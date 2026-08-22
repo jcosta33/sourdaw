@@ -548,6 +548,22 @@ impl PianoVoice {
     /// Render one output sample from this voice.
     #[inline]
     pub fn tick(&mut self) -> f32 {
+        self.tick_inner(false)
+    }
+
+    /// Reference render for the cost-reduction goldens: the voice renders
+    /// exactly as it did before the F8 and F17 cost reductions landed — the
+    /// strings process their zeroed f32 prefix (pre-F17) and the decay
+    /// follower is not updated (pre-F8; the simplification thresholds then
+    /// read the never-updated envelope, which they cannot fire on). A render
+    /// through this must be bit-identical to one through `tick`; any
+    /// difference means a cost reduction moved a sample. Never call this in
+    /// production.
+    pub fn tick_reference_render(&mut self) -> f32 {
+        self.tick_inner(true)
+    }
+
+    fn tick_inner(&mut self, reference_render: bool) -> f32 {
         if self.stage == VoiceStage::Idle {
             return 0.0;
         }
@@ -601,6 +617,7 @@ impl PianoVoice {
 
         let transverse = match self.quality {
             VoiceQuality::Simplified => self.strings.tick_simplified(force),
+            _ if reference_render => self.strings.tick_including_zeroed_prefix(force),
             _ => self.strings.tick(force),
         };
         self.last_string_displacement = transverse;
@@ -620,12 +637,14 @@ impl PianoVoice {
         // whole `Active` stage, so it says nothing about how loud a held note
         // still is; this follower does, and it keeps tracking through the
         // release ramp because `output` already carries `amplitude`.
-        self.decay_envelope = flush_denormal(
-            self.decay_envelope
-                + self.decay_follower_coefficient * (output.abs() - self.decay_envelope),
-        );
-        if self.decay_envelope > self.decay_peak {
-            self.decay_peak = self.decay_envelope;
+        if !reference_render {
+            self.decay_envelope = flush_denormal(
+                self.decay_envelope
+                    + self.decay_follower_coefficient * (output.abs() - self.decay_envelope),
+            );
+            if self.decay_envelope > self.decay_peak {
+                self.decay_peak = self.decay_envelope;
+            }
         }
 
         if self.stage == VoiceStage::Releasing || self.stage == VoiceStage::Stealing {

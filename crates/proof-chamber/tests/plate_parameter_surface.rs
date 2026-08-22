@@ -119,28 +119,25 @@ fn early_rms(output: &[f32]) -> f32 {
     rms(&output[..EARLY_END.min(output.len())])
 }
 
-/// Three cheap scalars of a render, pinned beside the digest and asserted
-/// before it.
+/// Three cheap scalars of a render, asserted against pinned constants.
 ///
-/// The digest is a good tripwire and a useless diagnosis. `digest 0x…` is three
-/// opaque integers, identical whether the render moved by one sample of fine
-/// structure, dropped 6 dB, went silent, or swapped its channels — and it is
-/// the *only* thing that fires for a whole class of change. Whoever moves this
-/// constant next has to work out which kind they caused, and the justification
-/// written above it cites T60 from a 50 ms envelope, seven octave bands and a
-/// lag-swept correlation, none of which any instrument in this repo produces.
-/// The number regenerates in one command; the reasoning does not regenerate at
-/// all.
+/// They are the absolute pin, and they are all of it: a last-bit difference in
+/// a transcendental — the thing one libm build does and the next does not —
+/// is orders of magnitude below a level change worth shipping, so peak and
+/// RMS hold inside the tolerances below on any platform. A bit-pattern digest
+/// of the same render does not, which is why this file no longer pins one
+/// (`daw-dsp`'s `dsp_cost_reduction_goldens` module doc is the finding).
 ///
-/// So the scalars go next to it, and they are asserted first so their message
-/// is the one that appears. A change that reds the digest while these hold *is*
-/// the diagnosis — same level, same start, different fine structure, which is
-/// what a retune looks like. A change that reds one of these names itself.
+/// What a digest is still for, and all it is for: comparing two renders of
+/// one process, where both sides share a libm and equality means
+/// bit-exactness.
 ///
-/// What they do not catch, stated so nobody reads more into them: a channel
-/// swap (the stimulus is mono-summed and this render keeps the left channel
-/// only), and any redistribution of energy that preserves peak, total RMS and
-/// onset. The digest is still the thing that notices those.
+/// What nothing catches any more, stated so nobody reads more into the
+/// scalars: a channel swap (the stimulus is mono-summed and this render keeps
+/// the left channel only), and any redistribution of energy that preserves
+/// peak, total RMS and onset. Same-run digest comparisons notice those
+/// between two renders of one process; nothing notices them against history,
+/// because history cannot be fingerprinted across libm builds.
 struct RenderShape {
     peak: f32,
     rms: f32,
@@ -165,7 +162,7 @@ fn shape(output: &[f32]) -> RenderShape {
 
 /// Level tolerance, in dB, for the two amplitude scalars.
 ///
-/// Sized to pass the change that produced the current digests and to fail
+/// Sized to pass a retune and to fail
 /// anything a listener would call a level change. #1547's one-to-two-sample
 /// retune moved peak by 0.00000 dB and RMS by 0.00013 dB on this render; 0.1 dB
 /// is nearly three orders of magnitude above that and an order of magnitude
@@ -182,8 +179,7 @@ fn assert_shape(actual: &RenderShape, expected: &RenderShape, label: &str) {
     assert!(
         peak_db.abs() < SHAPE_LEVEL_TOLERANCE_DB,
         "{label}: peak moved {peak_db:+.4} dB ({:e} against the pinned {:e}). \
-         That is a level change, not a retune — the digest below would have \
-         told you only that something moved.",
+         That is a level change, not a retune.",
         actual.peak,
         expected.peak
     );
@@ -226,6 +222,12 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
 
 /// FNV-1a over every sample's bit pattern, so any change anywhere in the
 /// buffer moves it.
+///
+/// Only ever compared against another digest from the same process. Both
+/// renders then share one libm, so equality is bit-exactness. A captured
+/// *absolute* digest of this engine drifts across libm builds — see
+/// `UNTOUCHED_PLATE_SHAPE`'s doc and `daw-dsp`'s
+/// `dsp_cost_reduction_goldens` module doc.
 fn digest(output: &[f32]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for sample in output {
@@ -236,89 +238,50 @@ fn digest(output: &[f32]) -> u64 {
 }
 
 /// What the plate renders with nothing written to it but `algorithm` and
-/// `mix`, which is what every project that never touched a control hears.
+/// `mix` — what every project that never touched a control hears — in three
+/// readable numbers. Measured on `main` at d36441d4f and unchanged since.
 ///
-/// A `render(&[])`-versus-`render(&[(name, default)])` comparison — the shape
-/// the three older rows in this file use — cannot pin this. Both sides of that
-/// comparison run the *same* mapping, so it catches a default that drifts away
-/// from the constructor and is blind to a mapping that is wrong at the default
-/// in the same way on both sides. That blindness is not hypothetical: a
-/// candidate `gravity` tilt neutral at 0 rather than at the shipped 0.5 passed
-/// every other assertion in this file while quietly changing what every
-/// existing project sounds like.
+/// These scalars, not a digest, are the absolute pin, and the reason is the
+/// same as in `algorithm_switch_parameter_retention.rs`: the engine's f32
+/// transcendentals round differently across libm builds — even between two
+/// Linux machines — so a captured bit-pattern fingerprint of this render
+/// cannot hold on a hosted runner, while peak and RMS inside the 0.1 dB
+/// tolerances can. `daw-dsp`'s `dsp_cost_reduction_goldens` module doc records
+/// the same finding, and the same same-run replacement, on another engine.
 ///
-/// So the reference is a constant rather than a second render. Changing this
-/// number is not a maintenance chore — it means an untouched project now
-/// sounds different, and that belongs in a release note.
+/// The fingerprint this file kept here until that finding moved twice, and
+/// both moves are part of the protection, so they are recorded rather than
+/// dropped:
 ///
-/// Changed once, by #1546: the constructor's `damping` moved from 0.0005 —
-/// which is bypass, 0.0087 dB at Nyquist — to the 0.3 the panel knob had been
-/// claiming all along. 0x9107_053e_5140_7165 → the value below, re-measured on
-/// this file's stimulus in the same commit as the constructor edit. The
-/// audible content of that move is measured in
-/// `tests/plate_default_damping.rs`, not fingerprinted: 9.66 dB of 6-12 kHz
-/// shed across the tail against 4.88 dB before.
-///
-/// The reach is newly added devices, not existing projects: `addDevice` writes
-/// the descriptor's `damping` into `Device.parameterValues` and
-/// `projectTrackToLiveStrip` replays every stored value on load, so a saved
-/// project keeps whatever it was added with.
-///
-/// Moved a second time, by #1547, which corrected the same off-by-one in two
-/// places: `DelayLine::read` now counts back from `write_pos - 1` instead of
-/// `write_pos`, and `EarlyReflections::process` does the same. The fix is aimed
-/// at Pre-Delay 0 ms, which used to render 503 ms of nothing; this row moves
-/// because those two expressions serve every delay in the engine, so the input
-/// path got two samples longer and the tank lines one. Dattorro's Table 2
-/// positions are literal sample delays — `delay_48_54[266]` is 266 samples —
-/// and the old expression delivered 265, so the fourteen output taps and the
-/// six Schroeder allpasses now match the paper. Six reads still do not, by one
-/// sample each, and `proof_chamber.rs`'s `read` says which and why.
-/// 0x15ca_3842_cec5_5de2 → the value below.
-///
-/// Unlike #1546 this is *not* a voicing change, and the difference between the
-/// two moves is the reason this comment is longer than the last one. A one-
-/// sample retune of a recirculating tank scrambles the fine structure while
-/// leaving everything measurable where it was. On the default plate, mix 1,
-/// impulse, 3.0 s at 48 kHz, before against after:
-///
-/// * peak 0.699514031 → 0.699514031, identical to every digit f32 carries
-/// * RMS -0.00013 dB (L), +0.00148 dB (R)
-/// * T60 from a 50 ms envelope 1.450 s → 1.450 s
-/// * seven octave bands from 20 Hz to 20 kHz, all within ±0.03 dB
-/// * the 50 ms RMS envelope, across its whole audible span, within
-///   +0.61/-0.56 dB with a mean of -0.02 dB
-///
-/// What moved is the waveform. Excluding sample 0 — which is the dry impulse
-/// leaking through the 30 ms `mix` ramp and holds 54% of the buffer's energy,
-/// so including it flatters every correlation figure — the zero-lag correlation
-/// between the two renders is **0.029**. The best realigning lag in -12..+12 is
-/// +2 samples, the two the input path gained, and even there it only holds in
-/// the dense head: r = +0.60 over the first 50 ms (70% of the tail's energy),
-/// +0.23 over the next 200 ms, and 0.00 everywhere past 250 ms, because the
-/// tank's circulation period changed rather than its output being delayed.
-///
-/// That is what a fingerprint is for. An untouched project renders a different
-/// tail with the same level, the same decay time and the same spectrum — worth
-/// a release note for the Pre-Delay fix, not for this.
-const UNTOUCHED_PLATE_DIGEST: u64 = 0x245952ca_4c990c89;
-
-/// The same render, described in three numbers a human can read.
-///
-/// Regenerate these together with the digest above and never separately: they
-/// are the same render, and a shape that disagrees with its digest means one of
-/// the two was copied from a different run. See `RenderShape` for what each one
-/// is for and what none of them can see.
+/// * #1546 moved the constructor's `damping` from 0.0005 — bypass, 0.0087 dB
+///   at Nyquist — to the 0.3 the panel knob had been claiming. A deliberate
+///   voicing change: 9.66 dB of 6-12 kHz shed across the tail against 4.88 dB
+///   before, measured in `tests/plate_default_damping.rs`, which pins that
+///   behaviour directly. The reach is newly added devices only — `addDevice`
+///   writes the descriptor's `damping` into `Device.parameterValues` and
+///   `projectTrackToLiveStrip` replays every stored value on load, so a saved
+///   project keeps what it was added with.
+/// * #1547 corrected the same off-by-one in `DelayLine::read` and
+///   `EarlyReflections::process`, which serve every delay in the engine. It
+///   moved the fingerprint without moving the sound: peak identical, RMS
+///   within 0.0015 dB, T60 identical, every octave band within 0.03 dB, and a
+///   waveform that decorrelated past the first 250 ms — the tank's
+///   circulation period changed, not its output level. That is exactly the
+///   move a level pin cannot see, and the reason the one-sample class is now
+///   pinned by behaviour instead: `wet_onset_follows_predelay.rs` for the
+///   shape, and the onset rows — this file's and
+///   `algorithm_switch_parameter_retention.rs`'s — for the exact sample.
 ///
 /// `onset: 0` is measured, not a placeholder, and it is the weakest of the
-/// three. Both this render and the sibling's are at `mix = 1`, and both measure
-/// 0 anyway: `mix` is smoothed from its constructor 0.3 with a 30 ms one-pole,
-/// so the dry burst is still most of the opening samples and the first sample
-/// above 1e-6 is the first sample. Neither can therefore reproduce #1547's
-/// shape — the dry path was never silent — and nothing here should be read as
-/// covering it. What the scalar does catch is a render that stops sounding or
-/// starts wholesale late. `wet_onset_follows_predelay.rs` is the file that
-/// carries the #1547 shape, on a stimulus with the ramp pre-rolled away.
+/// three. This render is at `mix = 1` and measures 0 anyway: `mix` is
+/// smoothed from its constructor 0.3 with a 30 ms one-pole, so the dry burst
+/// is still most of the opening samples and the first sample above 1e-6 is
+/// the first sample. It cannot therefore reproduce #1547's shape — the dry
+/// path was never silent — and nothing here should be read as covering it.
+/// What the scalar does catch is a render that stops sounding or starts
+/// wholesale late; the exact wet onset is pinned, on a stimulus with the ramp
+/// pre-rolled away, by
+/// `wet_onset_is_exactly_the_default_predelay_plus_the_first_tap` below.
 const UNTOUCHED_PLATE_SHAPE: RenderShape = RenderShape {
     peak: 8.290293e-1,
     rms: 1.0719928e-1,
@@ -551,8 +514,9 @@ fn size_renders_differently_at_interior_settings() {
 ///
 /// Un-ignore this when the constructor seeds `EarlyReflections` from the field
 /// it also stores. Note the direction of that fix: seeding from 0.75 changes
-/// what an untouched plate renders, so it moves `UNTOUCHED_PLATE_DIGEST` and
-/// `UNTOUCHED_PLATE_SHAPE` with it and belongs in a release note.
+/// what an untouched plate renders, so it moves `UNTOUCHED_PLATE_SHAPE` and
+/// the onset row's 876 (tap 0 becomes 222) with it and belongs in a release
+/// note.
 #[test]
 #[ignore = "pins the plate's split Size default — the field is seeded 0.75 (src/proof_chamber.rs:550) while EarlyReflections is built at 0.5 (:614), so an untouched plate renders a room it does not report. Red until the plate Size default lane lands."]
 fn size_defaults_to_the_documented_value() {
@@ -650,28 +614,168 @@ fn the_untouched_plate_still_renders_what_it_always_has() {
     // The claim `gravity` had to satisfy to be implementable at all: the tilt
     // is exactly 1.0 at the shipped default, so wiring a parameter that was
     // inert does not move a single sample of any project that never wrote it.
-    //
-    // This digest was taken from the plate *before* gravity read its field.
     let output = render(&[]);
 
-    // Scalars first, so that when both fire it is the readable one that
-    // reports. See `RenderShape`.
+    // Scalars first, so the readable failure is the one that reports. They
+    // are the only absolute pin left: they hold on every libm, where a
+    // captured fingerprint does not. See `UNTOUCHED_PLATE_SHAPE` for what
+    // moved them historically and where each of those protections went.
     assert_shape(
         &shape(&output),
         &UNTOUCHED_PLATE_SHAPE,
         "the untouched plate",
     );
 
-    let digest_now = digest(&output);
+    // Determinism witness. The same script rendered twice in one process
+    // must agree bit for bit, or every same-run comparison in this file —
+    // including the `identical` rows below — is measuring noise rather than
+    // a mapping.
+    let again = render(&[]);
     assert_eq!(
-        digest_now, UNTOUCHED_PLATE_DIGEST,
-        "the untouched plate changed: an existing project that never wrote a \
-         control now renders differently. digest {digest_now:#x}. The three \
-         scalars above held, so the level, the total energy and the start of \
-         this render are all where they were — what moved is fine structure, \
-         which is what a delay-length or coefficient retune looks like. If that \
-         was the intent, re-measure and move this constant with the reasoning; \
-         if it was not, the change is smaller than it looks and harder to see."
+        digest(&output),
+        digest(&again),
+        "the untouched plate rendered twice in one process produced \
+         different fine structure"
+    );
+
+    // The same-run pins of the default mapping are the per-control rows in
+    // this file (`early_late_defaults_to_the_documented_value`,
+    // `density_defaults_to_full_cross_coupling`,
+    // `gravity_defaults_to_the_documented_value`,
+    // `saturation_curve_defaults_to_tanh`), each asserting `identical` —
+    // bit-exact — between this render and the documented default written
+    // explicitly. What none of those can catch, and what the removed
+    // absolute fingerprint existed to catch, is a mapping wrong at the
+    // default in the same way on both sides of every comparison: the
+    // `gravity` tilt neutral at 0 is the recorded candidate, and it passed
+    // every one of those rows. That hole is now covered only insofar as such
+    // a change moves level or onset; a cross-platform fine-structure
+    // fingerprint does not exist to be kept, which is the finding
+    // `dsp_cost_reduction_goldens.rs` in `daw-dsp` records.
+}
+
+// ---------------------------------------------------------------------------
+// The #1547 protection the removed fingerprint used to carry
+// ---------------------------------------------------------------------------
+
+/// Silent blocks rendered before the burst in the onset row below. The mix
+/// ramp has to settle or the dry burst masks the wet onset — which is exactly
+/// why `UNTOUCHED_PLATE_SHAPE.onset` measures 0 above. Same figure and same
+/// argument as `wet_onset_follows_predelay.rs`'s `PREROLL_BLOCKS`; the
+/// instrument is a copy of the one `algorithm_switch_parameter_retention.rs`
+/// added, duplicated because Rust integration tests are separate crates.
+const WET_ONSET_PREROLL_BLOCKS: usize = 400;
+
+/// Length and level of the burst the onset row excites the engine with.
+///
+/// DC rather than this file's 220 Hz sine: the sine's first sample is zero,
+/// which would put the measured onset one sample after the tap's own — a real
+/// offset, but a trap in a row whose whole point is naming the sample the tap
+/// delivers. DC puts full amplitude in the first sample, so the onset names
+/// the tap and nothing else.
+const WET_ONSET_BURST: usize = 512;
+const WET_ONSET_BURST_LEVEL: f32 = 0.8;
+
+/// Fraction of the render's own peak that counts as sounding, so a quiet
+/// render is measured on its own terms. The first early-reflection sample
+/// sits orders of magnitude above it, so nothing is near the threshold and
+/// libm cannot move the crossing.
+const WET_ONSET_FLOOR_FRACTION: f32 = 1e-3;
+
+/// Frames rendered after the pre-roll. One second.
+const WET_ONSET_FRAMES: usize = 48_000;
+
+/// The untouched plate — `algorithm` and `mix`, nothing else — pre-rolled
+/// silent, then excited with the DC burst. Returns only the post-pre-roll
+/// frames, so an onset index into the result counts from the first burst
+/// sample.
+fn render_wet_onset() -> Vec<f32> {
+    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    instance.set_param("algorithm", PLATE);
+    instance.set_param("mix", 1.0);
+
+    let silence = [0.0_f32; BLOCK];
+    for _ in 0..WET_ONSET_PREROLL_BLOCKS {
+        instance.process(&silence, &silence, BLOCK as u32);
+    }
+
+    let mut output = Vec::with_capacity(WET_ONSET_FRAMES);
+    let mut index = 0;
+    while index < WET_ONSET_FRAMES {
+        let left: Vec<f32> = (0..BLOCK)
+            .map(|i| {
+                if index + i < WET_ONSET_BURST {
+                    WET_ONSET_BURST_LEVEL
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let right = left.clone();
+        let ptr = instance.process(&left, &right, BLOCK as u32);
+        assert!(!ptr.is_null(), "process returned a null buffer");
+        for i in 0..BLOCK {
+            output.push(unsafe { *ptr.add(i) });
+        }
+        index += BLOCK;
+    }
+    output
+}
+
+/// The untouched plate's wet onset, exactly, in samples.
+///
+/// #1547's off-by-one — delay reads counting back from the slot *after* the
+/// most recently written one, in both `DelayLine::read` and
+/// `EarlyReflections::process` — moved this file's old fingerprint and
+/// nothing else measurable: identical peak, RMS within 0.0015 dB, identical
+/// T60, every octave band within 0.03 dB. Behaviour is what can be pinned
+/// across platforms, so this row pins the untouched plate's wet onset
+/// exactly: the constructor's 15 ms pre-delay, which no script in this file
+/// ever writes — 720 samples — plus tap 0 of the early reflections, 156
+/// samples at the room size the constructor hands them (0.5; see the
+/// `#[ignore]`d Size row above for why that is not the 0.75 the field
+/// stores). 720 + 156 = 876. Nothing else in the wet path is shorter: the
+/// tank's first possible contribution is four input diffusers plus a
+/// modulated allpass, 905 samples minimum, later.
+///
+/// Sample counts, not bit fingerprints: the index depends only on integer
+/// delay arithmetic and on buffer slots that are exactly zero, so no libm
+/// moves it — while the defect it watches moves it by a whole sample (either
+/// copy of the off-by-one) or, in the Pre-Delay-0 shape
+/// (`wet_onset_follows_predelay.rs`), by 24 000.
+/// `algorithm_switch_parameter_retention.rs` pins the written-predelay path
+/// exactly at 0 and 10 ms; this row pins the constructor's own 720, which no
+/// write ever touches. When the Size split is fixed and the reflections are
+/// seeded from the stored field, tap 0 becomes 222 and this row moves with
+/// it — re-measure in that commit; the protocol works on any platform,
+/// which is why this row replaced a digest.
+#[test]
+fn wet_onset_is_exactly_the_default_predelay_plus_the_first_tap() {
+    let output = render_wet_onset();
+
+    let peak = output.iter().fold(0.0_f32, |a, b| a.max(b.abs()));
+    assert!(
+        peak > 1e-3,
+        "the untouched plate rendered nothing (peak {:e}); the onset \
+         measurement below would pass on silence",
+        peak
+    );
+
+    let floor = peak * WET_ONSET_FLOOR_FRACTION;
+    let onset = output
+        .iter()
+        .position(|s| s.abs() > floor)
+        .unwrap_or(output.len());
+    assert_eq!(
+        onset, 876,
+        "the untouched plate's wet output starts at sample {onset}, not 876 \
+         (the constructor's 720 samples of pre-delay plus the first \
+         reflection's 156). One sample early is #1547 alive again in \
+         `EarlyReflections::process` or `DelayLine::read`; a wholesale late \
+         start is the pre-delay wired to the wrong end of its buffer. If a \
+         retune moved the taps — the Size split fix will — re-measure: \
+         sample counts hold on every platform, which is why this row is \
+         here instead of a digest."
     );
 }
 

@@ -36,8 +36,16 @@
 //!   whether caching *every* forwarded name was right, rather than only the
 //!   ones the current engine reads.
 //! * **First construction.** An instance told nothing must still render what
-//!   it always rendered, pinned by a digest rather than by comparison against
-//!   another run of the same mapping.
+//!   it always renders. Pinned by shape scalars, which hold on every libm,
+//!   and by same-run digest comparisons — the untold render against a second
+//!   render of the same script and against the first `algorithm` selection —
+//!   and not by an absolute captured fingerprint: the engine's f32
+//!   transcendentals round differently across libm builds, even between two
+//!   Linux machines, so a captured digest cannot hold on a hosted runner.
+//!   `daw-dsp`'s `dsp_cost_reduction_goldens` module doc records the same
+//!   finding, and the same same-run replacement, on another engine. The
+//!   #1547 pre-delay behaviour the removed fingerprint used to catch is
+//!   carried by an onset row further down.
 //! * **The documented exception.** One sequence genuinely does not round-trip
 //!   — the plate latches `shimmer` off inside its `freeze` arm, and a value
 //!   cache cannot re-fire a latch whose trigger has since been overwritten. It
@@ -239,6 +247,12 @@ fn max_delta(a: &[f32], b: &[f32]) -> f32 {
 
 /// FNV-1a over every sample's bit pattern, so any change anywhere in the
 /// buffer moves it.
+///
+/// Only ever compared against another digest from the same process. Both
+/// renders then share one libm, so equality is bit-exactness — the honest
+/// fine-structure pin. A captured *absolute* digest of this engine drifts
+/// across libm builds; see the untold-instance row below and
+/// `daw-dsp`'s `dsp_cost_reduction_goldens` module doc.
 fn digest(output: &[f32]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for sample in output {
@@ -469,53 +483,28 @@ fn the_replay_preserves_most_recent_write_order() {
 // First construction
 // ---------------------------------------------------------------------------
 
-/// What an instance that has been told nothing but `mix` renders.
+/// What an instance that has been told nothing but `mix` renders, in three
+/// readable numbers. Measured on `main` at d36441d4f, before the parameter
+/// cache existed, and unchanged by it.
 ///
-/// Pinned rather than compared against another run of the same mapping: a
-/// cache that quietly replayed something into a first construction — or a
-/// default that drifted — would move this and leave a comparison row green,
-/// which is the hole #1519's gravity digest was added to close.
-/// Taken on `main` at d36441d4f, before the parameter cache existed, and
-/// unchanged by it.
-///
-/// Moved once, by #1546, when the plate constructor's `damping` went from
-/// 0.0005 to 0.3. That is a deliberate voicing change and this row is the
-/// place it is supposed to show up: 0xdd93_83f3_187e_b942 → the value below,
-/// re-measured on this stimulus in the same commit as the constructor edit.
-/// What it means in the render is 9.66 dB of 6-12 kHz shed across the tail
-/// against 4.88 dB before, and a late window that sits 8.45 dB *below* the
-/// midrange instead of 0.21 dB above it — measured in
-/// `tests/plate_default_damping.rs`, which pins the behaviour this digest only
-/// fingerprints.
-///
-/// It does **not** mean existing projects sound different. `addDevice` writes
-/// the descriptor's `damping` into `Device.parameterValues` at add time and
-/// `projectTrackToLiveStrip` replays every stored value on load, so a saved
-/// project carrying 0.0005 still gets 0.0005 written over the constructor.
-/// Only a newly added Dutch Oven reaches this state.
-///
-/// Moved a second time, by #1547, and for the same reason as its sibling in
-/// `plate_parameter_surface.rs` — the two fingerprint the same engine from two
-/// stimuli and always move together. `DelayLine::read` and
-/// `EarlyReflections::process` now count back from the most recently written
-/// sample rather than from the slot after it, so a request for zero delay is
-/// zero delay rather than a whole buffer. That is what stops Pre-Delay 0 ms
-/// rendering 503 ms of silence, and it lengthens every delay in the engine by
-/// one sample on the way, which is why a stimulus that never writes `predelay`
-/// moves at all. 0xaf24_03b1_9139_eb46 → the value below.
-///
-/// The measured content of the move is written out beside the other constant
-/// and not repeated here: identical peak, RMS within 0.0015 dB, identical T60,
-/// every octave band within 0.03 dB, and a waveform that decorrelates past the
-/// first 250 ms. This row is a fingerprint and it moved; the sound did not.
-const UNTOLD_INSTANCE_DIGEST: u64 = 0x331fcaf1_a4fc7535;
-
-/// The same render in three readable numbers. Regenerate with the digest, never
-/// separately — a shape that disagrees with its digest means one of the two came
-/// from a different run.
+/// These scalars, not a digest, are the absolute pin: a last-bit difference in
+/// a transcendental is orders of magnitude below a level change worth shipping,
+/// so peak and RMS hold inside the 0.1 dB tolerances on any libm, while a
+/// bit-pattern fingerprint amplifies that same last bit into a hard failure —
+/// which is why the absolute digest this file once pinned here was removed.
+/// Re-measured once, by #1546, when the plate constructor's `damping` went
+/// from 0.0005 to 0.3: a deliberate voicing change, with the behaviour it
+/// produced measured in `tests/plate_default_damping.rs`, which pins what
+/// these scalars only summarize. It did not change existing projects:
+/// `addDevice` writes the descriptor's `damping` into `Device.parameterValues`
+/// at add time and `projectTrackToLiveStrip` replays every stored value on
+/// load, so only a newly added Dutch Oven reaches this state.
 ///
 /// `onset: 0` is measured, not a placeholder — see `RenderShape` for why it is
-/// 0 even at `mix = 1`, and for what it can and cannot see.
+/// 0 even at `mix = 1`, and for what it can and cannot see. The onset this
+/// stimulus cannot see is pinned properly, on a pre-rolled render, by
+/// `wet_onset_is_exactly_predelay_plus_the_first_reflection_tap` below — the
+/// row that carries the #1547 protection the removed digest used to provide.
 const UNTOLD_INSTANCE_SHAPE: RenderShape = RenderShape {
     peak: 8.290293e-1,
     rms: 1.515884e-1,
@@ -528,33 +517,195 @@ fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
     // `ProofChamberInstance::new`.
     let constructed = render(&[("mix", 1.0)]);
 
-    // Scalars first, so the readable failure is the one that reports.
+    // Scalars first, so the readable failure is the one that reports. They
+    // are also the only absolute pin left standing: they hold on every libm,
+    // where a captured digest does not.
     assert_shape(
         &shape(&constructed),
         &UNTOLD_INSTANCE_SHAPE,
         "an untold instance",
     );
 
-    let digest_now = digest(&constructed);
+    // Determinism witness. Every comparison below is between renders of one
+    // process, which is only meaningful if the engine is a function of its
+    // script, so the same script rendered twice must agree bit for bit.
+    // Nondeterminism — an unseeded generator, state leaking between
+    // instances — trips here instead of disguising itself as a mapping
+    // change in the rows that follow.
+    let constructed_again = render(&[("mix", 1.0)]);
     assert_eq!(
-        digest_now, UNTOLD_INSTANCE_DIGEST,
-        "an untouched Dutch Oven changed what it renders: an existing project \
-         that never moved a control now sounds different. digest {digest_now:#x}. \
-         The three scalars above held, so the level, the total energy and the \
-         moment the reverb starts are all where they were — what moved is fine \
-         structure. If that was intended, re-measure and move this constant with \
-         the reasoning beside it."
+        digest(&constructed),
+        digest(&constructed_again),
+        "the same script rendered twice in one process produced different \
+         fine structure, so the engine is not a function of its parameters \
+         and every same-run comparison here is measuring noise"
     );
 
     // The first `algorithm` write happens against an empty cache, so it must
-    // hand back the constructor's defaults and not a partial replay.
+    // hand back the constructor's defaults and not a partial replay. Digest
+    // equality rather than `max_delta == 0`, and this is the fine-structure
+    // pin the removed absolute fingerprint used to carry: both renders share
+    // this process's libm, so bit-exactness is assertable here even though a
+    // captured constant is not.
     let first_selection = render(&[("algorithm", PLATE), ("mix", 1.0)]);
-    let delta = max_delta(&first_selection, &constructed);
     assert_eq!(
-        delta, 0.0,
+        digest(&first_selection),
+        digest(&constructed),
         "selecting the plate on a fresh instance does not render what the \
-         constructor's plate renders: max_delta {delta:e}"
+         constructor's plate renders: digest {:x} against {:x}. A partial \
+         replay, or a default that differs between the two construction \
+         sites, moves bits this comparison sees.",
+        digest(&first_selection),
+        digest(&constructed)
     );
+}
+
+// ---------------------------------------------------------------------------
+// The #1547 protection the removed digest used to carry
+// ---------------------------------------------------------------------------
+
+/// Silent blocks rendered before the burst in the onset row below.
+///
+/// `mix` is smoothed with a 30 ms one-pole, so an engine told `mix = 1` still
+/// passes a shrinking fraction of its dry input for some time afterwards; on
+/// this file's burst-from-zero stimulus that dry leak is exactly why
+/// `RenderShape::onset` measures 0. Rendering 400 silent blocks (1.07 s)
+/// first parks the ramp at 1 − 3.4e-5 — where it stalls rather than settles —
+/// so the dry burst measures 2.7e-5: an order of magnitude below the onset
+/// floor (peak × 1e-3 ≥ 2.7e-4, since the first wet sample lands near 0.27)
+/// and four orders below that first wet sample, which is what makes the
+/// first sample above the floor a wet one.
+///
+/// Same figure, measured and argued, as `wet_onset_follows_predelay.rs`'s
+/// `PREROLL_BLOCKS`; the instrument below is that file's, because the onset
+/// this file's own stimulus cannot see is what this section pins.
+const ONSET_PREROLL_BLOCKS: usize = 400;
+
+/// Length and level of the burst the onset row excites the engine with.
+///
+/// DC rather than this file's 220 Hz sine: the sine's first sample is zero,
+/// which would put the measured onset one sample after the tap's own — a real
+/// offset, but a trap in a row whose whole point is naming the sample the tap
+/// delivers. DC puts full amplitude in the first sample, so the onset names
+/// the tap and nothing else.
+const ONSET_BURST: usize = 512;
+const ONSET_BURST_LEVEL: f32 = 0.8;
+
+/// Fraction of a render's own peak that counts as sounding, so an engine that
+/// runs quiet is measured on its own terms. The first early-reflection sample
+/// lands near 0.27 against a floor orders of magnitude smaller, so nothing
+/// sits near the threshold and libm cannot move the crossing.
+const ONSET_FLOOR_FRACTION: f32 = 1e-3;
+
+/// Frames rendered after the pre-roll. One second, so #1547's 503 ms of
+/// silence would still fall inside the render and be measured rather than
+/// merely absent.
+const ONSET_FRAMES: usize = 48_000;
+
+/// Apply `script` to a fresh instance, pre-roll the mix ramp silent, then
+/// render the DC burst. Returns only the post-pre-roll frames, so an onset
+/// index into the result counts from the first burst sample.
+fn render_wet_onset(script: &[Step]) -> Vec<f32> {
+    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    for &(name, value) in script {
+        instance.set_param(name, value);
+    }
+
+    let silence = [0.0_f32; BLOCK];
+    for _ in 0..ONSET_PREROLL_BLOCKS {
+        instance.process(&silence, &silence, BLOCK as u32);
+    }
+
+    let mut output = Vec::with_capacity(ONSET_FRAMES);
+    let mut index = 0;
+    while index < ONSET_FRAMES {
+        let left: Vec<f32> = (0..BLOCK)
+            .map(|i| {
+                if index + i < ONSET_BURST {
+                    ONSET_BURST_LEVEL
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let right = left.clone();
+        let ptr = instance.process(&left, &right, BLOCK as u32);
+        assert!(!ptr.is_null(), "process returned a null buffer");
+        for i in 0..BLOCK {
+            output.push(unsafe { *ptr.add(i) });
+        }
+        index += BLOCK;
+    }
+    output
+}
+
+/// The wet onset of the default plate, exactly, in samples: the pre-delay
+/// plus the first early-reflection tap.
+///
+/// #1547 counted delay reads back from the slot *after* the most recently
+/// written one, in two places — `DelayLine::read` and
+/// `EarlyReflections::process` — so every delay in the engine delivered one
+/// sample early, and a request for zero delay had no representation at all:
+/// it read the oldest slot in the line, which on a pre-delay line sized
+/// `sample_rate * 0.5` is why Pre-Delay 0 ms rendered 503 ms of silence. The
+/// absolute digest this file used to pin the untold instance caught both —
+/// it moved when the fix landed — but a digest cannot be carried across
+/// machines, so this row carries the protection instead, as behaviour.
+///
+/// Why the onset is this number on an untouched instance: the plate
+/// constructor builds its early reflections at room size 0.5
+/// (`EarlyReflections::new(sample_rate, 0.5)`), and no `size` write ever
+/// reaches `update_room_size` here, so that is what renders. Tap 0 sits
+/// `(1.0·0.5 + (5 + 0.5·45)·0.1)/1000 · 48 000` = 156 samples out — 222 is
+/// the same tap after a Size 0.75 write — and nothing else in the wet path is
+/// shorter: the tank's first possible contribution is four input diffusers
+/// (142+107+379+277) plus a modulated allpass, 905 samples minimum, later.
+/// So the wet output's first non-zero sample is exactly `predelay_len + 156`.
+///
+/// Sample counts, not bit fingerprints: the index depends only on integer
+/// delay arithmetic and on buffer slots that are exactly zero, and the first
+/// non-zero early sample sits orders of magnitude above the floor, so no libm
+/// can move it — while the defect it watches moves it by a whole sample (the
+/// one-sample copy) or by about 24 000 (the unrepresented zero), which is the
+/// resolution this row pins. `early_reflections.rs`'s own unit test pins its
+/// copy of the expression in isolation; this row pins the same expression
+/// where the digest watched it, wired into the assembled default engine, and
+/// the pre-delay line's copy with it. `wet_onset_follows_predelay.rs` sweeps
+/// every engine, Size and two rates against a 20 ms budget; this is the
+/// exact pin on the default plate. Re-measure both numbers in the same
+/// commit as a deliberate retune — that protocol works here, because sample
+/// counts do not drift across platforms.
+#[test]
+fn wet_onset_is_exactly_predelay_plus_the_first_reflection_tap() {
+    for (predelay_ms, expected) in [(0.0_f32, 156_usize), (10.0, 636)] {
+        let output = render_wet_onset(&[("mix", 1.0), ("predelay", predelay_ms)]);
+
+        let peak = output.iter().fold(0.0_f32, |a, b| a.max(b.abs()));
+        assert!(
+            peak > 1e-3,
+            "the plate rendered nothing at Pre-Delay {predelay_ms} ms (peak \
+             {:e}); the onset measurement below would pass on silence",
+            peak
+        );
+
+        let floor = peak * ONSET_FLOOR_FRACTION;
+        let onset = output
+            .iter()
+            .position(|s| s.abs() > floor)
+            .unwrap_or(output.len());
+        let requested = (predelay_ms / 1000.0 * SAMPLE_RATE) as usize;
+        assert_eq!(
+            onset, expected,
+            "the wet output at Pre-Delay {predelay_ms} ms starts at sample \
+             {onset}, not {expected} ({requested} of pre-delay plus the first \
+             reflection's 156). One sample early is #1547 alive again in \
+             `EarlyReflections::process` or `DelayLine::read`; around 24 000 \
+             is its other half — a request for zero delay reading the oldest \
+             slot in the line. If the tap table was retuned on purpose, \
+             re-measure: sample counts hold on every platform, which is why \
+             this row is here instead of a digest."
+        );
+    }
 }
 
 /// Prints the table quoted in the change description. The rows above carry the
@@ -781,9 +932,9 @@ fn selecting_each_engine_on_a_fresh_instance_matches_its_constructor_defaults() 
     // directly and once after a detour that wrote nothing, so a replay that
     // invented state at either construction shows up as a difference.
     //
-    // The digest that stops both sides drifting together lives in
-    // `an_instance_told_nothing_renders_exactly_what_it_always_has`; this row
-    // is the per-engine spread around it.
+    // The same-run digest comparisons that stop both sides drifting together
+    // live in `an_instance_told_nothing_renders_exactly_what_it_always_has`;
+    // this row is the per-engine spread around them.
     for (name, algorithm) in EXPOSED {
         let once = render(&settled(algorithm, &[("mix", 1.0)]));
         let after_detour = render(&[

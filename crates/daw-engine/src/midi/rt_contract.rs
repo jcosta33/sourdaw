@@ -1,7 +1,7 @@
 use super::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot,
 };
-use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, PROBABILITY_CUTOFF_RANGE};
+use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, MidiFxParam, PROBABILITY_CUTOFF_RANGE};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use crate::scheduler::{AudioScheduler, GraphCommand, MidiFxKind};
 use rtrb::{Consumer, RingBuffer};
@@ -28,7 +28,7 @@ impl MidiFx for LegacyMidiFx {
     ) {
     }
 
-    fn set_param(&mut self, _name: &str, _value: f32) {}
+    fn set_param(&mut self, _param: MidiFxParam, _value: f32) {}
 
     fn reset(&mut self) {}
 }
@@ -159,6 +159,14 @@ fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
     command_tx
         .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
         .expect("MIDI FX command should fit");
+    // The addressed parameter shape: a `MidiFxParam` crosses the ring, not a
+    // name, and the arm applies it without freeing anything. The routed rate
+    // is also the observed one: half-beat steps keep the playhead at 0.4
+    // beats inside the first step, where the default 1/16 rate would already
+    // be a step ahead.
+    command_tx
+        .push(GraphCommand::SetMidiFxParam(7, 0, MidiFxParam::Rate, 0.5))
+        .expect("MIDI FX param command should fit");
     command_tx
         .push(GraphCommand::SetTransport(TransportState {
             is_playing: true,
@@ -174,6 +182,30 @@ fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
     scheduler.update_graph();
     let mut left = [0.0; 4];
     let mut right = [0.0; 4];
+    scheduler.process_block(&mut left, &mut right, 4);
+    scheduler.publish_midi_rt_diagnostics();
+
+    assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        diagnostics_reader
+            .snapshot()
+            .arpeggiator_active_note_exhaustions,
+        1
+    );
+
+    // At 0.4 beats the routed half-beat rate is still on step 0, so this
+    // block publishes nothing. A `SetMidiFxParam` the arm dropped, aimed at
+    // the wrong chain index, or applied to no effect leaves the default
+    // 1/16 rate, whose step 1 began at 0.25 beats: that arp would release
+    // and re-strike the note here, making the total 3.
+    command_tx
+        .push(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            song_pos_beats: 0.4,
+            ..TransportState::default()
+        }))
+        .expect("transport command should fit");
+    scheduler.update_graph();
     scheduler.process_block(&mut left, &mut right, 4);
     scheduler.publish_midi_rt_diagnostics();
 
@@ -212,6 +244,81 @@ fn arpeggiator_exhaustion_reports_exact_count_and_preserves_accepted_set() {
     assert!(arpeggiator.contains_active_note(60));
     assert!(arpeggiator.contains_active_note(75));
     assert!(!arpeggiator.contains_active_note(76));
+}
+
+/// The MIDI FX commands carry no owning payload onto the audio thread:
+/// consuming one of them there would free it inside the deadline (ADR 0020).
+/// Reading each payload *out of a shared reference to the command* is what
+/// pins that — moving out of a `&` compiles only while the payload is `Copy`,
+/// so reverting `SetMidiFxParam`'s parameter to a `String`, or the kind
+/// `AddMidiFx` addresses to a heap-carrying type, fails this test at compile
+/// time rather than leaving a `Copy` bound on some other type still
+/// satisfied.
+#[test]
+fn midi_fx_command_payloads_are_copy_addresses() {
+    fn copied_fx_kind(command: &GraphCommand) -> Option<MidiFxKind> {
+        match command {
+            GraphCommand::AddMidiFx(_, fx_kind) => Some(*fx_kind),
+            _ => None,
+        }
+    }
+    fn copied_midi_fx_param(command: &GraphCommand) -> Option<MidiFxParam> {
+        match command {
+            GraphCommand::SetMidiFxParam(_, _, param, _) => Some(*param),
+            _ => None,
+        }
+    }
+
+    assert_eq!(
+        copied_fx_kind(&GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator)),
+        Some(MidiFxKind::Arpeggiator)
+    );
+    assert_eq!(
+        copied_midi_fx_param(&GraphCommand::SetMidiFxParam(7, 0, MidiFxParam::Rate, 0.25)),
+        Some(MidiFxParam::Rate)
+    );
+}
+
+/// A MIDI FX past the device chain's fixed capacity is refused and counted
+/// rather than grown: the chain's slots are preallocated inline in the device,
+/// so the alternative to a counted refusal is an allocation inside the audio
+/// deadline. The refusal constructs nothing, so it also retires nothing.
+#[test]
+fn a_midi_fx_past_the_chains_capacity_is_refused_and_counted() {
+    let (mut command_tx, command_rx) = RingBuffer::new(256);
+    let (retired_tx, mut retired_rx) = RingBuffer::new(256);
+    let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
+    let mut scheduler =
+        AudioScheduler::with_midi_rt_diagnostics(command_rx, retired_tx, 48_000.0, diagnostics_tx);
+    let received_event_count = Arc::new(AtomicUsize::new(0));
+    let received_channel_sum = Arc::new(AtomicUsize::new(0));
+
+    command_tx
+        .push(GraphCommand::AddPlugin(
+            7,
+            Box::new(MidiRecordingPlugin {
+                received_event_count: Arc::clone(&received_event_count),
+                received_channel_sum,
+            }),
+        ))
+        .expect("plugin command should fit");
+    for _ in 0..crate::midi_fx::MIDI_FX_TABLE_CAPACITY {
+        command_tx
+            .push(GraphCommand::AddMidiFx(7, MidiFxKind::VelocityScaler))
+            .expect("MIDI FX command should fit");
+    }
+    scheduler.update_graph();
+
+    command_tx
+        .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
+        .expect("MIDI FX command should fit");
+    scheduler.update_graph();
+
+    assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
+    assert!(
+        retired_rx.pop().is_err(),
+        "a refused MIDI FX must not construct a unit to hand back"
+    );
 }
 
 #[test]
