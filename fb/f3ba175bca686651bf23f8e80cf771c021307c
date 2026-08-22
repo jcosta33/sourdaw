@@ -1,0 +1,20 @@
+tests/e2e/grooveAssignRenameDelete.spec.ts
+  s_24b1bdbc3c31ad::t_99ba42597c58a1 1,5-43,45-50,52,59-105,109-113,115-118,122-128,131-133,136-137
+  s_24b1bdbc3c31ad::t_e014dd4f9266fd 138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fbf3ba175bca686651bf23f8e80cf771c021307c",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
