@@ -1,0 +1,26 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_abc3d8414baa12 288,914,947
+.agents/decisions/0036-readmit-grand-boule.md
+  s_0a3429e31e555d::t_abc3d8414baa12 60-63,133-134
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_abc3d8414baa12 907,916
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_abc3d8414baa12 669
+  s_0a3429e31e555d::t_a195fdc4f341a8 704,708,710
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9f02ed1da5a5f83c077bc269a0376fd3433ad7ff",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
