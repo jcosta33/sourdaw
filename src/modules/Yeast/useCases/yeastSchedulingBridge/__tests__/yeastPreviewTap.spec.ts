@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createTrack } from '#/modules/Arrangement/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { YeastPreviewTap, yeastPreviewTap } from '../../../engine/yeastPreviewTap';
 import { yeastStore } from '../../../stores/yeastStore';
