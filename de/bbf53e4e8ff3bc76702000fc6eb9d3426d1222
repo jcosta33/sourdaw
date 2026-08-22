@@ -1,0 +1,179 @@
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_83871fa98708b4 35,695,699,951
+.agents/decisions/open-decision-docket.md
+  s_0a3429e31e555d::t_948af7c04318f5 47-51,58,63-64,70,80-81,98,105-106,112,117,132,148,150-151,156-173,486-494,786,812,890,1053,1072,1083,1104-1112,1134,1142,1151-1164
+.github/dependabot.yml
+  s_0a3429e31e555d::t_480eaf33361e30 3-4,9,13,18
+.github/workflows/health-gates.yml
+  s_0a3429e31e555d::t_359c2e2c1718de 3-6,8-12,14-18,20-24,26-28,30-37,43-51,53-54,56-64,67,69-139,141-146,151-156,160-196,199-206,208-230,232,235-238,241,243-294,299-330,336,341,347-350,354-398,400-402,404-412,415-418,421-439,441-453,458-463,467-472,474-478,483-646
+.gitleaks.toml
+  s_0a3429e31e555d::t_bea790bd1853ae 1-45
+.prettierignore
+  s_0a3429e31e555d::t_3af9527c892de3 9-24
+AGENTS.md
+  s_0a3429e31e555d::t_2b5ba90786af62 99-104,268-295,373-383,385
+crates/proof-chamber/src/decay_eq.rs
+  s_0a3429e31e555d::t_ac1bad1b92917e 211,815-817,882-883,967-970
+crates/proof-chamber/tests/decay_eq_parameter_surface.rs
+  s_0a3429e31e555d::t_7a8ca3675b9a35 448-450,775-776
+crates/proof-chamber/tests/vintage_character.rs
+  s_0a3429e31e555d::t_3f193f4567bafd 24-35,38-49,56-59,124-128,135-143
+crates/sourdaw-native/src/addon/mod.rs
+  s_0a3429e31e555d::t_887e00e821120f 341
+electron/__tests__/appIpc.spec.ts
+  s_0a3429e31e555d::t_89a99862880281 16,19,27-30,288-391
+electron/__tests__/bridge.spec.ts
+  s_0a3429e31e555d::t_8cfa331ff45675 25-29,73,76,80-90,108,442-489
+electron/__tests__/router.spec.ts
+  s_0a3429e31e555d::t_7ceed800a4cd86 57-63,66-68
+electron/__tests__/scanWorker.spec.ts
+  s_0a3429e31e555d::t_c847eda0438f43 89-102,105,113
+electron/__tests__/windowChrome.spec.ts
+  s_0a3429e31e555d::t_101720d681fa8e 13-18
+electron/appIpc.ts
+  s_0a3429e31e555d::t_49bcce46deb6a0 4-8,24-27,30,208-284
+electron/bridge.ts
+  s_0a3429e31e555d::t_5a29f3d084aed0 33-37,178-179,184,229-238,240-241,370-398
+electron/channels.ts
+  s_0a3429e31e555d::t_4da2142cc67fae 38-45,114-119,160-173
+electron/main.ts
+  s_0a3429e31e555d::t_3490183d4211ce 16-25,40-41,157-160,393-401,411-421
+electron/router.ts
+  s_0a3429e31e555d::t_a8c4cf8827865c 40-44,68-71,73,77,83,86-93
+electron/windowChrome.ts
+  s_0a3429e31e555d::t_24feaa81d24baa 3,5-25
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_c11decfb8bce00 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_0a3429e31e555d::t_43212a88f21a7e 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_0a3429e31e555d::t_a495af932d93d7 1
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_0a3429e31e555d::t_a3e843d3d6a1ab 9,11-12,14,94-114,120-121,131,164-198
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_0a3429e31e555d::t_339569ee0f614e 442-444,447-449
+scripts/__tests__/resourceGuard.spec.ts
+  s_0a3429e31e555d::t_109067f1266b5f 681-685
+scripts/__tests__/runLint.spec.ts
+  s_0a3429e31e555d::t_c37cf270e909fb 1-49
+scripts/checkLgplRuntimeProvenance.ts
+  s_0a3429e31e555d::t_fdca15734e0730 393
+scripts/resourceGuard.ts
+  s_0a3429e31e555d::t_1eb3cfdebf35f2 782-795,798,806-807,814,963
+scripts/runLint.ts
+  s_0a3429e31e555d::t_233310dff8e91b 46-89,107,112,114-126
+scripts/trustedGithubWriteBootstrap.ts
+  s_0a3429e31e555d::t_74f52e5b9995e0 10-14,74,112-134,137,209-258,277-289
+src/infra/store/__tests__/useStoreSelector.spec.tsx
+  s_0a3429e31e555d::t_02e27a41a5fb30 11,46-49,76,80,87-91
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/clearCloudProviderConfig.spec.ts
+  s_0a3429e31e555d::t_2f3c20a3f8795c 14-18
+src/modules/Arrangement/handlers/track/handleCreateBus.ts
+  s_0a3429e31e555d::t_cae4ba825074bc 81
+src/modules/AudioEngine/repositories/audioAnalysis/read-native-audio-file.ts
+  s_0a3429e31e555d::t_c27b0b9fdb22c4 2
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_0a3429e31e555d::t_b1ced42bcf4b3e 1
+src/modules/Collaboration/repositories/peerConnection.ts
+  s_0a3429e31e555d::t_98d52d241f53d9 407
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_0a3429e31e555d::t_53153f1ec412af 41-45,53-55
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_0a3429e31e555d::t_5c890725115c8c 1322
+src/modules/Crumbs/repositories/get-dropped-crumbs-file-path.ts
+  s_0a3429e31e555d::t_32a5588cd4e226 2
+src/modules/DawInterchange/handlers/__tests__/handleExportDawProject.spec.ts
+  s_0a3429e31e555d::t_9f113008acdaaf 5
+src/modules/DawInterchange/handlers/handleExportDawProject.ts
+  s_0a3429e31e555d::t_b1f855b860d011 4
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.ts
+  s_0a3429e31e555d::t_f10f6ea3f61613 55-59
+src/modules/MIDI/repositories/webMidi/lifecycle/destroyWebMidi.ts
+  s_0a3429e31e555d::t_d2f57a425d1639 11-12
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_0a3429e31e555d::t_1038eb46c5f974 10
+src/modules/PluginHost/repositories/pluginBridge/unloadPlugin.ts
+  s_0a3429e31e555d::t_04cbd9c329f1d0 17-19
+src/modules/Project/repositories/nativeFileDialog/pickFiles.ts
+  s_0a3429e31e555d::t_be1b02131478f1 2
+src/modules/Project/repositories/nativeProjectFiles/__tests__/desktopInvoke.spec.ts
+  s_0a3429e31e555d::t_cb8e70950f9d90 6
+src/modules/Project/repositories/nativeProjectFiles/__tests__/nativeProjectFiles.spec.ts
+  s_0a3429e31e555d::t_1d1640335f3f6e 5
+src/modules/Project/repositories/nativeProjectFiles/listProjectFiles.ts
+  s_0a3429e31e555d::t_6f730485647627 10-15
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/vcaFoundationLifecycle.spec.ts
+  s_0a3429e31e555d::t_c6eeaa34db3ce4 14
+src/modules/SampleLibrary/repositories/readNativeAudioFileBytes.ts
+  s_0a3429e31e555d::t_5308cd873eeccf 9-11
+src/modules/WorkspaceShell/presentations/views/ToolSelector.tsx
+  s_0a3429e31e555d::t_7f59f7cebe17f6 57-62
+src/modules/WorkspaceShell/presentations/views/Transport/WindowControls.tsx
+  s_0a3429e31e555d::t_e15e8fa56faca0 1-108
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/WindowControls.spec.tsx
+  s_0a3429e31e555d::t_f31f140dbb1efd 1-121
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_0a3429e31e555d::t_de810a0e917db8 1,14,31,66-83,102-107,139-144
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_0a3429e31e555d::t_2295ab05362d62 83-111,152-154,193-218
+src/modules/WorkspaceShell/repositories/windowChrome.ts
+  s_0a3429e31e555d::t_35deb784863382 1-32
+src/modules/WorkspaceShell/useCases/index.ts
+  s_0a3429e31e555d::t_66267facde6a06 65-68
+src/modules/WorkspaceShell/useCases/windowChrome.ts
+  s_0a3429e31e555d::t_e3217d786e75b0 1-6
+src/modules/Yeast/stores/__tests__/yeastStore.spec.ts
+  s_0a3429e31e555d::t_fbfc13fd0ac1cd 9
+src/modules/Yeast/stores/yeastStore.ts
+  s_0a3429e31e555d::t_56b3d1a44796ef 18
+src/modules/Yeast/useCases/__tests__/createOfflineYeastMidiProcessor.spec.ts
+  s_0a3429e31e555d::t_9eaf4d6fb42d10 9
+src/modules/Yeast/useCases/createOfflineYeastMidiProcessor.ts
+  s_0a3429e31e555d::t_050f6076f97a5c 4
+src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/yeastPreviewTap.spec.ts
+  s_0a3429e31e555d::t_3a61737eb604a8 4
+src/styles/main.css
+  s_0a3429e31e555d::t_3db1c0a300c61e 34-48
+src/types/sourdaw-desktop.d.ts
+  s_0a3429e31e555d::t_60d0e9f81dfc95 36-37,63-71
+src/utils/__tests__/desktopBridge.spec.ts
+  s_0a3429e31e555d::t_e9d96bace0df53 7,10,17,23-24,39-45,48-49,91-131
+src/utils/desktopBridge.ts
+  s_0a3429e31e555d::t_7c5c80a1de87d4 328-350
+tests/e2e/browserAiRedetectKokoroTestId.spec.ts
+  s_0a3429e31e555d::t_245ba697b9774c 1,7-8,10,12,15-16,18-20,22-23,25-26,29-31,34,36,41-46,49-50,52,54-58
+tests/e2e/browserAiTestId.spec.ts
+  s_0a3429e31e555d::t_3b4b29d4ae9671 1,5,7,12-16,18-19,23,27-28,31-33
+tests/e2e/browserInstrumentsTestId.spec.ts
+  s_0a3429e31e555d::t_e69965a84d7296 1,5,7,12-18,20-21,24-25,28-29,31-32,34-35
+tests/e2e/clipTrimStartTestId.spec.ts
+  s_0a3429e31e555d::t_0cad3a50112967 1-2,7-8,10-15,17-18,21-27,30,35,38,41-45
+tests/e2e/desktopRuntime.spec.ts
+  s_0a3429e31e555d::t_8636bdf0cc872d 70-73,113-127
+tests/e2e/levainArticulationTestId.spec.ts
+  s_0a3429e31e555d::t_628ef7888bd90e 1-2,5-11,14,16,22-23,25-27,29-30,35-41
+tests/e2e/levainEngineStatusTestId.spec.ts
+  s_0a3429e31e555d::t_e1ff135cac71a7 1,5-11,14,22-25
+tests/e2e/levainFamilyFilterTestId.spec.ts
+  s_0a3429e31e555d::t_253600a25c338d 1,5-11,14,22-49
+tests/e2e/levainSearchFilterTestId.spec.ts
+  s_0a3429e31e555d::t_9203c5c00fd34a 1,5-11,14,22-26,28-29,33-34,37-39
+vite.config.ts
+  s_0a3429e31e555d::t_b978d57f91265f 4,47-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "debbf53e4e8ff3bc76702000fc6eb9d3426d1222",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
