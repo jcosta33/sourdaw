@@ -1,0 +1,115 @@
+.agents/decisions/README.md
+  s_a40848e8f8cca9::t_0066ffdf39db4b 51-52
+  s_a40848e8f8cca9::t_d38234b6023ad1 46
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_662304a406c014 554
+  s_a40848e8f8cca9::t_0066ffdf39db4b 200-204,206,209,217,219-222,497,501-503,505-516,519-541,543-553,555-574,577,579-581,583-587,1427-1444,1446
+  s_a40848e8f8cca9::t_519752477eefb1 384,542
+  s_0a3429e31e555d::t_2c8c1bce4c5a2c 1445
+.agents/decisions/0030-exact-model-release-admission.md
+  s_a40848e8f8cca9::t_0066ffdf39db4b 5,22-24,28,49,60,64
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_0066ffdf39db4b 11,17-19,21,42-82,414-562,566
+.agents/decisions/0036-admit-webllm-qwen-conversions-under-apache-2.0.md
+  s_a40848e8f8cca9::t_0066ffdf39db4b 3,29
+.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md
+  s_a40848e8f8cca9::t_79d75a26490c4b 1-60
+electron/__tests__/webviewSecurity.spec.ts
+  s_a40848e8f8cca9::t_9fddc361b2ed8e 25,45,94-97,106,108-117,128-132
+electron/protocol.ts
+  s_a40848e8f8cca9::t_19c653786cb840 69-71,74-78,82
+public/legal/Magenta.js-NOTICE.txt
+  s_a40848e8f8cca9::t_38a35c813251dd 21-24
+public/legal/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_3256f92da86824 40,48-51
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_793d3a01547683 9-10,81,87-89,97-131,133-134,588-589,592-594,621,630-691,715,725-728,1235-1236
+src/infra/release/modelReleaseAdmission.ts
+  s_a40848e8f8cca9::t_c5066ba9ef14fb 3
+src/modules/Arrangement/handlers/__tests__/groupedUndoRuntimeGraph.spec.ts
+  s_a40848e8f8cca9::t_2a02918d7613d8 1-157
+src/modules/Arrangement/handlers/device/__tests__/handleAddDevice.spec.ts
+  s_a40848e8f8cca9::t_df041b8aa0bece 7,38-48,378-398
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPluginCommand.spec.ts
+  s_a40848e8f8cca9::t_c0fea8b948d07e 12,33-43,154-169
+src/modules/Arrangement/handlers/device/__tests__/handleReorderDevicesCommand.spec.ts
+  s_a40848e8f8cca9::t_21c3b1ed594b69 12,24-34,233-245
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_8584006015f07d 9-12,209-215
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_a40848e8f8cca9::t_dd05ba50dd0310 9-12,68-74
+src/modules/Arrangement/handlers/device/handleReorderDevices.ts
+  s_a40848e8f8cca9::t_60dc76a1e17002 9-12,128-135
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_a40848e8f8cca9::t_1430493420c725 8,16,41-44,63-73,387-412
+src/modules/Arrangement/handlers/preset/handleLoadPreset.ts
+  s_a40848e8f8cca9::t_63c4b417dfa9dc 15-19,28-30,124,132-142,149-154
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  s_a40848e8f8cca9::t_3b29a646c68886 1-104
+src/modules/Arrangement/useCases/device/__tests__/prepareRemoveDevice.spec.ts
+  s_a40848e8f8cca9::t_8918448e442f4d 11,23-33,186-259
+src/modules/Arrangement/useCases/device/applyDeviceChainRuntimeDelta.ts
+  s_a40848e8f8cca9::t_944325251fdc22 6-7,16-29,34-40,42-53
+src/modules/Arrangement/useCases/device/hasLiveProjectHostTrack.ts
+  s_a40848e8f8cca9::t_da8e0ba11f3052 1-21
+src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts
+  s_a40848e8f8cca9::t_eeb18fe8d5dedd 110-115,119
+src/modules/Arrangement/useCases/device/runtimeDeviceDeltaPostCommit.ts
+  s_a40848e8f8cca9::t_c47a1d588dd067 1-53
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_a40848e8f8cca9::t_a9dc5701f867f8 1,13,15,18,31-164,289,326-327,332,334-340
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_a40848e8f8cca9::t_578baaa37a9d8d 14-16,25,27,31-34,43-51,55-56,78-79,81-158,161-174,176-179,182-234
+src/modules/BrowserAi/useCases/__tests__/capabilityColdStart.spec.ts
+  s_a40848e8f8cca9::t_7ee47116750f84 15,34-48,102-104,124-126
+src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts
+  s_a40848e8f8cca9::t_c53fbc8b76f36b 80
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_a40848e8f8cca9::t_37736e6859c9f8 10,17,139-225
+src/modules/BrowserAi/useCases/__tests__/downloadModel.spec.ts
+  s_a40848e8f8cca9::t_cb1ba0cc945f15 96-98,104-106,114-140
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_a40848e8f8cca9::t_04c1b9fa54518b 11,24,40,82-88,92,119,133,136,142-143,149-154,165-185,197,228,251,261-323,335,357,383,407,432,462
+src/modules/BrowserAi/useCases/__tests__/removeModel.spec.ts
+  s_a40848e8f8cca9::t_898ae6179dcb1d 52-64,82,85,87-88,104,106-128,142,144
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_a40848e8f8cca9::t_125d16064b1f6c 14-17,55,131-145
+src/modules/BrowserAi/useCases/downloadDdspInstrument.ts
+  s_a40848e8f8cca9::t_c05a336b01327b 70-85,87,97-103,106-107
+src/modules/BrowserAi/useCases/downloadModel.ts
+  s_a40848e8f8cca9::t_681951660783fe 35-37
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_a40848e8f8cca9::t_715b1d02c0d376 22,50,53-60,138-145,152
+src/modules/BrowserAi/useCases/removeModel.ts
+  s_a40848e8f8cca9::t_7cc80635fae64c 22-24
+src/modules/BrowserAi/useCases/renderDdspInstrument.ts
+  s_a40848e8f8cca9::t_98a0dd9578b5d5 3,118-120
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_a40848e8f8cca9::t_c9e621ce3db286 106
+tests/e2e/modelManagerAdmission.spec.ts
+  s_a40848e8f8cca9::t_b39cc9d2359c51 25,29-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "26ad3e5858f0170c00a7eaca8de7fe2bca281c47",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
