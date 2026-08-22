@@ -1,15 +1,18 @@
 //! Bit-exactness goldens for the audio-path cost reductions that must not
 //! move a single sample.
 //!
-//! Contract: every optimization is pinned by SAME-RUN equivalence. The
-//! optimized render is hashed against a reference render, produced in the
-//! same process, that runs the pre-optimization computation — the cost-gated
-//! dual amp chain and circuit preamp (`GrinderEngine::set_reference_render`),
-//! the zeroed f32 prefix (`ModalString::tick_including_zeroed_prefix`), the
-//! decay follower and prefix together (`PianoVoice::tick_reference_render`).
-//! Both sides share one libm, so the assertion is platform-independent and
-//! stronger than a captured constant: it fails on any machine whose optimized
-//! path disagrees with its own reference.
+//! Contract: five of the six goldens pin their optimization by SAME-RUN
+//! equivalence. The optimized render is hashed against a reference render,
+//! produced in the same process, that runs the pre-optimization computation —
+//! the cost-gated dual amp chain and circuit preamp
+//! (`GrinderEngine::set_reference_render`), the zeroed f32 prefix
+//! (`ModalString::tick_including_zeroed_prefix`), the decay follower and
+//! prefix together (`PianoVoice::tick_reference_render`). Both sides share
+//! one libm, so each of those assertions is platform-independent and
+//! stronger than a captured constant: it fails on any machine whose
+//! optimized path disagrees with its own reference. The sixth, the F14
+//! burst-resonator golden, keeps a captured absolute constant and with it
+//! the residual libm risk disclosed below.
 //!
 //! The renders pass through f32 transcendentals (`tanh`, `exp`, `sin`) whose
 //! last-bit rounding is not specified across C runtimes, which is why the
@@ -40,10 +43,12 @@ fn hash_samples(samples: &[f32]) -> u64 {
 }
 
 /// A silent render would make any hash equality vacuous, so every golden
-/// first observes that the optimized path actually produced audio.
+/// first observes that the optimized path actually produced audio. The
+/// comparison is `abs() > 0.0`, not `!= 0.0`, because NaN satisfies the
+/// latter: an all-NaN render must fail here instead of passing vacuously.
 fn assert_non_silent(render: &[f32]) {
     assert!(
-        render.iter().any(|sample| *sample != 0.0),
+        render.iter().any(|sample| sample.abs() > 0.0),
         "golden render must produce audio or the equivalence pin is vacuous"
     );
 }
