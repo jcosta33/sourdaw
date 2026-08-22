@@ -1,0 +1,83 @@
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_b3eaac4bb3240a 139-140,150
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_b3eaac4bb3240a 7,10,12,16-28,31
+src/modules/Collaboration/useCases/collaboration/getCollaborationAssetOwnerId.ts
+  s_a40848e8f8cca9::t_c1f7712e974319 1,3-6,9
+  s_a40848e8f8cca9::t_66724478c870d1 2,7-8,10-14
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_59dc2894f9211e 58-66,94-102,166,172,176-177,183-188,191,284,790-796
+  s_a40848e8f8cca9::t_5c8dbd7f149ba4 149-150,152-153,159-165,179-182,189-190,192-195,201,207-216,223-231
+  s_a40848e8f8cca9::t_c421655284e974 23,119,143,151,154-158,167-171,173-175,178,196-200,202-206,217-222,310,318-320,333-338,348,369-373,380-384,391-395,404-408,417-421,430-439,457,466-470
+  s_a40848e8f8cca9::t_67b32ba0655583 146
+  s_a40848e8f8cca9::t_8e2679c2fb365d 16,147,232-283,285-304
+  s_a40848e8f8cca9::t_673bc73a1f24cd 148,311,316-317,788-789
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_ac1bb9cc0af378 196,199-201
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_00f3ad736055c2 70
+  s_a40848e8f8cca9::t_24c66308039636 75
+  s_a40848e8f8cca9::t_ef0f1837a2c7de 23,31-37,55,59-69,71-74,76
+  s_a40848e8f8cca9::t_db721708a965a2 77-78
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_4c6bc9ddbf56ba 49-50,354-359
+  s_a40848e8f8cca9::t_8e8211cf2ba5f1 352-353,603-604
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_a40848e8f8cca9::t_66724478c870d1 4,15
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_a40848e8f8cca9::t_66724478c870d1 6,88
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_ef0f1837a2c7de 14,19
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_a40848e8f8cca9::t_66724478c870d1 436,452-474,476-477
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_a40848e8f8cca9::t_e7ecec4caf21f2 18,29-31
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_8e187774ca5a98 22,82-83,153-154,158,160-164,186,197-198,222,224,231,239-243,375
+  s_a40848e8f8cca9::t_f84bddb692d8e6 392-398
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_c1f7712e974319 67-71,133
+  s_a40848e8f8cca9::t_1c6544c39c0575 214
+  s_27578aec2aab3b::t_27463beb934618 66
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_b3eaac4bb3240a 191,215,229
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_ca84e6d6af9b9c 8,14-15,20,25,30,36,50,53-56,60,63-66,143-151,162-165,177,179,184-185,225-239,257-258,265,280-290,294-299,302-310,320-322,333-336,339-342,350-351,361-364,375-377,384,391,394,396-397,399,401-402,404-407,409-413,417-418,430-433,440-452,457-458,469,482,489
+  s_a40848e8f8cca9::t_42ca2eb3d4a092 476,479,481,483-486,491,494,496,499-503,507,509,511-552
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_a40848e8f8cca9::t_e7ecec4caf21f2 14,23-25,46
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_a40848e8f8cca9::t_76dcafd015bb4a 1-59,61-71,92-93
+  s_a40848e8f8cca9::t_1b458ed54afb6a 60,72-91
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_2d9305eb746367 45,52-54,62-65,114,116,126
+  s_a40848e8f8cca9::t_1b458ed54afb6a 35,55-57,115
+src/modules/Collaboration/useCases/index.ts
+  s_a40848e8f8cca9::t_c1f7712e974319 9
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_a40848e8f8cca9::t_6eca1a51d9cc3e 362,375,393,409,417,425,433,441,449,464,477,493,504,514,523,532,553,573,578,597,610,626,638,658,677,690,704,725,744,754,768,785,800,888,905,916,1189,1203,1213,1228,1240,1255,1279,1306,1334,1349,1362,1379,1400,1412,1424,1444,1458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d93c1d393b543b9c296c6ebf572933278d1ed682",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
