@@ -23,19 +23,29 @@ describe('persistPreparedAudioBuffer', () => {
             leaseId: 'prepared-lease',
         });
 
-        await expect(persistPreparedAudioBuffer({ bufferId: 'prepared-buffer', buffer })).resolves.toEqual({
+        await expect(
+            persistPreparedAudioBuffer({ bufferId: 'prepared-buffer', buffer, leaseId: 'prepared-lease' })
+        ).resolves.toEqual({
             status: 'persisted',
             bufferId: 'prepared-buffer',
             leaseId: 'prepared-lease',
         });
-        expect(mocks.persistPreparedBuffer).toHaveBeenCalledExactlyOnceWith({ id: 'prepared-buffer', buffer });
+        expect(mocks.persistPreparedBuffer).toHaveBeenCalledExactlyOnceWith({
+            id: 'prepared-buffer',
+            buffer,
+            leaseId: 'prepared-lease',
+        });
     });
 
     it('returns a typed failure when the cache cannot create a durable candidate', async () => {
         mocks.persistPreparedBuffer.mockRejectedValue(new Error('PCM serialization failed'));
 
         await expect(
-            persistPreparedAudioBuffer({ bufferId: 'prepared-buffer', buffer: {} as AudioBuffer })
+            persistPreparedAudioBuffer({
+                bufferId: 'prepared-buffer',
+                buffer: {} as AudioBuffer,
+                leaseId: 'prepared-lease',
+            })
         ).resolves.toEqual({ status: 'failed', reason: 'PCM serialization failed' });
     });
 });

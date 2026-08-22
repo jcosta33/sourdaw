@@ -36,6 +36,7 @@ export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFro
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { persistPreparedAudioBuffer } from './persistPreparedAudioBuffer';
+export { reclaimPreparedAudioBufferOrphans } from './reclaimPreparedAudioBufferOrphans';
 export { releasePreparedAudioBuffer } from './releasePreparedAudioBuffer';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { reopenPreparedAudioBuffer } from './reopenPreparedAudioBuffer';
