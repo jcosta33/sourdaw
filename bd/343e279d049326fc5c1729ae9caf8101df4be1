@@ -1,0 +1,26 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_27578aec2aab3b::t_dcf8431113dc5f 984-1003
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_342d2cbbc857f3 465
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_dcf8431113dc5f 488-524
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_27578aec2aab3b::t_683aa68da21101 193-201,204
+  s_27578aec2aab3b::t_b0e7e9bbe706f6 202-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "bd343e279d049326fc5c1729ae9caf8101df4be1",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
