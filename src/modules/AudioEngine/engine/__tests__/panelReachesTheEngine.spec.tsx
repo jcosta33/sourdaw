@@ -192,8 +192,6 @@ const NOT_COVERED_DEVICE_TYPES: Readonly<Record<string, string>> = {
     'native-scoring':
         'The Tuner panel is a read-only readout driven by `ScoringNode` meter data; it has no parameter write to route.',
     crust: 'Not yet driven. No known blocker — the panel is Route A.',
-    'grand-boule':
-        'Panel setters resolve a handle from the strip through `resolveGrandBouleEngine`, so the node under test must be published on the engine registry rather than pushed onto a strip; the harness below installs strips only.',
 };
 
 describe('the panel-to-engine guard covers the devices that have panels', () => {
