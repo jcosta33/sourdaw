@@ -6,13 +6,13 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
 
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
-import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 
 export const RETENTION_CLASSES = [
     'keep',
@@ -297,8 +297,11 @@ function executableSource(source: string): string {
         const character = source[index]!;
         const next = source[index + 1];
         if (mode === 'line-comment') {
-            if (character === '\n') mode = 'code';
-            else output[index] = ' ';
+            if (character === '\n') {
+                mode = 'code';
+            } else {
+                output[index] = ' ';
+            }
             continue;
         }
         if (mode === 'block-comment') {
@@ -312,9 +315,11 @@ function executableSource(source: string): string {
         }
         if (mode !== 'code') {
             output[index] = character === '\n' ? '\n' : ' ';
-            if (escaped) escaped = false;
-            else if (character === '\\') escaped = true;
-            else if (
+            if (escaped) {
+                escaped = false;
+            } else if (character === '\\') {
+                escaped = true;
+            } else if (
                 (mode === 'single' && character === "'") ||
                 (mode === 'double' && character === '"') ||
                 (mode === 'template' && character === '`')
@@ -366,17 +371,24 @@ function balancedBody(source: string, openBrace: number): { body: string; start:
 function declaredBody(source: string, declaration: RegExp): string | undefined {
     const executable = executableSource(source);
     const match = declaration.exec(executable);
-    if (match === null) return undefined;
+    if (match === null) {
+        return undefined;
+    }
     return balancedBody(executable, executable.indexOf('{', match.index + match[0].length - 1))?.body;
 }
 
 function topLevelExecutableCall(body: string, call: RegExp): boolean {
     const match = call.exec(body);
-    if (match === null || /\breturn\b/u.test(body.slice(0, match.index))) return false;
+    if (match === null || /\breturn\b/u.test(body.slice(0, match.index))) {
+        return false;
+    }
     let depth = 0;
     for (const character of body.slice(0, match.index)) {
-        if (character === '{') depth += 1;
-        else if (character === '}') depth -= 1;
+        if (character === '{') {
+            depth += 1;
+        } else if (character === '}') {
+            depth -= 1;
+        }
     }
     return depth === 0;
 }
@@ -554,14 +566,20 @@ export function assertGrandBouleRustSourceAdmission(root: string): void {
 
 function rustGrandBouleConstructorTuple(source: string): number[] | null {
     const implBody = declaredBody(source, /\bimpl\s+GrandBouleEngine\s*\{/u);
-    if (implBody === undefined) return null;
+    if (implBody === undefined) {
+        return null;
+    }
     const constructorBody = declaredBody(
         implBody,
         /\bpub\s+fn\s+new\s*\(\s*sample_rate\s*:\s*f32\s*,\s*voice_count\s*:\s*usize\s*\)\s*->\s*Self\s*\{/u
     );
-    if (constructorBody === undefined || /\breturn\b/u.test(constructorBody)) return null;
+    if (constructorBody === undefined || /\breturn\b/u.test(constructorBody)) {
+        return null;
+    }
     const initializer = declaredBody(constructorBody, /\bSelf\s*\{/u);
-    if (initializer === undefined) return null;
+    if (initializer === undefined) {
+        return null;
+    }
     return [
         'hammer_hardness_scale',
         'hammer_mass_scale',
@@ -940,6 +958,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
                 'crates/daw-dsp/benches/quantum-cost-table.md',
                 'crates/daw-dsp/tests/quantum_bench_census.rs',
@@ -951,6 +970,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
                 'crates/daw-dsp/benches/quantum-cost-table.md',
                 'crates/daw-dsp/tests/quantum_bench_census.rs',

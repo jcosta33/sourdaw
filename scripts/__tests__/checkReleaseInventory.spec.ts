@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import {
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
@@ -38,7 +39,6 @@ import {
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
-import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
 
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -294,6 +294,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['crates/daw-dsp/benches/wasm/quantumCostProcessor.js', 'export const processor = 1;'],
         ['crates/daw-dsp/benches/wasm/run.mjs', 'export const runner = 1;'],
         ['crates/daw-dsp/benches/wasm/renderTable.mjs', 'export const renderer = 1;'],
+        ['crates/daw-dsp/benches/wasm/renderTable.d.mts', 'export function renderGeneratedRegion(): string;'],
         ['crates/daw-dsp/benches/quantum-cost-table.json', '{}'],
         ['crates/daw-dsp/benches/quantum-cost-table.md', '# retained measurement'],
         ['crates/daw-dsp/tests/quantum_bench_census.rs', 'fn census() {}'],
@@ -951,6 +952,7 @@ describe('release inventory', () => {
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
                 'crates/daw-dsp/benches/quantum-cost-table.md',
                 'crates/daw-dsp/tests/quantum_bench_census.rs',

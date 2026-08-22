@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { toGrandBouleDeviceState } from '../../models/GrandBouleDeviceState';
-import { projectGrandBouleMorphState } from '../../models/projectGrandBouleMorphState';
+import { projectGrandBouleMorphState } from '../../models/ProjectGrandBouleMorphState';
 import { prepareOfflineGrandBoule } from '../prepareOfflineGrandBoule';
 
 describe('prepareOfflineGrandBoule', () => {

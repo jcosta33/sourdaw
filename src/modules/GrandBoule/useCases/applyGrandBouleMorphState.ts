@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { type GrandBouleMorphState, findPianoModelById } from '../models/GrandBouleMorphState';
-import { projectGrandBouleMorphState } from '../models/projectGrandBouleMorphState';
+import { projectGrandBouleMorphState } from '../models/ProjectGrandBouleMorphState';
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 
 function dispatchInterpolatedParams(engine: GrandBouleEngineHandle, morph: GrandBouleMorphState): void {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { projectGrandBouleMorphState } from '../projectGrandBouleMorphState';
+import { projectGrandBouleMorphState } from '../ProjectGrandBouleMorphState';
 
 describe('projectGrandBouleMorphState', () => {
     it('projects every persisted voicing control, including tone color', () => {

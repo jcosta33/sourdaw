@@ -678,6 +678,7 @@
                 "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
                 "crates/daw-dsp/benches/wasm/run.mjs",
                 "crates/daw-dsp/benches/wasm/renderTable.mjs",
+                "crates/daw-dsp/benches/wasm/renderTable.d.mts",
                 "crates/daw-dsp/benches/quantum-cost-table.json",
                 "crates/daw-dsp/benches/quantum-cost-table.md",
                 "crates/daw-dsp/tests/quantum_bench_census.rs",
@@ -705,9 +706,9 @@
                 "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
-                "tracked-set-sha256:35432361fe0409c31ecb56e7c379865bda5928fd3ccb7ff033336462c15f32d9:grand-boule-project-state",
-                "tracked-set-sha256:3707375707b26f2d1b256521af91f71e40c8db6316ea82a0b328a61a2e0fad0b:grand-boule-offline-composition",
-                "tracked-set-sha256:8df68c6b869affa9b2c9de61cdd027638df9753f68a82a560e6c7ceb575fc183:grand-boule-release-proof"
+                "tracked-set-sha256:db8e5d53ae946169018f937140cea92b004d2030d84a3a1a265ba3604a7ae653:grand-boule-project-state",
+                "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
+                "tracked-set-sha256:2a911b54d17f832becc35fecfad22b0d14239a9778c7a104a83904b97ef912e7:grand-boule-release-proof"
             ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],

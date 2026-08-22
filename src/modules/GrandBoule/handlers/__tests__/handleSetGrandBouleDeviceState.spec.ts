@@ -48,11 +48,19 @@ vi.mock('../../useCases/reconcileGrandBouleDeviceStateFromProject', () => ({
 
 import { handleSetGrandBouleDeviceState } from '../handleSetGrandBouleDeviceState';
 
+function grandBouleDevice() {
+    const device = mocks.trackStore.value.tracks.at(0)?.devices.at(0);
+    if (device === undefined) {
+        throw new Error('Grand Boule test fixture is missing its device');
+    }
+    return device;
+}
+
 describe('handleSetGrandBouleDeviceState', () => {
     beforeEach(() => {
         mocks.setDeviceState.mockReset().mockReturnValue(true);
         mocks.reconcile.mockReset();
-        mocks.trackStore.value.tracks[0].devices[0].deviceState = before;
+        grandBouleDevice().deviceState = before;
     });
 
     it('writes project truth and reconciles session plus engine after commit', async () => {
@@ -75,7 +83,7 @@ describe('handleSetGrandBouleDeviceState', () => {
     });
 
     it('conflicts instead of overwriting a changed project state', async () => {
-        mocks.trackStore.value.tracks[0].devices[0].deviceState = after;
+        grandBouleDevice().deviceState = after;
 
         const result = await handleSetGrandBouleDeviceState.execute({
             type: 'setGrandBouleDeviceState',

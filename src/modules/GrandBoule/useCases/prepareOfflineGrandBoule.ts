@@ -1,5 +1,5 @@
 import { readGrandBouleMorphState } from '../models/GrandBouleDeviceState';
-import { projectGrandBouleMorphState } from '../models/projectGrandBouleMorphState';
+import { projectGrandBouleMorphState } from '../models/ProjectGrandBouleMorphState';
 
 export function prepareOfflineGrandBoule({ deviceState, port }: { deviceState: unknown; port: MessagePort }): void {
     const morph = readGrandBouleMorphState(deviceState);
