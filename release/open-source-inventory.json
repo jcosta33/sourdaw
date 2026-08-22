@@ -196,6 +196,11 @@
                 "npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0",
                 "npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0",
                 "npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5",
+                "sha256:45259c508c8dad298d975a2559fc2f8e0b0d707a18ccc501e74f3aa889cd281d:src/modules/BrowserAi/models/InferenceRequest.ts",
+                "sha256:c4e4e5ba9ceb16f7da586195bbc498d4235fefaae49f068f934234bf5fbb723b:src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
+                "sha256:7e5f06c67a7824cf43f307d7e1c92d8de1c1396759c52f43d7564f05c17a8848:src/modules/BrowserAi/services/computeDdspSessionKey.ts",
+                "sha256:08c788a4bde41fa1248ede289e1381137bce202196315dcbd2837d158ce92469:src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
+                "sha256:036c6cc37096f5042a69f12a865fd36afb792f537f407a96f5e8f372f50e0a47:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
@@ -210,8 +215,9 @@
             ],
             "productSurfaces": ["browser and desktop DDSP hardware-WebGPU worker runtime"],
             "evidence": [
-                "Exact package versions and npm integrity digests are pinned in the install graph.",
-                "The release validator binds the complete runtime and legal-file closure.",
+                "Exact package versions and npm integrity digests are pinned in the install graph; package and lock file contents are not independently content-digested here.",
+                "The release validator content-digests the application runtime sources and legal files listed by this surface.",
+                "Together these records bind the dependency integrity, application runtime, and legal-file obligations represented here without claiming a self-referential complete closure.",
                 "The runtime accepts only locally verified checkpoint artifact transfers and registers no CPU or WebGL fallback."
             ],
             "obligations": [
@@ -400,7 +406,6 @@
                 ".agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "electron/protocol.ts",
                 "public/legal/THIRD-PARTY-NOTICES.md",
-                "scripts/checkReleaseInventory.ts",
                 "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
@@ -410,6 +415,8 @@
                 "src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts",
                 "src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts",
                 "src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
+                "src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
+                "src/modules/BrowserAi/workers/modelStorageWorker.ts",
                 "src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
@@ -446,6 +453,8 @@
                 "sha256:dcff9ac063ca5a3d40fd064be346187526d17fb847c1fb8b9855c0542db3da91:src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts",
                 "sha256:56a0ef9c5e5b22f27289e01b1a5e792de520ac43d9e3c1de9675281cc6f87a52:src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts",
                 "sha256:360d7385f8450d219e77a7ae373a9a67f3bc02c213a0e25a8a25bb9630adf540:src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
+                "sha256:2eda85bf62b8b8b63bef3a86f7b10009ab0e4c6a1e17cac7e1897943d3ca1ca0:src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
+                "sha256:6c7d4d4b94518787ed0d28ccaef0e60019cd71c0305cc513e344fe049fc8a9b2:src/modules/BrowserAi/workers/modelStorageWorker.ts",
                 "sha256:2c7c2b09e316033b878869ec0e4a801e7499e3485f1cebe57931ccb6d614528f:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:dd052e9448b7ba5951037e69ef7979996beafb94992618c144c346a217c3b73c:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
@@ -1326,17 +1335,17 @@
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/"
         },
         {
-            "surface": "ddsp-models",
+            "surface": "project-source",
             "file": "scripts/checkReleaseInventory.ts",
             "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md"
         },
         {
-            "surface": "ddsp-models",
+            "surface": "project-source",
             "file": "scripts/checkReleaseInventory.ts",
             "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts"
         },
         {
-            "surface": "ddsp-models",
+            "surface": "project-source",
             "file": "scripts/checkReleaseInventory.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
         },

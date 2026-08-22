@@ -16,6 +16,7 @@ import {
     checkReleaseInventory,
     DDSP_ADMISSION_DECISION_PATH,
     DDSP_MODEL_PATHS,
+    DDSP_TFJS_APPLICATION_RUNTIME_PATHS,
     DDSP_TFJS_RUNTIME_PATHS,
     ddspModelsReleaseInventoryContract,
     ddspTfjsRuntimeReleaseInventoryContract,
@@ -47,6 +48,8 @@ const ddspModelEnforcementPaths = [
     'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
     'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
     'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorker.ts',
     'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
     'src/infra/release/modelReleaseAdmission.ts',
     'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
@@ -356,6 +359,7 @@ describe('release inventory', () => {
 
         expect(contract.retention).toBe('keep-with-obligations');
         expect(contract.paths).toEqual(DDSP_MODEL_PATHS);
+        expect(contract.paths).not.toContain('scripts/checkReleaseInventory.ts');
         expect(contract.paths).toEqual(
             expect.arrayContaining([
                 'electron/protocol.ts',
@@ -364,6 +368,8 @@ describe('release inventory', () => {
                 'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
                 'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
                 'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+                'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+                'src/modules/BrowserAi/workers/modelStorageWorker.ts',
                 'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
                 'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
                 'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
@@ -411,7 +417,32 @@ describe('release inventory', () => {
         }
     );
 
+    it.each([...DDSP_TFJS_APPLICATION_RUNTIME_PATHS])(
+        'rejects drift in admitted DDSP TF.js runtime source %s',
+        (changedPath) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-runtime-'));
+            for (const path of DDSP_TFJS_RUNTIME_PATHS) {
+                if (!path.startsWith('public/legal/') && !DDSP_TFJS_APPLICATION_RUNTIME_PATHS.includes(path)) {
+                    continue;
+                }
+                mkdirSync(dirname(join(root, path)), { recursive: true });
+                writeFileSync(join(root, path), `baseline:${path}`);
+            }
+
+            try {
+                const before = ddspTfjsRuntimeReleaseInventoryContract(root);
+                writeFileSync(join(root, changedPath), `changed runtime:${changedPath}`);
+
+                expect(ddspTfjsRuntimeReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
     it.each([
+        'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+        'src/modules/BrowserAi/workers/modelStorageWorker.ts',
         'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
         'src/infra/release/modelReleaseAdmission.ts',
         'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
@@ -471,7 +502,7 @@ describe('release inventory', () => {
     it('binds the exact DDSP TF.js dependency and legal closure', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-provenance-'));
         for (const path of DDSP_TFJS_RUNTIME_PATHS) {
-            if (!path.startsWith('public/legal/')) {
+            if (!path.startsWith('public/legal/') && !DDSP_TFJS_APPLICATION_RUNTIME_PATHS.includes(path)) {
                 continue;
             }
             mkdirSync(join(root, path, '..'), { recursive: true });

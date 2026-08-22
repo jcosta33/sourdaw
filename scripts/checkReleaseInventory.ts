@@ -78,14 +78,15 @@ export const OWNER_VISUAL_ASSET_PATHS = [
     'build/icons/**',
 ] as const;
 
-export const DDSP_TFJS_RUNTIME_PATHS = [
-    'package.json',
-    'pnpm-lock.yaml',
+const DDSP_TFJS_LEGAL_PATHS = [
     'public/legal/Apache-2.0.txt',
     'public/legal/Magenta.js-NOTICE.txt',
     'public/legal/TensorFlow.js-NOTICE.txt',
     'public/legal/seedrandom-MIT.txt',
     'public/legal/THIRD-PARTY-NOTICES.md',
+] as const;
+
+export const DDSP_TFJS_APPLICATION_RUNTIME_PATHS = [
     'src/modules/BrowserAi/models/InferenceRequest.ts',
     'src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts',
     'src/modules/BrowserAi/services/computeDdspSessionKey.ts',
@@ -93,12 +94,11 @@ export const DDSP_TFJS_RUNTIME_PATHS = [
     'src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts',
 ] as const;
 
-const DDSP_TFJS_LEGAL_PATHS = [
-    'public/legal/Apache-2.0.txt',
-    'public/legal/Magenta.js-NOTICE.txt',
-    'public/legal/TensorFlow.js-NOTICE.txt',
-    'public/legal/seedrandom-MIT.txt',
-    'public/legal/THIRD-PARTY-NOTICES.md',
+export const DDSP_TFJS_RUNTIME_PATHS = [
+    'package.json',
+    'pnpm-lock.yaml',
+    ...DDSP_TFJS_LEGAL_PATHS,
+    ...DDSP_TFJS_APPLICATION_RUNTIME_PATHS,
 ] as const;
 
 export const DDSP_ADMISSION_DECISION_PATH = '.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md';
@@ -112,6 +112,8 @@ const DDSP_MODEL_ENFORCEMENT_PATHS = [
     'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
     'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
     'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorker.ts',
     'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
     'src/infra/release/modelReleaseAdmission.ts',
     'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
@@ -128,7 +130,6 @@ export const DDSP_MODEL_PATHS = [
     DDSP_ADMISSION_DECISION_PATH,
     'electron/protocol.ts',
     'public/legal/THIRD-PARTY-NOTICES.md',
-    'scripts/checkReleaseInventory.ts',
     'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
     ...DDSP_MODEL_ENFORCEMENT_PATHS,
 ] as const;
@@ -604,6 +605,7 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): Partial<R
             'npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0',
             'npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0',
             'npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5',
+            ...DDSP_TFJS_APPLICATION_RUNTIME_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
             ...DDSP_TFJS_LEGAL_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
         ],
         licenses: [
@@ -614,8 +616,9 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): Partial<R
         ],
         productSurfaces: ['browser and desktop DDSP hardware-WebGPU worker runtime'],
         evidence: [
-            'Exact package versions and npm integrity digests are pinned in the install graph.',
-            'The release validator binds the complete runtime and legal-file closure.',
+            'Exact package versions and npm integrity digests are pinned in the install graph; package and lock file contents are not independently content-digested here.',
+            'The release validator content-digests the application runtime sources and legal files listed by this surface.',
+            'Together these records bind the dependency integrity, application runtime, and legal-file obligations represented here without claiming a self-referential complete closure.',
             'The runtime accepts only locally verified checkpoint artifact transfers and registers no CPU or WebGL fallback.',
         ],
         obligations: [
