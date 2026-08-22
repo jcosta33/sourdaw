@@ -593,7 +593,7 @@
                 "current tracked AudioEngine host boundary"
             ],
             "digests": [
-                "tracked-set-sha256:3565ddf142d69dbc650cf3795df819b4be5d42ec6adc8b6885a31a33847a3f07:grand-boule-native-rust",
+                "tracked-set-sha256:03af6e8447b266795fc9046ef6907ae32ad57c2c1048985552b346871c1348ce:grand-boule-native-rust",
                 "tracked-set-sha256:9d6db6ed66261fc35777ee1b7285a692ea4e2de732c13523269a7f5d1768fa73:grand-boule-product-module",
                 "tracked-set-sha256:e3dcbf65cd71fe13596e6c0119c99ea6d82084085a0acd6636f61fc3ada560e1:grand-boule-product-descriptor",
                 "tracked-set-sha256:d81a023a3cc73d6c357998ba97fd73aa452b0f848dafdb247dca5ccf6465ac1d:grand-boule-release-admission",
@@ -691,13 +691,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:4253201a4449cc4b1db17c1632124fcc9a9ddb872a865129d1c9ad20b9a5241e",
+                "daw-dsp sha256:b0f1f82f3a8c1c1a57feb1171ad69f63b6b0de8903b27e4ed60dd5d63013c543",
                 "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
                 "proof-chamber sha256:3d5c8eb0168f12bc9503c5d3b74ca788d19e462b2beb6d05251cfae19207f386",
                 "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
             ],
             "digests": [
-                "sha256:c1c0d8eb30f426abfafb42f9907264459ed2392d243f219321b7a8ec451f176c:public/wasm/manifest.json"
+                "sha256:194ad664ca6ea0b09334073d9e3b48d719bccf1edb7eb143fe86ad171b848427:public/wasm/manifest.json"
             ],
             "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -951,7 +951,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "c1c0d8eb30f426abfafb42f9907264459ed2392d243f219321b7a8ec451f176c"
+            "sha256": "194ad664ca6ea0b09334073d9e3b48d719bccf1edb7eb143fe86ad171b848427"
         }
     ],
     "externalReferences": [

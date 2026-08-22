@@ -136,6 +136,13 @@ impl ModalString {
         self.active_partials
     }
 
+    /// Number of low-frequency partials processed in f64. Lets callers
+    /// assert that a configuration actually zeroed an f32 prefix before
+    /// pinning the prefix skip against it.
+    pub fn f64_partials(&self) -> usize {
+        self.f64_partials
+    }
+
     /// Configure the bank for a given key.
     ///
     /// This retained scalar API is a compatibility wrapper for existing Rust
@@ -385,6 +392,21 @@ impl ModalString {
     /// SoA loop.
     #[inline]
     pub fn tick(&mut self, input: f32) -> f32 {
+        self.tick_with_f32_loop_start(self.f64_partials, input)
+    }
+
+    /// Reference render for the cost-reduction goldens: identical to
+    /// [`Self::tick`] except the f32 loop starts at zero, processing the
+    /// prefix slots `configure` zeroed, exactly as the pre-F17 code did.
+    /// A render through this must be bit-identical to one through `tick`;
+    /// the zeroed slots can only ever add signed zeros. Never call this in
+    /// production — it exists so the goldens can pin, in-process, that
+    /// skipping the prefix moves no sample.
+    pub fn tick_including_zeroed_prefix(&mut self, input: f32) -> f32 {
+        self.tick_with_f32_loop_start(0, input)
+    }
+
+    fn tick_with_f32_loop_start(&mut self, f32_loop_start: usize, input: f32) -> f32 {
         let mut output = 0.0_f32;
 
         // f64-precision partials (below 200 Hz).
@@ -407,7 +429,7 @@ impl ModalString {
         // `configure`, so starting there skips slots that can only ever add
         // zero — up to 8 wasted iterations per unison per polarization.
         let n = self.active_partials;
-        for index in self.f64_partials..n {
+        for index in f32_loop_start..n {
             let y = self.c0[index] * (input - self.x2[index])
                 + self.c1[index] * self.y1[index]
                 + self.c2[index] * self.y2[index];
