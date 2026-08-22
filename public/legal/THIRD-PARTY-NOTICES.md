@@ -73,6 +73,8 @@ exact notice and TVM's exact root license, notice, and full referenced license/n
 [Apache-TVM/licenses/LICENSE.rang.txt](./Apache-TVM/licenses/LICENSE.rang.txt),
 [Apache-TVM/licenses/LICENSE.tensorrt_llm.txt](./Apache-TVM/licenses/LICENSE.tensorrt_llm.txt),
 [Apache-TVM/licenses/LICENSE.vllm.txt](./Apache-TVM/licenses/LICENSE.vllm.txt),
+[Apache-TVM/3rdparty/tvm-ffi/NOTICE](./Apache-TVM/3rdparty/tvm-ffi/NOTICE),
+[Apache-TVM/3rdparty/tvm-ffi/LICENSE](./Apache-TVM/3rdparty/tvm-ffi/LICENSE),
 [Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt](./Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt),
 [Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt](./Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt),
 [Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt](./Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt),

@@ -201,7 +201,7 @@
                 "sha256:5d7b38822c5c0a4b51559a39c08b39f5bbbf83df0df214c0a21771816966c9e2:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:5f30e763682af55bd65bd78d00a8e4c24ac6621915b1332d7d2f802af31e109b:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:cb5f85ad335a9f118737195daadf68593834999fc8f3d0ca05e9e52a7ac3a8fe:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -290,6 +290,8 @@
                 "public/legal/Apache-TVM/licenses/LICENSE.rang.txt",
                 "public/legal/Apache-TVM/licenses/LICENSE.tensorrt_llm.txt",
                 "public/legal/Apache-TVM/licenses/LICENSE.vllm.txt",
+                "public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE",
+                "public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE",
                 "public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt",
                 "public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt",
                 "public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt",
@@ -318,6 +320,8 @@
                 "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.rang.txt",
                 "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.tensorrt_llm.txt",
                 "https://raw.githubusercontent.com/apache/tvm/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8/licenses/LICENSE.vllm.txt",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/LICENSE",
+                "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/NOTICE",
                 "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/licenses/LICENSE.dlpack.txt",
                 "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/licenses/LICENSE.libbacktrace.txt",
                 "https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/licenses/LICENSE.pytorch.txt",
@@ -362,6 +366,8 @@
                 "sha256:88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd:public/legal/Apache-TVM/licenses/LICENSE.rang.txt",
                 "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30:public/legal/Apache-TVM/licenses/LICENSE.tensorrt_llm.txt",
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:public/legal/Apache-TVM/licenses/LICENSE.vllm.txt",
+                "sha256:bb354d8b94589ad8817f2dff029d39a1133d217407f73679d0b0311c980e511f:public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE",
+                "sha256:5181189219b74687e08884d813b8f98c874d0e4ba84eb7afc4bb350d22502c24:public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE",
                 "sha256:3e8f6bc39276a586d60c8c5aaece2ff989262181cf2b3d2a128db58f97a9300c:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt",
                 "sha256:769d83cbbb817ba4e25d1f166238426aa45519981eca116011e4113087c7b7b3:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt",
                 "sha256:a8a2c6b67cf8a597ffaa5c82380a6bd1b82629c0417e00673d8013d662eb500a:public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt",
@@ -369,7 +375,7 @@
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:5f30e763682af55bd65bd78d00a8e4c24ac6621915b1332d7d2f802af31e109b:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:cb5f85ad335a9f118737195daadf68593834999fc8f3d0ca05e9e52a7ac3a8fe:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
@@ -380,12 +386,12 @@
             "productSurfaces": ["browser-local language model", "desktop-local language model"],
             "evidence": [
                 "The manifest pins each model revision and verifies the exact downloaded artifact bytes by SHA-256 before storage or inference.",
-                "The binary-mlc-llm-libs merge contains the admitted WASM bytes; its merged PR 165 attests exact MLC-LLM and Apache TVM source revisions. MLC-LLM's notice and TVM's root LICENSE, NOTICE, and referenced license/notice trees are shipped byte-for-byte.",
+                "The binary-mlc-llm-libs merge contains the admitted WASM bytes; its merged PR 165 attests exact MLC-LLM and Apache TVM source revisions, and TVM pins tvm-ffi 3c35034fd1026011736e19a4e0e1ed0f22058c42. MLC-LLM's notice, TVM's root LICENSE and NOTICE, and tvm-ffi's root and referenced legal files are shipped byte-for-byte.",
                 "Each MLC conversion card attributes its conversion to a Qwen model family; immutable Qwen3 1.7B, 4B, and 8B candidates publish byte-identical Apache-2.0 licenses and support the accepted admission decision.",
                 "The exact conversion cards do not map to base-checkpoint revisions, and PR 165 does not record exact emsdk, resolved configuration, or build-log inputs. Binary byte identity and the named MLC-LLM/TVM source revisions are proven; the exact Qwen source/license chain, hermetic reproduction, and complete build-input provenance are not."
             ],
             "obligations": [
-                "Carry the Apache-2.0 text, Qwen attribution, exact MLC-LLM notice, and exact TVM root LICENSE, NOTICE, and full referenced license/notice trees on the public web and desktop legal surfaces.",
+                "Carry the Apache-2.0 text, Qwen attribution, exact MLC-LLM notice, exact TVM root LICENSE and NOTICE, and exact tvm-ffi root and referenced license/notice trees on the public web and desktop legal surfaces.",
                 "Preserve the pinned revisions, artifact digests, byte verification, and fail-closed behavior when WebGPU is unavailable.",
                 "Do not represent the licensed Qwen candidates or incomplete upstream build record as an exact Qwen source/license chain, exact conversion inputs, or a hermetic reproduction recipe.",
                 "Reassess admission if conflicting licensing or provenance evidence appears for an exact conversion artifact."

@@ -18,6 +18,8 @@ sources:
     - https://github.com/mlc-ai/binary-mlc-llm-libs/tree/025bcaf3780fa8254f5e5efd3bfea0a5397248f4/web-llm-models/v0_2_84/base
     - https://github.com/mlc-ai/mlc-llm/tree/2008fe8343e1f40ef89ee57b9287aebcf1b86c98
     - https://github.com/apache/tvm/tree/bc1a904ec1ad89454ee6577d66cde1268b8f6bc8
+    - https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/LICENSE
+    - https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/NOTICE
     - https://github.com/mlc-ai/web-llm/blob/9e572d6ed95e248f29634996cd32cc8f3023d89d/LICENSE
     - src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json
     - src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts
@@ -42,13 +44,14 @@ Qwen source/license chain or build inputs. The MLC/WebLLM runtime is Apache-2.0.
 The admitted WebGPU modules are byte-identical to files in binary-mlc-llm-libs merge
 `025bcaf3780fa8254f5e5efd3bfea0a5397248f4`. Its merged PR 165 attests MLC-LLM
 `2008fe8343e1f40ef89ee57b9287aebcf1b86c98` and Apache TVM
-`bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as source revisions. Sourdaw ships MLC-LLM's exact
-notice and TVM's exact root license, notice, and every file in the license/notice trees referenced by
-that root license. PR 165 does not record an exact emsdk revision, resolved build configuration, or
-build log. The release manifest pins the exact conversion revisions and verifies every downloaded
-artifact's byte count and SHA-256 before caching or inference, but the upstream record does not
-support a claim of exact Qwen checkpoint provenance, hermetic reproduction, or complete build-input
-provenance.
+`bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as source revisions. That TVM revision pins its
+`3rdparty/tvm-ffi` gitlink to `3c35034fd1026011736e19a4e0e1ed0f22058c42`. Sourdaw ships
+MLC-LLM's exact notice, TVM's exact root license and notice, tvm-ffi's exact root license and notice,
+and every file in the referenced license/notice trees. PR 165 does not record an exact emsdk
+revision, resolved build configuration, or build log. The release manifest pins the exact conversion
+revisions and verifies every downloaded artifact's byte count and SHA-256 before caching or
+inference, but the upstream record does not support a claim of exact Qwen checkpoint provenance,
+hermetic reproduction, or complete build-input provenance.
 
 ## Decision
 
@@ -75,16 +78,23 @@ The admitted WebGPU modules remain exactly:
 | Qwen3 4B   | `web-llm-models/v0_2_84/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm`   | 5,847,049 | `a986a53c92579714eb7ec36856004f5fb75272c9f69091f14eb6b2086eea4440` |
 | Qwen3 8B   | `web-llm-models/v0_2_84/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm`   | 5,855,792 | `bf6384d9b30d6ae1eca567c65a893284ae2228fd57a432c3b795d06a803d9b72` |
 
+The tvm-ffi root legal files pinned by that gitlink remain exactly:
+
+| File      | SHA-256                                                            |
+| --------- | ------------------------------------------------------------------ |
+| `NOTICE`  | `5181189219b74687e08884d813b8f98c874d0e4ba84eb7afc4bb350d22502c24` |
+| `LICENSE` | `bb354d8b94589ad8817f2dff029d39a1133d217407f73679d0b0311c980e511f` |
+
 `MODEL_RELEASE_ADMISSION.webLlm` admits these artifacts on both browser and Electron targets. An
 explicit WebLLM selection remains exclusive: absent WebGPU it is unavailable and never falls back to
 a hosted provider. Automatic mode also fails closed when WebLLM is unavailable; hosted providers
 require an explicit selection.
 
 Every web and desktop release carries the Apache-2.0 text and Qwen attribution, MLC-LLM's
-exact-revision notice, and TVM's exact root license, notice, and referenced license/notice trees under
-`public/legal/`. The release must preserve the pinned revisions, generated manifest, artifact-set
-digests, and byte/hash verification. The unproven exact Qwen chain and incomplete build inputs remain
-accepted residual evidence gaps, not admission blockers.
+exact-revision notice, TVM's exact root license and notice, and the exact tvm-ffi root and referenced
+license/notice trees under `public/legal/`. The release must preserve the pinned revisions, generated
+manifest, artifact-set digests, and byte/hash verification. The unproven exact Qwen chain and
+incomplete build inputs remain accepted residual evidence gaps, not admission blockers.
 
 This partially supersedes ADR 0030 only for the WebLLM Qwen conversion withholding decision. ADR
 0030's exact-artifact principle and every decision for other model stacks remain unchanged.

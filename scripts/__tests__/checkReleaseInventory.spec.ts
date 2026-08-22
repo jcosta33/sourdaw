@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -302,6 +303,36 @@ describe('release inventory', () => {
 
     it('composes the DDSP TF.js runtime into live release inventory validation', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
+    });
+
+    it('binds the tvm-ffi root legal files to their immutable source bytes', () => {
+        const inventory = JSON.parse(
+            readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
+        ) as ReleaseInventory;
+        const surface = inventory.surfaces.find(({ id }) => id === 'webllm-qwen-artifacts');
+        const notice = readFileSync(join(repositoryRoot, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
+        const legalFiles = [
+            {
+                path: 'public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE',
+                sha256: 'bb354d8b94589ad8817f2dff029d39a1133d217407f73679d0b0311c980e511f',
+                source: 'https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/LICENSE',
+            },
+            {
+                path: 'public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE',
+                sha256: '5181189219b74687e08884d813b8f98c874d0e4ba84eb7afc4bb350d22502c24',
+                source: 'https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/NOTICE',
+            },
+        ] as const;
+
+        expect(surface).toBeDefined();
+        for (const legalFile of legalFiles) {
+            const bytes = readFileSync(join(repositoryRoot, legalFile.path));
+            expect(createHash('sha256').update(bytes).digest('hex')).toBe(legalFile.sha256);
+            expect(surface?.paths).toContain(legalFile.path);
+            expect(surface?.sources).toContain(legalFile.source);
+            expect(surface?.digests).toContain(`sha256:${legalFile.sha256}:${legalFile.path}`);
+            expect(notice).toContain(`(./${legalFile.path.replace('public/legal/', '')})`);
+        }
     });
 
     it('binds the exact DDSP TF.js dependency and legal closure', () => {
