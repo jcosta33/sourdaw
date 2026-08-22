@@ -181,6 +181,7 @@ describe('yeastStore', () => {
 
         const foreignStorage = createAutomergeStorage<{ marker: string }>('root', 'foreign');
         yeastStore.set({ processors: [processor('authored-on-a')], uiLevel: 1 });
+        expect(persistedRack(DEVICE_ID)).not.toHaveProperty('authored-on-a');
         foreignStorage.set({ marker: 'foreign-pending' });
 
         const tracks = trackStore.value;
@@ -189,6 +190,7 @@ describe('yeastStore', () => {
         }
         trackStore.set({ ...tracks, selectedTrackId: 'track-yeast-2' });
 
+        expect(persistedRack(SECOND_DEVICE_ID)).not.toHaveProperty('authored-on-a');
         expect(document.foreign).toBeUndefined();
         expect(Object.keys(persistedRack(DEVICE_ID))).toEqual(['authored-on-a']);
         expect(yeastStore.value?.processors).toEqual([]);
