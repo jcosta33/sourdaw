@@ -201,7 +201,7 @@
                 "sha256:5d7b38822c5c0a4b51559a39c08b39f5bbbf83df0df214c0a21771816966c9e2:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:c48f556438d5cd89bebe7857d65192a90a0caffae364804898b803b975e31c7c:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:d0df42740ac22a2e5a5725d4928cc5f20c6d13e98702c32dda90a6f9b7beee2d:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
