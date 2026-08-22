@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
@@ -23,6 +24,7 @@ import { readYeastRack, setActiveYeastDevice, yeastStore, type YeastProcessorInf
 // project's tracks exactly as production does.
 const DEVICE_ID = 'device-a';
 const SECOND_DEVICE_ID = 'device-b';
+type TestDocument = { foreign?: { marker: string }; yeast?: unknown };
 
 function yeastDevice(deviceId: string): {
     id: string;
@@ -54,7 +56,7 @@ function processor(id: string, bypassed = false): YeastProcessorInfo {
 }
 
 describe('yeastStore', () => {
-    let document: Doc<{ yeast?: unknown }>;
+    let document: Doc<TestDocument>;
 
     // Inside this closure `document` is the Automerge doc, not the jsdom
     // global — keep every doc assertion here for that reason.
@@ -171,6 +173,29 @@ describe('yeastStore', () => {
     //
     // Two Yeast devices are two racks: adding, reordering, or bypassing on one
     // instance must leave the other's slot entry and decoded rack untouched.
+
+    it('flushes the authored rack without publishing another storage owner during a track-driven switch', () => {
+        seedYeastDevices(DEVICE_ID, SECOND_DEVICE_ID);
+        setActiveYeastDevice(null);
+        flushAutomergeStorageWrites();
+
+        const foreignStorage = createAutomergeStorage<{ marker: string }>('root', 'foreign');
+        yeastStore.set({ processors: [processor('authored-on-a')], uiLevel: 1 });
+        foreignStorage.set({ marker: 'foreign-pending' });
+
+        const tracks = trackStore.value;
+        if (!tracks) {
+            throw new Error('Expected seeded tracks');
+        }
+        trackStore.set({ ...tracks, selectedTrackId: 'track-yeast-2' });
+
+        expect(document.foreign).toBeUndefined();
+        expect(Object.keys(persistedRack(DEVICE_ID))).toEqual(['authored-on-a']);
+        expect(yeastStore.value?.processors).toEqual([]);
+
+        foreignStorage.flushPendingUnscopedWrite();
+        expect(document.foreign).toEqual({ marker: 'foreign-pending' });
+    });
 
     it('keeps a processor added on one device out of the other device rack', () => {
         seedYeastDevices(DEVICE_ID, SECOND_DEVICE_ID);
