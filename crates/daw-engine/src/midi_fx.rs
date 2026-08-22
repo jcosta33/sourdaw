@@ -151,6 +151,67 @@ impl MidiEventBuffer {
     }
 }
 
+/// A MIDI-FX parameter, addressed without a name for the reason given on
+/// [`crate::timeline::AutomationTarget`]: a command carrying a `String`
+/// parameter name would have its allocation freed on the audio thread when
+/// the command is consumed.
+///
+/// The address is flat across every MIDI-FX kind — the same shape
+/// [`crate::timeline::DeviceParam`] gives built-in devices — so one command
+/// vocabulary serves the whole chain. A parameter an effect does not own is
+/// ignored by that effect's [`MidiFx::set_param`], exactly as an unknown name
+/// was before addressing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MidiFxParam {
+    /// The arpeggiator's step rate, in beats.
+    Rate,
+    /// The arpeggiator's pattern mode, addressed by its ordinal.
+    Mode,
+    /// The arpeggiator's octave range.
+    Octaves,
+    /// The velocity scaler's output floor.
+    Min,
+    /// The velocity scaler's output ceiling.
+    Max,
+    /// The velocity scaler's multiplicative scale.
+    Scale,
+    /// The velocity scaler's additive offset.
+    Offset,
+}
+
+impl MidiFxParam {
+    /// The wire name this parameter is addressed by. Its inverse is
+    /// [`Self::from_name`], so the named and the addressed paths cannot drift
+    /// into meaning different things.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Rate => "rate",
+            Self::Mode => "mode",
+            Self::Octaves => "octaves",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::Scale => "scale",
+            Self::Offset => "offset",
+        }
+    }
+
+    /// Resolve a wire name onto its address — the inverse of [`Self::name`].
+    /// `None` refuses the name control-side: a name with no address cannot
+    /// cross the ring to be freed on the audio thread after the fact.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "rate" => Some(Self::Rate),
+            "mode" => Some(Self::Mode),
+            "octaves" => Some(Self::Octaves),
+            "min" => Some(Self::Min),
+            "max" => Some(Self::Max),
+            "scale" => Some(Self::Scale),
+            "offset" => Some(Self::Offset),
+            _ => None,
+        }
+    }
+}
+
 pub trait MidiFx: Send {
     /// Process MIDI events. This can add, remove, or modify events.
     /// Returns the modified list of MIDI events to be passed to the next stage.
@@ -174,11 +235,167 @@ pub trait MidiFx: Send {
         self.process_midi(events, transport, sample_rate, num_samples);
     }
 
-    /// Set a parameter by name and value.
-    fn set_param(&mut self, name: &str, value: f32);
+    /// Set a parameter by its address and value. The name-to-address
+    /// resolution happened control-side ([`MidiFxParam::from_name`]), where an
+    /// unmapped name is refused rather than carried onto the audio thread.
+    fn set_param(&mut self, param: MidiFxParam, value: f32);
 
     /// Reset internal state (e.g. arpeggiator step counter).
     fn reset(&mut self);
+}
+
+/// The fixed capacity of one device's MIDI-FX table, on the same contract as
+/// the scheduler's effect table ([`crate::scheduler::EFFECT_TABLE_CAPACITY`]):
+/// the slots are built once, inline in the device, so installing an FX neither
+/// allocates nor frees on the audio thread, and an add past the ceiling is
+/// refused and counted rather than grown.
+pub(crate) const MIDI_FX_TABLE_CAPACITY: usize = 8;
+
+/// One resident MIDI-FX unit. An enum rather than a `Box<dyn MidiFx>`: the
+/// unit lives inline in the device's preallocated table, so installing one
+/// writes it in place instead of boxing it on the audio thread (ADR 0020).
+pub(crate) enum MidiFxSlot {
+    Arpeggiator(Arpeggiator),
+    VelocityScaler(VelocityScaler),
+}
+
+impl MidiFx for MidiFxSlot {
+    fn process_midi(
+        &mut self,
+        events: &mut MidiEventBuffer,
+        transport: &TransportState,
+        sample_rate: f32,
+        num_samples: usize,
+    ) {
+        match self {
+            Self::Arpeggiator(fx) => fx.process_midi(events, transport, sample_rate, num_samples),
+            Self::VelocityScaler(fx) => {
+                fx.process_midi(events, transport, sample_rate, num_samples)
+            }
+        }
+    }
+
+    fn process_midi_with_diagnostics(
+        &mut self,
+        events: &mut MidiEventBuffer,
+        transport: &TransportState,
+        sample_rate: f32,
+        num_samples: usize,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        match self {
+            Self::Arpeggiator(fx) => fx.process_midi_with_diagnostics(
+                events,
+                transport,
+                sample_rate,
+                num_samples,
+                diagnostics,
+            ),
+            Self::VelocityScaler(fx) => fx.process_midi_with_diagnostics(
+                events,
+                transport,
+                sample_rate,
+                num_samples,
+                diagnostics,
+            ),
+        }
+    }
+
+    fn set_param(&mut self, param: MidiFxParam, value: f32) {
+        match self {
+            Self::Arpeggiator(fx) => fx.set_param(param, value),
+            Self::VelocityScaler(fx) => fx.set_param(param, value),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Arpeggiator(fx) => fx.reset(),
+            Self::VelocityScaler(fx) => fx.reset(),
+        }
+    }
+}
+
+/// A device's MIDI-FX chain: a fixed table of inline slots, compact from the
+/// front, so chain order — the order MIDI flows through the units — is the
+/// index the commands address and removal preserves.
+///
+/// Every operation is a move within memory the device already owns: pushing
+/// never grows anything, and the slot an add or a remove hands back carries no
+/// heap, so nothing here allocates or frees on the audio thread (ADR 0020).
+pub(crate) struct MidiFxTable {
+    slots: [Option<MidiFxSlot>; MIDI_FX_TABLE_CAPACITY],
+    len: usize,
+}
+
+impl MidiFxTable {
+    pub(crate) fn new() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| None),
+            len: 0,
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        MIDI_FX_TABLE_CAPACITY
+    }
+
+    pub(crate) fn is_full(&self) -> bool {
+        self.len == MIDI_FX_TABLE_CAPACITY
+    }
+
+    /// Append one unit at the end of the chain. `false` refuses a full table:
+    /// the caller counts the refusal rather than growing the table inside the
+    /// audio deadline.
+    pub(crate) fn push(&mut self, slot: MidiFxSlot) -> bool {
+        if self.is_full() {
+            return false;
+        }
+
+        self.slots[self.len] = Some(slot);
+        self.len += 1;
+        true
+    }
+
+    /// Take the unit at `index` out of the chain, shifting the units behind
+    /// it forward so the chain stays compact. `None` leaves an out-of-range
+    /// removal untouched.
+    pub(crate) fn remove(&mut self, index: usize) -> Option<MidiFxSlot> {
+        if index >= self.len {
+            return None;
+        }
+
+        let removed = self.slots[index].take();
+        for shift_index in index..self.len - 1 {
+            self.slots[shift_index] = self.slots[shift_index + 1].take();
+        }
+        self.len -= 1;
+        removed
+    }
+
+    pub(crate) fn get_mut(&mut self, index: usize) -> Option<&mut MidiFxSlot> {
+        if index >= self.len {
+            return None;
+        }
+
+        Some(
+            self.slots[index]
+                .as_mut()
+                .expect("every slot below len holds a unit by construction"),
+        )
+    }
+
+    /// Iterate the chain in MIDI-flow order.
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut MidiFxSlot> {
+        self.slots[..self.len].iter_mut().map(|slot| {
+            slot.as_mut()
+                .expect("every slot below len holds a unit by construction")
+        })
+    }
 }
 
 pub struct VelocityScaler {
@@ -216,27 +433,28 @@ impl MidiFx for VelocityScaler {
         }
     }
 
-    fn set_param(&mut self, name: &str, value: f32) {
+    fn set_param(&mut self, param: MidiFxParam, value: f32) {
         // min/max are independently settable but must stay ordered: `process_midi`
         // calls `i16::clamp(min, max)` every note-on, and that panics on the
         // audio thread the moment min > max. Restoring the invariant here,
         // rather than at the call site, keeps every caller safe by construction.
-        match name {
-            "min" => {
+        match param {
+            MidiFxParam::Min => {
                 self.min = value.clamp(0.0, 127.0) as u8;
                 if self.min > self.max {
                     self.max = self.min;
                 }
             }
-            "max" => {
+            MidiFxParam::Max => {
                 self.max = value.clamp(0.0, 127.0) as u8;
                 if self.max < self.min {
                     self.min = self.max;
                 }
             }
-            "scale" => self.scale = value,
-            "offset" => self.offset = value as i16,
-            _ => {}
+            MidiFxParam::Scale => self.scale = value,
+            MidiFxParam::Offset => self.offset = value as i16,
+            // The arpeggiator's parameters: not owned by this unit.
+            MidiFxParam::Rate | MidiFxParam::Mode | MidiFxParam::Octaves => {}
         }
     }
 
@@ -542,9 +760,9 @@ impl MidiFx for Arpeggiator {
         }
     }
 
-    fn set_param(&mut self, name: &str, value: f32) {
-        match name {
-            "rate" => {
+    fn set_param(&mut self, param: MidiFxParam, value: f32) {
+        match param {
+            MidiFxParam::Rate => {
                 // The step timer divides by this every block; zero, negative
                 // and non-finite rates must never reach it.
                 let rate = f64::from(value);
@@ -554,7 +772,7 @@ impl MidiFx for Arpeggiator {
                     self.rate_beats
                 };
             }
-            "mode" => {
+            MidiFxParam::Mode => {
                 self.mode = match value as i32 {
                     0 => ArpMode::Up,
                     1 => ArpMode::Down,
@@ -562,14 +780,15 @@ impl MidiFx for Arpeggiator {
                     _ => ArpMode::Random,
                 };
             }
-            "octaves" => {
+            MidiFxParam::Octaves => {
                 self.octave_range = if value.is_finite() {
                     (value as i32).clamp(1, i32::from(ARPEGGIATOR_MAX_OCTAVE_RANGE)) as u8
                 } else {
                     self.octave_range
                 };
             }
-            _ => {}
+            // The velocity scaler's parameters: not owned by this unit.
+            MidiFxParam::Min | MidiFxParam::Max | MidiFxParam::Scale | MidiFxParam::Offset => {}
         }
     }
 
@@ -615,7 +834,7 @@ impl MidiFx for ProbabilityEvaluator {
         });
     }
 
-    fn set_param(&mut self, _name: &str, _value: f32) {}
+    fn set_param(&mut self, _param: MidiFxParam, _value: f32) {}
 
     fn reset(&mut self) {}
 }
@@ -644,8 +863,8 @@ mod velocity_scaler_tests {
         let mut scaler = VelocityScaler::default();
         // A UI or automation lane can send these independently: min pushed
         // above the current max is a routine sequence, not an edge case.
-        scaler.set_param("min", 100.0);
-        scaler.set_param("max", 50.0);
+        scaler.set_param(MidiFxParam::Min, 100.0);
+        scaler.set_param(MidiFxParam::Max, 50.0);
 
         let mut events = MidiEventBuffer::new();
         assert!(events.try_push(note_on(60)));
@@ -661,12 +880,12 @@ mod velocity_scaler_tests {
     #[test]
     fn set_param_never_leaves_min_greater_than_max() {
         let mut scaler = VelocityScaler::default();
-        scaler.set_param("max", 30.0);
-        scaler.set_param("min", 90.0);
+        scaler.set_param(MidiFxParam::Max, 30.0);
+        scaler.set_param(MidiFxParam::Min, 90.0);
         assert!(scaler.min <= scaler.max);
 
-        scaler.set_param("min", 10.0);
-        scaler.set_param("max", 5.0);
+        scaler.set_param(MidiFxParam::Min, 10.0);
+        scaler.set_param(MidiFxParam::Max, 5.0);
         assert!(scaler.min <= scaler.max);
     }
 }
@@ -674,6 +893,70 @@ mod velocity_scaler_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `from_name` is the inverse of `name`, so the named boundary and the
+    /// addressed command cannot drift into meaning different things.
+    #[test]
+    fn midi_fx_param_from_name_is_the_inverse_of_name() {
+        const EVERY_PARAM: [MidiFxParam; 7] = [
+            MidiFxParam::Rate,
+            MidiFxParam::Mode,
+            MidiFxParam::Octaves,
+            MidiFxParam::Min,
+            MidiFxParam::Max,
+            MidiFxParam::Scale,
+            MidiFxParam::Offset,
+        ];
+
+        for param in EVERY_PARAM {
+            assert_eq!(MidiFxParam::from_name(param.name()), Some(param));
+        }
+        assert_eq!(MidiFxParam::from_name("not-a-real-param"), None);
+    }
+
+    /// Pushing past the fixed ceiling is refused, not grown: the table has no
+    /// heap to grow into, and the caller must be able to tell the two apart.
+    #[test]
+    fn a_full_midi_fx_table_refuses_the_next_push() {
+        let mut table = MidiFxTable::new();
+        for _ in 0..MIDI_FX_TABLE_CAPACITY {
+            assert!(table.push(MidiFxSlot::VelocityScaler(VelocityScaler::default())));
+        }
+
+        assert!(table.is_full());
+        assert!(!table.push(MidiFxSlot::VelocityScaler(VelocityScaler::default())));
+        assert_eq!(table.len(), MIDI_FX_TABLE_CAPACITY);
+    }
+
+    /// Removal keeps the chain compact, so the index the commands address is
+    /// the position MIDI flows through after any removal.
+    #[test]
+    fn removal_shifts_the_chain_behind_the_taken_slot() {
+        let mut table = MidiFxTable::new();
+        assert!(table.push(MidiFxSlot::VelocityScaler(VelocityScaler {
+            min: 1,
+            ..VelocityScaler::default()
+        })));
+        assert!(table.push(MidiFxSlot::Arpeggiator(Arpeggiator::default())));
+        assert!(table.push(MidiFxSlot::VelocityScaler(VelocityScaler {
+            min: 2,
+            ..VelocityScaler::default()
+        })));
+
+        let removed = table.remove(1);
+        assert!(removed.is_some());
+        assert!(table.remove(MIDI_FX_TABLE_CAPACITY).is_none());
+        assert_eq!(table.len(), 2);
+        match table.get_mut(0) {
+            Some(MidiFxSlot::VelocityScaler(scaler)) => assert_eq!(scaler.min, 1),
+            _ => panic!("slot 0 must hold the min=1 scaler"),
+        }
+        match table.get_mut(1) {
+            Some(MidiFxSlot::VelocityScaler(scaler)) => assert_eq!(scaler.min, 2),
+            _ => panic!("slot 1 must hold the min=2 scaler after the shift"),
+        }
+        assert!(table.get_mut(2).is_none());
+    }
 
     fn playing_at(beat: f64) -> TransportState {
         TransportState {
@@ -765,14 +1048,14 @@ mod tests {
         assert_eq!(hold_chord(&mut up, &[60, 64, 67], 0.0), vec![(60, true)]);
 
         let mut down = Arpeggiator::default();
-        down.set_param("mode", 1.0);
+        down.set_param(MidiFxParam::Mode, 1.0);
         assert_eq!(hold_chord(&mut down, &[60, 64, 67], 0.0), vec![(67, true)]);
     }
 
     #[test]
     fn up_down_walks_the_pattern_without_repeating_endpoints() {
         let mut arpeggiator = Arpeggiator::default();
-        arpeggiator.set_param("mode", 2.0);
+        arpeggiator.set_param(MidiFxParam::Mode, 2.0);
 
         let mut sequence = vec![hold_chord(&mut arpeggiator, &[60, 64, 67], 0.0)[0].0];
         for step in 1..6 {
@@ -854,16 +1137,16 @@ mod tests {
     fn rate_clamps_to_a_positive_finite_range() {
         let mut arpeggiator = Arpeggiator::default();
 
-        arpeggiator.set_param("rate", 0.0);
+        arpeggiator.set_param(MidiFxParam::Rate, 0.0);
         assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MIN_RATE_BEATS);
 
-        arpeggiator.set_param("rate", -3.0);
+        arpeggiator.set_param(MidiFxParam::Rate, -3.0);
         assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MIN_RATE_BEATS);
 
-        arpeggiator.set_param("rate", f32::NAN);
+        arpeggiator.set_param(MidiFxParam::Rate, f32::NAN);
         assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MIN_RATE_BEATS);
 
-        arpeggiator.set_param("rate", 64.0);
+        arpeggiator.set_param(MidiFxParam::Rate, 64.0);
         assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MAX_RATE_BEATS);
     }
 
@@ -872,7 +1155,7 @@ mod tests {
     #[test]
     fn octave_range_expands_the_pattern_upward() {
         let mut arpeggiator = Arpeggiator::default();
-        arpeggiator.set_param("octaves", 2.0);
+        arpeggiator.set_param(MidiFxParam::Octaves, 2.0);
 
         assert_eq!(hold_chord(&mut arpeggiator, &[60], 0.0), vec![(60, true)]);
         assert_eq!(
@@ -901,9 +1184,9 @@ mod tests {
         };
 
         let mut first = Arpeggiator::default();
-        first.set_param("mode", 3.0);
+        first.set_param(MidiFxParam::Mode, 3.0);
         let mut second = Arpeggiator::default();
-        second.set_param("mode", 3.0);
+        second.set_param(MidiFxParam::Mode, 3.0);
 
         let first_run = sequence(&mut first);
         assert_eq!(first_run, sequence(&mut second));
