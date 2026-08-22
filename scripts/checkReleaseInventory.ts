@@ -210,14 +210,24 @@ function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-function pathAddressedSha256(
-    value: string,
-    trackedFiles: ReadonlySet<string>
-): { path: string; sha256: string } | undefined {
+function isSemanticSha256Label(value: string): boolean {
+    return value.startsWith('@');
+}
+
+function isByteCountPrefixedRemoteArtifact(value: string): boolean {
+    return /^(?:bytes:)?[0-9]+:/u.test(value);
+}
+
+function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
     const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
     const sha256 = match?.[1];
     const path = match?.[2];
-    if (sha256 === undefined || path === undefined || !trackedFiles.has(path)) {
+    if (
+        sha256 === undefined ||
+        path === undefined ||
+        isSemanticSha256Label(path) ||
+        isByteCountPrefixedRemoteArtifact(path)
+    ) {
         return undefined;
     }
     return { path, sha256 };
@@ -967,8 +977,13 @@ export function validateReleaseInventory(
             }
         }
         for (const digest of surface.digests) {
-            const addressed = pathAddressedSha256(digest, trackedFiles);
-            if (addressed !== undefined && snapshot.fileDigests[addressed.path] !== addressed.sha256) {
+            const addressed = pathAddressedSha256(digest);
+            if (addressed === undefined) {
+                continue;
+            }
+            if (!trackedFiles.has(addressed.path)) {
+                errors.push(`${surface.id}: path-addressed digest target is missing or untracked: ${addressed.path}`);
+            } else if (snapshot.fileDigests[addressed.path] !== addressed.sha256) {
                 errors.push(`${surface.id}: path-addressed digest drifted: ${addressed.path}`);
             }
         }
@@ -1126,7 +1141,6 @@ export function loadRepositorySnapshot(
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
     const files = trackedFilesInWorktree.filter((path) => existsSync(resolve(root, path)));
-    const trackedFileSet = new Set(files);
     const contents = new Map<string, string>();
     const readText = (path: string): string => {
         const cached = contents.get(path);
@@ -1147,7 +1161,7 @@ export function loadRepositorySnapshot(
         ...(inventory.snapshots ?? []).map((entry) => entry.path),
         ...(inventory.surfaces ?? []).flatMap((surface) =>
             surface.digests.flatMap((digest) => {
-                const addressed = pathAddressedSha256(digest, trackedFileSet);
+                const addressed = pathAddressedSha256(digest);
                 return addressed === undefined ? [] : [addressed.path];
             })
         ),

@@ -358,7 +358,7 @@
                 "sha256:a986a53c92579714eb7ec36856004f5fb75272c9f69091f14eb6b2086eea4440:5847049:web-llm-models/v0_2_84/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm",
                 "sha256:bf6384d9b30d6ae1eca567c65a893284ae2228fd57a432c3b795d06a803d9b72:5855792:web-llm-models/v0_2_84/base/Qwen3-8B-q4f16_1_cs1k-webgpu.wasm",
                 "npm-integrity:sha512-hrOWzK4/nGNmgoRKT8pgVmZZ2oEPpbblIWQOwpqNyvK2dysHw3KVB1gNJOuRcQfKOPhucEhX1NJzXzgMDnwSCQ==:@mlc-ai/web-llm@0.2.84",
-                "sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e:Qwen3-1.7B-4B-8B-immutable-LICENSE",
+                "sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e:@Qwen3-1.7B-4B-8B-immutable-LICENSE",
                 "sha256:3a7dfb37bb96ce6f5a1cc0d6d4c8da3b8a35e6ec4692647ba0a37f6155c7e694:public/legal/MLC-LLM-NOTICE.txt",
                 "sha256:bc894d48edd3a82ee4160cfb2d1bb9f79bda5ac66226930956eec779e954b315:public/legal/Apache-TVM/LICENSE",
                 "sha256:967cd2fb97712c43271e2b1c4f636c4d8823898869f0f76f65bf8a3232584f0f:public/legal/Apache-TVM/NOTICE",

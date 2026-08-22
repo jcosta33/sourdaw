@@ -383,24 +383,42 @@ describe('release inventory', () => {
 
     it('should reject nested tvm-ffi legal byte drift', () => {
         const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
-        const absolutePath = join(repositoryRoot, path);
-        const original = readFileSync(absolutePath);
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        const changed = snapshot();
+        changed.releaseFiles.push(path);
+        changed.fileDigests[path] = 'b'.repeat(64);
 
-        try {
-            writeFileSync(absolutePath, Buffer.concat([original, Buffer.from('\nchanged')]));
+        expect(validateReleaseInventory(value, changed)).toContain(`runtime: path-addressed digest drifted: ${path}`);
+    });
 
-            expect(() => checkReleaseInventory(repositoryRoot)).toThrow(
-                `webllm-qwen-artifacts: path-addressed digest drifted: ${path}`
-            );
-        } finally {
-            writeFileSync(absolutePath, original);
-        }
+    it('should reject a path-addressed digest with a mistyped repository path', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpak.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        expect(validateReleaseInventory(value, snapshot())).toContain(
+            `runtime: path-addressed digest target is missing or untracked: ${path}`
+        );
+    });
+
+    it('should reject a path-addressed digest whose tracked file was deleted', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        const changed = snapshot();
+        changed.fileDigests[path] = 'missing';
+
+        expect(validateReleaseInventory(value, changed)).toContain(
+            `runtime: path-addressed digest target is missing or untracked: ${path}`
+        );
     });
 
     it('should ignore semantic and remote artifact digest labels', () => {
         const value = inventory();
         value.surfaces[0]!.digests = [
             `sha256:${fixtureDigest}:5566554:public/icon.png`,
+            `sha256:${fixtureDigest}:bytes:5566554:https://models.example/public/icon.png`,
             `sha256:${fixtureDigest}:@runtime-license`,
         ];
         const changed = snapshot();
