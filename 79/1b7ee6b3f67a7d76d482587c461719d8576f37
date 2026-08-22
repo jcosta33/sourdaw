@@ -1,0 +1,185 @@
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_0a3429e31e555d::t_d6250651d33bb7 98-101,130,138-140
+  s_0a3429e31e555d::t_1ca9ea5076ac3a 141
+src/modules/Arrangement/models/PluginDescriptors/__tests__/BuiltinInstrumentDescriptors.spec.ts
+  s_0a3429e31e555d::t_6191dc2e38675c 74-79
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  s_0a3429e31e555d::t_1b6a03e760f9d2 822-823
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_0a3429e31e555d::t_3464be1abe3719 76
+src/modules/GrandBoule/useCases/__tests__/reconcileGrandBouleDeviceStateFromProject.spec.ts
+  s_0a3429e31e555d::t_060501438fb4e6 1-28
+src/modules/GrandBoule/useCases/setGrandBouleMorphBalance.ts
+  s_0a3429e31e555d::t_9175c296c9c4a9 6,10,12,23-29
+src/modules/Arrangement/useCases/index.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 257
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_50f0e16d8ca9ca 745-746,754,758
+  s_0a3429e31e555d::t_7da343666048c8 135,221-228,716-718
+  s_0a3429e31e555d::t_7c4c8f87ccdeb5 2,12,250,252-265,268,273-309,521,675,734-744,747-753,755-757,759
+  s_0a3429e31e555d::t_7b110f77a9fe3f 136-162,218-220,229-243,249
+  s_0a3429e31e555d::t_6c82237a4b3342 15,415-430,506-520,699-715,719-733
+  s_0a3429e31e555d::t_b3daa10cf4c5d6 251,522-530,760
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_0a3429e31e555d::t_177bd8e98d29a0 88,278,286,377,390,392
+src/modules/GrandBoule/useCases/hydrateGrandBouleMorphStateFromProject.ts
+  s_0a3429e31e555d::t_3a4aa3364038af 10
+crates/daw-dsp/benches/quantum.rs
+  s_0a3429e31e555d::t_1b6a03e760f9d2 301-302,321,329,351,374,384,392,1073,1086-1087,1093-1094
+src/app/bootstrap.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 101,432
+crates/daw-dsp/src/grand_boule/mechanical_noise.rs
+  s_0a3429e31e555d::t_4abd84a66cb549 27-29
+src/modules/GrandBoule/useCases/dispatchGrandBouleMorphEdit.ts
+  s_0a3429e31e555d::t_9175c296c9c4a9 1,3-5,7-8,10-22,25-28
+.agents/decisions/0035-readmit-grand-boule.md
+  s_0a3429e31e555d::t_4abd84a66cb549 14-17,23-25,71-77,90-112
+crates/daw-dsp/tests/quantum_bench_census.rs
+  s_0a3429e31e555d::t_535a3a682503ea 348,369-371
+  s_0a3429e31e555d::t_26cffe8f2ceb90 58-71,78,87-88,96,101,115-125,129-144,148-162,166-170,223,373,405-407,410,415,520-524,527
+  s_0a3429e31e555d::t_3a46589d7b5052 72-77,79-86,89-95,97-100,102-114,126-128,145-147,163-165,365-368,372,408-409,411-414,481-482,488-489
+  s_27578aec2aab3b::t_0734b50602108e 525-526
+src/modules/GrandBoule/useCases/__tests__/resolveGrandBouleEngine.spec.ts
+  s_0a3429e31e555d::t_d7da03cec5cab1 34-35,37-38
+src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts
+  s_0a3429e31e555d::t_3464be1abe3719 3-4,8-16,19-22,24-30
+src/modules/GrandBoule/useCases/setGrandBouleMorphModel.ts
+  s_0a3429e31e555d::t_9175c296c9c4a9 1-27
+src/modules/GrandBoule/presentations/components/MorphPanel.tsx
+  s_0a3429e31e555d::t_947979a451dd65 25-26,87
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_0a3429e31e555d::t_5fa63c581dc1d8 74-78
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_0a3429e31e555d::t_3464be1abe3719 5,139,196,219,240-246
+  s_0a3429e31e555d::t_ca29d579157d8b 247-248
+src/modules/GrandBoule/useCases/__tests__/grandBouleMorphGesture.spec.ts
+  s_0a3429e31e555d::t_4750539ef1a6e9 1-14,16-75
+  s_0a3429e31e555d::t_b78947864da37c 15
+src/utils/handlerContract.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 1190-1196
+  s_a40848e8f8cca9::t_fb06d9b699c51d 1189
+src/modules/GrandBoule/useCases/getGrandBouleHandlers.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 1-5
+src/modules/GrandBoule/handlers/handleSetGrandBouleDeviceState.ts
+  s_0a3429e31e555d::t_b78947864da37c 5-9,12-13,15-16,25-27,34-35,56-59
+  s_0a3429e31e555d::t_1bf054f5109b8f 1-4,10-11,14,17-24,28-33,36-55,60-61
+  s_0a3429e31e555d::t_ed6816f52d7096 62-65
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanelProjectHydration.spec.tsx
+  s_0a3429e31e555d::t_177bd8e98d29a0 42
+src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 1,4-5
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_211db0858f0b1e 573,603-607,612-615,618-624,721,972
+  s_0a3429e31e555d::t_2026760f2259cb 575-576,578-580,582-583,585,587-599,625
+src/modules/GrandBoule/useCases/setGrandBouleMorphEnabled.ts
+  s_0a3429e31e555d::t_d5e466e54e1f20 12,28
+  s_0a3429e31e555d::t_9175c296c9c4a9 6,10,23-27,29
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_0a3429e31e555d::t_74df62d7491a15 27
+src/modules/GrandBoule/useCases/grandBouleSubscriber.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 1-22
+src/app/__tests__/bootstrap.spec.ts
+  s_0a3429e31e555d::t_4c0f305d399fe6 284,473
+  s_0a3429e31e555d::t_3464be1abe3719 285
+src/app/prepareOfflineDeviceSetup.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 85
+src/modules/GrandBoule/useCases/setGrandBouleMasterGain.ts
+  s_0a3429e31e555d::t_74df62d7491a15 24
+src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts
+  s_0a3429e31e555d::t_9175c296c9c4a9 14,18-19,33-38
+src/modules/GrandBoule/useCases/__tests__/commitGrandBouleDeviceState.spec.ts
+  s_0a3429e31e555d::t_b78947864da37c 5
+  s_0a3429e31e555d::t_df7e2402c44e9d 6,11-13,18-26,28-45
+  s_0a3429e31e555d::t_b66d2b2cd9e1a8 46-49,53
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMorphPosition.spec.ts
+  s_0a3429e31e555d::t_db33870627407b 60-66,78-84,106,116,118
+  s_0a3429e31e555d::t_d5e466e54e1f20 140
+  s_0a3429e31e555d::t_3c8fd40fbf6759 117,119-122,136-139,141-142,166,191,206-212,229-235
+crates/daw-dsp/benches/wasm/run.mjs
+  s_0a3429e31e555d::t_488cee88810c90 92-93,106-122
+  s_0a3429e31e555d::t_a99db661b80f18 123-124,829-830
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_2c3f77a5f522b2 256-307,309-312,323,330-347,350-352,364-368
+  s_0a3429e31e555d::t_8050a2f764c5bd 485-518,520-522,524-525,527-540,542,581-586
+  s_0a3429e31e555d::t_52dba63f918913 790,803,808-809,817-822,831-837,850-860,869-875,883-888,897-903,946-947
+  s_0a3429e31e555d::t_7da343666048c8 359,789,802,807,812-816,825-830,840-849,863-868,878-882,891-896,928
+  s_0a3429e31e555d::t_232b32282d7eaa 931-935,940-943
+  s_0a3429e31e555d::t_79414ac987fe24 354,362,519,523,526
+  s_0a3429e31e555d::t_69a8ef1bf4fff9 587,698-776,1524
+  s_a40848e8f8cca9::t_8713b4ea5e8803 588
+src/modules/GrandBoule/useCases/reconcileGrandBouleDeviceStateFromProject.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 1-15
+src/app/getProductionCommandHandlerMaps.ts
+  s_0a3429e31e555d::t_1bf054f5109b8f 6,66
+src/modules/GrandBoule/models/GrandBouleConfig.ts
+  s_0a3429e31e555d::t_74df62d7491a15 7
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_0a3429e31e555d::t_5fa63c581dc1d8 148-150,152-154,201-203
+  s_0a3429e31e555d::t_09b9767f1ab664 204,804-818
+  s_0a3429e31e555d::t_c1f203efb10465 205
+src/modules/GrandBoule/useCases/__tests__/grandBouleSubscriber.spec.ts
+  s_0a3429e31e555d::t_060501438fb4e6 1-30,32-45
+  s_0a3429e31e555d::t_29158a24b97839 31
+src/modules/GrandBoule/useCases/commitGrandBouleDeviceState.ts
+  s_0a3429e31e555d::t_b78947864da37c 12
+  s_0a3429e31e555d::t_9175c296c9c4a9 4-5,7-11,13,16-19,24
+  s_0a3429e31e555d::t_e29e6441b14242 22-23
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_0a3429e31e555d::t_c8df1e1109d0cf 25,272-274
+  s_0a3429e31e555d::t_947979a451dd65 39,357-376,390,392
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  s_0a3429e31e555d::t_177bd8e98d29a0 29,46,48,51,58,62,67,72,85,95
+src/modules/GrandBoule/useCases/index.ts
+  s_0a3429e31e555d::t_9175c296c9c4a9 7
+  s_0a3429e31e555d::t_1bf054f5109b8f 2-3
+src/modules/GrandBoule/handlers/__tests__/handleSetGrandBouleDeviceState.spec.ts
+  s_0a3429e31e555d::t_df7e2402c44e9d 1-16,41-88
+  s_0a3429e31e555d::t_9bff4adf20cf41 17-23,25-40
+  s_0a3429e31e555d::t_b78947864da37c 24
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0a3429e31e555d::t_990e522006abfd 1,400-403,849,865-877,898-899,913-932,1053
+public/wasm/daw-dsp/daw_dsp.js
+  s_0a3429e31e555d::t_291274977f3805 824-831
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0a3429e31e555d::t_e2ea6dc1ac14b6 1,6,22-34,55-56,70-89,210
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_3d1d2cf9394cda 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0a3429e31e555d::t_f8fc9e7ee4d03a 1,400-403,849,865-877,898-899,913-932,1053
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_0a3429e31e555d::t_64b12461e6979a 1001-1008
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_0a3429e31e555d::t_8d6abec13de10e 1676-1685,1697,1708,1743,1748,1791,1796,1882,1905-1906,1929,1948,1956,1965,1976-1978,1992-1994,2025,2031,2040,2051,2059,2070-2071,2085-2086,2111-2112,2170,2179,2236,2254,2260,2308,2316,2325,2334-2335,2340-2345,2380,2387,2403,2411,2469-2470,2588,2594,2644,2659,2664,2679-2680,2700,2714-2715,2724,2726,2738-2739,2747-2748,2788-2789,2863-2864,2942-2943,3069,3080,3161-3162,3189-3190,3212,3226,3235,3257,3271,3278,3285-3287,3328-3331,3353,3358,3370,3377,3382,3384,3390,3395,3397-3398,3417,3424,3432-3433,3439,3442,3486-3487,3496-3497,3560,3566-3567,3578-3579,3601-3602,3636,3643,3648-3649,3665,3670-3671,3683,3693,3700,3706,3711,3720-3721,3742,3747-3748,3785-3786,3806,3820-3821,3829-3830,3919,3926,3932-3933,3940,3954,3969,3983,3988-3991,4019,4025,4039,4045,4090,4092,4107,4116-4117,4119,4132-4133,4136,4143,4148,4175,4180,4275,4282,4310,4318,4324,4332-4333,4373,4384,4392,4398,4405,4410,4418-4419,4630,4646,4663,4670-4671,4674,4705,4718-4721,4731-4732,4777,4791,4796,4798,4846,4851,4869,4874,4898,4903,4998-5002,5009-5039,5042-5047,5051,5053-5070,5073,5075-5085,5087-5088,5096-5128,5134-5135,5138-5142,5144-5145,5147,5149-5159,5163-5165,5167-5173,5175-5177,5179-5191,5193,5195-5197,5202,5205-5208,5212-5217,5222,5224-5225,5227-5228,5231-5243,5247-5251,5253-5255,5259-5260,5262-5263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "791b7ee6b3f67a7d76d482587c461719d8576f37",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
