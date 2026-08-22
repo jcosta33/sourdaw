@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { CURRENT_PROJECT_VERSION } from '../../../../models/ProjectData';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -12,6 +11,7 @@ import {
     transportStore,
 } from '#/modules/Transport/stores';
 
+import { CURRENT_PROJECT_VERSION } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { hydrateArrangementStoreFromProjectData } from '../../helpers/hydrateArrangementStoreFromProjectData';
