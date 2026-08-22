@@ -1,0 +1,23 @@
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_0a3429e31e555d::t_334647e8615e82 18
+src/app/getProductionCommandHandlerMaps.ts
+  s_0a3429e31e555d::t_334647e8615e82 15
+src/modules/GrandBoule/handlers/handleSetGrandBouleDeviceState.ts
+  s_0a3429e31e555d::t_334647e8615e82 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "15a62797bfaba3f97eb9b31115d9cc1182693041",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
