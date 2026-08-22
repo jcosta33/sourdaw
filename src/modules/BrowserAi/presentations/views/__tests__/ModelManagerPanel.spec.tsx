@@ -210,6 +210,30 @@ describe('ModelManagerPanel', () => {
         await vi.waitFor(() => expect(screen.getByRole('button', { name: /^Download Violin \(/ })).toBeEnabled());
     });
 
+    it('keeps published DDSP progress at 100 percent while post-publish work remains pending', async () => {
+        let finishDownload = (): void => undefined;
+        use_case_mocks.downloadDdspInstrument.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    finishDownload = resolve;
+                })
+        );
+        mocks.registryState = create_registry_with_ddsp();
+        const view = render(<ModelManagerPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: /^Download Violin \(/ }));
+        mocks.registryState = create_registry_with_ddsp({ 'ddsp-violin': 'ready' });
+        view.rerender(<ModelManagerPanel />);
+
+        expect(screen.getByRole('progressbar', { name: 'Downloading Violin: 100%' })).toHaveAttribute(
+            'aria-valuenow',
+            '100'
+        );
+
+        finishDownload();
+        await vi.waitFor(() => expect(screen.getByLabelText('Violin downloaded and ready')).toBeInTheDocument());
+    });
+
     it('should download the Kokoro model when not-downloaded and show its download button', () => {
         mocks.registryState = create_base_registry();
 

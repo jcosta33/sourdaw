@@ -103,6 +103,17 @@ const DDSP_TFJS_LEGAL_PATHS = [
 
 export const DDSP_ADMISSION_DECISION_PATH = '.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md';
 const DDSP_ARTIFACT_MANIFEST_PATH = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+const DDSP_MODEL_ENFORCEMENT_PATHS = [
+    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
+    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts',
+    'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
+    'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
+    'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+] as const;
 
 export const DDSP_MODEL_PATHS = [
     DDSP_ADMISSION_DECISION_PATH,
@@ -113,10 +124,8 @@ export const DDSP_MODEL_PATHS = [
     'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
     'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
     'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
-    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
-    'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    ...DDSP_MODEL_ENFORCEMENT_PATHS,
     'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
-    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
     'src/modules/BrowserAi/useCases/downloadModel.ts',
     'src/modules/BrowserAi/useCases/initBrowserAi.ts',
     'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
@@ -649,6 +658,7 @@ export function ddspModelsReleaseInventoryContract(root: string): Partial<Releas
             `sha256:${fileSha256(resolve(root, 'electron/protocol.ts'))}:electron/protocol.ts`,
             `sha256:${currentManifest}:${DDSP_ARTIFACT_MANIFEST_PATH}`,
             `sha256:${fileSha256(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'))}:public/legal/THIRD-PARTY-NOTICES.md`,
+            ...DDSP_MODEL_ENFORCEMENT_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
             ...artifacts.map(({ sha256, sizeBytes, url }) => `sha256:${sha256}:bytes:${sizeBytes}:${url}`),
         ],
         licenses: ['unverified:exact-GCS-checkpoint-artifacts'],

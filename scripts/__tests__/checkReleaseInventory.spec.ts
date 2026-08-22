@@ -38,9 +38,34 @@ import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
+const ddspModelEnforcementPaths = [
+    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
+    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts',
+    'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
+    'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
+    'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+] as const;
 
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+}
+
+function writeDdspModelContractFixture(root: string, manifest: string): void {
+    const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+    for (const [path, value] of [
+        [manifestPath, manifest],
+        ['electron/protocol.ts', 'protocol'],
+        ['public/legal/THIRD-PARTY-NOTICES.md', 'notice'],
+        [DDSP_ADMISSION_DECISION_PATH, `Admitted \`DdspArtifactManifest\` SHA-256: \`${sha256(manifest)}\``],
+        ...ddspModelEnforcementPaths.map((path) => [path, `baseline:${path}`] as const),
+    ] as const) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), value);
+    }
 }
 
 function wasmWithFunctionExport(name: string): Uint8Array {
@@ -325,6 +350,12 @@ describe('release inventory', () => {
         expect(contract.paths).toEqual(
             expect.arrayContaining([
                 'electron/protocol.ts',
+                'src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts',
+                'src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts',
+                'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
+                'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
+                'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+                'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
                 'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
                 'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
                 'src/modules/BrowserAi/useCases/downloadModel.ts',
@@ -332,6 +363,9 @@ describe('release inventory', () => {
                 'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
             ])
         );
+        for (const path of ddspModelEnforcementPaths) {
+            expect(contract.digests?.some((digest) => digest.endsWith(`:${path}`))).toBe(true);
+        }
         expect(contract.digests?.filter((digest) => digest.includes(':bytes:'))).toHaveLength(12);
         expect(contract.licenses).toEqual(['unverified:exact-GCS-checkpoint-artifacts']);
         expect(contract.obligations).toEqual(
@@ -350,16 +384,7 @@ describe('release inventory', () => {
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-model-admission-'));
             const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
             const manifest = `baseline:${manifestPath}`;
-            const hashedPaths = ['electron/protocol.ts', 'public/legal/THIRD-PARTY-NOTICES.md', manifestPath];
-            for (const path of hashedPaths) {
-                mkdirSync(dirname(join(root, path)), { recursive: true });
-                writeFileSync(join(root, path), path === manifestPath ? manifest : `baseline:${path}`);
-            }
-            mkdirSync(dirname(join(root, DDSP_ADMISSION_DECISION_PATH)), { recursive: true });
-            writeFileSync(
-                join(root, DDSP_ADMISSION_DECISION_PATH),
-                `Admitted \`DdspArtifactManifest\` SHA-256: \`${sha256(manifest)}\``
-            );
+            writeDdspModelContractFixture(root, manifest);
 
             try {
                 const admitted = ddspModelsReleaseInventoryContract(root);
@@ -377,19 +402,28 @@ describe('release inventory', () => {
         }
     );
 
+    it('rejects drift in the DDSP storage verification enforcement chain', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-enforcement-'));
+        const changedPath = 'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts';
+        writeDdspModelContractFixture(root, 'admitted manifest');
+
+        try {
+            const admitted = ddspModelsReleaseInventoryContract(root);
+            writeFileSync(join(root, changedPath), 'changed storage verification enforcement');
+
+            expect(() => assertDdspModelsReleaseInventory(root, admitted)).toThrow(
+                'DDSP models release inventory digests does not match provenance'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('rejects a regenerated DDSP inventory when the manifest changes without a new admission decision', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-manifest-anchor-'));
         const manifestPath = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
         const manifest = 'admitted manifest';
-        for (const [path, value] of [
-            [manifestPath, manifest],
-            ['electron/protocol.ts', 'protocol'],
-            ['public/legal/THIRD-PARTY-NOTICES.md', 'notice'],
-            [DDSP_ADMISSION_DECISION_PATH, `Admitted \`DdspArtifactManifest\` SHA-256: \`${sha256(manifest)}\``],
-        ] as const) {
-            mkdirSync(dirname(join(root, path)), { recursive: true });
-            writeFileSync(join(root, path), value);
-        }
+        writeDdspModelContractFixture(root, manifest);
 
         try {
             const admitted = ddspModelsReleaseInventoryContract(root);

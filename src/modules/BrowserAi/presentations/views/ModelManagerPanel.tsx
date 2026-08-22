@@ -63,7 +63,7 @@ function DdspModelAction({ id, name, sizeBytes, status, downloadProgress }: Ddsp
     };
 
     if (pendingAction === 'download' || status === 'downloading') {
-        const progress = status === 'downloading' ? downloadProgress : 0;
+        const progress = downloadProgress;
         const progressPercent = Math.round(progress * 100);
         return (
             <Row gap={2}>
