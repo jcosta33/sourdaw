@@ -1,19 +1,31 @@
 name: Health gates
 
-# Two lanes.
+# This workflow exists so that nobody has to run these checks on their own
+# machine. Several agents working in parallel lanes cannot each run a repository
+# -wide typecheck, lint, or test suite without exhausting the machine they share
+# and stalling one another. Everything that costs real resources belongs here.
 #
-# The fast lane runs on every push to a pull request: types, boundaries, lint,
-# format, artifact freshness, and the cheap inventory scripts. It is three
-# concurrent jobs rather than one serial one, so its wall clock is the slowest
-# check rather than the sum of all of them, and a failing check names its own
-# class.
+# So the default is: it runs on every push to a pull request. Types, boundaries,
+# lint, format, artifact freshness, the inventory scripts, the unit suite, the
+# production build, the Rust workspace, the collaboration server, and both
+# native platform legs. Measured, that lane settles in about ten minutes, bounded
+# by the unit shards.
 #
-# The heavy lane runs when a review is submitted with state `approved`, on the
-# nightly schedule, and on manual dispatch. Unit suite, build, Rust workspace,
-# collaboration server, end-to-end, and the two native platform legs. Deferring
-# it to approval is what keeps a rapid push-fix-push cycle from spending an hour
-# of runner time per commit; running the fast lane unconditionally is what stops
-# a reviewer from approving code that has never compiled.
+# Only what cannot fit that budget waits for an approving review: the end-to-end
+# suite at roughly twenty-six minutes across eight shards, CodeQL, and the
+# full-history secret scan. Those also run nightly and on dispatch.
+#
+# `gate` is the only job the branch ruleset requires by name. It depends on
+# every other job and passes when each either succeeded or was legitimately
+# skipped. A required check that names a filtered job directly would sit pending
+# forever on any pull request that skips it, so nothing else may be required.
+#
+# Runners are standard GitHub-hosted labels only. Public repositories bill
+# nothing for those; larger and GPU runners bill even here.
+#
+# An approval re-runs what already ran on the last push. That duplication is
+# deliberate: it costs nothing here, and the alternative is a merge decided by
+# results from an older head.
 #
 # `gate` is the only job the branch ruleset requires by name. It depends on
 # every other job and passes when each either succeeded or was legitimately
@@ -250,7 +262,7 @@ jobs:
   unit:
     name: Unit suite ${{ matrix.shard }}/4
     needs: decide
-    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.web == 'true'
+    if: needs.decide.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -284,7 +296,7 @@ jobs:
   build:
     name: Production build
     needs: decide
-    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.web == 'true'
+    if: needs.decide.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -309,7 +321,7 @@ jobs:
   rust:
     name: Rust workspace and collaboration server
     needs: decide
-    if: needs.decide.outputs.heavy == 'true' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')
+    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -355,7 +367,7 @@ jobs:
     # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
     # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
     # the only place it compiles, and public repositories get those free.
-    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.rust == 'true'
+    if: needs.decide.outputs.rust == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -378,7 +390,7 @@ jobs:
     # only for the Windows target: elsewhere `cfg(any(windows, test))` reaches
     # its pure policy half and never the windows-crate integration code. A
     # native runner replaces the cross-compilation oracle #2253 asked for.
-    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.rust == 'true'
+    if: needs.decide.outputs.rust == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
