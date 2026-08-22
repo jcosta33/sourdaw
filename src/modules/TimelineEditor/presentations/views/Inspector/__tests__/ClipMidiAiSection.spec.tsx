@@ -618,6 +618,8 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
 });
 
 describe('ClipMidiAiSection — DDSP instrument preview', () => {
+    type DdspInstrumentFixture = NonNullable<typeof modelRegistryStore.value>['ddspInstruments'][number];
+
     const clipA: Clip = {
         id: 'ddsp-clip-a',
         trackId: 'track-1',
@@ -633,7 +635,7 @@ describe('ClipMidiAiSection — DDSP instrument preview', () => {
         muted: false,
     };
     const clipB: Clip = { ...clipA, id: 'ddsp-clip-b', name: 'DDSP Clip B' };
-    const violin = {
+    const violin: DdspInstrumentFixture = {
         id: 'ddsp-violin',
         name: 'Violin',
         family: 'ddsp' as const,
@@ -670,7 +672,7 @@ describe('ClipMidiAiSection — DDSP instrument preview', () => {
             tier: 'browser-preview' as const,
         },
     });
-    const setRegistry = (instruments = [violin]): void => {
+    const setRegistry = (instruments: DdspInstrumentFixture[] = [violin]): void => {
         modelRegistryStore.set({
             ddspInstruments: instruments,
             kokoroModel: null,
