@@ -1,0 +1,34 @@
+.agents/decisions/README.md
+  s_a40848e8f8cca9::t_c76a310d55c706 51
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_b0d767be3928a8 281-283,288-298,301-310,315-323,331-333,338-340,343,345
+  s_a40848e8f8cca9::t_d3470c26803013 204,324-327
+.agents/decisions/0035-admit-webllm-qwen-conversions-under-apache-2.0.md
+  s_a40848e8f8cca9::t_957bd74cbfda63 14-21,38-50,62-75,81-85,96-97
+public/legal/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_957bd74cbfda63 54-71
+public/legal/Apache-TVM-LICENSE.txt
+  s_a40848e8f8cca9::t_d99ae9a9186dce 1-230
+public/legal/Apache-TVM-NOTICE.txt
+  s_a40848e8f8cca9::t_d99ae9a9186dce 1-5
+public/legal/MLC-LLM-NOTICE.txt
+  s_a40848e8f8cca9::t_d99ae9a9186dce 1-3
+public/legal/Qwen-NOTICE.txt
+  s_a40848e8f8cca9::t_957bd74cbfda63 10-12,16-18,22-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a725a75e51735bd18fb1364424905ec1961c9ecb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
