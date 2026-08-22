@@ -136,7 +136,8 @@ export async function prepareStemImport(
                 audioBufferId: decoded.id,
             };
             prepared.push(pendingStem);
-            const stagedAsset = await getAssetTransfer()?.stageLocalAsset(file, file.name);
+            const assetLeaseId = `asset-stage-${pendingStem.stemId}`;
+            const stagedAsset = await getAssetTransfer()?.stageLocalAsset(file, file.name, assetLeaseId);
             if (stagedAsset) {
                 Object.assign(pendingStem, {
                     assetHash: stagedAsset.hash,
@@ -146,7 +147,7 @@ export async function prepareStemImport(
             throwIfAborted(signal);
         }
     } catch (error) {
-        discardPreparedStemImportResources(prepared);
+        await discardPreparedStemImportResources(prepared);
         throw error;
     }
 

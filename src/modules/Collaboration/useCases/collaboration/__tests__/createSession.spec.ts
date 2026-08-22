@@ -11,7 +11,7 @@ import { createSession } from '../createSession';
  */
 const mockRuntime = vi.hoisted(() => ({
     cleanup: vi.fn<() => void>(),
-    initialize: vi.fn<() => void>(),
+    initialize: vi.fn<(assetOwnerId: string) => void>(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -20,6 +20,9 @@ const mockRuntime = vi.hoisted(() => ({
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
+vi.mock('../getCollaborationAssetOwnerId', () => ({
+    getCollaborationAssetOwnerId: () => 'project-owner-1',
+}));
 
 describe('createSession', () => {
     beforeEach(() => {
@@ -40,7 +43,7 @@ describe('createSession', () => {
         createSession('Host');
 
         expect(mockRuntime.cleanup).toHaveBeenCalledTimes(1);
-        expect(mockRuntime.initialize).toHaveBeenCalledTimes(1);
+        expect(mockRuntime.initialize).toHaveBeenCalledExactlyOnceWith('project-owner-1');
         expect(mockRuntime.startPlayheadBroadcast).toHaveBeenCalledTimes(1);
         expect(mockRuntime.startBranchSync).toHaveBeenCalledWith(true);
     });

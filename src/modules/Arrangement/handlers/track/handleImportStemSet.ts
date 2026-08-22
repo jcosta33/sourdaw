@@ -32,7 +32,7 @@ type ReconcileImportedStemEffectsInput = {
     importedTracks: readonly Track[];
     projectedTrackIds: Set<string>;
     publishedTrackIds: Set<string>;
-    assetLeaseIds: readonly string[];
+    assetLeases: readonly { leaseId: string; hash?: string }[];
     promotedAssetLeaseIds: Set<string>;
     committedTrackIds?: ReadonlySet<string>;
 };
@@ -42,21 +42,27 @@ async function reconcileImportedStemEffects({
     importedTracks,
     projectedTrackIds,
     publishedTrackIds,
-    assetLeaseIds,
+    assetLeases,
     promotedAssetLeaseIds,
     committedTrackIds,
 }: ReconcileImportedStemEffectsInput): Promise<void> {
     const isCommitted = (trackId: string) => !committedTrackIds || committedTrackIds.has(trackId);
     try {
         await runAllAsyncEffects([
-            ...assetLeaseIds
-                .filter((leaseId) => !promotedAssetLeaseIds.has(leaseId))
-                .map((leaseId) => () => {
+            ...assetLeases
+                .filter(({ leaseId }) => !promotedAssetLeaseIds.has(leaseId))
+                .map(({ leaseId, hash }) => async () => {
+                    if (!hash) {
+                        throw new Error(`Staged lease has no expected asset hash: ${leaseId}`);
+                    }
                     const transfer = getAssetTransfer();
                     if (!transfer) {
                         throw new Error(`Asset transfer is unavailable for staged lease: ${leaseId}`);
                     }
-                    transfer.promoteStagedAsset(leaseId);
+                    const promotion = await transfer.promoteStagedAsset(leaseId, hash);
+                    if (promotion.status === 'failed') {
+                        throw new Error(`Could not promote staged lease ${leaseId}: ${promotion.reason}`);
+                    }
                     promotedAssetLeaseIds.add(leaseId);
                 }),
             ...importedTracks
@@ -105,7 +111,9 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         pendingGuards.delete(action);
 
         const addedTracks = [folder, ...importedTracks];
-        const assetLeaseIds = action.payload.stems.flatMap((stem) => (stem.assetLeaseId ? [stem.assetLeaseId] : []));
+        const assetLeases = action.payload.stems.flatMap((stem) =>
+            stem.assetLeaseId ? [{ leaseId: stem.assetLeaseId, hash: stem.assetHash }] : []
+        );
         const projectedTrackIds = new Set<string>();
         const publishedTrackIds = new Set<string>();
         const promotedAssetLeaseIds = new Set<string>();
@@ -115,7 +123,7 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
                 importedTracks,
                 projectedTrackIds,
                 publishedTrackIds,
-                assetLeaseIds,
+                assetLeases,
                 promotedAssetLeaseIds,
                 committedTrackIds,
             });

@@ -46,7 +46,8 @@ const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
-        stageLocalAsset: vi.fn<(file: File, name: string) => Promise<{ hash: string; leaseId: string }>>(),
+        stageLocalAsset:
+            vi.fn<(file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>>(),
         decodeAudioFile: vi.fn(),
         detectTempo: vi.fn<() => number | null>(() => 120),
         ensureTrackStrip: vi.fn(),
@@ -348,8 +349,14 @@ describe('stem import and starting mix workflow', () => {
         mocks.decodeAudioFile.mockImplementation((file: File) =>
             Promise.resolve({ id: `buffer-${file.name}`, buffer: audioBuffer() })
         );
-        mocks.stageLocalAsset.mockImplementation((_file, name) =>
-            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
+        mocks.stageLocalAsset.mockImplementation((_file, name, leaseId) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId })
+        );
+        mocks.promoteStagedAsset.mockImplementation((leaseId: string, hash: string) =>
+            Promise.resolve({ status: 'promoted', leaseId, hash, blob: new Blob(), name: hash })
+        );
+        mocks.releaseStagedAsset.mockImplementation((leaseId: string, hash: string) =>
+            Promise.resolve({ status: 'released', leaseId, hash, assetRemoved: true, ownerRetained: false })
         );
         mocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
             Promise.resolve(
@@ -593,8 +600,8 @@ describe('stem import and starting mix workflow', () => {
 
     it('rejects provider omission and releases every preparation lease', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
-        mocks.stageLocalAsset.mockImplementation((_file, name) =>
-            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
+        mocks.stageLocalAsset.mockImplementation((_file, name, leaseId) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId })
         );
         mocks.transformPlan.value = (plan) => {
             const call = plan[0];

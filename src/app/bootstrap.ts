@@ -63,7 +63,12 @@ import {
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
-import { canExecuteCommandBatch, canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
+import {
+    canExecuteCommandBatch,
+    canMutateBranchMetadata,
+    configureCollaborationAssetOwner,
+    leaveSession,
+} from '#/modules/Collaboration/useCases';
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
@@ -125,6 +130,7 @@ import {
     migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
+import { projectStore } from '#/modules/Project/stores';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { setSetlistEventBus } from '#/modules/Setlist/useCases';
@@ -205,6 +211,7 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
+configureCollaborationAssetOwner(() => projectStore.value?.projectId);
 try {
     recoverInterruptedAgentRuns();
 } catch (error) {

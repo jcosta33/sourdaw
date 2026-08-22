@@ -3,6 +3,7 @@ import { type SignalingMessage, PEER_COLORS, sanitizePeerName } from '../../mode
 import { collaborationStore } from '../../stores/collaborationStore';
 
 import { joinAttemptAuthority } from './joinAttemptAuthority';
+import { getCollaborationAssetOwnerId } from './getCollaborationAssetOwnerId';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function joinSession(inviteString: string, name: string): Promise<string> {
@@ -84,7 +85,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         });
 
         runtimeStarted = true;
-        const peerManager = runtime.initialize();
+        const peerManager = runtime.initialize(getCollaborationAssetOwnerId());
         runtime.startPlayheadBroadcast();
         runtime.startBranchSync(false);
 
