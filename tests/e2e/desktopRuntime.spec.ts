@@ -67,6 +67,10 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
         };
 
         const bridge: SourdawDesktopBridge = {
+            // Linux exercises the frameless-chrome branch: the header mounts
+            // its own window controls against this stub. They resolve benignly
+            // rather than refuse, because mounting already probes isMaximized.
+            platform: 'linux',
             invoke: (command, args = []) => {
                 calls.push({ command, args });
                 if (command === 'list_midi_inputs') {
@@ -113,6 +117,13 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
                 // Subscribing crosses no IPC, matching `listen` above; the
                 // unsubscribe is a no-op because nothing here ever emits.
                 listenTerminal: () => () => undefined,
+            },
+            windowControls: {
+                minimize: () => Promise.resolve(),
+                toggleMaximize: () => Promise.resolve(false),
+                close: () => Promise.resolve(),
+                isMaximized: () => Promise.resolve(false),
+                listenMaximized: () => () => undefined,
             },
         };
 

@@ -1,10 +1,11 @@
 /**
  * The channels that are not addon commands (REQ-004, REQ-007).
  *
- * Three native dialogs, two path helpers, and the one command whose backend is
- * a separate process rather than the addon in this one. They share the command
- * router's origin guard, because a save dialog opened by something that is not
- * the app is the same failure as a command invoked by it.
+ * Three native dialogs, two path helpers, the frameless window's own controls,
+ * and the one command whose backend is a separate process rather than the
+ * addon in this one. They share the command router's origin guard, because a
+ * save dialog opened by something that is not the app is the same failure as a
+ * command invoked by it.
  *
  * `scan_plugins` is registered here rather than in the router, and that is the
  * whole point of it being here: the channel is identical, so the surface the
@@ -20,9 +21,13 @@ import {
     DIALOG_SAVE_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    WINDOW_CLOSE_CHANNEL,
+    WINDOW_IS_MAXIMIZED_CHANNEL,
+    WINDOW_MINIMIZE_CHANNEL,
+    WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
 } from './channels.js';
 import { commandChannel } from './commands.js';
-import { asPositionalArguments, withTrustedSender, type IpcMainLike } from './router.js';
+import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
 
 import type { ScanSupervisor } from './scan.js';
 import type {
@@ -198,5 +203,82 @@ export const registerPathChannels = ({
             }
             return join(...segments);
         })
+    );
+};
+
+/**
+ * The slice of a `BrowserWindow` the frameless chrome drives, narrowed the same
+ * way as `NativeDialogs`: the renderer may minimize, toggle the maximized
+ * state, read that state, and close its own window — nothing else.
+ */
+export type WindowControlTarget = {
+    readonly minimize: () => void;
+    readonly maximize: () => void;
+    readonly unmaximize: () => void;
+    readonly isMaximized: () => boolean;
+    readonly close: () => void;
+};
+
+export type RegisterWindowControlChannelsInput = {
+    readonly ipcMain: IpcMainLike;
+    readonly isTrustedFrameUrl: TrustGuard;
+    /**
+     * Resolve the window a sender belongs to, or null when it has none — a
+     * renderer that crashed between sending and being handled. Resolved per
+     * call rather than captured, so crash-recovery window recreation never
+     * leaves these channels pointing at a destroyed window.
+     */
+    readonly windowForSender: (sender: unknown) => WindowControlTarget | null;
+};
+
+/**
+ * The four window-control channels backing the frameless Linux chrome.
+ *
+ * Each one resolves the calling window from the sender, so the controls in one
+ * window can never drive another, and a sender with no window is a no-op
+ * (reported as not-maximized) rather than a throw into a dying renderer.
+ */
+export const registerWindowControlChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    windowForSender,
+}: RegisterWindowControlChannelsInput): void => {
+    ipcMain.handle(
+        WINDOW_MINIMIZE_CHANNEL,
+        withTrustedSenderEvent('window.minimize', isTrustedFrameUrl, (event) => {
+            windowForSender(event.sender)?.minimize();
+        })
+    );
+
+    ipcMain.handle(
+        WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+        withTrustedSenderEvent('window.toggleMaximize', isTrustedFrameUrl, (event) => {
+            const window = windowForSender(event.sender);
+            if (window === null) {
+                return false;
+            }
+            if (window.isMaximized()) {
+                window.unmaximize();
+            } else {
+                window.maximize();
+            }
+            return window.isMaximized();
+        })
+    );
+
+    ipcMain.handle(
+        WINDOW_CLOSE_CHANNEL,
+        withTrustedSenderEvent('window.close', isTrustedFrameUrl, (event) => {
+            windowForSender(event.sender)?.close();
+        })
+    );
+
+    ipcMain.handle(
+        WINDOW_IS_MAXIMIZED_CHANNEL,
+        withTrustedSenderEvent(
+            'window.isMaximized',
+            isTrustedFrameUrl,
+            (event) => windowForSender(event.sender)?.isMaximized() ?? false
+        )
     );
 };

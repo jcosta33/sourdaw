@@ -13,8 +13,10 @@ import {
     registerDialogChannels,
     registerPathChannels,
     registerScanCommand,
+    registerWindowControlChannels,
     SCAN_COMMAND,
     type NativeDialogs,
+    type WindowControlTarget,
 } from '../appIpc.js';
 import {
     DIALOG_MESSAGE_CHANNEL,
@@ -22,6 +24,10 @@ import {
     DIALOG_SAVE_CHANNEL,
     PATHS_JOIN_CHANNEL,
     PATHS_SAMPLES_BASE_CHANNEL,
+    WINDOW_CLOSE_CHANNEL,
+    WINDOW_IS_MAXIMIZED_CHANNEL,
+    WINDOW_MINIMIZE_CHANNEL,
+    WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
 } from '../channels.js';
 import { commandChannel } from '../commands.js';
 
@@ -277,5 +283,106 @@ describe('the origin guard on every non-command channel', () => {
         for (const handler of handlers.values()) {
             expect(() => handler(FOREIGN_FRAME, {})).toThrow(/not the application/u);
         }
+    });
+});
+
+describe('the window controls', () => {
+    const fakeWindow = (initiallyMaximized = false): WindowControlTarget => {
+        // Stateful like the real BrowserWindow: maximize/unmaximize move the
+        // state isMaximized then reports.
+        let maximized = initiallyMaximized;
+        return {
+            minimize: vi.fn(),
+            maximize: vi.fn(() => {
+                maximized = true;
+            }),
+            unmaximize: vi.fn(() => {
+                maximized = false;
+            }),
+            isMaximized: vi.fn(() => maximized),
+            close: vi.fn(),
+        };
+    };
+
+    const windowControlHandlers = (
+        windowForSender: (sender: unknown) => WindowControlTarget | null
+    ): Map<string, Handler> => {
+        const { ipcMain, handlers } = collectingIpc();
+        registerWindowControlChannels({ ipcMain, isTrustedFrameUrl, windowForSender });
+        return handlers;
+    };
+
+    it('resolves the calling window from the sender, never a captured one', async () => {
+        // Crash recovery replaces the window; a captured reference would keep
+        // driving the destroyed one, so the resolver runs on every call.
+        const window = fakeWindow();
+        const windowForSender = vi.fn((_sender: unknown) => window);
+        const handlers = windowControlHandlers(windowForSender);
+        const frame = { ...APP_FRAME, sender: 'web-contents' };
+
+        await handlers.get(WINDOW_MINIMIZE_CHANNEL)?.(frame);
+
+        expect(windowForSender).toHaveBeenCalledWith('web-contents');
+        expect(window.minimize).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a foreign frame on all four channels before touching a window', () => {
+        const windowForSender = vi.fn((_sender: unknown) => fakeWindow());
+        const handlers = windowControlHandlers(windowForSender);
+
+        expect([...handlers.keys()].sort()).toEqual(
+            [
+                WINDOW_CLOSE_CHANNEL,
+                WINDOW_IS_MAXIMIZED_CHANNEL,
+                WINDOW_MINIMIZE_CHANNEL,
+                WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+            ].sort()
+        );
+        for (const handler of handlers.values()) {
+            expect(() => handler(FOREIGN_FRAME)).toThrow(/not the application/u);
+        }
+        expect(windowForSender).not.toHaveBeenCalled();
+    });
+
+    it('closes the calling window', async () => {
+        const window = fakeWindow();
+        const handlers = windowControlHandlers(() => window);
+
+        await handlers.get(WINDOW_CLOSE_CHANNEL)?.(APP_FRAME);
+
+        expect(window.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('toggles to the opposite state and answers with the resulting one', () => {
+        const restored = fakeWindow(true);
+        const maximized = fakeWindow(false);
+        const handlers = windowControlHandlers(() => restored);
+
+        // The handlers are synchronous; `ipcMain.handle` lifts the return into
+        // the invoke promise at the Electron boundary.
+        expect(handlers.get(WINDOW_TOGGLE_MAXIMIZE_CHANNEL)?.(APP_FRAME)).toBe(false);
+        expect(restored.unmaximize).toHaveBeenCalledTimes(1);
+        expect(restored.maximize).not.toHaveBeenCalled();
+
+        const other = windowControlHandlers(() => maximized);
+        expect(other.get(WINDOW_TOGGLE_MAXIMIZE_CHANNEL)?.(APP_FRAME)).toBe(true);
+        expect(maximized.maximize).toHaveBeenCalledTimes(1);
+        expect(maximized.unmaximize).not.toHaveBeenCalled();
+    });
+
+    it('answers is-maximized with the resolved window state', () => {
+        expect(windowControlHandlers(() => fakeWindow(true)).get(WINDOW_IS_MAXIMIZED_CHANNEL)?.(APP_FRAME)).toBe(true);
+        expect(windowControlHandlers(() => fakeWindow(false)).get(WINDOW_IS_MAXIMIZED_CHANNEL)?.(APP_FRAME)).toBe(
+            false
+        );
+    });
+
+    it('no-ops a sender whose window is gone instead of throwing into a dying renderer', () => {
+        const handlers = windowControlHandlers(() => null);
+
+        expect(handlers.get(WINDOW_MINIMIZE_CHANNEL)?.(APP_FRAME)).toBeUndefined();
+        expect(handlers.get(WINDOW_CLOSE_CHANNEL)?.(APP_FRAME)).toBeUndefined();
+        expect(handlers.get(WINDOW_TOGGLE_MAXIMIZE_CHANNEL)?.(APP_FRAME)).toBe(false);
+        expect(handlers.get(WINDOW_IS_MAXIMIZED_CHANNEL)?.(APP_FRAME)).toBe(false);
     });
 });

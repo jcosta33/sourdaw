@@ -31,6 +31,21 @@
     }
 }
 
+/*
+ * The media query above only matches under the macOS window-controls overlay.
+ * On the frameless Linux build it never matches, so the titlebar row opts into
+ * the same drag contract through an un-gated modifier class instead.
+ */
+.desktop-titlebar-region--frameless {
+    -webkit-app-region: drag;
+    app-region: drag;
+}
+
+.desktop-titlebar-region--frameless :is(a, button, input, label, select, textarea, [role='button'], [tabindex]) {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
 /* ── DAW-specific utilities ────────────────────────────────────────────── */
 @utility panel-raised {
     background: var(--color-bg-panel);

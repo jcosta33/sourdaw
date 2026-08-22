@@ -13,10 +13,16 @@
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
-import { app, BaseWindow, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron';
+import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, session, shell, utilityProcess } from 'electron';
 
-import { registerDialogChannels, registerPathChannels, registerScanCommand, SCAN_COMMAND } from './appIpc.js';
-import { EVENT_CHANNEL, STREAM_CHANNEL } from './channels.js';
+import {
+    registerDialogChannels,
+    registerPathChannels,
+    registerScanCommand,
+    registerWindowControlChannels,
+    SCAN_COMMAND,
+} from './appIpc.js';
+import { EVENT_CHANNEL, STREAM_CHANNEL, WINDOW_MAXIMIZED_CHANGED_CHANNEL } from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
@@ -30,6 +36,8 @@ import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
+
+import type { WebContents } from 'electron';
 
 // Logging must never crash the shell. When stdout or stderr is a closed pipe
 // — a packaged app whose parent went away — every console write raises EPIPE,
@@ -146,6 +154,10 @@ const createWindow = (): BrowserWindow => {
     });
 
     window.once('ready-to-show', () => window.show());
+    // The frameless chrome's maximize button mirrors the native state; each
+    // window reports its own transitions so a recreated window is wired fresh.
+    window.on('maximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, true));
+    window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
     attachWebContentsPolicy(window);
     void window.loadURL(entryUrl);
     return window;
@@ -378,6 +390,14 @@ void app.whenReady().then(() => {
     handleAppProtocol(resolveContentRoots());
     applyPermissionPolicy(session.defaultSession, { allowedOrigins: allowedOrigins() });
 
+    // The frameless Linux chrome draws its own controls; the default
+    // application menu would sit above them as a second, boilerplate title
+    // bar. macOS keeps its menu: editing shortcuts there come from the menu
+    // bar, and its chrome is the overlay, not in-app controls.
+    if (process.platform !== 'darwin') {
+        Menu.setApplicationMenu(null);
+    }
+
     registerDialogChannels({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, dialogs: dialog });
     registerPathChannels({
         ipcMain,
@@ -386,6 +406,17 @@ void app.whenReady().then(() => {
         // also resolves from worker and worklet contexts.
         samplesBaseUrl: `${APP_ORIGIN}/samples`,
         join,
+    });
+    registerWindowControlChannels({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        // The router keeps IPC events structurally untyped so it stays
+        // Electron-free; an invoke event's sender is always a WebContents.
+        // Anything else has no window to drive.
+        windowForSender: (sender) =>
+            typeof sender === 'object' && sender !== null && 'id' in sender
+                ? BrowserWindow.fromWebContents(sender as WebContents)
+                : null,
     });
     startNativeSurface();
 

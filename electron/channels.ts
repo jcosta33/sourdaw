@@ -35,6 +35,14 @@ export const VOICE_DICTATION_START_CHANNEL = 'sourdaw:voice-dictation:start';
 export const VOICE_DICTATION_STOP_CHANNEL = 'sourdaw:voice-dictation:stop';
 export const VOICE_DICTATION_CANCEL_CHANNEL = 'sourdaw:voice-dictation:cancel';
 
+/** Renderer → main, invoke: the frameless window's own controls (Linux chrome). */
+export const WINDOW_MINIMIZE_CHANNEL = 'sourdaw:window:minimize';
+export const WINDOW_TOGGLE_MAXIMIZE_CHANNEL = 'sourdaw:window:toggle-maximize';
+export const WINDOW_CLOSE_CHANNEL = 'sourdaw:window:close';
+export const WINDOW_IS_MAXIMIZED_CHANNEL = 'sourdaw:window:is-maximized';
+/** Main → renderer: the window entered or left the maximized state, as a boolean. */
+export const WINDOW_MAXIMIZED_CHANGED_CHANNEL = 'sourdaw:window:maximized-changed';
+
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
     readonly name: string;
@@ -103,6 +111,12 @@ export type MessageDialogOptions = {
  * answer, would show up as a plugin rendering silence rather than as an error.
  */
 export type SourdawBridge = {
+    /**
+     * The platform the shell runs on (`process.platform`), published
+     * synchronously so the renderer can gate platform chrome — the frameless
+     * Linux window controls — without an async round trip.
+     */
+    readonly platform: string;
     /** Invoke a command whose arguments and result are JSON. */
     invoke: (command: string, args?: readonly unknown[]) => Promise<unknown>;
     /**
@@ -142,5 +156,19 @@ export type SourdawBridge = {
         readonly stop: (sessionId: string) => Promise<void>;
         readonly cancel: (sessionId: string) => Promise<void>;
         readonly listenTerminal: (sessionId: string, callback: (event: string, payload: unknown) => void) => () => void;
+    };
+    /**
+     * The frameless window chrome's controls (Linux). Each call resolves the
+     * calling window in main, so a recreated window is never driven through a
+     * stale reference.
+     */
+    windowControls: {
+        readonly minimize: () => Promise<void>;
+        /** Maximizes or restores; resolves with the resulting maximized state. */
+        readonly toggleMaximize: () => Promise<boolean>;
+        readonly close: () => Promise<void>;
+        readonly isMaximized: () => Promise<boolean>;
+        /** Subscribe to maximize/restore transitions. Returns the unsubscribe function. */
+        readonly listenMaximized: (callback: (maximized: boolean) => void) => () => void;
     };
 };
