@@ -218,4 +218,21 @@ describe('handleReorderDevices Command path', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(undoStore.value?.past).toHaveLength(1);
     });
+
+    it('returns clean success when the same commit superseded the reorder delta', async () => {
+        // The host track left project truth later in this commit, so the chain
+        // this reorder describes is gone and the strip it would reorder is
+        // being torn down by whatever removed the track.
+        configureStoragePort(() => undefined);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'superseded',
+            application: 'not-applied',
+            reason: 'Track audio-1 left project truth before its reorder-device delta was submitted',
+        });
+
+        await expect(executeAppAction(compileRackDrop())).resolves.toBeUndefined();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
 });

@@ -139,6 +139,26 @@ describe('handleLoadExternalPlugin command path', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
+    it('returns clean command success and activates no instance when the delta is superseded', async () => {
+        // The host track left project truth later in this commit. Activating a
+        // native plugin instance onto a strip that is being torn down would
+        // leak the instance, so the whole runtime effect is void — not a
+        // failure demanding manual repair.
+        configureStoragePort(() => undefined);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'superseded',
+            application: 'not-applied',
+            reason: 'Track audio-1 left project truth before its add-device delta was submitted',
+        });
+
+        await expect(
+            executeAppAction({ type: 'loadExternalPlugin', payload: { pluginId: 'plugin-1', trackId: 'audio-1' } })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+    });
+
     it('commits project truth before running the device delta and host activation', async () => {
         const effects: string[] = [];
         configureStoragePort(() => {

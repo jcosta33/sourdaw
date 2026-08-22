@@ -19,6 +19,13 @@ const mocks = vi.hoisted(() => ({
     projectTrackToLiveStrip: vi.fn<typeof projectTrackToLiveStrip>(),
 }));
 
+/** What the delta reports once its host track left project truth mid-commit. */
+const SUPERSEDED_DELTA = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track t1 left project truth before its remove-device delta was submitted',
+};
+
 /** Device ids whose reported latency this removal dropped. */
 function clearedLatencyDeviceIds(): string[] {
     return mocks.clearReportedLatency.mock.calls.map(([deviceId]) => deviceId).sort();
@@ -169,6 +176,80 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+    });
+
+    it('discharges the graph obligation when the delta reports itself superseded', async () => {
+        // Deferred finalization is validated against final project authority. A
+        // grouped undo of "create bus, add device to it" inverts to "remove the
+        // device, then discard the bus", so by the time this runs the host track
+        // is gone and the delta reports itself void rather than stale. That is
+        // not a failure — but every other obligation of this removal still has
+        // to run.
+        const track = {
+            id: 't1',
+            kind: 'audio',
+            devices: [createExternalDevice('d1', 'inst1')],
+        } as unknown as Track;
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(SUPERSEDED_DELTA);
+
+        const result = prepareRemoveDevice('d1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred removal result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null });
+
+        await expect(result.afterCommit()).resolves.toBeUndefined();
+
+        expect(clearedLatencyDeviceIds()).toEqual(['d1']);
+        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+    });
+
+    it('discharges the graph obligation on ambiguous reconciliation too', async () => {
+        const track = {
+            id: 't1',
+            kind: 'audio',
+            devices: [createExternalDevice('d1', 'inst1')],
+        } as unknown as Track;
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(SUPERSEDED_DELTA);
+
+        const result = prepareRemoveDevice('d1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred removal result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null });
+
+        await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
+
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(clearedLatencyDeviceIds()).toEqual(['d1']);
+    });
+
+    it('still fails loudly when a surviving host track rejects the device-chain delta', async () => {
+        // The skip above is keyed on the host track leaving project truth. A
+        // track that is still there and no longer matches the compiled chain is
+        // a genuine mismatch and must keep demanding manual repair.
+        const track = {
+            id: 't1',
+            kind: 'audio',
+            devices: [createExternalDevice('d1', 'inst1')],
+        } as unknown as Track;
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Runtime graph delta does not match the current project topology',
+        });
+
+        const result = prepareRemoveDevice('d1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred removal result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [{ ...track, devices: [] }], selectedTrackId: null });
+
+        await expect(result.afterCommit()).rejects.toThrow('manual repair is required');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
     });
 
     it('does not mask a failed graph removal when ambiguous reconciliation retries it', async () => {

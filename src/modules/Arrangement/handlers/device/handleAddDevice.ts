@@ -6,6 +6,10 @@ import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 import { writeDeviceToProject } from '../../useCases/device/addDevice';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
+import {
+    getRuntimeDeviceDeltaPostCommitFailure,
+    type RuntimeDeviceDeltaPostCommitError,
+} from '../../useCases/device/runtimeDeviceDeltaPostCommit';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { getPlannedTrackState } from '../getPlannedTrackState';
@@ -13,42 +17,11 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type DeviceIndexResolution = { status: 'resolved'; deviceIndex?: number } | { status: 'conflict' };
-type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
-type RuntimeDeviceDeltaFailure = Exclude<
-    RuntimeDeviceDeltaResult,
-    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
->;
 type RuntimeTrackStripInitializationResult = Exclude<ReturnType<typeof projectTrackToLiveStrip>, undefined>;
 type RuntimeTrackStripInitializationFailure = Exclude<
     RuntimeTrackStripInitializationResult,
     Readonly<{ acceptance: 'accepted'; application: 'applied' }>
 >;
-
-class RuntimeDeviceDeltaPostCommitError extends Error {
-    public readonly outcome: RuntimeDeviceDeltaFailure;
-    public readonly remediation: 'retry' | 'repair';
-
-    constructor(outcome: RuntimeDeviceDeltaFailure) {
-        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
-        super(
-            outcome.acceptance === 'rejected'
-                ? `Device runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
-                : `Device runtime delta requires ${remediation} after project commit: ${outcome.reason}`
-        );
-        this.name = 'RuntimeDeviceDeltaPostCommitError';
-        this.outcome = outcome;
-        this.remediation = remediation;
-    }
-}
-
-function getRuntimeDeviceDeltaPostCommitFailure(
-    result: RuntimeDeviceDeltaResult
-): RuntimeDeviceDeltaPostCommitError | undefined {
-    if (result.acceptance === 'accepted' && result.application === 'applied') {
-        return undefined;
-    }
-    return new RuntimeDeviceDeltaPostCommitError(result);
-}
 
 class RuntimeTrackStripInitializationPostCommitError extends Error {
     public readonly outcome: RuntimeTrackStripInitializationFailure;
@@ -233,6 +206,13 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 return;
             }
             const result = applyDeviceChainRuntimeDelta({ before: committedBefore, after, operation: 'add-device' });
+            // The host track left project truth after this delta was compiled —
+            // a later action in the same commit removed it. Nothing is owed:
+            // that action's teardown owns the strip, and the parameter writes
+            // below would target a device on a track that no longer exists.
+            if (result.acceptance === 'superseded') {
+                return;
+            }
             const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
             if (runtimeFailure) {
                 postCommitFailure = runtimeFailure;
