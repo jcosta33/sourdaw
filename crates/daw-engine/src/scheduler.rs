@@ -2868,12 +2868,23 @@ mod tests {
 
         assert_eq!(std::mem::size_of::<ProbabilityEvaluator>(), 0);
         assert_eq!(effect.midi_fx.len(), 0);
-        // The chain's capacity is fixed and inline in the device — no heap is
-        // reserved for it anywhere, so constructing an effect (which the
-        // `AddPlugin` arm does on the audio thread) allocates nothing for it.
+        // The chain starts at its full fixed capacity, which pins the
+        // `Vec::new()` revert: an empty Vec grows on first install, and
+        // installing a MIDI FX happens inside the audio deadline.
         assert_eq!(
             effect.midi_fx.capacity(),
             crate::midi_fx::MIDI_FX_TABLE_CAPACITY
+        );
+        // `capacity()` alone cannot tell the inline table from a
+        // `Vec::with_capacity(8)` — that also reserves heap. The size can:
+        // the table is at least as large as its whole slot array, so the
+        // array lives inline in the device, and constructing an effect
+        // (which the `AddPlugin` arm does on the audio thread) allocates
+        // nothing for the chain.
+        assert!(
+            std::mem::size_of::<MidiFxTable>()
+                >= std::mem::size_of::<[Option<MidiFxSlot>; crate::midi_fx::MIDI_FX_TABLE_CAPACITY]>(
+                )
         );
     }
 

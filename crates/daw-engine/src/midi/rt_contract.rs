@@ -160,7 +160,10 @@ fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
         .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
         .expect("MIDI FX command should fit");
     // The addressed parameter shape: a `MidiFxParam` crosses the ring, not a
-    // name, and the arm applies it without freeing anything.
+    // name, and the arm applies it without freeing anything. The routed rate
+    // is also the observed one: half-beat steps keep the playhead at 0.4
+    // beats inside the first step, where the default 1/16 rate would already
+    // be a step ahead.
     command_tx
         .push(GraphCommand::SetMidiFxParam(7, 0, MidiFxParam::Rate, 0.5))
         .expect("MIDI FX param command should fit");
@@ -179,6 +182,30 @@ fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
     scheduler.update_graph();
     let mut left = [0.0; 4];
     let mut right = [0.0; 4];
+    scheduler.process_block(&mut left, &mut right, 4);
+    scheduler.publish_midi_rt_diagnostics();
+
+    assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        diagnostics_reader
+            .snapshot()
+            .arpeggiator_active_note_exhaustions,
+        1
+    );
+
+    // At 0.4 beats the routed half-beat rate is still on step 0, so this
+    // block publishes nothing. A `SetMidiFxParam` the arm dropped, aimed at
+    // the wrong chain index, or applied to no effect leaves the default
+    // 1/16 rate, whose step 1 began at 0.25 beats: that arp would release
+    // and re-strike the note here, making the total 3.
+    command_tx
+        .push(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            song_pos_beats: 0.4,
+            ..TransportState::default()
+        }))
+        .expect("transport command should fit");
+    scheduler.update_graph();
     scheduler.process_block(&mut left, &mut right, 4);
     scheduler.publish_midi_rt_diagnostics();
 
