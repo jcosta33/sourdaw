@@ -126,7 +126,8 @@ describe('the production Content-Security-Policy', () => {
     });
 
     it('keeps the exact Magenta DDSP egress source aligned with release admission', () => {
-        expect(directives.get('connect-src')?.includes(MAGENTA_DDSP_CSP_SOURCE)).toBe(MODEL_RELEASE_ADMISSION.ddsp);
+        const connectSources = new Set<string>(directives.get('connect-src') ?? []);
+        expect(connectSources.has(MAGENTA_DDSP_CSP_SOURCE)).toBe(MODEL_RELEASE_ADMISSION.ddsp);
     });
 
     it('closes the directives an injected document would reach for', () => {
