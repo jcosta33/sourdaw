@@ -7,10 +7,11 @@ import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBuffe
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 
 beforeEach(async () => {
     vi.resetModules();
-    ({ audioBufferCache } = await import('../audioBufferCache'));
+    ({ audioBufferCache, clearRuntimeAudioBufferCache } = await import('../audioBufferCache'));
 });
 
 function createAudioBuffer({ length, sampleRate }: { length: number; sampleRate: number }): AudioBuffer {
@@ -814,6 +815,137 @@ describe('audioBufferCache conversions', () => {
         }
     });
 
+    it('does not let immediate prepared persistence supersede an occupied ordinary set', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const projectBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        projectBuffer.getChannelData(0)[0] = 0.15;
+        audioBufferCache.set('ordinary-set-collision', projectBuffer);
+        const prepared = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        prepared.getChannelData(0)[0] = 0.95;
+
+        await expect(
+            audioBufferCache.persistPreparedBuffer({ id: 'ordinary-set-collision', buffer: prepared })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is already occupied.',
+        });
+        await flushIndexedDbTasks();
+        expect(audioBufferCache.get('ordinary-set-collision')).toBe(projectBuffer);
+        expect(controls.committed.get('ordinary-set-collision')?.channelData[0]?.[0]).toBeCloseTo(0.15);
+        expect(controls.committedMeta.get('ordinary-set-collision')?.preparedOwner).toBeUndefined();
+    });
+
+    it('keeps temporary prepared PCM out of non-lease restore and export until project promotion', async () => {
+        installFakeAudioIndexedDb();
+        const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        temporary.getChannelData(0)[0] = 0.45;
+        const persisted = await audioBufferCache.persistPreparedBuffer({
+            id: 'temporary-isolation',
+            buffer: temporary,
+        });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected temporary isolation fixture to persist');
+        }
+
+        await expect(audioBufferCache.exportBuffers(['temporary-isolation'])).resolves.toEqual({});
+        clearRuntimeAudioBufferCache();
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            )
+        );
+        const prepared = await audioBufferCache.prepareFromIdb({ context, ids: ['temporary-isolation'] });
+        expect(prepared?.publish()).toBe(0);
+        expect(audioBufferCache.has('temporary-isolation')).toBe(false);
+        await expect(audioBufferCache.restoreFromIdb({ context, ids: ['temporary-isolation'] })).resolves.toBe(0);
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id: 'temporary-isolation',
+                leaseId: persisted.leaseId,
+                context,
+            })
+        ).resolves.toEqual({ status: 'reopened', bufferId: 'temporary-isolation', ownership: 'temporary' });
+
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'temporary-isolation',
+                leaseId: persisted.leaseId,
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+        await expect(audioBufferCache.exportBuffers(['temporary-isolation'])).resolves.toHaveProperty(
+            'temporary-isolation'
+        );
+        clearRuntimeAudioBufferCache();
+        await expect(audioBufferCache.restoreFromIdb({ context, ids: ['temporary-isolation'] })).resolves.toBe(1);
+    });
+
+    it('does not publish prepared runtime PCM after a project-transition clear', async () => {
+        const controls = installFakeAudioIndexedDb();
+        controls.pauseWriteSettlements();
+        const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        temporary.getChannelData(0)[0] = 0.55;
+        const persistence = audioBufferCache.persistPreparedBuffer({ id: 'clear-race', buffer: temporary });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        clearRuntimeAudioBufferCache();
+        controls.releaseNextWriteSettlement();
+        const persisted = await persistence;
+        expect(persisted).toMatchObject({ status: 'persisted', bufferId: 'clear-race' });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected clear-race prepared PCM to remain durable');
+        }
+        expect(audioBufferCache.has('clear-race')).toBe(false);
+        expect(controls.committed.get('clear-race')?.channelData[0]?.[0]).toBeCloseTo(0.55);
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id: 'clear-race',
+                leaseId: persisted.leaseId,
+                context: createTestContext(
+                    vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                        createAudioBuffer({ length, sampleRate })
+                    )
+                ),
+            })
+        ).resolves.toEqual({ status: 'reopened', bufferId: 'clear-race', ownership: 'temporary' });
+    });
+
+    it('does not let prepared discard evict a newer ordinary runtime buffer', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        temporary.getChannelData(0)[0] = 0.25;
+        const persisted = await audioBufferCache.persistPreparedBuffer({ id: 'discard-race', buffer: temporary });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected discard-race prepared PCM to persist');
+        }
+
+        controls.pauseWriteSettlements();
+        const discard = audioBufferCache.releasePreparedBuffer({
+            id: 'discard-race',
+            leaseId: persisted.leaseId,
+            disposition: 'discard',
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        const ordinary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        ordinary.getChannelData(0)[0] = 0.85;
+        audioBufferCache.set('discard-race', ordinary);
+
+        controls.releaseNextWriteSettlement();
+        await expect(discard).resolves.toEqual({ status: 'released', disposition: 'discarded' });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        await flushIndexedDbTasks(2);
+        expect(audioBufferCache.get('discard-race')).toBe(ordinary);
+        expect(controls.committed.get('discard-race')?.channelData[0]?.[0]).toBeCloseTo(0.85);
+        expect(controls.committedMeta.get('discard-race')?.preparedOwner).toBeUndefined();
+    });
+
     it('rejects a settled temporary owner after reload while preserving its lease and exact PCM', async () => {
         const controls = installFakeAudioIndexedDb();
         const original = createAudioBuffer({ length: 1, sampleRate: 48_000 });
@@ -870,19 +1002,12 @@ describe('audioBufferCache conversions', () => {
             await flushIndexedDbTasks(1);
         }
 
-        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
-        replacement.getChannelData(0)[0] = 0.75;
-        const second = audioBufferCache.persistPreparedBuffer({ id: 'reopen-race', buffer: replacement });
-        while (controls.pendingWriteSettlementCount() < 2) {
-            await flushIndexedDbTasks(1);
-        }
+        controls.pauseReadonlySettlements();
         controls.releaseNextWriteSettlement();
         const firstLeaseId = controls.committedMeta.get('reopen-race')?.preparedOwner?.leaseId;
         if (!firstLeaseId) {
             throw new TypeError('Expected the first in-flight owner to commit before its superseding write');
         }
-
-        controls.pauseReadonlySettlements();
         const staleReopen = audioBufferCache.reopenPreparedBuffer({
             id: 'reopen-race',
             leaseId: firstLeaseId,
@@ -892,7 +1017,18 @@ describe('audioBufferCache conversions', () => {
                 )
             ),
         });
+        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        replacement.getChannelData(0)[0] = 0.75;
+        const second = audioBufferCache.persistPreparedBuffer({ id: 'reopen-race', buffer: replacement });
         while (controls.pendingReadonlySettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextReadonlySettlement();
+        await expect(staleReopen).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio reopen was superseded.',
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
             await flushIndexedDbTasks(1);
         }
 
@@ -902,6 +1038,14 @@ describe('audioBufferCache conversions', () => {
         if (persisted.status !== 'persisted') {
             throw new TypeError('Expected replacement prepared PCM to persist');
         }
+        while (controls.pendingReadonlySettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextReadonlySettlement();
+        await expect(first).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio persistence was superseded.',
+        });
         const projectRelease = audioBufferCache.releasePreparedBuffer({
             id: 'reopen-race',
             leaseId: persisted.leaseId,
@@ -913,19 +1057,6 @@ describe('audioBufferCache conversions', () => {
         controls.releaseNextWriteSettlement();
         await expect(projectRelease).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
 
-        while (controls.pendingReadonlySettlementCount() < 2) {
-            await flushIndexedDbTasks(1);
-        }
-        controls.releaseNextReadonlySettlement();
-        controls.releaseNextReadonlySettlement();
-        await expect(first).resolves.toEqual({
-            status: 'failed',
-            reason: 'Prepared audio persistence was superseded.',
-        });
-        await expect(staleReopen).resolves.toEqual({
-            status: 'failed',
-            reason: 'Prepared audio reopen was superseded.',
-        });
         expect(audioBufferCache.get('reopen-race')).toBe(replacement);
         expect(controls.committed.get('reopen-race')?.channelData[0]?.[0]).toBeCloseTo(0.75);
         expect(controls.committedMeta.get('reopen-race')?.preparedOwner?.leaseId).toBe(persisted.leaseId);
@@ -946,11 +1077,10 @@ describe('audioBufferCache conversions', () => {
         const secondBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         secondBuffer.getChannelData(0)[0] = 0.75;
         const second = audioBufferCache.persistPreparedBuffer({ id: 'commit-truth', buffer: secondBuffer });
-        while (controls.pendingWriteSettlementCount() < 2) {
+        controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
             await flushIndexedDbTasks(1);
         }
-
-        controls.releaseNextWriteSettlement();
         controls.releaseNextWriteSettlement();
         const [firstResult, secondResult] = await Promise.all([first, second]);
 
