@@ -62,6 +62,7 @@ const assetTransferMock = vi.hoisted(() => ({
         handleMessage: ReturnType<typeof vi.fn>;
         getAsset: ReturnType<typeof vi.fn>;
         dispose: ReturnType<typeof vi.fn>;
+        releaseStagedAsset: ReturnType<typeof vi.fn>;
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
@@ -164,7 +165,13 @@ vi.mock('../../assetTransfer', () => ({
             onTransferFailed: (hash: string, reason: string) => void;
         }
     ) {
-        const instance = { handleMessage: vi.fn(), getAsset: vi.fn(), dispose: vi.fn(), options };
+        const instance = {
+            handleMessage: vi.fn(),
+            getAsset: vi.fn(),
+            dispose: vi.fn(),
+            releaseStagedAsset: vi.fn(),
+            options,
+        };
         assetTransferMock.instances.push(instance);
         return instance;
     }),
@@ -382,13 +389,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // Dropping the reference alone leaves in-flight transfers holding
         // partial chunk buffers and armed stall timers that fire against a
         // torn-down session.
-        it('disposes the asset transfer before dropping it', () => {
+        it('disposes transport state without releasing durable staged ownership', () => {
             sessionRuntimePrimitives.initialize();
             const assetTransfer = latestAssetTransfer();
 
             sessionRuntimePrimitives.cleanup();
 
             expect(assetTransfer.dispose).toHaveBeenCalledTimes(1);
+            expect(assetTransfer.releaseStagedAsset).not.toHaveBeenCalled();
         });
 
         it('is safe to call when no session is active', () => {

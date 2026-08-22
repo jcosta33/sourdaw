@@ -15,6 +15,14 @@ import {
     type PeerMessage,
 } from '../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../models/SyncChannelConstants';
+import {
+    createDurableAssetRepository,
+    type DurableAssetRepository,
+    type PromoteStagedAssetResult,
+    type ReleaseStagedAssetResult,
+    type ReopenDurableAssetResult,
+    type ReopenStagedAssetResult,
+} from '../repositories/durableAssetRepository';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
 /**
@@ -58,8 +66,6 @@ type AssetTransferCallbacks = {
 type LocalAssetEntry = {
     blob: Blob;
     name: string;
-    durable: boolean;
-    stagingLeaseIds: Set<string>;
 };
 
 /**
@@ -71,10 +77,10 @@ type LocalAssetEntry = {
 export class AssetTransfer {
     private peerManager: PeerConnectionManager;
     private callbacks: AssetTransferCallbacks;
+    private durableAssets: DurableAssetRepository;
 
-    /** Local content store with durable and pending-staging ownership. */
+    /** Disposable resident cache; IndexedDB owns durable bytes and leases. */
     private localAssets = new Map<string, LocalAssetEntry>();
-    private stagingLeaseHashById = new Map<string, string>();
 
     /** In-flight incoming transfers: hash → { chunks, received bitmap } */
     private incomingTransfers = new Map<
@@ -138,9 +144,14 @@ export class AssetTransfer {
      */
     private servingHashesByPeer = new Map<PeerId, Set<string>>();
 
-    constructor(peerManager: PeerConnectionManager, callbacks: AssetTransferCallbacks) {
+    constructor(
+        peerManager: PeerConnectionManager,
+        callbacks: AssetTransferCallbacks,
+        durableAssets: DurableAssetRepository = createDurableAssetRepository()
+    ) {
         this.peerManager = peerManager;
         this.callbacks = callbacks;
+        this.durableAssets = durableAssets;
     }
 
     /**
@@ -161,64 +172,57 @@ export class AssetTransfer {
         this.failedAttempts.clear();
         this.abandonedHashes.clear();
         this.servingHashesByPeer.clear();
+        this.localAssets.clear();
     }
 
     /** Register a local asset (e.g. after recording or importing). */
     async addLocalAsset(blob: Blob, name: string): Promise<string> {
-        const hash = await hashBlob(blob);
-        const existing = this.localAssets.get(hash);
-        if (existing) {
-            existing.durable = true;
-        } else {
-            this.localAssets.set(hash, { blob, name, durable: true, stagingLeaseIds: new Set() });
-        }
-        return hash;
+        const stored = await this.durableAssets.storeDurableAsset(blob, name);
+        this.localAssets.set(stored.hash, { blob: stored.blob, name: stored.name });
+        return stored.hash;
     }
 
     /** Stage an import asset under a unique lease until project commit or cancellation. */
     async stageLocalAsset(blob: Blob, name: string): Promise<{ hash: string; leaseId: string }> {
-        const hash = await hashBlob(blob);
-        const leaseId = `asset-stage-${crypto.randomUUID()}`;
-        const existing = this.localAssets.get(hash);
-        if (existing) {
-            existing.stagingLeaseIds.add(leaseId);
-        } else {
-            this.localAssets.set(hash, { blob, name, durable: false, stagingLeaseIds: new Set([leaseId]) });
-        }
-        this.stagingLeaseHashById.set(leaseId, hash);
-        return { hash, leaseId };
+        const staged = await this.durableAssets.stageAsset(blob, name);
+        this.localAssets.set(staged.hash, { blob: staged.blob, name: staged.name });
+        return { hash: staged.hash, leaseId: staged.leaseId };
     }
 
-    /** Release one unresolved staging reference, deleting only uncommitted unshared data. */
-    releaseStagedAsset(leaseId: string): void {
-        const hash = this.stagingLeaseHashById.get(leaseId);
-        if (!hash) {
-            return;
+    /** Verify and reopen one exact staged original after owner recreation. */
+    async reopenStagedAsset(leaseId: string, expectedHash: string): Promise<ReopenStagedAssetResult> {
+        const result = await this.durableAssets.reopenStagedAsset(leaseId, expectedHash);
+        if (result.status === 'opened') {
+            this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
         }
-        this.stagingLeaseHashById.delete(leaseId);
-        const entry = this.localAssets.get(hash);
-        if (!entry) {
-            return;
-        }
-        entry.stagingLeaseIds.delete(leaseId);
-        if (!entry.durable && entry.stagingLeaseIds.size === 0) {
-            this.localAssets.delete(hash);
-        }
+        return result;
     }
 
-    /** Promote one staging reference to durable project-owned availability. */
-    promoteStagedAsset(leaseId: string): void {
-        const hash = this.stagingLeaseHashById.get(leaseId);
-        if (!hash) {
-            return;
+    /** Verify and reopen one project-owned original after owner recreation. */
+    async reopenLocalAsset(hash: string): Promise<ReopenDurableAssetResult> {
+        const result = await this.durableAssets.reopenDurableAsset(hash);
+        if (result.status === 'opened') {
+            this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
         }
-        this.stagingLeaseHashById.delete(leaseId);
-        const entry = this.localAssets.get(hash);
-        if (!entry) {
-            throw new Error(`Cannot promote missing staged asset lease: ${leaseId}`);
+        return result;
+    }
+
+    /** Release one hash-bound staging reference exactly once. */
+    async releaseStagedAsset(leaseId: string, expectedHash?: string): Promise<ReleaseStagedAssetResult> {
+        const result = await this.durableAssets.releaseStagedAsset(leaseId, expectedHash);
+        if (result.status !== 'failed' && result.assetRemoved) {
+            this.localAssets.delete(result.hash);
         }
-        entry.stagingLeaseIds.delete(leaseId);
-        entry.durable = true;
+        return result;
+    }
+
+    /** Promote one hash-bound staging reference exactly once. */
+    async promoteStagedAsset(leaseId: string, expectedHash?: string): Promise<PromoteStagedAssetResult> {
+        const result = await this.durableAssets.promoteStagedAsset(leaseId, expectedHash);
+        if (result.status !== 'failed') {
+            this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
+        }
+        return result;
     }
 
     /** Check if an asset is available locally. */
@@ -609,12 +613,15 @@ export class AssetTransfer {
                 return;
             }
 
-            this.localAssets.set(hash, {
-                blob,
-                name: transfer.manifest.name,
-                durable: true,
-                stagingLeaseIds: new Set(),
-            });
+            // The immutable Blob was hashed immediately above; carry that
+            // verification into the durable write instead of digesting the
+            // same full-size original a second time.
+            const stored = await this.durableAssets.storeDurableAsset(blob, transfer.manifest.name, actualHash);
+            if (stored.hash !== hash) {
+                this.abortTransfer(hash, `integrity check failed while storing ${stored.hash}`);
+                return;
+            }
+            this.localAssets.set(hash, { blob: stored.blob, name: stored.name });
             this.clearStallTimer(hash);
             this.requestedHashes.delete(hash);
             // The asset resolved, so the hash owes nothing to the retry policy.

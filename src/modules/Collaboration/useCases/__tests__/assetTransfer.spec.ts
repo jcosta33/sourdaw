@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, type Mock } from 'vitest';
 
 import {
     ASSET_CHUNK_SIZE,
@@ -15,6 +15,14 @@ import {
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer, ASSET_TRANSFER_STALL_TIMEOUT_MS } from '../assetTransfer';
+
+import { installFakeDurableAssetIndexedDb, type FakeDurableAssetIndexedDb } from './fakeDurableAssetIndexedDb';
+
+let durableAssetIndexedDb: FakeDurableAssetIndexedDb;
+
+beforeAll(() => {
+    durableAssetIndexedDb = installFakeDurableAssetIndexedDb();
+});
 
 function makePeerManager(): PeerConnectionManager {
     return {
@@ -93,6 +101,7 @@ describe('AssetTransfer', () => {
     let transfer: AssetTransfer;
 
     beforeEach(() => {
+        durableAssetIndexedDb.reset();
         peer = makePeerManager();
         onAssetAvailable = vi.fn<(hash: string) => void>();
         onProgress = vi.fn<(hash: string, receivedChunks: number, totalChunks: number) => void>();
@@ -127,15 +136,140 @@ describe('AssetTransfer', () => {
         expect(transfer.getAsset(existingHash)).toBe(existing);
     });
 
+    it('reopens an exact staged blob after its renderer owner is recreated', async () => {
+        const staged = await transfer.stageLocalAsset(
+            new Blob(['restart-safe-original'], { type: 'audio/wav' }),
+            'restart-safe.wav'
+        );
+        transfer.dispose();
+        vi.resetModules();
+        const { AssetTransfer: FreshAssetTransfer } = await import('../assetTransfer');
+        const freshTransfer = new FreshAssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed });
+
+        const reopened = await freshTransfer.reopenStagedAsset(staged.leaseId, staged.hash);
+        if (reopened.status === 'failed') {
+            throw new Error(`reopen failed: ${reopened.reason}`);
+        }
+
+        expect(reopened).toMatchObject({ status: 'opened', name: 'restart-safe.wav' });
+        expect(await reopened.blob?.text()).toBe('restart-safe-original');
+        freshTransfer.dispose();
+    });
+
     it('does not delete a committed duplicate when an earlier staging owner is cancelled', async () => {
         const first = await transfer.stageLocalAsset(new Blob(['same-content']), 'first.wav');
         const second = await transfer.stageLocalAsset(new Blob(['same-content']), 'second.wav');
         expect(second.hash).toBe(first.hash);
 
-        transfer.promoteStagedAsset(second.leaseId);
-        transfer.releaseStagedAsset(first.leaseId);
+        await transfer.promoteStagedAsset(second.leaseId, second.hash);
+        await transfer.releaseStagedAsset(first.leaseId, first.hash);
 
         expect(transfer.hasAsset(second.hash)).toBe(true);
+    });
+
+    it('fails closed for unknown, mismatched, and missing durable lease bindings', async () => {
+        const staged = await transfer.stageLocalAsset(new Blob(['bound-original']), 'bound.wav');
+
+        await expect(transfer.reopenStagedAsset(staged.leaseId, 'sha256:not-the-staged-hash')).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-hash-mismatch',
+        });
+        await expect(transfer.promoteStagedAsset('asset-stage-unknown', staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'unknown-lease',
+        });
+        await expect(transfer.releaseStagedAsset('asset-stage-unknown', staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'unknown-lease',
+        });
+
+        durableAssetIndexedDb.deleteAsset(staged.hash);
+        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'missing-asset',
+        });
+
+        const corrupted = await transfer.stageLocalAsset(new Blob(['corrupt-binding']), 'corrupt.wav');
+        durableAssetIndexedDb.overwriteLeaseHash(corrupted.leaseId, 'sha256:different-record');
+        await expect(transfer.reopenStagedAsset(corrupted.leaseId, corrupted.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-hash-mismatch',
+        });
+
+        const unbound = await transfer.stageLocalAsset(new Blob(['missing-backlink']), 'unbound.wav');
+        durableAssetIndexedDb.unlinkLeaseFromAsset(unbound.leaseId, unbound.hash);
+        await expect(transfer.releaseStagedAsset(unbound.leaseId, unbound.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'corrupt-record',
+        });
+
+        const tampered = await transfer.stageLocalAsset(new Blob(['verified-bytes']), 'tampered.wav');
+        durableAssetIndexedDb.overwriteAssetBlob(tampered.hash, new Blob(['different-bytes']));
+        await expect(transfer.reopenStagedAsset(tampered.leaseId, tampered.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'stored-hash-mismatch',
+        });
+    });
+
+    it('keeps promoted original bytes after session teardown and owner recreation', async () => {
+        const staged = await transfer.stageLocalAsset(new Blob(['project-owned']), 'project.wav');
+
+        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'promoted',
+            hash: staged.hash,
+        });
+        transfer.dispose();
+        vi.resetModules();
+        const { AssetTransfer: FreshAssetTransfer } = await import('../assetTransfer');
+        const freshTransfer = new FreshAssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed });
+
+        const reopened = await freshTransfer.reopenLocalAsset(staged.hash);
+        expect(reopened).toMatchObject({ status: 'opened', hash: staged.hash, name: 'project.wav' });
+        expect(reopened.status === 'opened' ? await reopened.blob.text() : null).toBe('project-owned');
+        freshTransfer.dispose();
+    });
+
+    it('releases exactly once and deletes only uncommitted unshared bytes', async () => {
+        const first = await transfer.stageLocalAsset(new Blob(['shared-staging']), 'first.wav');
+        const second = await transfer.stageLocalAsset(new Blob(['shared-staging']), 'second.wav');
+
+        await expect(transfer.releaseStagedAsset(first.leaseId, first.hash)).resolves.toMatchObject({
+            status: 'released',
+            assetRemoved: false,
+        });
+        await expect(transfer.reopenStagedAsset(second.leaseId, second.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+        await expect(transfer.releaseStagedAsset(second.leaseId, second.hash)).resolves.toMatchObject({
+            status: 'released',
+            assetRemoved: true,
+        });
+        await expect(transfer.releaseStagedAsset(second.leaseId, second.hash)).resolves.toEqual({
+            status: 'already-released',
+            leaseId: second.leaseId,
+            hash: second.hash,
+            assetRemoved: true,
+        });
+        await expect(transfer.reopenStagedAsset(second.leaseId, second.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-terminal-conflict',
+        });
+    });
+
+    it('promotes exactly once without letting release undo committed ownership', async () => {
+        const staged = await transfer.stageLocalAsset(new Blob(['commit-once']), 'committed.wav');
+
+        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'promoted',
+        });
+        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'already-promoted',
+        });
+        await expect(transfer.releaseStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-terminal-conflict',
+        });
+        await expect(transfer.reopenLocalAsset(staged.hash)).resolves.toMatchObject({ status: 'opened' });
     });
 
     it('requestAsset broadcasts an asset.request message', () => {
