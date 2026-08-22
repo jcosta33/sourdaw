@@ -1,0 +1,47 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_f140e2c815fffc 297,955
+  s_2d507d809e6ffa::t_f096496a3c2350 10
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_70b7ed2890a6a0 322
+  s_0a3429e31e555d::t_f75183e0ced35a 9
+  s_0a3429e31e555d::t_f140e2c815fffc 961,973
+  s_0a3429e31e555d::t_216473ede97cad 300-304,318-321,374-376,382-384,387-391,569-571,576-578,580-582
+src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts
+  s_0a3429e31e555d::t_216473ede97cad 2
+crates/daw-dsp/benches/wasm/renderTable.d.mts
+  s_0a3429e31e555d::t_ac6da62d6459f3 1-5
+src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts
+  s_0a3429e31e555d::t_216473ede97cad 4
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_c2b9b7032ede28 681,709-711
+src/modules/GrandBoule/handlers/__tests__/handleSetGrandBouleDeviceState.spec.ts
+  s_0a3429e31e555d::t_cb6b7216ac4e2f 51-58,63,86
+src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts
+  s_0a3429e31e555d::t_216473ede97cad 4
+src/modules/GrandBoule/models/__tests__/projectGrandBouleMorphState.spec.ts
+  s_0a3429e31e555d::t_216473ede97cad 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "37d6e1e92233798b360ca082f21817b164027423",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_2d507d809e6ffa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a02b8b-c3c5-7a20-be23-4240f0ff63a3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
