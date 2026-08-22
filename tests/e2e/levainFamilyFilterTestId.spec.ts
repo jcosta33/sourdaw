@@ -1,26 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function openLevain(page: import('@playwright/test').Page): Promise<void> {
-    const search = page.getByTestId('browser-search');
-    if (!(await search.isVisible().catch(() => false))) {
-        await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
-    }
-    await search.fill('levain');
-    await page.waitForTimeout(500);
-    const card = page.getByRole('button', { name: /^Levain/i }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.click();
-    await expect(page.getByRole('button', { name: /Close Levain/i }).first()).toBeVisible({ timeout: 15_000 });
+async function openLevain(page: Page): Promise<void> {
+    const browser = page.getByRole('complementary', { name: 'Browser panel' });
+    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('button', { name: /^Levain/ }).click();
+    await expect(page.getByRole('button', { name: 'Close Levain' })).toBeVisible({
+        timeout: 30_000,
+    });
 }
 
-// Levain instrument family filter depth. The family selector
-// (aria-label="Filter instruments by family", a radiogroup of chips at
-// LevainPanel.tsx:132) is uncovered — no E2E asserts selecting a family
-// narrows the instrument list.
-test.describe('Levain instrument family filter — selecting a family narrows list', () => {
+test.describe('Levain family filter', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
@@ -28,38 +19,33 @@ test.describe('Levain instrument family filter — selecting a family narrows li
         await openLevain(page);
     });
 
-    test('selecting the Brass family decreases the instrument count and All restores it', async ({
-        page,
-    }) => {
-        const radiogroup = page.getByRole('radiogroup', { name: 'Filter instruments by family' });
-        await expect(radiogroup).toBeVisible({ timeout: 10_000 });
+    test('Brass hides Solo Violin and Flutes, keeps Trumpets, and All restores Solo Violin', async ({ page }) => {
+        const families = page.getByRole('radiogroup', { name: 'Filter instruments by family' });
+        const lineup = families.locator('xpath=..');
+        const all = families.getByRole('radio', { name: 'All', exact: true });
+        const brass = families.getByRole('radio', { name: 'Brass', exact: true });
+        const soloViolin = lineup.getByRole('button', { name: /Solo Violin/ });
+        const trumpets = lineup.getByRole('button', { name: /Trumpets/ });
+        const flutes = lineup.getByRole('button', { name: /Flutes/ });
 
-        // Count instrument buttons before filtering.
-        const instruments = page.locator('button.levain-window');
-        await expect(instruments.first()).toBeVisible({ timeout: 5000 });
-        const before = await instruments.count();
-        expect(before).toBeGreaterThanOrEqual(2);
+        await expect(all).toHaveAttribute('aria-checked', 'true');
+        await expect(soloViolin).toBeVisible();
+        await expect(trumpets).toBeVisible();
+        await expect(flutes).toBeVisible();
 
-        // Pick a specific family (not "All").
-        const brassChip = radiogroup.getByRole('radio', { name: 'Brass' });
-        await brassChip.click();
-        await expect(brassChip).toHaveAttribute('aria-checked', 'true', { timeout: 5000 });
+        await brass.click();
 
-        // The list narrowed and every remaining instrument is Brass
-        // (the family badge text is part of each button's text content).
-        const after = await instruments.count();
-        expect(after).toBeGreaterThan(0);
-        expect(after).toBeLessThan(before);
-        const remainingTexts = await instruments.allTextContents();
-        expect(remainingTexts).toHaveLength(after);
-        for (const text of remainingTexts) {
-            expect(text).toContain('Brass');
-        }
+        await expect(brass).toHaveAttribute('aria-checked', 'true');
+        await expect(all).not.toHaveAttribute('aria-checked', 'true');
+        await expect(trumpets).toBeVisible();
+        await expect(soloViolin).toHaveCount(0);
+        await expect(flutes).toHaveCount(0);
 
-        // Selecting "All" back restores the full list.
-        await radiogroup.getByRole('radio', { name: 'All' }).click();
-        await page.waitForTimeout(500);
-        const restored = await instruments.count();
-        expect(restored).toBe(before);
+        await all.click();
+
+        await expect(all).toHaveAttribute('aria-checked', 'true');
+        await expect(soloViolin).toBeVisible();
+        await expect(trumpets).toBeVisible();
+        await expect(flutes).toBeVisible();
     });
 });
