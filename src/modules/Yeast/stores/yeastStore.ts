@@ -14,8 +14,8 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
-import { type Store } from '#/infra/store/types';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { type Store } from '#/infra/store/types';
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type YeastState } from '../models/YeastState';

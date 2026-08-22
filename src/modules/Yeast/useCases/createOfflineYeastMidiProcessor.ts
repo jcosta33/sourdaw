@@ -1,7 +1,7 @@
 import { createOfflineYeastRuntime } from '../engine/createOfflineYeastRuntime';
 import { type TransportInfo } from '../models/MidiEvent';
-import { type YeastProcessorInfo } from '../models/YeastState';
 import { type YeastProcessorProjection } from '../models/YeastProcessorProjection';
+import { type YeastProcessorInfo } from '../models/YeastState';
 import { readYeastRackForTrack } from '../stores/yeastStore';
 
 import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';

@@ -68,6 +68,23 @@ export function eslintEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
     return { ...source, NODE_OPTIONS: `${current} --max-old-space-size=${ESLINT_HEAP_MIB}`.trim() };
 }
 
+/**
+ * Both linters run single-file-at-a-time by default here, and that default is
+ * an agent-session ceiling rather than a property of the work: a lane shares
+ * its machine with every other lane and with the resource guard's reservations.
+ * CI has neither constraint, and the eslint leg is the longest single check in
+ * the fast lane, so it is the one worth giving the cores.
+ *
+ * `SOURDAW_LINT_CONCURRENCY` takes `off`, `auto`, or a worker count.
+ */
+export function lintConcurrency(source: NodeJS.ProcessEnv = process.env): string {
+    return source.SOURDAW_LINT_CONCURRENCY ?? 'off';
+}
+
+export function lintThreads(source: NodeJS.ProcessEnv = process.env): string {
+    return source.SOURDAW_LINT_THREADS ?? '2';
+}
+
 function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process.env): void {
     const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
     if (result.error !== undefined) {
@@ -87,7 +104,7 @@ function main(): number {
             'exec',
             'oxlint',
             '--quiet',
-            '--threads=2',
+            `--threads=${lintThreads()}`,
             '--format=agent',
             ...(options.fix ? ['--fix'] : []),
             ...targets,
@@ -98,7 +115,7 @@ function main(): number {
                 'exec',
                 'eslint',
                 '--quiet',
-                '--concurrency=off',
+                `--concurrency=${lintConcurrency()}`,
                 '--cache',
                 '--cache-location',
                 'node_modules/.cache/eslint/',
