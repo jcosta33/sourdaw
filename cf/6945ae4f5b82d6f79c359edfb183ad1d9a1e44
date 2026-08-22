@@ -1,0 +1,20 @@
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_96a3c1658f1b2a 165
+  s_27578aec2aab3b::t_ba2b531431c8e4 166-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "cf6945ae4f5b82d6f79c359edfb183ad1d9a1e44",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
