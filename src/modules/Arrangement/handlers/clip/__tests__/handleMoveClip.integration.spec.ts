@@ -17,6 +17,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -31,6 +32,7 @@ const noActionHistoryMetadataPort = {
 
 describe('handleMoveClip atomic integration', () => {
     beforeEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('move clip atomic integration');
         removeCrdtDoc('root');
@@ -76,6 +78,7 @@ describe('handleMoveClip atomic integration', () => {
     });
 
     afterEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

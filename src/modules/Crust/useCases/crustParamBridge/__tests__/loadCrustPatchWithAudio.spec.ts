@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     })),
     trackStore: {
         value: { tracks: [{ id: 'track-1', devices: [{ id: 'device-1', type: 'crust' }] }] },
+        subscribe: vi.fn(() => () => undefined),
     },
 }));
 const { updateDeviceParam, persistDeviceParam } = mocks;

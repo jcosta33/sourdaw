@@ -43,14 +43,14 @@ describe('DawInlineHint — children and className', () => {
 });
 
 describe('DawPluginReadoutList — density variants', () => {
-    it('default density is default (space-y-2)', () => {
+    it('default density uses gap-2', () => {
         const { container } = render(<DawPluginReadoutList>X</DawPluginReadoutList>);
-        expect((container.firstChild as HTMLElement).className).toContain('space-y-2');
+        expect((container.firstChild as HTMLElement).className).toContain('gap-2');
     });
 
-    it('density=tight uses space-y-1', () => {
+    it('density=tight uses gap-1', () => {
         const { container } = render(<DawPluginReadoutList density="tight">X</DawPluginReadoutList>);
-        expect((container.firstChild as HTMLElement).className).toContain('space-y-1');
+        expect((container.firstChild as HTMLElement).className).toContain('gap-1');
     });
 
     it('renders children', () => {

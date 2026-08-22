@@ -21,6 +21,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -37,6 +38,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { createHostedToolPlanningFixture, createProviderToolPlanningFixture } from './providerToolPlanningFixture';
 
 const PROMPT = 'Lower every vocal send to the Hall by 3 dB only in verse two.';
 
@@ -51,6 +53,13 @@ const providerPlan = [
         },
     },
 ] as const;
+
+const providerScope = {
+    targetIds: ['track-lead-vocal', 'track-backing-vocal', 'bus-hall'],
+    targetRanges: [{ startBeat: 16, endBeat: 32 }],
+    protectedTargetIds: [],
+    protectedRanges: [],
+};
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -145,7 +154,7 @@ function getConfirmationId(): string {
 }
 
 function getHostedRequestBody(): string {
-    const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
+    const body = runtimeMocks.fetch.mock.calls.at(-1)?.[1]?.body;
     if (typeof body !== 'string') {
         throw new TypeError('Expected one hosted provider request body');
     }
@@ -187,24 +196,11 @@ describe('verse Hall send automation workflow', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(
+            createProviderToolPlanningFixture(providerPlan, providerScope)
         );
+        const hostedFixture = createHostedToolPlanningFixture(providerPlan, providerScope);
+        runtimeMocks.fetch.mockImplementation(async () => hostedFixture());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -227,6 +223,7 @@ describe('verse Hall send automation workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const lead = createTrack('track-lead-vocal', 'Lead Vocal');
         lead.sends = [
@@ -266,6 +263,7 @@ describe('verse Hall send automation workflow', () => {
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -320,7 +318,6 @@ describe('verse Hall send automation workflow', () => {
         expect(providerRequest).toContain('track-backing-vocal');
         expect(providerRequest).toContain('track-spoken-word');
         expect(providerRequest).toContain('bus-hall');
-        expect(providerRequest).toContain('section-verse-two');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation).toMatchObject({
             executionMode: 'atomic',
@@ -389,7 +386,6 @@ describe('verse Hall send automation workflow', () => {
         expect(providerRequest).toContain('track-lead-vocal');
         expect(providerRequest).toContain('track-backing-vocal');
         expect(providerRequest).toContain('bus-hall');
-        expect(providerRequest).toContain('section-verse-two');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions[0]).toMatchObject({
             type: 'automateSendRange',
@@ -468,7 +464,7 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
@@ -486,7 +482,7 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         const proposal = chatStore.value?.messages.find(

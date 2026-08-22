@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
-import { afterEach, test } from 'node:test';
+import { dirname, resolve } from 'node:path';
+import { afterEach, test } from 'vitest';
+import { fileURLToPath } from 'node:url';
 
 import WebSocket, { type RawData } from 'ws';
 
@@ -17,6 +19,7 @@ const processes = new Set<ChildProcessWithoutNullStreams>();
 const sockets = new Set<WebSocket>();
 const stderrByProcess = new Map<ChildProcessWithoutNullStreams, string>();
 const AUTH_TOKEN = 'test-collaboration-token-32-bytes';
+const serverDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 async function getFreePort(): Promise<number> {
     const server = createServer();
@@ -37,7 +40,7 @@ function spawnServer(env: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
               ]
             : [];
     const process = spawn(globalThis.process.execPath, [...clockImport, '--import', 'tsx', 'collab-server.ts'], {
-        cwd: globalThis.process.cwd(),
+        cwd: serverDirectory,
         env: {
             ...globalThis.process.env,
             COLLAB_AUTH_TOKEN: AUTH_TOKEN,
