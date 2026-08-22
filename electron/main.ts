@@ -392,9 +392,10 @@ void app.whenReady().then(() => {
 
     // The frameless Linux chrome draws its own controls; the default
     // application menu would sit above them as a second, boilerplate title
-    // bar. macOS keeps its menu: editing shortcuts there come from the menu
-    // bar, and its chrome is the overlay, not in-app controls.
-    if (process.platform !== 'darwin') {
+    // bar. Only Linux is frameless: macOS keeps its menu because editing
+    // shortcuts there come from the menu bar, and Windows keeps its native
+    // chrome, menu included.
+    if (process.platform === 'linux') {
         Menu.setApplicationMenu(null);
     }
 

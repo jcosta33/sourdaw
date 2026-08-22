@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     close: vi.fn<() => Promise<void>>(),
     isMaximized: vi.fn<() => Promise<boolean>>(),
     listenMaximized: vi.fn<(callback: (maximized: boolean) => void) => () => void>(),
+    unsubscribeMaximized: vi.fn<() => void>(),
 }));
 
 vi.mock('../../../../useCases/windowChrome', () => ({
@@ -40,7 +41,7 @@ describe('WindowControls', () => {
         mocks.toggleMaximize.mockResolvedValue(true);
         mocks.close.mockResolvedValue(undefined);
         mocks.isMaximized.mockResolvedValue(false);
-        mocks.listenMaximized.mockReturnValue(() => undefined);
+        mocks.listenMaximized.mockReturnValue(mocks.unsubscribeMaximized);
     });
 
     it('renders nothing off the frameless chrome', () => {
@@ -104,5 +105,17 @@ describe('WindowControls', () => {
         });
 
         expect(await screen.findByRole('button', { name: 'Restore window' })).toBeInTheDocument();
+    });
+
+    it('unsubscribes from maximize transitions exactly once on unmount', () => {
+        mocks.frameless = true;
+        const { unmount } = renderWithTooltip();
+
+        expect(mocks.listenMaximized).toHaveBeenCalledTimes(1);
+        expect(mocks.unsubscribeMaximized).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(mocks.unsubscribeMaximized).toHaveBeenCalledTimes(1);
     });
 });

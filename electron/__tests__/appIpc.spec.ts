@@ -288,8 +288,11 @@ describe('the origin guard on every non-command channel', () => {
 
 describe('the window controls', () => {
     const fakeWindow = (initiallyMaximized = false): WindowControlTarget => {
-        // Stateful like the real BrowserWindow: maximize/unmaximize move the
-        // state isMaximized then reports.
+        // Synchronously stateful — a simplification, not the real contract:
+        // real window managers apply maximize asynchronously, so isMaximized
+        // right after maximize() is not guaranteed. The authoritative state
+        // sync is the maximized-changed event; this fake only needs the toggle
+        // handler's read-back to be observable.
         let maximized = initiallyMaximized;
         return {
             minimize: vi.fn(),
