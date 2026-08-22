@@ -1,0 +1,63 @@
+src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.spec.ts
+  s_a40848e8f8cca9::t_f70545ac29842f 32,37-45
+  s_a40848e8f8cca9::t_52aecd585b8b5d 1-31,33-36,46-47
+  s_a40848e8f8cca9::t_720b5596291f8c 48-49
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_a40848e8f8cca9::t_3852b1d24c7e0e 23,50,89
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_a40848e8f8cca9::t_8db779c74862dc 24
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_a40848e8f8cca9::t_3852b1d24c7e0e 24,91,143
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_a40848e8f8cca9::t_3852b1d24c7e0e 20,35,81
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_a40848e8f8cca9::t_932d94c42c65db 24,157,226,266,467,485
+  s_a40848e8f8cca9::t_e164e2d9e7d3dc 41,199-200,202-203
+  s_a40848e8f8cca9::t_a5b251552207ff 57-63
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_a40848e8f8cca9::t_8db779c74862dc 193
+src/modules/Crust/useCases/crustParamBridge/__tests__/setCrustParamWithAudio.spec.ts
+  s_a40848e8f8cca9::t_59d2c6847fed16 19
+src/modules/CrdtDocument/useCases/projection/__tests__/projectMixStateSlots.spec.ts
+  s_a40848e8f8cca9::t_8db779c74862dc 30
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_a40848e8f8cca9::t_3852b1d24c7e0e 25,56,74
+src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.ts
+  s_a40848e8f8cca9::t_159253a540225c 12,16-18,32,52,54
+  s_a40848e8f8cca9::t_957476c7742977 14-15
+  s_a40848e8f8cca9::t_e164e2d9e7d3dc 49-51,53,55-73
+  s_a40848e8f8cca9::t_d979b973458b12 1-11,13,19-31,33-48
+src/modules/AiGeneration/presentations/views/__tests__/PatternBrowser.spec.tsx
+  s_a40848e8f8cca9::t_8db779c74862dc 48
+server/__tests__/collab-server.spec.ts
+  s_a40848e8f8cca9::t_b188f02a42daad 5,7,22,43
+  s_a40848e8f8cca9::t_c2f7d4ad72536c 6
+src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.integration.spec.ts
+  s_a40848e8f8cca9::t_3852b1d24c7e0e 20,34,52
+src/components/daw/__tests__/DawSmallLayoutComponents.spec.tsx
+  s_a40848e8f8cca9::t_1eefd8477f5c5d 46,48,51,53
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_a40848e8f8cca9::t_1eefd8477f5c5d 259,270
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_a40848e8f8cca9::t_8db779c74862dc 32
+package.json
+  s_a40848e8f8cca9::t_7c299cb9ec7dbc 123,152
+pnpm-lock.yaml
+  s_a40848e8f8cca9::t_2d4da57e3e0016 141-143,228-230,2541-2543,2916,5564-5575,7794-7797,11204-11205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0a6c76b24ab4a949ef46aa8c01abc2ea497495f1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
