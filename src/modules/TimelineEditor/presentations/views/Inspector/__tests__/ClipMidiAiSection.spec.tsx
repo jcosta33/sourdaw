@@ -981,6 +981,26 @@ describe('ClipMidiAiSection — DDSP instrument preview', () => {
         expect(renderQueueStore.value?.phraseStatusMap['ddsp-clip-a-ddsp']).toBe('stale');
     });
 
+    it('clears a completed preview and stales its canonical phrase after a mounted source change', async () => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'note', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        renderQueueStore.set({
+            entries: [],
+            cachedPhraseIds: [],
+            phraseStatusMap: { 'ddsp-clip-a-ddsp': 'preview' },
+        });
+        vi.mocked(renderDdspInstrument).mockResolvedValue(renderOutput());
+
+        render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+        await screen.findByTestId('ai-render-preview');
+
+        act(() => transportStore.set({ ...defaultTransportState, tempo: 90 }));
+
+        expect(screen.queryByTestId('ai-render-preview')).not.toBeInTheDocument();
+        expect(renderQueueStore.value?.phraseStatusMap['ddsp-clip-a-ddsp']).toBe('stale');
+    });
+
     it('drops a request during the source-change commit before its pending render settles', async () => {
         setRegistry();
         publishNotes({ [clipA.id]: [{ id: 'note', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
