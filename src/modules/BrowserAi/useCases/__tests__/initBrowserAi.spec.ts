@@ -162,6 +162,27 @@ describe('initBrowserAi', () => {
         expect(modelRegistryStore.value?.vocoder).toBeNull();
     });
 
+    it('keeps the DDSP registry empty without readiness probes when release admission is disabled', async () => {
+        release_gate.ddsp = false;
+        const check_ddsp_instrument_ready = vi.fn();
+        const with_ddsp_instrument_lock = vi.fn();
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: vi.fn().mockResolvedValue(false),
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
+            withDdspInstrumentLock: with_ddsp_instrument_lock,
+        });
+
+        await initBrowserAi();
+
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual([]);
+        expect(check_ddsp_instrument_ready).not.toHaveBeenCalled();
+        expect(with_ddsp_instrument_lock).not.toHaveBeenCalled();
+    });
+
     it('should mark only shared-lock-verified DDSP generations ready at startup', async () => {
         release_gate.ddsp = true;
         const check_ddsp_instrument_ready = vi.fn(async ({ id }: { id: string }) => id === 'ddsp-violin');
