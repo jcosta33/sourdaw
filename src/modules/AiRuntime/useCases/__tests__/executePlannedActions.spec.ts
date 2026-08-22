@@ -184,6 +184,29 @@ describe('executePlannedActions', () => {
         });
     });
 
+    it('forwards the commit-prepared observer to the authoritative Command boundary', async () => {
+        const receipt = idempotentReplayResult('committed').receipt;
+        const onProjectCommitPrepared = vi.fn();
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async (input) => {
+            input.onProjectCommitPrepared?.();
+            return {
+                status: 'committed',
+                actions: [{ action, label: 'Toggle playback' }],
+                receipt,
+            };
+        });
+
+        await executePlannedActions({
+            commandBatch,
+            prompt: 'Mute vocals',
+            actions: [action],
+            projectRevision: 'revision-1',
+            onProjectCommitPrepared,
+        });
+
+        expect(onProjectCommitPrepared).toHaveBeenCalledOnce();
+    });
+
     it.each([
         ['no-op', { status: 'no-op' }],
         ['cancelled', { status: 'cancelled' }],

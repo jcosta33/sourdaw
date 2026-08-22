@@ -72,6 +72,7 @@ import { createModelProviderProtocol } from './modelProviderProtocol';
 import { planAgentRun } from './planAgentRun';
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { planPromptActions } from './planPromptActions';
+import { recordAgentProviderUsage } from './recordAgentProviderUsage';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
@@ -180,56 +181,6 @@ function trySettleAgentRunWorkLease(
     } catch {
         return { accepted: true, warning: AGENT_RUN_PERSISTENCE_WARNING };
     }
-}
-
-function recordModelProviderUsage(
-    runId: string,
-    result: ModelProviderResult,
-    budgetAttemptId: string,
-    options: { terminal: boolean } = { terminal: false }
-): void {
-    const executor: RunnableAiBackend = result.provider === 'webllm' ? 'webllm' : 'cloud';
-    const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
-    const existingAttempt = agentRunLifecycle
-        .get(runId)
-        ?.budgetAttempts.some((attempt) => attempt.attemptId === budgetAttemptId);
-    if (!existingAttempt) {
-        agentRunLifecycle.reserveBudget({
-            runId,
-            attemptId: budgetAttemptId,
-            category: getProviderBudgetCategory(executor),
-            estimate: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
-            provenance: result.usage.provenance,
-        });
-    }
-    agentRunLifecycle.recordProviderUsage({
-        runId,
-        usage: {
-            provider: result.provider,
-            model: result.model,
-            inputTokens: result.usage.inputTokens,
-            outputTokens: result.usage.outputTokens,
-            cachedInputTokens: result.usage.cachedInputTokens,
-            provenance: result.usage.provenance,
-            correlationId: result.correlationId,
-            status: result.status,
-            retryable: result.failure?.retryable ?? null,
-            partialOutputDisposition: result.partialOutputDisposition,
-            routeId,
-            executor,
-            ...(result.remoteDisclosure ? { disclosure: result.remoteDisclosure } : {}),
-            fallbackReason:
-                options.terminal || result.status === 'complete' ? null : (result.failure?.code ?? result.status),
-        },
-    });
-    const consumed = (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0);
-    agentRunLifecycle.reconcileBudgetAttempt({
-        runId,
-        attemptId: budgetAttemptId,
-        consumed,
-        mode: 'final',
-        provenance: result.usage.provenance,
-    });
 }
 
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
@@ -371,7 +322,7 @@ export async function sendChatMessage(
                 prompt: userText,
                 signal: aborter.signal,
                 onProviderResult: (providerResult) => {
-                    recordModelProviderUsage(runId, providerResult, providerResult.correlationId);
+                    recordAgentProviderUsage(runId, providerResult, providerResult.correlationId);
                 },
                 streamIdentity: {
                     runId,
@@ -515,7 +466,7 @@ export async function sendChatMessage(
                         requireProviderProposal: result.executionMode === 'atomic',
                     });
                     if (plannedRun.status === 'needs-user-decision') {
-                        createStemImportConfirmationResourceLease(result.actions)?.release();
+                        createStemImportConfirmationResourceLease(runId, result.actions)?.release();
                         agentRunLifecycle.requireManualResume({
                             runId,
                             reason: plannedRun.decision.reason,
@@ -565,7 +516,7 @@ export async function sendChatMessage(
                         plan: plannedRun.plan,
                     });
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    createStemImportConfirmationResourceLease(runId, result.actions)?.release();
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: `Planned without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
@@ -632,7 +583,7 @@ export async function sendChatMessage(
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();
-                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    createStemImportConfirmationResourceLease(runId, result.actions)?.release();
                     agentRunLifecycle.requireManualResume({
                         runId,
                         reason: plannedRun.decision.reason,
@@ -752,7 +703,7 @@ export async function sendChatMessage(
                         throw new Error(`Agent preview work could not be claimed: ${previewLeaseResult.status}`);
                     }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'previewing', revision: projectRevision });
-                    const resourceLease = createStemImportConfirmationResourceLease(result.actions);
+                    const resourceLease = createStemImportConfirmationResourceLease(runId, result.actions);
                     const releasePreviewCancellation = agentRunCancellation.bindAbortController({
                         runId,
                         lease: previewLeaseResult.lease,
@@ -856,7 +807,10 @@ export async function sendChatMessage(
                         groupId: commandGroup.groupId,
                         groupLabel: commandGroup.groupLabel,
                         projectRevision,
-                        resourceLease: createStemImportConfirmationResourceLease(result.actions),
+                        resourceLease: createStemImportConfirmationResourceLease(runId, result.actions, {
+                            batchId: parsedCommandBatch.envelope.batchId,
+                            commandBatch,
+                        }),
                     });
                     if (!confirmation) {
                         const reason = 'Prepared action resources exceed the live confirmation limit.';
@@ -1620,7 +1574,7 @@ export async function sendChatMessage(
             receiptIdentity: providerLease.receiptIdentity,
             terminalState: 'completed',
         });
-        recordModelProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
+        recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
         providerUsageRecorded = true;
         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
@@ -1656,7 +1610,7 @@ export async function sendChatMessage(
             );
         }
         if (providerResult && !providerUsageRecorded) {
-            recordModelProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
+            recordAgentProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
             providerUsageRecorded = true;
         }
         if (configurationChanged) {

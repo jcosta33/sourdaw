@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     releasePreviewAudioBuffer: vi.fn(),
     releaseStagedAsset: vi.fn(),
+    getVersionedCommandBatchIdempotentReplay: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -13,6 +14,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { agentRunCancellation } from '../../cancelAgentRun';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
 import { preparedStemImportResources } from '../registerPreparedStemImportResources';
 
@@ -67,5 +69,213 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
+    });
+
+    it('discards uncommitted stem resources and clears their run-owned records', async () => {
+        agentRunLifecycle.create({
+            runId: 'stem-discarded',
+            request: 'Import stems.',
+            mode: 'plan',
+            createdRevision: 'r1',
+        });
+        preparedStemImportResources.register({ runId: 'stem-discarded', stems });
+
+        await preparedStemImportResources.discard({ runId: 'stem-discarded', stems });
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
+        expect(agentRunLifecycle.get('stem-discarded')?.temporaryAssets).toEqual([]);
+
+        expect(() => preparedStemImportResources.register({ runId: 'stem-discarded', stems })).not.toThrow();
+        preparedStemImportResources.release({ runId: 'stem-discarded', stems });
+        expect(agentRunLifecycle.get('stem-discarded')?.temporaryAssets).toEqual([]);
+    });
+
+    it.each(['discard', 'transfer'] as const)(
+        'retains protected stems after cancellation until explicit %s recovery settles ownership once',
+        async (recovery) => {
+            const runId = `stem-protected-${recovery}`;
+            agentRunLifecycle.create({
+                runId,
+                request: 'Import stems.',
+                mode: 'plan',
+                createdRevision: 'r1',
+            });
+            preparedStemImportResources.register({ runId, stems });
+            preparedStemImportResources.protect({ runId, stems });
+
+            await expect(
+                agentRunCancellation.cancel({ runId, reason: 'Abort during post-commit effects.' })
+            ).resolves.toMatchObject({
+                status: 'cancelled',
+                cleanupPendingAssetIds: ['decoded-buffer-1'],
+                releasedAssetIds: [],
+            });
+
+            expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([
+                expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'cleanup-pending' }),
+            ]);
+            await expect(deleteAgentRunArtifacts(runId)).resolves.toEqual({
+                status: 'partial',
+                deletedAssetIds: [],
+                failedAssetIds: ['decoded-buffer-1'],
+            });
+            expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+
+            if (recovery === 'discard') {
+                await preparedStemImportResources.discard({ runId, stems });
+                expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+                expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
+            } else {
+                preparedStemImportResources.release({ runId, stems });
+                expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+                expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+            }
+
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+            await expect(deleteAgentRunArtifacts(runId)).resolves.toEqual({
+                status: 'completed',
+                deletedAssetIds: [],
+                failedAssetIds: [],
+            });
+            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(recovery === 'discard' ? 1 : 0);
+            expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(recovery === 'discard' ? 1 : 0);
+        }
+    );
+
+    it.each([
+        { receiptOutcome: 'committed', settlement: 'transferred', physicalDeletes: 0 },
+        { receiptOutcome: 'failed', settlement: 'discarded', physicalDeletes: 1 },
+    ] as const)(
+        'settles retained exact stems once as $settlement from a proven $receiptOutcome Command receipt',
+        async ({ receiptOutcome, settlement, physicalDeletes }) => {
+            const runId = `stem-recovery-${receiptOutcome}`;
+            const batchId = `batch-${receiptOutcome}`;
+            const commandBatch = { authority: {} as never, serialized: `serialized-${receiptOutcome}` };
+            agentRunLifecycle.create({
+                runId,
+                request: 'Import stems.',
+                mode: 'plan',
+                createdRevision: 'r1',
+            });
+            preparedStemImportResources.register({ runId, stems });
+            preparedStemImportResources.protect({
+                runId,
+                stems,
+                recovery: { batchId, commandBatch },
+            });
+            preparedStemImportResources.retainForRecovery({ runId, stems });
+            expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([
+                {
+                    schemaVersion: 1,
+                    batchId,
+                    serializedCommandBatch: commandBatch.serialized,
+                    resources: [{ audioBufferId: 'decoded-buffer-1', assetLeaseId: 'staged-asset-1' }],
+                },
+            ]);
+            mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
+                schemaVersion: 1,
+                runId,
+                batchId,
+                outcome: receiptOutcome,
+                links: { render: [], analysis: [] },
+                warnings: [],
+                errors: [],
+                modelSummary: receiptOutcome,
+            });
+
+            const settlements = await Promise.all([
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                }),
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                }),
+            ]);
+
+            expect(settlements).toEqual([{ status: settlement }, { status: settlement }]);
+            await expect(
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                })
+            ).resolves.toEqual({ status: 'missing' });
+
+            expect(mocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledOnce();
+            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(physicalDeletes);
+            expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(physicalDeletes);
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+            expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        }
+    );
+
+    it.each([
+        { label: 'missing', receipt: null },
+        {
+            label: 'mismatched',
+            receipt: {
+                schemaVersion: 1,
+                runId: 'different-run',
+                batchId: 'different-batch',
+                outcome: 'committed',
+                links: { render: [], analysis: [] },
+                warnings: [],
+                errors: [],
+                modelSummary: 'mismatched',
+            },
+        },
+    ])('retains exact recovery ownership for a $label receipt until later proof settles it', async ({ receipt }) => {
+        const runId = `stem-recovery-${receipt ? 'mismatched' : 'missing'}`;
+        const batchId = `batch-${runId}`;
+        const commandBatch = { authority: {} as never, serialized: `serialized-${runId}` };
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems });
+        preparedStemImportResources.protect({ runId, stems, recovery: { batchId, commandBatch } });
+        preparedStemImportResources.retainForRecovery({ runId, stems });
+        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce(receipt);
+
+        await expect(
+            preparedStemImportResources.reconcile({
+                runId,
+                batchId,
+                getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+            })
+        ).resolves.toEqual({ status: 'retained' });
+        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'cleanup-pending' }),
+        ]);
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toHaveLength(1);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+
+        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
+            schemaVersion: 1,
+            runId,
+            batchId,
+            outcome: 'failed',
+            links: { render: [], analysis: [] },
+            warnings: [],
+            errors: ['not committed'],
+            modelSummary: 'not committed',
+        });
+        await expect(
+            preparedStemImportResources.reconcile({
+                runId,
+                batchId,
+                getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+            })
+        ).resolves.toEqual({ status: 'discarded' });
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
     });
 });

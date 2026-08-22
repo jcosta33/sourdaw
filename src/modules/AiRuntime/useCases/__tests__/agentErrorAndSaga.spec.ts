@@ -107,7 +107,7 @@ describe('agent error and saga contract', () => {
         ).toBe(false);
     });
 
-    it('persists and recovers every committed or uncompensated external step without a false clean success', () => {
+    it('persists and recovers every committed or uncompensated external step without a false clean success', async () => {
         agentRunLifecycle.create({
             runId: 'run-saga',
             request: 'Render and analyze.',
@@ -157,7 +157,9 @@ describe('agent error and saga contract', () => {
             }).status
         ).toBe('claimed');
 
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 3 })).toEqual({ recoveredRunIds: ['run-saga'] });
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 3 })).resolves.toEqual({
+            recoveredRunIds: ['run-saga'],
+        });
         expect(getAgentRunSagaProjection('run-saga')).toMatchObject([
             { stepId: 'command:1', state: 'committed', receiptIdentity: 'receipt-1' },
             { stepId: 'render:1', state: 'manual-repair', compensation: { available: false } },
@@ -169,7 +171,7 @@ describe('agent error and saga contract', () => {
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('"saga"');
     });
 
-    it('does not complete or skip recovery when a receipt still has external saga work', () => {
+    it('does not complete or skip recovery when a receipt still has external saga work', async () => {
         agentRunLifecycle.create({
             runId: 'run-terminal-pending-saga',
             request: 'Render the chorus.',
@@ -199,7 +201,7 @@ describe('agent error and saga contract', () => {
         });
 
         expect(agentRunLifecycle.get('run-terminal-pending-saga')?.phase).not.toBe('completed');
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 4 })).toEqual({
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 4 })).resolves.toEqual({
             recoveredRunIds: ['run-terminal-pending-saga'],
         });
         expect(getAgentRunSagaProjection('run-terminal-pending-saga')).toMatchObject([
