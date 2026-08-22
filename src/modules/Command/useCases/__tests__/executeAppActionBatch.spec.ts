@@ -38,6 +38,11 @@ const mocks = vi.hoisted(() => ({
     recordActionHistoryMetadata: vi.fn(() => []),
     commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
+    // Reached only through the barrel's import graph — `sessionManagement`
+    // subscribes to `branchStore`, `automergeSync` reads `actionHistoryStore` —
+    // never by this spec's own subject. They stand still so the graph resolves.
+    branchStore: { value: null, subscribe: vi.fn(() => vi.fn()) },
+    actionHistoryStore: { value: null, subscribe: vi.fn(() => vi.fn()) },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -45,6 +50,9 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
+    branchStore: mocks.branchStore,
+    actionHistoryStore: mocks.actionHistoryStore,
+    MAIN_BRANCH_ID: 'main',
 }));
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {
