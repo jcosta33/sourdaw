@@ -30,24 +30,25 @@ sources:
 
 ADR 0030 correctly required evidence for each distributed model artifact and withheld the WebLLM
 stack because the exact MLC conversion repositories had no repository-level `LICENSE` metadata.
-The three cards identify the official Qwen 1.7B, 4B, and 8B models that they convert to MLC format.
-Those Qwen models publish Apache-2.0 licenses. Apache-2.0 defines object form to include mechanical
-transformation or conversion, and grants reproduction, derivative works, and distribution in source
-or object form.
+The three cards attribute their conversions to Qwen 1.7B, 4B, and 8B models. Immutable candidate
+revisions for those Qwen model families publish Apache-2.0 licenses. That attribution and those
+licensed candidates support the accepted admission decision, but do not establish which exact
+checkpoint revision each conversion used.
 
 The MLC conversion repositories do not map the converted artifacts to exact base-checkpoint
-revisions. Immutable Qwen revisions establish licensed candidate source and license text, but are not
-claimed as exact conversion inputs. The MLC/WebLLM runtime is also Apache-2.0.
+revisions. Immutable Qwen revisions establish licensed candidates, but not the conversions' exact
+Qwen source/license chain or build inputs. The MLC/WebLLM runtime is Apache-2.0.
 
 The admitted WebGPU modules are byte-identical to files in binary-mlc-llm-libs merge
 `025bcaf3780fa8254f5e5efd3bfea0a5397248f4`. Its merged PR 165 attests MLC-LLM
 `2008fe8343e1f40ef89ee57b9287aebcf1b86c98` and Apache TVM
-`bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as source revisions. Those source revisions are
-Apache-2.0 and contain the notices and TVM attribution closure shipped with Sourdaw. PR 165 does not
-record an exact emsdk revision, resolved build configuration, or build log. The release manifest
-pins the exact conversion revisions and verifies every downloaded artifact's byte count and SHA-256
-before caching or inference, but the upstream record does not support a claim of hermetic
-reproduction or complete build-input provenance.
+`bc1a904ec1ad89454ee6577d66cde1268b8f6bc8` as source revisions. Sourdaw ships MLC-LLM's exact
+notice and TVM's exact root license, notice, and every file in the license/notice trees referenced by
+that root license. PR 165 does not record an exact emsdk revision, resolved build configuration, or
+build log. The release manifest pins the exact conversion revisions and verifies every downloaded
+artifact's byte count and SHA-256 before caching or inference, but the upstream record does not
+support a claim of exact Qwen checkpoint provenance, hermetic reproduction, or complete build-input
+provenance.
 
 ## Decision
 
@@ -62,8 +63,9 @@ Admit only these exact WebLLM Qwen MLC conversions:
 The corresponding immutable licensed Qwen candidate revisions are
 `70d244cc86ccca08cf5af4e1e306ecf908b1ad5e` (1.7B),
 `1cfa9a7208912126459214e8b04321603b3df60c` (4B), and
-`b968826d9c46dd6066d109eabc6255188de91218` (8B). They are license/source evidence, not an
-assertion that the upstream conversions used those exact checkpoints.
+`b968826d9c46dd6066d109eabc6255188de91218` (8B). Together with the conversion cards' attribution,
+they support the accepted admission decision; they do not prove that the upstream conversions used
+those exact checkpoints or establish an exact Qwen source/license chain.
 
 The admitted WebGPU modules remain exactly:
 
@@ -78,10 +80,10 @@ explicit WebLLM selection remains exclusive: absent WebGPU it is unavailable and
 a hosted provider. Automatic mode also fails closed when WebLLM is unavailable; hosted providers
 require an explicit selection.
 
-Every web and desktop release carries the Apache-2.0 text and Qwen attribution, the exact-revision
-MLC-LLM and TVM notices, and TVM's exact license and bundled third-party attribution closure under
+Every web and desktop release carries the Apache-2.0 text and Qwen attribution, MLC-LLM's
+exact-revision notice, and TVM's exact root license, notice, and referenced license/notice trees under
 `public/legal/`. The release must preserve the pinned revisions, generated manifest, artifact-set
-digests, and byte/hash verification. The absent checkpoint mapping and complete build inputs remain
+digests, and byte/hash verification. The unproven exact Qwen chain and incomplete build inputs remain
 accepted residual evidence gaps, not admission blockers.
 
 This partially supersedes ADR 0030 only for the WebLLM Qwen conversion withholding decision. ADR
@@ -93,7 +95,7 @@ This partially supersedes ADR 0030 only for the WebLLM Qwen conversion withholdi
   WebGPU.
 - WebLLM downloads only the admitted manifest artifacts and verifies them before use.
 - No native inference path or hosted fallback is introduced.
-- The decision proves admitted artifact identity and its Apache source/license chain, not hermetic
-  rebuildability from fully enumerated inputs.
+- The decision proves admitted artifact identity and records the named runtime-source legal
+  materials; it does not prove the exact Qwen source/license chain or hermetic rebuildability.
 - Any new model family, conversion, revision, digest, or conflicting provenance evidence requires
   separate admission evidence; this decision does not lower that requirement.

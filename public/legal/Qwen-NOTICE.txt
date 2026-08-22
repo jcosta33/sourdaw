@@ -6,10 +6,11 @@ Sourdaw can download the following pinned MLC-format Qwen conversions for browse
 - mlc-ai/Qwen3-4B-q4f16_1-MLC at a5c9fab855e3ccbdfed2e7e69683d75f30332161
 - mlc-ai/Qwen3-8B-q4f16_1-MLC at b3d55c289eae58f77095f5b68c895eeea358ee09
 
-Each MLC model card identifies its Qwen 1.7B, 4B, or 8B source model. The upstream Qwen models are
-copyright 2024 Alibaba Cloud and are licensed under the Apache License, Version 2.0. Their immutable
-license revisions are listed below. The complete license text is distributed as
-public/legal/Apache-2.0.txt.
+Each MLC model card attributes its conversion to a Qwen 1.7B, 4B, or 8B model. The immutable Qwen
+candidate revisions listed below are copyright 2024 Alibaba Cloud and publish the Apache License,
+Version 2.0. That attribution and those licensed candidates support Sourdaw's accepted admission
+decision, but do not prove which exact checkpoint revision each conversion used. The complete
+Apache-2.0 text is distributed as public/legal/Apache-2.0.txt.
 
 Sources:
 
@@ -21,5 +22,5 @@ https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC/tree/a5c9fab855e3ccbdfed2e7e6
 https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC/tree/b3d55c289eae58f77095f5b68c895eeea358ee09
 
 The MLC conversion repositories do not map their conversions to exact base-checkpoint revisions.
-The immutable Qwen revisions above establish licensed source candidates, not the exact build inputs
-for these conversions.
+The immutable Qwen revisions above are licensed candidates, not a proven source/license chain or the
+exact build inputs for these conversions.

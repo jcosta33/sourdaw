@@ -48,7 +48,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0032](0032-withhold-grand-boule-from-release.md)                   | Preserve Grand Boule but withhold it from released product paths                                                                        |
 | [0033](0033-grand-boule-string-soundboard-boundary.md)              | Make Grand Boule string-modal derivation and soundboard resonance independently explicit                                                |
 | [0034](0034-grand-boule-native-only-wasm-contract.md)               | Keep Grand Boule native-only at the daw-dsp WASM boundary                                                                               |
-| [0035](0035-admit-webllm-qwen-conversions-under-apache-2.0.md)      | Admit byte-pinned WebLLM Qwen conversions with the Apache chain and an accepted non-hermetic provenance gap                             |
+| [0035](0035-admit-webllm-qwen-conversions-under-apache-2.0.md)      | Admit byte-pinned WebLLM Qwen conversions with runtime notices and accepted checkpoint/build provenance gaps                            |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
