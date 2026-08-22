@@ -285,6 +285,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/utils/handlerContract.ts', 'export type Action = unknown;'],
         ['src/modules/Command/useCases/versionedCommandArgumentKeys.ts', 'export const keys = [];'],
         ['src/modules/Arrangement/useCases/index.ts', 'export const arrangement = 1;'],
+        ['src/modules/Arrangement/useCases/device/setDeviceState.ts', 'export const setDeviceState = 1;'],
         ['src/app/prepareOfflineDeviceSetup.ts', 'export const offline = 1;'],
         ['src/modules/AudioEngine/useCases/buildDeviceChain.ts', 'export const chain = 1;'],
         ['src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts', 'export const prepare = 1;'],
@@ -910,6 +911,7 @@ describe('release inventory', () => {
             expect(before.releaseModes).toEqual(['source', 'web', 'desktop']);
             expect(before.paths).toEqual(GRAND_BOULE_RELEASE_REGISTRY.boundaries.flatMap(({ paths }) => [...paths]));
             expect(before.paths).toContain('src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts');
+            expect(before.paths).toContain('src/modules/Arrangement/useCases/device/setDeviceState.ts');
             expect(before.paths).toContain('src/infra/release/deviceReleaseAdmission.ts');
             expect(before.paths).toContain('src/modules/AudioEngine/worklets/grandBoule*.ts');
             expect(before.paths).not.toContain('src/modules/AudioEngine/worklets/**');
@@ -942,6 +944,7 @@ describe('release inventory', () => {
                 'src/modules/GrandBoule/models/GrandBouleConfig.ts',
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
+                'src/modules/Arrangement/useCases/device/setDeviceState.ts',
                 'src/app/prepareOfflineDeviceSetup.ts',
                 'crates/daw-dsp/benches/quantum.rs',
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',

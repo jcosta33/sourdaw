@@ -57,8 +57,10 @@ ADR records no separate conclusion about implementations outside the exact shipp
 
 ## Decision
 
-Readmit Grand Boule to source, browser, and desktop releases with the modal soundboard replaced by a
-fixed finite feed-forward FIR body. The body owns warm/open stereo kernels, each formed from twelve
+Technically admit Grand Boule to source, browser, and desktop implementation and release reachability
+with the modal soundboard replaced by a fixed finite feed-forward FIR body. Public source, web, and
+desktop distribution remains blocked until OS-10 installs the project grant recorded by the release
+inventory. The body owns warm/open stereo kernels, each formed from twelve
 two-tap delay stages with deterministic unequal delays and signs. It has no feedback, recursive
 filter, oscillator, modal-frequency table, damping table, or partial-indexed body data, and reaches
 exact silence after a bounded 1-1.5 second impulse tail.
@@ -128,8 +130,8 @@ from string coefficients, output level, and allocation freedom with the FIR tail
 
 - ADR 0032's withholding decision and ADR 0034's native-only WASM decision are superseded.
 - ADR 0033 is superseded; its historical body remains as context for the architecture it described.
-- Grand Boule is release-reachable on web and desktop under the project-source grant recorded by
-  the release inventory.
+- Grand Boule implementation and web/desktop release reachability are technically admitted, while
+  public source, web, and desktop distribution remains blocked pending `OS-10-project-grant`.
 - This is an engineering design-around record for the exact implementation and claim text reviewed.
   It is not a legal opinion, a patent-status conclusion, or certainty about future claims,
   jurisdictions, or differently configured systems.

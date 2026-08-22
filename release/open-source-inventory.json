@@ -666,6 +666,7 @@
                 "src/modules/GrandBoule/**",
                 "src/modules/Command/useCases/versionedCommandArgumentKeys.ts",
                 "src/modules/Arrangement/useCases/index.ts",
+                "src/modules/Arrangement/useCases/device/setDeviceState.ts",
                 "src/app/bootstrap.ts",
                 "src/app/getProductionCommandHandlerMaps.ts",
                 "src/utils/handlerContract.ts",
@@ -700,13 +701,13 @@
             ],
             "digests": [
                 "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
-                "tracked-set-sha256:a35da9a5010b35d6e8efb4f727ae2bdb82cefdcc74d9ebca29f67f96a28be5c8:grand-boule-admission-decision",
+                "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
-                "tracked-set-sha256:2d4b32be7355fc9e0c4b1c8c4480cd055da6ae79b34dadf37066dcbfd3850267:grand-boule-project-state",
+                "tracked-set-sha256:35432361fe0409c31ecb56e7c379865bda5928fd3ccb7ff033336462c15f32d9:grand-boule-project-state",
                 "tracked-set-sha256:3707375707b26f2d1b256521af91f71e40c8db6316ea82a0b328a61a2e0fad0b:grand-boule-offline-composition",
-                "tracked-set-sha256:e380c1badf499d7cbfe3a13e258c208632b84dd0141ca8dcd0bf49d265d7573f:grand-boule-release-proof"
+                "tracked-set-sha256:8df68c6b869affa9b2c9de61cdd027638df9753f68a82a560e6c7ceb575fc183:grand-boule-release-proof"
             ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
