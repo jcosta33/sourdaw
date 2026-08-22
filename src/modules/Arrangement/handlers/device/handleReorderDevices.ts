@@ -6,42 +6,15 @@ import { type Track } from '../../models/Track';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import { reorderDevicesInProject } from '../../useCases/device/reorderDevices';
+import {
+    getRuntimeDeviceDeltaPostCommitFailure,
+    type RuntimeDeviceDeltaPostCommitError,
+} from '../../useCases/device/runtimeDeviceDeltaPostCommit';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { runtimeGraphTopology } from '../../useCases/runtimeGraphTopology';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 type ReorderDevicesAction = Extract<AppAction, { type: 'reorderDevices' }>;
-type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
-type RuntimeDeviceDeltaFailure = Exclude<
-    RuntimeDeviceDeltaResult,
-    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
->;
-
-class RuntimeDeviceDeltaPostCommitError extends Error {
-    public readonly outcome: RuntimeDeviceDeltaFailure;
-    public readonly remediation: 'retry' | 'repair';
-
-    constructor(outcome: RuntimeDeviceDeltaFailure) {
-        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
-        super(
-            outcome.acceptance === 'rejected'
-                ? `Device runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
-                : `Device runtime delta requires ${remediation} after project commit: ${outcome.reason}`
-        );
-        this.name = 'RuntimeDeviceDeltaPostCommitError';
-        this.outcome = outcome;
-        this.remediation = remediation;
-    }
-}
-
-function getRuntimeDeviceDeltaPostCommitFailure(
-    result: RuntimeDeviceDeltaResult
-): RuntimeDeviceDeltaPostCommitError | undefined {
-    if (result.acceptance === 'accepted' && result.application === 'applied') {
-        return undefined;
-    }
-    return new RuntimeDeviceDeltaPostCommitError(result);
-}
 
 function getUniqueCurrentTrack(trackId: string): Track | null {
     const owners = (getTrackStoreState()?.tracks ?? []).filter((track) => track.id === trackId);
@@ -152,9 +125,14 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
             if (postCommitFailure) {
                 throw postCommitFailure;
             }
-            const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(
-                applyDeviceChainRuntimeDelta({ before, after, operation: 'reorder-device' })
-            );
+            const result = applyDeviceChainRuntimeDelta({ before, after, operation: 'reorder-device' });
+            // A later action in this same commit removed the host track, so the
+            // chain this reorder describes no longer exists in project truth and
+            // the strip it would reorder is being torn down by that action.
+            if (result.acceptance === 'superseded') {
+                return;
+            }
+            const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
             if (runtimeFailure) {
                 postCommitFailure = runtimeFailure;
                 throw postCommitFailure;

@@ -5,6 +5,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { type AppAction, type DeviceSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleLoadPreset } from '../handleLoadPreset';
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'project-1'),
     findPresetById: vi.fn(),
     getTrackStrip: vi.fn<() => unknown>(() => ({})),
+    hasLiveProjectHostTrack: vi.fn(() => true),
     getTrackStoreState: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
     matchesMaterializedPresetDevices: vi.fn(() => true),
@@ -36,6 +38,10 @@ vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
 
+vi.mock('../../../useCases/device/hasLiveProjectHostTrack', () => ({
+    hasLiveProjectHostTrack: mocks.hasLiveProjectHostTrack,
+}));
+
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
@@ -53,6 +59,17 @@ vi.mock('../../../useCases/updateTrack', () => ({
 }));
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
+
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const supersededPresetDelta: DeviceChainRuntimeDeltaSuperseded = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track track-1 left project truth before its replace-device-chain delta was submitted',
+};
 
 const oldDevice: DeviceSnapshot = {
     id: 'old-device',
@@ -366,6 +383,32 @@ describe('handleLoadPreset', () => {
             }
         }
     );
+
+    it('returns clean Command success when the same commit superseded the replacement delta', async () => {
+        // The host track left project truth later in this commit, so the chain
+        // this preset would install is gone with it.
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(supersededPresetDelta);
+        registerHandlerMap({ loadPreset: handleLoadPreset });
+
+        await expect(executeAppAction(action())).resolves.toBeUndefined();
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('does not initialize a strip for a track the same commit removed', async () => {
+        // The no-live-strip branch never consults project truth, so without its
+        // own guard it happily builds a strip for a track that no longer
+        // exists — an orphan nothing owns or tears down.
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.hasLiveProjectHostTrack.mockReturnValue(false);
+        registerHandlerMap({ loadPreset: handleLoadPreset });
+
+        await expect(executeAppAction(action())).resolves.toBeUndefined();
+
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
 
     it('returns clean Command success only after the runtime replacement applies and parameters follow', async () => {
         registerHandlerMap({ loadPreset: handleLoadPreset });
