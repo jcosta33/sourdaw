@@ -1,0 +1,19 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_417119f18c7cc9 42,426,506
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "518aa3e99324988ad3ed098ea2d05fcd3424ec96",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
