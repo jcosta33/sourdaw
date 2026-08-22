@@ -64,6 +64,9 @@ export function createDefaultGrandBouleState(): GrandBouleState {
 export const defaultGrandBouleState: GrandBouleState = createDefaultGrandBouleState();
 
 const storesByDevice = new Map<string, ReturnType<typeof createStore<GrandBouleState>>>();
+const storeCreatedListeners = new Set<
+    (deviceId: string, store: ReturnType<typeof createStore<GrandBouleState>>) => void
+>();
 
 export function createGrandBouleStore(deviceId: string) {
     let store = storesByDevice.get(deviceId);
@@ -72,8 +75,21 @@ export function createGrandBouleStore(deviceId: string) {
             initialData: createDefaultGrandBouleState(),
         });
         storesByDevice.set(deviceId, store);
+        for (const listener of storeCreatedListeners) {
+            listener(deviceId, store);
+        }
     }
     return store;
+}
+
+export function subscribeToGrandBouleStoreCreation(
+    listener: (deviceId: string, store: ReturnType<typeof createStore<GrandBouleState>>) => void
+): () => void {
+    storeCreatedListeners.add(listener);
+    for (const [deviceId, store] of storesByDevice) {
+        listener(deviceId, store);
+    }
+    return () => storeCreatedListeners.delete(listener);
 }
 
 /** @deprecated Use createGrandBouleStore(deviceId) instead. Shim for backwards compatibility. */

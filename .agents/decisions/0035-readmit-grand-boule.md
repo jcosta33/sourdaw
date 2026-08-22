@@ -69,9 +69,32 @@ soundboard property. These families are labelled as project tuning rather than m
 published instrument data. Standard temperament, MIDI, equal-temperament, and ordinary piano-range
 facts remain ordinary engineering inputs.
 
-Replace unmeasured brand-specific morph labels and newly written IDs with neutral product voicings.
-Legacy IDs remain accepted only to load existing serialized projects and resolve immediately to the
-neutral voicing records.
+Replace unmeasured brand-specific morph labels and IDs with neutral product voicings. Morph state
+was never persisted before this decision, so branded aliases have no compatibility duty and are not
+accepted by the product or its project-state reader.
+
+## Source Admission Record
+
+Admission date: 2026-08-22. Actor and owner: Sourdaw team, OS-10. This record admits the following
+project-authored tuning families: hammer stiffness, hammer exponent, hammer mass, inharmonicity B,
+smooth stretch, deterministic note variation, and prompt/aftersound polarization decay; it also
+admits the four neutral product voicings. Allowed inputs are equal temperament, MIDI note/range,
+the current key index, frequency derived from that key, ordinary numeric operations, and the
+explicit neutral voicing values below. Excluded inputs are all prior measured literals and tables,
+named instrument data, brand labels, bridge-admittance or body values, and the removed branded
+aliases.
+
+| Admitted result                                                                    | Inputs and derivation                                                                                                                                                                        | Resulting data                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hammer stiffness/exponent, mass, inharmonicity, smooth stretch, and note variation | `key` is normalized across the 88-key range and evaluated only by the project formulas in `parameters.rs`; frequency is `key_fundamental_hz(key)`.                                           | The scalar coefficients emitted by `StringParameters::for_key`; no measured instrument table is read.                                                                                                                                   |
+| Prompt and aftersound polarization decay                                           | `register = clamp(log2(frequency / 27.5) / log2(4186.01 / 27.5), 0, 1)`; `prompt_hz = 0.58 + 0.72*register + 7.2*register^2.4`; `aftersound_hz = 0.012 + 0.025*register + 0.105*register^2`. | Frequency-only decay coefficients in `coupled_strings.rs`; no bridge or soundboard value is an input.                                                                                                                                   |
+| Neutral voicings                                                                   | Explicit product tuples in `GrandBouleMorphState.ts`, in order: hardness, mass, brightness, sympathetic level, body resonance, tone color.                                                   | `balanced-grand` = `(0.92, 1.08, 0.48, 0.58, 0.52, -0.08)`; `mellow-grand` = `(0.72, 1.25, 0.32, 0.74, 0.82, -0.58)`; `clear-grand` = `(1.34, 0.82, 0.78, 0.36, 0.42, 0.56)`; `singing-grand` = `(1.12, 0.94, 0.68, 0.66, 0.57, 0.28)`. |
+
+The decisive checks are the exact source-shape and legacy-literal rejections in
+`scripts/checkReleaseInventory.ts`, the coefficient-isolation test in `engine.rs` covering every
+body-only control at initial note-on and mid-note decay reset, the native/browser 64-voice benchmark
+census, and the pinned tracked-source digests in the `grand-boule` release-inventory row. Those
+checks pin admitted bytes and reject known legacy literals; they do not, and cannot, prove authorship.
 
 The release checker pins the FIR source shape, project-tuning provenance label, neutral visible
 voicing IDs, complete release reachability, exact tracked-source digests, and generated WASM

@@ -54,11 +54,11 @@ describe('findPianoModelById', () => {
         expect(findPianoModelById('does-not-exist')).toBeUndefined();
     });
 
-    it('maps legacy serialized ids to neutral product voicings', () => {
-        expect(findPianoModelById('steinway-d')?.id).toBe('balanced-grand');
-        expect(findPianoModelById('bosendorfer-imperial')?.id).toBe('mellow-grand');
-        expect(findPianoModelById('yamaha-cfx')?.id).toBe('clear-grand');
-        expect(findPianoModelById('fazioli-f308')?.id).toBe('singing-grand');
+    it('rejects removed branded aliases', () => {
+        expect(findPianoModelById('steinway-d')).toBeUndefined();
+        expect(findPianoModelById('bosendorfer-imperial')).toBeUndefined();
+        expect(findPianoModelById('yamaha-cfx')).toBeUndefined();
+        expect(findPianoModelById('fazioli-f308')).toBeUndefined();
     });
 
     it('returns undefined for an empty string id', () => {

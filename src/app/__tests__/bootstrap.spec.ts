@@ -280,7 +280,10 @@ vi.mock('#/modules/Gluten/stores', () => ({
     deleteGlutenMeters: noop,
 }));
 
-vi.mock('#/modules/GrandBoule/useCases', () => ({ setGrandBouleEventBus: noop }));
+vi.mock('#/modules/GrandBoule/useCases', () => ({
+    initGrandBouleDeviceStatePersistence: () => noop,
+    setGrandBouleEventBus: noop,
+}));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
 

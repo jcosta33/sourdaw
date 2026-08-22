@@ -173,12 +173,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
                 { id: 'singing-grand', name: 'Singing Grand', hammerHardnessScale: 1.12, hammerMassScale: 0.94, soundboardBrightness: 0.68, sympatheticLevel: 0.66, bodyResonance: 0.57, toneColor: 0.28
                 },
             ];
-            const LEGACY_LOAD_ALIASES = {
-                'steinway-d': 'balanced-grand',
-                'bosendorfer-imperial': 'mellow-grand',
-                'yamaha-cfx': 'clear-grand',
-                'fazioli-f308': 'singing-grand',
-            };`,
+            `,
         ],
         [
             'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
@@ -310,6 +305,10 @@ describe('release inventory', () => {
                 )
             );
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('legacy branded tuple');
+
+            writeGrandBouleReleaseFixture(root);
+            writeFileSync(voicingsPath, `${readFileSync(voicingsPath, 'utf8')}\nconst oldId = 'steinway-d';\n`);
+            expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('legacy branded id');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

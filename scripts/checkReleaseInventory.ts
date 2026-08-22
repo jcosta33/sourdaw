@@ -519,13 +519,11 @@ export function assertGrandBouleDesignAroundSource(root: string): void {
             `Grand Boule product voicing contract rejects brand-specific display labels in ${voicingsPath}`
         );
     }
-    const aliases = voicings.indexOf('const LEGACY_LOAD_ALIASES');
-    if (aliases < 0) {
-        throw new Error(`Grand Boule product voicing contract is missing legacy load aliases in ${voicingsPath}`);
-    }
     for (const legacyId of ['steinway-d', 'bosendorfer-imperial', 'yamaha-cfx', 'fazioli-f308']) {
-        if (voicings.slice(0, aliases).includes(legacyId) || !voicings.slice(aliases).includes(`'${legacyId}'`)) {
-            throw new Error(`Grand Boule legacy id ${legacyId} must exist only as a load alias in ${voicingsPath}`);
+        if (voicings.includes(legacyId)) {
+            throw new Error(
+                `Grand Boule product voicing contract rejects legacy branded id ${legacyId} in ${voicingsPath}`
+            );
         }
     }
 }

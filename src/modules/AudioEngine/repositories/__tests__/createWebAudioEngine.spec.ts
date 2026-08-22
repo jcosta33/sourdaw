@@ -2169,7 +2169,7 @@ describe('AudioEngine', () => {
 
         const profiledEngine = createAudioEngine();
 
-        expect(constructorOptions).toHaveBeenCalledWith({ latencyHint: 'playback' });
+        expect(constructorOptions).toHaveBeenCalledWith({ latencyHint: 'playback', sampleRate: 48_000 });
         expect(profiledEngine.getDiagnostics().context).toEqual({
             state: 'running',
             sampleRate: 48_000,

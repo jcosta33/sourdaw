@@ -34,7 +34,7 @@ export type GrandBouleConfig = {
 
 export function createDefaultGrandBouleConfig(): GrandBouleConfig {
     return {
-        masterGain: 0.7,
+        masterGain: 0.1,
         activePresetId: null,
         soundboardSend: 0.6,
         sympatheticSend: 0.25,

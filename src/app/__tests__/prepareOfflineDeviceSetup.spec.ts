@@ -28,6 +28,7 @@ vi.mock('#/modules/Levain/useCases', () => ({
 vi.mock('#/modules/Crumbs/useCases', () => ({
     prepareCrumbsEngine: vi.fn(() => Promise.resolve('ready')),
 }));
+vi.mock('#/modules/GrandBoule/useCases', () => ({ prepareOfflineGrandBoule: vi.fn() }));
 // Toaster's kit push is asserted against real project state in
 // `toasterLiveOfflineParity.spec.ts`. What this spec owns is the table wiring:
 // that the `toaster` row exists and is handed the right arguments.

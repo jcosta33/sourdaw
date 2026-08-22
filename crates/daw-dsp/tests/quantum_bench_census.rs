@@ -55,7 +55,44 @@ fn crate_root() -> PathBuf {
 /// than re-implementing the check inside the test — a fixture test that
 /// reimplements the predicate proves the reimplementation, not the guard.
 fn device_is_covered(bench_source: &str, type_name: &str) -> bool {
-    bench_source.contains(&format!("{type_name}::new"))
+    source_without_comments(bench_source).contains(&format!("{type_name}::new"))
+}
+
+/// A census marker must be executable source, never a stale prose reference.
+/// The recipes contain both line and block comments, so strip both before
+/// checking construction evidence.
+fn source_without_comments(source: &str) -> String {
+    let mut result = String::with_capacity(source.len());
+    let mut characters = source.chars().peekable();
+    let mut in_block_comment = false;
+    let mut in_line_comment = false;
+
+    while let Some(character) = characters.next() {
+        if in_line_comment {
+            if character == '\n' {
+                in_line_comment = false;
+                result.push(character);
+            }
+            continue;
+        }
+        if in_block_comment {
+            if character == '*' && characters.peek() == Some(&'/') {
+                characters.next();
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if character == '/' && characters.peek() == Some(&'/') {
+            characters.next();
+            in_line_comment = true;
+        } else if character == '/' && characters.peek() == Some(&'*') {
+            characters.next();
+            in_block_comment = true;
+        } else {
+            result.push(character);
+        }
+    }
+    result
 }
 
 /// A device found in the crate: its module directory name and its type name.
@@ -195,26 +232,32 @@ fn released_grand_boule_is_in_the_browser_wasm_bench() {
         .expect("browser WASM recipes must be readable");
     let runner = std::fs::read_to_string(root.join("benches/wasm/run.mjs"))
         .expect("browser WASM runner must be readable");
+    let processor = source_without_comments(&processor);
+    let recipes = source_without_comments(&recipes);
+    let runner = source_without_comments(&runner);
     assert!(
         processor.contains("GrandBouleInstance"),
         "the browser WASM processor must import GrandBouleInstance"
     );
     for required in [
-        "'grand_boule',",
         "wanted('grand_boule')",
-        "new dsp.GrandBouleInstance",
+        "new dsp.GrandBouleInstance(SAMPLE_RATE, 64)",
     ] {
         assert!(
             recipes.contains(required),
             "the browser WASM recipe/census is missing Grand Boule marker `{required}`"
         );
     }
-    for required in ["REFERENCE_PROJECT_WORKER", "['grand_boule', 1]"] {
+    for required in ["const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]]"] {
         assert!(
             runner.contains(required),
             "the browser WASM runner is missing Grand Boule Worker marker `{required}`"
         );
     }
+    assert!(
+        processor.contains("const produced = device.render()"),
+        "the browser WASM processor must render the selected Worker recipe in its timed path"
+    );
 
     for required in [
         "publishGrandBouleConsumerClock",
@@ -236,8 +279,10 @@ fn released_grand_boule_is_in_the_browser_wasm_bench() {
 
 #[test]
 fn grand_boule_remains_in_the_native_cost_bench() {
-    let bench = std::fs::read_to_string(crate_root().join("benches/quantum.rs"))
-        .expect("native cost bench must be readable");
+    let bench = source_without_comments(
+        &std::fs::read_to_string(crate_root().join("benches/quantum.rs"))
+            .expect("native cost bench must be readable"),
+    );
     assert!(bench.contains("GrandBouleInstance::new"));
     assert!(bench.contains("bench_grand_boule_process_block"));
     assert!(bench.contains("bench_grand_boule_instance"));
@@ -336,5 +381,13 @@ mod the_extractor_can_go_red {
             "prose naming the device must not satisfy the census — that is the exact way the \
              Crust gap survived"
         );
+    }
+
+    #[test]
+    fn comment_only_constructor_markers_are_not_coverage() {
+        assert!(!device_is_covered(
+            "// SourdoughInstance::new(SAMPLE_RATE)\n/* SourdoughInstance::new(SAMPLE_RATE) */",
+            "SourdoughInstance"
+        ));
     }
 }

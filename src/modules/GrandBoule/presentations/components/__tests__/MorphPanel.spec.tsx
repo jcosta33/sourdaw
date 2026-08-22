@@ -66,11 +66,10 @@ describe('MorphPanel — morph position readout', () => {
 });
 
 describe('MorphPanel — product voicings', () => {
-    it('renders legacy serialized ids through neutral visible labels', () => {
-        render(<MorphPanel {...defaultProps({ morph: morph({ modelA: 'steinway-d', modelB: 'yamaha-cfx' }) })} />);
+    it('does not offer removed branded aliases', () => {
+        render(<MorphPanel {...defaultProps()} />);
 
-        expect(screen.getAllByText('Balanced Grand').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Clear Grand').length).toBeGreaterThan(0);
+        expect(screen.queryByText(/steinway|yamaha/i)).not.toBeInTheDocument();
         expect(screen.queryByText(/Steinway|Yamaha/u)).not.toBeInTheDocument();
     });
 });

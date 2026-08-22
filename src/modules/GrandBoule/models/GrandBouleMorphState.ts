@@ -79,13 +79,6 @@ export const BUILTIN_PIANO_MODELS = [
     },
 ] as const satisfies readonly GrandBoulePianoModel[];
 
-const LEGACY_LOAD_ALIASES: Readonly<Record<string, string>> = Object.freeze({
-    'steinway-d': 'balanced-grand',
-    'bosendorfer-imperial': 'mellow-grand',
-    'yamaha-cfx': 'clear-grand',
-    'fazioli-f308': 'singing-grand',
-});
-
 export function createDefaultMorphState(): GrandBouleMorphState {
     return {
         modelA: 'balanced-grand',
@@ -96,11 +89,7 @@ export function createDefaultMorphState(): GrandBouleMorphState {
     };
 }
 
-/**
- * Look up a built-in product voicing by ID. Legacy IDs are accepted only so
- * existing serialized projects resolve to the corresponding neutral voicing.
- */
+/** Look up a built-in product voicing by its product-owned ID. */
 export function findPianoModelById(id: string): GrandBoulePianoModel | undefined {
-    const canonicalId = LEGACY_LOAD_ALIASES[id] ?? id;
-    return BUILTIN_PIANO_MODELS.find((model) => model.id === canonicalId);
+    return BUILTIN_PIANO_MODELS.find((model) => model.id === id);
 }

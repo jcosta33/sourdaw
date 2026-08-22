@@ -509,6 +509,8 @@ fn fermenter_level() -> Level {
 fn grand_boule_level() -> Level {
     use daw_dsp::grand_boule::GrandBouleInstance;
     let mut i = GrandBouleInstance::new(SAMPLE_RATE, 0);
+    // The production host replays the descriptor value after construction.
+    i.set_param("master_gain", 0.1);
     i.note_on(48, 0.9);
     i.note_on(60, 0.7);
     i.note_on(67, 0.5);
@@ -589,9 +591,7 @@ fn device_engines_hold_their_output_level_at_the_engine_boundary() {
         ("proof", proof_level(), 0.81706, 0.35082),
         ("knead", knead_level(), 0.52538, 0.24745),
         ("fermenter", fermenter_level(), 1.46824, 0.39554),
-        // Re-measured 2026-08-22 after replacing the recursive modal body with
-        // the fixed feed-forward FIR body. The +/-1 dB bands are unchanged.
-        ("grand_boule", grand_boule_level(), 1.36708, 0.28596),
+        ("grand_boule", grand_boule_level(), 0.72762, 0.16118),
         ("toaster", toaster_level(), 0.54580, 0.17768),
         ("levain", levain_level(), 0.32936, 0.19990),
     ];
@@ -610,4 +610,15 @@ fn device_engines_hold_their_output_level_at_the_engine_boundary() {
             LEVEL_TOLERANCE_DB,
         );
     }
+}
+
+#[test]
+fn grand_boule_shipped_descriptor_gain_stays_below_the_peak_ceiling() {
+    let level = grand_boule_level();
+    const PEAK_CEILING: f32 = 0.98;
+    assert!(
+        level.peak <= PEAK_CEILING,
+        "Grand Boule shipped master_gain 0.1 peaks at {} above explicit ceiling {PEAK_CEILING}",
+        level.peak
+    );
 }

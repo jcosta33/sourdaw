@@ -9,10 +9,10 @@
     "performanceCores": "8",
     "efficiencyCores": "4",
     "os": "macOS 26.6.2 (25G83)",
-    "gitSha": "c7625f6fa28610c261691bb5d8269aa691660774",
-    "gitBase": "42941f165728024df3efacd53c803f8e7a1a71a2",
-    "workingTree": "clean",
-    "takenAt": "2026-08-21T18:46:37.935Z"
+    "gitSha": "debbf53e4e8ff3bc76702000fc6eb9d3426d1222",
+    "gitBase": "c13a2272fa6835d71e8f23e82b5ce93254db5bfd",
+    "workingTree": "dirty",
+    "takenAt": "2026-08-22T20:37:37.592Z"
   },
   "browser": "151.0.7922.173",
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
@@ -26,8 +26,8 @@
     "deviceIds": []
   },
   "load": {
-    "before": 2.1845703125,
-    "after": 3.19384765625,
+    "before": 1.0849609375,
+    "after": 1.7529296875,
     "ceiling": 6
   },
   "referenceProject": {
@@ -84,7 +84,15 @@
     "audioUpperBoundMs": 1.107073054009157,
     "audioWorstQuantumUpperMs": 2.1582744265140272,
     "audioMedianMs": 1.0413796122591668,
-    "meanLoad": 2.869798091419956
+    "meanLoad": 2.869798091419956,
+    "worker": [
+      [
+        "grand_boule",
+        1
+      ]
+    ],
+    "workerFloorMs": 1.72232626645643,
+    "workerMedianMs": 2.117455103756738
   },
   "rows": [
     {
@@ -894,6 +902,72 @@
         "mean": 2.99560546875,
         "min": 2.99560546875,
         "max": 2.99560546875
+      },
+      "sampleCount": 20000
+    },
+    {
+      "id": "grand_boule",
+      "label": "Grand Boule (64 voices, re-struck 1/s) — production Worker cost site",
+      "note": "the harness times the production DSP kernel; the ring consumer carries the separate audio-thread cost",
+      "costSite": "worker",
+      "warmVerify": {
+        "ok": true,
+        "detail": "64 notes, no active-voice export: output RMS 2.283e-1 is 14.6x one identically-driven voice (1.560e-2), band 3.6-17.6x around sqrt(64) = 8.0x"
+      },
+      "lateVerify": {
+        "ok": true,
+        "detail": "64 notes, no active-voice export: output RMS 5.628e-2 is 5.6x one identically-driven voice (1.002e-2), band 3.6-17.6x around sqrt(64) = 8.0x"
+      },
+      "stats": {
+        "n": 20000,
+        "mean": 2.1184688523401864,
+        "floor": 1.72232626645643,
+        "median": 2.117455103756738,
+        "p95": 2.228165376827925,
+        "p99": 2.6272476109102243,
+        "p999": 4.101809219521083,
+        "max": 4.968440429619852,
+        "min": 1.672922120341101,
+        "firstFiveHundredMean": 2.115101304703738,
+        "lastFiveHundredMean": 2.124153176931638
+      },
+      "harnessFloor": {
+        "n": 2000,
+        "mean": 0.000016841121465886693,
+        "floor": 0,
+        "median": 0,
+        "p95": 0.00005701606928780893,
+        "p99": 0.00005701606928780893,
+        "p999": 0.00006414307794878505,
+        "max": 0.00008552410393171339,
+        "min": 0,
+        "firstFiveHundredMean": 0.0000181311100335232,
+        "lastFiveHundredMean": 0.00001663443821471824
+      },
+      "dutyCycle": null,
+      "dutyCycleSource": null,
+      "calibration": {
+        "segments": 44,
+        "medianTicksPerMs": 140311.321,
+        "minTicksPerMs": 134437.72827172827,
+        "maxTicksPerMs": 209231.73126873127,
+        "spreadPct": 53.3057507148714
+      },
+      "timedTotalMs": 42369.377046803726,
+      "warmupTotalMs": 10376.590054340662,
+      "mainThreadWallMs": 52248.50999999978,
+      "wallRatio": 1.0095209815771706,
+      "driftPct": 0.42796400379356836,
+      "stationary": true,
+      "medianTrustworthy": false,
+      "zeroTickSamples": 0,
+      "zeroFraction": 0,
+      "floorMeasurable": true,
+      "load": {
+        "samples": 44,
+        "mean": 1.5673273259943181,
+        "min": 1.2255859375,
+        "max": 1.7529296875
       },
       "sampleCount": 20000
     },

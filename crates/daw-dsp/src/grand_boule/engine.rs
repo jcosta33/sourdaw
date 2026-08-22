@@ -136,7 +136,7 @@ impl GrandBouleEngine {
             sympathetic: Sympathetic::new(sample_rate),
             noise: MechanicalNoise::new(sample_rate),
             attack_samples: AttackSampleSet::new(),
-            master_gain: 0.15,
+            master_gain: 0.1,
             soundboard_send: 0.6,
             sympathetic_send: 0.25,
             hammer_hardness_offset: 0.0,
@@ -516,7 +516,7 @@ impl GrandBouleEngine {
     pub fn set_param(&mut self, name: &str, value: f32) {
         let was_sleeping = self.lifecycle() == ProcessLifecycle::Sleep;
         match name {
-            "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
+            "master_gain" => self.master_gain = value.clamp(0.0, 1.0),
             "soundboard_send" => self.soundboard_send = value.clamp(0.0, 1.0),
             "sympathetic_send" => self.sympathetic_send = value.clamp(0.0, 1.0),
             "lid_position" => {
@@ -1069,6 +1069,7 @@ mod tests {
         altered_soundboard.set_param("soundboard_send", 0.0);
         altered_soundboard.set_param("soundboard_brightness", 1.0);
         altered_soundboard.set_param("body_resonance", 0.0);
+        altered_soundboard.set_param("tone_color", -1.0);
         let _ = altered_soundboard
             .soundboard
             .process_rendered_bridge(RenderedBridgeSignal::new(1.0));
@@ -1762,7 +1763,10 @@ mod tests {
         }
         assert!(!any_nan, "output contains NaN or Inf");
         assert!(peak_overall > 0.01, "no audio produced");
-        assert!(peak_overall < 2.0, "output is clipping: {peak_overall}");
+        assert!(
+            peak_overall <= 0.98,
+            "output exceeds the shipped peak ceiling: {peak_overall}"
+        );
         assert!(
             peak_at_1s > 0.0001,
             "signal is dead at 1 second: {peak_at_1s}"

@@ -26,8 +26,9 @@ document is careful about what is actually on it.
 
 The browser harness measures the Grand Boule DSP kernel in its worklet timing realm and assigns that
 row to the production Worker cost site. It measures `grand_boule_ring_consumer` separately on the
-audio thread. The committed record below contains only the ring-consumer measurement; rerun the full
-harness before treating it as a complete current device census.
+audio thread. The committed record below combines the existing audio-thread record with a current
+Worker-DSP measurement; rerun the full harness before treating every row as a same-run current device
+census.
 
 ### Two devices are duty cycles, and their p95 is not a tail
 
@@ -148,11 +149,11 @@ the floor doctrine working: on a clock that cannot stall, contention leaves the 
 | OS | macOS 26.6.2 (25G83), arm64 |
 | Browser | **151.0.7922.173** (Google Chrome stable, headless) |
 | User agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36` |
-| **Commit measured** | **`c7625f6fa28610c261691bb5d8269aa691660774`** |
-| Base it sits on | `42941f165728024df3efacd53c803f8e7a1a71a2` |
-| Working tree | clean |
-| Taken | 2026-08-21T18:46:37.935Z |
-| Machine load | 2.18 before, 3.19 after — **recorded, not gated** |
+| **Commit measured** | **`debbf53e4e8ff3bc76702000fc6eb9d3426d1222`** |
+| Base it sits on | `c13a2272fa6835d71e8f23e82b5ce93254db5bfd` |
+| Working tree | dirty |
+| Taken | 2026-08-22T20:37:37.592Z |
+| Machine load | 1.08 before, 1.75 after — **recorded, not gated** |
 | Warm-up / samples | 4000 discarded, 20000 timed quanta per row |
 | Budget | 2.6667 ms = 128 frames ÷ 48 kHz |
 
@@ -183,6 +184,12 @@ A dash means the clock stalled too often on that row for a floor to mean anythin
 | Knead (+4 semitones, PSOLA engaged) | — | **0.5 µs** | **0.019%** | 2 | 2.4% | yes |
 | Grand Boule ring consumer | 0.17 µs | **0.27 µs** | **0.01%** | 3 | 0.1% | **no** |
 
+### Production cost is not on the audio thread — measured kernel cost, separate budget
+
+| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
+| --- | ---: | ---: | ---: | ---: | ---: | :---: |
+| Grand Boule (64 voices, re-struck 1/s) — production Worker cost site | 1700 µs | **2100 µs** | **79%** | 2 | 0.0% | yes |
+
 
 ### Duty cycles, not tails
 
@@ -196,6 +203,7 @@ A dash means the clock stalled too often on that row for a floor to mean anythin
 
 Audio thread: 1 × grand_boule_ring_consumer, 1 × fermenter, 1 × levain, 1 × toaster, 1 × crumbs, 1 × grinder, 1 × knead, 1 × bacteria, 1 × proof, 3 × gluten, 1 × proof_chamber_plate.
 
+Worker: 1 × grand_boule.
 
 Measured at a mean 1-minute load average of **3** on 12 logical
 cores. Both bounds are valid under that load; see the note on direction above.
@@ -205,7 +213,7 @@ cores. Both bounds are valid under that load; see the note on direction above.
 | Audio thread, lower bound | 0.76 | 29% | partial — no floor from 1 rows, counted as zero |
 | **Audio thread, upper bound** | **1.1** | **42%** | **the decisive figure** |
 | Audio thread, worst quantum, upper bound | 2.2 | 81% | + the largest single duty spike |
-
+| Worker — Grand Boule DSP | 1.7 – 2.1 | 65% – 79% | separate thread and ring |
 
 **DECIDED: the upper bound already fits.**
 Even measured under a load average of 3, the reference project's audio thread does not approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.
@@ -224,6 +232,7 @@ Even measured under a load average of 3, the reference project's audio thread do
 - **fermenter_automation_90** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 7.293e-1, 2160000/2160000 schedule visits wrote through set_param_by_id (100.0%), 0/90 schedules exhausted their segments, timeline covers 25000 quanta
 - **fermenter_automation_105** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 7.111e-1, 2520000/2520000 schedule visits wrote through set_param_by_id (100.0%), 0/105 schedules exhausted their segments, timeline covers 25000 quanta
 - **fermenter_automation_1050** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 1.395e+0, 25200000/25200000 schedule visits wrote through set_param_by_id (100.0%), 0/1050 schedules exhausted their segments, timeline covers 25000 quanta
+- **grand_boule** — after the timed run: 64 notes, no active-voice export: output RMS 5.628e-2 is 5.6x one identically-driven voice (1.002e-2), band 3.6-17.6x around sqrt(64) = 8.0x
 - **grand_boule_ring_consumer** — after the timed run: 24000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), 24000 render requests, output RMS 3.278e-1
 - **toaster** — after the timed run: 16 notes, no active-voice export: output RMS 4.944e-2 is 3.4x one identically-driven voice (1.471e-2), band 1.8-8.8x around sqrt(16) = 4.0x
 - **levain** — after the timed run: active_voices() = 32, expected 32 from 64 note-ons, output RMS 1.264e+0
@@ -248,6 +257,7 @@ Even measured under a load average of 3, the reference project's audio thread do
 | fermenter_automation_90 | 2 | 130000 | 1.1% | 92% | 24 µs | 59 µs |
 | fermenter_automation_105 | 2 | 150000 | 28.7% | 91% | 27 µs | 56 µs |
 | fermenter_automation_1050 | 2 | 190000 | 0.3% | 93% | 0 µs | 90 µs |
+| grand_boule | 44 | 140000 | 53.3% | 101% | 1700 µs | 1700 µs |
 | grand_boule_ring_consumer | 1 | 170000 | 0.0% | 26% | 0 µs | 0.17 µs |
 | toaster | 3 | 190000 | 1.4% | 85% | 64 µs | 93 µs |
 | levain | 1 | 190000 | 0.0% | 97% | 14 µs | 26 µs |
