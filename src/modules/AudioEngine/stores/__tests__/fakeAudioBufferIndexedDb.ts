@@ -11,8 +11,9 @@ import { vi } from 'vitest';
  *    unobserved-write defects rest on.
  * 2. Writes are staged and become visible only when the transaction commits, so
  *    "the write landed" and "the request succeeded" are distinguishable.
- * 3. A transaction can abort **bare** — firing `abort` and no `error` — which is
- *    what leaves an `onabort`-less promise pending forever.
+ * 3. A transaction can abort **bare** — firing transaction `abort` and no
+ *    transaction `error` — while requests it had not delivered fail with
+ *    `AbortError`, matching the platform's separate request/transaction events.
  * 4. Every `open()` yields a **distinct** connection over shared stored data, and
  *    a connection that has been closed refuses `transaction()` with
  *    `InvalidStateError` (IDB 3.0 §3.3.1). A caller that keeps using a handle it
@@ -177,7 +178,7 @@ class FakeTransaction {
     onabort: (() => void) | null = null;
     error: unknown = null;
 
-    private readonly queue: Array<() => void> = [];
+    private readonly queue: Array<{ abort: () => void; run: () => void }> = [];
     private readonly staged = new Map<string, Map<string, StoredValue | null>>();
     private scheduled = false;
     private started = false;
@@ -204,8 +205,8 @@ class FakeTransaction {
         this.schedule();
     }
 
-    enqueue(operation: () => void): void {
-        this.queue.push(operation);
+    enqueue(operation: () => void, abort: () => void): void {
+        this.queue.push({ abort, run: operation });
         this.schedule();
     }
 
@@ -250,7 +251,7 @@ class FakeTransaction {
         }
         const operation = this.queue.shift();
         if (operation) {
-            operation();
+            operation.run();
             // A handler may have queued further requests on this transaction;
             // real IDB keeps the transaction alive while that happens.
             this.schedule();
@@ -269,6 +270,9 @@ class FakeTransaction {
         }
         this.settled = true;
         if (abort) {
+            for (const operation of this.queue.splice(0)) {
+                operation.abort();
+            }
             // Every store in scope rolls back together — the property a
             // two-store mutation depends on for its size accounting to stay
             // consistent with its records.
@@ -380,10 +384,16 @@ class FakeObjectStore {
 
     private request<T>(run: () => T): FakeRequest<T> {
         const request: FakeRequest<T> = { result: undefined, error: null, onsuccess: null, onerror: null };
-        this.transaction.enqueue(() => {
-            request.result = run();
-            request.onsuccess?.();
-        });
+        this.transaction.enqueue(
+            () => {
+                request.result = run();
+                request.onsuccess?.();
+            },
+            () => {
+                request.error = new DOMException('The transaction was aborted.', 'AbortError');
+                request.onerror?.();
+            }
+        );
         return request;
     }
 }

@@ -121,6 +121,7 @@ function replacePinnedBufferIds(ids: readonly string[]): void {
     for (const id of ids) {
         pinnedBufferIds.add(id);
     }
+    preparedAudioBufferLifecycle.recordProjectReservations(ids);
     while (cache.size > MAX_AUDIO_BUFFER_ENTRIES) {
         let lruKey: string | undefined;
         for (const key of cache.keys()) {
@@ -1120,7 +1121,9 @@ export const audioBufferCache = {
     async exportBuffers(ids: string[]): Promise<Record<string, ExportedAudioBuffer>> {
         const result: Record<string, ExportedAudioBuffer> = {};
         const metadataById = new Map<string, BufferMeta>();
-        const temporaryIds = new Set<string>();
+        const temporaryIds = new Set(
+            ids.filter((id) => preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, null))
+        );
         try {
             const db = await openDb();
             const tx = db.transaction(META_STORE_NAME, 'readonly');
