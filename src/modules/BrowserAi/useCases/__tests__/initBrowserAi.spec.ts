@@ -485,4 +485,41 @@ describe('initBrowserAi', () => {
         // demoted to stale just because its notes changed.
         expect(renderQueueStore.value?.phraseStatusMap['clip-queued']).toBe('queued');
     });
+
+    it('keeps a source-tracked canonical DDSP preview while the legacy phrase follows the coarse MIDI stale subscription', async () => {
+        const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
+        renderQueueStore.set({
+            entries: [],
+            cachedPhraseIds: [],
+            phraseStatusMap: {
+                'clip-rendered': 'preview',
+                'clip-rendered-ddsp': 'preview',
+            },
+            phraseSourceFingerprints: { 'clip-rendered-ddsp': 'effective-ddsp-source' },
+        });
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: detect_capabilities_repo,
+            checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
+        });
+
+        await initBrowserAi();
+
+        const onMidiChange = subscribe_to_midi_store.mock.calls[0]?.[0];
+        if (!onMidiChange) {
+            throw new Error('expected initBrowserAi to subscribe to midiStore');
+        }
+
+        onMidiChange({ notesByClipId: { 'clip-rendered': [] } });
+        onMidiChange({ notesByClipId: { 'clip-rendered': [] } });
+
+        expect(renderQueueStore.value?.phraseStatusMap['clip-rendered']).toBe('stale');
+        expect(renderQueueStore.value?.phraseStatusMap['clip-rendered-ddsp']).toBe('preview');
+        expect(renderQueueStore.value?.phraseSourceFingerprints?.['clip-rendered-ddsp']).toBe('effective-ddsp-source');
+    });
 });

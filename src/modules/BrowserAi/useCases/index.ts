@@ -9,6 +9,8 @@ export { removeDdspInstrument } from './removeDdspInstrument';
 export { isDdspInstrumentId } from './isDdspInstrumentId';
 export { getDdspPhraseId } from './getDdspPhraseId';
 export { markDdspPhraseStale } from './markDdspPhraseStale';
+export { invalidateDdspPhraseIfSourceChanged } from './invalidateDdspPhraseIfSourceChanged';
+export { recordDdspPhraseSource } from './recordDdspPhraseSource';
 export { renderDdspInstrument } from './renderDdspInstrument';
 export { renderKokoroTts } from './renderKokoroTts';
 export { renderDiffSingerPhrase } from './renderDiffSingerPhrase';
