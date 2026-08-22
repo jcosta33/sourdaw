@@ -1,0 +1,35 @@
+src/modules/BrowserAi/useCases/getDdspPhraseId.ts
+  s_27578aec2aab3b::t_71bf463e627cb6 1-4
+src/modules/BrowserAi/useCases/markDdspPhraseStale.ts
+  s_27578aec2aab3b::t_71bf463e627cb6 1-8
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_27578aec2aab3b::t_71bf463e627cb6 28-29,193-200
+src/modules/BrowserAi/useCases/__tests__/markDdspPhraseStale.spec.ts
+  s_27578aec2aab3b::t_57f31e27c54609 1-27
+src/modules/BrowserAi/useCases/index.ts
+  s_27578aec2aab3b::t_71bf463e627cb6 10-12
+src/modules/Transport/useCases/__tests__/secondsBetweenBeats.spec.ts
+  s_27578aec2aab3b::t_57f31e27c54609 1-37
+src/modules/Transport/useCases/index.ts
+  s_27578aec2aab3b::t_71bf463e627cb6 16
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_27578aec2aab3b::t_57f31e27c54609 448,454-458,483
+src/modules/Transport/useCases/secondsBetweenBeats.ts
+  s_27578aec2aab3b::t_71bf463e627cb6 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f9ea4bb39ed7e3781a1de1ee5734332d1d4edc5b",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
