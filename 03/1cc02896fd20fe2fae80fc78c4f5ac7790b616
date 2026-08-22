@@ -1,0 +1,33 @@
+public/legal/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_508cd313e7a216 50-57
+.agents/decisions/0035-admit-webllm-qwen-conversions-under-apache-2.0.md
+  s_a40848e8f8cca9::t_508cd313e7a216 1-71
+.agents/decisions/0030-exact-model-release-admission.md
+  s_a40848e8f8cca9::t_ba2fd2181a57e7 25-28,46,61-62
+  s_a40848e8f8cca9::t_6792bff3898109 57-58
+public/legal/Qwen-NOTICE.txt
+  s_a40848e8f8cca9::t_508cd313e7a216 1-20
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_6fdc1352a30739 305-310,312-315,317-321
+  s_a40848e8f8cca9::t_098cb5208f251d 268,279-282,288-292
+.agents/decisions/README.md
+  s_a40848e8f8cca9::t_ba2fd2181a57e7 51
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts
+  s_a40848e8f8cca9::t_5088cb41474a04 24-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "031cc02896fd20fe2fae80fc78c4f5ac7790b616",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
