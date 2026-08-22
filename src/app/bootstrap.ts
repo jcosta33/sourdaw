@@ -10,7 +10,7 @@ import {
     recoverInterruptedAgentRuns,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
-import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     clampDeviceParameterValue,
     getAllTracks,
@@ -123,6 +123,7 @@ import {
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
 import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
+import { projectStore } from '#/modules/Project/stores';
 import {
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
@@ -130,7 +131,6 @@ import {
     migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
-import { projectStore } from '#/modules/Project/stores';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { setSetlistEventBus } from '#/modules/Setlist/useCases';
@@ -211,7 +211,19 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
-configureCollaborationAssetOwner(() => projectStore.value?.projectId);
+const captureReferencedAssetHashes = () => [
+    ...new Set(
+        (trackStore.value?.tracks ?? []).flatMap((track) =>
+            track.clips.flatMap((clip) => (clip.assetHash ? [clip.assetHash] : []))
+        )
+    ),
+];
+configureCollaborationAssetOwner({
+    captureOwnerId: () => projectStore.value?.projectId,
+    subscribeOwnerId: (listener) => projectStore.subscribe((state) => listener(state?.projectId)),
+    captureReferencedHashes: captureReferencedAssetHashes,
+    subscribeReferencedHashes: (listener) => trackStore.subscribe(() => listener(captureReferencedAssetHashes())),
+});
 try {
     recoverInterruptedAgentRuns();
 } catch (error) {

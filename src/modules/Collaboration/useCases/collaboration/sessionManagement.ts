@@ -39,6 +39,7 @@ import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { type CollaborationPeer } from '../collaborationQueries';
 
 import { clearCollaborationFailure } from './clearCollaborationFailure';
+import { collaborationAssetOwnership } from './getCollaborationAssetOwnerId';
 
 /**
  * §14.1 — Coalesce all collaboration-session mutables into one holder so the
@@ -80,6 +81,9 @@ const sessionState: {
      * the store's error text.
      */
     sessionEndedByHostDeparture: boolean;
+    unsubscribeAssetOwner: (() => void) | null;
+    unsubscribeAssetReferences: (() => void) | null;
+    assetOwnershipTask: Promise<void>;
 } = {
     peerManager: null,
     automergeSync: null,
@@ -93,6 +97,9 @@ const sessionState: {
     isProjectingBranches: false,
     lastProjectedBranchesJson: null,
     sessionEndedByHostDeparture: false,
+    unsubscribeAssetOwner: null,
+    unsubscribeAssetReferences: null,
+    assetOwnershipTask: Promise.resolve(),
 };
 
 /** Shown to a joiner once the host has really gone — see the cleanup timer. */
@@ -433,7 +440,12 @@ function getLocalPeerInfo(): CollaborationPeer {
     };
 }
 
-function initializeSessionRuntime(assetOwnerId: string): PeerConnectionManager {
+type InitializeSessionRuntimeOptions = { rebindToSynchronizedOwner?: boolean };
+
+function initializeSessionRuntime(
+    assetOwnerId: string,
+    options: InitializeSessionRuntimeOptions = {}
+): PeerConnectionManager {
     const peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
@@ -476,11 +488,76 @@ function initializeSessionRuntime(assetOwnerId: string): PeerConnectionManager {
         assetOwnerId
     );
 
+    const assetTransfer = sessionState.assetTransfer;
+    let ownerSynchronized = options.rebindToSynchronizedOwner !== true;
+    let referencesObserved = ownerSynchronized;
+    let latestReferencedHashes = collaborationAssetOwnership.getReferencedHashes();
+    let referenceVersion = ownerSynchronized ? 1 : 0;
+    let reconciledReferenceVersion = 0;
+    const queueAssetOwnershipTask = (task: () => Promise<void>): void => {
+        sessionState.assetOwnershipTask = sessionState.assetOwnershipTask
+            .then(async () => {
+                if (sessionState.assetTransfer !== assetTransfer) {
+                    return;
+                }
+                await task();
+            })
+            .catch((error: unknown) => {
+                logger.error(new Error('Collaboration durable asset ownership update failed', { cause: error }));
+                setCollaborationError('Could not update ownership of shared audio. The operation can be retried.');
+            });
+    };
+    const reconcileReferencesNow = async (): Promise<void> => {
+        if (!ownerSynchronized || !referencesObserved || reconciledReferenceVersion === referenceVersion) {
+            return;
+        }
+        const version = referenceVersion;
+        const referencedHashes = [...latestReferencedHashes];
+        const result = await assetTransfer.reconcileOwnedAssets(referencedHashes);
+        if (result.status === 'failed') {
+            throw new Error(`Durable asset reference reconciliation failed: ${result.reason}`);
+        }
+        reconciledReferenceVersion = version;
+    };
+    const reconcileReferences = (): void => {
+        queueAssetOwnershipTask(reconcileReferencesNow);
+    };
+
+    sessionState.unsubscribeAssetReferences = collaborationAssetOwnership.subscribeReferencedHashes((hashes) => {
+        latestReferencedHashes = hashes;
+        referencesObserved = true;
+        referenceVersion += 1;
+        reconcileReferences();
+    });
+    if (options.rebindToSynchronizedOwner) {
+        sessionState.unsubscribeAssetOwner = collaborationAssetOwnership.subscribeOwner((nextOwnerId) => {
+            if (!nextOwnerId || nextOwnerId === assetOwnerId || ownerSynchronized) {
+                return;
+            }
+            queueAssetOwnershipTask(async () => {
+                const result = await assetTransfer.rebindOwner(nextOwnerId);
+                if (result.status === 'failed') {
+                    throw new Error(`Durable asset owner rebind failed: ${result.reason}`);
+                }
+                ownerSynchronized = true;
+                sessionState.unsubscribeAssetOwner?.();
+                sessionState.unsubscribeAssetOwner = null;
+                await reconcileReferencesNow();
+            });
+        });
+    } else {
+        reconcileReferences();
+    }
+
     return peerManager;
 }
 
 /** Tear down all subsystems without changing store state. */
 function cleanupSubsystems(): void {
+    sessionState.unsubscribeAssetOwner?.();
+    sessionState.unsubscribeAssetOwner = null;
+    sessionState.unsubscribeAssetReferences?.();
+    sessionState.unsubscribeAssetReferences = null;
     sessionState.pendingInviteId = null;
     sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();
@@ -940,4 +1017,5 @@ export const sessionRuntimePrimitives = {
     pickPeerColor,
     compressInvite,
     decompressInvite,
+    flushAssetOwnership: () => sessionState.assetOwnershipTask,
 };

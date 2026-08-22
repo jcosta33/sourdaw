@@ -142,20 +142,37 @@ export const pendingActionConfirmationStore = createStore<PendingActionConfirmat
 const MAX_CONFIRMATIONS = 20;
 const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 
-type PendingActionResourceLease = {
+export type PendingActionResourceLease = {
     bytes: number;
-    release: () => void;
+    release: () => Promise<void>;
 };
 
 const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>();
+const pendingActionResourceReleaseTasks = new Map<string, Promise<void>>();
 
-function releasePendingActionResourceLease(confirmationId: string): void {
+async function releasePendingActionResourceLease(confirmationId: string): Promise<void> {
     const lease = pendingActionResourceLeases.get(confirmationId);
     if (!lease) {
         return;
     }
-    pendingActionResourceLeases.delete(confirmationId);
-    lease.release();
+    const existingTask = pendingActionResourceReleaseTasks.get(confirmationId);
+    if (existingTask) {
+        await existingTask;
+        return;
+    }
+    const task = lease.release().then(() => {
+        if (pendingActionResourceLeases.get(confirmationId) === lease) {
+            pendingActionResourceLeases.delete(confirmationId);
+        }
+    });
+    pendingActionResourceReleaseTasks.set(confirmationId, task);
+    try {
+        await task;
+    } finally {
+        if (pendingActionResourceReleaseTasks.get(confirmationId) === task) {
+            pendingActionResourceReleaseTasks.delete(confirmationId);
+        }
+    }
 }
 
 function clonePendingActionConfirmation(confirmation: PendingAppActionConfirmation): PendingAppActionConfirmation {
@@ -182,12 +199,12 @@ type ProposePendingActionConfirmationInput = {
     resourceLease?: PendingActionResourceLease;
 };
 
-export function proposePendingActionConfirmation(
+export async function proposePendingActionConfirmation(
     input: ProposePendingActionConfirmationInput
-): PendingAppActionConfirmation | null {
+): Promise<PendingAppActionConfirmation | null> {
     const state = pendingActionConfirmationStore.value;
     if (!state) {
-        input.resourceLease?.release();
+        await input.resourceLease?.release();
         return null;
     }
 
@@ -201,7 +218,7 @@ export function proposePendingActionConfirmation(
             input.resourceLease.bytes < 0 ||
             preparedResourceBytes + input.resourceLease.bytes > MAX_PREPARED_RESOURCE_BYTES)
     ) {
-        input.resourceLease.release();
+        await input.resourceLease.release();
         return null;
     }
 
@@ -238,16 +255,16 @@ export function proposePendingActionConfirmation(
         projectRevision: input.projectRevision,
     };
 
-    if (input.resourceLease) {
-        pendingActionResourceLeases.set(confirmation.id, input.resourceLease);
-    }
     const confirmationsWithNewEntry = [...state.confirmations, confirmation];
     const confirmations = confirmationsWithNewEntry.slice(-MAX_CONFIRMATIONS);
     const retainedIds = new Set(confirmations.map((entry) => entry.id));
     for (const evicted of confirmationsWithNewEntry) {
         if (!retainedIds.has(evicted.id)) {
-            releasePendingActionResourceLease(evicted.id);
+            await releasePendingActionResourceLease(evicted.id);
         }
+    }
+    if (input.resourceLease) {
+        pendingActionResourceLeases.set(confirmation.id, input.resourceLease);
     }
     pendingActionConfirmationStore.set({ confirmations });
 
@@ -436,9 +453,9 @@ export function updatePendingActionFollowUp(
     return clonePendingActionConfirmation(updated);
 }
 
-export function clearPendingActionConfirmations(): void {
+export async function clearPendingActionConfirmations(): Promise<void> {
     for (const confirmationId of pendingActionResourceLeases.keys()) {
-        releasePendingActionResourceLease(confirmationId);
+        await releasePendingActionResourceLease(confirmationId);
     }
     pendingActionConfirmationStore.set({ confirmations: [] });
 }
@@ -448,9 +465,9 @@ type SettlePendingActionResourceLeaseInput = {
     disposition: 'discard' | 'retain';
 };
 
-export function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): void {
+export async function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): Promise<void> {
     if (input.disposition === 'discard') {
-        releasePendingActionResourceLease(input.confirmationId);
+        await releasePendingActionResourceLease(input.confirmationId);
         return;
     }
     pendingActionResourceLeases.delete(input.confirmationId);

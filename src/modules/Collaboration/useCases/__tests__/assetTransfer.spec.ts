@@ -426,6 +426,75 @@ describe('AssetTransfer', () => {
         freshTransfer.dispose();
     });
 
+    it('serves a project-owned original after recreation without manual cache priming', async () => {
+        const blob = new Blob(['restart-serve-original'], { type: 'audio/wav' });
+        const hash = await transfer.addLocalAsset(blob, 'restart-serve.wav');
+        transfer.dispose();
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+
+        await recreated.handleMessage('requester', {
+            type: 'crdt-sync',
+            docId: DOC_ID_ASSET,
+            data: JSON.stringify({ type: 'asset.request', hash, missingChunks: [] }),
+        });
+
+        expect(peer.sendCrdtSync).toHaveBeenCalledWith(
+            expect.objectContaining({
+                peerId: 'requester',
+                message: expect.objectContaining({ data: expect.stringContaining('asset.manifest') }),
+            })
+        );
+        recreated.dispose();
+    });
+
+    it('rebinds a join-created owner to the synchronized project identity before recreation', async () => {
+        const provisionalOwner = 'collaboration-join:attempt-1';
+        const hostOwner = 'project:host-authoritative';
+        const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
+        const staged = await joining.stageLocalAsset(
+            new Blob(['host-bound-original'], { type: 'audio/wav' }),
+            'host-bound.wav',
+            'asset-stage-host-bound'
+        );
+
+        await (joining as unknown as { rebindOwner: (ownerId: string) => Promise<{ status: string }> }).rebindOwner(
+            hostOwner
+        );
+        joining.dispose();
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, hostOwner);
+
+        await expect(recreated.reopenStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        recreated.dispose();
+    });
+
+    it('reconciles exact project references while retaining shared hashes until the final owner releases them', async () => {
+        const otherOwner = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, 'project:other');
+        const blob = new Blob(['shared-project-reference'], { type: 'audio/wav' });
+        const hash = await transfer.addLocalAsset(blob, 'owner-a.wav');
+        await otherOwner.addLocalAsset(blob, 'owner-b.wav');
+
+        await (
+            transfer as unknown as {
+                reconcileOwnedAssets: (hashes: readonly string[]) => Promise<{ status: string }>;
+            }
+        ).reconcileOwnedAssets([]);
+        await expect(otherOwner.reopenLocalAsset(hash)).resolves.toMatchObject({ status: 'opened', hash });
+
+        await (
+            otherOwner as unknown as {
+                reconcileOwnedAssets: (hashes: readonly string[]) => Promise<{ status: string }>;
+            }
+        ).reconcileOwnedAssets([]);
+        await expect(otherOwner.reopenLocalAsset(hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'missing-asset',
+        });
+        otherOwner.dispose();
+    });
+
     it('releases exactly once and deletes only uncommitted unshared bytes', async () => {
         const first = await transfer.stageLocalAsset(
             new Blob(['shared-staging']),

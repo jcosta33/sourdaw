@@ -15,8 +15,8 @@ export function createStemImportConfirmationResourceLease(actions: readonly Exec
             if (released) {
                 return;
             }
-            released = true;
             await discardPreparedStemImportResources(stems);
+            released = true;
         },
     };
 }

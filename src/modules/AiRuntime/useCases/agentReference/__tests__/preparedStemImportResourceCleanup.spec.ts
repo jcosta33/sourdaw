@@ -14,6 +14,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
+import { createStemImportConfirmationResourceLease } from '../createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from '../registerPreparedStemImportResources';
 
 const stems = [
@@ -95,5 +96,28 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
+    });
+
+    it('retries a confirmation lease whose first hash-bound durable release is rejected', async () => {
+        mocks.releaseStagedAsset
+            .mockResolvedValueOnce({ status: 'failed', reason: 'missing-asset' })
+            .mockResolvedValueOnce({
+                status: 'released',
+                leaseId: 'staged-asset-1',
+                hash: 'sha256:asset-1',
+                assetRemoved: true,
+                ownerRetained: false,
+            });
+        const lease = createStemImportConfirmationResourceLease([
+            { type: 'importStemSet', payload: { stems } },
+        ] as never);
+        if (!lease) {
+            throw new Error('Expected a stem import confirmation resource lease');
+        }
+
+        await expect(lease.release()).rejects.toThrow('Could not release staged lease staged-asset-1: missing-asset');
+        await expect(lease.release()).resolves.toBeUndefined();
+
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(2);
     });
 });

@@ -21,7 +21,7 @@ const mockRuntime = vi.hoisted(() => ({
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 vi.mock('../getCollaborationAssetOwnerId', () => ({
-    getCollaborationAssetOwnerId: () => 'project-owner-1',
+    collaborationAssetOwnership: { getOwnerId: () => 'project-owner-1' },
 }));
 
 describe('createSession', () => {

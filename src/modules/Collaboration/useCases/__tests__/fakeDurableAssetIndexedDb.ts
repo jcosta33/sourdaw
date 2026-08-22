@@ -96,6 +96,10 @@ class FakeObjectStore {
         return this.request(() => this.values.get(key));
     }
 
+    getAll(): FakeRequest<StoredRecord[]> {
+        return this.request(() => [...this.values.values()]);
+    }
+
     put(value: StoredRecord): FakeRequest<IDBValidKey> {
         this.transaction.assertWritable();
         const key = this.storeName === 'leases' ? value.leaseId : value.hash;

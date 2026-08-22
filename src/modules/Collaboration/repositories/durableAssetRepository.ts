@@ -51,6 +51,10 @@ export type ReleaseStagedAssetResult =
       }
     | DurableAssetFailure;
 export type ReleaseOwnedAssetResult = { status: 'released'; hash: string; assetRemoved: boolean } | DurableAssetFailure;
+export type RebindDurableAssetOwnerResult =
+    { status: 'rebound'; previousOwnerId: string; ownerId: string; reboundHashes: string[] } | DurableAssetFailure;
+export type ReconcileOwnedAssetsResult =
+    { status: 'reconciled'; releasedHashes: string[]; removedHashes: string[] } | DurableAssetFailure;
 
 type AssetInvalidation = { hash: string; ownerId?: string };
 const invalidationListeners = new Set<(event: AssetInvalidation) => void>();
@@ -63,6 +67,8 @@ export type DurableAssetRepository = {
     promoteStagedAsset: (leaseId: string, expectedHash: string) => Promise<PromoteStagedAssetResult>;
     releaseStagedAsset: (leaseId: string, expectedHash: string) => Promise<ReleaseStagedAssetResult>;
     releaseOwnedAsset: (hash: string) => Promise<ReleaseOwnedAssetResult>;
+    rebindOwner: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
+    reconcileOwnedAssets: (referencedHashes: readonly string[]) => Promise<ReconcileOwnedAssetsResult>;
     subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };
 
@@ -130,6 +136,10 @@ function awaitRequest<Result>(request: IDBRequest<Result>): Promise<Result> {
 
 function readStoredValue(store: IDBObjectStore, key: string): Promise<unknown> {
     return awaitRequest(store.get(key) as IDBRequest<unknown>);
+}
+
+function readAllStoredValues(store: IDBObjectStore): Promise<unknown[]> {
+    return awaitRequest(store.getAll() as IDBRequest<unknown[]>);
 }
 
 function awaitTransaction(transaction: IDBTransaction): Promise<void> {
@@ -545,6 +555,108 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
                 notifyInvalidation(assetRemoved ? { hash } : { hash, ownerId });
             }
             return { status: 'released', hash, assetRemoved };
+        },
+
+        async rebindOwner(nextOwnerId) {
+            if (nextOwnerId.length === 0) {
+                throw new Error('Collaboration asset owner identity is required');
+            }
+            if (nextOwnerId === ownerId) {
+                return { status: 'rebound', previousOwnerId: ownerId, ownerId: nextOwnerId, reboundHashes: [] };
+            }
+            const database = await openDatabase();
+            const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
+            const completion = awaitTransaction(transaction);
+            const assetStore = transaction.objectStore(ASSET_STORE);
+            const leaseStore = transaction.objectStore(LEASE_STORE);
+            const [assetValues, leaseValues] = await Promise.all([
+                readAllStoredValues(assetStore),
+                readAllStoredValues(leaseStore),
+            ]);
+            if (
+                assetValues.some((value) => !isAssetRecord(value)) ||
+                leaseValues.some((value) => !isLeaseRecord(value))
+            ) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed', reason: 'corrupt-record' };
+            }
+
+            const assets = assetValues as AssetRecord[];
+            const leases = leaseValues as LeaseRecord[];
+            const reboundHashes: string[] = [];
+            for (const asset of assets) {
+                const ownsAsset = asset.ownerIds.includes(ownerId);
+                const ownsLease = asset.activeLeases.some((lease) => lease.ownerId === ownerId);
+                if (!ownsAsset && !ownsLease) {
+                    continue;
+                }
+                reboundHashes.push(asset.hash);
+                assetStore.put({
+                    ...asset,
+                    ownerIds: ownsAsset
+                        ? [...new Set(asset.ownerIds.map((id) => (id === ownerId ? nextOwnerId : id)))]
+                        : asset.ownerIds,
+                    activeLeases: ownsLease
+                        ? asset.activeLeases.map((lease) =>
+                              lease.ownerId === ownerId ? { ...lease, ownerId: nextOwnerId } : lease
+                          )
+                        : asset.activeLeases,
+                } satisfies AssetRecord);
+            }
+            for (const lease of leases) {
+                if (lease.ownerId === ownerId) {
+                    leaseStore.put({ ...lease, ownerId: nextOwnerId } satisfies LeaseRecord);
+                }
+            }
+            await completion;
+            for (const hash of reboundHashes) {
+                notifyInvalidation({ hash, ownerId });
+            }
+            return { status: 'rebound', previousOwnerId: ownerId, ownerId: nextOwnerId, reboundHashes };
+        },
+
+        async reconcileOwnedAssets(referencedHashes) {
+            const referenced = new Set(referencedHashes);
+            const database = await openDatabase();
+            const transaction = database.transaction(ASSET_STORE, 'readwrite');
+            const completion = awaitTransaction(transaction);
+            const store = transaction.objectStore(ASSET_STORE);
+            const values = await readAllStoredValues(store);
+            if (values.some((value) => !isAssetRecord(value))) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed', reason: 'corrupt-record' };
+            }
+
+            const releasedHashes: string[] = [];
+            const removedHashes: string[] = [];
+            const invalidatedHashes: string[] = [];
+            for (const asset of values as AssetRecord[]) {
+                if (!asset.ownerIds.includes(ownerId) || referenced.has(asset.hash)) {
+                    continue;
+                }
+                releasedHashes.push(asset.hash);
+                const next: AssetRecord = {
+                    ...asset,
+                    ownerIds: asset.ownerIds.filter((id) => id !== ownerId),
+                };
+                if (next.ownerIds.length === 0 && next.activeLeases.length === 0) {
+                    store.delete(asset.hash);
+                    removedHashes.push(asset.hash);
+                    invalidatedHashes.push(asset.hash);
+                } else {
+                    store.put(next);
+                    if (!ownerRetained(next, ownerId)) {
+                        invalidatedHashes.push(asset.hash);
+                    }
+                }
+            }
+            await completion;
+            for (const hash of invalidatedHashes) {
+                notifyInvalidation(removedHashes.includes(hash) ? { hash } : { hash, ownerId });
+            }
+            return { status: 'reconciled', releasedHashes, removedHashes };
         },
 
         subscribeInvalidation(listener) {

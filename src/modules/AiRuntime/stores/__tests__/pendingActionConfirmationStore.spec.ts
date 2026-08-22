@@ -4,14 +4,15 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
+    settlePendingActionResourceLease,
 } from '../pendingActionConfirmationStore';
 
 describe('pendingActionConfirmationStore', () => {
-    beforeEach(() => {
-        clearPendingActionConfirmations();
+    beforeEach(async () => {
+        await clearPendingActionConfirmations();
     });
 
-    it('preserves one materialized bus identity across a pending compound confirmation', () => {
+    it('preserves one materialized bus identity across a pending compound confirmation', async () => {
         const busId = 'bus-ai-12345678-1234-4123-8123-123456789abc';
         const actions = [
             { type: 'createBus' as const, payload: { name: 'Vocal Plate', busId } },
@@ -22,7 +23,7 @@ describe('pendingActionConfirmationStore', () => {
             },
         ];
 
-        const confirmation = proposePendingActionConfirmation({
+        const confirmation = await proposePendingActionConfirmation({
             id: 'confirmation-1',
             prompt: 'create a Vocal Plate bus and route Vocals to it',
             assistantMessageId: 'message-1',
@@ -43,7 +44,7 @@ describe('pendingActionConfirmationStore', () => {
         });
     });
 
-    it('isolates approved actions and protected targets at proposal and read boundaries', () => {
+    it('isolates approved actions and protected targets at proposal and read boundaries', async () => {
         const action = {
             type: 'createBus' as const,
             payload: { name: 'Drum Bus', busId: 'bus-drum' },
@@ -85,7 +86,7 @@ describe('pendingActionConfirmationStore', () => {
                 },
             },
         };
-        const proposed = proposePendingActionConfirmation({
+        const proposed = await proposePendingActionConfirmation({
             id: 'confirmation-2',
             prompt: 'create a Drum Bus',
             assistantMessageId: 'message-2',
@@ -162,8 +163,8 @@ describe('pendingActionConfirmationStore', () => {
         });
     });
 
-    it('releases prepared resources when their confirmation is evicted or the store is cleared', () => {
-        const evictedRelease = vi.fn();
+    it('releases prepared resources when their confirmation is evicted or the store is cleared', async () => {
+        const evictedRelease = vi.fn().mockResolvedValue(undefined);
         const firstInput = {
             id: 'confirmation-evicted',
             prompt: 'first',
@@ -173,9 +174,9 @@ describe('pendingActionConfirmationStore', () => {
             projectRevision: 'revision-evicted',
             resourceLease: { bytes: 1, release: evictedRelease },
         };
-        proposePendingActionConfirmation(firstInput);
+        await proposePendingActionConfirmation(firstInput);
         for (let index = 0; index < 20; index++) {
-            proposePendingActionConfirmation({
+            await proposePendingActionConfirmation({
                 id: `confirmation-${String(index)}`,
                 prompt: `prompt-${String(index)}`,
                 assistantMessageId: `message-${String(index)}`,
@@ -188,7 +189,7 @@ describe('pendingActionConfirmationStore', () => {
         }
         expect(evictedRelease).toHaveBeenCalledTimes(1);
 
-        const clearedRelease = vi.fn();
+        const clearedRelease = vi.fn().mockResolvedValue(undefined);
         const clearInput = {
             id: 'confirmation-cleared',
             prompt: 'clear me',
@@ -198,16 +199,16 @@ describe('pendingActionConfirmationStore', () => {
             projectRevision: 'revision-cleared',
             resourceLease: { bytes: 1, release: clearedRelease },
         };
-        proposePendingActionConfirmation(clearInput);
-        clearPendingActionConfirmations();
+        await proposePendingActionConfirmation(clearInput);
+        await clearPendingActionConfirmations();
 
         expect(clearedRelease).toHaveBeenCalledTimes(1);
     });
 
-    it('rejects prepared confirmations above the aggregate live-resource ceiling', () => {
-        const firstRelease = vi.fn();
-        const rejectedRelease = vi.fn();
-        function createInput(id: string, release: () => void) {
+    it('rejects prepared confirmations above the aggregate live-resource ceiling', async () => {
+        const firstRelease = vi.fn().mockResolvedValue(undefined);
+        const rejectedRelease = vi.fn().mockResolvedValue(undefined);
+        function createInput(id: string, release: () => Promise<void>) {
             return {
                 id,
                 prompt: id,
@@ -219,9 +220,41 @@ describe('pendingActionConfirmationStore', () => {
             };
         }
 
-        expect(proposePendingActionConfirmation(createInput('first', firstRelease))).not.toBeNull();
-        expect(proposePendingActionConfirmation(createInput('second', rejectedRelease))).toBeNull();
+        await expect(proposePendingActionConfirmation(createInput('first', firstRelease))).resolves.not.toBeNull();
+        await expect(proposePendingActionConfirmation(createInput('second', rejectedRelease))).resolves.toBeNull();
         expect(firstRelease).not.toHaveBeenCalled();
         expect(rejectedRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains a confirmation resource lease after rejection and releases it on retry', async () => {
+        const release = vi
+            .fn<() => Promise<void>>()
+            .mockRejectedValueOnce(new Error('durable cleanup failed'))
+            .mockResolvedValueOnce(undefined);
+        await proposePendingActionConfirmation({
+            id: 'confirmation-release-retry',
+            prompt: 'retry cleanup',
+            assistantMessageId: 'message-release-retry',
+            actions: [{ type: 'createBus', payload: { name: 'Retry', busId: 'bus-retry' } }],
+            actionLabels: ['Retry'],
+            projectRevision: 'revision-release-retry',
+            resourceLease: { bytes: 1, release },
+        });
+
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-release-retry',
+                disposition: 'discard',
+            })
+        ).rejects.toThrow('durable cleanup failed');
+        expect(getPendingActionConfirmation('confirmation-release-retry')?.status).toBe('proposed');
+
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-release-retry',
+                disposition: 'discard',
+            })
+        ).resolves.toBeUndefined();
+        expect(release).toHaveBeenCalledTimes(2);
     });
 });

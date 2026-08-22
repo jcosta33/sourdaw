@@ -331,7 +331,7 @@ describe('stem import and starting mix workflow', () => {
             ),
         }));
         clearAiHistory();
-        clearPendingActionConfirmations();
+        await clearPendingActionConfirmations();
         setArrangementEventBus({ emit: mocks.arrangementEventEmit });
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState, tempo: 100 });
@@ -371,7 +371,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     afterEach(async () => {
-        clearPendingActionConfirmations();
+        await clearPendingActionConfirmations();
         await cloudSession.clear();
         clearAiHistory();
         clearUndoHistory();

@@ -15,7 +15,8 @@ import { leaveSession } from '../leaveSession';
  */
 const mockRuntime = vi.hoisted(() => ({
     cleanup: vi.fn<() => void>(),
-    initialize: vi.fn<(assetOwnerId: string) => PeerConnectionManager>(),
+    initialize:
+        vi.fn<(assetOwnerId: string, options?: { rebindToSynchronizedOwner?: boolean }) => PeerConnectionManager>(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -110,6 +111,12 @@ describe('joinSession', () => {
         await joinSession('invite', 'Alice');
 
         expect(mockRuntime.initialize).toHaveBeenCalledTimes(1);
+        expect(mockRuntime.initialize).toHaveBeenCalledWith(
+            expect.stringMatching(/^collaboration-join:session-1:joiner-1:/u),
+            {
+                rebindToSynchronizedOwner: true,
+            }
+        );
         expect(mockRuntime.startPlayheadBroadcast).toHaveBeenCalledTimes(1);
         expect(mockRuntime.startBranchSync).toHaveBeenCalledWith(false);
     });

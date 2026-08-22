@@ -353,7 +353,7 @@ describe('agent risk approval', () => {
             enableReasoning: true,
             chatMode: 'chat',
         });
-        const proposed = proposePendingActionConfirmation({
+        const proposed = await proposePendingActionConfirmation({
             actions: [action],
             actionLabels: ['Set Vocal gain from 0.8 to 0.7'],
             affectedIds: ['track-vocal'],

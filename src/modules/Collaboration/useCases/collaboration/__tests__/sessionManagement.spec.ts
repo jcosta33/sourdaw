@@ -9,6 +9,7 @@ import {
 } from '../../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../../models/SyncChannelConstants';
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { configureCollaborationAssetOwner } from '../getCollaborationAssetOwnerId';
 import { onPresence } from '../onPresence';
 import { sessionRuntimePrimitives } from '../sessionManagement';
 
@@ -63,6 +64,8 @@ const assetTransferMock = vi.hoisted(() => ({
         getAsset: ReturnType<typeof vi.fn>;
         dispose: ReturnType<typeof vi.fn>;
         releaseStagedAsset: ReturnType<typeof vi.fn>;
+        rebindOwner: ReturnType<typeof vi.fn>;
+        reconcileOwnedAssets: ReturnType<typeof vi.fn>;
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
@@ -170,6 +173,8 @@ vi.mock('../../assetTransfer', () => ({
             getAsset: vi.fn(),
             dispose: vi.fn(),
             releaseStagedAsset: vi.fn(),
+            rebindOwner: vi.fn().mockResolvedValue({ status: 'rebound' }),
+            reconcileOwnedAssets: vi.fn().mockResolvedValue({ status: 'reconciled' }),
             options,
         };
         assetTransferMock.instances.push(instance);
@@ -338,6 +343,9 @@ describe('sessionRuntimePrimitives', () => {
 });
 
 describe('sessionRuntimePrimitives runtime wiring', () => {
+    let notifyOwnerId: (ownerId: string | undefined) => void = () => undefined;
+    let notifyReferencedHashes: (hashes: readonly string[]) => void = () => undefined;
+
     beforeEach(() => {
         vi.clearAllMocks();
         peerConnectionMock.instances.length = 0;
@@ -350,6 +358,18 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         transportStoreMock.value = null;
         crdtMock.hasCrdtDoc.mockReturnValue(false);
         crdtMock.waitForCrdtDocumentTransition.mockReturnValue(null);
+        configureCollaborationAssetOwner({
+            captureOwnerId: () => 'project:local-before-sync',
+            subscribeOwnerId: (listener) => {
+                notifyOwnerId = listener;
+                return () => undefined;
+            },
+            captureReferencedHashes: () => [],
+            subscribeReferencedHashes: (listener) => {
+                notifyReferencedHashes = listener;
+                return () => undefined;
+            },
+        });
     });
 
     afterEach(() => {
@@ -367,6 +387,20 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(assetTransferMock.instances).toHaveLength(1);
 
             expect(sessionRuntimePrimitives.state.peerManager).toBe(peerManager);
+        });
+
+        it('rebinds a provisional join owner only after synchronized project identity and references arrive', async () => {
+            sessionRuntimePrimitives.initialize('collaboration-join:attempt-1', {
+                rebindToSynchronizedOwner: true,
+            });
+            const assetTransfer = latestAssetTransfer();
+
+            notifyOwnerId('project:host-authoritative');
+            notifyReferencedHashes(['sha256:host-clip']);
+            await sessionRuntimePrimitives.flushAssetOwnership();
+
+            expect(assetTransfer.rebindOwner).toHaveBeenCalledExactlyOnceWith('project:host-authoritative');
+            expect(assetTransfer.reconcileOwnedAssets).toHaveBeenCalledExactlyOnceWith(['sha256:host-clip']);
         });
     });
 

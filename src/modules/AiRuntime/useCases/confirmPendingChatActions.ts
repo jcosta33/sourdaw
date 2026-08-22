@@ -198,12 +198,12 @@ function settleTrackedAgentRunWorkLease(
     }
 }
 
-function settleVerifiedBatchReplay(
+async function settleVerifiedBatchReplay(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     recoveredExternalEffects = false,
     leaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null }
-): ConfirmPendingChatActionsResult {
+): Promise<ConfirmPendingChatActionsResult> {
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
         const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
@@ -211,7 +211,7 @@ function settleVerifiedBatchReplay(
             completesRun: leaseSettlement.accepted,
         });
         const runPersistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'executed',
@@ -242,7 +242,7 @@ function settleVerifiedBatchReplay(
             });
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -257,16 +257,16 @@ function settleVerifiedBatchReplay(
                 reason: 'The verified command receipt records cancellation.',
             });
         });
+        await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'cancelled',
             error: undefined,
             content: 'The prior verified receipt records cancellation before commit. No project changes were applied.',
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         return { status: 'cancelled' };
     }
-    settlePendingActionResourceLease({
+    await settlePendingActionResourceLease({
         confirmationId: confirmation.id,
         disposition: replay.status === 'ambiguous' ? 'retain' : 'discard',
     });
@@ -659,19 +659,23 @@ export async function confirmPendingChatActions(
 
     const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
     if (approvalPreflightFailure) {
-        return failApprovalPreflight(confirmation, approvalPreflightFailure, 'authorization');
+        return await failApprovalPreflight(confirmation, approvalPreflightFailure, 'authorization');
     }
 
     const commandBatch = confirmation.approvalSnapshot.commandBatch;
     if (!commandBatch) {
-        return failApprovalPreflight(confirmation, 'The confirmation has no approved command batch.', 'authorization');
+        return await failApprovalPreflight(
+            confirmation,
+            'The confirmation has no approved command batch.',
+            'authorization'
+        );
     }
     let trackedWorkLease: AgentRunWorkLease | null = null;
     let commandBudget: { attemptId: string; estimates: AgentWorkBudgetEstimate[] } | null = null;
     if (agentRunLifecycle.get(confirmation.runId)) {
         const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
         if (parsedCommandBatch.status === 'invalid') {
-            return failApprovalPreflight(confirmation, parsedCommandBatch.reason, 'schema');
+            return await failApprovalPreflight(confirmation, parsedCommandBatch.reason, 'schema');
         }
         const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
         const budgetReservation = hasPriorVerifiedBatchReceipt
@@ -682,7 +686,7 @@ export async function confirmPendingChatActions(
                   attemptId,
               });
         if (budgetReservation?.status === 'hard-limit-reached') {
-            return failApprovalPreflight(
+            return await failApprovalPreflight(
                 confirmation,
                 `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`,
                 'budget'
@@ -701,7 +705,7 @@ export async function confirmPendingChatActions(
                 retriable: false,
             });
             if (leaseResult.status !== 'claimed') {
-                return failApprovalPreflight(
+                return await failApprovalPreflight(
                     confirmation,
                     `The confirmed command work could not be claimed: ${leaseResult.status}`,
                     'conflict'
@@ -816,6 +820,7 @@ export async function confirmPendingChatActions(
                 knownDomain: error instanceof AiProposalInvalidatedError,
             });
         }
+        await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
@@ -826,7 +831,6 @@ export async function confirmPendingChatActions(
             error: reason,
             content: `Failed to execute confirmed actions atomically:\n\n${reason}`,
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         return { status: 'failed', reason };
     } finally {
         releaseCommandCancellation?.();
@@ -859,7 +863,7 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'idempotent-replay') {
-        return settleVerifiedBatchReplay(
+        return await settleVerifiedBatchReplay(
             confirmation,
             batchResult.receipt,
             'recoveredExternalEffects' in batchResult && batchResult.recoveredExternalEffects === true,
@@ -875,7 +879,7 @@ export async function confirmPendingChatActions(
 
     if (batchResult.status === 'cancelled') {
         if (aborter.signal.aborted && !cancellationTriggeredByInvalidation) {
-            return cancelAcceptedConfirmation(confirmation);
+            return await cancelAcceptedConfirmation(confirmation);
         }
         return invalidatePendingConfirmation(confirmation);
     }
@@ -899,7 +903,7 @@ export async function confirmPendingChatActions(
         ]
             .filter(Boolean)
             .join(' ');
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {
@@ -1029,7 +1033,7 @@ export async function confirmPendingChatActions(
             }
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -1045,7 +1049,7 @@ export async function confirmPendingChatActions(
             ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
             compensation: 'manual-repair',
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
@@ -1059,11 +1063,6 @@ export async function confirmPendingChatActions(
         return { status: 'failed', reason: batchResult.reason };
     }
 
-    updatePendingActionConfirmationStatus({
-        confirmationId: confirmation.id,
-        status: 'failed',
-        error: batchResult.reason,
-    });
     let failureCategory: AgentRunErrorCategory = 'project';
     if (batchResult.status === 'conflicted') {
         failureCategory = 'conflict';
@@ -1075,24 +1074,30 @@ export async function confirmPendingChatActions(
         retriable: false,
         ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
     });
+    await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'failed',
+        error: batchResult.reason,
+    });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'failed',
         error: batchResult.reason,
         content: `Failed to execute confirmed actions atomically:\n\n${batchResult.reason}`,
     });
-    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'failed', reason: batchResult.reason };
 }
 
-function failApprovalPreflight(
+async function failApprovalPreflight(
     confirmation: PendingAppActionConfirmation,
     reason: string,
     category: AgentRunErrorCategory
-): ConfirmPendingChatActionsResult {
+): Promise<ConfirmPendingChatActionsResult> {
     recordTrackedAgentRunFailure(confirmation, {
         category,
         retriable: true,
     });
+    await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'failed',
@@ -1103,7 +1108,6 @@ function failApprovalPreflight(
         error: reason,
         content: `The confirmed command was rejected before execution: ${reason}`,
     });
-    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'failed', reason };
 }
 
@@ -1112,6 +1116,7 @@ async function invalidatePendingConfirmation(
 ): Promise<Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }>> {
     const reason = new AiProposalInvalidatedError().message;
     await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
+    await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'invalidated',
@@ -1123,7 +1128,6 @@ async function invalidatePendingConfirmation(
         content:
             'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.',
     });
-    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'invalidated', reason };
 }
 
@@ -1137,6 +1141,7 @@ async function invalidatePendingConfirmationForDivergence(
         .join('; ');
     const reason = `The approved command was not executed because project divergence is ${divergence.kind}.`;
     await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
+    await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'invalidated',
@@ -1147,14 +1152,16 @@ async function invalidatePendingConfirmationForDivergence(
         error: reason,
         content: `${reason} Affected targets: ${targetIds}.${candidates ? ` Repair candidates: ${candidates}.` : ''} Review the current project before planning again.`,
     });
-    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'invalidated', reason, divergence };
 }
 
-function cancelAcceptedConfirmation(confirmation: PendingAppActionConfirmation): ConfirmPendingChatActionsResult {
+async function cancelAcceptedConfirmation(
+    confirmation: PendingAppActionConfirmation
+): Promise<ConfirmPendingChatActionsResult> {
     updateTrackedAgentRun(confirmation, () => {
         agentRunLifecycle.cancel({ runId: confirmation.runId, reason: 'User cancelled before the command committed.' });
     });
+    await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'cancelled',
@@ -1164,6 +1171,5 @@ function cancelAcceptedConfirmation(confirmation: PendingAppActionConfirmation):
         error: undefined,
         content: 'Command cancelled before it committed. No project changes were applied.',
     });
-    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'cancelled' };
 }

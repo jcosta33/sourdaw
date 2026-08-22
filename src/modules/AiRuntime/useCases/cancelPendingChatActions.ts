@@ -32,8 +32,8 @@ export async function cancelPendingChatActions(
         runId: confirmation.runId,
         reason: 'User cancelled the pending confirmation.',
     });
+    await settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
-    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'cancelled',
         content: `Cancelled pending actions:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,

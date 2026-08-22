@@ -19,6 +19,8 @@ import {
     createDurableAssetRepository,
     type DurableAssetRepository,
     type PromoteStagedAssetResult,
+    type RebindDurableAssetOwnerResult,
+    type ReconcileOwnedAssetsResult,
     type ReleaseOwnedAssetResult,
     type ReleaseStagedAssetResult,
     type ReopenDurableAssetResult,
@@ -241,6 +243,34 @@ export class AssetTransfer {
         return this.durableAssets.releaseOwnedAsset(hash);
     }
 
+    /** Move every session-created reference from a provisional join identity to synchronized project truth. */
+    async rebindOwner(nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
+        const result = await this.durableAssets.rebindOwner(nextOwnerId);
+        if (result.status === 'failed') {
+            return result;
+        }
+        this.unsubscribeInvalidation();
+        this.ownerId = nextOwnerId;
+        this.durableAssets = createDurableAssetRepository(nextOwnerId);
+        this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
+            if (event.ownerId === undefined || event.ownerId === this.ownerId) {
+                this.localAssets.delete(event.hash);
+            }
+        });
+        return result;
+    }
+
+    /** Release this project's durable ownership for originals absent from authoritative project references. */
+    async reconcileOwnedAssets(referencedHashes: readonly string[]): Promise<ReconcileOwnedAssetsResult> {
+        const result = await this.durableAssets.reconcileOwnedAssets(referencedHashes);
+        if (result.status === 'reconciled') {
+            for (const hash of result.releasedHashes) {
+                this.localAssets.delete(hash);
+            }
+        }
+        return result;
+    }
+
     /** Check if an asset is available locally. */
     hasAsset(hash: string): boolean {
         return this.localAssets.has(hash);
@@ -372,10 +402,6 @@ export class AssetTransfer {
     }
 
     private async handleAssetRequest(peerId: PeerId, hash: string, missingChunks: unknown): Promise<void> {
-        if (!this.localAssets.has(hash)) {
-            return;
-        }
-
         // A request is a ~100-byte message; answering one slices, base64-encodes
         // and buffers the whole asset. Without an in-flight marker, N identical
         // requests are served N times concurrently, so the responder multiplies
@@ -389,6 +415,9 @@ export class AssetTransfer {
         serving.add(hash);
         this.servingHashesByPeer.set(peerId, serving);
         try {
+            // The resident map is only a disposable acceleration cache. A
+            // renderer/session restart must still be able to serve originals
+            // owned by this project, so every request verifies durable truth.
             const durable = await this.durableAssets.reopenDurableAsset(hash);
             if (durable.status === 'failed') {
                 this.localAssets.delete(hash);
