@@ -120,6 +120,11 @@ pub struct GrinderEngine {
     limiter_threshold: f32,
     limiter_enabled: bool,
     bypassed: bool,
+    /// Golden-test switch, never set in production: also run the stages the
+    /// F9 cost reductions gate off and discard their output, exactly as the
+    /// pre-optimization code did, so a same-process render can pin that the
+    /// gating moves no sample.
+    reference_render: bool,
     cabinet_mode: CabinetMode,
     routing_mode: RoutingMode,
     cab_ir_slot: u32,
@@ -176,6 +181,7 @@ impl GrinderEngine {
             limiter_threshold: db_to_linear(-0.3),
             limiter_enabled: true,
             bypassed: false,
+            reference_render: false,
             cabinet_mode: CabinetMode::Both,
             routing_mode: RoutingMode::Serial,
             cab_ir_slot: 0,
@@ -482,7 +488,7 @@ impl GrinderEngine {
             // Circuit and Hybrid modes. Capture mode replaces them outright,
             // so running them there is pure audio-thread cost for a value the
             // selector below discards.
-            let circuit_amp = if neural_mode == EngineMode::Capture {
+            let circuit_amp = if neural_mode == EngineMode::Capture && !self.reference_render {
                 0.0
             } else {
                 let circuit_preamp = self.preamp.process_sample(amp_input);
@@ -528,15 +534,16 @@ impl GrinderEngine {
                 // Only DualAmp routing reads the second amp chain. Every other
                 // routing mode used to run a whole extra power amp and output
                 // transformer per sample and throw the result away.
-                let dual_transformer = if self.routing_mode == RoutingMode::DualAmp {
-                    let dual_back_emf = self.dual_speaker.back_emf();
-                    let dual_power = self
-                        .dual_power_amp
-                        .process_sample(signal * 0.94 + dual_back_emf * 0.08);
-                    self.dual_transformer.process_sample(dual_power)
-                } else {
-                    0.0
-                };
+                let dual_transformer =
+                    if self.routing_mode == RoutingMode::DualAmp || self.reference_render {
+                        let dual_back_emf = self.dual_speaker.back_emf();
+                        let dual_power = self
+                            .dual_power_amp
+                            .process_sample(signal * 0.94 + dual_back_emf * 0.08);
+                        self.dual_transformer.process_sample(dual_power)
+                    } else {
+                        0.0
+                    };
 
                 let pa_peak = primary_transformer.abs().max(dual_transformer.abs());
                 if pa_peak > self.power_amp_peak {
@@ -597,6 +604,18 @@ impl GrinderEngine {
                 self.output_peak *= self.meter_decay_coeff;
             }
         }
+    }
+
+    /// Reference-render switch for the cost-reduction goldens. When set, the
+    /// engine also runs the stages the F9 gating skips — the dual power amp
+    /// and output transformer in every routing mode, and the circuit preamp
+    /// and tone stack in Capture mode — and still discards their output,
+    /// which is what the pre-optimization code computed. A render with this
+    /// on must be bit-identical to one with it off; any difference means a
+    /// cost-gated stage is leaking into the live signal path. Never set in
+    /// production.
+    pub fn set_reference_render(&mut self, reference: bool) {
+        self.reference_render = reference;
     }
 
     /// Clear every stage's runtime state. Parameters and routing survive;
