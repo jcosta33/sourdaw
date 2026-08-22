@@ -571,8 +571,10 @@ fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
 /// this file's burst-from-zero stimulus that dry leak is exactly why
 /// `RenderShape::onset` measures 0. Rendering 400 silent blocks (1.07 s)
 /// first parks the ramp at 1 − 3.4e-5 — where it stalls rather than settles —
-/// so the dry burst measures 2.7e-5, three orders of magnitude below the
-/// onset floor, and the first sample above the floor is wet.
+/// so the dry burst measures 2.7e-5: an order of magnitude below the onset
+/// floor (peak × 1e-3 ≥ 2.7e-4, since the first wet sample lands near 0.27)
+/// and four orders below that first wet sample, which is what makes the
+/// first sample above the floor a wet one.
 ///
 /// Same figure, measured and argued, as `wet_onset_follows_predelay.rs`'s
 /// `PREROLL_BLOCKS`; the instrument below is that file's, because the onset
