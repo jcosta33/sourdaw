@@ -15,6 +15,7 @@ import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
 import { defaultGrandBouleState, createGrandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
+import { applyGrandBouleMorphState } from '../../useCases/applyGrandBouleMorphState';
 import { resetMidiCalibration } from '../../useCases/calibrateGrandBouleMidi/resetMidiCalibration';
 import { setCcSmoothingMs } from '../../useCases/calibrateGrandBouleMidi/setCcSmoothingMs';
 import { setSustainThreshold } from '../../useCases/calibrateGrandBouleMidi/setSustainThreshold';
@@ -22,7 +23,6 @@ import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVe
 import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi/setVelocityCurveExponent';
 import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
 import { syncMidiCalibrationToEngine } from '../../useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine';
-import { applyGrandBouleMorphState } from '../../useCases/applyGrandBouleMorphState';
 import { hydrateGrandBouleConfigFromProject } from '../../useCases/hydrateGrandBouleConfigFromProject';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';

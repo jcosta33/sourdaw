@@ -1,5 +1,5 @@
-import { setDeviceState } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { setDeviceState } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import {

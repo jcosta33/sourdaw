@@ -3,7 +3,6 @@ import { getAiOrganizationHandlers } from '#/modules/AiRuntime/useCases';
 import { getArrangementHandlers, getSongStructureHandlers } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
-import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getRaveHandlers } from '#/modules/BrowserAi/useCases';
@@ -13,6 +12,7 @@ import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers } from '#/modules/ControlSurface/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
+import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';
 import {
     getChordTrackHandlers,
