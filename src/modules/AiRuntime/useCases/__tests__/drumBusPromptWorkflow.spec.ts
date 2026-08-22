@@ -995,7 +995,7 @@ describe('drum bus prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);

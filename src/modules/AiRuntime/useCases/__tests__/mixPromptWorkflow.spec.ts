@@ -539,7 +539,7 @@ describe('mix prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result).toMatchObject({ status: 'failed' });
+        expect(result).toMatchObject({ status: 'invalidated' });
         expect(runtimeMocks.setTrackGain).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackPan).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackMute).not.toHaveBeenCalled();

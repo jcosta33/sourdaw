@@ -470,7 +470,7 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
@@ -488,7 +488,7 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         const proposal = chatStore.value?.messages.find(

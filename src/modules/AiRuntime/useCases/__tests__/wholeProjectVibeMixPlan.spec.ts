@@ -638,7 +638,7 @@ describe('whole-project vibe-mix planning', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getGainLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         const terminalMessage = chatStore.value?.messages.find(

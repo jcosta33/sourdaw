@@ -613,7 +613,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
 
         await confirmPendingChatActions({ confirmationId });
 
-        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('failed');
+        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('invalidated');
         expect(getCrdtDocIds().toSorted()).toEqual(sourceDocIdsBefore);
         expect(branchStore.value?.branches).toHaveLength(1);
         expect(undoStore.value?.past).toHaveLength(0);

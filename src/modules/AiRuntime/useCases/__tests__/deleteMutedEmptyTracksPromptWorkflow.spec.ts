@@ -558,7 +558,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);
@@ -594,7 +594,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);

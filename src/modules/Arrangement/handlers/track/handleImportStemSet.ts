@@ -150,6 +150,15 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         };
     },
     isNoop: isImportedStemSetApplied,
+    canReapplyAfterDivergence: (action) =>
+        typeof action.payload?.folderId === 'string' &&
+        Array.isArray(action.payload?.stems) &&
+        action.payload.stems.length > 0,
+    validate: (action) =>
+        typeof action.payload?.folderId === 'string' &&
+        typeof action.payload?.groupName === 'string' &&
+        Array.isArray(action.payload?.stems) &&
+        action.payload.stems.length > 0,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,

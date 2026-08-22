@@ -609,7 +609,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
 
         expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1.04);
         expect(getNoteDuration('clip-strings', 'strings-short-a')).toBe(1.02);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'failed', executedActions: [] });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'invalidated', executedActions: [] });
         expect(undoStore.value?.past).toEqual([]);
     });
 

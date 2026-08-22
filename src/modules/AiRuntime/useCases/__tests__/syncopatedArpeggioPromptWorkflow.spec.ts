@@ -453,10 +453,10 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(midiStore.value?.notesByClipId['clip-chords']).toEqual(original);
         expect(undoStore.value?.past).toEqual([]);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'failed' });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'invalidated' });
     });
 
     it('keeps grouped undo and redo retryable when a collaborator changes the clip or freeze state', async () => {

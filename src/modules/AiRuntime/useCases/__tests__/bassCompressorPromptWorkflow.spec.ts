@@ -564,7 +564,7 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_DEVICE_IDS,
@@ -595,7 +595,7 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_DEVICE_IDS,
@@ -632,7 +632,7 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
             ...BASS_DI_DEVICE_IDS,
             'device-remote-di',

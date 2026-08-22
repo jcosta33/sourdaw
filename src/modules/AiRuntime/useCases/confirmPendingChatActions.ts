@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { isImportedStemSetApplied } from '#/modules/Arrangement/useCases';
 import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
@@ -315,8 +316,8 @@ function isConfirmationExecutionAuthorized(confirmation: PendingAppActionConfirm
     const actions = confirmation.approvalSnapshot.actions;
     return (
         actions.length === 1 &&
-        actions[0]?.type === 'createDrumPreviewBranches' &&
-        isDrumPreviewBranchPlanApplied(actions[0])
+        ((actions[0]?.type === 'createDrumPreviewBranches' && isDrumPreviewBranchPlanApplied(actions[0])) ||
+            (actions[0]?.type === 'importStemSet' && isImportedStemSetApplied(actions[0])))
     );
 }
 
@@ -746,14 +747,21 @@ export async function confirmPendingChatActions(
     let batchResult: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
     let cancellationTriggeredByInvalidation = false;
     try {
+        let executionStarted = false;
         const executionOptions = {
             ...group,
             signal: aborter.signal,
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
-                if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
+                if (aborter.signal.aborted) {
                     return false;
+                }
+                if (!executionStarted) {
+                    if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
+                        return false;
+                    }
+                    executionStarted = true;
                 }
                 // Only abort, revision, and actor authorization gate the
                 // in-flight batch. The approval itself was fully validated by
@@ -883,7 +891,7 @@ export async function confirmPendingChatActions(
     }
 
     const batchFailedBeforeCommit =
-        batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
+        batchResult.status === 'rejected' || batchResult.status === 'conflicted';
     if (batchFailedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision) {
         return invalidatePendingConfirmation(confirmation);
     }
