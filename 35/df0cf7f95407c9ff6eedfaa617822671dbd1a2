@@ -1,0 +1,20 @@
+tests/e2e/levainArticulationTestId.spec.ts
+  s_24b1bdbc3c31ad::t_0c216b62c6ce3b 23,26-27
+  s_24b1bdbc3c31ad::t_8f488641aa5c1f 1-2,5-11,14,16,22,25,29-30,35-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "35df0cf7f95407c9ff6eedfaa617822671dbd1a2",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
