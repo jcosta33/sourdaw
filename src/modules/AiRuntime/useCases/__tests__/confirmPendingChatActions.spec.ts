@@ -513,7 +513,10 @@ describe('confirmPendingChatActions transaction admission', () => {
             groupId: 'group-confirmed-stems',
             groupLabel: 'Import confirmed stems',
             projectRevision,
-            resourceLease: createStemImportConfirmationResourceLease('run-confirmed-stems', [stemAction]),
+            resourceLease: createStemImportConfirmationResourceLease('run-confirmed-stems', [stemAction], {
+                batchId: 'group-confirmed-stems',
+                commandBatch,
+            }),
         });
 
         const confirmation = confirmPendingChatActions({ confirmationId: 'confirmation-confirmed-stems' });

@@ -46,6 +46,7 @@ import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDispo
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
+import { recoverPreparedStemImportResources } from './recoverPreparedStemImportResources';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ConfirmPendingChatActionsInput = {
@@ -192,12 +193,12 @@ function settleTrackedAgentRunWorkLease(
     }
 }
 
-function settleVerifiedBatchReplay(
+async function settleVerifiedBatchReplay(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     recoveredExternalEffects = false,
     leaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null }
-): ConfirmPendingChatActionsResult {
+): Promise<ConfirmPendingChatActionsResult> {
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
         const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
@@ -264,6 +265,9 @@ function settleVerifiedBatchReplay(
         confirmationId: confirmation.id,
         disposition: replay.status === 'ambiguous' ? 'retain' : 'discard',
     });
+    if (replay.status === 'ambiguous') {
+        await recoverPreparedStemImportResources({ runId: confirmation.runId });
+    }
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'failed',
@@ -1041,6 +1045,7 @@ export async function confirmPendingChatActions(
             compensation: 'manual-repair',
         });
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await recoverPreparedStemImportResources({ runId: confirmation.runId });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',

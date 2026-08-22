@@ -168,6 +168,14 @@ describe('prepared stem import resource cleanup', () => {
                 recovery: { batchId, commandBatch },
             });
             preparedStemImportResources.retainForRecovery({ runId, stems });
+            expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([
+                {
+                    schemaVersion: 1,
+                    batchId,
+                    serializedCommandBatch: commandBatch.serialized,
+                    resources: [{ audioBufferId: 'decoded-buffer-1', assetLeaseId: 'staged-asset-1' }],
+                },
+            ]);
             mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
                 schemaVersion: 1,
                 runId,
@@ -205,6 +213,7 @@ describe('prepared stem import resource cleanup', () => {
             expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(physicalDeletes);
             expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(physicalDeletes);
             expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+            expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
         }
     );
 
@@ -243,6 +252,7 @@ describe('prepared stem import resource cleanup', () => {
         expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([
             expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'cleanup-pending' }),
         ]);
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toHaveLength(1);
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
 
@@ -266,5 +276,6 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
         expect(mocks.releaseStagedAsset).toHaveBeenCalledOnce();
         expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
     });
 });

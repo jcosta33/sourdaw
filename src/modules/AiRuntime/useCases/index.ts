@@ -62,7 +62,6 @@ export { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority
 export { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
 export { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 export { recoverInterruptedAgentRuns } from './agentRunRecovery';
-export { reconcilePreparedStemImportRecovery } from './reconcilePreparedStemImportRecovery';
 export { normalizeAgentFailure } from './agentErrorAndSaga';
 export { admitAgentRetry } from './admitAgentRetry';
 export { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';

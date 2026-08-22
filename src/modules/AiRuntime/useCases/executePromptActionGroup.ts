@@ -17,6 +17,7 @@ import { executePlannedActions } from './executePlannedActions';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
+import { recoverPreparedStemImportResources } from './recoverPreparedStemImportResources';
 
 type ExecutePromptActionGroupInput = {
     actions: readonly AppAction[];
@@ -249,20 +250,28 @@ export async function executePromptActionGroup(
     }
 
     const group = generateGroupId(input.prompt);
+    const commandBatch = (() => {
+        if (!input.prepared.agentApproval) {
+            return input.prepared.commandBatch;
+        }
+        return {
+            ...input.prepared.commandBatch,
+            approvalBinding: issueAgentCommandApprovalBinding({
+                approval: input.prepared.agentApproval,
+                commandBatch: input.prepared.commandBatch,
+            }),
+        };
+    })();
+    const retainImportedStemsForRecovery = async (): Promise<void> => {
+        preparedStemImportResources.retainForRecovery({
+            runId: input.runId,
+            stems: importedStems,
+            recovery: { batchId: envelope.batchId, commandBatch },
+        });
+        await recoverPreparedStemImportResources({ runId: input.runId });
+    };
     let execution: Awaited<ReturnType<typeof executePlannedActions>>;
     try {
-        const commandBatch = (() => {
-            if (!input.prepared.agentApproval) {
-                return input.prepared.commandBatch;
-            }
-            return {
-                ...input.prepared.commandBatch,
-                approvalBinding: issueAgentCommandApprovalBinding({
-                    approval: input.prepared.agentApproval,
-                    commandBatch: input.prepared.commandBatch,
-                }),
-            };
-        })();
         agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'executing' });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,
@@ -304,7 +313,7 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
-            preparedStemImportResources.retainForRecovery({ runId: input.runId, stems: importedStems });
+            await retainImportedStemsForRecovery();
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
@@ -318,7 +327,7 @@ export async function executePromptActionGroup(
                 });
                 transitionRunIfLive(input.runId, 'partially-completed');
             }
-            preparedStemImportResources.retainForRecovery({ runId: input.runId, stems: importedStems });
+            await retainImportedStemsForRecovery();
             notifyAiChange(`Command outcome is uncertain: ${reason} Inspect the project before retrying.`, []);
             return { status: 'ambiguous' };
         }
@@ -376,7 +385,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'partially-completed');
         }
-        preparedStemImportResources.retainForRecovery({ runId: input.runId, stems: importedStems });
+        await retainImportedStemsForRecovery();
         notifyAiChange(`Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`, []);
         return { status: 'ambiguous' };
     }
