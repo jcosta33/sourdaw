@@ -39,6 +39,7 @@ import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
+const ddspTfjsApplicationRuntimePathSet = new Set<string>(DDSP_TFJS_APPLICATION_RUNTIME_PATHS);
 const ddspModelEnforcementPaths = [
     'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
     'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
@@ -422,7 +423,7 @@ describe('release inventory', () => {
         (changedPath) => {
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-runtime-'));
             for (const path of DDSP_TFJS_RUNTIME_PATHS) {
-                if (!path.startsWith('public/legal/') && !DDSP_TFJS_APPLICATION_RUNTIME_PATHS.includes(path)) {
+                if (!path.startsWith('public/legal/') && !ddspTfjsApplicationRuntimePathSet.has(path)) {
                     continue;
                 }
                 mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -502,7 +503,7 @@ describe('release inventory', () => {
     it('binds the exact DDSP TF.js dependency and legal closure', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-ddsp-tfjs-provenance-'));
         for (const path of DDSP_TFJS_RUNTIME_PATHS) {
-            if (!path.startsWith('public/legal/') && !DDSP_TFJS_APPLICATION_RUNTIME_PATHS.includes(path)) {
+            if (!path.startsWith('public/legal/') && !ddspTfjsApplicationRuntimePathSet.has(path)) {
                 continue;
             }
             mkdirSync(join(root, path, '..'), { recursive: true });
