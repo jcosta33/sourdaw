@@ -127,6 +127,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `test:release-inventory` proves each generated Levain manifest
+          # against the commit its provenance record pins, by `git show`-ing
+          # that blob. A shallow clone does not contain those commits, so the
+          # check cannot read them and reports every sample as unverifiable.
+          fetch-depth: 0
 
       - name: Enable Corepack
         run: corepack enable
