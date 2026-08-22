@@ -182,7 +182,14 @@ const META_STORE_NAME = 'bufferMeta';
 type BufferMeta = {
     freezeProjectId?: number;
     lastAccessed: number;
+    preparedOwner?: PreparedBufferOwner;
     sizeInBytes: number;
+};
+
+type PreparedBufferOwner = {
+    schemaVersion: 1;
+    leaseId: string;
+    status: 'project-owned' | 'temporary';
 };
 
 /** One connection for the life of the module (audit M-045). `get()` and
@@ -441,6 +448,47 @@ function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
         lastAccessed: Date.now(),
         sizeInBytes,
     };
+}
+
+function isValidSerializedBuffer(data: SerializedBuffer | undefined): data is SerializedBuffer {
+    if (!data || !Array.isArray(data.channelData)) {
+        return false;
+    }
+    const length = data.channelData[0]?.length ?? 0;
+    const sizeInBytes = data.channelData.reduce((total, channel) => total + channel.byteLength, 0);
+    return (
+        Number.isFinite(data.sampleRate) &&
+        data.sampleRate > 0 &&
+        Number.isInteger(data.numberOfChannels) &&
+        data.numberOfChannels > 0 &&
+        length > 0 &&
+        data.channelData.length === data.numberOfChannels &&
+        data.channelData.every((channel) => channel instanceof Float32Array && channel.length === length) &&
+        Number.isFinite(data.lastAccessed) &&
+        data.sizeInBytes === sizeInBytes
+    );
+}
+
+function readPreparedBufferOwner(meta: BufferMeta | undefined): PreparedBufferOwner | null | 'invalid' {
+    const owner = meta?.preparedOwner;
+    if (owner === undefined) {
+        return null;
+    }
+    if (
+        owner === null ||
+        typeof owner !== 'object' ||
+        owner.schemaVersion !== 1 ||
+        typeof owner.leaseId !== 'string' ||
+        owner.leaseId.length === 0 ||
+        (owner.status !== 'temporary' && owner.status !== 'project-owned')
+    ) {
+        return 'invalid';
+    }
+    return owner;
+}
+
+function failureReason(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }
 
 /** Refresh a buffer's last-access stamp. The age-based collector deletes on
@@ -758,6 +806,161 @@ type AudioBufferCacheClearRuntimeOptions = {
     retainedIds?: Iterable<string>;
 };
 
+type PersistPreparedBufferInput = {
+    id: string;
+    buffer: AudioBuffer;
+};
+
+type ReopenPreparedBufferInput = {
+    id: string;
+    leaseId: string;
+    context: Pick<BaseAudioContext, 'createBuffer'>;
+};
+
+type ReleasePreparedBufferInput = {
+    id: string;
+    leaseId: string;
+    disposition: 'discard' | 'project-owned';
+};
+
+/** Publish synchronously for preview, but report durable only after the exact IDB commit. */
+async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput) {
+    const leaseId = `prepared-audio-${crypto.randomUUID()}`;
+    const data = serializeBuffer(buffer);
+    const generation = claimPersistenceGeneration(id);
+    audioCacheSet(id, buffer, undefined, true);
+    clearWaveformCachesForId(id);
+    accessRefreshStampById.set(id, data.lastAccessed);
+    try {
+        const db = await openDb();
+        if (persistenceGenerationById.get(id) !== generation) {
+            return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+        }
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+        tx.objectStore(STORE_NAME).put(data, id);
+        tx.objectStore(META_STORE_NAME).put(
+            {
+                lastAccessed: data.lastAccessed,
+                preparedOwner: { schemaVersion: 1, leaseId, status: 'temporary' },
+                sizeInBytes: data.sizeInBytes,
+            } satisfies BufferMeta,
+            id
+        );
+        await awaitTransaction(tx);
+        if (persistenceGenerationById.get(id) !== generation) {
+            return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+        }
+        return { status: 'persisted' as const, bufferId: id, leaseId };
+    } catch (error) {
+        return { status: 'failed' as const, reason: failureReason(error) };
+    } finally {
+        if (persistenceGenerationById.get(id) === generation) {
+            persistenceGenerationById.delete(id);
+        }
+    }
+}
+
+/** Reconstruct one exact prepared owner without making every playback read async. */
+async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBufferInput) {
+    try {
+        const db = await openDb();
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
+        const [data, meta] = await Promise.all([
+            awaitRequest(tx.objectStore(STORE_NAME).get(id) as IDBRequest<SerializedBuffer | undefined>),
+            awaitRequest(tx.objectStore(META_STORE_NAME).get(id) as IDBRequest<BufferMeta | undefined>),
+        ]);
+        await awaitTransaction(tx);
+        if (!data || !meta) {
+            return { status: 'missing' as const };
+        }
+        const owner = readPreparedBufferOwner(meta);
+        if (owner === 'invalid') {
+            return { status: 'failed' as const, reason: 'Prepared audio ownership metadata is invalid.' };
+        }
+        if (!owner || owner.leaseId !== leaseId) {
+            return { status: 'mismatched' as const };
+        }
+        if (!isValidSerializedBuffer(data)) {
+            return { status: 'failed' as const, reason: 'Prepared audio PCM is invalid.' };
+        }
+        if (!Number.isFinite(meta.lastAccessed) || meta.sizeInBytes !== data.sizeInBytes) {
+            return { status: 'failed' as const, reason: 'Prepared audio metadata does not match its PCM.' };
+        }
+        const length = data.channelData[0]!.length;
+        const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
+        for (let channel = 0; channel < data.numberOfChannels; channel++) {
+            buffer.getChannelData(channel).set(data.channelData[channel]!);
+        }
+        audioCacheSet(id, buffer, meta.freezeProjectId, true);
+        clearWaveformCachesForId(id);
+        accessRefreshStampById.set(id, meta.lastAccessed);
+        return { status: 'reopened' as const, bufferId: id, ownership: owner.status };
+    } catch (error) {
+        return { status: 'failed' as const, reason: failureReason(error) };
+    }
+}
+
+/** Settle one temporary owner transactionally; project transfer retains PCM. */
+async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePreparedBufferInput) {
+    const generation = claimPersistenceGeneration(id);
+    try {
+        const db = await openDb();
+        if (persistenceGenerationById.get(id) !== generation) {
+            return { status: 'failed' as const, reason: 'Prepared audio settlement was superseded.' };
+        }
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const metaStore = tx.objectStore(META_STORE_NAME);
+        const [data, meta] = await Promise.all([
+            awaitRequest(store.get(id) as IDBRequest<SerializedBuffer | undefined>),
+            awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>),
+        ]);
+        if (!data || !meta) {
+            await awaitTransaction(tx);
+            return { status: 'missing' as const };
+        }
+        const owner = readPreparedBufferOwner(meta);
+        if (owner === 'invalid') {
+            await awaitTransaction(tx);
+            return { status: 'failed' as const, reason: 'Prepared audio ownership metadata is invalid.' };
+        }
+        if (!owner || owner.leaseId !== leaseId) {
+            await awaitTransaction(tx);
+            return { status: 'mismatched' as const };
+        }
+        if (owner.status === 'project-owned') {
+            await awaitTransaction(tx);
+            return { status: 'already-settled' as const, disposition: 'project-owned' as const };
+        }
+        if (disposition === 'project-owned') {
+            if (!isValidSerializedBuffer(data) || meta.sizeInBytes !== data.sizeInBytes) {
+                await awaitTransaction(tx);
+                return { status: 'failed' as const, reason: 'Prepared audio PCM cannot be promoted safely.' };
+            }
+            metaStore.put({ ...meta, preparedOwner: { ...owner, status: 'project-owned' } } satisfies BufferMeta, id);
+            await awaitTransaction(tx);
+            if (persistenceGenerationById.get(id) !== generation) {
+                return { status: 'failed' as const, reason: 'Prepared audio settlement was superseded.' };
+            }
+            return { status: 'released' as const, disposition: 'project-owned' as const };
+        }
+        store.delete(id);
+        metaStore.delete(id);
+        await awaitTransaction(tx);
+        if (persistenceGenerationById.get(id) !== generation) {
+            return { status: 'failed' as const, reason: 'Prepared audio settlement was superseded.' };
+        }
+        evictCachedBuffer(id);
+        return { status: 'released' as const, disposition: 'discarded' as const };
+    } catch (error) {
+        return { status: 'failed' as const, reason: failureReason(error) };
+    } finally {
+        if (persistenceGenerationById.get(id) === generation) {
+            persistenceGenerationById.delete(id);
+        }
+    }
+}
+
 export function clearRuntimeAudioBufferCache({ retainedIds }: AudioBufferCacheClearRuntimeOptions = {}): void {
     if (!retainedIds) {
         clearRuntimeCacheState();
@@ -802,6 +1005,12 @@ export const audioBufferCache = {
     has(id: string): boolean {
         return cache.has(id);
     },
+
+    persistPreparedBuffer,
+
+    reopenPreparedBuffer,
+
+    releasePreparedBuffer,
 
     getWaveformPeaks(
         id: string,
@@ -1304,6 +1513,7 @@ export const audioBufferCache = {
                     typeof key !== 'string' ||
                     !key.startsWith('freeze-') ||
                     activeIds.has(key) ||
+                    metadata?.preparedOwner?.status === 'temporary' ||
                     freezeProjectId !== projectId
                 ) {
                     continue;
@@ -1358,7 +1568,7 @@ export const audioBufferCache = {
             for (let index = 0; index < metas.length; index++) {
                 const meta = metas[index]!;
                 const key = keys[index]! as string;
-                if (pinnedBufferIds.has(key)) {
+                if (pinnedBufferIds.has(key) || meta.preparedOwner?.status === 'temporary') {
                     continue;
                 }
                 if (typeof meta.lastAccessed !== 'number') {
@@ -1485,6 +1695,7 @@ export const audioBufferCache = {
                 .map((meta, index) => ({
                     id: keys[index]! as string,
                     lastAccessed: meta.lastAccessed,
+                    temporary: meta.preparedOwner?.status === 'temporary',
                     size: meta.sizeInBytes,
                 }))
                 .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
@@ -1496,7 +1707,7 @@ export const audioBufferCache = {
                 if (currentTotal <= maxSizeBytes) {
                     break;
                 }
-                if (pinnedBufferIds.has(entry.id)) {
+                if (pinnedBufferIds.has(entry.id) || entry.temporary) {
                     continue;
                 }
                 store.delete(entry.id);

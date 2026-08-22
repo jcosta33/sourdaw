@@ -43,6 +43,11 @@ export type StoredAudioBuffer = {
 export type StoredBufferMeta = {
     freezeProjectId?: number;
     lastAccessed: number;
+    preparedOwner?: {
+        schemaVersion: 1;
+        leaseId: string;
+        status: 'project-owned' | 'temporary';
+    };
     sizeInBytes: number;
 };
 
