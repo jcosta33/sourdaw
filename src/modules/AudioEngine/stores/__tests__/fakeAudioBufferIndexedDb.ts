@@ -43,6 +43,11 @@ export type StoredAudioBuffer = {
 export type StoredBufferMeta = {
     freezeProjectId?: number;
     lastAccessed: number;
+    preparedOwner?: {
+        schemaVersion: 1;
+        leaseId: string;
+        status: 'project-owned' | 'temporary';
+    };
     sizeInBytes: number;
 };
 
@@ -115,6 +120,20 @@ export type FakeAudioIndexedDbControls = {
      */
     abortWritesTo: (storeName: string) => void;
     allowWrites: () => void;
+    /** Abort exactly the next readwrite transaction, then resume normal writes. */
+    abortNextWrite: () => void;
+    /** Hold readonly completion after its requests have produced their snapshots. */
+    pauseReadonlySettlements: () => void;
+    /** Release the oldest held readonly completion. */
+    releaseNextReadonlySettlement: () => void;
+    /** Readonly completions currently held after request delivery. */
+    pendingReadonlySettlementCount: () => number;
+    /** Hold readwrite completion after its writes have been staged. */
+    pauseWriteSettlements: () => void;
+    /** Release the oldest held readwrite commit or abort. */
+    releaseNextWriteSettlement: () => void;
+    /** Readwrite completions currently held after request delivery. */
+    pendingWriteSettlementCount: () => number;
     /** Number of readwrite transactions opened against the database. */
     writeTransactionCount: () => number;
     /** Number of `indexedDB.open` calls issued against the fake. */
@@ -161,17 +180,27 @@ class FakeTransaction {
     private readonly queue: Array<() => void> = [];
     private readonly staged = new Map<string, Map<string, StoredValue | null>>();
     private scheduled = false;
+    private started = false;
     private settled = false;
 
     constructor(
         private readonly tables: Tables,
         private readonly scope: readonly string[],
         private readonly willAbort: boolean,
-        private readonly meters: ByteMeters
+        private readonly meters: ByteMeters,
+        private readonly holdSettlement?: (settle: () => void) => void,
+        private readonly onSettled?: () => void
     ) {
         for (const name of scope) {
             this.staged.set(name, new Map<string, StoredValue | null>());
         }
+    }
+
+    start(): void {
+        if (this.started || this.settled) {
+            return;
+        }
+        this.started = true;
         this.schedule();
     }
 
@@ -205,7 +234,7 @@ class FakeTransaction {
     }
 
     private schedule(): void {
-        if (this.scheduled || this.settled) {
+        if (!this.started || this.scheduled || this.settled) {
             return;
         }
         this.scheduled = true;
@@ -227,6 +256,10 @@ class FakeTransaction {
             this.schedule();
             return;
         }
+        if (this.holdSettlement) {
+            this.holdSettlement(() => this.settle(this.willAbort));
+            return;
+        }
         this.settle(this.willAbort);
     }
 
@@ -245,6 +278,7 @@ class FakeTransaction {
             this.error = null;
             // A bare abort fires `abort` and nothing else.
             this.onabort?.();
+            this.onSettled?.();
             return;
         }
         for (const [name, staged] of this.staged) {
@@ -259,6 +293,7 @@ class FakeTransaction {
             staged.clear();
         }
         this.oncomplete?.();
+        this.onSettled?.();
     }
 }
 
@@ -400,6 +435,18 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     const transactionScopes: string[][] = [];
     let abortWrites = false;
     let abortWritesToStore: string | null = null;
+    let abortNextWrite = false;
+    let pauseReadonlySettlements = false;
+    let pauseWriteSettlements = false;
+    const pendingReadonlySettlements: Array<() => void> = [];
+    const pendingWriteSettlements: Array<() => void> = [];
+    type ScheduledTransaction = {
+        mode: IDBTransactionMode;
+        scope: readonly string[];
+        transaction: FakeTransaction;
+    };
+    const pendingTransactions: ScheduledTransaction[] = [];
+    const activeTransactions: ScheduledTransaction[] = [];
     let writeTransactionCount = 0;
     let openRequestCount = 0;
     let closeCount = 0;
@@ -407,6 +454,50 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     // Every `open()` yields its own connection over the shared committed data,
     // exactly as a browser does. Closing one must not disturb the others.
     const connections: FakeConnection[] = [];
+
+    function transactionsConflict(alpha: ScheduledTransaction, beta: ScheduledTransaction): boolean {
+        return (
+            (alpha.mode === 'readwrite' || beta.mode === 'readwrite') &&
+            alpha.scope.some((storeName) => beta.scope.includes(storeName))
+        );
+    }
+
+    function startEligibleTransactions(): void {
+        for (let index = 0; index < pendingTransactions.length; index++) {
+            const candidate = pendingTransactions[index]!;
+            const blockedByActive = activeTransactions.some((active) => transactionsConflict(active, candidate));
+            const blockedByEarlier = pendingTransactions
+                .slice(0, index)
+                .some((earlier) => transactionsConflict(earlier, candidate));
+            if (blockedByActive || blockedByEarlier) {
+                continue;
+            }
+            pendingTransactions.splice(index, 1);
+            index--;
+            activeTransactions.push(candidate);
+            candidate.transaction.start();
+        }
+    }
+
+    function scheduleTransaction(transaction: FakeTransaction, scope: readonly string[], mode: IDBTransactionMode) {
+        const scheduled = { transaction, scope, mode };
+        pendingTransactions.push(scheduled);
+        startEligibleTransactions();
+        return scheduled;
+    }
+
+    function finishTransaction(scheduled: ScheduledTransaction): void {
+        const activeIndex = activeTransactions.indexOf(scheduled);
+        if (activeIndex >= 0) {
+            activeTransactions.splice(activeIndex, 1);
+        } else {
+            const pendingIndex = pendingTransactions.indexOf(scheduled);
+            if (pendingIndex >= 0) {
+                pendingTransactions.splice(pendingIndex, 1);
+            }
+        }
+        startEligibleTransactions();
+    }
 
     function createConnection(): FakeConnection {
         let closed = false;
@@ -450,8 +541,30 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                     writeTransactionCount++;
                 }
                 const doomed =
-                    isWrite && (abortWrites || (abortWritesToStore !== null && scope.includes(abortWritesToStore)));
-                return new FakeTransaction(tables, scope, doomed, meters);
+                    isWrite &&
+                    (abortWrites ||
+                        abortNextWrite ||
+                        (abortWritesToStore !== null && scope.includes(abortWritesToStore)));
+                if (isWrite && abortNextWrite) {
+                    abortNextWrite = false;
+                }
+                let heldSettlements: Array<() => void> | undefined;
+                if (isWrite && pauseWriteSettlements) {
+                    heldSettlements = pendingWriteSettlements;
+                } else if (!isWrite && pauseReadonlySettlements) {
+                    heldSettlements = pendingReadonlySettlements;
+                }
+                let scheduled: ScheduledTransaction;
+                const transaction = new FakeTransaction(
+                    tables,
+                    scope,
+                    doomed,
+                    meters,
+                    heldSettlements ? (settle) => heldSettlements.push(settle) : undefined,
+                    () => finishTransaction(scheduled)
+                );
+                scheduled = scheduleTransaction(transaction, scope, mode);
+                return transaction;
             },
             isClosed: () => closed,
         };
@@ -514,6 +627,23 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
             abortWrites = false;
             abortWritesToStore = null;
         },
+        abortNextWrite: () => {
+            abortNextWrite = true;
+        },
+        pauseReadonlySettlements: () => {
+            pauseReadonlySettlements = true;
+        },
+        releaseNextReadonlySettlement: () => {
+            pendingReadonlySettlements.shift()?.();
+        },
+        pendingReadonlySettlementCount: () => pendingReadonlySettlements.length,
+        pauseWriteSettlements: () => {
+            pauseWriteSettlements = true;
+        },
+        releaseNextWriteSettlement: () => {
+            pendingWriteSettlements.shift()?.();
+        },
+        pendingWriteSettlementCount: () => pendingWriteSettlements.length,
         writeTransactionCount: () => writeTransactionCount,
         openRequestCount: () => openRequestCount,
         closeCount: () => closeCount,
