@@ -1,0 +1,29 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_26e4d325ea9583 2,308-337
+public/legal/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_ab7feff293e781 76-77
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_1f366b10e50c55 204,293-294,323-324,369-370,378,389,394
+public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE
+  s_a40848e8f8cca9::t_6f04d537c476ee 1-217
+public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE
+  s_a40848e8f8cca9::t_6f04d537c476ee 1-5
+.agents/decisions/0035-admit-webllm-qwen-conversions-under-apache-2.0.md
+  s_a40848e8f8cca9::t_ab7feff293e781 21-22,47-54,81-87,94-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "54dbfbeda4f1ae28f5e50144224b552aa7a94045",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
