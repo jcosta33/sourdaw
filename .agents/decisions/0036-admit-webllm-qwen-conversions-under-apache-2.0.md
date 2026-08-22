@@ -1,6 +1,6 @@
 ---
 type: adr
-id: 0035
+id: 0036
 title: Admit pinned WebLLM Qwen conversions under Apache-2.0
 status: accepted
 date: 2026-08-22
@@ -26,7 +26,7 @@ sources:
     - public/legal/Qwen-NOTICE.txt
 ---
 
-# 0035 - Admit pinned WebLLM Qwen conversions under Apache-2.0
+# 0036 - Admit pinned WebLLM Qwen conversions under Apache-2.0
 
 ## Context
 

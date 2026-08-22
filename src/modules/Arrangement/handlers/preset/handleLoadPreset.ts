@@ -12,6 +12,11 @@ import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/tr
 import { type Device, type Track } from '../../stores/trackStore';
 import { compileTrackStripInitializationSnapshot } from '../../useCases/compileTrackStripInitializationSnapshot';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
+import { hasLiveProjectHostTrack } from '../../useCases/device/hasLiveProjectHostTrack';
+import {
+    getRuntimeDeviceDeltaPostCommitFailure,
+    type RuntimeDeviceDeltaPostCommitError,
+} from '../../useCases/device/runtimeDeviceDeltaPostCommit';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { findPresetById } from '../../useCases/preset/findPresetById';
 import { matchesMaterializedPresetDevices } from '../../useCases/preset/matchesMaterializedPresetDevices';
@@ -20,28 +25,10 @@ import { updateTrack } from '../../useCases/updateTrack';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
-type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
-type RuntimeDeviceDeltaFailure = Exclude<
-    RuntimeDeviceDeltaResult,
-    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
+type RuntimeDeviceDeltaResult = Exclude<
+    ReturnType<typeof applyDeviceChainRuntimeDelta>,
+    Readonly<{ acceptance: 'superseded' }>
 >;
-
-class RuntimePresetDeltaPostCommitError extends Error {
-    public readonly outcome: RuntimeDeviceDeltaFailure;
-    public readonly remediation: 'retry' | 'repair';
-
-    constructor(outcome: RuntimeDeviceDeltaFailure) {
-        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
-        super(
-            outcome.acceptance === 'rejected'
-                ? `Preset runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
-                : `Preset runtime delta requires ${remediation} after project commit: ${outcome.reason}`
-        );
-        this.name = 'RuntimePresetDeltaPostCommitError';
-        this.outcome = outcome;
-        this.remediation = remediation;
-    }
-}
 
 function findUniqueTrack(trackId: string): Track | null {
     const matches = (getTrackStoreState()?.tracks ?? []).filter((track) => track.id === trackId);
@@ -134,7 +121,7 @@ function initializeMissingLiveStrip(after: Track): RuntimeDeviceDeltaResult {
 }
 
 function createPostCommitRuntimeEffect(before: Track, after: Track): () => void {
-    let failure: RuntimePresetDeltaPostCommitError | undefined;
+    let failure: RuntimeDeviceDeltaPostCommitError | undefined;
     return () => {
         if (failure) {
             throw failure;
@@ -142,15 +129,29 @@ function createPostCommitRuntimeEffect(before: Track, after: Track): () => void 
         if (!shouldCreateLiveTrackStrip(after)) {
             return;
         }
-        const result = getTrackStrip(after.id)
+        // This effect runs after the whole batch commits, so a later action in
+        // the same commit may have removed the host track. Both branches below
+        // are unsound once it is gone, and each is guarded on its own terms:
+        // the delta reports itself `superseded`, while strip initialization
+        // never consults project truth at all and would build a strip nothing
+        // owns for a track that no longer exists.
+        const liveStrip = getTrackStrip(after.id);
+        if (!liveStrip && !hasLiveProjectHostTrack(after.id)) {
+            return;
+        }
+        const result = liveStrip
             ? applyDeviceChainRuntimeDelta({
                   before,
                   after,
                   operation: 'replace-device-chain',
               })
             : initializeMissingLiveStrip(after);
-        if (result.acceptance !== 'accepted' || result.application !== 'applied') {
-            failure = new RuntimePresetDeltaPostCommitError(result);
+        if (result.acceptance === 'superseded') {
+            return;
+        }
+        const presetFailure = getRuntimeDeviceDeltaPostCommitFailure(result, 'Preset');
+        if (presetFailure) {
+            failure = presetFailure;
             throw failure;
         }
         // Parameter controls are intentionally separate from the topology
