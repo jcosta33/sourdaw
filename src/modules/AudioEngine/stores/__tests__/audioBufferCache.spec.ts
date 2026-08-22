@@ -814,25 +814,78 @@ describe('audioBufferCache conversions', () => {
         }
     });
 
+    it('rejects a settled temporary owner after reload while preserving its lease and exact PCM', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const original = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        original.getChannelData(0)[0] = 0.35;
+        const first = await audioBufferCache.persistPreparedBuffer({ id: 'settled-reload', buffer: original });
+        if (first.status !== 'persisted') {
+            throw new TypeError('Expected settled prepared PCM fixture to persist');
+        }
+
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            )
+        );
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({ id: 'settled-reload', leaseId: first.leaseId, context })
+        ).resolves.toEqual({ status: 'reopened', bufferId: 'settled-reload', ownership: 'temporary' });
+        const reopenedRuntime = audioBufferCache.get('settled-reload');
+        const durablePcm = structuredClone(controls.committed.get('settled-reload'));
+        const durableMeta = structuredClone(controls.committedMeta.get('settled-reload'));
+        const unrelated = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        unrelated.getChannelData(0)[0] = 0.85;
+
+        await expect(
+            audioBufferCache.persistPreparedBuffer({ id: 'settled-reload', buffer: unrelated })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is already occupied.',
+        });
+        expect(audioBufferCache.get('settled-reload')).toBe(reopenedRuntime);
+        expect(controls.committed.get('settled-reload')).toEqual(durablePcm);
+        expect(controls.committedMeta.get('settled-reload')).toEqual(durableMeta);
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({ id: 'settled-reload', leaseId: first.leaseId, context })
+        ).resolves.toEqual({ status: 'reopened', bufferId: 'settled-reload', ownership: 'temporary' });
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'settled-reload',
+                leaseId: first.leaseId,
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+    });
+
     it('does not let a stale reopen overwrite a newer prepared buffer in memory after it commits', async () => {
         const controls = installFakeAudioIndexedDb();
-        controls.committed.set('reopen-race', {
-            sampleRate: 48_000,
-            numberOfChannels: 1,
-            channelData: [new Float32Array([0.25])],
-            lastAccessed: 1,
-            sizeInBytes: 4,
-        });
-        controls.committedMeta.set('reopen-race', {
-            lastAccessed: 1,
-            sizeInBytes: 4,
-            preparedOwner: { schemaVersion: 1, leaseId: 'lease-a', status: 'temporary' },
-        });
-        controls.pauseReadonlySettlements();
+        controls.pauseWriteSettlements();
+        const original = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        original.getChannelData(0)[0] = 0.25;
+        const first = audioBufferCache.persistPreparedBuffer({ id: 'reopen-race', buffer: original });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
 
+        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        replacement.getChannelData(0)[0] = 0.75;
+        const second = audioBufferCache.persistPreparedBuffer({ id: 'reopen-race', buffer: replacement });
+        while (controls.pendingWriteSettlementCount() < 2) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        const firstLeaseId = controls.committedMeta.get('reopen-race')?.preparedOwner?.leaseId;
+        if (!firstLeaseId) {
+            throw new TypeError('Expected the first in-flight owner to commit before its superseding write');
+        }
+
+        controls.pauseReadonlySettlements();
         const staleReopen = audioBufferCache.reopenPreparedBuffer({
             id: 'reopen-race',
-            leaseId: 'lease-a',
+            leaseId: firstLeaseId,
             context: createTestContext(
                 vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
                     createAudioBuffer({ length, sampleRate })
@@ -843,22 +896,32 @@ describe('audioBufferCache conversions', () => {
             await flushIndexedDbTasks(1);
         }
 
-        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
-        replacement.getChannelData(0)[0] = 0.75;
-        const persisted = await audioBufferCache.persistPreparedBuffer({ id: 'reopen-race', buffer: replacement });
+        controls.releaseNextWriteSettlement();
+        const persisted = await second;
         expect(persisted).toMatchObject({ status: 'persisted', bufferId: 'reopen-race' });
         if (persisted.status !== 'persisted') {
             throw new TypeError('Expected replacement prepared PCM to persist');
         }
-        await expect(
-            audioBufferCache.releasePreparedBuffer({
-                id: 'reopen-race',
-                leaseId: persisted.leaseId,
-                disposition: 'project-owned',
-            })
-        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+        const projectRelease = audioBufferCache.releasePreparedBuffer({
+            id: 'reopen-race',
+            leaseId: persisted.leaseId,
+            disposition: 'project-owned',
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        await expect(projectRelease).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
 
+        while (controls.pendingReadonlySettlementCount() < 2) {
+            await flushIndexedDbTasks(1);
+        }
         controls.releaseNextReadonlySettlement();
+        controls.releaseNextReadonlySettlement();
+        await expect(first).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio persistence was superseded.',
+        });
         await expect(staleReopen).resolves.toEqual({
             status: 'failed',
             reason: 'Prepared audio reopen was superseded.',

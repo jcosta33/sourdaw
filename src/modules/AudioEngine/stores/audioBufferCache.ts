@@ -440,6 +440,7 @@ type PreparedPersistenceAttempt = {
     settle: () => void;
 };
 const preparedPersistenceAttemptById = new Map<string, PreparedPersistenceAttempt>();
+const activePreparedPersistenceLeaseIdsById = new Map<string, Set<string>>();
 let nextImportCandidateId = 0;
 let activeImportCandidateId = 0;
 let committedImportCandidateId = 0;
@@ -474,14 +475,29 @@ function claimPersistenceGeneration(id: string): number {
     return generation;
 }
 
-function registerPreparedPersistenceAttempt(id: string, generation: number): PreparedPersistenceAttempt {
+function registerPreparedPersistenceAttempt(
+    id: string,
+    generation: number,
+    leaseId: string
+): PreparedPersistenceAttempt {
     let settle = (): void => undefined;
     const settled = new Promise<void>((resolve) => {
         settle = resolve;
     });
     const attempt = { generation, settled, settle };
     preparedPersistenceAttemptById.set(id, attempt);
+    const activeLeaseIds = activePreparedPersistenceLeaseIdsById.get(id) ?? new Set<string>();
+    activeLeaseIds.add(leaseId);
+    activePreparedPersistenceLeaseIdsById.set(id, activeLeaseIds);
     return attempt;
+}
+
+function unregisterPreparedPersistenceLease(id: string, leaseId: string): void {
+    const activeLeaseIds = activePreparedPersistenceLeaseIdsById.get(id);
+    activeLeaseIds?.delete(leaseId);
+    if (activeLeaseIds?.size === 0) {
+        activePreparedPersistenceLeaseIdsById.delete(id);
+    }
 }
 
 async function waitForSupersedingPreparedPersistence(id: string, generation: number): Promise<void> {
@@ -552,7 +568,11 @@ function readPreparedBufferOwner(meta: BufferMeta | undefined): PreparedBufferOw
     return owner;
 }
 
-function isReplaceablePreparedBuffer(data: SerializedBuffer | undefined, meta: BufferMeta | undefined): boolean {
+function isReplaceablePreparedBuffer(
+    id: string,
+    data: SerializedBuffer | undefined,
+    meta: BufferMeta | undefined
+): boolean {
     const owner = readPreparedBufferOwner(meta);
     return (
         isValidSerializedBuffer(data) &&
@@ -560,7 +580,8 @@ function isReplaceablePreparedBuffer(data: SerializedBuffer | undefined, meta: B
         Number.isFinite(meta.lastAccessed) &&
         meta.sizeInBytes === data.sizeInBytes &&
         owner !== 'invalid' &&
-        owner?.status === 'temporary'
+        owner?.status === 'temporary' &&
+        activePreparedPersistenceLeaseIdsById.get(id)?.has(owner.leaseId) === true
     );
 }
 
@@ -919,7 +940,7 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
     const leaseId = `prepared-audio-${crypto.randomUUID()}`;
     const data = serializeBuffer(buffer);
     const generation = claimPersistenceGeneration(id);
-    const attempt = registerPreparedPersistenceAttempt(id, generation);
+    const attempt = registerPreparedPersistenceAttempt(id, generation, leaseId);
     bumpBufferLifecycleEpoch(id);
     try {
         const db = await openDb();
@@ -934,7 +955,7 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
             awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>),
         ]);
         const occupied = existingData !== undefined || existingMeta !== undefined;
-        if (occupied && !isReplaceablePreparedBuffer(existingData, existingMeta)) {
+        if (occupied && !isReplaceablePreparedBuffer(id, existingData, existingMeta)) {
             await awaitTransaction(tx);
             return { status: 'failed' as const, reason: 'Prepared audio buffer ID is already occupied.' };
         }
@@ -966,6 +987,7 @@ async function persistPreparedBuffer({ id, buffer }: PersistPreparedBufferInput)
         if (preparedPersistenceAttemptById.get(id) === attempt) {
             preparedPersistenceAttemptById.delete(id);
         }
+        unregisterPreparedPersistenceLease(id, leaseId);
         if (persistenceGenerationById.get(id) === generation) {
             persistenceGenerationById.delete(id);
         }
