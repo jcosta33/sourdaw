@@ -210,6 +210,29 @@ function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function isSemanticSha256Label(value: string): boolean {
+    return value.startsWith('@');
+}
+
+function isByteCountPrefixedRemoteArtifact(value: string): boolean {
+    return /^(?:bytes:)?[0-9]+:/u.test(value);
+}
+
+function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
+    const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
+    const sha256 = match?.[1];
+    const path = match?.[2];
+    if (
+        sha256 === undefined ||
+        path === undefined ||
+        isSemanticSha256Label(path) ||
+        isByteCountPrefixedRemoteArtifact(path)
+    ) {
+        return undefined;
+    }
+    return { path, sha256 };
+}
+
 function directorySha256(root: string, directory: string): string {
     const absoluteRoot = resolve(root, directory);
     const files: string[] = [];
@@ -912,6 +935,7 @@ export function validateReleaseInventory(
     requiredComponentPaths: Readonly<Record<string, readonly string[]>> = {}
 ): string[] {
     const errors: Array<string | undefined> = [];
+    const trackedFiles = new Set(snapshot.releaseFiles);
     if (inventory.schemaVersion !== 1) {
         errors.push('schemaVersion must be 1');
     }
@@ -950,6 +974,17 @@ export function validateReleaseInventory(
         for (const path of surface.paths) {
             if (!snapshot.releaseFiles.some((trackedPath) => pathMatches(path, trackedPath))) {
                 errors.push(`${surface.id}: path is not tracked: ${path}`);
+            }
+        }
+        for (const digest of surface.digests) {
+            const addressed = pathAddressedSha256(digest);
+            if (addressed === undefined) {
+                continue;
+            }
+            if (!trackedFiles.has(addressed.path)) {
+                errors.push(`${surface.id}: path-addressed digest target is missing or untracked: ${addressed.path}`);
+            } else if (snapshot.fileDigests[addressed.path] !== addressed.sha256) {
+                errors.push(`${surface.id}: path-addressed digest drifted: ${addressed.path}`);
             }
         }
     }
@@ -1100,7 +1135,7 @@ export function validateReleaseInventory(
 
 export function loadRepositorySnapshot(
     root: string,
-    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'>,
+    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'> & Partial<Pick<ReleaseInventory, 'surfaces'>>,
     trackedFiles?: string[]
 ): RepositorySnapshot {
     const trackedFilesInWorktree =
@@ -1124,6 +1159,12 @@ export function loadRepositorySnapshot(
     const snapshotPaths = sortedUnique([
         ...REQUIRED_SNAPSHOT_PATHS,
         ...(inventory.snapshots ?? []).map((entry) => entry.path),
+        ...(inventory.surfaces ?? []).flatMap((surface) =>
+            surface.digests.flatMap((digest) => {
+                const addressed = pathAddressedSha256(digest);
+                return addressed === undefined ? [] : [addressed.path];
+            })
+        ),
     ]);
     const fileDigests = Object.fromEntries(
         snapshotPaths.map((path) => {

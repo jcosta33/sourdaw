@@ -351,6 +351,84 @@ describe('release inventory', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
+    it('binds the tvm-ffi root legal files to their immutable source bytes', () => {
+        const inventory = JSON.parse(
+            readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
+        ) as ReleaseInventory;
+        const surface = inventory.surfaces.find(({ id }) => id === 'webllm-qwen-artifacts');
+        const notice = readFileSync(join(repositoryRoot, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
+        const legalFiles = [
+            {
+                path: 'public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE',
+                sha256: 'bb354d8b94589ad8817f2dff029d39a1133d217407f73679d0b0311c980e511f',
+                source: 'https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/LICENSE',
+            },
+            {
+                path: 'public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE',
+                sha256: '5181189219b74687e08884d813b8f98c874d0e4ba84eb7afc4bb350d22502c24',
+                source: 'https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/NOTICE',
+            },
+        ] as const;
+
+        expect(surface).toBeDefined();
+        for (const legalFile of legalFiles) {
+            const bytes = readFileSync(join(repositoryRoot, legalFile.path));
+            expect(createHash('sha256').update(bytes).digest('hex')).toBe(legalFile.sha256);
+            expect(surface?.paths).toContain(legalFile.path);
+            expect(surface?.sources).toContain(legalFile.source);
+            expect(surface?.digests).toContain(`sha256:${legalFile.sha256}:${legalFile.path}`);
+            expect(notice).toContain(`(./${legalFile.path.replace('public/legal/', '')})`);
+        }
+    });
+
+    it('should reject nested tvm-ffi legal byte drift', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        const changed = snapshot();
+        changed.releaseFiles.push(path);
+        changed.fileDigests[path] = 'b'.repeat(64);
+
+        expect(validateReleaseInventory(value, changed)).toContain(`runtime: path-addressed digest drifted: ${path}`);
+    });
+
+    it('should reject a path-addressed digest with a mistyped repository path', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpak.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        expect(validateReleaseInventory(value, snapshot())).toContain(
+            `runtime: path-addressed digest target is missing or untracked: ${path}`
+        );
+    });
+
+    it('should reject a path-addressed digest whose tracked file was deleted', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        const changed = snapshot();
+        changed.fileDigests[path] = 'missing';
+
+        expect(validateReleaseInventory(value, changed)).toContain(
+            `runtime: path-addressed digest target is missing or untracked: ${path}`
+        );
+    });
+
+    it('should ignore semantic and remote artifact digest labels', () => {
+        const value = inventory();
+        value.surfaces[0]!.digests = [
+            `sha256:${fixtureDigest}:5566554:public/icon.png`,
+            `sha256:${fixtureDigest}:bytes:5566554:https://models.example/public/icon.png`,
+            `sha256:${fixtureDigest}:@runtime-license`,
+        ];
+        const changed = snapshot();
+        changed.fileDigests['public/icon.png'] = 'b'.repeat(64);
+
+        expect(validateReleaseInventory(value, changed).filter((error) => error.includes('path-addressed'))).toEqual(
+            []
+        );
+    });
+
     it('composes the admitted DDSP model contract into live release inventory validation', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
     });
