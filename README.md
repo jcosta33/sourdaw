@@ -56,4 +56,5 @@ signed, notarized, published, or updated automatically.
 - [Security](./SECURITY.md)
 - [Privacy](./PRIVACY.md)
 - [Developer documentation](./docs/README.md)
+- [Release proof](./docs/release.md)
 - [User manual](./docs/manual/README.md)

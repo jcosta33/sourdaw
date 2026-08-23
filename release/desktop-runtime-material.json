@@ -1,0 +1,16 @@
+{
+    "schemaVersion": 1,
+    "kind": "desktop-runtime-material",
+    "artifact": "darwin-arm64",
+    "runtimeManifest": "ELECTRON-SOURCES.json",
+    "requiredMaterial": {
+        "ffmpegSource": "ffmpeg-source.tar.gz",
+        "ffmpegBuild": "ffmpeg-build.json"
+    },
+    "ffmpeg": {
+        "repository": "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
+        "revision": "ad41607c61898cf7150e0fb20fe4bbabd44922a3",
+        "license": "LGPL-2.1-or-later",
+        "buildOutputs": ["libffmpeg.dylib", "libffmpeg.so", "ffmpeg.dll"]
+    }
+}

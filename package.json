@@ -27,6 +27,8 @@
         "license:dependencies": "node scripts/generateDependencyLicenseReport.ts",
         "test:electron-runtime": "node scripts/checkElectronRuntimeProvenance.ts",
         "test:electron-runtime:online": "node scripts/checkElectronRuntimeProvenance.ts --online",
+        "release:proof": "node scripts/releaseProof.ts check",
+        "release:proof:assemble": "node scripts/releaseProof.ts assemble",
         "test:lgpl-runtime": "node scripts/checkLgplRuntimeProvenance.ts",
         "test:lgpl-runtime:online": "node scripts/checkLgplRuntimeProvenance.ts --online",
         "test:barrel-mocks": "node scripts/checkBarrelMockCoverage.ts",

@@ -16,7 +16,9 @@
                 ".github/**",
                 "crates/**",
                 "docs/**",
+                "release/desktop-runtime-material.json",
                 "release/open-source-inventory.json",
+                "release/web-artifact-manifest.json",
                 "scripts/**",
                 "server/**",
                 "src/**",
@@ -65,8 +67,8 @@
                 "vite.config.ts"
             ],
             "sources": ["git:github.com/jcosta33/sourdaw", "package.json", "server/package.json", "Cargo.toml"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553", "pnpm-lock.yaml", "Cargo.lock"],
-            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "revisions": ["release-proof:exact-candidate-revision", "pnpm-lock.yaml", "Cargo.lock"],
+            "digests": ["release-proof:source-archive-sha256"],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["repository source"],
             "evidence": ["Git history and the dependency manifests named in paths."],
@@ -149,6 +151,8 @@
                 "electron/**",
                 "build/**",
                 "electron-builder.yml",
+                "release/desktop-runtime-material.json",
+                "release/web-artifact-manifest.json",
                 "public/legal/ELECTRON-SOURCES.json",
                 "public/legal/RELINKING.md",
                 "public/legal/THIRD-PARTY-NOTICES.md",
@@ -162,20 +166,22 @@
                 "https://github.com/nodejs/node",
                 "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
                 "package.json",
-                "public/legal/ELECTRON-SOURCES.json"
+                "public/legal/ELECTRON-SOURCES.json",
+                "release/desktop-runtime-material.json"
             ],
             "revisions": [
                 "electron 43.4.1 340bae15aaef12b7e96f1c857be986aa9f65c21c",
                 "Chromium 150.0.7871.224 36bfd07adec25f5027aaecf2023b35821f30ee4e",
                 "Node v24.18.1 9623d9ad85d37d2f0610ec4a82b48182cf2c6061",
                 "FFmpeg ad41607c61898cf7150e0fb20fe4bbabd44922a3",
-                "pnpm-lock.yaml"
+                "pnpm-lock.yaml",
+                "release-proof:exact-candidate-revision"
             ],
             "digests": [
                 "npm-integrity:sha512-5b+EuiwkgG5iRcsEL34rimgRpkYp15SsfZOa0pC5kXs0Tb82TH4n95rpQzTZa7yRCbA7tm0WoEbuBL6NaAhAcA==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
-                "pending:OS-12-final-desktop-package"
+                "release-proof:desktop-mac-arm64-artifact"
             ],
             "licenses": [
                 "MIT:Electron",
@@ -1151,7 +1157,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "8db2f0b0c48f3b92829d9cceda8e6e56ee70cc4d2b23275b52b614ca185882b0"
+            "sha256": "338ab36863edd013e89cd3d07993067f445d143c2cb72c6bfaa4ac4a5e066b3c"
         },
         {
             "path": "server/package.json",
