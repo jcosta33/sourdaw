@@ -534,40 +534,47 @@ jobs:
     if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Scan history for secrets
+      - name: Validate secret scanner positive control
         env:
-          GITLEAKS_VERSION: 8.30.1
-          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          GITLEAKS_EXPECTED_LEAK_EXIT_CODE: 79
         run: |
           set -euo pipefail
           umask 077
-          gitleaks_archive="$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          gitleaks_dir="$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}"
-          gitleaks_url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          positive_control_repo=$(mktemp -d "$RUNNER_TEMP/gitleaks-positive-control.XXXXXX")
+          trap 'rm -rf "$positive_control_repo"' EXIT
 
-          curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
-            --output "$gitleaks_archive" \
-            "$gitleaks_url"
-          printf '%s  %s\n' "$GITLEAKS_SHA256" "$gitleaks_archive" | sha256sum --check --status
-          printf 'Gitleaks binary verified: %s\n' "$GITLEAKS_SHA256"
+          git -C "$positive_control_repo" init --initial-branch=main
+          git -C "$positive_control_repo" config user.email sourdaw-ci@example.invalid
+          git -C "$positive_control_repo" config user.name 'Sourdaw CI'
+          synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
+          printf 'aws_access_key_id = "%s"\n' "$synthetic_access_key" > "$positive_control_repo/synthetic-secret.txt"
+          git -C "$positive_control_repo" add synthetic-secret.txt
+          git -C "$positive_control_repo" commit -m 'add synthetic secret fixture'
 
-          mkdir -p "$gitleaks_dir"
-          tar -xzf "$gitleaks_archive" -C "$gitleaks_dir" gitleaks
+          set +e
+          GITLEAKS_EXIT_CODE="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+            sh scripts/run-gitleaks-history-scan.sh "$positive_control_repo"
+          positive_control_status=$?
+          set -e
 
-          "$gitleaks_dir/gitleaks" git \
-            --no-banner \
-            --no-color \
-            --redact=100 \
-            --verbose \
-            --exit-code=1 \
-            --log-opts=--all \
-            "$GITHUB_WORKSPACE"
+          if [ "$positive_control_status" -ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" ]; then
+            printf 'expected Gitleaks positive control to exit %s, got %s\n' \
+              "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+              "$positive_control_status" >&2
+            exit 1
+          fi
+
+      - name: Scan history for secrets
+        run: sh scripts/run-gitleaks-history-scan.sh "$GITHUB_WORKSPACE"
 
   nightly-report:
     name: Nightly failure report
