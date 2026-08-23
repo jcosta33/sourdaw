@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./sourdaw.png" alt="Sourdaw" width="160">
+  <img src="./public/icon-transparent.png" alt="Sourdaw" width="160">
 
 # Sourdaw
 
