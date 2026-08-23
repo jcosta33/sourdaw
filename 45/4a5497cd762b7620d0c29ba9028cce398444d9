@@ -1,0 +1,21 @@
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_a2f8bd6f8b8987 129,218,1160,1172
+public/legal/DEPENDENCY-LICENSES.txt
+  s_0a3429e31e555d::t_ff85b2620620a0 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "454a5497cd762b7620d0c29ba9028cce398444d9",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
