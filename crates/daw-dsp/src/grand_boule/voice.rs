@@ -141,6 +141,9 @@ pub struct PianoVoice {
     /// One-pole coefficient for `decay_envelope`, derived once from the sample
     /// rate.
     decay_follower_coefficient: f32,
+    /// Debug-only proof that the optimized voice executed the F8 follower.
+    #[cfg(debug_assertions)]
+    debug_decay_follower_updates: usize,
     sample_rate: f32,
     configured_quality: VoiceQuality,
     quality: VoiceQuality,
@@ -185,6 +188,8 @@ impl PianoVoice {
             decay_peak: 0.0,
             decay_follower_coefficient: 1.0
                 - (-1.0 / (DECAY_FOLLOWER_SECONDS * sample_rate.max(1.0))).exp(),
+            #[cfg(debug_assertions)]
+            debug_decay_follower_updates: 0,
             sample_rate,
             configured_quality: VoiceQuality::Standard,
             quality: VoiceQuality::Standard,
@@ -229,6 +234,13 @@ impl PianoVoice {
 
     pub fn amplitude(&self) -> f32 {
         self.amplitude
+    }
+
+    /// Number of decay-follower updates since construction.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn debug_decay_follower_updates(&self) -> usize {
+        self.debug_decay_follower_updates
     }
 
     /// Attempt to arm the hybrid sampled-attack playhead for this voice.
@@ -542,6 +554,20 @@ impl PianoVoice {
     /// Render one output sample from this voice.
     #[inline]
     pub fn tick(&mut self) -> f32 {
+        self.tick_inner::<false>()
+    }
+
+    /// Debug-only reference render for the cost-reduction golden. It retains
+    /// the pre-F17 zero-prefix work and omits the F8 decay follower update;
+    /// neither discarded computation may move the rendered sample.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn tick_reference_render(&mut self) -> f32 {
+        self.tick_inner::<true>()
+    }
+
+    #[inline]
+    fn tick_inner<const REFERENCE_RENDER: bool>(&mut self) -> f32 {
         if self.stage == VoiceStage::Idle {
             return 0.0;
         }
@@ -595,6 +621,8 @@ impl PianoVoice {
 
         let transverse = match self.quality {
             VoiceQuality::Simplified => self.strings.tick_simplified(force),
+            #[cfg(debug_assertions)]
+            _ if REFERENCE_RENDER => self.strings.tick_including_zeroed_prefix(force),
             _ => self.strings.tick(force),
         };
         self.last_string_displacement = transverse;
@@ -614,12 +642,19 @@ impl PianoVoice {
         // whole `Active` stage, so it says nothing about how loud a held note
         // still is; this follower does, and it keeps tracking through the
         // release ramp because `output` already carries `amplitude`.
-        self.decay_envelope = flush_denormal(
-            self.decay_envelope
-                + self.decay_follower_coefficient * (output.abs() - self.decay_envelope),
-        );
-        if self.decay_envelope > self.decay_peak {
-            self.decay_peak = self.decay_envelope;
+        if !REFERENCE_RENDER {
+            #[cfg(debug_assertions)]
+            {
+                self.debug_decay_follower_updates =
+                    self.debug_decay_follower_updates.saturating_add(1);
+            }
+            self.decay_envelope = flush_denormal(
+                self.decay_envelope
+                    + self.decay_follower_coefficient * (output.abs() - self.decay_envelope),
+            );
+            if self.decay_envelope > self.decay_peak {
+                self.decay_peak = self.decay_envelope;
+            }
         }
 
         if self.stage == VoiceStage::Releasing || self.stage == VoiceStage::Stealing {
