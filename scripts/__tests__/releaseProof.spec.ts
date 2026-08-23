@@ -1,17 +1,30 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from '../electronRuntimeContract';
-import { assembleReleaseProof, validateReleaseProof } from '../releaseProof';
+import { ELECTRON_FFMPEG_BUILD_INPUTS, assembleReleaseProof, validateReleaseProof } from '../releaseProof';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const roots: string[] = [];
-const revision = 'a'.repeat(40);
+const fixtureRoots: string[] = [];
+const electronRepository = 'https://example.test/electron/electron';
+const ffmpegRepository = 'https://example.test/chromium/ffmpeg';
+
+type Fixture = {
+    base: string;
+    root: string;
+    candidate: string;
+    webDist: string;
+    desktopArtifact: string;
+    electronSource: string;
+    ffmpegSource: string;
+    contract: ElectronRuntimeContract;
+    revision: string;
+};
 
 function hash(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -30,56 +43,150 @@ function writeJson(path: string, value: unknown): void {
     write(path, `${JSON.stringify(value, null, 4)}\n`);
 }
 
-function mapFiles(root: string): Record<string, string> {
-    const result: Record<string, string> = {};
-    const entries = execFileSync('find', ['.', '-type', 'f', '-print'], { cwd: root, encoding: 'utf8' })
-        .split('\n')
-        .filter(Boolean)
-        .map((path) => path.slice(2))
-        .sort();
-    for (const path of entries) result[path] = hash(join(root, path));
-    return result;
+function git(repository: string, args: readonly string[]): string {
+    return execFileSync('git', [...args], { cwd: repository, encoding: 'utf8' }).trim();
 }
 
-function createArchive(root: string, archive: string, directory: string): void {
-    mkdirSync(dirname(archive), { recursive: true });
-    execFileSync('tar', ['-czf', archive, '-C', root, directory]);
+function commit(repository: string, message: string): string {
+    git(repository, ['add', '.']);
+    execFileSync(
+        'git',
+        ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', message],
+        { cwd: repository }
+    );
+    return git(repository, ['rev-parse', 'HEAD']);
 }
 
-function createZip(root: string, archive: string): void {
-    const files = execFileSync('find', ['.', '-type', 'f', '-print'], { cwd: root, encoding: 'utf8' });
-    execFileSync('zip', ['-X', '-q', archive, '-@'], { cwd: root, input: files });
-}
-
-function buildCandidate(): { root: string; candidate: string; proof: string; contract: ElectronRuntimeContract } {
-    const root = mkdtempSync(join(workspaceRoot, 'release-proof-fixture-'));
-    roots.push(root);
-    const repository = join(root, 'repository');
-    const candidate = join(root, 'candidate');
+function createRepository(base: string, name: string, remote: string, files: Record<string, string>): string {
+    const repository = join(base, name);
     mkdirSync(repository, { recursive: true });
-    mkdirSync(candidate, { recursive: true });
+    execFileSync('git', ['init', '--quiet'], { cwd: repository });
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: repository });
+    for (const [path, value] of Object.entries(files)) {
+        write(join(repository, path), value);
+    }
+    commit(repository, 'fixture source');
+    return repository;
+}
+
+function desktopMaterial(contract: ElectronRuntimeContract): unknown {
+    return {
+        schemaVersion: 1,
+        kind: 'desktop-runtime-material',
+        artifact: 'darwin-arm64',
+        runtimeManifest: 'ELECTRON-SOURCES.json',
+        requiredMaterial: {
+            electronSource: `electron-${contract.revision}.tar.gz`,
+            electronCommit: `electron-${contract.revision}.commit`,
+            ffmpegSource: `ffmpeg-${contract.ffmpeg.revision}.tar.gz`,
+            ffmpegCommit: `ffmpeg-${contract.ffmpeg.revision}.commit`,
+            ffmpegBuild: 'ffmpeg-build-material.json',
+            buildInputs: 'build-inputs/electron',
+        },
+        electron: {
+            repository: contract.repository,
+            revision: contract.revision,
+            buildInputs: ELECTRON_FFMPEG_BUILD_INPUTS,
+        },
+        ffmpeg: {
+            repository: contract.ffmpeg.repository,
+            revision: contract.ffmpeg.revision,
+            license: contract.ffmpeg.license,
+        },
+        build: {
+            configureCommand:
+                'TARGET_ARCH=arm64 e init -f --root=. --out=Default release --import release --target-cpu arm64',
+            command: 'TARGET_ARCH=arm64 e build --target electron:release_build',
+            target: 'electron:release_build',
+            output: 'src/out/Default/Electron Framework.framework/Libraries/libffmpeg.dylib',
+        },
+    };
+}
+
+function arm64MachO(arch: 'arm64' | 'x64'): Buffer {
+    const value = Buffer.alloc(32);
+    value.writeUInt32LE(0xfeedfacf, 0);
+    value.writeUInt32LE(arch === 'arm64' ? 0x0100000c : 0x01000007, 4);
+    return value;
+}
+
+function createDesktopZip(
+    fixture: Omit<Fixture, 'desktopArtifact' | 'revision'>,
+    options: { arch?: 'arm64' | 'x64'; appName?: string } = {}
+): string {
+    const appName = options.appName ?? 'Sourdaw.app';
+    const packageRoot = join(fixture.base, 'desktop-package');
+    const appRoot = join(packageRoot, appName);
+    write(
+        join(appRoot, 'Contents/Info.plist'),
+        '<plist><dict><key>CFBundleExecutable</key><string>Sourdaw</string></dict></plist>'
+    );
+    const executable = join(appRoot, 'Contents/MacOS/Sourdaw');
+    const framework = join(appRoot, 'Contents/Frameworks/Sourdaw Framework.framework/Versions/A/Sourdaw Framework');
+    write(executable, arm64MachO(options.arch ?? 'arm64'));
+    write(framework, arm64MachO(options.arch ?? 'arm64'));
+    chmodSync(executable, 0o755);
+    chmodSync(framework, 0o755);
+    const resources = join(appRoot, 'Contents/Resources');
+    write(join(resources, 'app.asar'), 'fixture application archive');
+    const nativeAddon = join(resources, 'sourdaw-native.node');
+    write(nativeAddon, arm64MachO(options.arch ?? 'arm64'));
+    chmodSync(nativeAddon, 0o755);
+    for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'SOURDAW-NOTICE.txt']) {
+        write(join(resources, `legal/${path}`), readFileSync(join(fixture.root, 'public/legal', path)));
+    }
+    write(join(resources, 'legal/electron-LICENSE.txt'), 'fixture Electron license');
+    write(join(resources, 'legal/electron-LICENSES.chromium.html'), 'fixture Electron bundled notices');
+    for (const path of ['ELECTRON-SOURCES.json', 'RELINKING.md', 'THIRD-PARTY-NOTICES.md']) {
+        write(join(resources, `legal/${path}`), readFileSync(join(fixture.root, 'public/legal', path)));
+    }
+    const archive = join(fixture.base, 'Sourdaw-1.0.0-mac-arm64.zip');
+    execFileSync('zip', ['-X', '-q', '-r', archive, appName], { cwd: packageRoot });
+    return archive;
+}
+
+function createFixture(options: { arch?: 'arm64' | 'x64'; appName?: string } = {}): Fixture {
+    const base = mkdtempSync(join(workspaceRoot, 'release-proof-fixture-'));
+    fixtureRoots.push(base);
+
+    const ffmpegSource = createRepository(base, 'ffmpeg', ffmpegRepository, {
+        'BUILD.gn': 'shared_library("ffmpeg") {}\n',
+        'COPYING.LGPLv2.1': 'fixture LGPL source\n',
+        'libavcodec/codec.c': 'int codec(void) { return 1; }\n',
+    });
+    const ffmpegRevision = git(ffmpegSource, ['rev-parse', 'HEAD']);
+    const electronFiles = Object.fromEntries(
+        ELECTRON_FFMPEG_BUILD_INPUTS.map((path) => [path, `fixture Electron input ${path}\n`])
+    );
+    electronFiles.DEPS = `'ffmpeg_revision': '${ffmpegRevision}'\n`;
+    const electronSource = createRepository(base, 'electron', electronRepository, electronFiles);
+    const electronRevision = git(electronSource, ['rev-parse', 'HEAD']);
 
     const contract = structuredClone(ELECTRON_RUNTIME_CONTRACT);
-    const license = 'fixture Electron license';
-    const notices = 'fixture Electron bundled notices';
-    contract.licenseSha256 = hashValue(license);
+    contract.repository = electronRepository;
+    contract.revision = electronRevision;
+    contract.licenseSha256 = hashValue('fixture Electron license');
+    contract.ffmpeg = { ...contract.ffmpeg, repository: ffmpegRepository, revision: ffmpegRevision };
     contract.targets = contract.targets.map((target) =>
         target.platform === 'darwin' && target.arch === 'arm64'
-            ? { ...target, sha256: 'c'.repeat(64), noticesSha256: hashValue(notices) }
+            ? { ...target, noticesSha256: hashValue('fixture Electron bundled notices') }
             : target
     );
-    contract.ffmpeg = { ...contract.ffmpeg, revision: 'e'.repeat(40) };
-    write(join(repository, 'public/legal/ELECTRON-SOURCES.json'), `${JSON.stringify(contract, null, 4)}\n`);
-    write(join(repository, 'public/legal/RELINKING.md'), 'fixture relinking instructions');
-    write(join(repository, 'public/legal/THIRD-PARTY-NOTICES.md'), 'fixture third-party notices');
-    write(join(repository, 'public/legal/Apache-2.0.txt'), 'fixture Apache license');
-    write(join(repository, 'public/legal/DEPENDENCY-LICENSES.txt'), 'fixture dependency licenses');
-    write(join(repository, 'public/legal/SOURDAW-NOTICE.txt'), 'fixture Sourdaw notice');
-    write(join(repository, 'package.json'), '{}\n');
-    write(join(repository, 'LICENSE'), 'fixture license\n');
-    write(join(repository, 'NOTICE'), 'fixture notice\n');
-    write(join(repository, 'release/open-source-inventory.json'), '{}\n');
-    writeJson(join(repository, 'release/web-artifact-manifest.json'), {
+
+    const root = join(base, 'repository');
+    mkdirSync(root, { recursive: true });
+    writeJson(join(root, 'public/legal/ELECTRON-SOURCES.json'), contract);
+    write(join(root, 'public/legal/RELINKING.md'), 'fixture relinking instructions');
+    write(join(root, 'public/legal/THIRD-PARTY-NOTICES.md'), 'fixture third-party notices');
+    write(join(root, 'public/legal/Apache-2.0.txt'), 'fixture Apache license');
+    write(join(root, 'public/legal/DEPENDENCY-LICENSES.txt'), 'fixture dependency licenses');
+    write(join(root, 'public/legal/SOURDAW-NOTICE.txt'), 'fixture Sourdaw notice');
+    write(join(root, 'package.json'), '{}\n');
+    write(join(root, 'LICENSE'), 'fixture license\n');
+    write(join(root, 'NOTICE'), 'fixture notice\n');
+    writeJson(join(root, 'release/open-source-inventory.json'), {});
+    writeJson(join(root, 'release/desktop-runtime-material.json'), desktopMaterial(contract));
+    writeJson(join(root, 'release/web-artifact-manifest.json'), {
         schemaVersion: 1,
         kind: 'web-artifact-manifest',
         artifact: 'web',
@@ -91,257 +198,159 @@ function buildCandidate(): { root: string; candidate: string; proof: string; con
         binding: 'release-proof.json',
         requiredFiles: ['index.html', 'assets/', 'legal/'],
     });
-    writeJson(join(repository, 'release/desktop-runtime-material.json'), {
-        schemaVersion: 1,
-        kind: 'desktop-runtime-material',
-        artifact: 'darwin-arm64',
-        runtimeManifest: 'ELECTRON-SOURCES.json',
-        requiredMaterial: { ffmpegSource: 'ffmpeg-source.tar.gz', ffmpegBuild: 'ffmpeg-build.json' },
-        ffmpeg: {
-            repository: contract.ffmpeg.repository,
-            revision: contract.ffmpeg.revision,
-            license: contract.ffmpeg.license,
-            buildOutputs: ['libffmpeg.dylib', 'libffmpeg.so', 'ffmpeg.dll'],
-        },
-    });
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://example.test/sourdaw/sourdaw'], { cwd: root });
+    const revision = commit(root, 'fixture release');
 
-    const sourceTree = join(root, `sourdaw-${revision}`);
-    for (const path of [
-        'package.json',
-        'LICENSE',
-        'NOTICE',
-        'release/open-source-inventory.json',
-        'public/legal/ELECTRON-SOURCES.json',
-        'release/desktop-runtime-material.json',
-    ]) {
-        write(join(sourceTree, path), `fixture ${path}`);
-    }
-    const sourceArchive = join(candidate, 'source/sourdaw-source.tar.gz');
-    createArchive(root, sourceArchive, `sourdaw-${revision}`);
-    const sourceManifest = join(candidate, 'source/source-manifest.json');
-    writeJson(sourceManifest, {
-        schemaVersion: 1,
-        artifact: 'source',
-        sourceRevision: revision,
-        archiveSha256: hash(sourceArchive),
-    });
-
-    const webContents = join(candidate, 'web/contents');
-    write(join(webContents, 'index.html'), '<!doctype html>');
-    write(join(webContents, 'assets/app.js'), 'console.log("fixture");');
+    const webDist = join(base, 'web-dist');
+    write(join(webDist, 'index.html'), '<!doctype html>');
+    write(join(webDist, 'assets/app.js'), 'console.log("fixture");');
     for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'THIRD-PARTY-NOTICES.md']) {
-        write(join(webContents, `legal/${path}`), readFileSync(join(repository, 'public/legal', path)));
+        write(join(webDist, `legal/${path}`), readFileSync(join(root, 'public/legal', path)));
     }
-    const webManifest = join(webContents, 'web-artifact-manifest.json');
-    writeJson(webManifest, {
-        schemaVersion: 1,
-        artifact: 'web',
-        sourceRevision: revision,
-        buildCommand: 'pnpm build',
-        files: mapFiles(webContents),
-    });
-    const webArchive = join(candidate, 'web/sourdaw-web.zip');
-    createZip(webContents, webArchive);
 
-    const desktopContents = join(candidate, 'desktop/contents');
-    for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'SOURDAW-NOTICE.txt']) {
-        write(join(desktopContents, `legal/${path}`), readFileSync(join(repository, 'public/legal', path)));
-    }
-    write(join(desktopContents, 'legal/electron-LICENSE.txt'), license);
-    write(join(desktopContents, 'legal/electron-LICENSES.chromium.html'), notices);
-    write(
-        join(desktopContents, 'legal/ELECTRON-SOURCES.json'),
-        readFileSync(join(repository, 'public/legal/ELECTRON-SOURCES.json'))
-    );
-    write(join(desktopContents, 'legal/RELINKING.md'), readFileSync(join(repository, 'public/legal/RELINKING.md')));
-    write(
-        join(desktopContents, 'legal/THIRD-PARTY-NOTICES.md'),
-        readFileSync(join(repository, 'public/legal/THIRD-PARTY-NOTICES.md'))
-    );
-    const desktopContentsManifest = join(candidate, 'desktop/desktop-contents-manifest.json');
-    writeJson(desktopContentsManifest, {
-        schemaVersion: 1,
-        artifact: 'desktop-contents',
-        sourceRevision: revision,
-        requiredFiles: [
-            'legal/Apache-2.0.txt',
-            'legal/DEPENDENCY-LICENSES.txt',
-            'legal/SOURDAW-NOTICE.txt',
-            'legal/electron-LICENSE.txt',
-            'legal/electron-LICENSES.chromium.html',
-            'legal/ELECTRON-SOURCES.json',
-            'legal/RELINKING.md',
-            'legal/THIRD-PARTY-NOTICES.md',
-        ],
-        files: mapFiles(desktopContents),
-    });
-    const desktopArtifact = join(candidate, 'desktop/Sourdaw-mac-arm64.dmg');
-    write(desktopArtifact, 'macOS arm64 fixture');
-    const runtimeManifest = join(candidate, 'desktop/ELECTRON-SOURCES.json');
-    write(runtimeManifest, readFileSync(join(repository, 'public/legal/ELECTRON-SOURCES.json')));
-    const ffmpegSource = join(candidate, 'desktop/ffmpeg-source.tar.gz');
-    write(join(root, 'ffmpeg-source/COPYING.LGPLv2.1'), 'LGPL source fixture');
-    createArchive(root, ffmpegSource, 'ffmpeg-source');
-    const ffmpegBuild = join(candidate, 'desktop/ffmpeg-build.json');
-    writeJson(ffmpegBuild, {
-        schemaVersion: 1,
-        artifact: 'electron-ffmpeg-build',
-        sourceRevision: contract.ffmpeg.revision,
-        sourceArchiveSha256: hash(ffmpegSource),
-        electronVersion: contract.version,
-        electronRevision: contract.revision,
-        buildInputs: ['Chromium DEPS', 'Electron build configuration'],
-        buildCommand: 'autoninja -C out/Release third_party/ffmpeg:ffmpeg',
-        outputs: ['libffmpeg.dylib', 'libffmpeg.so', 'ffmpeg.dll'],
-    });
+    const fixtureWithoutArtifact = {
+        base,
+        root,
+        candidate: join(base, 'candidate'),
+        webDist,
+        electronSource,
+        ffmpegSource,
+        contract,
+    };
+    const desktopArtifact = createDesktopZip(fixtureWithoutArtifact, options);
+    return { ...fixtureWithoutArtifact, desktopArtifact, revision };
+}
 
-    const proof = join(candidate, 'release-proof.json');
-    writeJson(proof, {
-        schemaVersion: 1,
-        sourceRevision: revision,
-        source: {
-            archivePath: 'source/sourdaw-source.tar.gz',
-            archiveSha256: hash(sourceArchive),
-            manifestPath: 'source/source-manifest.json',
-            manifestSha256: hash(sourceManifest),
-        },
-        web: {
-            archivePath: 'web/sourdaw-web.zip',
-            archiveSha256: hash(webArchive),
-            contentsPath: 'web/contents',
-            manifestPath: 'web/contents/web-artifact-manifest.json',
-            manifestSha256: hash(webManifest),
-        },
-        desktop: {
-            platform: 'darwin',
-            arch: 'arm64',
-            artifactPath: 'desktop/Sourdaw-mac-arm64.dmg',
-            artifactSha256: hash(desktopArtifact),
-            contentsPath: 'desktop/contents',
-            contentsManifestPath: 'desktop/desktop-contents-manifest.json',
-            contentsManifestSha256: hash(desktopContentsManifest),
-            runtimeManifestPath: 'desktop/ELECTRON-SOURCES.json',
-            runtimeManifestSha256: hash(runtimeManifest),
-            ffmpegSourcePath: 'desktop/ffmpeg-source.tar.gz',
-            ffmpegSourceSha256: hash(ffmpegSource),
-            ffmpegBuildPath: 'desktop/ffmpeg-build.json',
-            ffmpegBuildSha256: hash(ffmpegBuild),
-        },
-    });
-    execFileSync('git', ['init', '--quiet'], { cwd: repository });
-    execFileSync('git', ['add', '.'], { cwd: repository });
-    execFileSync(
-        'git',
-        ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'fixture'],
-        { cwd: repository }
+function assemble(fixture: Fixture): void {
+    assembleReleaseProof(
+        fixture.root,
+        fixture.candidate,
+        fixture.webDist,
+        fixture.desktopArtifact,
+        fixture.electronSource,
+        fixture.ffmpegSource,
+        fixture.contract
     );
-    return { root: repository, candidate, proof, contract };
+}
+
+function proof(fixture: Fixture): Record<string, unknown> {
+    return JSON.parse(readFileSync(join(fixture.candidate, 'release-proof.json'), 'utf8')) as Record<string, unknown>;
+}
+
+function desktopProof(value: Record<string, unknown>): Record<string, unknown> {
+    return value.desktop as Record<string, unknown>;
+}
+
+function refreshProofHash(fixture: Fixture, field: string, path: string): void {
+    const value = proof(fixture);
+    desktopProof(value)[field] = hash(join(fixture.candidate, path));
+    writeJson(join(fixture.candidate, 'release-proof.json'), value);
+}
+
+function validate(fixture: Fixture): string {
+    return validateReleaseProof({
+        root: fixture.root,
+        candidate: fixture.candidate,
+        expectedRevision: fixture.revision,
+        runtimeContract: fixture.contract,
+    }).join('\n');
 }
 
 afterEach(() => {
-    for (const root of roots.splice(0)) {
-        rmSync(join(root, 'repository/.git'), { recursive: true, force: true });
+    for (const root of fixtureRoots.splice(0)) {
         rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
     }
 });
 
 describe('release proof', () => {
-    it('rejects malformed proof JSON', () => {
-        const { root, candidate, proof, contract } = buildCandidate();
-        write(proof, '{');
-        expect(
-            validateReleaseProof({ root, candidate, expectedRevision: revision, runtimeContract: contract }).join('\n')
-        ).toContain('release-proof.json: malformed JSON');
+    it('rejects a malformed proof manifest', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        write(join(fixture.candidate, 'release-proof.json'), '{');
+        expect(validate(fixture)).toContain('release-proof.json: malformed JSON');
     });
 
-    it('rejects a stale source revision', () => {
-        const { root, candidate, proof, contract } = buildCandidate();
-        const value = JSON.parse(readFileSync(proof, 'utf8')) as Record<string, unknown>;
-        value.sourceRevision = 'b'.repeat(40);
-        writeJson(proof, value);
-        expect(
-            validateReleaseProof({ root, candidate, expectedRevision: revision, runtimeContract: contract }).join('\n')
-        ).toContain('sourceRevision does not match');
+    it('rejects a stale candidate revision', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const value = proof(fixture);
+        value.sourceRevision = '0'.repeat(40);
+        writeJson(join(fixture.candidate, 'release-proof.json'), value);
+        expect(validate(fixture)).toContain('sourceRevision does not match');
     });
 
-    it('rejects missing FFmpeg source material', () => {
-        const { root, candidate, contract } = buildCandidate();
-        rmSync(join(candidate, 'desktop/ffmpeg-source.tar.gz'));
-        expect(
-            validateReleaseProof({ root, candidate, expectedRevision: revision, runtimeContract: contract }).join('\n')
-        ).toContain('FFmpeg source material: file is missing');
+    it('rejects random bytes renamed as a desktop ZIP', () => {
+        const fixture = createFixture();
+        write(fixture.desktopArtifact, 'not a ZIP');
+        expect(() => assemble(fixture)).toThrow(/zip archive is unreadable|desktop archive/u);
     });
 
-    it('rejects mismatched desktop legal bytes', () => {
-        const { root, candidate, contract } = buildCandidate();
-        write(join(candidate, 'desktop/contents/legal/RELINKING.md'), 'changed');
-        expect(
-            validateReleaseProof({ root, candidate, expectedRevision: revision, runtimeContract: contract }).join('\n')
-        ).toContain('desktop legal file legal/RELINKING.md is missing or drifted');
+    it('rejects a desktop census not derived from the packaged archive', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const manifestPath = join(fixture.candidate, 'desktop/desktop-contents-manifest.json');
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+        const files = manifest.files as Record<string, string>;
+        files['legal/RELINKING.md'] = '0'.repeat(64);
+        writeJson(manifestPath, manifest);
+        refreshProofHash(fixture, 'contentsManifestSha256', 'desktop/desktop-contents-manifest.json');
+        expect(validate(fixture)).toContain('desktop archive resource census or digest does not match');
     });
 
-    it('accepts a complete candidate with matching source, web, desktop, and runtime material', () => {
-        const { root, candidate, contract } = buildCandidate();
-        expect(
-            validateReleaseProof({ root, candidate, expectedRevision: revision, runtimeContract: contract }).join('\n')
-        ).toBe('');
+    it('rejects FFmpeg source checked out at the wrong commit', () => {
+        const fixture = createFixture();
+        write(join(fixture.ffmpegSource, 'wrong.c'), 'int wrong(void) { return 1; }\n');
+        commit(fixture.ffmpegSource, 'wrong revision');
+        expect(() => assemble(fixture)).toThrow('FFmpeg source checkout HEAD does not match the pinned revision');
     });
 
-    it('assembles a candidate from the clean source revision and concrete artifacts', () => {
-        const { root, candidate, contract } = buildCandidate();
-        const webDist = join(root, '../web-dist');
-        const desktopArtifact = join(root, '../Sourdaw-mac-arm64.dmg');
-        const desktopContents = join(root, '../desktop-contents');
-        const output = join(root, '../assembled-candidate');
-        write(join(webDist, 'index.html'), '<!doctype html>');
-        write(join(webDist, 'assets/app.js'), 'console.log("assembled");');
-        for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'THIRD-PARTY-NOTICES.md']) {
-            write(join(webDist, `legal/${path}`), readFileSync(join(root, 'public/legal', path)));
-        }
-        write(desktopArtifact, 'assembled desktop');
-        for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'SOURDAW-NOTICE.txt']) {
-            write(join(desktopContents, `legal/${path}`), readFileSync(join(root, 'public/legal', path)));
-        }
-        write(join(desktopContents, 'legal/electron-LICENSE.txt'), 'fixture Electron license');
-        write(join(desktopContents, 'legal/electron-LICENSES.chromium.html'), 'fixture Electron bundled notices');
-        for (const path of ['ELECTRON-SOURCES.json', 'RELINKING.md', 'THIRD-PARTY-NOTICES.md']) {
-            write(join(desktopContents, `legal/${path}`), readFileSync(join(root, 'public/legal', path)));
-        }
-        const ffmpegSource = join(root, '../assembled-ffmpeg-source.tar.gz');
-        write(join(root, '../assembled-ffmpeg-source/COPYING.LGPLv2.1'), 'LGPL source fixture');
-        createArchive(dirname(ffmpegSource), ffmpegSource, 'assembled-ffmpeg-source');
-        const ffmpegBuild = join(root, '../assembled-ffmpeg-build.json');
-        writeJson(ffmpegBuild, {
-            schemaVersion: 1,
-            artifact: 'electron-ffmpeg-build',
-            sourceRevision: contract.ffmpeg.revision,
-            sourceArchiveSha256: hash(ffmpegSource),
-            electronVersion: contract.version,
-            electronRevision: contract.revision,
-            buildInputs: ['Chromium DEPS'],
-            buildCommand: 'autoninja -C out/Release third_party/ffmpeg:ffmpeg',
-            outputs: ['libffmpeg.dylib', 'libffmpeg.so', 'ffmpeg.dll'],
-        });
-        assembleReleaseProof(
-            root,
-            output,
-            webDist,
-            desktopArtifact,
-            desktopContents,
-            ffmpegSource,
-            ffmpegBuild,
-            contract
-        );
-        const assembledRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-        expect(
-            validateReleaseProof({
-                root,
-                candidate: output,
-                expectedRevision: assembledRevision,
-                runtimeContract: contract,
-            })
-        ).toEqual([]);
-        expect(readFileSync(join(output, 'release-proof.json'), 'utf8')).toContain(assembledRevision);
-        expect(candidate).toContain('candidate');
+    it('rejects fabricated FFmpeg build material', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const path = join(fixture.candidate, 'desktop/ffmpeg-build-material.json');
+        const material = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+        (material.commands as Record<string, unknown>).target = 'caller:invented';
+        writeJson(path, material);
+        refreshProofHash(fixture, 'ffmpegBuildSha256', 'desktop/ffmpeg-build-material.json');
+        expect(validate(fixture)).toContain('was not generated from the pinned Electron and FFmpeg sources');
+    });
+
+    it.each([
+        ['missing', (path: string) => rmSync(path)],
+        ['mutated', (path: string) => write(path, 'caller-authored bytes')],
+    ])('rejects %s exact Electron build inputs', (_label, mutate) => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const input = join(fixture.candidate, 'desktop/build-inputs/electron/build/args/release.gn');
+        mutate(input);
+        expect(validate(fixture)).toMatch(/Electron FFmpeg build inputs|does not match the source archive/u);
+    });
+
+    it('rejects missing corresponding FFmpeg source', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const value = proof(fixture);
+        const path = desktopProof(value).ffmpegSourcePath as string;
+        rmSync(join(fixture.candidate, path));
+        expect(validate(fixture)).toContain('FFmpeg source archive: file is missing');
+    });
+
+    it.each([
+        ['wrong architecture', { arch: 'x64' as const }, /not a thin arm64 Mach-O/u],
+        ['wrong application layout', { appName: 'Other.app' }, /exactly one top-level Sourdaw.app/u],
+    ])('rejects a desktop ZIP with %s', (_label, options, message) => {
+        const fixture = createFixture(options);
+        expect(() => assemble(fixture)).toThrow(message);
+    });
+
+    it('accepts a complete candidate assembled from the exact artifacts and Git commits', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        expect(validate(fixture)).toBe('');
+        const value = proof(fixture);
+        expect(desktopProof(value).artifactPath).toBe('desktop/Sourdaw-1.0.0-mac-arm64.zip');
+        expect(() => readFileSync(join(fixture.candidate, 'desktop/contents'))).toThrow();
+        expect(readFileSync(join(fixture.candidate, 'release-proof.json'), 'utf8')).toContain(fixture.revision);
     });
 });

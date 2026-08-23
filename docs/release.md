@@ -1,46 +1,37 @@
 # Release Proof
 
-OS-12 release candidates are assembled and checked with the same exact Git
-revision. The proof directory is an external candidate directory; it is not
-committed to the repository and it must not contain the proof manifest itself
-as a hashed artifact.
-
-Build the web distribution first, obtain the macOS arm64 package, and extract
-that package's `Contents/Resources` directory. Supply the extracted directory
-and the complete FFmpeg source archive plus its build manifest to the
-assembler:
+A release candidate is one external directory whose source, web, and macOS
+arm64 desktop artifacts carry the same full Git revision. Assemble it from a
+clean Sourdaw checkout, the built web distribution, the packaged desktop ZIP,
+and local Electron and FFmpeg Git checkouts at the revisions in
+`public/legal/ELECTRON-SOURCES.json`:
 
 ```sh
 pnpm release:proof:assemble -- \
   --output <candidate-directory> \
   --web-dist dist \
-  --desktop-artifact <macOS-arm64-package> \
-  --desktop-contents <extracted-Contents-Resources> \
-  --ffmpeg-source <FFmpeg-source-archive> \
-  --ffmpeg-build <FFmpeg-build-manifest>
+  --desktop-artifact <Sourdaw-version-mac-arm64.zip> \
+  --electron-source <electron-git-checkout> \
+  --ffmpeg-source <ffmpeg-git-checkout>
 ```
 
-Assembly requires a clean worktree. It creates a source archive from `HEAD`,
-a deterministic web ZIP with a file manifest, and a desktop proof containing
-the package digest, an exact extracted-content census, Electron legal bytes,
-the pinned Electron source manifest, and adjacent FFmpeg source/build
-material. Every generated manifest carries the same full Git revision.
+The assembler preserves the desktop artifact's ZIP filename and derives its
+resource census, legal-file hashes, application layout, and arm64 executable
+identity by extracting that ZIP itself. It creates revision-rooted Sourdaw,
+Electron, and FFmpeg source archives from verified Git commits. The adjacent
+FFmpeg build manifest and Electron build-input copies are generated from the
+pinned Electron commit and identify the macOS arm64 release target and
+`libffmpeg.dylib` output.
 
-Validate the candidate from that same checkout with:
+Validate the complete candidate from the same Sourdaw revision:
 
 ```sh
 pnpm release:proof -- --candidate <candidate-directory>
 ```
 
-Validation fails closed for malformed or stale manifests, unsafe paths,
-missing or changed files, a source archive from another revision, web archive
-and content-census drift, a non-macOS-arm64 package, missing notices, or
-missing/mismatched Electron FFmpeg source and build material. The existing
-inventory, Electron provenance, LGPL provenance, and project-license checks
-remain separate required gates.
-
-The proof does not claim a reproducible Faust compiler build. The existing
-LGPL provenance gate continues to pin the FaustWasm package, wrapper source,
-compiler source, and distributed bytes; OS-12 treats that source-and-relinking
-evidence as the obligation being checked. No new architecture decision is
-introduced by the release-proof tooling, so no ADR is required.
+Validation fails when any manifest is malformed or stale; an artifact,
+archive, commit object, source tree, build input, notice, or legal file is
+missing or changed; material is not adjacent to the desktop ZIP; the package
+layout or architecture is wrong; or source, web, and desktop evidence does not
+bind to the same revision. The release inventory, Electron provenance, LGPL
+provenance, and project-license checks remain required release gates.

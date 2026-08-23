@@ -4,13 +4,35 @@
     "artifact": "darwin-arm64",
     "runtimeManifest": "ELECTRON-SOURCES.json",
     "requiredMaterial": {
-        "ffmpegSource": "ffmpeg-source.tar.gz",
-        "ffmpegBuild": "ffmpeg-build.json"
+        "electronSource": "electron-340bae15aaef12b7e96f1c857be986aa9f65c21c.tar.gz",
+        "electronCommit": "electron-340bae15aaef12b7e96f1c857be986aa9f65c21c.commit",
+        "ffmpegSource": "ffmpeg-ad41607c61898cf7150e0fb20fe4bbabd44922a3.tar.gz",
+        "ffmpegCommit": "ffmpeg-ad41607c61898cf7150e0fb20fe4bbabd44922a3.commit",
+        "ffmpegBuild": "ffmpeg-build-material.json",
+        "buildInputs": "build-inputs/electron"
+    },
+    "electron": {
+        "repository": "https://github.com/electron/electron",
+        "revision": "340bae15aaef12b7e96f1c857be986aa9f65c21c",
+        "buildInputs": [
+            ".github/actions/build-electron/action.yml",
+            "DEPS",
+            "build/args/all.gn",
+            "build/args/release.gn",
+            "patches/config.json",
+            "patches/ffmpeg/.patches",
+            "patches/ffmpeg/link_with_loader_path.patch"
+        ]
     },
     "ffmpeg": {
         "repository": "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
         "revision": "ad41607c61898cf7150e0fb20fe4bbabd44922a3",
-        "license": "LGPL-2.1-or-later",
-        "buildOutputs": ["libffmpeg.dylib", "libffmpeg.so", "ffmpeg.dll"]
+        "license": "LGPL-2.1-or-later"
+    },
+    "build": {
+        "configureCommand": "TARGET_ARCH=arm64 e init -f --root=. --out=Default release --import release --target-cpu arm64",
+        "command": "TARGET_ARCH=arm64 e build --target electron:release_build",
+        "target": "electron:release_build",
+        "output": "src/out/Default/Electron Framework.framework/Libraries/libffmpeg.dylib"
     }
 }
