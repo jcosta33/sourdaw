@@ -35,9 +35,9 @@
 //! * **A parameter the intermediate engine drops.** The case that decides
 //!   whether caching *every* forwarded name was right, rather than only the
 //!   ones the current engine reads.
-//! * **First construction.** An instance told nothing must match the first
-//!   explicit plate selection bit for bit and retain its platform-independent
-//!   shape.
+//! * **First construction.** An untold constructor Plate must keep its retained
+//!   cross-platform shape and match the first explicit Plate selection with an
+//!   empty cache, bit for bit in the same process.
 //! * **The documented exception.** One sequence genuinely does not round-trip
 //!   — the plate latches `shimmer` off inside its `freeze` arm, and a value
 //!   cache cannot re-fire a latch whose trigger has since been overwritten. It
@@ -189,7 +189,7 @@ fn shape(output: &[f32]) -> RenderShape {
 }
 
 /// See the sibling file for how these two are sized. In short: a hundred times
-/// looser than the retune that produced the current digests, ten times tighter
+/// looser than the measured retune, ten times tighter
 /// than any level move worth shipping.
 const SHAPE_LEVEL_TOLERANCE_DB: f32 = 0.1;
 const SHAPE_ONSET_TOLERANCE: usize = 4;
@@ -483,18 +483,18 @@ fn the_replay_preserves_most_recent_write_order() {
 // First construction
 // ---------------------------------------------------------------------------
 
-/// What an instance that has been told nothing but `mix` renders.
+/// What an untold constructor Plate must prove.
 ///
-/// The readable shape is pinned, while the constructor/cache relationship is
-/// compared bit for bit within the same process so platform `libm` drift does
-/// not become an unbound allowlist.
-/// Taken on `main` at d36441d4f, before the parameter cache existed, and
-/// unchanged by it.
+/// This file owns constructor/cache/algorithm-switch parity. It does not own
+/// Plate's independent historical render character, which is guarded by the
+/// Plate render-surface tests. The retained shape below is the cross-platform
+/// scalar contract for an untouched constructor Plate; the exact fine-structure
+/// contract is only same-process parity with the first explicit Plate selection
+/// while the cache is empty.
 ///
 /// Moved once, by #1546, when the plate constructor's `damping` went from
-/// 0.0005 to 0.3. That is a deliberate voicing change and this row is the
-/// place it is supposed to show up, re-measured on this stimulus in the same
-/// commit as the constructor edit.
+/// 0.0005 to 0.3. That is a deliberate voicing change, re-measured on this
+/// stimulus in the same commit as the constructor edit.
 /// What it means in the render is 9.66 dB of 6-12 kHz shed across the tail
 /// against 4.88 dB before, and a late window that sits 8.45 dB *below* the
 /// midrange instead of 0.21 dB above it — measured in
@@ -507,8 +507,8 @@ fn the_replay_preserves_most_recent_write_order() {
 /// Only a newly added Dutch Oven reaches this state.
 ///
 /// Moved a second time, by #1547, and for the same reason as its sibling in
-/// `plate_parameter_surface.rs` — the two fingerprint the same engine from two
-/// stimuli and always move together. `DelayLine::read` and
+/// `plate_parameter_surface.rs` — the two measure the same engine from two
+/// stimuli and move together. `DelayLine::read` and
 /// `EarlyReflections::process` now count back from the most recently written
 /// sample rather than from the slot after it, so a request for zero delay is
 /// zero delay rather than a whole buffer. That is what stops Pre-Delay 0 ms
@@ -516,15 +516,11 @@ fn the_replay_preserves_most_recent_write_order() {
 /// one sample on the way, which is why a stimulus that never writes `predelay`
 /// moves at all.
 ///
-/// The measured content of the move is written out beside the other constant
-/// and not repeated here: identical peak, RMS within 0.0015 dB, identical T60,
-/// every octave band within 0.03 dB, and a waveform that decorrelates past the
-/// first 250 ms. The fine structure moved; the sound did not.
-///
 /// The retained render crosses platform `libm` implementations, so the stable
 /// contract is its readable shape plus an exact same-process comparison with
-/// the first explicit selection below. Both paths use the same platform math;
-/// any constructor/cache disagreement still moves a sample bit.
+/// the first explicit Plate selection below. Both paths use the same platform
+/// math; any constructor/empty-cache selection disagreement still moves a
+/// sample bit.
 
 /// The render in three readable numbers.
 ///
@@ -537,7 +533,7 @@ const UNTOLD_INSTANCE_SHAPE: RenderShape = RenderShape {
 };
 
 #[test]
-fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
+fn an_untold_constructor_plate_keeps_shape_and_matches_empty_cache_plate_selection() {
     // No `algorithm` write at all: the constructor's plate, straight from
     // `ProofChamberInstance::new`.
     let constructed = render(&[("mix", 1.0)]);
@@ -785,9 +781,9 @@ fn selecting_each_engine_on_a_fresh_instance_matches_its_constructor_defaults() 
     // directly and once after a detour that wrote nothing, so a replay that
     // invented state at either construction shows up as a difference.
     //
-    // The platform-independent shape contract lives in
-    // `an_instance_told_nothing_renders_exactly_what_it_always_has`; this row
-    // is the per-engine spread around it.
+    // The platform-independent constructor Plate shape contract lives in
+    // `an_untold_constructor_plate_keeps_shape_and_matches_empty_cache_plate_selection`;
+    // this row is the per-engine spread around it.
     for (name, algorithm) in EXPOSED {
         let once = render(&settled(algorithm, &[("mix", 1.0)]));
         let after_detour = render(&[
