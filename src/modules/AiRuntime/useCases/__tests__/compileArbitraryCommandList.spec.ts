@@ -1011,6 +1011,118 @@ describe('compileArbitraryCommandList', () => {
         expect(distinct).toMatchObject({ status: 'accepted' });
     });
 
+    it('composes distinct sends while rejecting destructive aliases of the same send in either order', () => {
+        const sendContext = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                { ...context.tracks[0]!, id: 'bus-one', name: 'Bus One', kind: 'bus' },
+                { ...context.tracks[0]!, id: 'bus-two', name: 'Bus Two', kind: 'bus' },
+            ],
+        };
+        const sendItem = (id: string, busName: string) => ({
+            id,
+            name: 'setSend',
+            arguments: { trackId: 'track-kick', level: 0.5 },
+            selector: {
+                targetArgument: 'busId',
+                entity: 'track',
+                where: { name: busName },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+        });
+        const removeItem = (id: string, busName: string) => ({
+            id,
+            name: 'removeSend',
+            arguments: { trackId: 'track-kick' },
+            selector: {
+                targetArgument: 'busId',
+                entity: 'track',
+                where: { name: busName },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+        });
+        const compile = (items: readonly Record<string, unknown>[], targetIds: string[]) =>
+            compileArbitraryCommandList({
+                context: sendContext,
+                revision: 'revision-send-resources',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: { plan: plan(targetIds), list: { schemaVersion: 1, items } },
+                    },
+                ],
+            });
+
+        expect(
+            compile(
+                [
+                    sendItem('set-bus-one', 'Bus One'),
+                    { ...removeItem('remove-bus-two', 'Bus Two'), dependsOn: ['set-bus-one'] },
+                ],
+                ['bus-one', 'track-kick', 'bus-two']
+            )
+        ).toMatchObject({ status: 'accepted' });
+
+        for (const order of ['set-first', 'remove-first'] as const) {
+            const set = sendItem('set-bus-one', 'Bus One');
+            const remove = removeItem('remove-bus-one', 'Bus One');
+            const items =
+                order === 'set-first'
+                    ? [set, { ...remove, dependsOn: ['set-bus-one'] }]
+                    : [remove, { ...set, dependsOn: ['remove-bus-one'] }];
+            expect(compile(items, ['bus-one', 'track-kick'])).toEqual({
+                status: 'rejected',
+                reason: 'Structured command list contains contradictory mutation resources.',
+            });
+        }
+    });
+
+    it('rejects remove and rename aliases of the same section while composing distinct sections', () => {
+        const compile = (items: readonly Record<string, unknown>[]) =>
+            compileArbitraryCommandList({
+                context,
+                revision: 'revision-section-resources',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: { plan: plan([]), list: { schemaVersion: 1, items } },
+                    },
+                ],
+            });
+        const renameVerse = {
+            id: 'rename-verse',
+            name: 'renameSection',
+            arguments: { startBeat: 0, endBeat: 16, name: 'Verse', newName: 'Verse A' },
+        };
+
+        expect(
+            compile([
+                renameVerse,
+                {
+                    id: 'remove-verse',
+                    name: 'removeSection',
+                    arguments: { startBeat: 0, endBeat: 16, name: 'Verse' },
+                    dependsOn: ['rename-verse'],
+                },
+            ])
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list contains contradictory mutation resources.',
+        });
+        expect(
+            compile([
+                renameVerse,
+                {
+                    id: 'remove-chorus',
+                    name: 'removeSection',
+                    arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' },
+                    dependsOn: ['rename-verse'],
+                },
+            ])
+        ).toMatchObject({ status: 'accepted' });
+    });
+
     it('composes compatible property writes in one registry-owned target resource family', () => {
         const selector = {
             targetArgument: 'trackId',
@@ -2693,7 +2805,7 @@ describe('compileArbitraryCommandList', () => {
                 })
             ).toEqual({
                 status: 'rejected',
-                reason: 'Structured command list contains contradictory target dependencies.',
+                reason: 'Structured command list contains contradictory mutation resources.',
             });
         }
     );
@@ -2851,7 +2963,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
-    it('carries semantic dependencies and batch-local producers through the command-batch boundary', () => {
+    it('carries transitive batch-local producers through serialized dependencies and partial acceptance', async () => {
         const result = compileArbitraryCommandList({
             context,
             revision: 'revision-graph',
@@ -2874,6 +2986,12 @@ describe('compileArbitraryCommandList', () => {
                                     arguments: { trackId: '$drum-bus', gain: 0.8 },
                                     dependsOn: ['create-drum-bus'],
                                 },
+                                {
+                                    id: 'pan-drum-bus',
+                                    name: 'setTrackPan',
+                                    arguments: { trackId: '$drum-bus', pan: -0.25 },
+                                    dependsOn: ['gain-drum-bus'],
+                                },
                             ],
                         },
                     },
@@ -2890,9 +3008,10 @@ describe('compileArbitraryCommandList', () => {
             compilerEvidence: result.compilerEvidence,
             context,
             projectRevision: 'revision-graph',
-            prompt: 'Create a Drum Bus, then set its gain to 0.8.',
+            prompt: 'Create a Drum Bus, set its gain to 0.8, then pan it left.',
         });
         expect(bridged.rejections).toEqual([]);
+        expect(bridged.actionCommandGraph?.dependenciesByActionIndex).toEqual([[], [0], [0, 1]]);
         const materialized = materializeBatchLocalActionIdentities(
             bridged.actions,
             bridged.batchLocalActionIdentities ?? []
@@ -2906,16 +3025,58 @@ describe('compileArbitraryCommandList', () => {
         if (guarded.status !== 'accepted') {
             return;
         }
-        registerHandlerMap(getArrangementHandlers());
+        const busId = guarded.actions[0]?.type === 'createBus' ? guarded.actions[0].payload.busId : undefined;
+        expect(busId).toBeDefined();
+        if (busId === undefined) {
+            return;
+        }
+        registerHandlerMap({
+            createBus: {
+                describe: () => ({ label: 'Create Drum Bus' }),
+                execute: () => ({ status: 'written' }),
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            },
+            setTrackGain: {
+                describe: () => ({ label: 'Set Drum Bus gain' }),
+                execute: () => ({ status: 'written' }),
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            },
+            setTrackPan: {
+                describe: () => ({ label: 'Pan Drum Bus left' }),
+                execute: () => ({ status: 'written' }),
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            },
+        });
         commandTrackDefaultsPort.setTrackColorProvider(() => '#123456');
+        commandBatchPreflightPort.setProvider(({ projectDocument }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'revision-graph',
+            projectInvariantsValid: true,
+            targetFingerprints: projectDocument === undefined ? {} : { [busId]: 'created-drum-bus' },
+        }));
+        commandBatchPreviewPort.setProvider(() => ({
+            getProjectDocument: () => ({}),
+            release: () => undefined,
+            scope: (callback) => callback(),
+        }));
         const compileInput = {
             actions: guarded.actions,
-            actionLabels: ['Create Drum Bus', 'Set Drum Bus gain'],
+            actionLabels: ['Create Drum Bus', 'Set Drum Bus gain', 'Pan Drum Bus left'],
             actionCommandGraph: bridged.actionCommandGraph,
             autoCommit: false,
             context,
             group: { groupId: 'group-graph', groupLabel: 'Create Drum Bus' },
-            intent: 'Create a Drum Bus, then set its gain to 0.8.',
+            intent: 'Create a Drum Bus, set its gain to 0.8, then pan it left.',
+            mode: 'preview' as const,
             projectRevision: 'revision-graph',
             runId: 'run-graph',
         };
@@ -2925,10 +3086,12 @@ describe('compileArbitraryCommandList', () => {
         if (parsed.status !== 'valid') {
             return;
         }
-        const [producer, consumer] = parsed.envelope.commands;
-        expect(consumer?.dependencyIds).toEqual([producer?.commandId]);
+        const [producer, gain, pan] = parsed.envelope.commands;
+        expect(gain?.dependencyIds).toEqual([producer?.commandId]);
+        expect(pan?.dependencyIds).toEqual([producer?.commandId, gain?.commandId]);
         expect(parsed.envelope.dependencies).toEqual([
-            { commandId: consumer?.commandId, dependsOn: [producer?.commandId] },
+            { commandId: gain?.commandId, dependsOn: [producer?.commandId] },
+            { commandId: pan?.commandId, dependsOn: [producer?.commandId, gain?.commandId] },
         ]);
         expect(parsed.envelope.batchLocalBindings).toEqual([
             {
@@ -2937,14 +3100,32 @@ describe('compileArbitraryCommandList', () => {
                 producerCommandId: producer?.commandId,
             },
         ]);
-        const busId = guarded.actions[0]?.type === 'createBus' ? guarded.actions[0].payload.busId : undefined;
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.commandBatch.authority,
+            serialized: compiled.commandBatch.serialized,
+        });
+        expect(preview.status).toBe('previewed');
+        if (preview.status !== 'previewed' || pan === undefined) {
+            return;
+        }
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'group-graph-partial',
+            previewSelection: preview.partialAcceptance,
+            runId: 'run-graph-partial',
+            selectedIntentGroupIds: [pan.commandId],
+        });
+        expect(partial).toMatchObject({
+            status: 'compiled',
+            includedOriginalCommandIds: parsed.envelope.commands.map((command) => command.commandId),
+        });
+        preview.resource.release();
         expect(compiled.commandBatch.authority.scope.targetIds).toEqual([busId]);
         expect(
             planAgentRun({
-                request: 'Create a Drum Bus, then set its gain to 0.8.',
+                request: 'Create a Drum Bus, set its gain to 0.8, then pan it left.',
                 revision: 'revision-graph',
                 actions: guarded.actions,
-                actionLabels: ['Create Drum Bus', 'Set Drum Bus gain'],
+                actionLabels: ['Create Drum Bus', 'Set Drum Bus gain', 'Pan Drum Bus left'],
                 scope: {
                     ...compiled.commandBatch.authority.scope,
                     targetIds: [...compiled.commandBatch.authority.scope.targetIds],
@@ -2959,7 +3140,7 @@ describe('compileArbitraryCommandList', () => {
                 budgets: { limits: compiled.commandBatch.authority.budgets, consumed: {} },
                 requiresConfirmation: true,
                 providerProposal: {
-                    ...plan([busId!]),
+                    ...plan([busId]),
                     semantic: { classification: 'simple' as const, uncertainty: [] },
                     objective: 'Create and gain a drum bus.',
                 },

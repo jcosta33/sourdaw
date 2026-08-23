@@ -28,7 +28,14 @@ describe('getExecutableAppActionGroundingRules', () => {
                 { argument: 'outputId', capability: 'output' },
                 { argument: 'trackId', capability: 'routable-source' },
             ],
-            mutationIdentityRules: [{ arguments: [{ argument: 'trackId' }], resourceFamily: 'track' }],
+            mutationIdentityRules: [
+                { arguments: [{ argument: 'trackId' }], resourceFamily: 'track' },
+                {
+                    arguments: [{ argument: 'outputId' }],
+                    resourceFamily: 'track',
+                    resourceReferenceOnly: true,
+                },
+            ],
         });
         expect(getExecutableAppActionGroundingRules('setDeviceParameter')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
@@ -37,10 +44,10 @@ describe('getExecutableAppActionGroundingRules', () => {
             { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
         ]);
         expect(getExecutableAppActionGroundingRules('addSend')?.mutationIdentityRules).toEqual([
-            { arguments: [{ argument: 'trackId' }, { argument: 'busId' }] },
+            { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
         ]);
         expect(getExecutableAppActionGroundingRules('moveClip')?.mutationIdentityRules).toEqual([
-            { arguments: [{ argument: 'clipId' }] },
+            { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
         ]);
         expect(getExecutableAppActionGroundingRules('copyMidiArticulations')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'targetClipId' }] },
@@ -62,6 +69,21 @@ describe('getExecutableAppActionGroundingRules', () => {
         expect(getExecutableAppActionGroundingRules('splitClip')?.mutationIdempotent).toBe(false);
         expect(getExecutableAppActionGroundingRules('removeMarker')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeClip')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeDevice')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeSend')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeSection')?.mutationIdentityRules).toEqual([
+            {
+                arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }],
+                resourceFamily: 'section',
+            },
         ]);
     });
 

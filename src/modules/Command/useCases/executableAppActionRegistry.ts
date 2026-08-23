@@ -45,6 +45,7 @@ export type ExecutableAppActionMutationIdentityRule = {
     arguments: readonly ExecutableAppActionMutationIdentityArgument[];
     fallbackArguments?: readonly ExecutableAppActionMutationIdentityArgument[];
     resourceFamily?: string;
+    resourceReferenceOnly?: true;
 };
 
 export type ExecutableAppActionValueRule =
@@ -2341,13 +2342,23 @@ export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppAction
 const NO_MUTATION_IDENTITY = [] as const;
 const SINGLETON_MUTATION_IDENTITY = [{ arguments: [] }] as const;
 const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }], resourceFamily: 'track' }] as const;
-const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }] }] as const;
+const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' }] as const;
 const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
-const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }] }] as const;
+const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' }] as const;
 const DEVICE_PARAMETER_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
 ] as const;
-const SEND_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }, { argument: 'busId' }] }] as const;
+const SEND_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+] as const;
+const TRACK_OUTPUT_MUTATION_IDENTITY = [
+    ...TRACK_MUTATION_IDENTITY,
+    {
+        arguments: [{ argument: 'outputId' }],
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
 const AUTOMATED_SEND_MUTATION_IDENTITY = [
     {
         arguments: [{ argument: 'trackIds', cardinality: 'many' }, { argument: 'busId' }],
@@ -2362,7 +2373,10 @@ const MARKER_REFERENCE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },
 ] as const;
 const SECTION_REFERENCE_MUTATION_IDENTITY = [
-    { arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }] },
+    {
+        arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }],
+        resourceFamily: 'section',
+    },
 ] as const;
 const ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY = [
     {
@@ -2451,7 +2465,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     addSend: SEND_MUTATION_IDENTITY,
     setSend: SEND_MUTATION_IDENTITY,
     removeSend: SEND_MUTATION_IDENTITY,
-    setTrackOutput: TRACK_MUTATION_IDENTITY,
+    setTrackOutput: TRACK_OUTPUT_MUTATION_IDENTITY,
     addSidechainRoute: ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY,
     removeSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
     addAdjustmentRegion: NO_MUTATION_IDENTITY,

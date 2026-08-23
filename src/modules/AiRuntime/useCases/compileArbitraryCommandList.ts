@@ -243,6 +243,7 @@ type MutationIdentityRule = {
     arguments: readonly { argument: string; cardinality?: 'many' }[];
     fallbackArguments?: readonly { argument: string; cardinality?: 'many' }[];
     resourceFamily?: string;
+    resourceReferenceOnly?: true;
 };
 
 function expandMutationIdentityValues(
@@ -287,6 +288,9 @@ function getMutationWriteIdentities(
     }
     const mutationWriteIdentities: string[] = [];
     for (const rule of mutationIdentityRules) {
+        if (rule.resourceReferenceOnly === true) {
+            continue;
+        }
         const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
         if (expandedIdentityValues === null) {
             return null;
@@ -348,6 +352,9 @@ function getMutationIdentityLabel(
 ): string {
     const values: unknown[] = [];
     for (const rule of mutationIdentityRules) {
+        if (rule.resourceReferenceOnly === true) {
+            continue;
+        }
         const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
         if (expandedIdentityValues !== null) {
             values.push(...expandedIdentityValues.flat());
@@ -683,7 +690,6 @@ export function compileArbitraryCommandList(input: {
     const evidence: ArbitraryCommandListSelectorEvidence[] = [];
     const compiledItems: CompiledItemEvidence[] = [];
     const orderedTargetIds: string[] = [];
-    const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
     const targetCommandArguments = new Map<string, string>();
     const mutationResourceWrites = new Map<string, { destructive: boolean }>();
     const canonicalCommandIndexByKey = new Map<string, number>();
@@ -863,21 +869,6 @@ export function compileArbitraryCommandList(input: {
         const declaredCommandIdentities: string[] = [];
         let omittedCommandCount = 0;
         const representativeCommandIndexes: number[] = [];
-        const isDestructive = /^remove|^delete/u.test(item.name);
-        const groundedStableIds = [
-            ...resolved.stableIds,
-            ...targetValidation.directTargets.flatMap((target) => target.stableIds),
-        ];
-        for (const stableId of groundedStableIds) {
-            const previousWrite = targetWrites.get(stableId);
-            if (previousWrite && (isDestructive || previousWrite.destructive) && previousWrite.itemId !== item.id) {
-                return {
-                    status: 'rejected',
-                    reason: 'Structured command list contains contradictory target dependencies.',
-                };
-            }
-            targetWrites.set(stableId, { destructive: isDestructive, itemId: item.id });
-        }
         const selectedArgumentValues: Array<string | string[]> =
             targetRule.cardinality === 'many' ? [[...resolved.stableIds]] : [...resolved.stableIds];
         for (const selectedTarget of selectedArgumentValues) {

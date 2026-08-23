@@ -571,12 +571,23 @@ export function validateArbitraryCommandListEvidence(input: {
         ];
     };
     for (const item of evidence.items) {
-        const dependencyIndexes = [
+        const itemDependencyIndexes = [
             ...new Set(item.dependsOn.flatMap((dependencyId) => resolveDependencyIndexes(dependencyId))),
         ].sort((left, right) => left - right);
         for (let offset = 0; offset < item.commandCount; offset += 1) {
             const commandIndex = item.commandStart + offset;
-            dependenciesByActionIndex[commandIndex] = dependencyIndexes;
+            const batchLocalProducerIndexes = (targetOverridesByCallIndex.get(commandIndex) ?? []).flatMap(
+                (override) => {
+                    if (!('batchLocalBinding' in override)) {
+                        return [];
+                    }
+                    const producer = producerByBinding.get(override.batchLocalBinding);
+                    return producer === undefined ? [] : [producer.commandIndex];
+                }
+            );
+            dependenciesByActionIndex[commandIndex] = [
+                ...new Set([...itemDependencyIndexes, ...batchLocalProducerIndexes]),
+            ].sort((left, right) => left - right);
         }
     }
     return {
