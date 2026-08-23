@@ -1,0 +1,24 @@
+crates/daw-dsp/tests/support/retained_signal.rs
+  s_a40848e8f8cca9::t_dc221020d55939 2,8-14,22-29,45,51-57,76-127
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_a40848e8f8cca9::t_d85025c06e19c1 1-3,5-8,18-74,109,111,116,119-120,122,127,130,132,138,165,167,169,190-191,193,195,213-214,218-223,225-230
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_2d5bb5be9d9026 32
+  s_a40848e8f8cca9::t_18ba71dfa8e098 793-833
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "3c29c533e4b4052de98b82acc544039b53a05642",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
