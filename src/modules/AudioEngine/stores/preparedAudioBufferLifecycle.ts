@@ -614,7 +614,11 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 existingOwner?.status === 'temporary' &&
                 existingOwner.leaseId === leaseId;
             if (retryingExactLease) {
-                if (!isValidPreparedAudioBufferPair(existingData, existingMetadata)) {
+                if (
+                    existingData === undefined ||
+                    existingMetadata === undefined ||
+                    !isValidPreparedAudioBufferPair(existingData, existingMetadata)
+                ) {
                     await awaitPreparedTransaction(transaction);
                     return {
                         status: 'failed' as const,
