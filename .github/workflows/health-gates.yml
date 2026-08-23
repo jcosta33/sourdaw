@@ -55,8 +55,9 @@ jobs:
     name: Decide scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # A review that requests changes or only comments starts nothing.
-    if: github.event_name != 'pull_request_review' || github.event.review.state == 'approved'
+    # Only a submitted approval starts review-gated work. Dismissals, change
+    # requests, and comments proceed directly to the fail-closed Gate.
+    if: github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'approved')
     outputs:
       heavy: ${{ steps.scope.outputs.heavy }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -650,6 +651,7 @@ jobs:
       - name: Require every job to have succeeded or been skipped
         env:
           EVENT: ${{ github.event_name }}
+          REVIEW_ACTION: ${{ github.event.action }}
           REVIEW_STATE: ${{ github.event.review.state }}
           REVIEW_COMMIT: ${{ github.event.review.commit_id }}
           PULL_REQUEST_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -660,8 +662,8 @@ jobs:
             printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\n'
             exit 1
           fi
-          if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_STATE" != "approved" ]; then
-            printf 'non-approved pull-request review cannot satisfy Gate\n'
+          if [ "$EVENT" = "pull_request_review" ] && { [ "$REVIEW_ACTION" != "submitted" ] || [ "$REVIEW_STATE" != "approved" ]; }; then
+            printf 'pull-request review must be a submitted approval\n'
             exit 1
           fi
           if [ "$EVENT" = "pull_request_review" ] && { [ -z "$REVIEW_COMMIT" ] || [ "$REVIEW_COMMIT" != "$PULL_REQUEST_HEAD" ]; }; then

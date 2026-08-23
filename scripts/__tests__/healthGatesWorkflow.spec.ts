@@ -9,9 +9,10 @@ import { parseDocument } from 'yaml';
 type UnknownRecord = Record<string, unknown>;
 
 const APPROVED_REVIEW_CONDITION =
-    "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
+    "github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'approved')";
 const GATE_CONDITION = 'always()';
 const GATE_EVENT_REFERENCE = '${{ github.event_name }}';
+const GATE_REVIEW_ACTION_REFERENCE = '${{ github.event.action }}';
 const GATE_REVIEW_STATE_REFERENCE = '${{ github.event.review.state }}';
 const GATE_REVIEW_COMMIT_REFERENCE = '${{ github.event.review.commit_id }}';
 const GATE_HEAD_SHA_REFERENCE = '${{ github.event.pull_request.head.sha }}';
@@ -19,8 +20,8 @@ const FAIL_CLOSED_PULL_REQUEST_GUARD = `if [ "$EVENT" = "pull_request" ]; then
   printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\\n'
   exit 1
 fi`;
-const FAIL_CLOSED_REVIEW_GUARD = `if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_STATE" != "approved" ]; then
-  printf 'non-approved pull-request review cannot satisfy Gate\\n'
+const FAIL_CLOSED_REVIEW_GUARD = `if [ "$EVENT" = "pull_request_review" ] && { [ "$REVIEW_ACTION" != "submitted" ] || [ "$REVIEW_STATE" != "approved" ]; }; then
+  printf 'pull-request review must be a submitted approval\\n'
   exit 1
 fi`;
 const CURRENT_HEAD_REVIEW_GUARD = `if [ "$EVENT" = "pull_request_review" ] && { [ -z "$REVIEW_COMMIT" ] || [ "$REVIEW_COMMIT" != "$PULL_REQUEST_HEAD" ]; }; then
@@ -112,9 +113,9 @@ function assertHeavyScanChain(candidate: UnknownRecord): string {
     return stringAt(scope, 'run');
 }
 
-function decideAdmits(eventName: string, reviewState: string): boolean {
+function decideAdmits(eventName: string, reviewAction: string, reviewState: string): boolean {
     assertHeavyScanChain(workflow);
-    return eventName !== 'pull_request_review' || reviewState === 'approved';
+    return eventName !== 'pull_request_review' || (reviewAction === 'submitted' && reviewState === 'approved');
 }
 
 function assertGateContract(candidate: UnknownRecord): string {
@@ -126,6 +127,9 @@ function assertGateContract(candidate: UnknownRecord): string {
     const environment = recordAt(step, 'env');
     if (environment.EVENT !== GATE_EVENT_REFERENCE) {
         throw new Error('gate must receive the exact event name');
+    }
+    if (environment.REVIEW_ACTION !== GATE_REVIEW_ACTION_REFERENCE) {
+        throw new Error('gate must receive the exact pull-request review action');
     }
     if (environment.REVIEW_STATE !== GATE_REVIEW_STATE_REFERENCE) {
         throw new Error('gate must receive the exact pull-request review state');
@@ -178,13 +182,15 @@ function runGateScript(
     reviewState: string,
     results: string,
     reviewCommit = 'head-sha',
-    pullRequestHead = 'head-sha'
+    pullRequestHead = 'head-sha',
+    reviewAction = 'submitted'
 ): number | null {
     return spawnSync('bash', ['-c', script], {
         encoding: 'utf8',
         env: {
             ...process.env,
             EVENT: eventName,
+            REVIEW_ACTION: reviewAction,
             REVIEW_STATE: reviewState,
             REVIEW_COMMIT: reviewCommit,
             PULL_REQUEST_HEAD: pullRequestHead,
@@ -338,7 +344,17 @@ describe('health gates workflow contract', () => {
         ).not.toBe(0);
         expect(runGateScript(gateScript, 'pull_request_review', 'commented', skippedResults)).not.toBe(0);
         expect(runGateScript(gateScript, 'pull_request_review', 'changes_requested', skippedResults)).not.toBe(0);
-        expect(runGateScript(gateScript, 'pull_request_review', 'dismissed', skippedResults)).not.toBe(0);
+        expect(
+            runGateScript(
+                gateScript,
+                'pull_request_review',
+                'approved',
+                approvedResults,
+                'head-sha',
+                'head-sha',
+                'dismissed'
+            )
+        ).not.toBe(0);
         expect(runGateScript(gateScript, 'pull_request', '', gateResults(workflow, 'failure'))).not.toBe(0);
         for (const job of ['codeql', 'secrets']) {
             for (const result of ['skipped', 'failure'] as const) {
@@ -355,11 +371,11 @@ describe('health gates workflow contract', () => {
 
         const scopeScript = assertHeavyScanChain(workflow);
 
-        expect(decideAdmits('pull_request_review', 'approved')).toBe(true);
-        expect(decideAdmits('pull_request_review', 'commented')).toBe(false);
-        expect(decideAdmits('pull_request_review', 'changes_requested')).toBe(false);
-        expect(decideAdmits('pull_request_review', 'dismissed')).toBe(false);
-        expect(decideAdmits('pull_request', '')).toBe(true);
+        expect(decideAdmits('pull_request_review', 'submitted', 'approved')).toBe(true);
+        expect(decideAdmits('pull_request_review', 'submitted', 'commented')).toBe(false);
+        expect(decideAdmits('pull_request_review', 'submitted', 'changes_requested')).toBe(false);
+        expect(decideAdmits('pull_request_review', 'dismissed', 'approved')).toBe(false);
+        expect(decideAdmits('pull_request', '', '')).toBe(true);
         expect(runScopeScript(scopeScript, 'pull_request_review')).toEqual({
             heavy: 'true',
             rust: 'false',
