@@ -1,0 +1,27 @@
+.github/workflows/health-gates.yml
+  s_a40848e8f8cca9::t_d3d458e734dc72 15-20,46-51,61-64,510-513,521-524,527,529,540-544,622-624,654,674,685-686
+  s_a40848e8f8cca9::t_7a74dff4b83d3e 525-526
+  s_a40848e8f8cca9::t_7872e1540c982b 687-688
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_a40848e8f8cca9::t_cf9beedb8cd5d0 12-14,17,25-28,42-43,45,124,126-129,145-147,164-166,203-204,212,325-327,394-401
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_7a74dff4b83d3e 99-100,278-281
+  s_a40848e8f8cca9::t_6900e50663ff09 1,16,83-98,101-183,206-277,282-292
+  s_a40848e8f8cca9::t_fbb7e0177063d1 293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "12f993fb2c507522dc2a6127f9bfa018ca592be9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
