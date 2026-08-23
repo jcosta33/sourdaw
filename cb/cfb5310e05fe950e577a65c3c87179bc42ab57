@@ -1,0 +1,26 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_d445186b367cb4 711
+  s_a40848e8f8cca9::t_665ba00ffd883f 1030,1042
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_cf92f403044e53 780-785,792-800,802-811,814-815,822
+  s_a40848e8f8cca9::t_83ada03e2d6c66 816-817
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_fd7fef8ce2e9fa 1023-1047,1050-1052
+  s_a40848e8f8cca9::t_19fd28e3197db4 1048-1049,1053
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "cbcfb5310e05fe950e577a65c3c87179bc42ab57",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
