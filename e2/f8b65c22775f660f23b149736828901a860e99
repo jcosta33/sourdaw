@@ -1,0 +1,45 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_4bc83106078f3b 37
+  s_a40848e8f8cca9::t_fc185ae6e136ac 200-204,207,209-210,212-227
+  s_a40848e8f8cca9::t_baae9b9a07b734 1-3,25-35,41-47,51-61,172,179-181,183-191,194,196-197,228-230
+  s_a40848e8f8cca9::t_16765b4517cd3b 36,38-40,292-294
+  s_a40848e8f8cca9::t_a17bf48737bdb3 48-49,182,199,205,211
+  s_a40848e8f8cca9::t_104763f82ec159 50,193,195,206,208
+  s_a40848e8f8cca9::t_728b7e59de6778 13,249,288,300-301,303-304,311-315
+scripts/__tests__/publishLane.spec.ts
+  s_a40848e8f8cca9::t_26a611227ad8c5 2,36-60,189-304,306-312,391
+  s_a40848e8f8cca9::t_dc768ce6538543 318
+  s_a40848e8f8cca9::t_ad4680b974cd74 3,305,876,883
+  s_a40848e8f8cca9::t_4608e8ff44f24c 119-122,372-390
+  s_a40848e8f8cca9::t_828286d5eacfb0 885
+  s_a40848e8f8cca9::t_c3e4fb24bd6a48 392
+scripts/trustedGithubWriteBootstrap.ts
+  s_a40848e8f8cca9::t_e25aac8a4dbbc3 254-256,259-265,278-282,297
+  s_a40848e8f8cca9::t_631b7da5324b7c 369
+  s_a40848e8f8cca9::t_792a97bf3f158b 135-138,268,299-302
+  s_a40848e8f8cca9::t_ff429ebb71b9df 3,5,12,15-16,115-123,229,269-273,276,288,294-296,298,303-304,314-318,337-358,360-364,366
+scripts/githubAppIdentity.ts
+  s_a40848e8f8cca9::t_8011a5411051a3 266-277,314-315,321,340-365,373,378-385,387,389
+scripts/publishLane.ts
+  s_a40848e8f8cca9::t_5d6452a80b3f49 385-387
+  s_a40848e8f8cca9::t_600304b1bf0730 25,53,55,59,119-120,366-367,377-384,388-389,403,407,412,462,470,535-549,571-576,590-591,593,604-610,619-621,627,672,675,809-812,822-826
+  s_a40848e8f8cca9::t_0d037632d5302a 827-828
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_a40848e8f8cca9::t_a929d05dcc34df 42,98-107,269,330,337,356,360,379,383,398,402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e2f8b65c22775f660f23b149736828901a860e99",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
