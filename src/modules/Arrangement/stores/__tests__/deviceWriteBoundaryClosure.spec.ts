@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import { createScanner, LanguageVariant, ScriptTarget, SyntaxKind } from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 type CountByPath = Readonly<Record<string, number>>;
@@ -10,6 +11,7 @@ type SinkFamily = 'persistence-runtime' | 'strip-add' | 'direct-built-in' | 'loa
 type SinkDefinition = {
     pattern: RegExp;
     includes: (path: string) => boolean;
+    excludesComments?: (path: string) => boolean;
 };
 
 function includeAllPaths(): boolean {
@@ -47,6 +49,8 @@ const SINK_DEFINITIONS: Record<SinkFamily, SinkDefinition> = {
         pattern:
             /\b(?:compile[A-Z][A-Za-z]*|load[A-Z][A-Za-z]*PatchWithAudio|loadToasterKitPreset|loadSamplesForInstrument|loadInstrument|set[A-Z][A-Za-z]*Immediate|audioDevice\.loaded)\b/g,
         includes: includeAllPaths,
+        excludesComments: (path) =>
+            path === 'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts',
     },
 };
 
@@ -354,6 +358,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // each scored 1 and now score 0, so they leave this table. They clamp to
         // their declared range and delegate; nothing else changed about them.
         'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 3,
+        // Count provenance: new file entry, measured 1 — the morph reconciler
+        // applies the project-owned interpolation through the Grand Boule
+        // engine handle. This is the one direct runtime write after the command
+        // handler has validated and committed the morph state.
+        'src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts': 1,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
         // Count provenance: measured 3 with `grep -o`, was 2. The two
         // executable hits are unchanged — the `setParam` handle on the returned
@@ -364,7 +373,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // GrandBoule on a track hosting two before the scope was added.
         'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
-        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 7,
+        // Count provenance: measured 1 — the move now delegates its single
+        // command-owned morph edit to `dispatchGrandBouleMorphEdit`; the former
+        // six direct engine writes moved into `applyGrandBouleMorphState`.
+        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
@@ -525,10 +537,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // Count provenance: 4 = the compileAutomationSegments import line
-        // (matched twice: named import + module path), its single call site,
-        // and one doc-comment mention added by the AU-3 affine-scale fix
-        // (#765). The executable call surface is unchanged and singular.
+        // Count provenance: 4 executable references — the typed
+        // compileAutomationEvents import, the compileAutomationSegments import
+        // (named import + module path), and its single call site. Boundary-law
+        // prose is deliberately excluded: the oracle counts executable
+        // references, not explanatory comments.
         'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
@@ -567,6 +580,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Gluten/useCases/index.ts': 1,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,
+        // Count provenance: new file entry, measured 2 — the lifecycle event
+        // contract and the subscriber registration that hydrates the newly
+        // loaded engine from project state.
+        'src/modules/GrandBoule/useCases/grandBouleSubscriber.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts': 1,
         'src/modules/Grinder/useCases/index.ts': 1,
@@ -695,6 +712,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: new guarded clip-state restore path, measured 3 —
+        // each track snapshot reconstructs `devices:` before the handler writes
+        // it through the registered undo/redo action.
+        'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // the Arrangement handler commits through executeAppAction. Project
         // writer is `writeDeviceToProject`; this is the handler's topology
@@ -782,6 +803,9 @@ const DEVICE_DATA_COUNTS = {
         // executeAppAction, the same shape as setExternalPluginState above.
         'src/modules/Arrangement/useCases/device/setDeviceState.ts': 1,
         'src/modules/Arrangement/useCases/device/updateMidiFxParam.ts': 1,
+        // Count provenance: measured 1 — the pure undo/redo snapshot captures
+        // each track's device collection as executable data, never as a type.
+        'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
         'src/modules/Arrangement/useCases/duplicateTrack.ts': 1,
         'src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts': 2,
         'src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts': 1,
@@ -813,12 +837,18 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
+        // Count provenance: measured 1 — the exported agent-facing projection
+        // builds a runtime track contract with an ordered device collection.
+        'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/addDeviceChain.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/attachSidechainCompressor.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 1,
     },
     static: {
+        // Count provenance: measured 1 — the public agent project-model type
+        // declares a track's device collection and has no executable access.
+        'src/modules/Project/models/AgentProjectModelContract.ts': 1,
         'src/modules/Arrangement/models/SoundPreset.ts': 2,
         // Count provenance: new file entry from #2347 ("migrate stored device
         // parameters before preset load"), measured 1 — the `parameterValues:
@@ -948,13 +978,27 @@ function productionSources(root: string): ProductionSource[] {
     return files;
 }
 
+function sourceWithoutComments(source: string): string {
+    const scanner = createScanner(ScriptTarget.Latest, false, LanguageVariant.Standard, source);
+    let result = '';
+    for (let token = scanner.scan(); token !== SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+        const text = scanner.getTokenText();
+        result +=
+            token === SyntaxKind.SingleLineCommentTrivia || token === SyntaxKind.MultiLineCommentTrivia
+                ? text.replaceAll(/[^\r\n]/g, ' ')
+                : text;
+    }
+    return result;
+}
+
 function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDefinition): Record<string, number> {
     const result: Record<string, number> = {};
     for (const file of files) {
         if (!definition.includes(file.path)) {
             continue;
         }
-        const matches = file.source.match(definition.pattern);
+        const source = definition.excludesComments?.(file.path) ? sourceWithoutComments(file.source) : file.source;
+        const matches = source.match(definition.pattern);
         if (matches && matches.length > 0) {
             result[file.path] = matches.length;
         }
@@ -1022,6 +1066,25 @@ describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
         const files = productionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
+    });
+
+    it('does not count boundary-law prose as an automation scheduling executable reference', () => {
+        const counts = countByPath(
+            [
+                {
+                    path: 'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts',
+                    source: [
+                        'compileAutomationSegments(points, duration, tempo);',
+                        '// Boundary law: compileAutomationSegments keeps the curve semantics stable.',
+                    ].join('\n'),
+                },
+            ],
+            SINK_DEFINITIONS['load-compile-hydration']
+        );
+
+        expect(counts).toEqual({
+            'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 1,
+        });
     });
 
     it.each([
