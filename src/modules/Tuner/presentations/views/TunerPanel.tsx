@@ -83,7 +83,7 @@ function SectionCard({
 }): ReactElement {
     return (
         <DawPluginSectionCard
-            className="scoring-window"
+            className="scoring-window shrink-0"
             title={title}
             detail={detail}
             detailMode="badge"

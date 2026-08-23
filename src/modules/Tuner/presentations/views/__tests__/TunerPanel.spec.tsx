@@ -119,16 +119,18 @@ vi.mock('#/components/daw/DawPluginSectionCard', () => ({
         title,
         children,
         detail,
+        className,
     }: {
         title: React.ReactNode;
         children?: React.ReactNode;
         detail?: React.ReactNode;
+        className?: string;
     }) => (
-        <div data-testid="section-card">
+        <section data-testid="section-card" className={className}>
             <h3>{title}</h3>
             <div>{detail}</div>
             {children}
-        </div>
+        </section>
     ),
 }));
 
@@ -191,6 +193,15 @@ describe('TunerPanel', () => {
         expect(screen.getByText('Needle')).toBeInTheDocument();
         expect(screen.getByText('Strobe')).toBeInTheDocument();
         expect(screen.getByText('Poly')).toBeInTheDocument();
+    });
+
+    it('keeps sidebar cards from shrinking their controls into the next card hit area', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+
+        expect(screen.getAllByTestId('section-card')).toHaveLength(4);
+        for (const card of screen.getAllByTestId('section-card')) {
+            expect(card).toHaveClass('shrink-0');
+        }
     });
 
     it('should render reference section with knob', () => {
