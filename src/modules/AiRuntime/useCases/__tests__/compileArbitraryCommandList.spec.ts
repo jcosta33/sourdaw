@@ -107,7 +107,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
-    it('does not invent one shared mutation identity for non-targeted commands', () => {
+    it('rejects contradictory writes to the same singleton project resource', () => {
         const result = compileArbitraryCommandList({
             context,
             revision: 'revision-1',
@@ -133,14 +133,347 @@ describe('compileArbitraryCommandList', () => {
             ],
         });
 
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for setTempo on singleton resource are not safely composable.',
+        });
+    });
+
+    it('composes independent child creation under the same parent resources', () => {
+        const automationContext = {
+            ...context,
+            automationLanes: [
+                {
+                    id: 'lane-kick-gain',
+                    trackId: 'track-kick',
+                    parameterId: 'gain',
+                    name: 'Kick Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [],
+                },
+            ],
+            adjustmentLayers: [
+                {
+                    id: 'layer-kick-air',
+                    name: 'Kick Air',
+                    effectType: 'eq' as const,
+                    parameters: [],
+                    affectedTrackIds: ['track-kick'],
+                    insertionIndex: 0,
+                    regions: [],
+                    enabled: true,
+                    mix: 1,
+                    color: '#ffffff',
+                },
+            ],
+        };
+        const result = compileArbitraryCommandList({
+            context: automationContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'lane-kick-gain', 'layer-kick-air']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'first-clip',
+                                    name: 'addClip',
+                                    arguments: { startBeat: 0, endBeat: 4, name: 'First' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'second-clip',
+                                    name: 'addClip',
+                                    arguments: { startBeat: 4, endBeat: 8, name: 'Second' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['first-clip'],
+                                },
+                                {
+                                    id: 'first-point',
+                                    name: 'addAutomationPoint',
+                                    arguments: { beat: 1, value: 0.25 },
+                                    selector: {
+                                        targetArgument: 'laneId',
+                                        entity: 'automation-lane',
+                                        where: { name: 'Kick Gain' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['second-clip'],
+                                },
+                                {
+                                    id: 'second-point',
+                                    name: 'addAutomationPoint',
+                                    arguments: { beat: 2, value: 0.75 },
+                                    selector: {
+                                        targetArgument: 'laneId',
+                                        entity: 'automation-lane',
+                                        where: { name: 'Kick Gain' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['first-point'],
+                                },
+                                {
+                                    id: 'first-region',
+                                    name: 'addAdjustmentRegion',
+                                    arguments: {
+                                        startBeat: 0,
+                                        endBeat: 4,
+                                        blend: 1,
+                                        fadeInBeats: 0,
+                                        fadeOutBeats: 0,
+                                    },
+                                    selector: {
+                                        targetArgument: 'layerId',
+                                        entity: 'adjustment-layer',
+                                        where: { name: 'Kick Air' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['second-point'],
+                                },
+                                {
+                                    id: 'second-region',
+                                    name: 'addAdjustmentRegion',
+                                    arguments: {
+                                        startBeat: 4,
+                                        endBeat: 8,
+                                        blend: 0.5,
+                                        fadeInBeats: 0,
+                                        fadeOutBeats: 0,
+                                    },
+                                    selector: {
+                                        targetArgument: 'layerId',
+                                        entity: 'adjustment-layer',
+                                        where: { name: 'Kick Air' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['first-region'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
         expect(result).toMatchObject({ status: 'accepted' });
-        if (result.status !== 'accepted') {
-            return;
-        }
-        expect(result.calls[0]?.arguments.commands).toEqual([
-            { name: 'setTempo', arguments: { bpm: 128 } },
-            { name: 'setTempo', arguments: { bpm: 130 } },
-        ]);
+    });
+
+    it('keys automation lane creation by track and parameter', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'gain-lane',
+                                    name: 'addAutomationLane',
+                                    arguments: { parameterId: 'gain' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'pan-lane',
+                                    name: 'addAutomationLane',
+                                    arguments: { parameterId: 'pan' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['gain-lane'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+    });
+
+    it('keys sidechain creation by source and materialized target device', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-to-first-compressor',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-a' },
+                                    selector: {
+                                        targetArgument: 'sourceTrackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'route-to-second-compressor',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-b' },
+                                    selector: {
+                                        targetArgument: 'sourceTrackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['route-to-first-compressor'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+    });
+
+    it('rejects duplicate sidechain creation for one source and materialized target device', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-device',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-a' },
+                                    selector: {
+                                        targetArgument: 'sourceTrackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'reroute-device',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-other', targetDeviceId: 'compressor-a' },
+                                    selector: {
+                                        targetArgument: 'sourceTrackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['route-device'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for addSidechainRoute on track-kick are not safely composable.',
+        });
+    });
+
+    it('rejects contradictory edits of the same exact marker reference while composing distinct markers', () => {
+        const contradictory = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'color-verse-blue',
+                                    name: 'setMarkerColor',
+                                    arguments: { beat: 4, name: 'Verse', color: 'blue' },
+                                },
+                                {
+                                    id: 'color-verse-red',
+                                    name: 'setMarkerColor',
+                                    arguments: { beat: 4, name: 'Verse', color: 'red' },
+                                    dependsOn: ['color-verse-blue'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        const distinct = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'color-verse',
+                                    name: 'setMarkerColor',
+                                    arguments: { beat: 4, name: 'Verse', color: 'blue' },
+                                },
+                                {
+                                    id: 'color-chorus',
+                                    name: 'setMarkerColor',
+                                    arguments: { beat: 16, name: 'Chorus', color: 'red' },
+                                    dependsOn: ['color-verse'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(contradictory).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for setMarkerColor on 4,Verse are not safely composable.',
+        });
+        expect(distinct).toMatchObject({ status: 'accepted' });
     });
 
     it('canonicalizes idempotent selector repetition into one guarded write per stable target', () => {

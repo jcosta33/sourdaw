@@ -2337,6 +2337,7 @@ export type ExecutableProviderAction = DescriptorAction<(typeof executableAppAct
 export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppActionType }>;
 
 const NO_MUTATION_IDENTITY = [] as const;
+const SINGLETON_MUTATION_IDENTITY = [{ arguments: [] }] as const;
 const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }] }] as const;
 const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }] }] as const;
 const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
@@ -2352,13 +2353,23 @@ const AUTOMATED_SEND_MUTATION_IDENTITY = [
 ] as const;
 const AUTOMATED_TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }] as const;
 const AUTOMATION_LANE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'laneId' }] }] as const;
+const AUTOMATION_LANE_CREATION_IDENTITY = [
+    { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
+] as const;
+const MARKER_REFERENCE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'beat' }, { argument: 'name' }] }] as const;
+const SECTION_REFERENCE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }] },
+] as const;
+const ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetDeviceId' }] },
+] as const;
 
 export const executableAppActionMutationIdentityRulesByType = {
     importStemSet: NO_MUTATION_IDENTITY,
     addTrack: NO_MUTATION_IDENTITY,
     createBus: NO_MUTATION_IDENTITY,
     removeTrack: TRACK_MUTATION_IDENTITY,
-    addClip: TRACK_MUTATION_IDENTITY,
+    addClip: NO_MUTATION_IDENTITY,
     duplicateClip: CLIP_MUTATION_IDENTITY,
     duplicateClipToNextBar: CLIP_MUTATION_IDENTITY,
     removeClip: CLIP_MUTATION_IDENTITY,
@@ -2396,32 +2407,32 @@ export const executableAppActionMutationIdentityRulesByType = {
     muteTrack: TRACK_MUTATION_IDENTITY,
     soloTrack: TRACK_MUTATION_IDENTITY,
     setSoloSafe: TRACK_MUTATION_IDENTITY,
-    clearSolos: NO_MUTATION_IDENTITY,
+    clearSolos: SINGLETON_MUTATION_IDENTITY,
     armTrack: TRACK_MUTATION_IDENTITY,
     duplicateTrack: TRACK_MUTATION_IDENTITY,
     setTrackGain: TRACK_MUTATION_IDENTITY,
     setTrackPan: TRACK_MUTATION_IDENTITY,
     setTrackColor: TRACK_MUTATION_IDENTITY,
     reorderTrack: TRACK_MUTATION_IDENTITY,
-    setTempo: NO_MUTATION_IDENTITY,
-    setTimeSignature: NO_MUTATION_IDENTITY,
-    setPlayback: NO_MUTATION_IDENTITY,
-    stopPlayback: NO_MUTATION_IDENTITY,
-    seekPlayhead: NO_MUTATION_IDENTITY,
+    setTempo: SINGLETON_MUTATION_IDENTITY,
+    setTimeSignature: SINGLETON_MUTATION_IDENTITY,
+    setPlayback: SINGLETON_MUTATION_IDENTITY,
+    stopPlayback: SINGLETON_MUTATION_IDENTITY,
+    seekPlayhead: SINGLETON_MUTATION_IDENTITY,
     addMarker: NO_MUTATION_IDENTITY,
-    removeMarker: NO_MUTATION_IDENTITY,
-    setMarkerColor: NO_MUTATION_IDENTITY,
+    removeMarker: MARKER_REFERENCE_MUTATION_IDENTITY,
+    setMarkerColor: MARKER_REFERENCE_MUTATION_IDENTITY,
     addSection: NO_MUTATION_IDENTITY,
-    removeSection: NO_MUTATION_IDENTITY,
-    renameSection: NO_MUTATION_IDENTITY,
-    setLoopEnabled: NO_MUTATION_IDENTITY,
-    setLoopRegion: NO_MUTATION_IDENTITY,
-    setPunchIn: NO_MUTATION_IDENTITY,
-    setPunchOut: NO_MUTATION_IDENTITY,
-    setPunchEnabled: NO_MUTATION_IDENTITY,
-    setMetronomeEnabled: NO_MUTATION_IDENTITY,
-    setMetronomeVolume: NO_MUTATION_IDENTITY,
-    setMasterGain: NO_MUTATION_IDENTITY,
+    removeSection: SECTION_REFERENCE_MUTATION_IDENTITY,
+    renameSection: SECTION_REFERENCE_MUTATION_IDENTITY,
+    setLoopEnabled: SINGLETON_MUTATION_IDENTITY,
+    setLoopRegion: SINGLETON_MUTATION_IDENTITY,
+    setPunchIn: SINGLETON_MUTATION_IDENTITY,
+    setPunchOut: SINGLETON_MUTATION_IDENTITY,
+    setPunchEnabled: SINGLETON_MUTATION_IDENTITY,
+    setMetronomeEnabled: SINGLETON_MUTATION_IDENTITY,
+    setMetronomeVolume: SINGLETON_MUTATION_IDENTITY,
+    setMasterGain: SINGLETON_MUTATION_IDENTITY,
     setVcaGain: [{ arguments: [{ argument: 'vcaGroupId' }] }],
     createVcaGroup: [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }],
     assignToVca: TRACK_MUTATION_IDENTITY,
@@ -2434,15 +2445,15 @@ export const executableAppActionMutationIdentityRulesByType = {
     setSend: SEND_MUTATION_IDENTITY,
     removeSend: SEND_MUTATION_IDENTITY,
     setTrackOutput: TRACK_MUTATION_IDENTITY,
-    addSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
+    addSidechainRoute: ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY,
     removeSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
-    addAdjustmentRegion: [{ arguments: [{ argument: 'layerId' }] }],
+    addAdjustmentRegion: NO_MUTATION_IDENTITY,
     automateSendRange: AUTOMATED_SEND_MUTATION_IDENTITY,
     automateTrackGainRange: AUTOMATED_TRACK_MUTATION_IDENTITY,
     automateSendRanges: AUTOMATED_SEND_MUTATION_IDENTITY,
     renderProjectSections: NO_MUTATION_IDENTITY,
-    addAutomationLane: TRACK_MUTATION_IDENTITY,
-    addAutomationPoint: AUTOMATION_LANE_MUTATION_IDENTITY,
+    addAutomationLane: AUTOMATION_LANE_CREATION_IDENTITY,
+    addAutomationPoint: NO_MUTATION_IDENTITY,
     setAutomationLaneEnabled: AUTOMATION_LANE_MUTATION_IDENTITY,
     setAutomationMode: TRACK_MUTATION_IDENTITY,
     scaleAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,

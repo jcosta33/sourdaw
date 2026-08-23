@@ -279,7 +279,7 @@ function getMutationIdentityLabel(
             }
         }
     }
-    return values.join(',');
+    return values.length === 0 ? 'singleton resource' : values.join(',');
 }
 
 function checkCommandWriteConflict(input: {

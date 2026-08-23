@@ -52,7 +52,6 @@ describe('command registry completeness', () => {
             });
             expect(Array.isArray(registration.mutationIdentityRules)).toBe(true);
             for (const identityRule of registration.mutationIdentityRules) {
-                expect(identityRule.arguments.length).toBeGreaterThan(0);
                 expect(new Set(identityRule.arguments.map((rule) => rule.argument)).size).toBe(
                     identityRule.arguments.length
                 );
