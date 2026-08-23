@@ -1,0 +1,29 @@
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_0a3429e31e555d::t_496b79f2bcf863 505
+  s_0a3429e31e555d::t_89f96868f6bda0 502-504,506-538
+  s_0a3429e31e555d::t_f642b90ec6272b 539-542
+scripts/dependencyLicenseReport.ts
+  s_0a3429e31e555d::t_5fb044d551a253 929
+  s_0a3429e31e555d::t_382816216b26b3 720
+  s_0a3429e31e555d::t_70db288b37aaf9 613-615,707
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_781714c0e6acf7 127
+public/legal/DEPENDENCY-LICENSES.txt
+  s_0a3429e31e555d::t_d5e223e971570a 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "80b0f5207d641385a8c83aa51593c02ff8301556",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
