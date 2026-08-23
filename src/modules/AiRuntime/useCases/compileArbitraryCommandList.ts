@@ -37,6 +37,13 @@ export type ArbitraryCommandListSelectorEvidence = {
     preconditions: Array<{ stableId: string; fingerprint: string }>;
 };
 
+export type ArbitraryCommandListDirectTargetEvidence = {
+    argument: string;
+    capability: string;
+    cardinality: 'one' | 'many';
+    stableIds: string[];
+};
+
 type CompiledItemEvidence = {
     canonicalStableIds: string[];
     itemId: string;
@@ -50,6 +57,7 @@ type CompiledItemEvidence = {
     targetArgument?: string;
     targetCapability?: string;
     targetCardinality?: 'many';
+    directTargets?: ArbitraryCommandListDirectTargetEvidence[];
 };
 
 export type ArbitraryCommandListEvidence = {
@@ -205,11 +213,11 @@ function resolveSelector(input: {
 }
 
 function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stableIds: readonly string[]): boolean {
-    return (
-        plan !== null &&
-        plan.scope.targetIds.length === stableIds.length &&
-        plan.scope.targetIds.every((id, index) => id === stableIds[index])
-    );
+    if (plan === null || plan.scope.targetIds.length !== stableIds.length) {
+        return false;
+    }
+    const proposedIds = new Set(plan.scope.targetIds);
+    return proposedIds.size === stableIds.length && stableIds.every((id) => proposedIds.has(id));
 }
 
 function canonicalJson(value: unknown): string {
@@ -396,6 +404,10 @@ function detectDependencyCycle(items: readonly SemanticCommandListItem[]): strin
 
 const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
+function capabilityRequiresConcreteDependency(capability: string): boolean {
+    return capability === 'device' || capability === 'device-parameter';
+}
+
 type BatchLocalBindingProducer = {
     itemId: string;
 };
@@ -422,17 +434,28 @@ function dependsTransitivelyOn(
 }
 
 function validateTargetArgumentsWithoutSelectors(input: {
+    context: ProjectContext;
     item: SemanticCommandListItem;
     itemsById: ReadonlyMap<string, SemanticCommandListItem>;
     producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
+    protectedTargetIds: ReadonlySet<string>;
     selectorArgument?: string;
+    selectorStableIds?: readonly string[];
     targetRules: readonly {
         argument: string;
         allowBatchLocal?: boolean;
+        capability: string;
         cardinality?: 'many';
+        dependsOn?: string;
+        distinctFrom?: string;
         optional?: boolean;
     }[];
-}): RejectedCompilation | null {
+}): { status: 'accepted'; directTargets: ArbitraryCommandListDirectTargetEvidence[] } | RejectedCompilation {
+    const directTargets: ArbitraryCommandListDirectTargetEvidence[] = [];
+    const stableIdsByArgument = new Map<string, readonly string[]>();
+    if (input.selectorArgument !== undefined && input.selectorStableIds !== undefined) {
+        stableIdsByArgument.set(input.selectorArgument, input.selectorStableIds);
+    }
     for (const targetRule of input.targetRules) {
         if (targetRule.argument === input.selectorArgument) {
             continue;
@@ -441,30 +464,108 @@ function validateTargetArgumentsWithoutSelectors(input: {
         if (value === undefined && targetRule.optional) {
             continue;
         }
-        if (input.selectorArgument !== undefined && (typeof value !== 'string' || !value.startsWith('$'))) {
+        if (typeof value === 'string' && value.startsWith('$')) {
+            if (targetRule.cardinality === 'many' || targetRule.allowBatchLocal === false) {
+                return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
+            }
+            const binding = value.slice(1);
+            if (!BATCH_LOCAL_BINDING_PATTERN.test(binding)) {
+                return { status: 'rejected', reason: `Malformed batch-local target reference: ${value}` };
+            }
+            const producer = input.producersByBinding.get(binding);
+            if (producer === undefined || !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)) {
+                return {
+                    status: 'rejected',
+                    reason: `Batch-local target ${value} requires an earlier bounded producer dependency.`,
+                };
+            }
             continue;
         }
-        if (
-            typeof value !== 'string' ||
-            !value.startsWith('$') ||
-            targetRule.cardinality === 'many' ||
-            targetRule.allowBatchLocal === false
-        ) {
+        if (input.selectorArgument === undefined) {
             return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
         }
-        const binding = value.slice(1);
-        if (!BATCH_LOCAL_BINDING_PATTERN.test(binding)) {
-            return { status: 'rejected', reason: `Malformed batch-local target reference: ${value}` };
-        }
-        const producer = input.producersByBinding.get(binding);
-        if (producer === undefined || !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)) {
+        let stableIds: string[];
+        if (targetRule.cardinality === 'many') {
+            const parsedIds = parseIdList(value, `Direct command target ${targetRule.argument}`);
+            if ('status' in parsedIds || parsedIds.length === 0) {
+                return 'status' in parsedIds
+                    ? parsedIds
+                    : {
+                          status: 'rejected',
+                          reason: `Direct command target ${targetRule.argument} must contain bounded stable IDs.`,
+                      };
+            }
+            stableIds = parsedIds;
+        } else if (isSafeId(value)) {
+            stableIds = [value];
+        } else {
             return {
                 status: 'rejected',
-                reason: `Batch-local target ${value} requires an earlier bounded producer dependency.`,
+                reason: `Direct command target ${targetRule.argument} must be one bounded stable ID.`,
             };
         }
+        const dependencyIds =
+            targetRule.dependsOn === undefined
+                ? []
+                : (stableIdsByArgument.get(targetRule.dependsOn) ??
+                  (() => {
+                      const dependencyValue = input.item.arguments[targetRule.dependsOn];
+                      if (typeof dependencyValue === 'string' && !dependencyValue.startsWith('$')) {
+                          return [dependencyValue];
+                      }
+                      if (Array.isArray(dependencyValue) && dependencyValue.every(isSafeId)) {
+                          return dependencyValue;
+                      }
+                      return [];
+                  })());
+        if (
+            targetRule.dependsOn !== undefined &&
+            dependencyIds.length === 0 &&
+            capabilityRequiresConcreteDependency(targetRule.capability)
+        ) {
+            return {
+                status: 'rejected',
+                reason: `Direct command target ${targetRule.argument} has no immutable dependency boundary.`,
+            };
+        }
+        const isEligible = stableIds.every((stableId) =>
+            (dependencyIds.length === 0 ? [undefined] : dependencyIds).every((dependencyId) =>
+                isAgentReferenceCapabilityCandidate({
+                    capability: targetRule.capability,
+                    context: input.context,
+                    ...(dependencyId === undefined ? {} : { dependencyId }),
+                    id: stableId,
+                })
+            )
+        );
+        if (!isEligible || stableIds.some((stableId) => input.protectedTargetIds.has(stableId))) {
+            return {
+                status: 'rejected',
+                reason: `Direct command target ${targetRule.argument} is outside the command capability contract.`,
+            };
+        }
+        const distinctIds =
+            targetRule.distinctFrom === undefined
+                ? []
+                : (stableIdsByArgument.get(targetRule.distinctFrom) ??
+                  (isSafeId(input.item.arguments[targetRule.distinctFrom])
+                      ? [input.item.arguments[targetRule.distinctFrom] as string]
+                      : []));
+        if (stableIds.some((stableId) => distinctIds.includes(stableId))) {
+            return {
+                status: 'rejected',
+                reason: `Direct command target ${targetRule.argument} violates the distinct target contract.`,
+            };
+        }
+        stableIdsByArgument.set(targetRule.argument, stableIds);
+        directTargets.push({
+            argument: targetRule.argument,
+            capability: targetRule.capability,
+            cardinality: targetRule.cardinality === 'many' ? 'many' : 'one',
+            stableIds,
+        });
     }
-    return null;
+    return { status: 'accepted', directTargets };
 }
 
 function getDeclaredBatchLocalBinding(
@@ -576,14 +677,16 @@ export function compileArbitraryCommandList(input: {
         }
         if (item.selector === undefined) {
             let omittedCommandCount = 0;
-            const targetRejection = validateTargetArgumentsWithoutSelectors({
+            const targetValidation = validateTargetArgumentsWithoutSelectors({
+                context: input.context,
                 item,
                 itemsById,
                 producersByBinding,
+                protectedTargetIds,
                 targetRules: rules.targetRules,
             });
-            if (targetRejection !== null) {
-                return targetRejection;
+            if (targetValidation.status === 'rejected') {
+                return targetValidation;
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = { name: item.name, arguments: { ...item.arguments } };
@@ -639,28 +742,46 @@ export function compileArbitraryCommandList(input: {
         if (selector.targetArgument in item.arguments) {
             return { status: 'rejected', reason: 'Provider may not supply target IDs for a semantic bulk selector.' };
         }
-        const targetRejection = validateTargetArgumentsWithoutSelectors({
-            item,
-            itemsById,
-            producersByBinding,
-            selectorArgument: selector.targetArgument,
-            targetRules: rules.targetRules,
-        });
-        if (targetRejection !== null) {
-            return targetRejection;
-        }
         const resolved = resolveSelector({ candidates, selector, protectedTargetIds, itemId: item.id });
         if ('status' in resolved) {
             return resolved;
         }
+        const targetValidation = validateTargetArgumentsWithoutSelectors({
+            context: input.context,
+            item,
+            itemsById,
+            producersByBinding,
+            protectedTargetIds,
+            selectorArgument: selector.targetArgument,
+            selectorStableIds: resolved.stableIds,
+            targetRules: rules.targetRules,
+        });
+        if (targetValidation.status === 'rejected') {
+            return targetValidation;
+        }
+        const directTargetsByArgument = new Map(
+            targetValidation.directTargets.map((directTarget) => [directTarget.argument, directTarget.stableIds])
+        );
+        const selectorDependencyIds =
+            targetRule.dependsOn === undefined ? [] : (directTargetsByArgument.get(targetRule.dependsOn) ?? []);
         if (
+            (targetRule.dependsOn !== undefined &&
+                selectorDependencyIds.length === 0 &&
+                capabilityRequiresConcreteDependency(targetRule.capability)) ||
             !resolved.stableIds.every((stableId) =>
-                isAgentReferenceCapabilityCandidate({
-                    capability: targetRule.capability,
-                    context: input.context,
-                    id: stableId,
-                })
-            )
+                (selectorDependencyIds.length === 0 ? [undefined] : selectorDependencyIds).every((dependencyId) =>
+                    isAgentReferenceCapabilityCandidate({
+                        capability: targetRule.capability,
+                        context: input.context,
+                        ...(dependencyId === undefined ? {} : { dependencyId }),
+                        id: stableId,
+                    })
+                )
+            ) ||
+            (targetRule.distinctFrom !== undefined &&
+                resolved.stableIds.some((stableId) =>
+                    (directTargetsByArgument.get(targetRule.distinctFrom!) ?? []).includes(stableId)
+                ))
         ) {
             return {
                 status: 'rejected',
@@ -668,9 +789,15 @@ export function compileArbitraryCommandList(input: {
             };
         }
         evidence.push(resolved.evidence);
-        for (const stableId of resolved.stableIds) {
-            if (!orderedTargetIds.includes(stableId)) {
-                orderedTargetIds.push(stableId);
+        for (const rule of rules.targetRules) {
+            const stableIds =
+                rule.argument === selector.targetArgument
+                    ? resolved.stableIds
+                    : (directTargetsByArgument.get(rule.argument) ?? []);
+            for (const stableId of stableIds) {
+                if (!orderedTargetIds.includes(stableId)) {
+                    orderedTargetIds.push(stableId);
+                }
             }
         }
         if (repeat > 1 && !rules.mutationIdempotent) {
@@ -741,6 +868,7 @@ export function compileArbitraryCommandList(input: {
             targetArgument: selector.targetArgument,
             targetCapability: targetRule.capability,
             ...(targetRule.cardinality === 'many' ? { targetCardinality: 'many' as const } : {}),
+            ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
     }
     if (!hasExactScope(plan, orderedTargetIds)) {

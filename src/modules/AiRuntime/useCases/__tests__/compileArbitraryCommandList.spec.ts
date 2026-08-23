@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { planAgentRun } from '../planAgentRun';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
 const context = {
@@ -70,7 +75,271 @@ const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
     stoppingConditions: [],
 });
 
+const deviceParameter = (id: string) => ({
+    id,
+    name: id,
+    type: 'float' as const,
+    value: 0,
+    minValue: -100,
+    maxValue: 100,
+    unit: 'unitless',
+});
+
 describe('compileArbitraryCommandList', () => {
+    afterEach(() => {
+        clearHandlerRegistry();
+    });
+
+    it('carries every direct secondary target through exact compiler and command-batch planning scope', () => {
+        const routingContext = {
+            ...context,
+            tracks: [
+                ...context.tracks.map((track) => ({ ...track, outputId: 'master' })),
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-mix-bus',
+                    name: 'Mix Bus',
+                    kind: 'bus',
+                    outputId: 'master',
+                },
+            ],
+        };
+        const result = compileArbitraryCommandList({
+            context: routingContext,
+            revision: 'revision-routing',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'track-mix-bus']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-kick',
+                                    name: 'setTrackOutput',
+                                    arguments: { outputId: 'track-mix-bus' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.proposalScope.targetIds).toEqual(['track-kick', 'track-mix-bus']);
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context: routingContext,
+                revision: 'revision-routing',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            targetOverridesByCallIndex: new Map([
+                [
+                    0,
+                    [
+                        {
+                            argument: 'outputId',
+                            capability: 'output',
+                            cardinality: 'one',
+                            stableIds: ['track-mix-bus'],
+                        },
+                        {
+                            argument: 'trackId',
+                            capability: 'routable-source',
+                            cardinality: 'one',
+                            stableIds: ['track-kick'],
+                        },
+                    ],
+                ],
+            ]),
+        });
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: {
+                    ...result.compilerEvidence,
+                    items: result.compilerEvidence.items.map((item) => ({ ...item, directTargets: undefined })),
+                },
+                calls: result.compilerEvidence.commands,
+                context: routingContext,
+                revision: 'revision-routing',
+            })
+        ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('direct targets') });
+
+        const action = {
+            type: 'setTrackOutput' as const,
+            payload: {
+                trackId: 'track-kick',
+                outputId: 'track-mix-bus',
+                expectedOutputId: 'master',
+            },
+        };
+        registerHandlerMap(getArrangementHandlers());
+        const compiledExecution = compilePlannedActionCommandBatch({
+            actions: [action],
+            actionLabels: ['Route Kick to Mix Bus'],
+            autoCommit: false,
+            context: routingContext,
+            group: { groupId: 'group-route-kick', groupLabel: 'Route Kick' },
+            intent: 'Route Kick to Mix Bus',
+            projectRevision: 'revision-routing',
+            runId: 'run-route-kick',
+        });
+        expect(compiledExecution.commandBatch.authority.scope.targetIds).toEqual(['track-kick', 'track-mix-bus']);
+        expect(
+            planAgentRun({
+                request: 'Route Kick to Mix Bus',
+                revision: 'revision-routing',
+                actions: [action],
+                actionLabels: ['Route Kick to Mix Bus'],
+                scope: {
+                    ...compiledExecution.commandBatch.authority.scope,
+                    targetIds: [...compiledExecution.commandBatch.authority.scope.targetIds],
+                    targetRanges: [...compiledExecution.commandBatch.authority.scope.targetRanges],
+                    protectedTargetIds: [...compiledExecution.commandBatch.authority.scope.protectedTargetIds],
+                    protectedRanges: [...compiledExecution.commandBatch.authority.scope.protectedRanges],
+                },
+                grants: {
+                    ...compiledExecution.commandBatch.authority.grants,
+                    allowedOperationPrefixes: [
+                        ...compiledExecution.commandBatch.authority.grants.allowedOperationPrefixes,
+                    ],
+                },
+                budgets: { limits: compiledExecution.commandBatch.authority.budgets, consumed: {} },
+                requiresConfirmation: true,
+                providerProposal: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Route Kick to Mix Bus',
+                    constraints: [],
+                    scope: result.compilerEvidence.proposalScope,
+                    capabilityIds: ['setTrackOutput'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [],
+                    stoppingConditions: [],
+                },
+                requireProviderProposal: true,
+            })
+        ).toMatchObject({ status: 'planned' });
+    });
+
+    it('rejects an invalid direct secondary target before command materialization', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-routing',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'missing-output']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-kick',
+                                    name: 'setTrackOutput',
+                                    arguments: { outputId: 'missing-output' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Direct command target outputId is outside the command capability contract.',
+        });
+    });
+
+    it('validates and records a direct many-target secondary argument exactly once', () => {
+        const sendContext = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-send-bus',
+                    name: 'Send Bus',
+                    kind: 'bus',
+                },
+            ],
+        };
+        const result = compileArbitraryCommandList({
+            context: sendContext,
+            revision: 'revision-send',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'track-hat', 'track-send-bus']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'lower-sends',
+                                    name: 'automateSendRange',
+                                    arguments: {
+                                        trackIds: ['track-kick', 'track-hat'],
+                                        sectionName: 'Chorus',
+                                        reductionDb: 3,
+                                    },
+                                    selector: {
+                                        targetArgument: 'busId',
+                                        entity: 'track',
+                                        where: { name: 'Send Bus' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.items[0]?.directTargets).toEqual([
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                stableIds: ['track-kick', 'track-hat'],
+            },
+        ]);
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context: sendContext,
+                revision: 'revision-send',
+            }).status
+        ).toBe('accepted');
+    });
+
     it('preserves explicit order and dependencies for non-targeted catalog commands', () => {
         const result = compileArbitraryCommandList({
             context,
@@ -326,7 +595,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick']),
+                        plan: plan(['track-kick', 'track-hat']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -398,7 +667,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick']),
+                        plan: plan(['track-kick', 'track-hat', 'track-bass']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -446,7 +715,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick']),
+                        plan: plan(['track-kick', 'track-hat']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -464,7 +733,7 @@ describe('compileArbitraryCommandList', () => {
                                 {
                                     id: 'reroute-device',
                                     name: 'addSidechainRoute',
-                                    arguments: { targetTrackId: 'track-other', targetDeviceId: 'compressor-a' },
+                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-a' },
                                     selector: {
                                         targetArgument: 'sourceTrackId',
                                         entity: 'track',
@@ -500,7 +769,7 @@ describe('compileArbitraryCommandList', () => {
                                   name: 'Hat Compressor',
                                   type: 'builtin-sidechain-compressor',
                                   bypassed: false,
-                                  parameters: [],
+                                  parameters: [deviceParameter('threshold')],
                               },
                           ],
                       }
@@ -865,7 +1134,7 @@ describe('compileArbitraryCommandList', () => {
                                   name: 'Kick Compressor',
                                   type: 'builtin-compressor',
                                   bypassed: false,
-                                  parameters: [],
+                                  parameters: [deviceParameter('threshold')],
                               },
                           ],
                       }
@@ -885,7 +1154,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['device-kick-compressor']),
+                        plan: plan(['device-kick-compressor', 'threshold']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -974,7 +1243,7 @@ describe('compileArbitraryCommandList', () => {
                                   name: 'Kick Compressor',
                                   type: 'builtin-compressor',
                                   bypassed: false,
-                                  parameters: [],
+                                  parameters: [deviceParameter('threshold'), deviceParameter('ratio')],
                               },
                           ],
                       }
@@ -994,7 +1263,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['device-kick-compressor']),
+                        plan: plan(['device-kick-compressor', 'threshold', 'ratio']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1046,7 +1315,7 @@ describe('compileArbitraryCommandList', () => {
                         name: `${track.name} Compressor`,
                         type: 'builtin-compressor',
                         bypassed: false,
-                        parameters: [],
+                        parameters: [deviceParameter('threshold')],
                     },
                 ],
             })),
@@ -1058,7 +1327,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick-compressor', 'track-hat-compressor']),
+                        plan: plan(['track-kick-compressor', 'track-hat-compressor', 'threshold']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1122,7 +1391,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-mix-bus']),
+                        plan: plan(['track-mix-bus', 'track-kick', 'track-hat']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1368,7 +1637,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['clip-track-kick', 'clip-track-hat']),
+                        plan: plan(['clip-track-kick', 'clip-track-hat', 'track-hat']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1564,13 +1833,19 @@ describe('compileArbitraryCommandList', () => {
             quantity: { unit: 'targets', exactly: 1 },
         };
         const result = compileArbitraryCommandList({
-            context,
+            context: {
+                ...context,
+                vcaGroups: [
+                    { id: 'vca-a', name: 'VCA A', gain: 1, muted: false, trackIds: [] },
+                    { id: 'vca-b', name: 'VCA B', gain: 1, muted: false, trackIds: [] },
+                ],
+            },
             revision: 'revision-1',
             calls: [
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick']),
+                        plan: plan(['track-kick', 'vca-a', 'vca-b']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1662,7 +1937,7 @@ describe('compileArbitraryCommandList', () => {
                                   name: 'Kick Compressor',
                                   type: 'builtin-compressor',
                                   bypassed: false,
-                                  parameters: [],
+                                  parameters: [deviceParameter('threshold')],
                               },
                           ],
                       }
@@ -1682,7 +1957,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['device-kick-compressor']),
+                        plan: plan(['device-kick-compressor', 'threshold']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1927,6 +2202,7 @@ describe('compileArbitraryCommandList', () => {
             name: 'armTrack',
             targetArgument: 'trackId',
             arguments_: { armed: true },
+            scopeIds: ['target'],
             ineligibleKind: 'vca',
             eligibleKind: 'audio',
         },
@@ -1934,30 +2210,42 @@ describe('compileArbitraryCommandList', () => {
             name: 'addDevice',
             targetArgument: 'trackId',
             arguments_: { deviceType: 'builtin-eq' },
+            scopeIds: ['target'],
             ineligibleKind: 'vca',
             eligibleKind: 'audio',
         },
         {
             name: 'setTrackOutput',
             targetArgument: 'outputId',
-            arguments_: {},
+            arguments_: { trackId: 'track-source' },
+            scopeIds: ['target', 'track-source'],
             ineligibleKind: 'audio',
             eligibleKind: 'bus',
         },
-        { name: 'addSend', targetArgument: 'busId', arguments_: {}, ineligibleKind: 'audio', eligibleKind: 'bus' },
+        {
+            name: 'addSend',
+            targetArgument: 'busId',
+            arguments_: { trackId: 'track-source', level: 0.5 },
+            scopeIds: ['target', 'track-source'],
+            ineligibleKind: 'audio',
+            eligibleKind: 'bus',
+        },
     ] as const)('rejects an ineligible $name selector while accepting its canonical capability kind', (entry) => {
         const compile = (kind: string) =>
             compileArbitraryCommandList({
                 context: {
                     ...context,
-                    tracks: [{ ...context.tracks[0]!, id: 'target', name: 'Target', kind }],
+                    tracks: [
+                        { ...context.tracks[0]!, id: 'target', name: 'Target', kind },
+                        { ...context.tracks[0]!, id: 'track-source', name: 'Source', kind: 'audio' },
+                    ],
                 },
                 revision: 'revision-1',
                 calls: [
                     {
                         name: 'command.batch.propose',
                         arguments: {
-                            plan: plan(['target']),
+                            plan: plan([...entry.scopeIds]),
                             list: {
                                 schemaVersion: 1,
                                 items: [

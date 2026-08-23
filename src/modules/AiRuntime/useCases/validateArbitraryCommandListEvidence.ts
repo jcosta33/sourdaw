@@ -89,6 +89,18 @@ function sameToolCalls(left: readonly ToolCallResult[], right: readonly ToolCall
     );
 }
 
+function hasExactStableIdSet(left: readonly string[], right: readonly string[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const leftIds = new Set(left);
+    return leftIds.size === right.length && right.every((id) => leftIds.has(id));
+}
+
+function capabilityRequiresConcreteDependency(capability: string): boolean {
+    return capability === 'device' || capability === 'device-parameter';
+}
+
 /** Re-checks bounded, app-owned compiler proof at the bridge boundary before any grounding bypass. */
 export function validateArbitraryCommandListEvidence(input: {
     evidence: ArbitraryCommandListEvidence;
@@ -185,12 +197,28 @@ export function validateArbitraryCommandListEvidence(input: {
         ) {
             return { status: 'rejected', reason: 'Structured command compiler evidence command order is invalid.' };
         }
+        const groundingRules = getExecutableAppActionGroundingRules(item.commandName);
+        if (groundingRules === null) {
+            return {
+                status: 'rejected',
+                reason: 'Structured command compiler evidence target override is invalid.',
+            };
+        }
+        const directTargets = item.directTargets ?? [];
+        const directTargetsByArgument = new Map(directTargets.map((target) => [target.argument, target]));
+        if (directTargetsByArgument.size !== directTargets.length) {
+            return {
+                status: 'rejected',
+                reason: 'Structured command compiler evidence direct targets are invalid.',
+            };
+        }
         if (selector === undefined) {
             if (
                 item.canonicalStableIds.length > 0 ||
                 item.targetArgument !== undefined ||
                 item.targetCapability !== undefined ||
-                item.targetCardinality !== undefined
+                item.targetCardinality !== undefined ||
+                directTargets.length > 0
             ) {
                 return {
                     status: 'rejected',
@@ -198,8 +226,16 @@ export function validateArbitraryCommandListEvidence(input: {
                 };
             }
         } else {
-            const groundingRules = getExecutableAppActionGroundingRules(item.commandName);
-            const targetRule = groundingRules?.targetRules.find((rule) => rule.argument === item.targetArgument);
+            const targetRule = groundingRules.targetRules.find((rule) => rule.argument === item.targetArgument);
+            const stableIdsByArgument = new Map<string, readonly string[]>();
+            if (item.targetArgument !== undefined) {
+                stableIdsByArgument.set(item.targetArgument, item.stableIds);
+            }
+            for (const directTarget of directTargets) {
+                stableIdsByArgument.set(directTarget.argument, directTarget.stableIds);
+            }
+            const selectorDependencyIds =
+                targetRule?.dependsOn === undefined ? [] : (stableIdsByArgument.get(targetRule.dependsOn) ?? []);
             if (
                 item.targetArgument === undefined ||
                 item.targetCapability === undefined ||
@@ -211,13 +247,23 @@ export function validateArbitraryCommandListEvidence(input: {
                       (item.commandCount === 1 &&
                           JSON.stringify(item.canonicalStableIds) !== JSON.stringify(item.stableIds))
                     : item.commandCount !== item.canonicalStableIds.length) ||
+                (targetRule.dependsOn !== undefined &&
+                    selectorDependencyIds.length === 0 &&
+                    capabilityRequiresConcreteDependency(targetRule.capability)) ||
                 !item.stableIds.every((stableId) =>
-                    isAgentReferenceCapabilityCandidate({
-                        capability: item.targetCapability!,
-                        context: input.context,
-                        id: stableId,
-                    })
-                )
+                    (selectorDependencyIds.length === 0 ? [undefined] : selectorDependencyIds).every((dependencyId) =>
+                        isAgentReferenceCapabilityCandidate({
+                            capability: item.targetCapability!,
+                            context: input.context,
+                            ...(dependencyId === undefined ? {} : { dependencyId }),
+                            id: stableId,
+                        })
+                    )
+                ) ||
+                (targetRule.distinctFrom !== undefined &&
+                    item.stableIds.some((stableId) =>
+                        (stableIdsByArgument.get(targetRule.distinctFrom!) ?? []).includes(stableId)
+                    ))
             ) {
                 return {
                     status: 'rejected',
@@ -254,19 +300,113 @@ export function validateArbitraryCommandListEvidence(input: {
                     },
                 ]);
             }
-        }
-        itemIds.add(item.itemId);
-        for (const stableId of item.stableIds) {
-            if (!resolvedTargetIds.includes(stableId)) {
-                resolvedTargetIds.push(stableId);
+            const validatedDirectArguments = new Set<string>();
+            for (const directRule of groundingRules.targetRules) {
+                if (directRule.argument === item.targetArgument) {
+                    continue;
+                }
+                const directTarget = directTargetsByArgument.get(directRule.argument);
+                if (directTarget === undefined) {
+                    const hasUnprovenStableTarget = evidence.commands
+                        .slice(item.commandStart, item.commandStart + item.commandCount)
+                        .some((command) => {
+                            const value = command.arguments[directRule.argument];
+                            return (
+                                (typeof value === 'string' && !value.startsWith('$')) ||
+                                (Array.isArray(value) && value.length > 0)
+                            );
+                        });
+                    if (hasUnprovenStableTarget) {
+                        return {
+                            status: 'rejected',
+                            reason: 'Structured command compiler evidence direct targets are invalid.',
+                        };
+                    }
+                    continue;
+                }
+                const dependencyIds =
+                    directRule.dependsOn === undefined ? [] : (stableIdsByArgument.get(directRule.dependsOn) ?? []);
+                if (
+                    directTarget.capability !== directRule.capability ||
+                    directTarget.cardinality !== (directRule.cardinality === 'many' ? 'many' : 'one') ||
+                    directTarget.stableIds.length === 0 ||
+                    new Set(directTarget.stableIds).size !== directTarget.stableIds.length ||
+                    directTarget.stableIds.some((stableId) => protectedTargetIds.has(stableId)) ||
+                    (directRule.dependsOn !== undefined &&
+                        dependencyIds.length === 0 &&
+                        capabilityRequiresConcreteDependency(directRule.capability)) ||
+                    !directTarget.stableIds.every((stableId) =>
+                        (dependencyIds.length === 0 ? [undefined] : dependencyIds).every((dependencyId) =>
+                            isAgentReferenceCapabilityCandidate({
+                                capability: directTarget.capability,
+                                context: input.context,
+                                ...(dependencyId === undefined ? {} : { dependencyId }),
+                                id: stableId,
+                            })
+                        )
+                    ) ||
+                    (directRule.distinctFrom !== undefined &&
+                        directTarget.stableIds.some((stableId) =>
+                            (stableIdsByArgument.get(directRule.distinctFrom!) ?? []).includes(stableId)
+                        )) ||
+                    !evidence.commands
+                        .slice(item.commandStart, item.commandStart + item.commandCount)
+                        .every((command) => {
+                            const commandTarget = command.arguments[directRule.argument];
+                            return directTarget.cardinality === 'many'
+                                ? JSON.stringify(commandTarget) === JSON.stringify(directTarget.stableIds)
+                                : commandTarget === directTarget.stableIds[0];
+                        })
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Structured command compiler evidence direct targets are invalid.',
+                    };
+                }
+                validatedDirectArguments.add(directRule.argument);
+            }
+            if (validatedDirectArguments.size !== directTargets.length) {
+                return {
+                    status: 'rejected',
+                    reason: 'Structured command compiler evidence direct targets are invalid.',
+                };
+            }
+            for (let offset = 0; offset < item.commandCount; offset += 1) {
+                const commandIndex = item.commandStart + offset;
+                const selectorOverride = targetOverridesByCallIndex.get(commandIndex)?.[0];
+                const overridesByArgument = new Map<string, CompilerResolvedTargetOverride>();
+                if (selectorOverride !== undefined) {
+                    overridesByArgument.set(selectorOverride.argument, selectorOverride);
+                }
+                for (const directTarget of directTargets) {
+                    overridesByArgument.set(directTarget.argument, directTarget);
+                }
+                targetOverridesByCallIndex.set(
+                    commandIndex,
+                    groundingRules.targetRules.flatMap((rule) => {
+                        const override = overridesByArgument.get(rule.argument);
+                        return override === undefined ? [] : [override];
+                    })
+                );
+            }
+            for (const rule of groundingRules.targetRules) {
+                const stableIds =
+                    rule.argument === item.targetArgument
+                        ? item.stableIds
+                        : (directTargetsByArgument.get(rule.argument)?.stableIds ?? []);
+                for (const stableId of stableIds) {
+                    if (!resolvedTargetIds.includes(stableId)) {
+                        resolvedTargetIds.push(stableId);
+                    }
+                }
             }
         }
+        itemIds.add(item.itemId);
         commandCursor += item.commandCount;
     }
     if (
         commandCursor !== evidence.commands.length ||
-        evidence.proposalScope.targetIds.length !== resolvedTargetIds.length ||
-        !evidence.proposalScope.targetIds.every((stableId, index) => stableId === resolvedTargetIds[index])
+        !hasExactStableIdSet(evidence.proposalScope.targetIds, resolvedTargetIds)
     ) {
         return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
     }
