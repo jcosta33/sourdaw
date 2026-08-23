@@ -1,0 +1,85 @@
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_9a0ea310b24db5 1,3-15,17-19,151-159,162-182,184-185,190,195-203,213,216-312,315,318,323,328-330,334-335,345-398,401,403-406,409-416,419,427,431,433-436,449-451,455,463,467,469-472,483,487-516,518,524,529-542,546-606,609,618,621,634-636,644-655,663-703,705-728,731-768,770-774,776-777,779-786,794,797-821,828-831,834-860,862,867-890,895-898,901,903,920-922,924-930,939-942,945-948,953-960,962-997,1002-1007,1010-1036,1038,1040-1073,1076-1107,1109-1110,1114,1119-1171,1173,1175-3814
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_9a0ea310b24db5 6,129-161
+src/modules/AiRuntime/models/ActionCommandGraph.ts
+  s_a40848e8f8cca9::t_4696b13633cde2 1-8
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_3b5cded771e154 1,16-17
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  s_a40848e8f8cca9::t_65befcd70f8d8e 1-272
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_6d22162fe34f9b 69-91
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_f6ff0341b8dc4d 393,401,413,416,421,424-425,431,433,436-439,449-450,452,456-458,460-466,469,477,485-488,493,497,501,504-505,511-513,523,526,529-542,544
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_9e7efc5f4ef62d 4,93-341
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_a40848e8f8cca9::t_f0e8b23980f923 468-504
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_690560b7dcf9b4 7,99,125-156,3580-3581,3613-3620,3648-3669,3732-3745,3766,3768-3769,3771,3779,4025,4037-4056,4421,4562-4578,4687-4697,4722-4724,4738
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_e3be3b513b8b7c 17,34,62-66,77-81,84-86
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_c656f64a790f36 283-286
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_a40848e8f8cca9::t_fdebebfb67a59f 3,140
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_dd0d3689a9583d 2,6-13,21,40-46,49,55,61-62,134-141,155,173,177,182,190-191,196,207,217-264,267-278,281-426,431-434,439,443-475,477-483,486-521,523-595,597-644,678-680,682-684,686,694-697,699,716-718,720-725,728,730-740,744-759,761,764-766,769,777,783,788-790,793,795,808-825,827-829,831-843,851-859,862,869,871-874,878,880-890,892-895,897,900-907,911,916,920,922,928-929,932,935
+src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts
+  s_a40848e8f8cca9::t_eddd28b87fd568 7-8,10,18-45
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_a40848e8f8cca9::t_167e57f9a7f682 8,15,334,339-363,372
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_42098fd9ae2021 5-6,15,36
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_f4b386fd0c91da 1,112-114
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_e1f3250dc0358e 4,317,624-640,644-646,652
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_a40848e8f8cca9::t_637801b23caf9c 43-55
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_470fd7e1acf4bf 477,580
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_05f1facc06a1c2 1-3,5,18,29-45,83-90,104-151,159-163,210,213,226-241,269-283,288-290,298-307,311-321,323-335,342-362,366-378,385-524,528-542,545,550,552-591,593-604
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_a40848e8f8cca9::t_d57a04ab55b5b2 53-68
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_a40848e8f8cca9::t_e44aee621ae3ed 134-157
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_fdc2ada5756e15 2175,2199-2206,2212-2221,2335,2381-2401
+src/modules/Command/useCases/__tests__/getAppActionStaticAuthority.spec.ts
+  s_a40848e8f8cca9::t_35cae6b589e178 1-44
+src/modules/Command/useCases/__tests__/getExecutableAppActionGroundingRules.spec.ts
+  s_a40848e8f8cca9::t_cfb5eaa128481f 21-87,133-135
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_82baf8dd21876f 20,40-51,1955,2019-2026,2054-2063,2353-2598
+src/modules/Command/useCases/getAppActionStaticAuthority.ts
+  s_a40848e8f8cca9::t_aa69dd4fa5c980 3-4,6-32
+src/modules/Command/useCases/getExecutableAppActionGroundingRules.ts
+  s_a40848e8f8cca9::t_846d62d99f6eb0 4,15-16,29-30
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_410b3223e2caee 3-8,39-40
+src/modules/Command/useCases/migrateLegacyAppActionToVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_64f209b149aea5 11,29
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_f2816b75f447ab 474-514
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_0b743f6c86a411 68,327,369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "5fa4607e25ee598eb44ad0ad8d306217e83674fb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
