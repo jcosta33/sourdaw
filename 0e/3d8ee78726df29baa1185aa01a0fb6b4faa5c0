@@ -1,0 +1,19 @@
+tests/e2e/instrumentPanels.spec.ts
+  s_a40848e8f8cca9::t_a7516cb6fd7b81 6-11,23,25,27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0e3d8ee78726df29baa1185aa01a0fb6b4faa5c0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
