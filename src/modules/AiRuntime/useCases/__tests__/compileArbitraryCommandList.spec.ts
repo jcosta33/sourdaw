@@ -363,6 +363,81 @@ describe('compileArbitraryCommandList', () => {
         expect(result).toMatchObject({ status: 'accepted' });
     });
 
+    it('uses the owning target track until an omitted sidechain device is materialized', () => {
+        const routeContext = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-bass',
+                    name: 'Bass',
+                    deviceCount: 1,
+                    devices: [
+                        {
+                            id: 'compressor-bass',
+                            name: 'Bass Compressor',
+                            type: 'builtin-sidechain-compressor',
+                            bypassed: false,
+                            parameters: [],
+                        },
+                    ],
+                },
+            ],
+        };
+        const selector = {
+            targetArgument: 'sourceTrackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: routeContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-to-hat-compressor',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-hat' },
+                                    selector,
+                                },
+                                {
+                                    id: 'route-to-bass-compressor',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-bass' },
+                                    selector,
+                                    dependsOn: ['route-to-hat-compressor'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            {
+                name: 'addSidechainRoute',
+                arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-hat' },
+            },
+            {
+                name: 'addSidechainRoute',
+                arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-bass' },
+            },
+        ]);
+    });
+
     it('rejects duplicate sidechain creation for one source and materialized target device', () => {
         const result = compileArbitraryCommandList({
             context,
@@ -397,6 +472,50 @@ describe('compileArbitraryCommandList', () => {
                                         quantity: { unit: 'targets', exactly: 1 },
                                     },
                                     dependsOn: ['route-device'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for addSidechainRoute on track-kick are not safely composable.',
+        });
+    });
+
+    it('rejects duplicate sidechain creation for one source and unmaterialized target track', () => {
+        const selector = {
+            targetArgument: 'sourceTrackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-track',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-hat' },
+                                    selector,
+                                },
+                                {
+                                    id: 'reroute-track',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-hat' },
+                                    selector,
+                                    dependsOn: ['route-track'],
                                 },
                             ],
                         },
@@ -1020,6 +1139,66 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
+    it('rejects duplicate non-idempotent mutations even when their arguments are identical', () => {
+        const clipContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-kick'
+                    ? {
+                          ...track,
+                          clipCount: 1,
+                          clips: [
+                              {
+                                  id: 'clip-kick',
+                                  name: 'Kick Clip',
+                                  type: 'audio' as const,
+                                  startBeat: 0,
+                                  endBeat: 8,
+                                  noteCount: 0,
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const selector = {
+            targetArgument: 'clipId',
+            entity: 'clip',
+            where: { name: 'Kick Clip' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: clipContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['clip-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                { id: 'split-once', name: 'splitClip', arguments: { beat: 4 }, selector },
+                                {
+                                    id: 'split-again',
+                                    name: 'splitClip',
+                                    arguments: { beat: 4 },
+                                    selector,
+                                    dependsOn: ['split-once'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for splitClip on clip-kick are not safely composable.',
+        });
+    });
+
     it('composes moves of different clips to the same destination track', () => {
         const clipContext = {
             ...context,
@@ -1277,7 +1456,7 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
-    it('rejects contradictory insertions into the same device chain regardless of anchor', () => {
+    it('composes independent device child creation under one track', () => {
         const selector = {
             targetArgument: 'trackId',
             entity: 'track',
@@ -1296,17 +1475,17 @@ describe('compileArbitraryCommandList', () => {
                             schemaVersion: 1,
                             items: [
                                 {
-                                    id: 'insert-after-eq',
+                                    id: 'insert-eq',
                                     name: 'addDevice',
-                                    arguments: { deviceType: 'builtin-compressor', afterDeviceId: 'device-eq' },
+                                    arguments: { deviceType: 'builtin-eq' },
                                     selector,
                                 },
                                 {
-                                    id: 'insert-after-filter',
+                                    id: 'insert-compressor',
                                     name: 'addDevice',
-                                    arguments: { deviceType: 'builtin-compressor', afterDeviceId: 'device-filter' },
+                                    arguments: { deviceType: 'builtin-compressor' },
                                     selector,
-                                    dependsOn: ['insert-after-eq'],
+                                    dependsOn: ['insert-eq'],
                                 },
                             ],
                         },
@@ -1315,10 +1494,14 @@ describe('compileArbitraryCommandList', () => {
             ],
         });
 
-        expect(result).toEqual({
-            status: 'rejected',
-            reason: 'Structured command writes for addDevice on track-kick are not safely composable.',
-        });
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'addDevice', arguments: { deviceType: 'builtin-eq', trackId: 'track-kick' } },
+            { name: 'addDevice', arguments: { deviceType: 'builtin-compressor', trackId: 'track-kick' } },
+        ]);
     });
 
     it('rejects contradictory writes to the same parameter on the same selected device', () => {

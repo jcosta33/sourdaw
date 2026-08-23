@@ -211,10 +211,6 @@ function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stab
     );
 }
 
-function isIdempotentSetCommand(name: string): boolean {
-    return name.startsWith('set') || ['armTrack', 'bypassDevice', 'muteTrack', 'soloTrack'].includes(name);
-}
-
 function canonicalJson(value: unknown): string {
     if (Array.isArray(value)) {
         return `[${value.map(canonicalJson).join(',')}]`;
@@ -234,7 +230,40 @@ function getCanonicalCommandIdentity(command: ToolCallResult): string {
 
 type MutationIdentityRule = {
     arguments: readonly { argument: string; cardinality?: 'many' }[];
+    fallbackArguments?: readonly { argument: string; cardinality?: 'many' }[];
 };
+
+function expandMutationIdentityValues(
+    argumentRules: MutationIdentityRule['arguments'],
+    arguments_: Readonly<Record<string, unknown>>
+): unknown[][] | null {
+    let expandedIdentityValues: unknown[][] = [[]];
+    for (const argumentRule of argumentRules) {
+        const value = arguments_[argumentRule.argument];
+        if (argumentRule.cardinality === 'many' && (!Array.isArray(value) || value.length === 0)) {
+            return null;
+        }
+        const values = argumentRule.cardinality === 'many' ? (value as unknown[]) : [value];
+        expandedIdentityValues = expandedIdentityValues.flatMap((identityValues) =>
+            values.map((entry) => [...identityValues, entry])
+        );
+    }
+    return expandedIdentityValues;
+}
+
+function getExpandedMutationIdentityValues(
+    rule: MutationIdentityRule,
+    arguments_: Readonly<Record<string, unknown>>
+): unknown[][] | null {
+    if (
+        rule.fallbackArguments !== undefined &&
+        rule.arguments.some((argumentRule) => arguments_[argumentRule.argument] === undefined)
+    ) {
+        return expandMutationIdentityValues(rule.fallbackArguments, arguments_);
+    }
+    const primaryValues = expandMutationIdentityValues(rule.arguments, arguments_);
+    return primaryValues;
+}
 
 function getMutationWriteIdentities(
     name: string,
@@ -246,16 +275,9 @@ function getMutationWriteIdentities(
     }
     const mutationWriteIdentities: string[] = [];
     for (const rule of mutationIdentityRules) {
-        let expandedIdentityValues: unknown[][] = [[]];
-        for (const argumentRule of rule.arguments) {
-            const value = arguments_[argumentRule.argument];
-            if (argumentRule.cardinality === 'many' && (!Array.isArray(value) || value.length === 0)) {
-                return null;
-            }
-            const values = argumentRule.cardinality === 'many' ? (value as unknown[]) : [value];
-            expandedIdentityValues = expandedIdentityValues.flatMap((identityValues) =>
-                values.map((entry) => [...identityValues, entry])
-            );
+        const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
+        if (expandedIdentityValues === null) {
+            return null;
         }
         mutationWriteIdentities.push(
             ...expandedIdentityValues.map((mutationIdentity) => canonicalJson({ name, mutationIdentity }))
@@ -270,13 +292,9 @@ function getMutationIdentityLabel(
 ): string {
     const values: unknown[] = [];
     for (const rule of mutationIdentityRules) {
-        for (const argumentRule of rule.arguments) {
-            const value = arguments_[argumentRule.argument];
-            if (Array.isArray(value)) {
-                values.push(...(value as unknown[]));
-            } else {
-                values.push(value);
-            }
+        const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
+        if (expandedIdentityValues !== null) {
+            values.push(...expandedIdentityValues.flat());
         }
     }
     return values.length === 0 ? 'singleton resource' : values.join(',');
@@ -284,6 +302,7 @@ function getMutationIdentityLabel(
 
 function checkCommandWriteConflict(input: {
     command: ToolCallResult;
+    mutationIdempotent: boolean;
     mutationIdentityRules: readonly MutationIdentityRule[];
     targetCommandArguments: Map<string, string>;
     targetLabel: string;
@@ -303,7 +322,7 @@ function checkCommandWriteConflict(input: {
     if (
         mutationWriteIdentities.some((identity) => {
             const priorArguments = input.targetCommandArguments.get(identity);
-            return priorArguments !== undefined && priorArguments !== commandKey;
+            return priorArguments !== undefined && (!input.mutationIdempotent || priorArguments !== commandKey);
         })
     ) {
         return {
@@ -546,6 +565,7 @@ export function compileArbitraryCommandList(input: {
                 const command = { name: item.name, arguments: { ...item.arguments } };
                 const writeCheck = checkCommandWriteConflict({
                     command,
+                    mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
                     targetCommandArguments,
                     targetLabel: getMutationIdentityLabel(rules.mutationIdentityRules, command.arguments),
@@ -554,7 +574,7 @@ export function compileArbitraryCommandList(input: {
                     return writeCheck;
                 }
                 const { commandKey } = writeCheck;
-                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                if (rules.mutationIdempotent && canonicalCommandKeys.has(commandKey)) {
                     omittedCommandCount += 1;
                     continue;
                 }
@@ -628,7 +648,7 @@ export function compileArbitraryCommandList(input: {
                 orderedTargetIds.push(stableId);
             }
         }
-        if (repeat > 1 && !isIdempotentSetCommand(item.name)) {
+        if (repeat > 1 && !rules.mutationIdempotent) {
             return {
                 status: 'rejected',
                 reason: `Structured command repetition is not safely composable: ${item.name}`,
@@ -657,6 +677,7 @@ export function compileArbitraryCommandList(input: {
                 };
                 const writeCheck = checkCommandWriteConflict({
                     command,
+                    mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
                     targetCommandArguments,
                     targetLabel: resolved.stableIds.join(','),
@@ -665,7 +686,7 @@ export function compileArbitraryCommandList(input: {
                     return writeCheck;
                 }
                 const { commandKey } = writeCheck;
-                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                if (rules.mutationIdempotent && canonicalCommandKeys.has(commandKey)) {
                     omittedCommandCount += 1;
                     continue;
                 }

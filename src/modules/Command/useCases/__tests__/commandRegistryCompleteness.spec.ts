@@ -50,13 +50,20 @@ describe('command registry completeness', () => {
                 targetChecks: descriptor?.targetRules,
                 risk: descriptor?.risk,
             });
+            expect(registration.mutationIdempotent).toBeTypeOf('boolean');
             expect(Array.isArray(registration.mutationIdentityRules)).toBe(true);
             for (const identityRule of registration.mutationIdentityRules) {
-                expect(new Set(identityRule.arguments.map((rule) => rule.argument)).size).toBe(
-                    identityRule.arguments.length
-                );
-                for (const identityArgument of identityRule.arguments) {
-                    expect(descriptor?.parameters.properties).toHaveProperty(identityArgument.argument);
+                const fallbackArguments: readonly { argument: string; cardinality?: 'many' }[] =
+                    'fallbackArguments' in identityRule ? identityRule.fallbackArguments : [];
+                const identityArgumentGroups: readonly (readonly {
+                    argument: string;
+                    cardinality?: 'many';
+                }[])[] = [identityRule.arguments, fallbackArguments];
+                for (const identityArguments of identityArgumentGroups) {
+                    expect(new Set(identityArguments.map((rule) => rule.argument)).size).toBe(identityArguments.length);
+                    for (const identityArgument of identityArguments) {
+                        expect(descriptor?.parameters.properties).toHaveProperty(identityArgument.argument);
+                    }
                 }
             }
             expect(registration.providerSchema).toBe(descriptor?.parameters);

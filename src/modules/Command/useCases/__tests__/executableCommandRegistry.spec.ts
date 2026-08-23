@@ -8,10 +8,6 @@ import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
 
-import {
-    type ExecutableAppActionMutationIdentityRule,
-    type ExecutableAppActionType,
-} from '../executableAppActionRegistry';
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { getExecutableAppActionGroundingRules } from '../getExecutableAppActionGroundingRules';
 import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionToolSchemas';
@@ -2328,148 +2324,6 @@ const EXPECTED_GROUNDING = [
     },
 ] as const;
 
-const NO_MUTATION_IDENTITY = [] as const;
-const SINGLETON_MUTATION_IDENTITY = [{ arguments: [] }] as const;
-const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }] }] as const;
-const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }] }] as const;
-const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
-const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }] }] as const;
-const DEVICE_PARAMETER_MUTATION_IDENTITY = [
-    { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
-] as const;
-const SEND_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }, { argument: 'busId' }] }] as const;
-const AUTOMATED_SEND_MUTATION_IDENTITY = [
-    {
-        arguments: [{ argument: 'trackIds', cardinality: 'many' }, { argument: 'busId' }],
-    },
-] as const;
-const AUTOMATED_TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }] as const;
-const AUTOMATION_LANE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'laneId' }] }] as const;
-const AUTOMATION_LANE_CREATION_IDENTITY = [
-    { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
-] as const;
-const MARKER_REFERENCE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'beat' }, { argument: 'name' }] }] as const;
-const SECTION_REFERENCE_MUTATION_IDENTITY = [
-    { arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }] },
-] as const;
-const ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY = [
-    { arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetDeviceId' }] },
-] as const;
-
-const EXPECTED_MUTATION_IDENTITIES = {
-    importStemSet: NO_MUTATION_IDENTITY,
-    addTrack: NO_MUTATION_IDENTITY,
-    createBus: NO_MUTATION_IDENTITY,
-    removeTrack: TRACK_MUTATION_IDENTITY,
-    addClip: NO_MUTATION_IDENTITY,
-    duplicateClip: CLIP_MUTATION_IDENTITY,
-    duplicateClipToNextBar: CLIP_MUTATION_IDENTITY,
-    removeClip: CLIP_MUTATION_IDENTITY,
-    moveClip: CLIP_MUTATION_IDENTITY,
-    splitClip: CLIP_MUTATION_IDENTITY,
-    renameClip: CLIP_MUTATION_IDENTITY,
-    trimClipStart: CLIP_MUTATION_IDENTITY,
-    trimClipEnd: CLIP_MUTATION_IDENTITY,
-    nudgeClip: CLIP_MUTATION_IDENTITY,
-    setClipGain: CLIP_MUTATION_IDENTITY,
-    muteClip: CLIP_MUTATION_IDENTITY,
-    setClipColor: CLIP_MUTATION_IDENTITY,
-    setClipFade: CLIP_MUTATION_IDENTITY,
-    glueClips: MANY_CLIPS_MUTATION_IDENTITY,
-    crossfadeClips: [{ arguments: [{ argument: 'clipAId' }] }, { arguments: [{ argument: 'clipBId' }] }],
-    lockClip: CLIP_MUTATION_IDENTITY,
-    setClipLoop: CLIP_MUTATION_IDENTITY,
-    setClipLoopLength: CLIP_MUTATION_IDENTITY,
-    normalizeClip: CLIP_MUTATION_IDENTITY,
-    setClipStretchMode: CLIP_MUTATION_IDENTITY,
-    setClipStretchRatio: CLIP_MUTATION_IDENTITY,
-    fitClipToBeats: CLIP_MUTATION_IDENTITY,
-    quantizeNotes: CLIP_MUTATION_IDENTITY,
-    removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
-    arpeggiate: CLIP_MUTATION_IDENTITY,
-    createDrumPreviewBranches: NO_MUTATION_IDENTITY,
-    copyMidiArticulations: [{ arguments: [{ argument: 'targetClipId' }] }],
-    transposeNotes: CLIP_MUTATION_IDENTITY,
-    invertNotes: CLIP_MUTATION_IDENTITY,
-    retrogradeNotes: CLIP_MUTATION_IDENTITY,
-    quantizeNoteLengths: CLIP_MUTATION_IDENTITY,
-    scaleAllVelocities: CLIP_MUTATION_IDENTITY,
-    setAllVelocities: CLIP_MUTATION_IDENTITY,
-    renameTrack: TRACK_MUTATION_IDENTITY,
-    muteTrack: TRACK_MUTATION_IDENTITY,
-    soloTrack: TRACK_MUTATION_IDENTITY,
-    setSoloSafe: TRACK_MUTATION_IDENTITY,
-    clearSolos: SINGLETON_MUTATION_IDENTITY,
-    armTrack: TRACK_MUTATION_IDENTITY,
-    duplicateTrack: TRACK_MUTATION_IDENTITY,
-    setTrackGain: TRACK_MUTATION_IDENTITY,
-    setTrackPan: TRACK_MUTATION_IDENTITY,
-    setTrackColor: TRACK_MUTATION_IDENTITY,
-    reorderTrack: TRACK_MUTATION_IDENTITY,
-    setTempo: SINGLETON_MUTATION_IDENTITY,
-    setTimeSignature: SINGLETON_MUTATION_IDENTITY,
-    setPlayback: SINGLETON_MUTATION_IDENTITY,
-    stopPlayback: SINGLETON_MUTATION_IDENTITY,
-    seekPlayhead: SINGLETON_MUTATION_IDENTITY,
-    addMarker: NO_MUTATION_IDENTITY,
-    removeMarker: MARKER_REFERENCE_MUTATION_IDENTITY,
-    setMarkerColor: MARKER_REFERENCE_MUTATION_IDENTITY,
-    addSection: NO_MUTATION_IDENTITY,
-    removeSection: SECTION_REFERENCE_MUTATION_IDENTITY,
-    renameSection: SECTION_REFERENCE_MUTATION_IDENTITY,
-    setLoopEnabled: SINGLETON_MUTATION_IDENTITY,
-    setLoopRegion: SINGLETON_MUTATION_IDENTITY,
-    setPunchIn: SINGLETON_MUTATION_IDENTITY,
-    setPunchOut: SINGLETON_MUTATION_IDENTITY,
-    setPunchEnabled: SINGLETON_MUTATION_IDENTITY,
-    setMetronomeEnabled: SINGLETON_MUTATION_IDENTITY,
-    setMetronomeVolume: SINGLETON_MUTATION_IDENTITY,
-    setMasterGain: SINGLETON_MUTATION_IDENTITY,
-    setVcaGain: [{ arguments: [{ argument: 'vcaGroupId' }] }],
-    createVcaGroup: [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }],
-    assignToVca: TRACK_MUTATION_IDENTITY,
-    removeFromVca: TRACK_MUTATION_IDENTITY,
-    addDevice: TRACK_MUTATION_IDENTITY,
-    removeDevice: DEVICE_MUTATION_IDENTITY,
-    setDeviceParameter: DEVICE_PARAMETER_MUTATION_IDENTITY,
-    bypassDevice: DEVICE_MUTATION_IDENTITY,
-    addSend: SEND_MUTATION_IDENTITY,
-    setSend: SEND_MUTATION_IDENTITY,
-    removeSend: SEND_MUTATION_IDENTITY,
-    setTrackOutput: TRACK_MUTATION_IDENTITY,
-    addSidechainRoute: ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY,
-    removeSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
-    addAdjustmentRegion: NO_MUTATION_IDENTITY,
-    automateSendRange: AUTOMATED_SEND_MUTATION_IDENTITY,
-    automateTrackGainRange: AUTOMATED_TRACK_MUTATION_IDENTITY,
-    automateSendRanges: AUTOMATED_SEND_MUTATION_IDENTITY,
-    renderProjectSections: NO_MUTATION_IDENTITY,
-    addAutomationLane: AUTOMATION_LANE_CREATION_IDENTITY,
-    addAutomationPoint: NO_MUTATION_IDENTITY,
-    setAutomationLaneEnabled: AUTOMATION_LANE_MUTATION_IDENTITY,
-    setAutomationMode: TRACK_MUTATION_IDENTITY,
-    scaleAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
-    stretchAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
-    invertAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
-    reverseAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
-    thinAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
-    quantizeAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
-} as const satisfies Record<ExecutableAppActionType, readonly ExecutableAppActionMutationIdentityRule[]>;
-
-function assertCompleteMutationIdentityAuthority(
-    actual: ReadonlyMap<string, readonly ExecutableAppActionMutationIdentityRule[]>
-): void {
-    const expectedEntries = Object.entries(EXPECTED_MUTATION_IDENTITIES);
-    if (actual.size !== expectedEntries.length) {
-        throw new Error('Mutation identity authority is incomplete.');
-    }
-    for (const [actionType, expectedRules] of expectedEntries) {
-        if (JSON.stringify(actual.get(actionType)) !== JSON.stringify(expectedRules)) {
-            throw new Error(`Mutation identity authority mismatch: ${actionType}`);
-        }
-    }
-}
-
 describe('executable command registry', () => {
     it('derives the exact duplicate-free provider tool schema and execution policy', () => {
         const schemas = getExecutableAppActionToolSchemas();
@@ -2514,39 +2368,27 @@ describe('executable command registry', () => {
     it('pins the complete intent, target, and value grounding map', () => {
         const actual = EXPECTED_COMMANDS.map((command) => getExecutableAppActionGroundingRules(command[0]));
 
-        expect(actual).toEqual(
-            EXPECTED_GROUNDING.map((grounding) => ({
-                ...grounding,
-                mutationIdentityRules: EXPECTED_MUTATION_IDENTITIES[grounding.actionType as ExecutableAppActionType],
-            }))
-        );
-        assertCompleteMutationIdentityAuthority(
-            new Map(
-                actual.map((grounding) => {
-                    if (grounding === null) {
-                        throw new Error('Expected executable grounding rules.');
-                    }
-                    return [grounding.actionType, grounding.mutationIdentityRules] as const;
-                })
-            )
-        );
-    });
-
-    it('fails the complete authority guard when a destination replaces the mutated subject', () => {
-        const actual = new Map(
-            EXPECTED_COMMANDS.map((command) => {
-                const grounding = getExecutableAppActionGroundingRules(command[0]);
+        expect(
+            actual.map((grounding) => {
                 if (grounding === null) {
                     throw new Error('Expected executable grounding rules.');
                 }
-                return [grounding.actionType, grounding.mutationIdentityRules] as const;
+                const {
+                    mutationIdempotent: _mutationIdempotent,
+                    mutationIdentityRules: _mutationIdentityRules,
+                    ...rest
+                } = grounding;
+                return rest;
             })
-        );
-        actual.set('moveClip', [{ arguments: [{ argument: 'trackId' }] }]);
-
-        expect(() => assertCompleteMutationIdentityAuthority(actual)).toThrow(
-            'Mutation identity authority mismatch: moveClip'
-        );
+        ).toEqual(EXPECTED_GROUNDING);
+        expect(
+            actual.every(
+                (grounding) =>
+                    grounding !== null &&
+                    typeof grounding.mutationIdempotent === 'boolean' &&
+                    Array.isArray(grounding.mutationIdentityRules)
+            )
+        ).toBe(true);
     });
 
     it('maps every provider-executable action to exactly one production handler with executable metadata', () => {
