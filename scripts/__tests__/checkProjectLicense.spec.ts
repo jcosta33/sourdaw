@@ -905,6 +905,19 @@ describe('project license', () => {
     it('rejects duplicate keys in the dependency proof manifest', () => {
         write(root, DEPENDENCY_LICENSE_PROOFS_PATH, '{"schemaVersion":3,"schemaVersion":3,"packages":{}}');
         expect(() => readDependencyLicenseProofManifest(root)).toThrow('duplicate key');
+        try {
+            readDependencyLicenseProofManifest(root);
+        } catch (error) {
+            expect((error as Error & { cause?: unknown }).cause).toBeInstanceOf(Error);
+        }
+
+        write(root, DEPENDENCY_LICENSE_PROOFS_PATH, '{"schemaVersion":3');
+        expect(() => readDependencyLicenseProofManifest(root)).toThrow('invalid JSON');
+        try {
+            readDependencyLicenseProofManifest(root);
+        } catch (error) {
+            expect((error as Error & { cause?: unknown }).cause).toBeInstanceOf(Error);
+        }
     });
 
     it('validates the current aws-lc compound expression branch by branch', () => {
