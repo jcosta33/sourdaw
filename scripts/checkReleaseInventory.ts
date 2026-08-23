@@ -80,8 +80,10 @@ export const ADAPTED_ORIGINAL_COMMIT = '99432f2bf443219b3eb77e65e1a18583faad422e
 export const ADAPTED_ORIGINAL_SOURCE_PATH = 'plaits/dsp/drums/analog_bass_drum.h';
 export const ADAPTED_ORIGINAL_SOURCE_SHA256 = '46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea';
 export const ADAPTED_MIT_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs';
+export const ADAPTED_MIT_LICENSE_PROOF_PATH = 'release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt';
 export const ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mutable-instruments-analog_bass_drum.h';
 export const ADAPTED_MIT_UPSTREAM_SOURCE_SHA256 = 'f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949';
+export const ADAPTED_MIT_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
 
 const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
     'pnpm-lock.yaml': ['javascript-dependencies'],
@@ -884,6 +886,7 @@ export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceC
         paths: [
             ADAPTED_MIT_SOURCE_PATH,
             ADAPTED_MIT_UPSTREAM_PROOF_PATH,
+            ADAPTED_MIT_LICENSE_PROOF_PATH,
             ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH,
             ADAPTED_MIT_LICENSE_PATH,
             ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
@@ -891,6 +894,7 @@ export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceC
         ],
         sources: [
             `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:src/drums/analog_bass_drum.rs`,
+            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`,
             `git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
             ADAPTED_MIT_SOURCE_PATH,
         ],
@@ -898,6 +902,8 @@ export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceC
         digests: [
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_SOURCE_PATH))}:${ADAPTED_MIT_SOURCE_PATH}`,
             `sha256:${ADAPTED_MIT_UPSTREAM_SOURCE_SHA256}:${ADAPTED_MIT_UPSTREAM_PROOF_PATH}`,
+            `sha256:${ADAPTED_MIT_LICENSE_SHA256}:git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`,
+            `sha256:${ADAPTED_MIT_LICENSE_SHA256}:${ADAPTED_MIT_LICENSE_PROOF_PATH}`,
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH))}:${ADAPTED_MIT_LICENSE_PATH}`,
             `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
             `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:${ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH}`,
@@ -916,6 +922,12 @@ export function assertAdaptedMitSourceProofs(root: string): void {
         if (fileSha256(resolve(root, path)) !== expected) {
             throw new Error(`${path}: pinned upstream source proof drifted`);
         }
+    }
+    if (fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PROOF_PATH)) !== ADAPTED_MIT_LICENSE_SHA256) {
+        throw new Error(`${ADAPTED_MIT_LICENSE_PROOF_PATH}: pinned upstream license proof drifted`);
+    }
+    if (fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH)) !== ADAPTED_MIT_LICENSE_SHA256) {
+        throw new Error(`${ADAPTED_MIT_LICENSE_PATH}: distributed upstream license drifted`);
     }
 }
 

@@ -12,6 +12,7 @@ import {
     adaptedMitSourceReleaseInventoryContract,
     ADAPTED_MIT_COMMIT,
     ADAPTED_MIT_LICENSE_PATH,
+    ADAPTED_MIT_LICENSE_PROOF_PATH,
     ADAPTED_MIT_NOTICE_PATH,
     ADAPTED_MIT_SOURCE_PATH,
     ADAPTED_MIT_UPSTREAM_PROOF_PATH,
@@ -1211,12 +1212,19 @@ describe('release inventory', () => {
         mkdirSync(join(root, 'public/legal'), { recursive: true });
         mkdirSync(join(root, 'release/upstream-proofs'), { recursive: true });
         writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'adapted source');
-        writeFileSync(join(root, ADAPTED_MIT_LICENSE_PATH), 'upstream license');
+        writeFileSync(
+            join(root, ADAPTED_MIT_LICENSE_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_MIT_LICENSE_PATH))
+        );
         writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'original upstream license');
         writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'public notice');
         writeFileSync(
             join(root, ADAPTED_MIT_UPSTREAM_PROOF_PATH),
             readFileSync(join(repositoryRoot, ADAPTED_MIT_UPSTREAM_PROOF_PATH))
+        );
+        writeFileSync(
+            join(root, ADAPTED_MIT_LICENSE_PROOF_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_MIT_LICENSE_PROOF_PATH))
         );
         writeFileSync(
             join(root, ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH),
@@ -1233,15 +1241,27 @@ describe('release inventory', () => {
             expect(before.digests).toContain(
                 `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`
             );
+            expect(before.digests).toContain(
+                `sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`
+            );
+
+            writeFileSync(join(root, ADAPTED_MIT_LICENSE_PROOF_PATH), 'changed upstream license proof');
+            expect(() => adaptedMitSourceReleaseInventoryContract(root)).toThrow(
+                'pinned upstream license proof drifted'
+            );
+            writeFileSync(
+                join(root, ADAPTED_MIT_LICENSE_PROOF_PATH),
+                readFileSync(join(repositoryRoot, ADAPTED_MIT_LICENSE_PROOF_PATH))
+            );
 
             writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'changed');
             expect(adaptedMitSourceReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
 
             writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'changed original license');
-            expect(adaptedMitSourceReleaseInventoryContract(root).digests[5]).not.toBe(before.digests[5]);
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[7]).not.toBe(before.digests[7]);
 
             writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'changed public notice');
-            expect(adaptedMitSourceReleaseInventoryContract(root).digests[6]).not.toBe(before.digests[6]);
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[8]).not.toBe(before.digests[8]);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

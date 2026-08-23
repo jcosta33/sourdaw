@@ -728,6 +728,7 @@
             "paths": [
                 "crates/daw-dsp/src/toaster/engines/kick_808.rs",
                 "release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
+                "release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
                 "release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "public/legal/MI-PLAITS-DSP-RS-MIT.txt",
                 "public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
@@ -735,6 +736,7 @@
             ],
             "sources": [
                 "git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:src/drums/analog_bass_drum.rs",
+                "git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
                 "git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "crates/daw-dsp/src/toaster/engines/kick_808.rs"
             ],
@@ -742,6 +744,8 @@
             "digests": [
                 "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
                 "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
+                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
+                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:public/legal/MI-PLAITS-DSP-RS-MIT.txt",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
@@ -826,7 +830,7 @@
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:a2b02833e449fd162305e3be3ba946a7e2cf5631b4af010991bffaccff1d1f19:grand-boule-release-proof"
+                "tracked-set-sha256:1c6cdea60cf1dcf3674b7a14abb6c87589ae1224784d90a2fa7aa2fa7f7e706f:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
