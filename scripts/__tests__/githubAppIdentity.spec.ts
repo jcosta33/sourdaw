@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_LOGIN,
+    AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     TRACKER_AUTHOR_MINT_PERMISSIONS,
     isAuthorBotLogin,
     AUTHOR_MINT_PERMISSIONS,
@@ -16,6 +17,7 @@ import {
     REVIEWER_MINT_PERMISSIONS,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
+    authenticatePublishingAuthor,
     authenticateRole,
     authenticateTrackerAuthor,
     createGhSession,
@@ -29,6 +31,7 @@ import {
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
+    authorWorkflowWriteRequired,
     type FileReader,
     type GitHubJsonClient,
 } from '../githubAppIdentity.ts';
@@ -172,6 +175,126 @@ describe('GraphQL envelopes', () => {
 });
 
 describe('installation mint', () => {
+    it.each([
+        ['workflow file', '.github/workflows/health-gates.yml\0', true],
+        ['workflow file containing a newline', '.github/workflows/nightly\ncheck.yml\0', true],
+        ['lookalike directory', '.github/workflows-disabled/health-gates.yml\0', false],
+        ['workflow directory itself', '.github/workflows\0', false],
+        ['parent traversal lookalike', '.github/workflows/../CODEOWNERS\0', false],
+        ['leading-dot lookalike', './.github/workflows/health-gates.yml\0', false],
+    ])('detects an exact committed %s before mint', (_case, diff, expected) => {
+        const calls: Array<{ command: string; args: string[]; cwd?: string }> = [];
+
+        expect(
+            authorWorkflowWriteRequired('/lane', (command, args, cwd) => {
+                calls.push({ command, args, cwd });
+                return diff;
+            })
+        ).toBe(expected);
+        expect(calls).toEqual([
+            {
+                command: 'git',
+                args: ['diff', '--name-only', '--no-renames', '-z', 'origin/main...HEAD', '--'],
+                cwd: '/lane',
+            },
+        ]);
+    });
+
+    it('rejects a non-NUL-terminated committed-path result', () => {
+        expect(() => authorWorkflowWriteRequired('/lane', () => '.github/workflows/health-gates.yml')).toThrow(
+            /NUL-terminated/
+        );
+    });
+
+    it('requests workflows write only when the publishing lane changes a workflow', async () => {
+        const order: string[] = [];
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+        });
+        const auth = await authenticatePublishingAuthor({
+            primaryRoot: '/repo',
+            lane: '/lane',
+            readFile: files(),
+            request: async (url, init) => {
+                order.push(url.includes('/access_tokens') ? 'mint' : 'identity');
+                return request(url, init);
+            },
+            env: {},
+            capture: () => {
+                order.push('diff');
+                return '.github/workflows/health-gates.yml\0';
+            },
+        });
+        try {
+            expect(order[0]).toBe('diff');
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                permissions: AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+            });
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
+    it('keeps ordinary publishing lanes on the existing least-privilege author mint', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write' },
+        });
+        const auth = await authenticatePublishingAuthor({
+            primaryRoot: '/repo',
+            lane: '/lane',
+            readFile: files(),
+            request,
+            env: {},
+            capture: () => 'scripts/publishLane.ts\0',
+        });
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+            expect(requests[0]?.body).not.toContain('workflows');
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
+    it('refuses workflow write returned for an ordinary publishing lane', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+        });
+
+        await expect(
+            authenticatePublishingAuthor({
+                primaryRoot: '/repo',
+                lane: '/lane',
+                readFile: files(),
+                request,
+                env: {},
+                capture: () => 'scripts/publishLane.ts\0',
+            })
+        ).rejects.toThrow(/workflows: write/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
+    it('refuses a workflow publishing token that omits workflow write', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write' },
+        });
+
+        await expect(
+            authenticatePublishingAuthor({
+                primaryRoot: '/repo',
+                lane: '/lane',
+                readFile: files(),
+                request,
+                env: {},
+                capture: () => '.github/workflows/health-gates.yml\0',
+            })
+        ).rejects.toThrow(/workflows is <missing>/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
     it('mints reviewer permissions without contents write and checks login', async () => {
         const { requests, request } = mintClient({
             login: REVIEWER_BOT_LOGIN,

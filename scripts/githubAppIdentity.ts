@@ -52,6 +52,11 @@ export const AUTHOR_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
+export const AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+    ...AUTHOR_MINT_PERMISSIONS,
+    workflows: 'write',
+} as const;
+
 export const TRACKER_AUTHOR_MINT_PERMISSIONS = {
     issues: 'write',
 } as const;
@@ -74,6 +79,7 @@ export type MintPermissions = {
     contents?: 'read' | 'write';
     pull_requests?: 'write';
     issues?: 'write';
+    workflows?: 'write';
 };
 
 export type MintedInstallation = {
@@ -88,6 +94,8 @@ export type GitHubJsonClient = (
 ) => Promise<{ status: number; body: unknown }>;
 
 export type FileReader = (path: string) => string;
+
+export type CommandCapture = (command: string, args: string[], cwd?: string) => string;
 
 export type GhSession = {
     configDir: string;
@@ -248,6 +256,73 @@ export async function authenticateRole(input: {
     request?: GitHubJsonClient;
     env?: NodeJS.ProcessEnv;
 }): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
+    return authenticateWithPermissions(
+        input,
+        input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS
+    );
+}
+
+const AUTHOR_WORKFLOW_PATH_PREFIX = '.github/workflows/';
+const COMMITTED_DIFF_PATH_ARGS = ['diff', '--name-only', '--no-renames', '-z', 'origin/main...HEAD', '--'];
+
+/**
+ * Git's `-z` form is the authority here: it preserves every byte that may occur in a path instead
+ * of quoting newlines or other unusual characters. The component check is defense in depth against
+ * lookalikes and traversal-shaped input before the exact workflow-directory prefix is considered.
+ */
+export function authorWorkflowWriteRequired(
+    lane: string,
+    capture: CommandCapture = (command, args, cwd) => spawnCapture(command, args, { cwd, trim: false })
+): boolean {
+    const output = capture('git', COMMITTED_DIFF_PATH_ARGS, lane);
+    if (output === '') {
+        return false;
+    }
+    if (!output.endsWith('\0')) {
+        fail('git committed-path diff was not NUL-terminated');
+    }
+    return output
+        .slice(0, -1)
+        .split('\0')
+        .some((path) => {
+            const components = path.split('/');
+            const canonical = components.every(
+                (component) => component !== '' && component !== '.' && component !== '..'
+            );
+            return canonical && path.startsWith(AUTHOR_WORKFLOW_PATH_PREFIX);
+        });
+}
+
+/**
+ * Publishing is the only author operation allowed to acquire workflow authority. The caller can
+ * identify the locked lane, but cannot supply permissions: this function derives the fixed scope
+ * directly from that lane's committed Git diff before credentials are loaded or a token is minted.
+ */
+export async function authenticatePublishingAuthor(input: {
+    primaryRoot: string;
+    lane: string;
+    readFile?: FileReader;
+    request?: GitHubJsonClient;
+    env?: NodeJS.ProcessEnv;
+    capture?: CommandCapture;
+}): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
+    const permissions = authorWorkflowWriteRequired(input.lane, input.capture);
+    return authenticateWithPermissions(
+        { ...input, role: 'author' },
+        permissions ? AUTHOR_WORKFLOW_MINT_PERMISSIONS : AUTHOR_MINT_PERMISSIONS
+    );
+}
+
+async function authenticateWithPermissions(
+    input: {
+        primaryRoot: string;
+        role: Role;
+        readFile?: FileReader;
+        request?: GitHubJsonClient;
+        env?: NodeJS.ProcessEnv;
+    },
+    permissions: MintPermissions
+): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
     const env = input.env ?? process.env;
     clearInheritedGithubEnv(env);
     const credentials = loadRoleCredentials(input.primaryRoot, input.role, input.readFile);
@@ -255,7 +330,7 @@ export async function authenticateRole(input: {
         appId: credentials.appId,
         installationId: credentials.installationId,
         privateKey: credentials.privateKey,
-        permissions: input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS,
+        permissions,
         expectedLogin: input.role === 'author' ? AUTHOR_BOT_LOGIN : REVIEWER_BOT_LOGIN,
         request: input.request,
     });

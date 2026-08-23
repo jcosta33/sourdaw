@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -157,6 +157,19 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
 ];
 
 describe('lane publish', () => {
+    it('resolves the locked lane before requesting its diff-scoped publishing token', () => {
+        const source = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');
+        const main = source.slice(source.indexOf('async function main(): Promise<number>'));
+        const resolveLane = main.indexOf('resolveAuthorLane(parsed.issue, localWorktrees');
+        const authenticate = main.indexOf(
+            'authenticatePublishingAuthor({ primaryRoot, lane: authenticationLane.path })'
+        );
+
+        expect(resolveLane).toBeGreaterThanOrEqual(0);
+        expect(authenticate).toBeGreaterThan(resolveLane);
+        expect(main).not.toMatch(/\bauthenticateRole\b/);
+    });
+
     it('pushes without force, opens one PR, and prints the number', () => {
         const { port, calls, logs } = fakePort();
 

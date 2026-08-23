@@ -12,7 +12,7 @@ import {
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
-    authenticateRole,
+    authenticatePublishingAuthor,
     gitAuthenticatedArgs,
     originMainBlob,
     parseJson,
@@ -750,7 +750,14 @@ async function main(): Promise<number> {
     const cwd = process.cwd();
     assertTrustedExecutingBlob('scripts/publishLane.ts', executingFile, originMainBlob('scripts/publishLane.ts', cwd));
     const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'author' });
+    const localWorktrees = parsePublishWorktrees(
+        spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })
+    );
+    // Resolve the locally locked lane before mint so the token scope comes only from that lane's
+    // committed diff. Legacy eligibility is re-proven through GitHub after authentication below;
+    // `true` here grants no publish authority, it only lets the enclosing locked lane be inspected.
+    const authenticationLane = resolveAuthorLane(parsed.issue, localWorktrees, cwd, realpathSync, () => true);
+    const auth = await authenticatePublishingAuthor({ primaryRoot, lane: authenticationLane.path });
     try {
         const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
             env: auth.session.env,
