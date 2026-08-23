@@ -151,7 +151,17 @@ type PendingActionResourceLease = {
     retain?: () => void | Promise<void>;
 };
 
-const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>();
+type PendingActionResourceLeaseDisposition = 'pending' | 'discard' | 'retain';
+
+type PendingActionResourceLeaseEntry = {
+    lease: PendingActionResourceLease;
+    disposition: PendingActionResourceLeaseDisposition;
+    commitInFlight: Promise<void> | null;
+    releaseInFlight: Promise<void> | null;
+    retainInFlight: Promise<void> | null;
+};
+
+const pendingActionResourceLeases = new Map<string, PendingActionResourceLeaseEntry>();
 
 function reportResourceReleaseFailure(error: unknown): void {
     logger.error(
@@ -162,12 +172,25 @@ function reportResourceReleaseFailure(error: unknown): void {
 }
 
 async function releasePendingActionResourceLease(confirmationId: string): Promise<void> {
-    const lease = pendingActionResourceLeases.get(confirmationId);
-    if (!lease) {
+    const entry = pendingActionResourceLeases.get(confirmationId);
+    if (!entry || entry.disposition === 'retain') {
         return;
     }
-    await lease.release();
-    if (pendingActionResourceLeases.get(confirmationId) === lease) {
+    entry.disposition = 'discard';
+    if (!entry.releaseInFlight) {
+        try {
+            entry.releaseInFlight = Promise.resolve(entry.lease.release());
+        } catch (error) {
+            entry.releaseInFlight = Promise.reject(error);
+        }
+        entry.releaseInFlight = entry.releaseInFlight.finally(() => {
+            if (pendingActionResourceLeases.get(confirmationId) === entry) {
+                entry.releaseInFlight = null;
+            }
+        });
+    }
+    await entry.releaseInFlight;
+    if (pendingActionResourceLeases.get(confirmationId) === entry) {
         pendingActionResourceLeases.delete(confirmationId);
     }
 }
@@ -206,7 +229,7 @@ export function proposePendingActionConfirmation(
     }
 
     const preparedResourceBytes = [...pendingActionResourceLeases.values()].reduce(
-        (total, lease) => total + lease.bytes,
+        (total, entry) => total + entry.lease.bytes,
         0
     );
     if (
@@ -253,7 +276,13 @@ export function proposePendingActionConfirmation(
     };
 
     if (input.resourceLease) {
-        pendingActionResourceLeases.set(confirmation.id, input.resourceLease);
+        pendingActionResourceLeases.set(confirmation.id, {
+            lease: input.resourceLease,
+            disposition: 'pending',
+            commitInFlight: null,
+            releaseInFlight: null,
+            retainInFlight: null,
+        });
     }
     const confirmationsWithNewEntry = [...state.confirmations, confirmation];
     const confirmations = confirmationsWithNewEntry.slice(-MAX_CONFIRMATIONS);
@@ -462,12 +491,27 @@ export async function preparePendingActionResourceLeaseForCommit(
     confirmationId: string,
     commandBatch?: PendingCommandBatch
 ): Promise<void> {
-    await pendingActionResourceLeases.get(confirmationId)?.prepareForCommit?.(commandBatch);
+    await pendingActionResourceLeases.get(confirmationId)?.lease.prepareForCommit?.(commandBatch);
 }
 
 /** Mark a prepared resource recovery executable only after the command produced a verified commit receipt. */
 export async function commitPendingActionResourceLease(confirmationId: string): Promise<void> {
-    await pendingActionResourceLeases.get(confirmationId)?.commit?.();
+    const entry = pendingActionResourceLeases.get(confirmationId);
+    if (!entry) {
+        return;
+    }
+    if (entry.disposition === 'discard') {
+        throw new Error('Confirmed AI action resource cleanup already owns this lease');
+    }
+    entry.disposition = 'retain';
+    entry.commitInFlight ??= Promise.resolve()
+        .then(() => entry.lease.commit?.())
+        .finally(() => {
+            if (pendingActionResourceLeases.get(confirmationId) === entry) {
+                entry.commitInFlight = null;
+            }
+        });
+    await entry.commitInFlight;
 }
 
 type SettlePendingActionResourceLeaseInput = {
@@ -480,17 +524,27 @@ export async function settlePendingActionResourceLease(input: SettlePendingActio
         await releasePendingActionResourceLease(input.confirmationId);
         return;
     }
-    const lease = pendingActionResourceLeases.get(input.confirmationId);
-    if (!lease) {
+    const entry = pendingActionResourceLeases.get(input.confirmationId);
+    if (!entry) {
         return;
     }
-    try {
-        await lease.retain?.();
-    } finally {
-        if (pendingActionResourceLeases.get(input.confirmationId) === lease) {
-            pendingActionResourceLeases.delete(input.confirmationId);
-        }
+    if (entry.disposition === 'discard') {
+        return;
     }
+    entry.disposition = 'retain';
+    entry.retainInFlight ??= Promise.resolve()
+        .then(() => entry.lease.retain?.())
+        .then(() => {
+            if (pendingActionResourceLeases.get(input.confirmationId) === entry) {
+                pendingActionResourceLeases.delete(input.confirmationId);
+            }
+        })
+        .finally(() => {
+            if (pendingActionResourceLeases.get(input.confirmationId) === entry) {
+                entry.retainInFlight = null;
+            }
+        });
+    await entry.retainInFlight;
 }
 
 /** Settle without replacing the caller's primary outcome; failed leases stay registered for retry. */

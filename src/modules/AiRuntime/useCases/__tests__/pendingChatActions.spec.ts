@@ -11,6 +11,7 @@ import {
 
 import {
     clearPendingActionConfirmations,
+    commitPendingActionResourceLease,
     getPendingActionConfirmation,
     proposePendingActionConfirmation as storePendingActionConfirmation,
     settlePendingActionResourceLease,
@@ -345,6 +346,46 @@ describe('pending chat action confirmation', () => {
                 content: 'Command cancelled before it committed. No project changes were applied.',
             })
         );
+    });
+
+    it('keeps committed resources retained when cancellation races a failed promotion commit', async () => {
+        let rejectPromotionCommit: ((error: Error) => void) | undefined;
+        const deferredPromotionCommit = new Promise<void>((_resolve, reject) => {
+            rejectPromotionCommit = reject;
+        });
+        const commit = vi
+            .fn<() => Promise<void>>()
+            .mockImplementationOnce(() => deferredPromotionCommit)
+            .mockResolvedValueOnce(undefined);
+        const retain = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        const release = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        const logError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        proposePendingAppAction('confirm-committed-race', { bytes: 1, commit, retain, release });
+
+        const confirmation = confirmPendingChatActions({ confirmationId: 'confirm-committed-race' });
+        await vi.waitFor(() => expect(commit).toHaveBeenCalledOnce());
+
+        await expect(
+            settlePendingActionResourceLease({ confirmationId: 'confirm-committed-race', disposition: 'discard' })
+        ).resolves.toBeUndefined();
+        expect(release).not.toHaveBeenCalled();
+
+        rejectPromotionCommit?.(new Error('promotion commit interrupted'));
+        await expect(confirmation).resolves.toEqual({ status: 'executed' });
+        expect(retain).not.toHaveBeenCalled();
+        expect(logError).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: 'Committed resource recovery could not be made executable',
+            })
+        );
+
+        await expect(commitPendingActionResourceLease('confirm-committed-race')).resolves.toBeUndefined();
+        await expect(
+            settlePendingActionResourceLease({ confirmationId: 'confirm-committed-race', disposition: 'retain' })
+        ).resolves.toBeUndefined();
+        expect(commit).toHaveBeenCalledTimes(2);
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
     });
 
     it('keeps a second app-action confirmation proposed while another AI execution owns Stop', async () => {

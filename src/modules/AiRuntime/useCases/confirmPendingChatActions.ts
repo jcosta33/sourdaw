@@ -93,6 +93,7 @@ async function retainCommittedPendingActionResources(confirmationId: string): Pr
         await commitPendingActionResourceLease(confirmationId);
     } catch (error) {
         logger.error(new Error('Committed resource recovery could not be made executable', { cause: error }));
+        return;
     }
     await settlePendingActionResourcesBestEffort({ confirmationId, disposition: 'retain' });
 }
