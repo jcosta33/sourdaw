@@ -143,7 +143,7 @@ const SideCard = ({
     children: ReactElement | ReactElement[];
 }): ReactElement => (
     <DawPluginSectionCard
-        className="proof-window"
+        className="proof-window shrink-0"
         title={title}
         detail={detail}
         titleClassName="text-[var(--color-accent-mint)]/70"
