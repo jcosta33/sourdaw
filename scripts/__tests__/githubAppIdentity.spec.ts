@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -24,6 +24,7 @@ import {
     gitAuthenticatedArgs,
     gitCredentialHelperPath,
     githubChildEnv,
+    githubAuthorizationGitEnv,
     isReviewerBotLogin,
     loadRoleCredentials,
     mintInstallationToken,
@@ -194,7 +195,16 @@ describe('installation mint', () => {
         expect(calls).toEqual([
             {
                 command: 'git',
-                args: ['diff', '--name-only', '--no-renames', '-z', 'origin/main...HEAD', '--'],
+                args: [
+                    'diff',
+                    '--no-ext-diff',
+                    '--no-textconv',
+                    '--name-only',
+                    '--no-renames',
+                    '-z',
+                    'origin/main...HEAD',
+                    '--',
+                ],
                 cwd: '/lane',
             },
         ]);
@@ -204,6 +214,98 @@ describe('installation mint', () => {
         expect(() => authorWorkflowWriteRequired('/lane', () => '.github/workflows/health-gates.yml')).toThrow(
             /NUL-terminated/
         );
+    });
+
+    it('keeps an ordinary lane on the ordinary mint despite hostile inherited Git routing', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-workflow-auth-'));
+        const ordinary = join(root, 'ordinary');
+        const hostile = join(root, 'hostile');
+        const git = (repository: string, args: string[]) => {
+            const env = { ...process.env };
+            delete env.GIT_DIR;
+            delete env.GIT_WORK_TREE;
+            const result = spawnSync('git', args, { cwd: repository, env, encoding: 'utf8', shell: false });
+            if (result.error !== undefined) {
+                throw result.error;
+            }
+            expect(result.status, result.stderr).toBe(0);
+        };
+        const repository = (path: string, changedPath: string) => {
+            mkdirSync(path, { recursive: true });
+            git(path, ['init', '-b', 'main']);
+            git(path, ['config', 'user.name', 'Fixture']);
+            git(path, ['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(path, 'base.txt'), 'base\n');
+            git(path, ['add', 'base.txt']);
+            git(path, ['commit', '--no-gpg-sign', '-m', 'chore: base']);
+            git(path, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+            const target = join(path, changedPath);
+            mkdirSync(dirname(target), { recursive: true });
+            writeFileSync(target, 'change\n');
+            git(path, ['add', '--', changedPath]);
+            git(path, ['commit', '--no-gpg-sign', '-m', 'test: lane change']);
+        };
+
+        try {
+            repository(ordinary, 'scripts/publishLane.ts');
+            repository(hostile, '.github/workflows/hostile.yml');
+            const { requests, request } = mintClient({
+                login: AUTHOR_BOT_LOGIN,
+                permissions: { contents: 'write', pull_requests: 'write' },
+            });
+            const auth = await authenticatePublishingAuthor({
+                primaryRoot: '/repo',
+                lane: ordinary,
+                readFile: files(),
+                request,
+                env: {
+                    PATH: process.env.PATH,
+                    GIT_DIR: join(hostile, '.git'),
+                    GIT_WORK_TREE: hostile,
+                },
+            });
+
+            try {
+                expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+                expect(requests[0]?.body).not.toContain('workflows');
+            } finally {
+                auth.session.dispose();
+            }
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('sterilizes inherited Git and GitHub authority for authorization-only reads', () => {
+        const env = githubAuthorizationGitEnv({
+            PATH: '/usr/bin',
+            GIT_DIR: '/hostile/.git',
+            GIT_WORK_TREE: '/hostile',
+            GIT_CONFIG_COUNT: '1',
+            GIT_EXTERNAL_DIFF: '/hostile/diff',
+            GH_TOKEN: 'personal',
+            GITHUB_TOKEN: 'actions',
+            SOURDAW_GITHUB_APP_PRIVATE_KEY: 'secret',
+            SSH_AUTH_SOCK: '/tmp/agent.sock',
+        });
+
+        expect(env).toMatchObject({
+            PATH: '/usr/bin',
+            GIT_CONFIG_GLOBAL: '/dev/null',
+            GIT_CONFIG_SYSTEM: '/dev/null',
+            GIT_TERMINAL_PROMPT: '0',
+            GIT_SSH_COMMAND: '/usr/bin/false',
+            GIT_SSH: '/usr/bin/false',
+            GCM_INTERACTIVE: 'never',
+        });
+        expect(env.GIT_DIR).toBeUndefined();
+        expect(env.GIT_WORK_TREE).toBeUndefined();
+        expect(env.GIT_CONFIG_COUNT).toBeUndefined();
+        expect(env.GIT_EXTERNAL_DIFF).toBeUndefined();
+        expect(env.GH_TOKEN).toBeUndefined();
+        expect(env.GITHUB_TOKEN).toBeUndefined();
+        expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
+        expect(env.SSH_AUTH_SOCK).toBeUndefined();
     });
 
     it('requests workflows write only when the publishing lane changes a workflow', async () => {

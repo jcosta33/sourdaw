@@ -14,6 +14,7 @@ import {
     assertTrustedExecutingBlob,
     authenticatePublishingAuthor,
     gitAuthenticatedArgs,
+    githubAuthorizationGitEnv,
     originMainBlob,
     parseJson,
     removalLockPid,
@@ -740,18 +741,27 @@ export function parsePublishWorktrees(value: string): PublishWorktree[] {
         });
 }
 
-async function main(): Promise<number> {
-    const parsed = parsePublishLaneArgs(process.argv.slice(2));
+export async function runPublishLaneCli(args: string[]): Promise<number> {
+    const parsed = parsePublishLaneArgs(args);
     if (parsed.help) {
         console.log(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
         return 0;
     }
     const executingFile = fileURLToPath(import.meta.url);
     const cwd = process.cwd();
-    assertTrustedExecutingBlob('scripts/publishLane.ts', executingFile, originMainBlob('scripts/publishLane.ts', cwd));
-    const primaryRoot = resolvePrimaryRoot();
+    const authorizationEnv = githubAuthorizationGitEnv();
+    assertTrustedExecutingBlob(
+        'scripts/publishLane.ts',
+        executingFile,
+        originMainBlob('scripts/publishLane.ts', cwd, authorizationEnv)
+    );
+    const primaryRoot = resolvePrimaryRoot(
+        (command, commandArgs, directory) =>
+            spawnCapture(command, commandArgs, { cwd: directory, env: authorizationEnv }),
+        cwd
+    );
     const localWorktrees = parsePublishWorktrees(
-        spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })
+        spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot, env: authorizationEnv })
     );
     // Resolve the locally locked lane before mint so the token scope comes only from that lane's
     // committed diff. Legacy eligibility is re-proven through GitHub after authentication below;
@@ -775,7 +785,7 @@ async function main(): Promise<number> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
+    void runPublishLaneCli(process.argv.slice(2)).then(
         (code) => process.exit(code),
         (error: unknown) => {
             console.error(error instanceof Error ? error.message : error);

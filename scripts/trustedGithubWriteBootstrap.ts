@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile';
+export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 
@@ -45,11 +45,18 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'lane:publish': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/publishLane.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
+    'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -70,9 +77,6 @@ export function assertTrustedSourceGraph(
     for (const [path, source] of sources) {
         if (!pathSet.has(path)) {
             throw new Error(`trusted snapshot contains unexpected source ${path}`);
-        }
-        if (path === BOOTSTRAP_PATH) {
-            continue;
         }
         for (const dependency of localModuleDependencies(path, source)) {
             if (!pathSet.has(dependency)) {
@@ -196,7 +200,12 @@ async function runSnapshotModule(entryPath: string, runner: string, args: string
 }
 
 function captureGit(repositoryRoot: string, args: string[]): string {
-    const result = spawnSync('git', args, { cwd: repositoryRoot, encoding: 'utf8', shell: false });
+    const result = spawnSync('git', args, {
+        cwd: repositoryRoot,
+        env: trustedGitReadEnv(),
+        encoding: 'utf8',
+        shell: false,
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -204,6 +213,31 @@ function captureGit(repositoryRoot: string, args: string[]): string {
         throw new Error(result.stderr.trim() || `git failed with exit ${result.status ?? 'signal'}`);
     }
     return result.stdout;
+}
+
+// This loader must remain self-contained until it has pinned and validated the source closure, so
+// the Git-read environment intentionally duplicates the identity helper's policy instead of
+// importing lane-local code before trust is established.
+export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...parent };
+    for (const key of Object.keys(env)) {
+        if (
+            key.startsWith('GIT_') ||
+            key.startsWith('GH_') ||
+            key.startsWith('GITHUB_') ||
+            key.startsWith('SOURDAW_GITHUB_APP_') ||
+            key === 'SSH_AUTH_SOCK'
+        ) {
+            delete env[key];
+        }
+    }
+    env.GIT_CONFIG_GLOBAL = '/dev/null';
+    env.GIT_CONFIG_SYSTEM = '/dev/null';
+    env.GIT_TERMINAL_PROMPT = '0';
+    env.GIT_SSH_COMMAND = '/usr/bin/false';
+    env.GIT_SSH = '/usr/bin/false';
+    env.GCM_INTERACTIVE = 'never';
+    return env;
 }
 
 /**
@@ -266,10 +300,10 @@ function defaultPort(repositoryRoot: string): TrustedSourcePort {
 }
 
 function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
-    if (value === 'deliver' || value === 'issue:reconcile') {
+    if (value === 'deliver' || value === 'issue:reconcile' || value === 'lane:publish') {
         return value;
     }
-    throw new Error('usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile> [args...]');
+    throw new Error('usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish> [args...]');
 }
 
 async function main(): Promise<number> {

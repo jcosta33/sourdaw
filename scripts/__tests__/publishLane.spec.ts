@@ -159,15 +159,15 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
 describe('lane publish', () => {
     it('resolves the locked lane before requesting its diff-scoped publishing token', () => {
         const source = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');
-        const main = source.slice(source.indexOf('async function main(): Promise<number>'));
-        const resolveLane = main.indexOf('resolveAuthorLane(parsed.issue, localWorktrees');
-        const authenticate = main.indexOf(
+        const cli = source.slice(source.indexOf('export async function runPublishLaneCli'));
+        const resolveLane = cli.indexOf('resolveAuthorLane(parsed.issue, localWorktrees');
+        const authenticate = cli.indexOf(
             'authenticatePublishingAuthor({ primaryRoot, lane: authenticationLane.path })'
         );
 
         expect(resolveLane).toBeGreaterThanOrEqual(0);
         expect(authenticate).toBeGreaterThan(resolveLane);
-        expect(main).not.toMatch(/\bauthenticateRole\b/);
+        expect(cli).not.toMatch(/\bauthenticateRole\b/);
     });
 
     it('pushes without force, opens one PR, and prints the number', () => {

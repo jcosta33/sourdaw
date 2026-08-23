@@ -12,6 +12,7 @@ import {
     REPOSITORY_ROOT_ENV,
     runTrustedGithubWriteCommand,
     shouldHoistToOrigin,
+    trustedGitReadEnv,
     trustedDependencyPaths,
 } from '../trustedGithubWriteBootstrap.ts';
 
@@ -24,7 +25,7 @@ describe('package scripts and gitignore', () => {
             scripts: Record<string, string>;
         };
         expect(pkg.scripts['lane:open']).toBe('node scripts/openLane.ts');
-        expect(pkg.scripts['lane:publish']).toBe('node scripts/publishLane.ts');
+        expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
@@ -128,6 +129,59 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
+    it('pins lane publishing and its authentication policy to one origin/main source closure', async () => {
+        expect(trustedDependencyPaths('lane:publish')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/publishLane.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
+
+        const laneLocalHelper = 'export const AUTHOR_MINT_PERMISSIONS = { workflows: "write" };';
+        const trustedSources = new Map([
+            ['scripts/trustedGithubWriteBootstrap.ts', 'trusted bootstrap'],
+            [
+                'scripts/publishLane.ts',
+                "import { publishingPermission } from './githubAppIdentity.ts';\n" +
+                    'export async function runPublishLaneCli() { return publishingPermission === "ordinary" ? 0 : 1; }',
+            ],
+            ['scripts/githubAppIdentity.ts', 'export const publishingPermission = "ordinary";'],
+            ['scripts/prContract.ts', 'export {};'],
+        ]);
+        const result = await runTrustedGithubWriteCommand('lane:publish', ['2745'], {
+            resolveOriginMain: () => 'trusted-head',
+            readOriginSource: (commit, path) => {
+                expect(commit).toBe('trusted-head');
+                return trustedSources.get(path) ?? '';
+            },
+            executeSnapshot: executeTrustedSnapshot,
+        });
+
+        expect(result).toBe(0);
+        expect(trustedSources.get('scripts/githubAppIdentity.ts')).not.toBe(laneLocalHelper);
+    });
+
+    it('resolves the trusted snapshot with no inherited Git or GitHub routing', () => {
+        const env = trustedGitReadEnv({
+            PATH: '/usr/bin',
+            GIT_DIR: '/hostile/.git',
+            GIT_WORK_TREE: '/hostile',
+            GH_TOKEN: 'personal',
+            GITHUB_TOKEN: 'actions',
+            SOURDAW_GITHUB_APP_PRIVATE_KEY: 'secret',
+            SOURDAW_TRUSTED_REPOSITORY_ROOT: '/repo',
+        });
+
+        expect(env.GIT_DIR).toBeUndefined();
+        expect(env.GIT_WORK_TREE).toBeUndefined();
+        expect(env.GH_TOKEN).toBeUndefined();
+        expect(env.GITHUB_TOKEN).toBeUndefined();
+        expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_REPOSITORY_ROOT).toBe('/repo');
+        expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
+        expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
+    });
+
     it('pins one origin commit and executes only that snapshot while origin advances', async () => {
         const paths = trustedDependencyPaths('deliver');
         const trusted = new Map(paths.map((path) => [path, `trusted:${path}`]));
@@ -191,7 +245,7 @@ describe('package scripts and gitignore', () => {
     });
 
     it('keeps the loader inside its own trusted closure', () => {
-        for (const command of ['deliver', 'issue:reconcile'] as const) {
+        for (const command of ['deliver', 'issue:reconcile', 'lane:publish'] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
         }
     });

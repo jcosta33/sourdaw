@@ -263,7 +263,43 @@ export async function authenticateRole(input: {
 }
 
 const AUTHOR_WORKFLOW_PATH_PREFIX = '.github/workflows/';
-const COMMITTED_DIFF_PATH_ARGS = ['diff', '--name-only', '--no-renames', '-z', 'origin/main...HEAD', '--'];
+const COMMITTED_DIFF_PATH_ARGS = [
+    'diff',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--name-only',
+    '--no-renames',
+    '-z',
+    'origin/main...HEAD',
+    '--',
+];
+
+/**
+ * Authorization reads use only the repository named by `cwd`. Inherited Git routing can redirect
+ * even a local `git diff` through `GIT_DIR` or `GIT_WORK_TREE`, so none of it crosses this boundary.
+ * The replacement values disable ambient config, credentials, prompts, and SSH for the read.
+ */
+export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...parent };
+    for (const key of Object.keys(env)) {
+        if (
+            key.startsWith('GIT_') ||
+            key.startsWith('GH_') ||
+            key.startsWith('GITHUB_') ||
+            key.startsWith('SOURDAW_GITHUB_APP_') ||
+            key === 'SSH_AUTH_SOCK'
+        ) {
+            delete env[key];
+        }
+    }
+    env.GIT_CONFIG_GLOBAL = '/dev/null';
+    env.GIT_CONFIG_SYSTEM = '/dev/null';
+    env.GIT_TERMINAL_PROMPT = '0';
+    env.GIT_SSH_COMMAND = '/usr/bin/false';
+    env.GIT_SSH = '/usr/bin/false';
+    env.GCM_INTERACTIVE = 'never';
+    return env;
+}
 
 /**
  * Git's `-z` form is the authority here: it preserves every byte that may occur in a path instead
@@ -272,9 +308,14 @@ const COMMITTED_DIFF_PATH_ARGS = ['diff', '--name-only', '--no-renames', '-z', '
  */
 export function authorWorkflowWriteRequired(
     lane: string,
-    capture: CommandCapture = (command, args, cwd) => spawnCapture(command, args, { cwd, trim: false })
+    capture?: CommandCapture,
+    parentEnv: NodeJS.ProcessEnv = process.env
 ): boolean {
-    const output = capture('git', COMMITTED_DIFF_PATH_ARGS, lane);
+    const read =
+        capture ??
+        ((command: string, args: string[], cwd?: string) =>
+            spawnCapture(command, args, { cwd, env: githubAuthorizationGitEnv(parentEnv), trim: false }));
+    const output = read('git', COMMITTED_DIFF_PATH_ARGS, lane);
     if (output === '') {
         return false;
     }
@@ -306,7 +347,7 @@ export async function authenticatePublishingAuthor(input: {
     env?: NodeJS.ProcessEnv;
     capture?: CommandCapture;
 }): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
-    const permissions = authorWorkflowWriteRequired(input.lane, input.capture);
+    const permissions = authorWorkflowWriteRequired(input.lane, input.capture, input.env);
     return authenticateWithPermissions(
         { ...input, role: 'author' },
         permissions ? AUTHOR_WORKFLOW_MINT_PERMISSIONS : AUTHOR_MINT_PERMISSIONS
@@ -462,13 +503,17 @@ export function resolvePrimaryRoot(
     return dirname(resolveExisting(absolute));
 }
 
-export function originMainBlob(repoRelativePath: string, cwd: string = process.cwd()): string | undefined {
+export function originMainBlob(
+    repoRelativePath: string,
+    cwd: string = process.cwd(),
+    env?: NodeJS.ProcessEnv
+): string | undefined {
     try {
-        spawnCapture('git', ['cat-file', '-e', `origin/main:${repoRelativePath}`], { cwd });
+        spawnCapture('git', ['cat-file', '-e', `origin/main:${repoRelativePath}`], { cwd, env });
     } catch {
         return undefined;
     }
-    return spawnCapture('git', ['show', `origin/main:${repoRelativePath}`], { cwd, trim: false });
+    return spawnCapture('git', ['show', `origin/main:${repoRelativePath}`], { cwd, env, trim: false });
 }
 
 export function assertTrustedExecutingBlob(
