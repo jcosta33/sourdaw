@@ -123,7 +123,7 @@ import {
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
 import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
-import { projectStore } from '#/modules/Project/stores';
+import { getSettledProjectId } from '#/modules/Project/stores';
 import {
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
@@ -212,7 +212,7 @@ actionHistoryStore.subscribe((state) => {
 });
 setRuntimeLogger(logger);
 configureCollaborationAssetOwner({
-    captureOwnerId: () => projectStore.value?.projectId,
+    captureOwnerId: getSettledProjectId,
 });
 try {
     recoverInterruptedAgentRuns();

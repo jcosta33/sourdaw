@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     decodeAudioFile: vi.fn(),
+    detectTempo: vi.fn(() => 120),
     pickFiles: vi.fn<() => Promise<File[] | null>>(),
     stageLocalAsset: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
-    detectTempo: vi.fn(),
+    detectTempo: mocks.detectTempo,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: mocks.decodeAudioFile,
@@ -79,5 +80,47 @@ describe('prepareStemImport budget admission', () => {
         expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('stem-budget-run')?.budgets.consumed).toEqual({});
         expect(agentRunLifecycle.get('stem-budget-run')?.budgetAttempts).toEqual([]);
+    });
+
+    it('retains each live-session asset hash and lease in the prepared stem contract', async () => {
+        const files = [
+            new File(['kick'], 'kick.wav', { type: 'audio/wav' }),
+            new File(['snare'], 'snare.wav', { type: 'audio/wav' }),
+        ];
+        mocks.pickFiles.mockResolvedValue(files);
+        mocks.decodeAudioFile.mockImplementation((file: File) =>
+            Promise.resolve({
+                id: `buffer-${file.name}`,
+                buffer: { duration: 1, length: 48_000, numberOfChannels: 2 },
+            })
+        );
+        mocks.stageLocalAsset.mockImplementation((_file: File, name: string) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
+        );
+
+        const result = await prepareStemImport(undefined, () => true);
+
+        expect(result.status).toBe('prepared');
+        if (result.status !== 'prepared') {
+            throw new TypeError('Expected prepared stem resources');
+        }
+        expect(result.stems).toEqual([
+            expect.objectContaining({
+                sourceName: 'kick.wav',
+                audioBufferId: 'buffer-kick.wav',
+                assetHash: 'hash-kick.wav',
+                assetLeaseId: 'lease-kick.wav',
+            }),
+            expect.objectContaining({
+                sourceName: 'snare.wav',
+                audioBufferId: 'buffer-snare.wav',
+                assetHash: 'hash-snare.wav',
+                assetLeaseId: 'lease-snare.wav',
+            }),
+        ]);
+        expect(mocks.stageLocalAsset.mock.calls).toEqual([
+            [files[0], 'kick.wav'],
+            [files[1], 'snare.wav'],
+        ]);
     });
 });

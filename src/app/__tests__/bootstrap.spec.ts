@@ -53,6 +53,8 @@ const {
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
     canExecuteCommandBatchMock,
+    configureCollaborationAssetOwnerMock,
+    getSettledProjectIdMock,
     prepareOfflineLevainMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
@@ -70,6 +72,8 @@ const {
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
         configureCommandBatchIdempotencyMock: vi.fn(),
         canExecuteCommandBatchMock: vi.fn(() => true),
+        configureCollaborationAssetOwnerMock: vi.fn(),
+        getSettledProjectIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -206,6 +210,7 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 vi.mock('#/modules/Collaboration/useCases', () => ({
     canExecuteCommandBatch: canExecuteCommandBatchMock,
     canMutateBranchMetadata: () => true,
+    configureCollaborationAssetOwner: configureCollaborationAssetOwnerMock,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     getAssetTransfer: () => null,
     leaveSession: noop,
@@ -333,6 +338,10 @@ vi.mock('#/modules/Project/useCases', () => ({
             failed: 0,
         }),
     setProjectIdentityTransitionDependencies: noop,
+}));
+
+vi.mock('#/modules/Project/stores', () => ({
+    getSettledProjectId: getSettledProjectIdMock,
 }));
 
 vi.mock('#/modules/ProjectVersioning/useCases', () => ({
@@ -496,6 +505,12 @@ describe('bootstrap', () => {
     it('configures durable command-batch idempotency exactly once', () => {
         expect(configureCommandBatchIdempotencyMock).toHaveBeenCalledExactlyOnceWith({
             canExecute: canExecuteCommandBatchMock,
+        });
+    });
+
+    it('gives Collaboration only Project-owned settled identity reads', () => {
+        expect(configureCollaborationAssetOwnerMock).toHaveBeenCalledExactlyOnceWith({
+            captureOwnerId: getSettledProjectIdMock,
         });
     });
 

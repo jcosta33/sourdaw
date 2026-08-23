@@ -6,7 +6,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { isCanonicalProjectId } from '../../models/ProjectData';
-import { defaultProjectStoreState, projectStore, type ProjectStoreState } from '../projectStore';
+import { defaultProjectStoreState, getSettledProjectId, projectStore, type ProjectStoreState } from '../projectStore';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -153,6 +153,21 @@ describe('projectStore', () => {
             expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document: fake_doc })).toEqual([]);
         }
     );
+
+    it('publishes only a canonical project identity whose migration has settled', () => {
+        const settledProjectId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+        projectStore.set({ ...create_default_state(), projectId: settledProjectId, identityMigrationPending: false });
+        expect(getSettledProjectId()).toBe(settledProjectId);
+
+        projectStore.set({ ...create_default_state(), projectId: 'not-a-uuid', identityMigrationPending: false });
+        expect(getSettledProjectId()).toBeUndefined();
+
+        projectStore.set({ ...create_default_state(), projectId: settledProjectId, identityMigrationPending: true });
+        expect(getSettledProjectId()).toBeUndefined();
+
+        projectStore.set({ ...create_default_state(), projectId: undefined, identityMigrationPending: false });
+        expect(getSettledProjectId()).toBeUndefined();
+    });
 
     it('should ignore legacy persisted transient flags on cold-start hydration', () => {
         fake_doc.projectMeta = {

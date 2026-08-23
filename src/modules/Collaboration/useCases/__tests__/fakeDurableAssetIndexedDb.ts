@@ -18,14 +18,21 @@ class FakeTransaction {
 
     private operations: Array<() => void> = [];
     private settled = false;
+    private readonly storeSnapshots = new Map<string, Map<string, StoredRecord>>();
 
     constructor(
         private readonly stores: Map<string, Map<string, StoredRecord>>,
         private readonly indexes: Map<string, Map<string, FakeIndexDefinition>>,
         private readonly storeNames: readonly string[],
         private readonly mode: IDBTransactionMode,
-        private readonly onFullScan: () => void = () => undefined
+        private readonly onFullScan: () => void = () => undefined,
+        private readonly failOnComplete = false
     ) {
+        if (mode === 'readwrite') {
+            for (const storeName of storeNames) {
+                this.storeSnapshots.set(storeName, new Map(stores.get(storeName)));
+            }
+        }
         queueMicrotask(() => this.flush());
     }
 
@@ -52,6 +59,16 @@ class FakeTransaction {
             return;
         }
         this.settled = true;
+        for (const [storeName, snapshot] of this.storeSnapshots) {
+            const store = this.stores.get(storeName);
+            if (!store) {
+                continue;
+            }
+            store.clear();
+            for (const [key, value] of snapshot) {
+                store.set(key, value);
+            }
+        }
         this.error = new DOMException('The transaction was aborted', 'AbortError');
         this.onabort?.();
     }
@@ -73,6 +90,10 @@ class FakeTransaction {
                 }
                 if (this.operations.length > 0) {
                     this.flush();
+                    return;
+                }
+                if (this.failOnComplete) {
+                    this.abort();
                     return;
                 }
                 this.settled = true;
@@ -175,6 +196,7 @@ export type FakeDurableAssetIndexedDb = {
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
     countRecords: (store: 'assets' | 'leases' | 'ownerHandoffs') => number;
+    failNextReadwriteTransactions: (count: number) => void;
     getFullScanCount: () => number;
 };
 
@@ -183,6 +205,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
     const stores = new Map<string, Map<string, StoredRecord>>();
     const indexes = new Map<string, Map<string, FakeIndexDefinition>>();
     let fullScanCount = 0;
+    let failedReadwriteTransactionsRemaining = 0;
     const database = {
         objectStoreNames: {
             contains: (name: string) => stores.has(name),
@@ -198,10 +221,22 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
         },
         close: () => undefined,
         onversionchange: null as (() => void) | null,
-        transaction: (names: string | string[], mode: IDBTransactionMode = 'readonly') =>
-            new FakeTransaction(stores, indexes, Array.isArray(names) ? names : [names], mode, () => {
-                fullScanCount += 1;
-            }),
+        transaction: (names: string | string[], mode: IDBTransactionMode = 'readonly') => {
+            const shouldFail = mode === 'readwrite' && failedReadwriteTransactionsRemaining > 0;
+            if (shouldFail) {
+                failedReadwriteTransactionsRemaining -= 1;
+            }
+            return new FakeTransaction(
+                stores,
+                indexes,
+                Array.isArray(names) ? names : [names],
+                mode,
+                () => {
+                    fullScanCount += 1;
+                },
+                shouldFail
+            );
+        },
     };
     vi.stubGlobal('indexedDB', {
         open: () => {
@@ -227,6 +262,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 store.clear();
             }
             fullScanCount = 0;
+            failedReadwriteTransactionsRemaining = 0;
         },
         deleteAsset: (hash) => {
             stores.get('assets')?.delete(hash);
@@ -275,6 +311,9 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
             }
         },
         countRecords: (store) => stores.get(store)?.size ?? 0,
+        failNextReadwriteTransactions: (count) => {
+            failedReadwriteTransactionsRemaining = count;
+        },
         getFullScanCount: () => fullScanCount,
     };
 }

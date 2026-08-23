@@ -216,6 +216,33 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('keeps a handoff executable across bounded transaction failures and restart', async () => {
+        const provisionalOwner = 'collaboration-join:bounded-retry';
+        const projectOwner = 'project:bounded-retry-authoritative';
+        const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
+        const staged = await joining.stageDurableAsset(
+            new Blob(['bounded-retry-original']),
+            'bounded-retry.wav',
+            'asset-stage-bounded-retry'
+        );
+        await joining.prepareDurableOwnerRebind(projectOwner);
+        durableAssetIndexedDb.failNextReadwriteTransactions(3);
+
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            await expect(joining.commitDurableOwnerRebind(projectOwner)).rejects.toThrow('aborted');
+        }
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+        joining.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        recreated.dispose();
+    });
+
     it('releases exactly once and deletes only uncommitted unshared bytes', async () => {
         const first = await transfer.stageDurableAsset(
             new Blob(['shared-staging']),

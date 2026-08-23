@@ -366,3 +366,12 @@ export const projectStore = createStore<ProjectStoreState>({
     initialData: defaultProjectStoreState,
     sanitize: sanitize_project_store_state,
 });
+
+/** Return the durable project identity only after canonical migration has settled. */
+export function getSettledProjectId(): string | undefined {
+    const project = projectStore.value;
+    if (!project || project.identityMigrationPending || !isCanonicalProjectId(project.projectId)) {
+        return undefined;
+    }
+    return project.projectId;
+}
