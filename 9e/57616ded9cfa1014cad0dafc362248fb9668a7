@@ -1,0 +1,26 @@
+CONTRIBUTING.md
+  s_0a3429e31e555d::t_c1f21dc2fbe466 21,26-27
+PRIVACY.md
+  s_0a3429e31e555d::t_c1f21dc2fbe466 46-50
+SECURITY.md
+  s_0a3429e31e555d::t_c1f21dc2fbe466 5-6
+docs/architecture/09-ai-stack.md
+  s_0a3429e31e555d::t_c1f21dc2fbe466 23-26,35-38
+  s_0a3429e31e555d::t_d78c18e12eb7a3 19-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9e57616ded9cfa1014cad0dafc362248fb9668a7",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
