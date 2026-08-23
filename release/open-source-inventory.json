@@ -1157,7 +1157,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "66563bdb8109f2155a7494f45f6f854e73a7596f5feca5e4b47ab30febd9b655"
+            "sha256": "7d77f05c1ea7dccb25fa09c7b602e18c190ede0b2969ade782e900d8e097787e"
         },
         {
             "path": "server/package.json",
