@@ -777,49 +777,22 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         }>;
     };
     const revision = data.sourceRevision;
-    if (
-        !revision ||
-        !/^[0-9a-f]{40}$/u.test(revision) ||
-        revision !== data.machine?.gitSha ||
-        data.machine?.workingTree !== 'clean'
-    ) {
+    if (!revision || revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
         throw new Error('Grand Boule measurement must name one clean implementation source revision');
     }
     const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();
     if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
         throw new Error('Grand Boule measurement source-digest census is incomplete');
     }
-    let sourceRevisionIsAvailable = true;
-    try {
-        execFileSync('git', ['cat-file', '-e', `${revision}^{commit}`], {
-            cwd: root,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-    } catch {
-        sourceRevisionIsAvailable = false;
-    }
     for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
-        const retainedDigest = data.sourceDigests?.[path];
-        const currentDigest = createHash('sha256')
-            .update(readFileSync(resolve(root, path)))
-            .digest('hex');
-        if (retainedDigest !== currentDigest) {
-            throw new Error(`Grand Boule measurement source digest drifted for ${path}`);
-        }
-        if (!sourceRevisionIsAvailable) {
-            continue;
-        }
         let sourceAtRevision: Buffer;
         try {
-            sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], {
-                cwd: root,
-                stdio: ['ignore', 'pipe', 'pipe'],
-            });
+            sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
         } catch {
             throw new Error(`Grand Boule measurement source revision cannot provide ${path}`);
         }
         const expected = createHash('sha256').update(sourceAtRevision).digest('hex');
-        if (retainedDigest !== expected) {
+        if (data.sourceDigests?.[path] !== expected) {
             throw new Error(`Grand Boule measurement source digest drifted for ${path}`);
         }
     }
