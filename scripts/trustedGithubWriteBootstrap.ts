@@ -1,20 +1,40 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    accessSync,
+    constants,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, posix, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile';
+export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 
-/** Set by a hoisting parent so the hoisted copy knows which repository it acts on. */
-export const REPOSITORY_ROOT_ENV = 'SOURDAW_TRUSTED_REPOSITORY_ROOT';
+export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
+export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
+export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+
+export type TrustedLauncherBinding = {
+    primaryRoot: string;
+    commonDir: string;
+    gitPath: string;
+    ghPath: string;
+};
 
 export type TrustedSourceSnapshot = {
     commit: string;
     sources: ReadonlyMap<string, string>;
+    launcher?: TrustedLauncherBinding;
 };
 
 type TrustedSourcePort = {
@@ -27,7 +47,12 @@ type TrustedSourcePort = {
     ) => Promise<number>;
 };
 
-type SnapshotRunner = (entryPath: string, runner: string, args: string[]) => Promise<number>;
+type SnapshotRunner = (
+    entryPath: string,
+    runner: string,
+    args: string[],
+    snapshot: TrustedSourceSnapshot
+) => Promise<number>;
 
 const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
     deliver: [
@@ -45,11 +70,18 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'lane:publish': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/publishLane.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
+    'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -70,9 +102,6 @@ export function assertTrustedSourceGraph(
     for (const [path, source] of sources) {
         if (!pathSet.has(path)) {
             throw new Error(`trusted snapshot contains unexpected source ${path}`);
-        }
-        if (path === BOOTSTRAP_PATH) {
-            continue;
         }
         for (const dependency of localModuleDependencies(path, source)) {
             if (!pathSet.has(dependency)) {
@@ -106,6 +135,15 @@ export async function runTrustedGithubWriteCommand(
     port: TrustedSourcePort
 ): Promise<number> {
     const commit = port.resolveOriginMain();
+    return runTrustedGithubWriteCommandAtCommit(command, args, port, commit);
+}
+
+async function runTrustedGithubWriteCommandAtCommit(
+    command: TrustedGithubWriteCommand,
+    args: string[],
+    port: TrustedSourcePort,
+    commit: string
+): Promise<number> {
     if (commit.trim() === '') {
         throw new Error('origin/main did not resolve to a commit');
     }
@@ -117,21 +155,10 @@ export async function runTrustedGithubWriteCommand(
     // and leave generated artifacts stale, so that requirement cost real safety
     // to buy none.
     //
-    // This file is not one of those, and the distinction is the whole security
-    // story here. `pnpm deliver` resolves this loader from the lane's own root,
-    // so the code that pins the commit, builds the snapshot and decides whether
-    // to run it is always the working-tree copy; nothing in the snapshot imports
-    // it, so the snapshot cannot vouch for it. The comparison removed above did
-    // cover this one file, but only against honest drift — a hostile edit would
-    // delete the check along with everything else — and honest drift is exactly
-    // the behind-a-moved-main case this change exists to permit.
-    //
-    // Verifying the loader properly means re-executing main's copy rather than
-    // refusing, and that cannot land here: main's copy derives the repository
-    // root from its own module URL, so a copy executed out of a temporary
-    // directory would run git against that directory. It needs a loader on main
-    // that accepts the root from its caller, which is a later change, not this
-    // one. Filed as #2671 rather than asserted away.
+    // The package route is accepted only from the protected primary checkout,
+    // where this loader is compared with the pinned origin commit before the
+    // closure runs. A lane path is command data; no lane package or helper is an
+    // executable input to this process.
     const sources = new Map<string, string>();
     for (const path of trustedDependencyPaths(command)) {
         sources.set(path, port.readOriginSource(commit, path));
@@ -157,7 +184,7 @@ export async function executeTrustedSnapshot(
             writeFileSync(target, source, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
         }
         const entry = commandEntries[command];
-        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args);
+        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args, snapshot);
         if (!Number.isSafeInteger(result)) {
             throw new TypeError(`trusted ${command} snapshot returned an invalid exit code`);
         }
@@ -167,10 +194,15 @@ export async function executeTrustedSnapshot(
     }
 }
 
-async function runSnapshotModule(entryPath: string, runner: string, args: string[]): Promise<number> {
+async function runSnapshotModule(
+    entryPath: string,
+    runner: string,
+    args: string[],
+    snapshot: TrustedSourceSnapshot
+): Promise<number> {
     const source = [
         "import { pathToFileURL } from 'node:url';",
-        'const [entryPath, runner, ...args] = process.argv.slice(1);',
+        'const [entryPath, runner, ...args] = process.argv.slice(2);',
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
@@ -178,11 +210,16 @@ async function runSnapshotModule(entryPath: string, runner: string, args: string
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
     ].join('\n');
-    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', source, entryPath, runner, ...args], {
-        cwd: process.cwd(),
-        stdio: 'inherit',
-        shell: false,
-    });
+    const result = spawnSync(
+        process.execPath,
+        ['--input-type=module', '--eval', source, 'trusted-snapshot-runner', entryPath, runner, ...args],
+        {
+            cwd: process.cwd(),
+            env: trustedSnapshotEnv(snapshot),
+            stdio: 'inherit',
+            shell: false,
+        }
+    );
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -195,8 +232,33 @@ async function runSnapshotModule(entryPath: string, runner: string, args: string
     return result.status;
 }
 
-function captureGit(repositoryRoot: string, args: string[]): string {
-    const result = spawnSync('git', args, { cwd: repositoryRoot, encoding: 'utf8', shell: false });
+export function trustedSnapshotEnv(
+    snapshot: TrustedSourceSnapshot,
+    parent: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+    const env = trustedGitReadEnv(parent);
+    const launcher = snapshot.launcher;
+    if (launcher === undefined) {
+        return env;
+    }
+    env.PATH = [...new Set([dirname(launcher.gitPath), dirname(launcher.ghPath), dirname(process.execPath)])].join(
+        delimiter
+    );
+    env[TRUSTED_PRIMARY_ROOT_ENV] = launcher.primaryRoot;
+    env[TRUSTED_COMMON_DIR_ENV] = launcher.commonDir;
+    env[TRUSTED_GIT_PATH_ENV] = launcher.gitPath;
+    env[TRUSTED_GH_PATH_ENV] = launcher.ghPath;
+    env[TRUSTED_ORIGIN_COMMIT_ENV] = snapshot.commit;
+    return env;
+}
+
+function captureGit(repositoryRoot: string, gitPath: string, args: string[]): string {
+    const result = spawnSync(gitPath, args, {
+        cwd: repositoryRoot,
+        env: trustedGitReadEnv(),
+        encoding: 'utf8',
+        shell: false,
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -206,90 +268,111 @@ function captureGit(repositoryRoot: string, args: string[]): string {
     return result.stdout;
 }
 
-/**
- * Hoisting exists because this file is the one member of the trusted closure
- * that runs as the lane holds it: `package.json` resolves it from the lane's
- * root, and nothing inside the snapshot imports it, so the snapshot cannot
- * vouch for it. Handing the whole invocation to main's copy is what makes the
- * loader trusted too, and it does that without refusing a lane that has merely
- * fallen behind — refusing is what forced a merge, and a merge can resolve
- * cleanly while leaving generated artifacts stale.
- *
- * The hop terminates because the copy hoisted to is byte-identical to origin's,
- * so it takes the other branch. It is skipped when origin's copy predates
- * `REPOSITORY_ROOT_ENV`: that copy derives the repository root from its own
- * module URL, so hoisting to it would run git against a temporary directory.
- */
-export function shouldHoistToOrigin(executingSource: string, originSource: string): boolean {
-    return executingSource !== originSource && originSource.includes(REPOSITORY_ROOT_ENV);
+// This loader must remain self-contained until it has pinned and validated the source closure, so
+// the Git-read environment intentionally duplicates the identity helper's policy instead of
+// importing lane-local code before trust is established.
+export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...parent };
+    for (const key of Object.keys(env)) {
+        if (
+            key.startsWith('GIT_') ||
+            key.startsWith('GH_') ||
+            key.startsWith('GITHUB_') ||
+            key.startsWith('SOURDAW_GITHUB_APP_') ||
+            key.startsWith('SOURDAW_TRUSTED_') ||
+            key.startsWith('NODE_') ||
+            key === 'SSH_AUTH_SOCK'
+        ) {
+            delete env[key];
+        }
+    }
+    env.GIT_CONFIG_GLOBAL = '/dev/null';
+    env.GIT_CONFIG_SYSTEM = '/dev/null';
+    env.GIT_TERMINAL_PROMPT = '0';
+    env.GIT_SSH_COMMAND = '/usr/bin/false';
+    env.GIT_SSH = '/usr/bin/false';
+    env.GCM_INTERACTIVE = 'never';
+    return env;
 }
 
-export async function hoistToOriginBootstrap(
-    originSource: string,
-    repositoryRoot: string,
-    argv: string[],
-    spawnBootstrap: (entryPath: string, argv: string[], repositoryRoot: string) => number = spawnOriginBootstrap
-): Promise<number> {
-    const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-loader-'));
-    try {
-        const entry = resolve(root, 'trustedGithubWriteBootstrap.ts');
-        writeFileSync(entry, originSource, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-        return spawnBootstrap(entry, argv, repositoryRoot);
-    } finally {
-        rmSync(root, { recursive: true, force: true });
+export function resolveTrustedExecutable(name: 'git' | 'gh', parent: NodeJS.ProcessEnv = process.env): string {
+    const extensions = process.platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
+    for (const directory of (parent.PATH ?? '').split(delimiter)) {
+        for (const extension of extensions) {
+            const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
+            try {
+                accessSync(candidate, constants.X_OK);
+                return realpathSync(candidate);
+            } catch {
+                // Try the next operator-provided PATH entry. The protected launcher freezes the
+                // first executable it finds before any lane-selected child starts.
+            }
+        }
     }
+    throw new Error(`cannot resolve trusted ${name} executable from the launcher PATH`);
 }
 
-function spawnOriginBootstrap(entryPath: string, argv: string[], repositoryRoot: string): number {
-    const result = spawnSync(process.execPath, [entryPath, ...argv], {
-        cwd: process.cwd(),
-        env: { ...process.env, [REPOSITORY_ROOT_ENV]: repositoryRoot },
-        stdio: 'inherit',
-        shell: false,
-    });
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status === null) {
-        throw new Error(`trusted loader terminated by ${result.signal ?? 'unknown signal'}`);
-    }
-    return result.status;
+function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
+    const value = captureGit(checkoutRoot, gitPath, ['rev-parse', '--git-common-dir']).trim();
+    return realpathSync(isAbsolute(value) ? value : resolve(checkoutRoot, value));
 }
 
-function defaultPort(repositoryRoot: string): TrustedSourcePort {
+export function resolveTrustedLauncherBinding(
+    launcherRoot: string,
+    parent: NodeJS.ProcessEnv = process.env
+): TrustedLauncherBinding {
+    const root = realpathSync(launcherRoot);
+    const gitPath = resolveTrustedExecutable('git', parent);
+    const commonDir = repositoryCommonDir(root, gitPath);
+    const primaryRoot = realpathSync(dirname(commonDir));
+    if (root !== primaryRoot) {
+        throw new Error('trusted GitHub writes must be launched from the protected primary checkout');
+    }
+    return {
+        primaryRoot,
+        commonDir,
+        gitPath,
+        ghPath: resolveTrustedExecutable('gh', parent),
+    };
+}
+
+function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
     return {
         resolveOriginMain: () =>
-            captureGit(repositoryRoot, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']).trim(),
-        readOriginSource: (commit, path) => captureGit(repositoryRoot, ['show', `${commit}:${path}`]),
-        executeSnapshot: executeTrustedSnapshot,
+            captureGit(binding.primaryRoot, binding.gitPath, [
+                'rev-parse',
+                '--verify',
+                'refs/remotes/origin/main^{commit}',
+            ]).trim(),
+        readOriginSource: (commit, path) =>
+            captureGit(binding.primaryRoot, binding.gitPath, ['show', `${commit}:${path}`]),
+        executeSnapshot: (command, args, snapshot) =>
+            executeTrustedSnapshot(command, args, { ...snapshot, launcher: binding }),
     };
 }
 
 function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
-    if (value === 'deliver' || value === 'issue:reconcile') {
+    if (value === 'deliver' || value === 'issue:reconcile' || value === 'lane:publish') {
         return value;
     }
-    throw new Error('usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile> [args...]');
+    throw new Error('usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish> [args...]');
 }
 
 async function main(): Promise<number> {
-    const command = parseCommand(process.argv[2]);
     const executingFile = fileURLToPath(import.meta.url);
-    // A hoisted copy runs from a temporary directory, where its own module URL
-    // says nothing about which repository it is acting on, so the hoisting
-    // parent names the root. Absent that, the root is this file's parent, which
-    // is what a normal invocation wants.
-    const repositoryRoot = resolve(process.env[REPOSITORY_ROOT_ENV] ?? fileURLToPath(new URL('..', import.meta.url)));
-    const port = defaultPort(repositoryRoot);
-
-    const originBootstrap = port.readOriginSource(port.resolveOriginMain(), BOOTSTRAP_PATH);
-    if (shouldHoistToOrigin(readFileSync(executingFile, 'utf8'), originBootstrap)) {
-        return hoistToOriginBootstrap(originBootstrap, repositoryRoot, process.argv.slice(2));
+    const launcherRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+    const binding = resolveTrustedLauncherBinding(launcherRoot);
+    const command = parseCommand(process.argv[2]);
+    const port = defaultPort(binding);
+    const commit = port.resolveOriginMain();
+    const originBootstrap = port.readOriginSource(commit, BOOTSTRAP_PATH);
+    if (readFileSync(executingFile, 'utf8') !== originBootstrap) {
+        throw new Error('protected primary launcher does not match its pinned origin/main snapshot');
     }
-    return runTrustedGithubWriteCommand(command, process.argv.slice(3), port);
+    return runTrustedGithubWriteCommandAtCommit(command, process.argv.slice(3), port, commit);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
     void main().then(
         (code) => process.exit(code),
         (error: unknown) => {
