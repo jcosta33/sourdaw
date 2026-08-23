@@ -202,7 +202,7 @@ async function runSnapshotModule(
 ): Promise<number> {
     const source = [
         "import { pathToFileURL } from 'node:url';",
-        'const [entryPath, runner, ...args] = process.argv.slice(1);',
+        'const [entryPath, runner, ...args] = process.argv.slice(2);',
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
@@ -210,12 +210,16 @@ async function runSnapshotModule(
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
     ].join('\n');
-    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', source, entryPath, runner, ...args], {
-        cwd: process.cwd(),
-        env: trustedSnapshotEnv(snapshot),
-        stdio: 'inherit',
-        shell: false,
-    });
+    const result = spawnSync(
+        process.execPath,
+        ['--input-type=module', '--eval', source, 'trusted-snapshot-runner', entryPath, runner, ...args],
+        {
+            cwd: process.cwd(),
+            env: trustedSnapshotEnv(snapshot),
+            stdio: 'inherit',
+            shell: false,
+        }
+    );
     if (result.error !== undefined) {
         throw result.error;
     }

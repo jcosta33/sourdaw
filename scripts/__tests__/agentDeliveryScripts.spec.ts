@@ -397,6 +397,36 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('should import the snapshot entry without direct execution and invoke its runner once with exact args', async () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-entry-import-'));
+        const recordPath = join(fixtureRoot, 'invocations.jsonl');
+        const callerArgs = ['2495', '--label', 'value with spaces', recordPath];
+        try {
+            await expect(
+                executeTrustedSnapshot('deliver', callerArgs, {
+                    commit: 'pinned-sha',
+                    sources: new Map([
+                        [
+                            'scripts/deliverPullRequest.ts',
+                            [
+                                "import { appendFileSync } from 'node:fs';",
+                                "import { fileURLToPath } from 'node:url';",
+                                'const recordPath = process.argv.at(-1);',
+                                "if (recordPath === undefined) throw new Error('missing invocation record path');",
+                                "if (process.argv[1] === fileURLToPath(import.meta.url)) appendFileSync(recordPath, `${JSON.stringify({ kind: 'direct' })}\\n`);",
+                                "export async function runDeliverCli(args) { appendFileSync(recordPath, `${JSON.stringify({ kind: 'runner', args })}\\n`); return 0; }",
+                            ].join('\n'),
+                        ],
+                    ]),
+                })
+            ).resolves.toBe(0);
+
+            expect(readFileSync(recordPath, 'utf8')).toBe(`${JSON.stringify({ kind: 'runner', args: callerArgs })}\n`);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
     it('cleans the exact-byte snapshot tree after success and failure', async () => {
         await expect(
             executeTrustedSnapshot('deliver', ['2495'], {
