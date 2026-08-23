@@ -44,6 +44,14 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import {
+    createHostedSemanticListPlanningResponder,
+    createProviderSemanticListPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderScope,
+    type SemanticCommandListItem,
+} from './providerToolPlanningFixture';
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
 const MF01_PROMPT = 'Route every drum track except the parallel-compression return into the Drum Bus.';
@@ -220,17 +228,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function getHostedUserMessage(requestBody: string): string {
-    const request: unknown = JSON.parse(requestBody);
-    if (!isRecord(request) || !Array.isArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
-    }
-    for (const message of request.messages) {
-        if (isRecord(message) && message.role === 'user' && typeof message.content === 'string') {
-            return message.content;
-        }
-    }
-    throw new TypeError('Expected one hosted provider user message');
+function getHostedUserMessage(input: string | RequestInit | undefined): string {
+    return decodeHostedProviderUserMessage(input);
 }
 
 function getProviderContext(userMessage: string): Record<string, unknown> {
@@ -477,81 +476,116 @@ function setMf06Project(): void {
     trackStore.set({ tracks: [kick, bassSynth, bassDi, guitar], selectedTrackId: null, ghostClips: [] });
 }
 
-function createMf06ProviderPlanFromUserMessage(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context)) {
-        throw new TypeError('Expected object-shaped project context');
-    }
-    const capability = context.sidechainRoutingCapability;
+type Mf06ProviderPlan = { items: SemanticCommandListItem[]; scope: ProviderScope };
+
+function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06ProviderPlan {
+    const planningContext = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = planningContext.capabilityData.sidechainRoutingCapability;
     if (!isRecord(capability) || capability.actionType !== 'addSidechainRoute') {
         throw new TypeError('Expected app-owned MF-06 capability');
     }
-    if (typeof context.projectRevision !== 'string' || capability.baseRevision !== context.projectRevision) {
+    if (planningContext.revision === null || capability.baseRevision !== planningContext.revision) {
         throw new TypeError('Expected revision-bound MF-06 capability');
     }
+    const source = capability.source;
     const allowedAction = capability.allowedAction;
     const targets = capability.targets;
-    if (!isRecord(allowedAction) || !Array.isArray(allowedAction.exactRoutes) || !Array.isArray(targets)) {
+    const protectedTargets = capability.protectedTargets;
+    if (
+        !isRecord(source) ||
+        typeof source.trackId !== 'string' ||
+        !isRecord(allowedAction) ||
+        allowedAction.type !== 'addSidechainRoute' ||
+        !Array.isArray(allowedAction.exactRoutes) ||
+        !Array.isArray(targets) ||
+        !Array.isArray(protectedTargets)
+    ) {
         throw new TypeError('Expected exact MF-06 route capability');
     }
-    const targetDeviceIds = new Set(
-        targets.flatMap((target) => (isRecord(target) && typeof target.deviceId === 'string' ? [target.deviceId] : []))
-    );
-    return allowedAction.exactRoutes.map((route) => {
+
+    const targetsByDeviceId = new Map<string, { trackId: string; deviceName: string; deviceType: string }>();
+    for (const target of targets) {
+        if (
+            !isRecord(target) ||
+            typeof target.deviceId !== 'string' ||
+            typeof target.trackId !== 'string' ||
+            typeof target.deviceName !== 'string' ||
+            typeof target.deviceType !== 'string' ||
+            targetsByDeviceId.has(target.deviceId)
+        ) {
+            throw new TypeError('Expected unique semantic MF-06 targets');
+        }
+        targetsByDeviceId.set(target.deviceId, {
+            trackId: target.trackId,
+            deviceName: target.deviceName,
+            deviceType: target.deviceType,
+        });
+    }
+
+    const targetIds: string[] = [];
+    const items = allowedAction.exactRoutes.map((route, index): SemanticCommandListItem => {
         if (
             !isRecord(route) ||
-            typeof route.sourceTrackId !== 'string' ||
+            route.sourceTrackId !== source.trackId ||
             typeof route.targetTrackId !== 'string' ||
-            typeof route.targetDeviceId !== 'string' ||
-            !targetDeviceIds.has(route.targetDeviceId)
+            typeof route.targetDeviceId !== 'string'
+        ) {
+            throw new TypeError('Expected MF-06 routes to match the app-owned source');
+        }
+        const target = targetsByDeviceId.get(route.targetDeviceId);
+        if (
+            target === undefined ||
+            target.trackId !== route.targetTrackId ||
+            targetIds.includes(route.targetDeviceId)
         ) {
             throw new TypeError('Expected MF-06 routes to match capability-filtered target devices');
         }
-        return { name: 'addSidechainRoute', arguments: { ...route } };
+        targetIds.push(route.targetDeviceId);
+        return {
+            id: `sidechain-route-${String(index + 1)}`,
+            name: 'addSidechainRoute',
+            arguments: { sourceTrackId: source.trackId, targetTrackId: target.trackId },
+            selector: {
+                targetArgument: 'targetDeviceId',
+                entity: 'device',
+                where: { name: target.deviceName, trackId: target.trackId, type: target.deviceType },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+        };
     });
+    if (targetIds.length !== targetsByDeviceId.size) {
+        throw new TypeError('Expected complete MF-06 capability target ordering');
+    }
+
+    const protectedTargetIds = protectedTargets.map((target) => {
+        if (!isRecord(target) || typeof target.id !== 'string' || typeof target.name !== 'string') {
+            throw new TypeError('Expected exact MF-06 protected target scope');
+        }
+        return target.id;
+    });
+    return {
+        items,
+        scope: { targetIds, targetRanges: [], protectedTargetIds, protectedRanges: [] },
+    };
 }
 
-function useMf06WebLlmFixture(
-    transform: (plan: ReturnType<typeof createMf06ProviderPlanFromUserMessage>) => void = () => undefined
-): void {
+function useMf06WebLlmFixture(transform: (items: SemanticCommandListItem[]) => void = () => undefined): void {
     runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
         const plan = createMf06ProviderPlanFromUserMessage(userMessage);
-        transform(plan);
-        return Promise.resolve(JSON.stringify(plan));
+        transform(plan.items);
+        return Promise.resolve(createProviderSemanticListPlanningResponder(plan.items, plan.scope)(userMessage));
     });
 }
 
 function useMf06HostedFixture({ reverse = false }: { reverse?: boolean } = {}): void {
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = createMf06ProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+        const userMessage = getHostedUserMessage(init);
+        const plan = createMf06ProviderPlanFromUserMessage(userMessage);
         if (reverse) {
-            plan.reverse();
+            plan.items.reverse();
+            plan.scope.targetIds.reverse();
         }
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        return Promise.resolve(createHostedSemanticListPlanningResponder(plan.items, plan.scope)(userMessage));
     });
 }
 
@@ -2011,7 +2045,7 @@ describe('drum bus prompt workflow', () => {
 
         await sendChatMessage(EX06_PROMPT);
 
-        const userMessage = getHostedUserMessage(getHostedRequestBody());
+        const userMessage = getHostedUserMessage(runtimeMocks.fetch.mock.calls.at(-1)?.[1]);
         expect(userMessage).toContain(EX06_PROMPT);
         expect(userMessage).toContain('"sidechainRoutingCapability"');
         const confirmation = getPendingActionConfirmation(
@@ -2057,11 +2091,18 @@ describe('drum bus prompt workflow', () => {
                     return;
                 }
                 plan.push({
+                    id: 'sidechain-route-enlargement',
                     name: 'addSidechainRoute',
-                    arguments: {
-                        sourceTrackId: 'track-kick',
-                        targetTrackId: 'track-guitar',
-                        targetDeviceId: 'device-guitar-comp',
+                    arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-guitar' },
+                    selector: {
+                        targetArgument: 'targetDeviceId',
+                        entity: 'device',
+                        where: {
+                            name: 'Guitar Compressor',
+                            trackId: 'track-guitar',
+                            type: 'builtin-sidechain-compressor',
+                        },
+                        quantity: { unit: 'targets', exactly: 1 },
                     },
                 });
             });
@@ -2138,11 +2179,18 @@ describe('drum bus prompt workflow', () => {
                     plan[2] = plan[0]!;
                 } else {
                     plan.push({
+                        id: 'sidechain-route-enlargement',
                         name: 'addSidechainRoute',
-                        arguments: {
-                            sourceTrackId: 'track-kick',
-                            targetTrackId: 'track-guitar',
-                            targetDeviceId: 'device-guitar-comp',
+                        arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-guitar' },
+                        selector: {
+                            targetArgument: 'targetDeviceId',
+                            entity: 'device',
+                            where: {
+                                name: 'Guitar Compressor',
+                                trackId: 'track-guitar',
+                                type: 'builtin-sidechain-compressor',
+                            },
+                            quantity: { unit: 'targets', exactly: 1 },
                         },
                     });
                 }
