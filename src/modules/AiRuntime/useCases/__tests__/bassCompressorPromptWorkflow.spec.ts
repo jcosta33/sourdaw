@@ -54,6 +54,16 @@ const BASS_AMP_INSERTED_DEVICE_IDS = [
     'device-bass-amp-chorus',
 ];
 
+type RuntimeGraphDeltaFixtureResult =
+    | { acceptance: 'accepted'; application: 'applied' }
+    | {
+          acceptance: 'accepted';
+          application: 'needs-reconcile';
+          compensation: 'failed';
+          reason: string;
+      }
+    | { acceptance: 'rejected'; application: 'not-applied'; reason: string };
+
 const providerPlan = [
     {
         name: 'addDevice',
@@ -100,7 +110,10 @@ const providerList = [
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
-        applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
+        applyRuntimeGraphDelta: vi.fn<(delta: unknown) => RuntimeGraphDeltaFixtureResult>(() => ({
+            acceptance: 'accepted',
+            application: 'applied',
+        })),
         backend,
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),

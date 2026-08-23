@@ -829,14 +829,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
+                "tracked-set-sha256:189e68942e77885ebcb1b05ca4b2f2f16cc9c123ebf3f25fd008c3c6cd4f9707:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:1c6cdea60cf1dcf3674b7a14abb6c87589ae1224784d90a2fa7aa2fa7f7e706f:grand-boule-release-proof"
+                "tracked-set-sha256:37cb9a660f65a7cb45cbf8a2d755c72905b6b97c9b5e58e61adf90bcc6d7ab80:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
@@ -932,7 +932,7 @@
                 "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
             ],
             "digests": [
-                "sha256:50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e:public/wasm/manifest.json"
+                "sha256:02b4c66352a3976a7d77737e7ecc3cef320f43c40a1796db43ad4256d65ea8bf:public/wasm/manifest.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],

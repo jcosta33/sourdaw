@@ -149,11 +149,11 @@ the floor doctrine working: on a clock that cannot stall, contention leaves the 
 | OS | macOS 26.6.2 (25G83), arm64 |
 | Browser | **151.0.7922.173** (Google Chrome stable, headless) |
 | User agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36` |
-| **Commit measured** | **`26a362bbc4a5b9a74d46dd713951eb9f411ded68`** |
-| Base it sits on | `6ea6f8107f83253bbd8ec421d3d852b948798cbf` |
+| **Commit measured** | **`a01b05f4f40f658a9e1049f80512fef5e2b15e5a`** |
+| Base it sits on | `5fa4607e25ee598eb44ad0ad8d306217e83674fb` |
 | Working tree | clean |
-| Taken | 2026-08-23T03:09:46.922Z |
-| Machine load | 3.80 before, 3.35 after — **recorded, not gated** |
+| Taken | 2026-08-23T12:06:02.232Z |
+| Machine load | 0.86 before, 2.23 after — **recorded, not gated** |
 | Warm-up / samples | 4000 discarded, 20000 timed quanta per row |
 | Budget | 2.6667 ms = 128 frames ÷ 48 kHz |
 
@@ -162,7 +162,7 @@ Measured-source digests:
 - `crates/daw-dsp/benches/quantum.rs`: `sha256:0de57088cce2094f76dd9d3eb567552692bdc0146eddbc8b5e15c7c8d9b6b873`
 - `crates/daw-dsp/benches/wasm/deviceRecipes.js`: `sha256:0a93e3d48f15813c2185377551acbfd59e4d65a53dc142f72e61d72953d13ac1`
 - `crates/daw-dsp/benches/wasm/quantumCostProcessor.js`: `sha256:e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713`
-- `public/wasm/daw-dsp/daw_dsp_bg.wasm`: `sha256:2546711eeaa323fe45d03a58c595d31c0fd9c1a7bfac3f7a826c357000cd76a7`
+- `public/wasm/daw-dsp/daw_dsp_bg.wasm`: `sha256:4f298c97a781372dfc7a5ddb9384bc7c974832b0cbdb05f2144665e6262b9096`
 
 ### On the audio thread — these share the one 2.667 ms deadline
 
@@ -171,39 +171,39 @@ A dash means the clock stalled too often on that row for a floor to mean anythin
 
 | Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
 | --- | ---: | ---: | ---: | ---: | ---: | :---: |
-| Crumbs (32 sounding voices, in-memory pool) | 450 µs | **550 µs** | **20%** | 4 | 0.0% | yes |
-| Grinder (Crunch JCM, ch 1, gain 5 — shipped patch) | 97 µs | **130 µs** | **4.7%** | 4 | 0.0% | yes |
-| Toaster (16 pads, re-struck 1/s) | 91 µs | **120 µs** | **4.3%** | 3 | 0.0% | yes |
-| Fermenter + 1050 automated params (16 sounding voices, 1 layer) | 85 µs | **95 µs** | **3.6%** | 4 | 0.0% | yes |
-| Fermenter (32 sounding voices, 1 layer) | 78 µs | **91 µs** | **3.4%** | 4 | 0.1% | yes |
-| Fermenter + 105 automated params (16 sounding voices, 1 layer) | 46 µs | **71 µs** | **2.7%** | 4 | 0.0% | **no** |
-| Fermenter + 90 automated params (16 sounding voices, 1 layer) | 60 µs | **71 µs** | **2.6%** | 4 | 0.0% | yes |
-| Fermenter + 16 automated params (16 sounding voices, 1 layer) | 58 µs | **69 µs** | **2.6%** | 4 | 0.0% | yes |
-| Proof (limiter engaged) | 50 µs | **61 µs** | **2.3%** | 4 | 0.0% | yes |
-| ProofChamber (FDN-16 — heaviest selectable) | 23 µs | **31 µs** | **1.2%** | 3 | 0.0% | yes |
-| Levain (32 sounding voices, looped zone) | 27 µs | **29 µs** | **1.1%** | 3 | 0.0% | yes |
-| Bacteria (3 bands, distortion on, Smudge/STFT) | 10 µs | **18 µs** | **0.66%** | 4 | 0.0% | yes |
-| Crust (true-peak limiting, 4x OS) | 8.6 µs | **17 µs** | **0.65%** | 3 | 0.0% | yes |
-| Bacteria (3 bands, mix 1.0, all stages off) | 7.7 µs | **8.8 µs** | **0.33%** | 3 | 0.0% | yes |
-| ProofChamber (Plate — shipped default) | 1.9 µs | **8.2 µs** | **0.31%** | 3 | 0.1% | yes |
-| Gluten (4:1, -24 dB, compressing) | 0.96 µs | **7.5 µs** | **0.28%** | 3 | 0.4% | yes |
-| Scoring / Tuner (pitch detection running) | — | **0.98 µs** | **0.037%** | 3 | 2.3% | yes |
-| Knead (+4 semitones, PSOLA engaged) | — | **0.49 µs** | **0.019%** | 4 | 1.9% | yes |
-| Grand Boule ring consumer | 0.17 µs | **0.26 µs** | **0.0096%** | 3 | 0.0% | **no** |
+| Crumbs (32 sounding voices, in-memory pool) | 410 µs | **540 µs** | **20%** | 2 | 0.0% | yes |
+| Grinder (Crunch JCM, ch 1, gain 5 — shipped patch) | 97 µs | **120 µs** | **4.7%** | 1 | 0.0% | yes |
+| Toaster (16 pads, re-struck 1/s) | 91 µs | **120 µs** | **4.3%** | 2 | 0.0% | yes |
+| Fermenter + 1050 automated params (16 sounding voices, 1 layer) | 88 µs | **94 µs** | **3.5%** | 1 | 0.0% | yes |
+| Fermenter (32 sounding voices, 1 layer) | 79 µs | **90 µs** | **3.4%** | 1 | 0.0% | yes |
+| Fermenter + 90 automated params (16 sounding voices, 1 layer) | 61 µs | **71 µs** | **2.6%** | 1 | 0.0% | yes |
+| Fermenter + 105 automated params (16 sounding voices, 1 layer) | 51 µs | **69 µs** | **2.6%** | 1 | 0.0% | **no** |
+| Fermenter + 16 automated params (16 sounding voices, 1 layer) | 58 µs | **68 µs** | **2.6%** | 1 | 0.0% | yes |
+| Proof (limiter engaged) | 51 µs | **60 µs** | **2.3%** | 1 | 0.0% | yes |
+| ProofChamber (FDN-16 — heaviest selectable) | 23 µs | **31 µs** | **1.2%** | 2 | 0.0% | yes |
+| Levain (32 sounding voices, looped zone) | 24 µs | **29 µs** | **1.1%** | 2 | 0.0% | yes |
+| Bacteria (3 bands, distortion on, Smudge/STFT) | 9.9 µs | **17 µs** | **0.65%** | 1 | 0.0% | yes |
+| Crust (true-peak limiting, 4x OS) | 8.9 µs | **17 µs** | **0.63%** | 2 | 0.0% | yes |
+| Bacteria (3 bands, mix 1.0, all stages off) | 8 µs | **8.3 µs** | **0.31%** | 2 | 0.0% | yes |
+| ProofChamber (Plate — shipped default) | 1.5 µs | **8.2 µs** | **0.31%** | 2 | 0.1% | yes |
+| Gluten (4:1, -24 dB, compressing) | 1.2 µs | **7.2 µs** | **0.27%** | 2 | 0.3% | yes |
+| Scoring / Tuner (pitch detection running) | — | **0.98 µs** | **0.037%** | 2 | 1.9% | yes |
+| Knead (+4 semitones, PSOLA engaged) | — | **0.56 µs** | **0.021%** | 1 | 2.3% | yes |
+| Grand Boule ring consumer | 0.15 µs | **0.26 µs** | **0.0098%** | 2 | 0.4% | **no** |
 
 ### Production cost is not on the audio thread — measured kernel cost, separate budget
 
 | Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
 | --- | ---: | ---: | ---: | ---: | ---: | :---: |
-| Grand Boule (64 voices, re-struck 1/s) — production Worker cost site | 1900 µs | **2100 µs** | **80%** | 4 | 0.0% | yes |
+| Grand Boule (64 voices, re-struck 1/s) — production Worker cost site | 2000 µs | **2100 µs** | **79%** | 2 | 0.0% | yes |
 
 
 ### Duty cycles, not tails
 
 | Device | period | duty | cost in the tick | cost otherwise | amortised mean | period comes from |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| bacteria_smudge | every 4 quanta | 25% | 1000 µs (39%) | 17 µs | **270 µs (10%)** | `stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta` |
-| knead | every 16 quanta | 6.3% | 1000 µs (39%) | 0.53 µs | **65 µs (2.4%)** | `yin_cfg.frame_size = 2048 frames / 128 = 16 quanta` |
+| bacteria_smudge | every 4 quanta | 25% | 1000 µs (38%) | 17 µs | **270 µs (10%)** | `stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta` |
+| knead | every 16 quanta | 6.3% | 1000 µs (38%) | 0.56 µs | **63 µs (2.4%)** | `yin_cfg.frame_size = 2048 frames / 128 = 16 quanta` |
 | scoring | every 12.5 quanta | 8% | 210 µs (7.8%) | 0.95 µs | **18 µs (0.66%)** | `hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta` |
 
 ### The reference project
@@ -212,18 +212,18 @@ Audio thread: 1 × grand_boule_ring_consumer, 1 × fermenter, 1 × levain, 1 × 
 
 Worker: 1 × grand_boule.
 
-Measured at a mean 1-minute load average of **4** on 12 logical
+Measured at a mean 1-minute load average of **2** on 12 logical
 cores. Both bounds are valid under that load; see the note on direction above.
 
 | | ms | % of 2.667 ms | |
 | --- | ---: | ---: | --- |
-| Audio thread, lower bound | 0.81 | 30% | partial — no floor from 1 rows, counted as zero |
+| Audio thread, lower bound | 0.77 | 29% | partial — no floor from 1 rows, counted as zero |
 | **Audio thread, upper bound** | **1.1** | **40%** | **the decisive figure** |
-| Audio thread, worst quantum, upper bound | 2.1 | 79% | + the largest single duty spike |
-| Worker — Grand Boule DSP | 1.9 – 2.1 | 70% – 80% | separate thread and ring |
+| Audio thread, worst quantum, upper bound | 2.1 | 77% | + the largest single duty spike |
+| Worker — Grand Boule DSP | 2 – 2.1 | 75% – 79% | separate thread and ring |
 
 **DECIDED: the upper bound already fits.**
-Even measured under a load average of 4, the reference project's audio thread does not approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.
+Even measured under a load average of 2, the reference project's audio thread does not approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.
 
 ### Occupancy, verified after each timed run
 
@@ -252,26 +252,26 @@ Even measured under a load average of 4, the reference project's audio thread do
 
 | Device | segments | ticks/ms (median) | rate spread | compute ÷ wall | raw min | floor (p1) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| bacteria | 1 | 190000 | 0.0% | 67% | 0 µs | 7.7 µs |
-| bacteria_smudge | 6 | 150000 | 42.4% | 103% | 0 µs | 10 µs |
-| crust | 1 | 130000 | 0.0% | 80% | 0 µs | 8.6 µs |
-| gluten | 1 | 130000 | 0.0% | 63% | 0 µs | 0.96 µs |
-| proof | 2 | 140000 | 0.7% | 93% | 0 µs | 50 µs |
-| knead | 2 | 140000 | 0.4% | 94% | 0 µs | withheld |
-| grinder | 3 | 140000 | 3.9% | 97% | 60 µs | 97 µs |
-| fermenter | 2 | 130000 | 0.3% | 93% | 0 µs | 78 µs |
-| fermenter_automation_16 | 2 | 140000 | 1.9% | 92% | 20 µs | 58 µs |
-| fermenter_automation_90 | 2 | 130000 | 3.3% | 92% | 16 µs | 60 µs |
-| fermenter_automation_105 | 2 | 190000 | 4.6% | 87% | 35 µs | 46 µs |
-| fermenter_automation_1050 | 2 | 200000 | 3.9% | 92% | 55 µs | 85 µs |
-| grand_boule | 43 | 140000 | 51.2% | 106% | 320 µs | 1900 µs |
-| grand_boule_ring_consumer | 1 | 190000 | 0.0% | 22% | 0 µs | 0.17 µs |
-| toaster | 3 | 200000 | 2.2% | 85% | 57 µs | 91 µs |
-| levain | 1 | 200000 | 0.0% | 96% | 8.1 µs | 27 µs |
-| crumbs | 12 | 140000 | 48.3% | 107% | 360 µs | 450 µs |
-| proof_chamber_plate | 1 | 130000 | 0.0% | 67% | 0 µs | 1.9 µs |
-| proof_chamber_fdn16 | 1 | 140000 | 0.0% | 88% | 5.6 µs | 23 µs |
-| scoring | 1 | 140000 | 0.0% | 81% | 0 µs | withheld |
+| bacteria | 1 | 200000 | 0.0% | 68% | 0 µs | 8 µs |
+| bacteria_smudge | 6 | 150000 | 44.8% | 103% | 3.3 µs | 9.9 µs |
+| crust | 1 | 130000 | 0.0% | 80% | 0.84 µs | 8.9 µs |
+| gluten | 1 | 130000 | 0.0% | 64% | 0 µs | 1.2 µs |
+| proof | 2 | 130000 | 1.1% | 94% | 29 µs | 51 µs |
+| knead | 2 | 130000 | 3.7% | 94% | 0 µs | withheld |
+| grinder | 3 | 130000 | 2.2% | 97% | 61 µs | 97 µs |
+| fermenter | 2 | 130000 | 1.6% | 93% | 38 µs | 79 µs |
+| fermenter_automation_16 | 2 | 130000 | 2.7% | 91% | 35 µs | 58 µs |
+| fermenter_automation_90 | 2 | 130000 | 1.6% | 92% | 12 µs | 61 µs |
+| fermenter_automation_105 | 2 | 170000 | 18.5% | 89% | 11 µs | 51 µs |
+| fermenter_automation_1050 | 2 | 190000 | 0.8% | 93% | 49 µs | 88 µs |
+| grand_boule | 43 | 130000 | 56.2% | 107% | 1500 µs | 2000 µs |
+| grand_boule_ring_consumer | 1 | 200000 | 0.0% | 23% | 0 µs | 0.15 µs |
+| toaster | 3 | 190000 | 5.9% | 85% | 53 µs | 91 µs |
+| levain | 1 | 200000 | 0.0% | 96% | 3.2 µs | 24 µs |
+| crumbs | 11 | 140000 | 48.1% | 107% | 340 µs | 410 µs |
+| proof_chamber_plate | 1 | 130000 | 0.0% | 66% | 0 µs | 1.5 µs |
+| proof_chamber_fdn16 | 1 | 130000 | 0.0% | 88% | 0 µs | 23 µs |
+| scoring | 1 | 130000 | 0.0% | 82% | 0 µs | withheld |
 
 <!-- generated:end -->
 
