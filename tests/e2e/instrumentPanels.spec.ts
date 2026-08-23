@@ -1,7 +1,17 @@
 import { expect, test } from '@playwright/test';
+
+import { isDeviceReleaseAdmitted } from '../../src/infra/release/deviceReleaseAdmission';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+const BROWSER_INSTRUMENT_CATALOG = [
+    { deviceType: 'fermenter', label: 'Fermenter' },
+    { deviceType: 'toaster', label: 'Toaster' },
+    { deviceType: 'levain', label: 'Levain' },
+    { deviceType: 'builtin-sampler', label: 'Crumbs' },
+    { deviceType: 'grand-boule', label: 'Grand Boule' },
+] as const;
 
 test.describe('Instrument Panels — Synths & Samplers', () => {
     test.beforeEach(async ({ page }) => {
@@ -12,13 +22,12 @@ test.describe('Instrument Panels — Synths & Samplers', () => {
         await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     });
 
-    test('Browser panel lists released instruments only', async ({ page }) => {
+    test('Browser panel lists the release-admitted instrument catalog', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await expect(browser.getByText('Fermenter')).toBeVisible();
-        await expect(browser.getByText('Toaster')).toBeVisible();
-        await expect(browser.getByText('Levain')).toBeVisible();
-        await expect(browser.getByText('Crumbs')).toBeVisible();
-        await expect(browser.getByRole('button', { name: /^Grand Boule/i })).toHaveCount(0);
+        for (const { deviceType, label } of BROWSER_INSTRUMENT_CATALOG) {
+            const card = browser.getByRole('button', { name: new RegExp(`^${label}\\b`, 'i') });
+            await expect(card).toHaveCount(isDeviceReleaseAdmitted(deviceType) ? 1 : 0);
+        }
     });
 
     test('Default MIDI track has synth device shown in inspector', async ({ page }) => {

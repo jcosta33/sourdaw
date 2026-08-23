@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('AI Features', () => {

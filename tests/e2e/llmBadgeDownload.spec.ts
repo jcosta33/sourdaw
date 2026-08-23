@@ -1,6 +1,52 @@
 import { test, expect, type Page } from '@playwright/test';
 
+import { MODEL_RELEASE_ADMISSION } from '../../src/infra/release/modelReleaseAdmission';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
+
+const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
+
+type BrowserAiCapabilityReport = {
+    webGpu: { reason?: string; status: 'supported' | 'unavailable' };
+};
+
+function isBrowserAiCapabilityReport(value: unknown): value is BrowserAiCapabilityReport {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const webGpu = value.webGpu;
+    return (
+        isRecord(webGpu) &&
+        (webGpu.status === 'supported' || webGpu.status === 'unavailable') &&
+        (webGpu.reason === undefined || typeof webGpu.reason === 'string')
+    );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function getBrowserAiCapabilityReport(page: Page): Promise<BrowserAiCapabilityReport> {
+    await expect
+        .poll(() => page.evaluate((key) => window.localStorage.getItem(key) !== null, CAPABILITY_STORAGE_KEY))
+        .toBe(true);
+    const observedReport: unknown = await page.evaluate((key) => {
+        const cached = window.localStorage.getItem(key);
+        return cached === null ? null : JSON.parse(cached);
+    }, CAPABILITY_STORAGE_KEY);
+    expect(isBrowserAiCapabilityReport(observedReport)).toBe(true);
+    if (!isBrowserAiCapabilityReport(observedReport)) {
+        throw new Error('Browser AI capability report did not match its public runtime contract');
+    }
+    return observedReport;
+}
+
+function skipWithoutHardwareWebGpu(report: BrowserAiCapabilityReport): void {
+    test.skip(
+        report.webGpu.status === 'unavailable',
+        `requires hardware WebGPU (${report.webGpu.reason ?? 'adapter unavailable'})`
+    );
+}
 
 // The LlmStatusBadge's model-onboarding affordances (#1954 WebLLM artifact
 // admission) have no E2E: the download button's per-model label and the
@@ -14,7 +60,25 @@ test.describe('LlmStatusBadge — model download affordances', () => {
         await launch_new_project(page);
     });
 
-    test('the panel offers model choice, a named download button, and the verification blurb', async ({ page }) => {
+    test('the release-gated panel exposes download affordances only on hardware-capable admitted builds', async ({
+        page,
+    }) => {
+        if (!MODEL_RELEASE_ADMISSION.webLlm) {
+            const unavailable = page.getByText('AI unavailable', { exact: true });
+            await expect(unavailable).toBeVisible();
+            await expect(unavailable).toHaveAttribute('title', 'No configured AI backend is available');
+            await expect(page.getByRole('button', { name: 'Load AI', exact: true })).toHaveCount(0);
+            await expect(page.getByRole('button', { name: /Download & Load /i })).toHaveCount(0);
+
+            await page.getByTestId('toggle-preferences').click();
+            const dialog = page.getByRole('dialog');
+            await dialog.getByRole('button', { name: 'AI', exact: true }).click();
+            await expect(dialog.getByText('No local language model is admitted in this release.')).toBeVisible();
+            return;
+        }
+
+        const capabilityReport = await getBrowserAiCapabilityReport(page);
+        skipWithoutHardwareWebGpu(capabilityReport);
         await page.getByRole('button', { name: 'Load AI' }).first().click();
 
         // Model options are DawChooserCard buttons named "<display> <description>
