@@ -581,6 +581,20 @@ describe('verified batch receipt', () => {
                 state: 'pending',
             },
         ]);
+        const legacyPartialReceipt = { ...receipt };
+        delete legacyPartialReceipt.pendingEffects;
+        expect(
+            parseStoredVerifiedBatchReceipt({
+                baseRevision: revision(0),
+                batchId: 'batch-receipt',
+                commands: [
+                    { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                    { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+                ],
+                runId: 'run-receipt',
+                serializedReceipt: JSON.stringify(legacyPartialReceipt),
+            })
+        ).toBeNull();
         expect(
             parseStoredVerifiedBatchReceipt({
                 baseRevision: revision(0),

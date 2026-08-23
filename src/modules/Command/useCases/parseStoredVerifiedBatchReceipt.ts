@@ -168,6 +168,10 @@ export function parseStoredVerifiedBatchReceipt(input: {
         !value.createdBindings.every(isCreatedBinding) ||
         !isStringArray(value.warnings) ||
         !isStringArray(value.errors) ||
+        (value.outcome === 'partially-committed' &&
+            (!pendingEffects ||
+                pendingEffects.length === 0 ||
+                value.atomicity !== 'durable-atomic-with-non-atomic-effects')) ||
         (value.pendingEffects !== undefined &&
             (!pendingEffects ||
                 !pendingEffects.every((effect) => isPendingEffect(effect, input.commands)) ||
