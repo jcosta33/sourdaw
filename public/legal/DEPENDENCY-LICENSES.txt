@@ -2,7 +2,7 @@ Sourdaw third-party dependency licenses
 
 Generated from pnpm-lock.yaml, server/package-lock.json, and the normal-dependency Cargo.lock graph.
 Each package keeps its declared license expression and exact archive terms or an explicit assembled notice.
-Assembled notices combine immutable archive metadata with canonical SPDX License List 3.28.0 text. They are not upstream files.
+Assembled notices use hash-pinned metadata from the lock-resolved install plus canonical SPDX License List 3.28.0 text; only checked proof archives are byte-authenticated against package integrity.
 Generation fails when complete legal evidence is unavailable.
 
 Source graph digests:

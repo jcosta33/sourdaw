@@ -610,8 +610,10 @@ function assertProofFile(
         }
         const contents = tar.subarray(offset + 512, offset + 512 + size);
         if (archivePath === wanted) {
+            if (legal !== undefined) {
+                throw new Error(`${packageId}: proof archive repeats ${file.sourcePath}`);
+            }
             legal = readLegalBytes(contents, `${file.sourcePath} from ${file.archivePath}`);
-            break;
         }
         offset += 512 + Math.ceil(size / 512) * 512;
     }
@@ -702,7 +704,7 @@ function validateAssembledProof(
     const assembled = proof.assembled!;
     const expectedMetadata = new Map((record.metadataFiles ?? []).map((file) => [file.label, file] as const));
     if (expectedMetadata.size === 0) {
-        throw new Error(`${packageId}: assembled proof has no immutable archive metadata`);
+        throw new Error(`${packageId}: assembled proof has no installed package metadata`);
     }
     if (assembled.metadata.length !== expectedMetadata.size) {
         throw new Error(`${packageId}: assembled proof metadata set is incomplete`);
@@ -715,7 +717,7 @@ function validateAssembledProof(
         return metadata;
     });
     if (new Set(assembled.metadata.map(({ sourcePath }) => sourcePath)).size !== assembled.metadata.length) {
-        throw new Error(`${packageId}: assembled proof repeats archive metadata`);
+        throw new Error(`${packageId}: assembled proof repeats package metadata`);
     }
     if (assembled.licenses.length === 0 || new Set(assembled.licenses).size !== assembled.licenses.length) {
         throw new Error(`${packageId}: assembled proof licenses must be unique and non-empty`);
@@ -924,7 +926,7 @@ export function renderDependencyLicenseReport(
         '',
         'Generated from pnpm-lock.yaml, server/package-lock.json, and the normal-dependency Cargo.lock graph.',
         'Each package keeps its declared license expression and exact archive terms or an explicit assembled notice.',
-        `Assembled notices combine immutable archive metadata with canonical SPDX License List ${SPDX_LICENSE_LIST_VERSION} text. They are not upstream files.`,
+        `Assembled notices use hash-pinned metadata from the lock-resolved install plus canonical SPDX License List ${SPDX_LICENSE_LIST_VERSION} text; only checked proof archives are byte-authenticated against package integrity.`,
         'Generation fails when complete legal evidence is unavailable.',
         '',
         'Source graph digests:',

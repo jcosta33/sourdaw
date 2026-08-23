@@ -124,7 +124,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:030d28a1fd39c99e9ff0215e5f407f98e41fedc31cecedacf23f6525a710f2ce:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:8a70f44caf09b8a3fc1b41353f9cef06c7b7a7fefbfbe28f420000c8a7628406:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:34a22e363a1f0032e2bea75066e8fc94285cb469dd11bf4fbe172b2a5a686257:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0"],

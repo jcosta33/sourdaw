@@ -499,6 +499,47 @@ describe('project license', () => {
         );
     });
 
+    it('rejects duplicate legal members in a locked proof archive', () => {
+        const archivePath = 'release/dependency-license-proofs/example-1.0.0.tgz';
+        const license = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'));
+        mkdirSync(join(root, 'package'), { recursive: true });
+        writeFileSync(join(root, 'package/LICENSE'), license);
+        mkdirSync(dirname(join(root, archivePath)), { recursive: true });
+        execFileSync('tar', ['-czf', join(root, archivePath), 'package/LICENSE', 'package/LICENSE'], { cwd: root });
+        const archive = readFileSync(join(root, archivePath));
+        const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
+        const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
+        write(
+            root,
+            'server/package-lock.json',
+            JSON.stringify({
+                packages: { 'node_modules/example': { version: '1.0.0', resolved: source, integrity: revision } },
+            })
+        );
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'npm',
+            name: 'example',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [],
+            serverLockPath: 'node_modules/example',
+            graphs: ['server/package-lock.json'],
+        };
+        const proof: DependencyLicenseProof = {
+            source,
+            revision,
+            files: [
+                {
+                    archivePath,
+                    sourcePath: 'LICENSE',
+                    sha256: createHash('sha256').update(license).digest('hex'),
+                },
+            ],
+        };
+
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('proof archive repeats LICENSE');
+    });
+
     it('enforces SPDX AND, OR, and WITH semantics against full terms', () => {
         const mit = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
         const apache = readFileSync(join(process.cwd(), 'LICENSE'), 'utf8');
