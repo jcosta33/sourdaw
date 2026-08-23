@@ -194,7 +194,7 @@ describe('resolveAgentReference', () => {
         ];
         project.availableDeviceTypes = [
             { id: 'builtin-sidechain-compressor', name: 'Sidechain Compressor' },
-            { id: 'builtin-eq', name: 'EQ' },
+            { id: 'builtin-eq', name: 'Sidechain Compressor' },
         ];
 
         expect(
