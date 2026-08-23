@@ -826,12 +826,12 @@
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:5cf2bed9ddb3d77dd6e548808a993fabd9c409f667dfce3cc24d8bbe7ab4d2f5:grand-boule-release-proof"
+                "tracked-set-sha256:fb9cfa9ac7a4cc16f46803a3a920ac357a6a0fb3120d441b1f85c42b88a7070b:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADR 0036 is the dated project-owner admission record for the project-authored tuning families, neutral voicings, finite FIR body, and frequency-only prompt/aftersound decay curves. The repository Apache-2.0 grant covers those licensable project bytes.",
+                "ADR 0036 records the project owner's Apache-2.0 grant and admission basis for the listed bytes; it is not independent proof of authorship or rights ownership.",
                 "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
                 "The release checker pins the admitted bytes and rejects legacy literals, including branded morph aliases."
             ],
@@ -1179,6 +1179,16 @@
         }
     ],
     "externalReferences": [
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/rust-lang/crates.io-index"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://index.crates.io/"
+        },
         {
             "surface": "desktop-shell",
             "file": "public/legal/ELECTRON-SOURCES.json",

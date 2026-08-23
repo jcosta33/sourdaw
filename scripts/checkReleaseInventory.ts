@@ -559,23 +559,23 @@ export function assertGrandBouleRustWasmBoundary(root: string): void {
 }
 
 export const GRAND_BOULE_RUST_SOURCE_ADMISSION = {
-    'attack_sampler.rs': 'project-authored implementation',
+    'attack_sampler.rs': 'owner-admitted project implementation',
     'coupled_strings.rs':
-        'project-authored aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
-    'duplex.rs': 'project-authored implementation using standard duplex-string acoustics',
-    'engine.rs': 'project-authored orchestration and product voicing',
-    'hammer.rs': 'project-authored implementation of the cited Stulov scientific relation',
-    'longitudinal.rs': 'project-authored implementation using standard longitudinal-mode physics',
-    'mechanical_noise.rs': 'project-authored implementation informed by cited mechanical-transient observations',
-    'midi2.rs': 'project-authored implementation of public MIDI protocol facts',
-    'mod.rs': 'project-authored host and WASM boundary',
-    'parameters.rs': 'project-authored curves retaining cited Russell and Rossing measurement anchors',
-    'pedals.rs': 'project-authored implementation using standard piano mechanics',
-    'radiation.rs': 'project-authored radiation and microphone model',
-    'soundboard.rs': 'project-authored finite body kernels and processing',
-    'string.rs': 'project-authored modal coefficient implementation from standard string equations',
-    'sympathetic.rs': 'project-authored sympathetic-resonance implementation',
-    'voice.rs': 'project-authored voice lifecycle and coefficient composition',
+        'owner-admitted aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
+    'duplex.rs': 'owner-admitted implementation using standard duplex-string acoustics',
+    'engine.rs': 'owner-admitted orchestration and product voicing',
+    'hammer.rs': 'owner-admitted implementation of the cited Stulov scientific relation',
+    'longitudinal.rs': 'owner-admitted implementation using standard longitudinal-mode physics',
+    'mechanical_noise.rs': 'owner-admitted implementation informed by cited mechanical-transient observations',
+    'midi2.rs': 'owner-admitted implementation of public MIDI protocol facts',
+    'mod.rs': 'owner-admitted host and WASM boundary',
+    'parameters.rs': 'owner-admitted curves retaining cited Russell and Rossing measurement anchors',
+    'pedals.rs': 'owner-admitted implementation using standard piano mechanics',
+    'radiation.rs': 'owner-admitted radiation and microphone model',
+    'soundboard.rs': 'owner-admitted finite body kernels and processing',
+    'string.rs': 'owner-admitted modal coefficient implementation from standard string equations',
+    'sympathetic.rs': 'owner-admitted sympathetic-resonance implementation',
+    'voice.rs': 'owner-admitted voice lifecycle and coefficient composition',
 } as const;
 
 export function assertGrandBouleRustSourceAdmission(root: string): void {

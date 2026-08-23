@@ -29,6 +29,7 @@ export type DependencyLicenseRecord = {
     legalFiles: LegalFile[];
     metadataFiles?: LegalFile[];
     serverLockPath?: string;
+    cargoSource?: string;
     graphs?: string[];
 };
 
@@ -74,6 +75,7 @@ type CargoMetadata = {
         id: string;
         name: string;
         version: string;
+        source: string | null;
         license: string | null;
         license_file: string | null;
         manifest_path: string;
@@ -486,16 +488,18 @@ export function collectCargoDependencyLicenses(root: string): DependencyLicenseR
                     ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
                     : []),
             ],
+            ...(pkg.source === null ? {} : { cargoSource: pkg.source }),
             graphs: ['Cargo.lock'],
         }));
 }
 
-function cargoChecksum(root: string, name: string, version: string): string | undefined {
+function cargoChecksum(root: string, name: string, version: string, source: string): string | undefined {
     const blocks = readFileSync(resolve(root, 'Cargo.lock'), 'utf8').split('[[package]]');
     for (const block of blocks) {
         if (
             new RegExp(`^name = "${name.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'mu').test(block) &&
-            new RegExp(`^version = "${version.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'mu').test(block)
+            new RegExp(`^version = "${version.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'mu').test(block) &&
+            new RegExp(`^source = "${source.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'mu').test(block)
         ) {
             return /^checksum = "([0-9a-f]{64})"$/mu.exec(block)?.[1];
         }
@@ -520,7 +524,14 @@ function pnpmIntegrity(root: string, name: string, version: string): string | un
 
 function expectedProofIdentity(root: string, record: DependencyLicenseRecord): { source: string; revision: string } {
     if (record.ecosystem === 'cargo') {
-        const checksum = cargoChecksum(root, record.name, record.version);
+        const source = record.cargoSource;
+        if (
+            source !== 'registry+https://github.com/rust-lang/crates.io-index' &&
+            source !== 'registry+https://index.crates.io/'
+        ) {
+            throw new Error(`cargo:${record.name}@${record.version}: proof source is not the crates.io registry`);
+        }
+        const checksum = cargoChecksum(root, record.name, record.version, source);
         if (checksum === undefined) {
             throw new Error(`cargo:${record.name}@${record.version}: Cargo.lock checksum is missing`);
         }
@@ -555,6 +566,14 @@ function assertProofFile(
     root: string,
     file: { archivePath: string; sourcePath: string; sha256: string }
 ): LegalFile {
+    const canonicalArchivePath = posix.normalize(file.archivePath.replaceAll('\\', '/'));
+    if (
+        file.archivePath !== canonicalArchivePath ||
+        posix.isAbsolute(canonicalArchivePath) ||
+        !canonicalArchivePath.startsWith(PROOF_DIRECTORY)
+    ) {
+        throw new Error(`${packageId}: proof archive path must be canonical and confined under ${PROOF_DIRECTORY}`);
+    }
     const proofRootPath = resolve(root, PROOF_DIRECTORY);
     const proofRoot = realpathSync(proofRootPath);
     const candidatePath = resolve(root, file.archivePath);

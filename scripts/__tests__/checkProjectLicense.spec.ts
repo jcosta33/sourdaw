@@ -482,7 +482,9 @@ describe('project license', () => {
 
         proof.revision = revision;
         proof.files![0]!.archivePath = 'ws-8.21.1.tgz';
-        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('proof path escapes');
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'proof archive path must be canonical and confined'
+        );
     });
 
     it('confines checked-in proof archives to the exact proof root', () => {
@@ -522,7 +524,7 @@ describe('project license', () => {
             readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.21.1.tgz'))
         );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
-            'proof path escapes release/dependency-license-proofs/'
+            'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );
 
         proof.files![0]!.archivePath = 'release/dependency-license-proofs-confused/ws-8.21.1.tgz';
@@ -532,7 +534,12 @@ describe('project license', () => {
             readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.21.1.tgz'))
         );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
-            'proof path escapes release/dependency-license-proofs/'
+            'proof archive path must be canonical and confined under release/dependency-license-proofs/'
+        );
+
+        proof.files![0]!.archivePath = 'release/dependency-license-proofs/./ws-8.21.1.tgz';
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'proof archive path must be canonical and confined under release/dependency-license-proofs/'
         );
     });
 
@@ -631,24 +638,32 @@ describe('project license', () => {
             ecosystem: 'cargo',
             name: 'example',
             version: '1.0.0',
+            cargoSource: 'registry+https://github.com/rust-lang/crates.io-index',
             license: 'MIT',
             legalFiles: [],
             graphs: ['Cargo.lock'],
         };
 
-        expect(
-            validateDependencyLicenseProof(root, record, {
-                source: 'https://crates.io/api/v1/crates/example/1.0.0/download',
-                revision: `sha256:${checksum}`,
-                files: [
-                    {
-                        archivePath,
-                        sourcePath: 'LICENSE',
-                        sha256: createHash('sha256').update(license).digest('hex'),
-                    },
-                ],
-            })
-        ).toHaveLength(1);
+        const proof: DependencyLicenseProof = {
+            source: 'https://crates.io/api/v1/crates/example/1.0.0/download',
+            revision: `sha256:${checksum}`,
+            files: [
+                {
+                    archivePath,
+                    sourcePath: 'LICENSE',
+                    sha256: createHash('sha256').update(license).digest('hex'),
+                },
+            ],
+        };
+
+        expect(validateDependencyLicenseProof(root, record, proof)).toHaveLength(1);
+
+        write(
+            root,
+            'Cargo.lock',
+            `[[package]]\nname = "example"\nversion = "1.0.0"\nsource = "git+https://example.com/example"\nchecksum = "${checksum}"\n`
+        );
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('Cargo.lock checksum is missing');
     });
 
     it('rejects proof source traversal after separator normalization', () => {
