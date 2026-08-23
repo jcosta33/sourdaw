@@ -126,7 +126,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:2679b5cd7f103bd34d46d2adfb1612587cdfe0af4813c931d60e065224ae4134:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:f6c78ac5891e95105794a3d463af3e5ba7c98f657c6f2101cb859d13277abc52:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:362b8480e9be35c45a075a17d01b1b957e1ba92a423fa6fef7fda72cf1fb7614:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
@@ -215,7 +215,7 @@
             "sources": ["package.json", "server/package.json", "server/package-lock.json", "pnpm-lock.yaml"],
             "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
             "digests": [
-                "sha256:9c6b876c5b9a0239169fbed36da8e51d4e05ccad73647a95fb3c28b5696349b6",
+                "sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
@@ -1157,7 +1157,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "338ab36863edd013e89cd3d07993067f445d143c2cb72c6bfaa4ac4a5e066b3c"
+            "sha256": "66563bdb8109f2155a7494f45f6f854e73a7596f5feca5e4b47ab30febd9b655"
         },
         {
             "path": "server/package.json",
@@ -1169,7 +1169,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "9c6b876c5b9a0239169fbed36da8e51d4e05ccad73647a95fb3c28b5696349b6"
+            "sha256": "e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f"
         },
         {
             "path": "Cargo.toml",
