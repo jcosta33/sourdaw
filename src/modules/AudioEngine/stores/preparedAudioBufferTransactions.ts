@@ -1,4 +1,5 @@
-export type PreparedTransactionRole = 'discard' | 'persistence' | 'promotion' | 'reclamation' | 'reconciliation';
+export type PreparedTransactionRole =
+    'discard' | 'persistence' | 'promotion' | 'reclamation' | 'reconciliation' | 'reopen';
 
 export type PreparedTransaction = {
     role: PreparedTransactionRole;

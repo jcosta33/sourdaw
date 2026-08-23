@@ -206,9 +206,15 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     function recordProjectReservations(ids: readonly string[]): void {
         for (const id of ids) {
             projectReservationEpochById.set(id, (projectReservationEpochById.get(id) ?? 0) + 1);
+            invalidateReopen(id);
             transactions.abort(id, 'discard');
             transactions.abort(id, 'persistence');
             transactions.abort(id, 'reclamation');
+            transactions.abort(id, 'reopen');
+            const runtimeOwner = runtimeOwnerById.get(id);
+            if (runtimeOwner?.kind === 'prepared' && runtimeOwner.status === 'temporary') {
+                evictPreparedRuntimeIfOwned(id, runtimeOwner.leaseId);
+            }
         }
         for (const id of projectReservationEpochById.keys()) {
             clearProjectReservationEpochIfIdle(id);
@@ -596,6 +602,9 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         if (invalidIdentity) {
             return { status: 'failed' as const, reason: invalidIdentity };
         }
+        if (host.hasPinnedReservation(id)) {
+            return { status: 'failed' as const, reason: 'Prepared audio buffer ID is reserved by the project.' };
+        }
         if (!isRuntimeSlotAvailable(id, leaseId)) {
             return { status: 'failed' as const, reason: 'Prepared audio buffer ID is already occupied.' };
         }
@@ -605,9 +614,11 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         const admittedProjectEpoch = projectEpoch;
         const reopenToken = ++nextReopenToken;
         activeReopenTokenById.set(id, reopenToken);
+        let trackedTransaction: PreparedTransaction | undefined;
         try {
             const database = await host.openDatabase();
             const transaction = database.transaction([host.bufferStoreName, host.metadataStoreName], 'readonly');
+            trackedTransaction = transactions.track(id, 'reopen', transaction);
             const [data, metadata] = await Promise.all([
                 awaitPreparedRequest(
                     transaction.objectStore(host.bufferStoreName).get(id) as IDBRequest<
@@ -621,6 +632,9 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 ),
             ]);
             await awaitPreparedTransaction(transaction);
+            if (host.hasPinnedReservation(id)) {
+                return { status: 'failed' as const, reason: 'Prepared audio buffer ID is reserved by the project.' };
+            }
             const currentOwner = runtimeOwnerById.get(id);
             if (
                 projectEpoch !== admittedProjectEpoch ||
@@ -652,6 +666,9 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             if (!Number.isFinite(metadata.lastAccessed) || metadata.sizeInBytes !== data.sizeInBytes) {
                 return { status: 'failed' as const, reason: 'Prepared audio metadata does not match its PCM.' };
             }
+            if (host.hasPinnedReservation(id)) {
+                return { status: 'failed' as const, reason: 'Prepared audio buffer ID is reserved by the project.' };
+            }
             if (!isRuntimeSlotAvailable(id, leaseId)) {
                 return { status: 'failed' as const, reason: 'Prepared audio buffer ID is already occupied.' };
             }
@@ -679,6 +696,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             }
             return { status: 'failed' as const, reason: failureReason(error) };
         } finally {
+            transactions.untrack(id, trackedTransaction);
             if (activeReopenTokenById.get(id) === reopenToken) {
                 activeReopenTokenById.delete(id);
             }

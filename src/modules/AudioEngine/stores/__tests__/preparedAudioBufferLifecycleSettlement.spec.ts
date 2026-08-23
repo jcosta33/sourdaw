@@ -395,6 +395,86 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(audioBufferCache.get('delayed-prepare-promotion')).toBe(temporary);
     });
 
+    it('evicts temporary reopens created after project preparation without disturbing durable runtime owners', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const completedId = 'delayed-project-completed-reopen';
+        const activeId = 'delayed-project-active-reopen';
+        const projectOwnedId = 'delayed-project-owned-runtime';
+        const ordinaryId = 'delayed-project-ordinary-runtime';
+        for (const id of [completedId, activeId]) {
+            await audioBufferCache.persistPreparedBuffer({
+                id,
+                buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+                leaseId: `${id}-lease`,
+            });
+        }
+        clearRuntimeAudioBufferCache();
+        const ordinary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        audioBufferCache.set(ordinaryId, ordinary);
+        await flushIndexedDbTasks();
+        const projectOwned = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        const projectOwnedLeaseId = `${projectOwnedId}-lease`;
+        await audioBufferCache.persistPreparedBuffer({
+            id: projectOwnedId,
+            buffer: projectOwned,
+            leaseId: projectOwnedLeaseId,
+        });
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: projectOwnedId,
+                leaseId: projectOwnedLeaseId,
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+        const project = await audioBufferCache.prepareFromIdb({
+            context: createTestContext(
+                vi.fn((_channels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+            ids: [completedId, activeId, projectOwnedId, ordinaryId],
+        });
+
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id: completedId,
+                leaseId: `${completedId}-lease`,
+                context: createTestContext(
+                    vi.fn((_channels: number, length: number, sampleRate: number) =>
+                        createAudioBuffer({ length, sampleRate })
+                    )
+                ),
+            })
+        ).resolves.toEqual({ status: 'reopened', bufferId: completedId, ownership: 'temporary' });
+        controls.pauseReadonlySettlements();
+        const activeReopen = audioBufferCache.reopenPreparedBuffer({
+            id: activeId,
+            leaseId: `${activeId}-lease`,
+            context: createTestContext(
+                vi.fn((_channels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+        });
+        while (controls.pendingReadonlySettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        expect(project?.publish()).toBe(0);
+        controls.releaseNextReadonlySettlement();
+        await expect(activeReopen).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio reopen was superseded.',
+        });
+        expect(audioBufferCache.has(completedId)).toBe(false);
+        expect(audioBufferCache.has(activeId)).toBe(false);
+        expect(audioBufferCache.get(projectOwnedId)).toBe(projectOwned);
+        expect(audioBufferCache.get(ordinaryId)).toBe(ordinary);
+        expect(project?.publish()).toBe(0);
+        expect(audioBufferCache.has(completedId)).toBe(false);
+        expect(audioBufferCache.has(activeId)).toBe(false);
+    });
+
     it('retries committed prepared persistence by caller-known lease after a module reload', async () => {
         const controls = installFakeAudioIndexedDb();
         const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
@@ -677,7 +757,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
         ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is reserved by the project.' });
         expect(controls.committed.has(id)).toBe(true);
         expect(controls.committedMeta.get(id)).toEqual(metadata);
-        expect(audioBufferCache.get(id)).toBe(buffer);
+        expect(audioBufferCache.has(id)).toBe(false);
     });
 
     it.each(['before-settlement', 'after-commit'] as const)(
@@ -733,7 +813,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
             }
             expect(controls.committed.get(id)).toEqual(stored);
             expect(controls.committedMeta.get(id)).toEqual(metadata);
-            expect(audioBufferCache.get(id)).toBe(buffer);
+            expect(audioBufferCache.has(id)).toBe(false);
         }
     );
 

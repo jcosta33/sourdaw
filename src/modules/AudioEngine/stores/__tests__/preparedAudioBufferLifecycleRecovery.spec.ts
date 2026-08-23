@@ -4,11 +4,13 @@ import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBuffe
 import { createAudioBuffer, createTestContext } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let reclaimPreparedBufferOrphans: typeof import('../audioBufferCache').reclaimPreparedBufferOrphans;
 
 beforeEach(async () => {
     vi.resetModules();
-    ({ audioBufferCache, reclaimPreparedBufferOrphans } = await import('../audioBufferCache'));
+    ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
+        await import('../audioBufferCache'));
 });
 
 afterEach(() => {
@@ -17,6 +19,38 @@ afterEach(() => {
 });
 
 describe('prepared audio-buffer recovery and project admission', () => {
+    it('rejects temporary reopen after the project reserves the exact buffer ID', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'project-reserved-reopen';
+        const leaseId = `${id}-lease`;
+        await audioBufferCache.persistPreparedBuffer({
+            id,
+            buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            leaseId,
+        });
+        clearRuntimeAudioBufferCache();
+        const project = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: [id],
+            context: createTestContext(vi.fn()),
+        });
+        expect(project?.publish()).toBe(0);
+        const createBuffer = vi.fn((_channels: number, length: number, sampleRate: number) =>
+            createAudioBuffer({ length, sampleRate })
+        );
+
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({ id, leaseId, context: createTestContext(createBuffer) })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is reserved by the project.',
+        });
+        expect(createBuffer).not.toHaveBeenCalled();
+        expect(audioBufferCache.has(id)).toBe(false);
+        expect(controls.committed.has(id)).toBe(true);
+        expect(controls.committedMeta.get(id)?.preparedOwner?.status).toBe('temporary');
+    });
+
     it.each(['age', 'size'] as const)(
         'pins a buffer promoted after non-lease preparation through %s collection',
         async (collector) => {
