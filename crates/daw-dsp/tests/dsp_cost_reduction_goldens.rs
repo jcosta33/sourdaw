@@ -132,12 +132,11 @@ fn serial_routing_output_is_unchanged_by_gating_the_dual_amp_chain() {
     assert_equivalent_renders(&optimized, &reference);
 }
 
-/// F9: the optimized engine freezes the dual chain during Serial routing and
-/// clears it before entering DualAmp. The pre-F9 shadow continuously processes
-/// that chain and preserves its state across the transition, so the second
-/// block must differ. Equality means the shadow copied the optimized reset.
+/// F9: Serial routing freezes the optimized dual chain while the pre-F9 shadow
+/// continues processing it. Both paths agree during Serial, then diverge after
+/// switching to DualAmp because they enter with different dual-chain state.
 #[test]
-fn dual_amp_entry_resets_state_that_pre_f9_kept_processing() {
+fn dual_amp_entry_diverges_after_serial_freezes_the_optimized_chain() {
     fn render(mut engine: impl GrinderHarness) -> (Vec<f32>, Vec<f32>) {
         configure_grinder(&mut engine, &[("routingMode", 0.0), ("cabType", 2.0)]);
         let mut serial = stimulus(4096);
