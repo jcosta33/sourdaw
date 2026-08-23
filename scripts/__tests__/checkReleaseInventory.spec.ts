@@ -747,6 +747,12 @@ describe('release inventory', () => {
         expect(() =>
             assertDdspReleaseInventory(repositoryRoot, {
                 ...liveInventory,
+                surfaces: liveInventory.surfaces.filter(({ id }) => id !== 'ddsp-tfjs-runtime'),
+            })
+        ).toThrow('DDSP TF.js runtime release inventory kind does not match provenance');
+        expect(() =>
+            assertDdspReleaseInventory(repositoryRoot, {
+                ...liveInventory,
                 surfaces: liveInventory.surfaces.filter(({ id }) => id !== 'ddsp-models'),
             })
         ).toThrow('DDSP models release inventory kind does not match provenance');
@@ -755,6 +761,9 @@ describe('release inventory', () => {
     it('keeps full live validation bound to Grand Boule source history before WASM verification', () => {
         const historyRequests: string[] = [];
         const stopAfterHistoryValidation = new Error('stop after Grand Boule history validation');
+        const { sourceRevision } = JSON.parse(
+            readFileSync(join(repositoryRoot, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')
+        ) as { sourceRevision: string };
 
         expect(() =>
             checkReleaseInventory(repositoryRoot, {
@@ -767,8 +776,8 @@ describe('release inventory', () => {
                 },
             })
         ).toThrow(stopAfterHistoryValidation);
-        expect(historyRequests.map((request) => request.slice(request.indexOf(':') + 1))).toEqual(
-            GRAND_BOULE_MEASUREMENT_SOURCE_PATHS
+        expect(historyRequests).toEqual(
+            GRAND_BOULE_MEASUREMENT_SOURCE_PATHS.map((path) => `${sourceRevision}:${path}`)
         );
     }, 15_000);
 
