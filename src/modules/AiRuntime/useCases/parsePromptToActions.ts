@@ -628,26 +628,6 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
-                    const effectiveProviderProposal =
-                        providerProposal === null ||
-                        (bridged.actionCommandGraph === undefined && bridged.batchLocalActionIdentities === undefined)
-                            ? providerProposal
-                            : {
-                                  ...providerProposal,
-                                  scope: {
-                                      ...providerProposal.scope,
-                                      targetIds: [
-                                          ...new Set([
-                                              ...providerProposal.scope.targetIds,
-                                              ...(bridged.batchLocalActionIdentities ?? []).map((identity) =>
-                                                  identity.actionType === 'createBus'
-                                                      ? identity.busId
-                                                      : identity.deviceId
-                                              ),
-                                          ]),
-                                      ],
-                                  },
-                              };
                     let verifiedProviderProposalScope = bridged.verifiedProviderProposalScope;
                     if (verifiedProviderProposalScope === undefined && bridged.bassProcessingCopyScope !== undefined) {
                         verifiedProviderProposalScope = {
@@ -697,7 +677,7 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
-                        ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
+                        ...(providerProposal === null ? {} : { providerProposal }),
                         ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
                     };
                 }

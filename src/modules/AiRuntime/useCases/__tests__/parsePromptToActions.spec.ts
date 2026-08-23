@@ -1,14 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { commandTrackDefaultsPort } from '#/modules/Command/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { planAgentRun } from '../planAgentRun';
+
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 
 const {
     mockLogger,
@@ -259,6 +269,12 @@ describe('parsePromptToActions', () => {
         markerStoreValue.value = { markers: [], sections: [] };
     });
 
+    afterEach(() => {
+        clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
+        resetAiWorkflowCommandPreflightFixture();
+    });
+
     it.each([
         {
             prompt: 'set tempo to 128',
@@ -390,7 +406,7 @@ describe('parsePromptToActions', () => {
         expect(result.requiresConfirmation).toBe(true);
     });
 
-    it('materializes compiler-owned binding scope and preserves its action graph', async () => {
+    it('keeps generated binding identities in application authority while the original provider scope reaches planning', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls)
             .mockResolvedValueOnce({
@@ -458,12 +474,69 @@ describe('parsePromptToActions', () => {
             batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
         });
         const createdBusId = result.actions[0]?.type === 'createBus' ? result.actions[0].payload.busId : undefined;
+        if (typeof createdBusId !== 'string') {
+            throw new TypeError('Expected one application-owned bus identity');
+        }
         expect(createdBusId).toMatch(/^bus-ai-/u);
         expect(result.actions[1]).toMatchObject({
             type: 'setTrackGain',
             payload: { trackId: createdBusId, gain: 0.8 },
         });
-        expect(result.providerProposal?.scope.targetIds).toEqual([createdBusId]);
+        expect(result.providerProposal?.scope.targetIds).toEqual([]);
+        expect(result.verifiedProviderProposalScope?.targetIds).toEqual([]);
+
+        const actionLabels = ['Create Drum Bus', 'Set Drum Bus gain'];
+        registerHandlerMap(getArrangementHandlers());
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
+        configureAiWorkflowCommandPreflightFixture('revision-binding');
+        const compiled = compileAgentActionExecution({
+            actions: result.actions,
+            actionCommandGraph: result.actionCommandGraph,
+            actionLabels,
+            context: baseContext,
+            group: { groupId: 'group-binding', groupLabel: 'Create and gain Drum Bus' },
+            intent: 'Create a Drum Bus, then set its gain to 0.8.',
+            projectRevision: 'revision-binding',
+            requiresConfirmation: result.requiresConfirmation,
+            runId: 'run-binding',
+        });
+        expect(compiled.commandBatch.authority.scope.targetIds).toContain(createdBusId);
+
+        const planInput = {
+            request: 'Create a Drum Bus, then set its gain to 0.8.',
+            revision: 'revision-binding',
+            actions: result.actions,
+            actionLabels,
+            scope: {
+                ...compiled.commandBatch.authority.scope,
+                targetIds: [...compiled.commandBatch.authority.scope.targetIds],
+                targetRanges: [...compiled.commandBatch.authority.scope.targetRanges],
+                protectedTargetIds: [...compiled.commandBatch.authority.scope.protectedTargetIds],
+                protectedRanges: [...compiled.commandBatch.authority.scope.protectedRanges],
+            },
+            grants: {
+                ...compiled.commandBatch.authority.grants,
+                allowedOperationPrefixes: [...compiled.commandBatch.authority.grants.allowedOperationPrefixes],
+            },
+            budgets: { limits: compiled.commandBatch.authority.budgets, consumed: {} },
+            requiresConfirmation: compiled.requiresConfirmation,
+            providerProposal: result.providerProposal,
+            verifiedProviderProposalScope: result.verifiedProviderProposalScope,
+            requireProviderProposal: true,
+        };
+        expect(planAgentRun(planInput)).toMatchObject({ status: 'planned' });
+        expect(
+            planAgentRun({
+                ...planInput,
+                providerProposal:
+                    result.providerProposal === undefined
+                        ? undefined
+                        : {
+                              ...result.providerProposal,
+                              scope: { ...result.providerProposal.scope, targetIds: [createdBusId] },
+                          },
+            })
+        ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('scope') });
     });
 
     it('rejects a selected application-expanded workflow before its compiler graph can reach partial acceptance', async () => {
