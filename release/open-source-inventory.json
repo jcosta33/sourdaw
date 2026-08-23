@@ -827,9 +827,9 @@
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADR 0036 records the dated source-admission record, finite FIR body design-around, frequency-only prompt/aftersound decay curves, retained Weinreich aftersound inputs, independently authored project parameters, and engineering-not-legal-certainty boundary.",
+                "ADR 0036 is the dated project-owner admission record for the project-authored tuning families, neutral voicings, finite FIR body, and frequency-only prompt/aftersound decay curves. The repository Apache-2.0 grant covers those licensable project bytes.",
                 "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
-                "The release checker pins admitted bytes and rejects legacy literals, including branded morph aliases; this constrains source identity and does not prove authorship."
+                "The release checker pins the admitted bytes and rejects legacy literals, including branded morph aliases."
             ],
             "obligations": ["Preserve the project-source admission and release-boundary checks."]
         },
@@ -923,7 +923,9 @@
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
             "evidence": ["The WASM gate binds every artifact to its crate closure and pinned toolchain."],
-            "obligations": ["Keep generated hashes, package metadata, project grant, and third-party notices aligned."]
+            "obligations": [
+                "Keep generated hashes, package metadata, Apache-2.0 project licensing, and third-party notices aligned."
+            ]
         },
         {
             "id": "audio-worklet-sources",
@@ -949,7 +951,7 @@
             "evidence": [
                 "Both shipped processors are direct project source; no generator or second source tree exists."
             ],
-            "obligations": ["Carry the project grant into every distribution."]
+            "obligations": ["Ship the project LICENSE and NOTICE with every distribution."]
         },
         {
             "id": "online-sample-sources",

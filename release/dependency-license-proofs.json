@@ -1,554 +1,659 @@
 {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "packages": {
+        "cargo:automerge@0.11.0": {
+            "source": "https://crates.io/api/v1/crates/automerge/0.11.0/download",
+            "revision": "sha256:c1b59cbd9e7685a1ac6bf6046ddcd8acb550fa5bf03c09f6c1056728a742b40d",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "2389cf65ff9ee752ff067b72e42ae6a797b5dfa0fb1c49c68af3707a2913f052"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
+        },
+        "cargo:objc2-foundation@0.3.2": {
+            "source": "https://crates.io/api/v1/crates/objc2-foundation/0.3.2/download",
+            "revision": "sha256:e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "eabbe24e325c7b474c6f5de2e955f4f942ecd385608e4b6609b89a1f68ef39cc"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
+        },
+        "cargo:whisper-rs-sys@0.15.0": {
+            "source": "https://crates.io/api/v1/crates/whisper-rs-sys/0.15.0/download",
+            "revision": "sha256:6986c0fe081241d391f09b9a071fbcbb59720c3563628c3c829057cf69f2a56f",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "662014946424b030a3887685a5e47994f9db9ed964433feb46de68920c41589e"
+                    }
+                ],
+                "licenses": ["Unlicense"]
+            }
+        },
+        "npm:@breezystack/lamejs@1.2.7": {
+            "source": "npm:@breezystack/lamejs@1.2.7",
+            "revision": "sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "cd7e0d13df9e60b931dd7b307c2e1c06af9c44667dda281d5c77d7d226034f9e"
+                    }
+                ],
+                "licenses": ["LGPL-3.0"]
+            }
+        },
+        "npm:@grame/faustwasm@0.16.7": {
+            "source": "npm:@grame/faustwasm@0.16.7",
+            "revision": "sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "27ab25305d38ab8a24cf478339be742af2a8deee3a021c66b2102ab81ae74e3a"
+                    }
+                ],
+                "licenses": ["LGPL-3.0"]
+            }
+        },
         "cargo:block2@0.6.2": {
             "source": "https://crates.io/api/v1/crates/block2/0.6.2/download",
             "revision": "sha256:cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-b416-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "e325c51f01145af3e11f2ee5ce7c47f10697d936c1d90b9ee81a0cf4f700f6d7"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:dispatch2@0.3.1": {
             "source": "https://crates.io/api/v1/crates/dispatch2/0.3.1/download",
             "revision": "sha256:1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-8852-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "f246cf8997c346fdcabb8925ad5be967f397fd8b92630ef7bcc9bdce5d33f775"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:objc2@0.6.4": {
             "source": "https://crates.io/api/v1/crates/objc2/0.6.4/download",
             "revision": "sha256:3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-8852-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "74bfa13bee2c7362432f22886f9749743c78d32eed5916e26a06ff56ae84c901"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:objc2-audio-toolbox@0.3.2": {
             "source": "https://crates.io/api/v1/crates/objc2-audio-toolbox/0.3.2/download",
             "revision": "sha256:6948501a91121d6399b79abaa33a8aa4ea7857fe019f341b8c23ad6e81b79b08",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "1490b8dce5ee70b1b4a953db4109fb5797cefbe9e3973ec9121ee11fc008a012"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:objc2-avf-audio@0.3.2": {
             "source": "https://crates.io/api/v1/crates/objc2-avf-audio/0.3.2/download",
             "revision": "sha256:13a380031deed8e99db00065c45937da434ca987c034e13b87e4441f9e4090be",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "34d2f324811ae1be1ec767394fff06f5405a2c72bb0259cf3649fd61b59ac387"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:objc2-core-audio@0.3.2": {
             "source": "https://crates.io/api/v1/crates/objc2-core-audio/0.3.2/download",
             "revision": "sha256:e1eebcea8b0dbff5f7c8504f3107c68fc061a3eb44932051c8cf8a68d969c3b2",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "62763a0b5d7e8d78402f464c83c2d31e69138b00ec1e19361f6359d500a4274c"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:objc2-core-audio-types@0.3.2": {
             "source": "https://crates.io/api/v1/crates/objc2-core-audio-types/0.3.2/download",
             "revision": "sha256:5a89f2ec274a0cf4a32642b2991e8b351a404d290da87bb6a9a9d8632490bd1c",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "f26066fe0a9932213e31793ec1b72578746e3ceb07dd667be2595daaf84760e1"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:objc2-core-foundation@0.3.2": {
             "source": "https://crates.io/api/v1/crates/objc2-core-foundation/0.3.2/download",
             "revision": "sha256:2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "c0f54260fa1396923f2db4edf1e2d54e8ab09dea214af4b8ce37aaefa7185e60"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:objc2-encode@4.1.0": {
             "source": "https://crates.io/api/v1/crates/objc2-encode/4.1.0/download",
             "revision": "sha256:ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/objc2-8d21-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "cf9a8cc812710344d7fe618a5e615530baeeceae5c2826b9d5bb557dc419f159"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:dasp_sample@0.11.0": {
             "source": "https://crates.io/api/v1/crates/dasp_sample/0.11.0/download",
             "revision": "sha256:0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/dasp-LICENSE-APACHE",
-                    "sha256": "756c8d2ab2dc24f256e1455b5f03937f4933d83d7bc9f2d55009fc962377d512",
-                    "sourcePath": "dasp-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/dasp-LICENSE-MIT",
-                    "sha256": "b1d6df41ed3aa96806e74c729444d7c121d90e6660a6aed01d298e03fde475a0",
-                    "sourcePath": "dasp-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "887e72a805d35311dc78020a553e2106cb5ab83e4b37a66d3c1d9fab17831cfd"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:dlopen2@0.9.0": {
             "source": "https://crates.io/api/v1/crates/dlopen2/0.9.0/download",
             "revision": "sha256:60768c353d76ba6dd1b6332a5dbbdd3bc2dddadc2935f4cc6a9d0f17ca8ecb6a",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/dlopen2-LICENSE",
-                    "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "1c47ec4d4b91c32e9bab236b9b49a4b375cc3db9d54e45820d296b6e6be3c432"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:hexane@1.0.0-alpha.5": {
             "source": "https://crates.io/api/v1/crates/hexane/1.0.0-alpha.5/download",
             "revision": "sha256:81df830f11babb0eee9a082e09135ef0a7d8791f3fe9b279bb9485bf7eaf23e0",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/hexane-LICENSE",
-                    "sha256": "7a06f577e39ec132eb8657abc3471f81f668ff3810a160db79b9b18a9568242b",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "fd8b849b4a2fb4f10d505822bebcecd762c7e547032951625b63d859904bc58c"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:jni@0.22.4": {
             "source": "https://crates.io/api/v1/crates/jni/0.22.4/download",
             "revision": "sha256:5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/jni-LICENSE-APACHE",
-                    "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
-                    "sourcePath": "jni-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/jni-LICENSE-MIT",
-                    "sha256": "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960",
-                    "sourcePath": "jni-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "c49920826559d3b55b635c743ca9b2a463db421541782c6896aad28d43599640"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:jni-macros@0.22.4": {
             "source": "https://crates.io/api/v1/crates/jni-macros/0.22.4/download",
             "revision": "sha256:a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/jni-macros-LICENSE-APACHE",
-                    "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
-                    "sourcePath": "jni-macros-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/jni-macros-LICENSE-MIT",
-                    "sha256": "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960",
-                    "sourcePath": "jni-macros-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "c473e169667d41adddd70480939538b814cbd45006f942ba33e2c83558402719"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:jni-sys-macros@0.4.1": {
             "source": "https://crates.io/api/v1/crates/jni-sys-macros/0.4.1/download",
             "revision": "sha256:38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/jni-sys-LICENSE-APACHE",
-                    "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
-                    "sourcePath": "jni-sys-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/jni-sys-LICENSE-MIT",
-                    "sha256": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1",
-                    "sourcePath": "jni-sys-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "b5a9f66e6501e17d0e790fecffa657df060b1bc41ac4d5f8cb5d7388098326a4"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:jni-min-helper@0.3.4": {
             "source": "https://crates.io/api/v1/crates/jni-min-helper/0.3.4/download",
             "revision": "sha256:913370a00ba1851b0f3369b49d0f3e745da2d20d3f15ecc296a64234ccda45f7",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/jni-min-helper-Cargo.toml",
-                    "sha256": "1f4b7a7f83b056d8851f2232cad771420205bac631010be2e9516ae42b0353f0",
-                    "sourcePath": "Cargo.toml"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "d132bb67b22186d98462b0ce2cd61e48d084df4ea78c3b399edf3322fb9daea3"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:ndk@0.9.0": {
             "source": "https://crates.io/api/v1/crates/ndk/0.9.0/download",
             "revision": "sha256:c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/ndk-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
-                    "sourcePath": "ndk-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/ndk-LICENSE-MIT",
-                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
-                    "sourcePath": "ndk-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "e2fd0c3c8be9826bfc4a52735e948e38588621edb3df9314ca60e819080e9835"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:ndk-sys@0.6.0+11769913": {
             "source": "https://crates.io/api/v1/crates/ndk-sys/0.6.0+11769913/download",
             "revision": "sha256:ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/ndk-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
-                    "sourcePath": "ndk-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/ndk-LICENSE-MIT",
-                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
-                    "sourcePath": "ndk-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "228e4432b6367f8c8348757f9798732b331b1748c116a0af9d2a1ef02b92eaa8"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:ndk-context@0.1.1": {
             "source": "https://crates.io/api/v1/crates/ndk-context/0.1.1/download",
             "revision": "sha256:27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/ndk-context-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
-                    "sourcePath": "ndk-context-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/ndk-context-LICENSE-MIT",
-                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
-                    "sourcePath": "ndk-context-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "caed75f8ae352e5f07b1cf5b34cfb1e47cc4d76485dbaf12fe6cd033075bc67a"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:r-efi@6.0.0": {
             "source": "https://crates.io/api/v1/crates/r-efi/6.0.0/download",
             "revision": "sha256:f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/r-efi-AUTHORS",
-                    "sha256": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111",
-                    "sourcePath": "r-efi-AUTHORS"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "a021f9fb0645cc5de5770cf7f41594c1deff4b388eca933b289752aa52666829"
+                    },
+                    {
+                        "sourcePath": "AUTHORS",
+                        "sha256": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:realfft@3.5.0": {
             "source": "https://crates.io/api/v1/crates/realfft/3.5.0/download",
             "revision": "sha256:f821338fddb99d089116342c46e9f1fbf3828dba077674613e734e01d6ea8677",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/realfft-Cargo.toml",
-                    "sha256": "d72ddbadf9bb55ed21ae973ac97f0bb4e8df2064af628c54b802b2c7d764c8de",
-                    "sourcePath": "Cargo.toml"
-                },
-                {
-                    "path": "release/dependency-license-proofs/realfft-README.md",
-                    "sha256": "1e92c54e7fa08298d2a34ea9aa63b85626c47519873a91cd1028f234e1221608",
-                    "sourcePath": "README.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "fe28135c8d4cb6456b797ff5143e6b65b4e35ded5db778ed962cfdbb8ac98581"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:rustls-platform-verifier-android@0.1.1": {
             "source": "https://crates.io/api/v1/crates/rustls-platform-verifier-android/0.1.1/download",
             "revision": "sha256:f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/rustls-platform-verifier-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
-                    "sourcePath": "rustls-platform-verifier-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/rustls-platform-verifier-LICENSE-MIT",
-                    "sha256": "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c",
-                    "sourcePath": "rustls-platform-verifier-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "34de6835ef5df615acadc4071bb9d38565b23fbe5a9087a7cf30cc7ccfe02a20"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:winapi-i686-pc-windows-gnu@0.4.0": {
             "source": "https://crates.io/api/v1/crates/winapi-i686-pc-windows-gnu/0.4.0/download",
             "revision": "sha256:ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/winapi-LICENSE-APACHE",
-                    "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
-                    "sourcePath": "winapi-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/winapi-LICENSE-MIT",
-                    "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
-                    "sourcePath": "winapi-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "9652222664ffc7e2a26fdcdebdce0917a455b39d8fbcbf451bf0b011a3067bf7"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "cargo:winapi-x86_64-pc-windows-gnu@0.4.0": {
             "source": "https://crates.io/api/v1/crates/winapi-x86_64-pc-windows-gnu/0.4.0/download",
             "revision": "sha256:712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/winapi-LICENSE-APACHE",
-                    "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
-                    "sourcePath": "winapi-LICENSE-APACHE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/winapi-LICENSE-MIT",
-                    "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
-                    "sourcePath": "winapi-LICENSE-MIT"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "Cargo.toml",
+                        "sha256": "a88605a11db5def9b6cf73398e83b3edb72228cb43ea935729fac5cd33cec22c"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:@tensorflow/tfjs@3.21.0": {
             "source": "npm:@tensorflow/tfjs@3.21.0",
             "revision": "sha512-khcARd3/872llL/oF4ouR40qlT71mylU66PGT8kHP/GJ5YKj44sv8lDRjU7lOVlJK7jsJFWEsNVHI3eMc/GWNQ==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "5d0556a3719282f13e20da1f0cc8c23659ea9b29039d67a645124b22783ea62e"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-backend-cpu@3.21.0": {
             "source": "npm:@tensorflow/tfjs-backend-cpu@3.21.0",
             "revision": "sha512-88S21UAdzyK0CsLUrH17GPTD+26E85OP9CqmLZslaWjWUmBkeTQ5Zqyp6iK+gELnLxPx6q7JsNEeFuPv4254lQ==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "41215eef78ee37f8dfb645be2bf9260053b2ac92f0406a9e554e220b0dd85193"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-backend-webgl@3.21.0": {
             "source": "npm:@tensorflow/tfjs-backend-webgl@3.21.0",
             "revision": "sha512-N4zitIAT9IX8B8oe489qM3f3VcESxGZIZvHmVP8varOQakTvTX859aaPo1s8hK1qCy4BjSGbweooZe4U8D4kTQ==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "8295ee6be50a0e8bce4bb6135659ab5c711ea4f55e867cc46683a8590ff7237d"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-converter@3.21.0": {
             "source": "npm:@tensorflow/tfjs-converter@3.21.0",
             "revision": "sha512-12Y4zVDq3yW+wSjSDpSv4HnpL2sDZrNiGSg8XNiDE4HQBdjdA+a+Q3sZF/8NV9y2yoBhL5L7V4mMLDdbZBd9/Q==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "ad50a47391eb3db0a137c56ead42514eae7a74339651575acbf340edcc95f631"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-core@3.21.0": {
             "source": "npm:@tensorflow/tfjs-core@3.21.0",
             "revision": "sha512-YSfsswOqWfd+M4bXIhT3hwtAb+IV8+ODwIxwdFR/7jTAPZP1wMVnSlpKnXHAN64HFOiP+Tm3HmKusEZ0+09A0w==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "0a91de61b37ab934ce7a1b2d114e642f08bfe70710d20bfc3abe38db2b4dbdd6"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-data@3.21.0": {
             "source": "npm:@tensorflow/tfjs-data@3.21.0",
             "revision": "sha512-eFLfw2wIcFNxnP2Iv/SnVlihehzKMumk1b5Prcx1ixk/SbkCo5u0Lt7OVOWaEOKVqvB2sT+dJcTjAh6lrCC/QA==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "df72eabd4e10a6caeb76d29f485dc12edd3fb9dbb2dd2d1d227932282dc768fe"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-layers@3.21.0": {
             "source": "npm:@tensorflow/tfjs-layers@3.21.0",
             "revision": "sha512-CMVXsraakXgnXEnqD9QbtResA7nvV7Jz20pGmjFIodcQkClgmFFhdCG5N+zlVRHEz7VKG2OyfhltZ0dBq/OAhA==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                },
-                {
-                    "path": "release/dependency-license-proofs/tfjs-layers-80cf3c-LICENSE",
-                    "sha256": "a79c269bc0e74de72571cea54c5f92ed74cbc6e8d1250a9fdb40357383d9dc4b",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "d76599056ff65220db12e7c76db26596f9ac1d83c4f4cf63b04a1566712434ab"
+                    }
+                ],
+                "licenses": ["Apache-2.0", "MIT"]
+            }
         },
         "npm:@tensorflow/tfjs-backend-cpu@4.22.0": {
             "source": "npm:@tensorflow/tfjs-backend-cpu@4.22.0",
             "revision": "sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "9400f1a4ea5f144646b62c8b393f54ed53b3446a2827321ba6b462ac220f0859"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-backend-webgpu@4.22.0": {
             "source": "npm:@tensorflow/tfjs-backend-webgpu@4.22.0",
             "revision": "sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "cd48bc505923ebb14ade8b7eaa550012a6dd2995a47c1c5dba228371ad84e1aa"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-converter@4.22.0": {
             "source": "npm:@tensorflow/tfjs-converter@4.22.0",
             "revision": "sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "b6a4f89058a5f4a5fdfb7fe0fe4cf3181023bdedcc80a374e0349c002ab068b5"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:@tensorflow/tfjs-core@4.22.0": {
             "source": "npm:@tensorflow/tfjs-core@4.22.0",
             "revision": "sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "d4b3c3f337f7ea6de582ac1320b7521abe970a9b11f4d486e6929b29ccdbd283"
+                    }
+                ],
+                "licenses": ["Apache-2.0"]
+            }
         },
         "npm:babel-plugin-add-module-exports@0.2.1": {
             "source": "npm:babel-plugin-add-module-exports@0.2.1",
             "revision": "sha512-3AN/9V/rKuv90NG65m4tTHsI04XrCKsWbztIcW7a8H5iIN7WlvWucRtVV0V/rT4QvtA11n5Vmp20fLwfMWqp6g==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/babel-plugin-add-module-exports-package.json",
-                    "sha256": "5f4ec73d64724b7127a62414a2d4da25e57c8e68cc44c6794de3efa0d5d49eea",
-                    "sourcePath": "package.json"
-                },
-                {
-                    "path": "release/dependency-license-proofs/babel-plugin-add-module-exports-README.md",
-                    "sha256": "f62d1adc0b46f7ef8809e61418370e7fd707fd33348cbcc08e27f5e01214ff57",
-                    "sourcePath": "README.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "5f4ec73d64724b7127a62414a2d4da25e57c8e68cc44c6794de3efa0d5d49eea"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:buffer-alloc@1.2.0": {
             "source": "npm:buffer-alloc@1.2.0",
             "revision": "sha512-CFsHQgjtW1UChdXgbyJGtnm+O/uLQeZdtbDo8mfUgYXCHSM1wgrVxXm6bSyrUuErEb+4sYVGCzASBRot7zyrow==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/buffer-alloc-LICENSE",
-                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "d607efec5e54b94b612bd7065186e00f1591fade12aaf41a170606d02f6ac670"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:buffer-alloc-unsafe@1.1.0": {
             "source": "npm:buffer-alloc-unsafe@1.1.0",
             "revision": "sha512-TEM2iMIEQdJ2yjPJoSIsldnleVaAk1oW3DBVUykyOLsEsFmEc9kn+SFFPz+gl54KQNxlDnAwCXosOS9Okx2xAg==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/buffer-alloc-unsafe-LICENSE",
-                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "abd77cd9f8e32a213714c6a188c62a59d97bb9359824022db89f57da4949a549"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:buffer-fill@1.0.0": {
             "source": "npm:buffer-fill@1.0.0",
             "revision": "sha512-T7zexNBwiiaCOGDg9xNX9PBmjrubblRkENuptryuI64URkXDFum9il/JGL8Lm8wYfAXpredVXXZz7eMHilimiQ==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/buffer-fill-LICENSE",
-                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "602a10e946f2f5eff5b19781d13fb3b589babe12815a1a9be4c7a673eb0fdd4f"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
+        },
+        "npm:dijkstrajs@1.0.3": {
+            "source": "npm:dijkstrajs@1.0.3",
+            "revision": "sha512-qiSlmBq9+BCdCA/L46dw8Uy93mloxsPSbwnm5yrKn2vMPiy8KyAskTF6zuV/j5BMsmOGZDPs7KjU+mjb670kfA==",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "b523e007019401be68405b83e846ef9da4682026e8be339ee4ee7888e90b865a"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:guid-typescript@1.0.9": {
             "source": "npm:guid-typescript@1.0.9",
             "revision": "sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/guid-typescript-package.json",
-                    "sha256": "ed86856ee95fe87eadd8552b6803a85b7fb4f6cce08603bf9c8385972b5badb6",
-                    "sourcePath": "package.json"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "ed86856ee95fe87eadd8552b6803a85b7fb4f6cce08603bf9c8385972b5badb6"
+                    }
+                ],
+                "licenses": ["ISC"]
+            }
         },
         "npm:onnxruntime-common@1.27.0": {
             "source": "npm:onnxruntime-common@1.27.0",
             "revision": "sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/onnxruntime-LICENSE",
-                    "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "740784b70b19207529b9a08229aaa4bf7c211afcc30ab4594daa32891ccffb94"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:onnxruntime-web@1.27.0": {
             "source": "npm:onnxruntime-web@1.27.0",
             "revision": "sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/onnxruntime-LICENSE",
-                    "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "8cdbce0a4f6205109083cc4675477632147ed48e13fa7f891827fd08ef3c818c"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:react-remove-scroll-bar@2.3.8": {
             "source": "npm:react-remove-scroll-bar@2.3.8",
             "revision": "sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/react-remove-scroll-bar-LICENSE",
-                    "sha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84",
-                    "sourcePath": "LICENSE"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "e372f857ce05f266137c65293436b5380fec42ac311e6acb9378ed78b98d75d0"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:tr46@0.0.3": {
             "source": "npm:tr46@0.0.3",
             "revision": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==",
-            "files": [
-                {
-                    "path": "release/dependency-license-proofs/tr46-LICENSE.md",
-                    "sha256": "499d6d466d064e0460427967a344e2a32fcb86ea8c6cd1a285ec4f1fa03fba67",
-                    "sourcePath": "LICENSE.md"
-                }
-            ]
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "615087f58ee138fd35c2b414c355b72e36e5919725b8aecc1c34f6a5585b9779"
+                    }
+                ],
+                "licenses": ["MIT"]
+            }
         },
         "npm:ws@8.21.1": {
             "source": "https://registry.npmjs.org/ws/-/ws-8.21.1.tgz",

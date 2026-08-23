@@ -2,10 +2,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
+import parseSpdxExpression from 'spdx-expression-parse';
 import { parseDocument } from 'yaml';
+
+import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const DEPENDENCY_LICENSE_REPORT_PATH = 'public/legal/DEPENDENCY-LICENSES.txt';
 export const SERVER_THIRD_PARTY_NOTICES_PATH = 'server/THIRD-PARTY-NOTICES.md';
@@ -23,17 +26,22 @@ export type DependencyLicenseRecord = {
     version: string;
     license: string;
     legalFiles: LegalFile[];
+    metadataFiles?: LegalFile[];
     graphs?: string[];
 };
 
 export type DependencyLicenseProof = {
     source: string;
     revision: string;
-    files: Array<{ path: string; sourcePath: string; sha256: string }>;
+    files?: Array<{ path: string; sourcePath: string; sha256: string }>;
+    assembled?: {
+        metadata: Array<{ sourcePath: string; sha256: string }>;
+        licenses: string[];
+    };
 };
 
 type DependencyLicenseProofManifest = {
-    schemaVersion: 2;
+    schemaVersion: 3;
     packages: Record<string, DependencyLicenseProof>;
 };
 
@@ -81,8 +89,107 @@ type CargoMetadata = {
 };
 
 const LEGAL_FILE = /^(?:licen[cs]e|notice|copying|copyright)(?:[._-].*)?$/iu;
+const SOURCE_FILE_SUFFIX = /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|java|js|jsx|m|mm|py|rs|ts|tsx)$/iu;
 const COMPLETE_MIT_NOTICE = /copyright[\s\S]+permission is hereby granted[\s\S]+the above copyright notice/iu;
 const PROOF_DIRECTORY = 'release/dependency-license-proofs/';
+const SPDX_LICENSE_LIST_VERSION = '3.28.0';
+const SPDX_LICENSE_TEXTS: Readonly<Record<string, { path: string; sha256: string; source: string }>> = {
+    'Apache-2.0': {
+        path: 'release/spdx-license-texts/Apache-2.0.txt',
+        sha256: '074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff',
+        source: 'https://github.com/spdx/license-list-data/blob/v3.28.0/text/Apache-2.0.txt',
+    },
+    ISC: {
+        path: 'release/spdx-license-texts/ISC.txt',
+        sha256: 'f2ec607f67bb0dd3053b49835b02110d5cd0f8eb6da3aac4dc0b142a6b299be9',
+        source: 'https://github.com/spdx/license-list-data/blob/v3.28.0/text/ISC.txt',
+    },
+    'LGPL-3.0': {
+        path: 'release/spdx-license-texts/LGPL-3.0.txt',
+        sha256: '996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1',
+        source: 'https://github.com/spdx/license-list-data/blob/v3.28.0/text/LGPL-3.0-only.txt',
+    },
+    MIT: {
+        path: 'release/spdx-license-texts/MIT.txt',
+        sha256: 'b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5',
+        source: 'https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt',
+    },
+    Unlicense: {
+        path: 'release/spdx-license-texts/Unlicense.txt',
+        sha256: '0bdebfeda07d45dada625ae1317c6f833186e798b171d0db640bcf32e92a8240',
+        source: 'https://github.com/spdx/license-list-data/blob/v3.28.0/text/Unlicense.txt',
+    },
+};
+const LICENSE_SIGNATURES: Readonly<Record<string, readonly RegExp[]>> = {
+    '0BSD': [
+        /permission\s+to\s+use,\s+copy,\s+modify,\s+and\/or\s+distribute\s+this\s+software\s+for\s+any\s+purpose\s+with\s+or\s+without\s+fee/iu,
+        /the software is provided ["'“]as is["'”]/iu,
+    ],
+    'Apache-2.0': [
+        /Apache License\s+Version 2\.0/iu,
+        /terms and conditions for use, reproduction, and distribution/iu,
+        /grant of copyright license/iu,
+    ],
+    'BSD-2-Clause': [
+        /redistribution and use in source and binary forms/iu,
+        /redistributions of source code must retain/iu,
+        /redistributions in binary form must reproduce/iu,
+        /this software is provided by the copyright holders and contributors\s+["'“]as is["'”]/iu,
+    ],
+    'BSD-3-Clause': [
+        /redistribution and use in source and binary forms/iu,
+        /neither the name of [\s\S]{0,100} nor the names? of\s+(?:its|the)\s+contributors/iu,
+        /this software is provided by the copyright holders and contributors\s+["'“]as\s+is["'”]/iu,
+    ],
+    'CDLA-Permissive-2.0': [
+        /Community Data License Agreement/iu,
+        /Conditions for Sharing Data/iu,
+        /No Warranty; Limitation of Liability/iu,
+    ],
+    ISC: [
+        /permission\s+to\s+use,\s+copy,\s+modify,\s+and\/or\s+distribute\s+this\s+software\s+for\s+any\s+purpose\s+with\s+or\s+without\s+fee/iu,
+        /the software is provided ["'“]as is["'”]/iu,
+        /(?:disclaims\s+all\s+warranties|all\s+implied\s+warranties)[\s\S]*?merchantability/iu,
+    ],
+    'LGPL-2.1-or-later': [
+        /GNU Lesser General Public License/iu,
+        /either version 2\.1 of the License, or \(at your option\) any later version/iu,
+        /without any warranty/iu,
+    ],
+    'LGPL-3.0': [/GNU Lesser General Public License/iu, /version 3, 29 June 2007/iu, /GNU General Public License/iu],
+    MIT: [
+        /permission is hereby granted,\s+free of charge/iu,
+        /the above copyright notice and this permission notice[\s\S]{0,100}?shall be\s+included/iu,
+        /the software is provided ["'“]as is["'”]/iu,
+    ],
+    'MIT-0': [
+        /MIT No Attribution/iu,
+        /permission is hereby granted, free of charge/iu,
+        /the software is provided ["'“]as is["'”]/iu,
+    ],
+    'MPL-2.0': [/Mozilla Public License Version 2\.0/iu, /Source Code Form/iu, /Covered Software/iu],
+    'Unicode-3.0': [
+        /UNICODE LICENSE V3/iu,
+        /COPYRIGHT AND PERMISSION NOTICE/iu,
+        /THE DATA FILES AND SOFTWARE ARE PROVIDED ["'“]AS IS["'”]/iu,
+    ],
+    Unlicense: [
+        /This is free and unencumbered software released into the public domain/iu,
+        /Anyone is free to copy, modify, publish, use, compile, sell, or\s+distribute this software/iu,
+        /THE SOFTWARE IS PROVIDED ["'“]AS\s+IS["'”]/iu,
+    ],
+    Zlib: [
+        /This software is provided ["'“]as-is["'”]/iu,
+        /The origin of this software must not be misrepresented/iu,
+        /This notice may not be removed or altered from any source distribution/iu,
+    ],
+};
+const EXCEPTION_SIGNATURES: Readonly<Record<string, readonly RegExp[]>> = {
+    'LLVM-exception': [
+        /LLVM Exceptions? to the Apache 2\.0 License/iu,
+        /limitations under the License with the following exceptions/iu,
+    ],
+};
 const BUILD_ONLY_PLATFORM_NPM_PACKAGES = new Set([
     '@rollup/rollup-android-arm-eabi@4.60.1',
     '@rollup/rollup-android-arm64@4.60.1',
@@ -116,6 +223,10 @@ function sha256(contents: Buffer): string {
     return createHash('sha256').update(contents).digest('hex');
 }
 
+function readJsonFile<T>(path: string): T {
+    return parseJsonWithUniqueKeys<T>(readFileSync(path, 'utf8'), path);
+}
+
 export function readLegalFile(path: string, label: string): LegalFile {
     const bytes = readFileSync(path);
     const contents = bytes.toString('utf8');
@@ -139,7 +250,7 @@ function packageLegalFiles(directory: string, explicitLicenseFile?: string): Leg
                 if (!['.git', 'node_modules', 'target'].includes(entry.name)) {
                     queue.push(path);
                 }
-            } else if (entry.isFile() && LEGAL_FILE.test(entry.name)) {
+            } else if (entry.isFile() && LEGAL_FILE.test(entry.name) && !SOURCE_FILE_SUFFIX.test(entry.name)) {
                 paths.push(path);
             }
         }
@@ -172,6 +283,10 @@ function assertEquivalent(left: DependencyLicenseRecord, right: DependencyLicens
         JSON.stringify({
             license: record.license,
             legalFiles: record.legalFiles.map(({ label, sha256: digest }) => ({ label, sha256: digest })),
+            metadataFiles: record.metadataFiles?.map(({ label, sha256: digest }) => ({
+                label,
+                sha256: digest,
+            })),
         });
     if (comparable(left) !== comparable(right)) {
         throw new Error(`${left.ecosystem}:${left.name}@${left.version}: peer-context legal metadata differs`);
@@ -195,9 +310,9 @@ export function assertPlatformRestrictedNpmPackage(packageId: string): void {
 function assertBuildOnlyPlatformNpmPackage(root: string, packageId: string): void {
     assertPlatformRestrictedNpmPackage(packageId);
     const electronBuilder = readFileSync(resolve(root, 'electron-builder.yml'), 'utf8');
-    const packageMetadata = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+    const packageMetadata = readJsonFile<{
         scripts?: { build?: unknown };
-    };
+    }>(resolve(root, 'package.json'));
     if (!/^\s*- '!node_modules\/\*\*\/\*'$/mu.test(electronBuilder)) {
         throw new Error(`${packageId}: electron packaging no longer excludes node_modules`);
     }
@@ -207,13 +322,14 @@ function assertBuildOnlyPlatformNpmPackage(root: string, packageId: string): voi
 }
 
 export function collectNpmDependencyLicenses(root: string): DependencyLicenseRecord[] {
-    const report = JSON.parse(
+    const report = parseJsonWithUniqueKeys<Record<string, PnpmLicenseEntry[]>>(
         execFileSync('pnpm', ['licenses', 'list', '--prod', '--json'], {
             cwd: root,
             encoding: 'utf8',
             maxBuffer: 50 * 1024 * 1024,
-        })
-    ) as Record<string, PnpmLicenseEntry[]>;
+        }),
+        'pnpm licenses list --prod --json'
+    );
     const records = new Map<string, DependencyLicenseRecord>();
     for (const entries of Object.values(report)) {
         for (const entry of entries) {
@@ -222,14 +338,14 @@ export function collectNpmDependencyLicenses(root: string): DependencyLicenseRec
                 if (!existsSync(packageJsonPath)) {
                     throw new Error(`${packagePath}: pnpm reported a dependency that is not installed`);
                 }
-                const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+                const packageJson = readJsonFile<{
                     name?: unknown;
                     version?: unknown;
                     license?: unknown;
                     os?: unknown;
                     cpu?: unknown;
                     libc?: unknown;
-                };
+                }>(packageJsonPath);
                 if (typeof packageJson.name !== 'string' || typeof packageJson.version !== 'string') {
                     throw new TypeError(`${packageJsonPath}: package identity is incomplete`);
                 }
@@ -243,6 +359,7 @@ export function collectNpmDependencyLicenses(root: string): DependencyLicenseRec
                     version: packageJson.version,
                     license: licenseExpression(packageJson.license, packageJsonPath),
                     legalFiles: packageLegalFiles(packagePath),
+                    metadataFiles: [readLegalFile(packageJsonPath, 'package.json')],
                     graphs: ['pnpm-lock.yaml'],
                 };
                 const key = `${record.name}@${record.version}`;
@@ -260,9 +377,13 @@ export function collectNpmDependencyLicenses(root: string): DependencyLicenseRec
 
 export function collectNpmLockDependencyLicenses(root: string): DependencyLicenseRecord[] {
     const lockPath = resolve(root, 'server/package-lock.json');
-    const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as PackageLock;
+    const lock = readJsonFile<PackageLock>(lockPath);
     const included = new Set<string>();
-    const queue = Object.keys(lock.packages['']?.dependencies ?? {}).map((name) => `node_modules/${name}`);
+    const rootDependencies = {
+        ...lock.packages['']?.dependencies,
+        ...lock.packages['']?.optionalDependencies,
+    };
+    const queue = Object.keys(rootDependencies).map((name) => `node_modules/${name}`);
     while (queue.length > 0) {
         const path = queue.pop()!;
         if (included.has(path)) {
@@ -328,13 +449,14 @@ function runtimeCargoPackageIds(metadata: CargoMetadata): Set<string> {
 }
 
 export function collectCargoDependencyLicenses(root: string): DependencyLicenseRecord[] {
-    const metadata = JSON.parse(
+    const metadata = parseJsonWithUniqueKeys<CargoMetadata>(
         execFileSync('cargo', ['metadata', '--locked', '--format-version', '1'], {
             cwd: root,
             encoding: 'utf8',
             maxBuffer: 100 * 1024 * 1024,
-        })
-    ) as CargoMetadata;
+        }),
+        'cargo metadata --locked --format-version 1'
+    );
     const workspace = new Set(metadata.workspace_members);
     const runtime = runtimeCargoPackageIds(metadata);
     return metadata.packages
@@ -348,6 +470,12 @@ export function collectCargoDependencyLicenses(root: string): DependencyLicenseR
                 dirname(pkg.manifest_path),
                 pkg.license_file === null ? undefined : pkg.license_file
             ),
+            metadataFiles: [
+                readLegalFile(pkg.manifest_path, basename(pkg.manifest_path)),
+                ...(existsSync(resolve(dirname(pkg.manifest_path), 'AUTHORS'))
+                    ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
+                    : []),
+            ],
             graphs: ['Cargo.lock'],
         }));
 }
@@ -392,7 +520,7 @@ function expectedProofIdentity(root: string, record: DependencyLicenseRecord): {
         };
     }
     if (record.graphs?.includes('server/package-lock.json')) {
-        const lock = JSON.parse(readFileSync(resolve(root, 'server/package-lock.json'), 'utf8')) as PackageLock;
+        const lock = readJsonFile<PackageLock>(resolve(root, 'server/package-lock.json'));
         const entry = lock.packages[`node_modules/${record.name}`];
         if (entry === undefined || typeof entry.resolved !== 'string' || typeof entry.integrity !== 'string') {
             throw new Error(`npm:${record.name}@${record.version}: server/package-lock.json identity is incomplete`);
@@ -415,20 +543,181 @@ function assertProofFile(
     root: string,
     file: { path: string; sourcePath: string; sha256: string }
 ): LegalFile {
-    if (!file.path.startsWith(PROOF_DIRECTORY) || /(?:^|\/)(?:SPDX-|LICENSE$)/u.test(file.path)) {
+    const proofRootPath = resolve(root, PROOF_DIRECTORY);
+    const proofRoot = realpathSync(proofRootPath);
+    const candidatePath = resolve(root, file.path);
+    const candidateRelative = relative(proofRootPath, candidatePath);
+    if (
+        candidateRelative === '' ||
+        candidateRelative.startsWith(`..${sep}`) ||
+        candidateRelative === '..' ||
+        isAbsolute(candidateRelative)
+    ) {
+        throw new Error(`${packageId}: proof path escapes ${PROOF_DIRECTORY}`);
+    }
+    const realPath = realpathSync(candidatePath);
+    const realRelative = relative(proofRoot, realPath);
+    if (
+        realRelative === '' ||
+        realRelative.startsWith(`..${sep}`) ||
+        realRelative === '..' ||
+        isAbsolute(realRelative)
+    ) {
+        throw new Error(`${packageId}: proof path escapes ${PROOF_DIRECTORY}`);
+    }
+    if (/(?:^|\/)(?:SPDX-|LICENSE$)/u.test(file.path)) {
         throw new Error(`${packageId}: proof must be package-specific checked-in source evidence`);
     }
     if (file.sourcePath.trim().length === 0) {
         throw new Error(`${packageId}: proof source path is missing`);
     }
-    const legal = readLegalFile(resolve(root, file.path), file.path);
-    if (legal.contents.trim().length === 0 || !/license|copyright|permission/iu.test(legal.contents)) {
-        throw new Error(`${packageId}: proof at ${file.path} lacks legal or copyright content`);
-    }
+    const legal = readLegalFile(realPath, file.path);
     if (legal.sha256 !== file.sha256) {
         throw new Error(`${packageId}: dependency proof drifted at ${file.path}`);
     }
     return { ...legal, label: `${file.sourcePath} from ${proof.source}@${proof.revision}` };
+}
+
+type SpdxNode = ReturnType<typeof parseSpdxExpression>;
+
+function normalizeLicenseExpression(expression: string): string {
+    return expression.replaceAll(/\s*\/\s*/gu, ' OR ');
+}
+
+function matchesSignatures(contents: string, signatures: readonly RegExp[]): boolean {
+    const normalized = contents.replaceAll(/^\s*\/\/\s?/gmu, '');
+    return signatures.every((signature) => signature.test(normalized));
+}
+
+function hasLicenseEvidence(license: string, files: readonly LegalFile[]): boolean {
+    const signatures = LICENSE_SIGNATURES[license];
+    if (signatures === undefined) {
+        throw new Error(`unsupported SPDX evidence signature: ${license}`);
+    }
+    return files.some(({ contents }) => matchesSignatures(contents, signatures));
+}
+
+function hasExceptionEvidence(exception: string, files: readonly LegalFile[]): boolean {
+    const signatures = EXCEPTION_SIGNATURES[exception];
+    if (signatures === undefined) {
+        throw new Error(`unsupported SPDX exception evidence signature: ${exception}`);
+    }
+    return files.some(({ contents }) => matchesSignatures(contents, signatures));
+}
+
+function satisfiesSpdxNode(node: SpdxNode, files: readonly LegalFile[]): boolean {
+    if ('license' in node) {
+        return (
+            hasLicenseEvidence(node.license, files) &&
+            (node.exception === undefined || hasExceptionEvidence(node.exception, files))
+        );
+    }
+    if (node.conjunction === 'and') {
+        return satisfiesSpdxNode(node.left, files) && satisfiesSpdxNode(node.right, files);
+    }
+    return satisfiesSpdxNode(node.left, files) || satisfiesSpdxNode(node.right, files);
+}
+
+export function assertLicenseExpressionEvidence(
+    packageId: string,
+    expression: string,
+    legalFiles: readonly LegalFile[]
+): void {
+    let parsed: SpdxNode;
+    try {
+        parsed = parseSpdxExpression(normalizeLicenseExpression(expression));
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${packageId}: invalid SPDX license expression ${expression}: ${message}`);
+    }
+    if (!satisfiesSpdxNode(parsed, legalFiles)) {
+        throw new Error(`${packageId}: evidence does not substantiate declared license ${expression}`);
+    }
+}
+
+function readCanonicalSpdxText(root: string, license: string): LegalFile {
+    const source = SPDX_LICENSE_TEXTS[license];
+    if (source === undefined) {
+        throw new Error(`assembled proof uses unsupported canonical SPDX license: ${license}`);
+    }
+    const legal = readLegalFile(resolve(root, source.path), source.path);
+    if (legal.sha256 !== source.sha256) {
+        throw new Error(`${source.path}: SPDX ${SPDX_LICENSE_LIST_VERSION} text drifted`);
+    }
+    return { ...legal, label: `${license} canonical text from ${source.source}` };
+}
+
+function validateAssembledProof(
+    packageId: string,
+    proof: DependencyLicenseProof,
+    record: DependencyLicenseRecord,
+    root: string
+): LegalFile[] {
+    const assembled = proof.assembled!;
+    const expectedMetadata = new Map((record.metadataFiles ?? []).map((file) => [file.label, file] as const));
+    if (expectedMetadata.size === 0) {
+        throw new Error(`${packageId}: assembled proof has no immutable archive metadata`);
+    }
+    if (assembled.metadata.length !== expectedMetadata.size) {
+        throw new Error(`${packageId}: assembled proof metadata set is incomplete`);
+    }
+    const metadataFiles = assembled.metadata.map(({ sourcePath, sha256: expectedSha256 }) => {
+        const metadata = expectedMetadata.get(sourcePath);
+        if (metadata === undefined || metadata.sha256 !== expectedSha256) {
+            throw new Error(`${packageId}: assembled proof metadata drifted at ${sourcePath}`);
+        }
+        return metadata;
+    });
+    if (new Set(assembled.metadata.map(({ sourcePath }) => sourcePath)).size !== assembled.metadata.length) {
+        throw new Error(`${packageId}: assembled proof repeats archive metadata`);
+    }
+    if (assembled.licenses.length === 0 || new Set(assembled.licenses).size !== assembled.licenses.length) {
+        throw new Error(`${packageId}: assembled proof licenses must be unique and non-empty`);
+    }
+    const canonicalTerms = assembled.licenses.map((license) => readCanonicalSpdxText(root, license));
+    assertLicenseExpressionEvidence(packageId, record.license, canonicalTerms);
+
+    const metadataBlocks = metadataFiles.map((file) => {
+        const contents = file.contents.endsWith('\n') ? file.contents : `${file.contents}\n`;
+        return [
+            `===== archive metadata ${file.label} sha256:${file.sha256} =====`,
+            contents,
+            `===== end archive metadata ${file.label} =====`,
+        ].join('\n');
+    });
+    const licenseBlocks = canonicalTerms.map((file, index) => {
+        const license = assembled.licenses[index]!;
+        const contents = file.contents.endsWith('\n') ? file.contents : `${file.contents}\n`;
+        return [
+            `===== canonical SPDX ${license} sha256:${file.sha256} =====`,
+            `Source: ${SPDX_LICENSE_TEXTS[license]!.source}`,
+            contents,
+            `===== end canonical SPDX ${license} =====`,
+        ].join('\n');
+    });
+    const contents = [
+        'Sourdaw assembled dependency compliance notice',
+        '',
+        `Package: ${packageId}`,
+        `Locked source: ${proof.source}`,
+        `Locked revision: ${proof.revision}`,
+        `Declared license: ${record.license}`,
+        `Selected SPDX terms: ${assembled.licenses.join(', ')}`,
+        '',
+        'The locked published archive omits full license terms. This checked-in notice combines its immutable metadata with canonical SPDX License List text. It is assembled evidence, not an upstream file.',
+        '',
+        ...metadataBlocks,
+        ...licenseBlocks,
+        '',
+    ].join('\n');
+    const bytes = Buffer.from(contents, 'utf8');
+    return [
+        {
+            label: `assembled notice from locked archive metadata and SPDX ${SPDX_LICENSE_LIST_VERSION}`,
+            sha256: sha256(bytes),
+            contents,
+        },
+    ];
 }
 
 export function validateDependencyLicenseProof(
@@ -441,36 +730,47 @@ export function validateDependencyLicenseProof(
     if (proof.source !== expected.source || proof.revision !== expected.revision) {
         throw new Error(`${packageId}: proof source identity does not match the locked package`);
     }
-    const legalFiles = proof.files.map((file) => assertProofFile(packageId, proof, root, file));
-    const declaredTerms = record.license.split(/\s*(?:OR|AND|\/)\s*/u).map((term) => term.trim());
-    const termEvidence = (term: string, contents: string): boolean => {
-        if (term === 'Apache-2.0') {
-            return /Apache(?: License)?, Version 2\.0|Apache-2\.0/u.test(contents);
+    const files = proof.files ?? [];
+    if (proof.assembled !== undefined) {
+        if (files.length > 0) {
+            throw new Error(`${packageId}: proof cannot mix archive files with assembled evidence`);
         }
-        return contents.includes(term);
-    };
-    if (!declaredTerms.some((term) => legalFiles.some((file) => termEvidence(term, file.contents)))) {
-        throw new Error(`${packageId}: proof does not substantiate declared license ${record.license}`);
+        return validateAssembledProof(packageId, proof, record, root);
     }
+    if (files.length === 0) {
+        throw new Error(`${packageId}: proof has no legal evidence`);
+    }
+    const legalFiles = files.map((file) => assertProofFile(packageId, proof, root, file));
+    assertLicenseExpressionEvidence(packageId, record.license, legalFiles);
     return legalFiles;
 }
 
+export function readDependencyLicenseProofManifest(root: string): DependencyLicenseProofManifest {
+    const manifestPath = resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH);
+    return readJsonFile<DependencyLicenseProofManifest>(manifestPath);
+}
+
 function applyDependencyLicenseProofs(root: string, records: DependencyLicenseRecord[]): DependencyLicenseRecord[] {
-    const manifest = JSON.parse(
-        readFileSync(resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH), 'utf8')
-    ) as DependencyLicenseProofManifest;
-    if (manifest.schemaVersion !== 2 || typeof manifest.packages !== 'object') {
+    const manifest = readDependencyLicenseProofManifest(root);
+    if (manifest.schemaVersion !== 3 || typeof manifest.packages !== 'object') {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
     }
     const used = new Set<string>();
     const unresolved: string[] = [];
     const resolved = records.map((record) => {
-        if (record.legalFiles.length > 0) {
-            return record;
-        }
         const packageId = `${record.ecosystem}:${record.name}@${record.version}`;
         const proof = manifest.packages[packageId];
-        if (proof === undefined || proof.files.length === 0) {
+        if (record.legalFiles.length > 0) {
+            try {
+                assertLicenseExpressionEvidence(packageId, record.license, record.legalFiles);
+                return record;
+            } catch (error) {
+                if (proof === undefined) {
+                    throw error;
+                }
+            }
+        }
+        if (proof === undefined) {
             unresolved.push(packageId);
             return record;
         }
@@ -563,7 +863,7 @@ export function renderDependencyLicenseReport(
             const contents = block.contents.endsWith('\n') ? block.contents : `${block.contents}\n`;
             return [
                 `===== sha256:${digest} =====`,
-                `Original filenames: ${labels}`,
+                `Evidence labels: ${labels}`,
                 'Packages:',
                 packages,
                 '',
@@ -575,8 +875,9 @@ export function renderDependencyLicenseReport(
         'Sourdaw third-party dependency licenses',
         '',
         'Generated from pnpm-lock.yaml, server/package-lock.json, and the normal-dependency Cargo.lock graph.',
-        'Each package keeps its declared license expression and exact archive or pinned-upstream legal text.',
-        'Generation fails when exact legal evidence is unavailable.',
+        'Each package keeps its declared license expression and exact archive terms or an explicit assembled notice.',
+        `Assembled notices combine immutable archive metadata with canonical SPDX License List ${SPDX_LICENSE_LIST_VERSION} text. They are not upstream files.`,
+        'Generation fails when complete legal evidence is unavailable.',
         '',
         'Source graph digests:',
         ...graphLines,

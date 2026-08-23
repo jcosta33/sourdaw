@@ -18,11 +18,14 @@ import {
     validateServerThirdPartyNotices,
 } from '../checkProjectLicense';
 import {
+    assertLicenseExpressionEvidence,
     collectNpmLockDependencyLicenses,
+    DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
     assertPlatformRestrictedNpmPackage,
     isPlatformRestrictedPackage,
     readLegalFile,
+    readDependencyLicenseProofManifest,
     renderDependencyLicenseReport,
     renderServerThirdPartyNotices,
     SERVER_THIRD_PARTY_NOTICES_PATH,
@@ -139,6 +142,19 @@ describe('project license', () => {
         );
     });
 
+    it('rejects duplicate keys in every project package manifest', () => {
+        write(root, 'package.json', '{"license":"MIT","license":"Apache-2.0"}');
+        expect(() => validateProjectLicense(root, cargo)).toThrow('package.json: duplicate key');
+
+        write(root, 'package.json', JSON.stringify({ license: PROJECT_LICENSE_ID }));
+        write(root, 'server/package.json', '{"license":"MIT","license":"Apache-2.0"}');
+        expect(() => validateProjectLicense(root, cargo)).toThrow('server/package.json: duplicate key');
+
+        write(root, 'server/package.json', JSON.stringify({ license: PROJECT_LICENSE_ID }));
+        write(root, 'server/package-lock.json', '{"packages":{"":{"license":"MIT","license":"Apache-2.0"}}}');
+        expect(() => validateProjectLicense(root, cargo)).toThrow('server/package-lock.json: duplicate key');
+    });
+
     it('rejects server/package.json drift independently', () => {
         write(root, 'server/package.json', JSON.stringify({ license: 'MIT' }));
         expect(validateProjectLicense(root, cargo)).toContain('server/package.json: license must be Apache-2.0');
@@ -204,18 +220,24 @@ describe('project license', () => {
         expect(report).toContain(`- server/package-lock.json sha256:${'c'.repeat(64)}`);
     });
 
-    it('collects the standalone server production closure without server/node_modules', () => {
+    it('collects root server dependencies and optional dependencies without server/node_modules', () => {
         write(
             root,
             'server/package-lock.json',
             JSON.stringify({
                 packages: {
-                    '': { dependencies: { ws: '8.21.1' } },
+                    '': { dependencies: { ws: '8.21.1' }, optionalDependencies: { optional: '2.0.0' } },
                     'node_modules/ws': {
                         version: '8.21.1',
                         license: 'MIT',
                         resolved: 'https://registry.npmjs.org/ws/-/ws-8.21.1.tgz',
                         integrity: 'sha512-ws',
+                    },
+                    'node_modules/optional': {
+                        version: '2.0.0',
+                        license: 'MIT',
+                        resolved: 'https://registry.npmjs.org/optional/-/optional-2.0.0.tgz',
+                        integrity: 'sha512-optional',
                     },
                     'node_modules/dev-only': { version: '1.0.0', license: 'MIT', dev: true },
                     'node_modules/unreachable': { version: '1.0.0', license: 'MIT' },
@@ -223,6 +245,7 @@ describe('project license', () => {
             })
         );
         expect(collectNpmLockDependencyLicenses(root)).toEqual([
+            expect.objectContaining({ name: 'optional', version: '2.0.0' }),
             expect.objectContaining({
                 ecosystem: 'npm',
                 name: 'ws',
@@ -279,7 +302,7 @@ describe('project license', () => {
         }
     });
 
-    it('rejects empty, unrelated, stale, generic, and unbound fallback proof evidence', () => {
+    it('rejects empty, unrelated, stale, and unbound fallback proof evidence', () => {
         const record: DependencyLicenseRecord = {
             ecosystem: 'npm',
             name: 'example',
@@ -293,12 +316,13 @@ describe('project license', () => {
             'lockfileVersion: 9.0\npackages:\n  example@1.0.0:\n    resolution:\n      integrity: sha512-example\n'
         );
         const path = 'release/dependency-license-proofs/example-1.0.0-LICENSE';
-        write(root, path, 'MIT License\nCopyright Example\n');
+        const mitTerms = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
+        write(root, path, mitTerms);
         const digest = (contents: string): string => createHash('sha256').update(contents).digest('hex');
         const proof: DependencyLicenseProof = {
             source: 'npm:example@1.0.0',
             revision: 'sha512-example',
-            files: [{ path, sourcePath: 'LICENSE', sha256: digest('MIT License\nCopyright Example\n') }],
+            files: [{ path, sourcePath: 'LICENSE', sha256: digest(mitTerms) }],
         };
 
         expect(validateDependencyLicenseProof(root, record, proof)).toHaveLength(1);
@@ -307,25 +331,172 @@ describe('project license', () => {
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('legal file is empty');
 
         write(root, path, 'Apache License, Version 2.0\nCopyright Example\n');
-        proof.files[0]!.sha256 = digest('Apache License, Version 2.0\nCopyright Example\n');
+        proof.files![0]!.sha256 = digest('Apache License, Version 2.0\nCopyright Example\n');
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'does not substantiate declared license MIT'
         );
 
-        write(root, path, 'MIT License\nCopyright Example\n');
+        write(root, path, mitTerms);
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('dependency proof drifted');
 
-        proof.files[0]!.sha256 = digest('MIT License\nCopyright Example\n');
+        proof.files![0]!.sha256 = digest(mitTerms);
         proof.revision = 'sha512-stale';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof source identity does not match'
         );
 
         proof.revision = 'sha512-example';
-        proof.files[0]!.path = 'LICENSE';
-        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
-            'package-specific checked-in source evidence'
+        proof.files![0]!.path = 'LICENSE';
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('proof path escapes');
+    });
+
+    it('confines checked-in proof files to the exact proof root', () => {
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'npm',
+            name: 'example',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [],
+        };
+        write(
+            root,
+            'pnpm-lock.yaml',
+            'lockfileVersion: 9.0\npackages:\n  example@1.0.0:\n    resolution:\n      integrity: sha512-example\n'
         );
+        const contents = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
+        const digest = createHash('sha256').update(contents).digest('hex');
+        const proof: DependencyLicenseProof = {
+            source: 'npm:example@1.0.0',
+            revision: 'sha512-example',
+            files: [
+                {
+                    path: 'release/dependency-license-proofs/../outside-LICENSE',
+                    sourcePath: 'LICENSE',
+                    sha256: digest,
+                },
+            ],
+        };
+        write(root, 'release/dependency-license-proofs/placeholder', 'x');
+        write(root, 'release/outside-LICENSE', contents);
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'proof path escapes release/dependency-license-proofs/'
+        );
+
+        proof.files![0]!.path = 'release/dependency-license-proofs-confused/example-LICENSE';
+        write(root, proof.files![0]!.path, contents);
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'proof path escapes release/dependency-license-proofs/'
+        );
+    });
+
+    it('enforces SPDX AND, OR, and WITH semantics against full terms', () => {
+        const mit = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
+        const apache = readFileSync(join(process.cwd(), 'LICENSE'), 'utf8');
+        const legal = (contents: string) => [{ label: 'LICENSE', sha256: 'a'.repeat(64), contents }];
+
+        expect(() => assertLicenseExpressionEvidence('npm:example@1', 'MIT AND Apache-2.0', legal(mit))).toThrow(
+            'does not substantiate'
+        );
+        expect(() => assertLicenseExpressionEvidence('npm:example@1', 'MIT OR Apache-2.0', legal(mit))).not.toThrow();
+        expect(() =>
+            assertLicenseExpressionEvidence('npm:example@1', 'Apache-2.0 WITH LLVM-exception', legal(apache))
+        ).toThrow('does not substantiate');
+        expect(() =>
+            assertLicenseExpressionEvidence(
+                'npm:example@1',
+                'Apache-2.0 WITH LLVM-exception',
+                legal(
+                    `${apache}\nLLVM Exceptions to the Apache 2.0 License\nlimitations under the License with the following exceptions`
+                )
+            )
+        ).not.toThrow();
+    });
+
+    it('rejects false-positive words and metadata-only evidence', () => {
+        const legal = (contents: string) => [{ label: 'package.json', sha256: 'a'.repeat(64), contents }];
+        expect(() =>
+            assertLicenseExpressionEvidence('npm:example@1', 'MIT', legal('license copyright permission'))
+        ).toThrow('does not substantiate');
+        expect(() =>
+            assertLicenseExpressionEvidence(
+                'npm:example@1',
+                'ISC',
+                legal('{"name":"example","license":"ISC","author":"Example"}')
+            )
+        ).toThrow('does not substantiate');
+    });
+
+    it('builds honest assembled evidence from locked metadata and pinned SPDX text', () => {
+        const metadataContents = '{"name":"example","version":"1.0.0","author":"Example","license":"MIT"}\n';
+        const metadata = {
+            label: 'package.json',
+            sha256: createHash('sha256').update(metadataContents).digest('hex'),
+            contents: metadataContents,
+        };
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'npm',
+            name: 'example',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [],
+            metadataFiles: [metadata],
+        };
+        write(
+            root,
+            'pnpm-lock.yaml',
+            'lockfileVersion: 9.0\npackages:\n  example@1.0.0:\n    resolution:\n      integrity: sha512-example\n'
+        );
+        write(
+            root,
+            'release/spdx-license-texts/MIT.txt',
+            readFileSync(join(process.cwd(), 'release/spdx-license-texts/MIT.txt'), 'utf8')
+        );
+        const proof: DependencyLicenseProof = {
+            source: 'npm:example@1.0.0',
+            revision: 'sha512-example',
+            assembled: {
+                metadata: [{ sourcePath: metadata.label, sha256: metadata.sha256 }],
+                licenses: ['MIT'],
+            },
+        };
+
+        const [notice] = validateDependencyLicenseProof(root, record, proof);
+        expect(notice?.contents).toContain('assembled evidence, not an upstream file');
+        expect(notice?.contents).toContain(metadataContents.trim());
+        expect(notice?.contents).toContain('canonical SPDX MIT');
+
+        proof.assembled!.metadata[0]!.sha256 = '0'.repeat(64);
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('assembled proof metadata drifted');
+    });
+
+    it('rejects duplicate keys in the dependency proof manifest', () => {
+        write(root, DEPENDENCY_LICENSE_PROOFS_PATH, '{"schemaVersion":3,"schemaVersion":3,"packages":{}}');
+        expect(() => readDependencyLicenseProofManifest(root)).toThrow('duplicate key');
+    });
+
+    it('validates the current aws-lc compound expression branch by branch', () => {
+        const apache = readFileSync(join(process.cwd(), 'LICENSE'), 'utf8');
+        const mit = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
+        const isc =
+            'Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted.\n' +
+            'THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY.\n';
+        const bsd =
+            'Redistribution and use in source and binary forms are permitted. Redistributions of source code must retain this notice. ' +
+            'Redistributions in binary form must reproduce this notice. Neither the name of Example nor the names of its contributors may be used to endorse. ' +
+            'THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS".\n';
+        const mitZero =
+            'MIT No Attribution\nPermission is hereby granted, free of charge. THE SOFTWARE IS PROVIDED "AS IS".\n';
+        const files = [
+            { label: 'LICENSE', sha256: 'a'.repeat(64), contents: `${apache}\n${mit}\n${isc}\n${bsd}\n${mitZero}` },
+        ];
+        expect(() =>
+            assertLicenseExpressionEvidence(
+                'cargo:aws-lc-sys@0.44.0',
+                'ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND ' +
+                    '(Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)',
+                files
+            )
+        ).not.toThrow();
     });
 
     it('rejects dependency report drift and absence', () => {

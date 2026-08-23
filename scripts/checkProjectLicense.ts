@@ -12,6 +12,7 @@ import {
     SERVER_THIRD_PARTY_NOTICES_PATH,
     type DependencyLicenseArtifacts,
 } from './dependencyLicenseReport.ts';
+import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const PROJECT_LICENSE_ID = 'Apache-2.0';
 export const PROJECT_AUTHOR = 'Jose Costa';
@@ -48,6 +49,7 @@ const RETIRED_PROJECT_LICENSE_MARKERS = [
     'Complete the OS-10 project grant before public release.',
     'apply the OS-10 project license',
     'Apply the project license in OS-10',
+    'project grant',
 ] as const;
 
 type CargoMetadata = {
@@ -59,7 +61,7 @@ function sha256(path: string): string {
 }
 
 function readJson<TResult>(path: string): TResult {
-    return JSON.parse(readFileSync(path, 'utf8')) as TResult;
+    return parseJsonWithUniqueKeys<TResult>(readFileSync(path, 'utf8'), path);
 }
 
 export function validateProjectLicense(root: string, cargo: CargoMetadata): string[] {
@@ -161,12 +163,13 @@ export function checkProjectLicense(
     root: string,
     artifactBuilder: (root: string) => DependencyLicenseArtifacts = buildDependencyLicenseArtifacts
 ): void {
-    const cargo = JSON.parse(
+    const cargo = parseJsonWithUniqueKeys<CargoMetadata>(
         execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
             cwd: root,
             encoding: 'utf8',
-        })
-    ) as CargoMetadata;
+        }),
+        'cargo metadata --no-deps --format-version 1'
+    );
     const artifacts = artifactBuilder(root);
     const errors = [
         ...validateProjectLicense(root, cargo),
