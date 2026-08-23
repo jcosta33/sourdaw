@@ -1,0 +1,46 @@
+src/modules/AudioEngine/stores/preparedAudioBufferTransactions.ts
+  s_a40848e8f8cca9::t_d425edc0dddba3 1
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_a40848e8f8cca9::t_e552b4f3989e58 129-132,200-201,238,314,318-319,399-403,464,590-591,660-664
+  s_a40848e8f8cca9::t_7f386e5e3135dd 665
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleSettlement.spec.ts
+  s_a40848e8f8cca9::t_fcf862039b4576 3,10,313,323,331
+  s_a40848e8f8cca9::t_6c0244685093d4 569-632,638-653
+  s_a40848e8f8cca9::t_e210c3aa48609c 11-15,341-392
+  s_a40848e8f8cca9::t_ab3fa29aa675c6 633-637
+  s_a40848e8f8cca9::t_de94d85990b864 393
+src/modules/AudioEngine/stores/preparedAudioBufferLifecycle.ts
+  s_a40848e8f8cca9::t_aed79cc4044513 157-170,696
+  s_a40848e8f8cca9::t_263949f6846d13 753-755
+  s_a40848e8f8cca9::t_109eed7502ed66 257-264
+  s_a40848e8f8cca9::t_db79ac043be751 476-479,486-494,821
+  s_a40848e8f8cca9::t_f35a90a7aef618 3,97,103-110,113,707
+  s_a40848e8f8cca9::t_79af9f11935557 187,209,214
+  s_a40848e8f8cca9::t_833d152e4432aa 397-421,864
+  s_a40848e8f8cca9::t_ed94efdc7e5aab 721,752,825-829,833-842,862
+  s_a40848e8f8cca9::t_7a5530b318adbd 697-698,700
+  s_a40848e8f8cca9::t_b9946b46597fa0 472-475,693-695,705-706,722,730-732,749-751,820,863
+src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts
+  s_a40848e8f8cca9::t_3c39ba03b2affc 25-55,113-138
+  s_a40848e8f8cca9::t_a121bb9d220a5b 139
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_a40848e8f8cca9::t_57a2a42b447eda 4-8,450
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecyclePersistence.spec.ts
+  s_a40848e8f8cca9::t_e6dca14d1825c5 3,205-208,408,416-421
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e9235f2cb9156de4e7ff9ce02f1521f3257a1940",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
