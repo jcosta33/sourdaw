@@ -1,8 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
-
 test.describe('AI Features', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
@@ -37,18 +35,12 @@ test.describe('AI Features', () => {
         await expect(panel_content.first()).toBeVisible();
     });
 
-    test('Voice command button is clickable', async ({ page }) => {
-        const voice = page.getByRole('button', { name: /Voice command/i });
-        await expect(voice).toBeVisible();
-        await voice.click();
-        await page.waitForTimeout(300);
-        await expect(voice).toBeVisible();
+    test('does not expose voice controls before a local voice model is available', async ({ page }) => {
+        await expect(page.getByTestId('voice-command-button')).toHaveCount(0);
     });
 
-    test('Load AI button is present and clickable', async ({ page }) => {
-        const load = page.getByRole('button', { name: 'Load AI' });
-        await expect(load).toBeVisible();
-        await load.click();
-        await page.waitForTimeout(500);
+    test('shows the unavailable state when this browser has no admitted LLM backend', async ({ page }) => {
+        await expect(page.getByText('AI unavailable', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Load AI' })).toHaveCount(0);
     });
 });

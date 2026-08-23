@@ -50,28 +50,22 @@ test.describe('AI Chat Panel — Composer', () => {
     });
 });
 
-test.describe('Load AI Button', () => {
-    test('Load AI button is clickable', async ({ page }) => {
+test.describe('AI availability', () => {
+    test('shows the unavailable state when this browser has no admitted LLM backend', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const load = page.getByRole('button', { name: 'Load AI' });
-        await expect(load).toBeVisible();
-        await load.click();
-        await page.waitForTimeout(500);
+        await expect(page.getByText('AI unavailable', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Load AI' })).toHaveCount(0);
     });
 });
 
-test.describe('Voice Command Button', () => {
-    test('Voice command button is present and clickable', async ({ page }) => {
+test.describe('Voice command availability', () => {
+    test('does not expose voice controls before a local voice model is available', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const voice = page.getByRole('button', { name: /Voice command/i });
-        await expect(voice).toBeVisible();
-        await voice.click();
-        await page.waitForTimeout(300);
-        await expect(voice).toBeVisible();
+        await expect(page.getByTestId('voice-command-button')).toHaveCount(0);
     });
 });
 

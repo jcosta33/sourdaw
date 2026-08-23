@@ -87,7 +87,7 @@ test.describe('BrowserAi panels — ModelManagerPanel state change', () => {
         const dialog = page.getByRole('dialog');
 
         // The 'Browser AI' FieldGroup from AiSection hosts CapabilityReportPanel.
-        const browserAiField = dialog.getByText('Browser AI', { exact: true });
+        const browserAiField = dialog.locator('label').filter({ hasText: 'Browser AI' });
         await expect(browserAiField).toBeVisible();
 
         const resolvedVerdict = dialog.getByText(
