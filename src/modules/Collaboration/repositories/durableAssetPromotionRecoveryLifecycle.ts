@@ -10,6 +10,7 @@ import {
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
 import {
     type DurableAssetFailure,
+    type DurableAssetCommitProof,
     type PromoteStagedAssetResult,
     type ReleaseStagedAssetsResult,
     type ReopenDurableAssetResult,
@@ -56,6 +57,14 @@ function haveSameBindings(left: readonly StagedAssetBinding[], right: readonly S
             (binding, index) =>
                 binding.leaseId === normalizedRight[index]?.leaseId &&
                 binding.expectedHash === normalizedRight[index]?.expectedHash
+        )
+    );
+}
+
+function bindingsAreContained(subset: readonly StagedAssetBinding[], superset: readonly StagedAssetBinding[]): boolean {
+    return subset.every((binding) =>
+        superset.some(
+            (candidate) => candidate.leaseId === binding.leaseId && candidate.expectedHash === binding.expectedHash
         )
     );
 }
@@ -147,7 +156,8 @@ export function createDurableAssetPromotionRecoveryLifecycle(
         recoveryId: string,
         bindings: readonly StagedAssetBinding[],
         disposition: RecoveryDisposition,
-        allowPromotionToCleanup = false
+        allowPromotionToCleanup = false,
+        commitProof?: DurableAssetCommitProof
     ) {
         if (recoveryId.length === 0) {
             throw new Error('Durable asset recovery identity is required');
@@ -246,7 +256,14 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                 disposition === 'promote' &&
                 getRecoveryDisposition(recovery) === 'release' &&
                 recovery.ownerId === ownerId &&
-                haveSameBindings(recovery.bindings, normalized);
+                (haveSameBindings(recovery.bindings, normalized) ||
+                    (recovery.recoveryKind === 'default-release' &&
+                        bindingsAreContained(recovery.bindings, normalized)));
+            const replaceDefaultCleanup =
+                disposition === 'release' &&
+                recovery.recoveryKind === 'default-release' &&
+                recovery.ownerId === ownerId &&
+                bindingsAreContained(recovery.bindings, normalized);
             const replacePromotionWithCleanup =
                 allowPromotionToCleanup &&
                 disposition === 'release' &&
@@ -255,7 +272,7 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                 getPromotionState(recovery) === 'prepared' &&
                 recovery.ownerId === ownerId &&
                 haveSameBindings(recovery.bindings, normalized);
-            if (!replaceCleanupWithPromotion && !replacePromotionWithCleanup) {
+            if (!replaceCleanupWithPromotion && !replaceDefaultCleanup && !replacePromotionWithCleanup) {
                 return fail('owner-handoff-conflict');
             }
             if (recovery.recoveryId !== recoveryId) {
@@ -269,6 +286,8 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             leaseIds: normalized.map((binding) => binding.leaseId),
             bindings: normalized,
             disposition,
+            recoveryKind: 'explicit',
+            ...(disposition === 'promote' && commitProof ? { commitProof } : {}),
             ...(disposition === 'promote' ? { promotionState } : {}),
             preparedAt: records.isPromotionRecoveryRecord(existing) ? existing.preparedAt : Date.now(),
         } satisfies PromotionRecoveryRecord);
@@ -283,8 +302,12 @@ export function createDurableAssetPromotionRecoveryLifecycle(
     }
 
     return {
-        async preparePromotionRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
-            return prepareRecovery(recoveryId, bindings, 'promote');
+        async preparePromotionRecovery(
+            recoveryId: string,
+            bindings: readonly StagedAssetBinding[],
+            commitProof?: DurableAssetCommitProof
+        ) {
+            return prepareRecovery(recoveryId, bindings, 'promote', false, commitProof);
         },
 
         async prepareCleanupRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
@@ -382,7 +405,11 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             return deletionFailure ?? { status: 'cancelled' as const, recoveryId };
         },
 
-        async resumeRecoveries() {
+        async resumeRecoveries(
+            protectedRecoveryIds: ReadonlySet<string> = new Set(),
+            isCommitProven: (proof: DurableAssetCommitProof) => boolean = () => false,
+            protectDefaultReleaseClaims = false
+        ) {
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readonly');
             const completion = records.awaitTransaction(transaction);
@@ -397,8 +424,16 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             }
             const promotedHashes = new Set<string>();
             for (const recovery of values as PromotionRecoveryRecord[]) {
-                if (getRecoveryDisposition(recovery) === 'promote' && getPromotionState(recovery) !== 'committed') {
+                if (protectedRecoveryIds.has(recovery.recoveryId)) {
                     continue;
+                }
+                if (protectDefaultReleaseClaims && recovery.recoveryKind === 'default-release') {
+                    continue;
+                }
+                if (getRecoveryDisposition(recovery) === 'promote' && getPromotionState(recovery) !== 'committed') {
+                    if (!recovery.commitProof || !isCommitProven(recovery.commitProof)) {
+                        continue;
+                    }
                 }
                 const completed = await completeRecord(recovery);
                 if (completed.status === 'failed') {

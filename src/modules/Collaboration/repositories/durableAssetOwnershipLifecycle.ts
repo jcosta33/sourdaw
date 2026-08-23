@@ -96,6 +96,7 @@ async function releaseStagedAssetSet(
     }));
 
     const cleanupRecoveries = new Map<string, PromotionRecoveryRecord>();
+    const defaultCleanupRecoveryIds = new Set<string>();
     for (const [index, valuesForLease] of promotionValues.entries()) {
         if (!Array.isArray(valuesForLease)) {
             return fail('corrupt-record');
@@ -117,6 +118,12 @@ async function releaseStagedAssetSet(
             }
             if (recovery.recoveryId === cleanupRecoveryId && (recovery.disposition ?? 'promote') === 'release') {
                 cleanupRecoveries.set(recovery.recoveryId, recovery);
+            } else if (
+                recovery.recoveryKind === 'default-release' &&
+                recovery.disposition === 'release' &&
+                recovery.bindings.length === 1
+            ) {
+                defaultCleanupRecoveryIds.add(recovery.recoveryId);
             } else {
                 return fail('lease-terminal-conflict');
             }
@@ -213,6 +220,9 @@ async function releaseStagedAssetSet(
     }
     if (cleanupRecoveryId !== undefined) {
         promotionStore.delete(cleanupRecoveryId);
+    }
+    for (const recoveryId of defaultCleanupRecoveryIds) {
+        promotionStore.delete(recoveryId);
     }
     await completion;
     await receipts.compactTerminalLeaseReceipts(ownerId);

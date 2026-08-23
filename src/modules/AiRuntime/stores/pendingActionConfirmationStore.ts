@@ -145,7 +145,7 @@ const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 
 type PendingActionResourceLease = {
     bytes: number;
-    prepareForCommit?: () => void | Promise<void>;
+    prepareForCommit?: (commandBatch?: PendingCommandBatch) => void | Promise<void>;
     commit?: () => void | Promise<void>;
     release: () => void | Promise<void>;
     retain?: () => void | Promise<void>;
@@ -155,7 +155,7 @@ const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>(
 
 function reportResourceReleaseFailure(error: unknown): void {
     logger.error(
-        new Error('[PendingActionConfirmation] Prepared resource release failed', {
+        new Error('Confirmed AI action resource cleanup failed; the durable lease remains retryable', {
             cause: error,
         })
     );
@@ -458,8 +458,11 @@ export function clearPendingActionConfirmations(): void {
 }
 
 /** Persist resource recovery ownership before the project command may commit. */
-export async function preparePendingActionResourceLeaseForCommit(confirmationId: string): Promise<void> {
-    await pendingActionResourceLeases.get(confirmationId)?.prepareForCommit?.();
+export async function preparePendingActionResourceLeaseForCommit(
+    confirmationId: string,
+    commandBatch?: PendingCommandBatch
+): Promise<void> {
+    await pendingActionResourceLeases.get(confirmationId)?.prepareForCommit?.(commandBatch);
 }
 
 /** Mark a prepared resource recovery executable only after the command produced a verified commit receipt. */

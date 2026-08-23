@@ -302,26 +302,37 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
             return commitOwnerRebind(ownerId, nextOwnerId);
         },
 
-        async resumeOwnerRebinds() {
+        async abortOwnerRebind(nextOwnerId: string) {
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readwrite');
             const completion = records.awaitTransaction(transaction);
             const store = transaction.objectStore(OWNER_HANDOFF_STORE);
-            const [values, outgoing] = await Promise.all([
-                records.readIndexedValues(store, OWNER_HANDOFF_TARGET_INDEX, ownerId),
-                records.readStoredValue(store, ownerId),
-            ]);
-            if (outgoing !== undefined && !records.isOwnerHandoffRecord(outgoing)) {
+            const outgoing = await records.readStoredValue(store, ownerId);
+            if (outgoing === undefined) {
+                await completion;
+                return { status: 'missing' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
+            }
+            if (!records.isOwnerHandoffRecord(outgoing)) {
                 transaction.abort();
                 await completion.catch(() => undefined);
                 return { status: 'failed' as const, reason: 'corrupt-record' as const };
             }
-            // If this is the canonical owner after restart, any handoff sourced
-            // from it never crossed the project-persistence boundary. Retire
-            // that stale prepare record before it can block a later handoff.
-            if (outgoing !== undefined) {
-                store.delete(ownerId);
+            if (outgoing.nextOwnerId !== nextOwnerId) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
             }
+            store.delete(ownerId);
+            await completion;
+            return { status: 'aborted' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
+        },
+
+        async resumeOwnerRebinds() {
+            const database = await records.openDurableAssetDatabase();
+            const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readonly');
+            const completion = records.awaitTransaction(transaction);
+            const store = transaction.objectStore(OWNER_HANDOFF_STORE);
+            const values = await records.readIndexedValues(store, OWNER_HANDOFF_TARGET_INDEX, ownerId);
             await completion;
             if (values.some((value) => !records.isOwnerHandoffRecord(value))) {
                 return { status: 'failed' as const, reason: 'corrupt-record' as const };

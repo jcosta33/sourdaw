@@ -548,6 +548,55 @@ export class AutomergeSync {
         const converged = Boolean(
             newSyncState.theirHeads && haveSameHeads(getHeads(sanitized_doc), newSyncState.theirHeads)
         );
+        const rootHeads =
+            docId === DOC_PREFIX_ROOT ? [...getHeads(sanitized_doc)].map(String).toSorted() : ([] as string[]);
+        const projectId =
+            docId === DOC_PREFIX_ROOT
+                ? readSettledProjectId((sanitized_doc as Doc<Record<string, unknown>>).projectMeta)
+                : undefined;
+        if (
+            !documentChanged &&
+            docId === DOC_PREFIX_ROOT &&
+            projectId !== undefined &&
+            acceptance.senderIsHost &&
+            this.hooks.prepareSyncPersistence !== undefined
+        ) {
+            this.persistenceBarrierCount += 1;
+            const persistence = runCrdtPersistenceBarrier(async () => {
+                if (generation !== this.lifecycleGeneration) {
+                    return;
+                }
+                try {
+                    const afterPersist = await this.hooks.prepareSyncPersistence?.({
+                        peerId,
+                        docId,
+                        projectId,
+                        rootHeads,
+                        senderIsHost: acceptance.senderIsHost,
+                    });
+                    if (generation !== this.lifecycleGeneration) {
+                        return;
+                    }
+                    const currentRoot = getCrdtDoc(DOC_PREFIX_ROOT);
+                    if (!currentRoot || !haveSameHeads(rootHeads, getHeads(currentRoot))) {
+                        return;
+                    }
+                    peerStates.set(docId, newSyncState);
+                    this.syncStates.set(peerId, peerStates);
+                    if (converged) {
+                        this.hooks.onSyncConverged?.({ peerId, docId });
+                    }
+                    await afterPersist?.();
+                } catch (error) {
+                    logger.warn('[AutomergeSync] No-op root owner adoption failed:', error);
+                    this.hooks.onPostPersistError?.(error);
+                }
+            });
+            this.persistenceTail = persistence.finally(() => {
+                this.persistenceBarrierCount -= 1;
+            });
+            return;
+        }
         if (!documentChanged && this.hooks.prepareSyncPersistence !== undefined) {
             peerStates.set(docId, newSyncState);
             this.syncStates.set(peerId, peerStates);
@@ -556,13 +605,6 @@ export class AutomergeSync {
             }
             return;
         }
-
-        const rootHeads =
-            docId === DOC_PREFIX_ROOT ? [...getHeads(sanitized_doc)].map(String).toSorted() : ([] as string[]);
-        const projectId =
-            docId === DOC_PREFIX_ROOT
-                ? readSettledProjectId((sanitized_doc as Doc<Record<string, unknown>>).projectMeta)
-                : undefined;
 
         const publish = () => {
             peerStates.set(docId, newSyncState);

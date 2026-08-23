@@ -15,6 +15,7 @@ export const RECORD_SCHEMA_VERSION = 2;
 export const OWNER_HANDOFF_SCHEMA_VERSION = 1;
 export const PROMOTION_RECOVERY_SCHEMA_VERSION = 1;
 export const OWNER_AUTHORITY_SCHEMA_VERSION = 1;
+export const DEFAULT_STAGE_RECOVERY_PREFIX = 'asset-stage-default-release:';
 
 export type LeaseState = 'staged' | 'promoted' | 'released';
 export type ActiveLease = { leaseId: string; ownerId: string };
@@ -55,6 +56,14 @@ export type PromotionRecoveryRecord = {
     bindings: Array<{ leaseId: string; expectedHash: string }>;
     disposition?: 'promote' | 'release';
     promotionState?: 'prepared' | 'committed';
+    recoveryKind?: 'default-release' | 'explicit';
+    commitProof?: {
+        projectId: string;
+        idempotencyKey: string;
+        contentHash: string;
+        runId: string;
+        batchId: string;
+    };
     preparedAt: number;
 };
 
@@ -221,6 +230,10 @@ function awaitTransaction(transaction: IDBTransaction): Promise<void> {
     });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function isAssetRecord(value: unknown): value is AssetRecord {
     if (typeof value !== 'object' || value === null) {
         return false;
@@ -317,6 +330,18 @@ function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRe
             record.promotionState !== 'prepared' &&
             record.promotionState !== 'committed') ||
         (record.disposition === 'release' && record.promotionState !== undefined) ||
+        (record.recoveryKind !== undefined &&
+            record.recoveryKind !== 'default-release' &&
+            record.recoveryKind !== 'explicit') ||
+        (record.recoveryKind === 'default-release' && record.disposition !== 'release') ||
+        (record.commitProof !== undefined &&
+            (!isRecord(record.commitProof) ||
+                typeof record.commitProof.projectId !== 'string' ||
+                typeof record.commitProof.idempotencyKey !== 'string' ||
+                !/^sha256:[a-f0-9]{64}$/.test(String(record.commitProof.contentHash)) ||
+                typeof record.commitProof.runId !== 'string' ||
+                typeof record.commitProof.batchId !== 'string')) ||
+        (record.commitProof !== undefined && record.disposition !== 'promote') ||
         typeof record.preparedAt !== 'number' ||
         !Number.isSafeInteger(record.preparedAt)
     ) {

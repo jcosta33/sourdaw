@@ -11,6 +11,13 @@ const mocks = vi.hoisted(() => ({
     releasePreviewAudioBuffer: vi.fn(),
     releaseStagedAsset: vi.fn(),
     transitionDurablePromotionRecoveryToCleanup: vi.fn().mockResolvedValue({ status: 'prepared' }),
+    getVersionedCommandBatchCommitProof: vi.fn().mockResolvedValue({
+        projectId: 'project:test',
+        idempotencyKey: 'command:test',
+        contentHash: `sha256:${'a'.repeat(64)}`,
+        runId: 'run:test',
+        batchId: 'batch:test',
+    }),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -28,6 +35,9 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
         releaseStagedAsset: mocks.releaseStagedAsset,
         transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
     }),
+}));
+vi.mock('#/modules/Command/useCases', () => ({
+    getVersionedCommandBatchCommitProof: mocks.getVersionedCommandBatchCommitProof,
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
@@ -120,16 +130,18 @@ describe('prepared stem import resource cleanup', () => {
             'stem-promotion:receipt-bound'
         );
 
-        await lease?.prepareForCommit?.();
+        await lease?.prepareForCommit?.({ serialized: 'serialized', authority: {} as never });
         expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
         expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
 
         await lease?.commit?.();
         await lease?.retain?.();
 
-        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound', [
-            { leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' },
-        ]);
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            'stem-promotion:receipt-bound',
+            [{ leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' }],
+            await mocks.getVersionedCommandBatchCommitProof.mock.results[0]?.value
+        );
         expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound');
         expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound');
         expect(mocks.prepareDurablePromotionRecovery.mock.invocationCallOrder[0]).toBeLessThan(
@@ -153,7 +165,7 @@ describe('prepared stem import resource cleanup', () => {
             'stem-promotion:concurrent-cancel',
             'stem-concurrent-cancel'
         );
-        await lease?.prepareForCommit?.();
+        await lease?.prepareForCommit?.({ serialized: 'serialized', authority: {} as never });
 
         await Promise.all([
             agentRunCancellation.cancel({ runId: 'stem-concurrent-cancel', reason: 'User cancelled.' }),

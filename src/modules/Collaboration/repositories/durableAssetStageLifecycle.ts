@@ -1,11 +1,16 @@
 import {
     ASSET_STORE,
+    DEFAULT_STAGE_RECOVERY_PREFIX,
     LEASE_STORE,
+    PROMOTION_RECOVERY_SCHEMA_VERSION,
+    PROMOTION_RECOVERY_LEASE_INDEX,
+    PROMOTION_RECOVERY_STORE,
     OWNER_AUTHORITY_SCHEMA_VERSION,
     OWNER_AUTHORITY_STORE,
     RECORD_SCHEMA_VERSION,
     type AssetRecord,
     type LeaseRecord,
+    type PromotionRecoveryRecord,
     type OwnerAuthorityRecord,
 } from './durableAssetIndexedDb';
 import { createDurableAssetReceiptRetention } from './durableAssetReceiptRetention';
@@ -20,11 +25,15 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
         async stageAsset(leaseId: string, blob: Blob, name: string) {
             const hash = await records.hashBlob(blob);
             const database = await records.openDurableAssetDatabase();
-            const transaction = database.transaction([ASSET_STORE, LEASE_STORE, OWNER_AUTHORITY_STORE], 'readwrite');
+            const transaction = database.transaction(
+                [ASSET_STORE, LEASE_STORE, OWNER_AUTHORITY_STORE, PROMOTION_RECOVERY_STORE],
+                'readwrite'
+            );
             const completion = records.awaitTransaction(transaction);
             const assetStore = transaction.objectStore(ASSET_STORE);
             const leaseStore = transaction.objectStore(LEASE_STORE);
             const authorityStore = transaction.objectStore(OWNER_AUTHORITY_STORE);
+            const recoveryStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
             const [existingAsset, existingLease, authorityValue] = await Promise.all([
                 records.readStoredValue(assetStore, hash),
                 records.readStoredValue(leaseStore, leaseId),
@@ -80,6 +89,17 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                 hash,
                 state: 'staged',
             } satisfies LeaseRecord);
+            const recoveryId = `${DEFAULT_STAGE_RECOVERY_PREFIX}${leaseId}`;
+            recoveryStore.put({
+                schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                recoveryId,
+                ownerId,
+                leaseIds: [leaseId],
+                bindings: [{ leaseId, expectedHash: hash }],
+                disposition: 'release',
+                recoveryKind: 'default-release',
+                preparedAt: Date.now(),
+            } satisfies PromotionRecoveryRecord);
             await completion;
             return { ...records.asDurableAsset(record), leaseId };
         },
@@ -160,13 +180,15 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                 };
             }
             const database = await records.openDurableAssetDatabase();
-            const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
+            const transaction = database.transaction([ASSET_STORE, LEASE_STORE, PROMOTION_RECOVERY_STORE], 'readwrite');
             const assetStore = transaction.objectStore(ASSET_STORE);
             const leaseStore = transaction.objectStore(LEASE_STORE);
+            const recoveryStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
             const completion = records.awaitTransaction(transaction);
-            const [currentAsset, currentLease] = await Promise.all([
+            const [currentAsset, currentLease, recoveryValues] = await Promise.all([
                 records.readStoredValue(assetStore, lease.hash),
                 records.readStoredValue(leaseStore, leaseId),
+                records.readIndexedValues(recoveryStore, PROMOTION_RECOVERY_LEASE_INDEX, leaseId),
             ]);
             if (!records.isAssetRecord(currentAsset) || !records.isLeaseRecord(currentLease)) {
                 transaction.abort();
@@ -213,6 +235,22 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                             ? ('lease-terminal-conflict' as const)
                             : ('corrupt-record' as const),
                 };
+            }
+            for (const recovery of recoveryValues) {
+                if (
+                    !records.isPromotionRecoveryRecord(recovery) ||
+                    recovery.ownerId !== ownerId ||
+                    !recovery.bindings.some(
+                        (binding) => binding.leaseId === leaseId && binding.expectedHash === expectedHash
+                    )
+                ) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
+                }
+                if (recovery.recoveryKind === 'default-release') {
+                    recoveryStore.delete(recovery.recoveryId);
+                }
             }
             assetStore.put({
                 ...currentAsset,

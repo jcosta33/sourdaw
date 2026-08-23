@@ -265,6 +265,40 @@ describe('AutomergeSync', () => {
         expect(order.slice(-4)).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
     });
 
+    it('adopts the settled owner from an authoritative converged root without rewriting project state', async () => {
+        const canonical = change(seedAmDoc(), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+        });
+        let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+        const remote = clone(canonical, 'bbbbbbbbbbbbbbbb');
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const commitHandoff = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        const prepareSyncPersistence = vi.fn().mockResolvedValue(commitHandoff);
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence,
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        expect(prepareSyncPersistence).toHaveBeenCalledWith({
+            peerId: 'host-peer',
+            docId: 'root',
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            rootHeads: [...getHeads(canonical)].map(String).toSorted(),
+            senderIsHost: true,
+        });
+        expect(commitHandoff).toHaveBeenCalledOnce();
+        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+    });
+
     it('retains a prepared handoff when project persistence fails before commit', async () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
@@ -398,7 +432,8 @@ describe('AutomergeSync', () => {
 
         expect(persistInputs[0]).toEqual([firstHeads]);
         expect((live as Doc<SeededDoc>).peerProbe).toBe('second');
-        expect(preparedAuthorities).toEqual([true, true]);
+        expect(preparedAuthorities.length).toBeGreaterThanOrEqual(2);
+        expect(preparedAuthorities.every(Boolean)).toBe(true);
     });
 
     it('drops a root delivery deferred behind preparation when the session stops', async () => {

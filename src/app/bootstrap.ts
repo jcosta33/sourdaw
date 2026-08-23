@@ -67,6 +67,7 @@ import {
     canExecuteCommandBatch,
     canMutateBranchMetadata,
     configureCollaborationAssetOwner,
+    configureDurableAssetCommitProof,
     leaveSession,
 } from '#/modules/Collaboration/useCases';
 import {
@@ -80,6 +81,7 @@ import {
     setActionHistoryMetadataPort,
     commandProjectRevisionPort,
     commandProjectDivergencePort,
+    isVersionedCommandBatchCommitProven,
     commandTrackDefaultsPort,
     setCommandEventBus,
     syncActionReplayMetadata,
@@ -213,6 +215,9 @@ actionHistoryStore.subscribe((state) => {
 setRuntimeLogger(logger);
 configureCollaborationAssetOwner({
     captureOwnerId: getSettledProjectId,
+});
+configureDurableAssetCommitProof({
+    isProven: isVersionedCommandBatchCommitProven,
 });
 try {
     recoverInterruptedAgentRuns();

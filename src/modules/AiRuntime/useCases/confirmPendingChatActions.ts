@@ -798,7 +798,7 @@ export async function confirmPendingChatActions(
             !hasPriorVerifiedBatchReceipt && approved
                 ? issueAgentCommandApprovalBinding({ approval: approved, commandBatch })
                 : undefined;
-        await preparePendingActionResourceLeaseForCommit(confirmation.id);
+        await preparePendingActionResourceLeaseForCommit(confirmation.id, commandBatch);
         const versionedResult = await executeVersionedCommandBatchEnvelope({
             authority: commandBatch.authority,
             ...(approvalBinding ? { approvalBinding } : {}),

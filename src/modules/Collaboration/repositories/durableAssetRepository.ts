@@ -5,8 +5,12 @@ import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
 import { type DurableAssetRepository } from './durableAssetRepositoryContract';
 import { createDurableAssetStageLifecycle } from './durableAssetStageLifecycle';
 
+export { DEFAULT_STAGE_RECOVERY_PREFIX } from './durableAssetIndexedDb';
+
 export type {
+    AbortDurableAssetOwnerHandoffResult,
     DurableAsset,
+    DurableAssetCommitProof,
     DurableAssetFailure,
     DurableAssetRepository,
     CancelDurableAssetPromotionRecoveryResult,

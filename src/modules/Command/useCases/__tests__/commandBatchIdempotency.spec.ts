@@ -19,6 +19,8 @@ import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommand
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
+import { getVersionedCommandBatchCommitProof } from '../getVersionedCommandBatchCommitProof';
+import { isVersionedCommandBatchCommitProven } from '../isVersionedCommandBatchCommitProven';
 import { persistProjectCommandBatchIdempotencyCheckpoint } from '../persistProjectCommandBatchIdempotencyCheckpoint';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
@@ -363,6 +365,8 @@ describe('command batch idempotency', () => {
             confirmed: true,
             serialized: batch.serialized,
         });
+        const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
+        expect(isVersionedCommandBatchCommitProven(projectCommitProof)).toBe(true);
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'missing' }),
             claim: () => Promise.resolve({ status: 'claimed' }),

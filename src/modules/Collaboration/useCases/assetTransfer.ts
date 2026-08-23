@@ -18,7 +18,9 @@ import { DOC_ID_ASSET } from '../models/SyncChannelConstants';
 import { durableAssetOwnerResolution } from '../repositories/durableAssetOwnerResolution';
 import {
     createDurableAssetRepository,
+    DEFAULT_STAGE_RECOVERY_PREFIX,
     type DurableAssetRepository,
+    type DurableAssetCommitProof,
     type PromoteStagedAssetResult,
     type RebindDurableAssetOwnerResult,
     type ReleaseOwnedAssetResult,
@@ -29,6 +31,12 @@ import {
     type StagedAssetBinding,
 } from '../repositories/durableAssetRepository';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
+
+import { durableAssetCommitProof } from './configureDurableAssetCommitProof';
+
+function getDefaultStageRecoveryId(leaseId: string): string {
+    return `${DEFAULT_STAGE_RECOVERY_PREFIX}${leaseId}`;
+}
 
 /**
  * How long a solicited transfer may go without progress before it is abandoned.
@@ -102,6 +110,8 @@ export class AssetTransfer {
     private disposed = false;
     private durableStagingReady: boolean;
     private ownerRecoveryPending = true;
+    private readonly protectedStageRecoveryIds = new Set<string>();
+    private protectPendingStageRecoveries = false;
     /** Serializes every operation whose durable authority is bound to ownerId. */
     private ownerOperationTail = Promise.resolve();
 
@@ -196,6 +206,11 @@ export class AssetTransfer {
             }
             if (event.ownerId === undefined || event.ownerId === this.ownerId) {
                 this.durableAssetCache.delete(event.hash);
+            }
+        });
+        void this.runOwnerOperation(async () => undefined).catch((error: unknown) => {
+            if (!this.disposed) {
+                logger.error(new Error('Durable asset startup recovery failed', { cause: error }));
             }
         });
     }
@@ -295,12 +310,14 @@ export class AssetTransfer {
 
     /** Stage a caller-keyed restartable original for future #2648 integration. */
     async stageDurableAsset(blob: Blob, name: string, leaseId: string): Promise<{ hash: string; leaseId: string }> {
+        this.protectedStageRecoveryIds.add(getDefaultStageRecoveryId(leaseId));
         return this.runOwnerOperation(async (durableAssets) => {
             if (!this.durableStagingReady) {
                 throw new Error('Durable asset staging is unavailable until synchronized owner persistence completes');
             }
             const staged = await durableAssets.stageAsset(leaseId, blob, name);
             if (!this.disposed) {
+                this.protectedStageRecoveryIds.add(getDefaultStageRecoveryId(staged.leaseId));
                 this.durableAssetCache.set(staged.hash, { blob: staged.blob, name: staged.name });
             }
             return { hash: staged.hash, leaseId: staged.leaseId };
@@ -309,8 +326,17 @@ export class AssetTransfer {
 
     /** Verify and reopen one exact staged original after owner recreation. */
     async reopenDurableStagedAsset(leaseId: string, expectedHash: string): Promise<ReopenStagedAssetResult> {
+        // Possession of the exact lease/hash pair is the live caller renewing
+        // ownership of a pending stage after recreation. Protect its default
+        // release claim before startup recovery can treat it as abandoned.
+        const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectPendingStageRecoveries = true;
+        this.protectedStageRecoveryIds.add(defaultRecoveryId);
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.reopenStagedAsset(leaseId, expectedHash);
+            if (result.status === 'failed') {
+                this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+            }
             if (result.status === 'opened' && !this.disposed) {
                 this.durableAssetCache.set(result.hash, { blob: result.blob, name: result.name });
             }
@@ -331,18 +357,30 @@ export class AssetTransfer {
 
     /** Release one hash-bound staging reference exactly once. */
     async releaseDurableStagedAsset(leaseId: string, expectedHash: string): Promise<ReleaseStagedAssetResult> {
-        return this.runOwnerOperation(async (durableAssets) => {
+        const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectPendingStageRecoveries = true;
+        this.protectedStageRecoveryIds.add(defaultRecoveryId);
+        const result = await this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.releaseStagedAsset(leaseId, expectedHash);
             if (!this.disposed && result.status === 'released' && !result.ownerRetained) {
                 this.durableAssetCache.delete(result.hash);
             }
             return result;
         });
+        if (result.status !== 'failed') {
+            this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+        }
+        return result;
     }
 
     /** Atomically release a complete prepared resource set or leave every lease staged. */
     async releaseDurableStagedAssets(bindings: readonly StagedAssetBinding[]): Promise<ReleaseStagedAssetsResult> {
-        return this.runOwnerOperation(async (durableAssets) => {
+        const defaultRecoveryIds = bindings.map((binding) => getDefaultStageRecoveryId(binding.leaseId));
+        this.protectPendingStageRecoveries = true;
+        for (const recoveryId of defaultRecoveryIds) {
+            this.protectedStageRecoveryIds.add(recoveryId);
+        }
+        const result = await this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.releaseStagedAssets(bindings);
             if (!this.disposed && result.status === 'released') {
                 for (const release of result.releases) {
@@ -353,24 +391,47 @@ export class AssetTransfer {
             }
             return result;
         });
+        if (result.status !== 'failed') {
+            for (const recoveryId of defaultRecoveryIds) {
+                this.protectedStageRecoveryIds.delete(recoveryId);
+            }
+        }
+        return result;
     }
 
     /** Promote one hash-bound staging reference exactly once. */
     async promoteDurableStagedAsset(leaseId: string, expectedHash: string): Promise<PromoteStagedAssetResult> {
-        return this.runOwnerOperation(async (durableAssets) => {
+        const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectPendingStageRecoveries = true;
+        this.protectedStageRecoveryIds.add(defaultRecoveryId);
+        const result = await this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.promoteStagedAsset(leaseId, expectedHash);
             if (!this.disposed && result.status !== 'failed') {
                 this.durableAssetCache.set(result.hash, { blob: result.blob, name: result.name });
             }
             return result;
         });
+        if (result.status !== 'failed') {
+            this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+        }
+        return result;
     }
 
     /** Persist exact committed-asset promotion ownership before the project transaction starts. */
-    async prepareDurablePromotionRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
-        return this.runBindingOwnerOperation(bindings, (durableAssets) =>
-            durableAssets.preparePromotionRecovery(recoveryId, bindings)
+    async prepareDurablePromotionRecovery(
+        recoveryId: string,
+        bindings: readonly StagedAssetBinding[],
+        commitProof?: DurableAssetCommitProof
+    ) {
+        const result = await this.runBindingOwnerOperation(bindings, (durableAssets) =>
+            durableAssets.preparePromotionRecovery(recoveryId, bindings, commitProof)
         );
+        if (result.status !== 'failed') {
+            for (const binding of bindings) {
+                this.protectedStageRecoveryIds.delete(getDefaultStageRecoveryId(binding.leaseId));
+            }
+        }
+        return result;
     }
 
     /** Make a prepared promotion restart-executable after the command returns durable commit proof. */
@@ -396,9 +457,15 @@ export class AssetTransfer {
 
     /** Persist exact staged-asset cleanup ownership before a terminal caller may disappear. */
     async prepareDurableCleanupRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
-        return this.runBindingOwnerOperation(bindings, (durableAssets) =>
+        const result = await this.runBindingOwnerOperation(bindings, (durableAssets) =>
             durableAssets.prepareCleanupRecovery(recoveryId, bindings)
         );
+        if (result.status !== 'failed') {
+            for (const binding of bindings) {
+                this.protectedStageRecoveryIds.delete(getDefaultStageRecoveryId(binding.leaseId));
+            }
+        }
+        return result;
     }
 
     /** Atomically replace a pre-commit promotion claim with exact restart-safe cleanup ownership. */
@@ -497,7 +564,11 @@ export class AssetTransfer {
                     this.ownerRecoveryPending = false;
                 }
                 if (options.resumeRecoveries !== false) {
-                    const recovery = await this.durableAssets.resumeRecoveries();
+                    const recovery = await this.durableAssets.resumeRecoveries(
+                        this.protectedStageRecoveryIds,
+                        durableAssetCommitProof.isProven,
+                        this.protectPendingStageRecoveries
+                    );
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset promotion recovery failed: ${recovery.reason}`);
                     }
