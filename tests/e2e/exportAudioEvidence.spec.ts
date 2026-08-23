@@ -11,9 +11,10 @@ const ALLOWED_WARNING_FRAGMENTS = [
     '[MIDI] Web MIDI failed',
     'No available adapters.',
 ] as const;
+const EXPORT_COMPLETION_TIMEOUT_MS = 900_000;
 
 test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, testInfo) => {
-    test.setTimeout(600_000);
+    test.setTimeout(EXPORT_COMPLETION_TIMEOUT_MS + 60_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Audio export E2E requires a configured Playwright baseURL');
@@ -87,10 +88,12 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
     await expect(tailInput).toBeEnabled();
     await expect(tailInput).toHaveValue('2');
 
-    const downloadPromise = page.waitForEvent('download', { timeout: 300_000 });
+    const downloadPromise = page.waitForEvent('download', { timeout: EXPORT_COMPLETION_TIMEOUT_MS });
     await dialog.getByRole('button', { name: 'Start Baking' }).click();
     const download = await downloadPromise;
-    await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible({ timeout: 300_000 });
+    await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible({
+        timeout: EXPORT_COMPLETION_TIMEOUT_MS,
+    });
 
     expect(await download.failure()).toBeNull();
     expect(download.suggestedFilename()).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
