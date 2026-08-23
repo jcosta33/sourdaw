@@ -80,7 +80,12 @@ describe('grinderControlRateParams', () => {
 
     it('keeps non-continuous parameters on the validated message path without rebuilding the graph', async () => {
         const context = { currentTime: 2, state: 'running' } as unknown as BaseAudioContext;
-        const grinder = await createGrinderNode(context);
+        const grinder = await createGrinderNode(context, undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['transformerHysteresis', 'cabIrSlot', 'neuralCpuBudget'],
+        });
         postMessage.mockClear();
 
         grinder.setParam('transformerHysteresis', 0.7);
@@ -99,8 +104,20 @@ describe('grinderControlRateParams', () => {
         }
 
         expect(postMessage).toHaveBeenCalledTimes(2);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'transformerHysteresis', value: 0.7 });
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'cabIrSlot', value: 3 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'transformerHysteresis' }),
+                value: 0.7,
+            })
+        );
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'cabIrSlot' }),
+                value: 3,
+            })
+        );
         expect(workletNodeCreations).toBe(1);
     });
 });

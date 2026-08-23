@@ -106,8 +106,8 @@ function makeBlock(): { inputs: Float32Array[][]; outputs: Float32Array[][] } {
 }
 
 // Fresh 32-float telemetry SAB slot; index 3.. holds the band-levels blit.
-function makeSab(): { sab: ArrayBuffer; view: Float32Array } {
-    const sab = new RealFloat32Array(32).buffer;
+function makeSab(): { sab: SharedArrayBuffer; view: Float32Array } {
+    const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
     return { sab, view: new RealFloat32Array(sab, 0, 32) };
 }
 
