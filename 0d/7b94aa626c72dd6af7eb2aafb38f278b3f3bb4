@@ -1,0 +1,31 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_a40848e8f8cca9::t_4d388a198a6f9c 228
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_a40848e8f8cca9::t_4d388a198a6f9c 658
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_a40848e8f8cca9::t_4d388a198a6f9c 17-30
+src/modules/Arrangement/models/PluginDescriptors/KneadDescriptor.ts
+  s_a40848e8f8cca9::t_4d388a198a6f9c 1-41
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  s_a40848e8f8cca9::t_4d388a198a6f9c 680
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_a40848e8f8cca9::t_4d388a198a6f9c 15,167
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_a40848e8f8cca9::t_4d388a198a6f9c 141,156,159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0d7b94aa626c72dd6af7eb2aafb38f278b3f3bb4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
