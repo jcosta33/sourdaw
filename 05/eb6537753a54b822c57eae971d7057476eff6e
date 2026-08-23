@@ -1,0 +1,74 @@
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleRecovery.spec.ts
+  s_a40848e8f8cca9::t_a1701977ab4f4c 102,153,184,195,198,204,214-215
+  s_a40848e8f8cca9::t_8ef511da956bb2 3-12,30-45,47-101,103-152,154-183,185-194,196-197,199-203,205-213
+  s_a40848e8f8cca9::t_490f47ae4e5502 46
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecyclePersistence.spec.ts
+  s_a40848e8f8cca9::t_e1617de12e5a6a 47,51-56,58-66
+  s_a40848e8f8cca9::t_65337ee6b263c4 3-9,27-29
+  s_a40848e8f8cca9::t_4d9ae008f936b8 48-49
+  s_a40848e8f8cca9::t_230f8b47e6f708 26,32-33,39,41-44
+  s_a40848e8f8cca9::t_36ba57814429eb 45-46
+src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts
+  s_a40848e8f8cca9::t_bba71174ff34f7 38
+  s_a40848e8f8cca9::t_eb48f145e5ece8 25-37,49-84,117
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_a40848e8f8cca9::t_360dff6c632710 111,152,157-158
+  s_a40848e8f8cca9::t_a9aded64fced03 159
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_a40848e8f8cca9::t_0584728a899f83 1207,1604,1646
+  s_a40848e8f8cca9::t_672bff5ee0d936 7-8,174,199,203-226,228-239,241-248,356,377-380,402-412
+  s_a40848e8f8cca9::t_6607bf2f34b2c8 1600,1614,1682,1690
+  s_a40848e8f8cca9::t_87d100e9053612 227,240
+  s_a40848e8f8cca9::t_49f6d66eaaa948 779,820-825
+  s_a40848e8f8cca9::t_612a9d563414c3 1573-1576,1693,1701-1703
+  s_a40848e8f8cca9::t_44b1f85fae7949 1179,1185
+  s_a40848e8f8cca9::t_9db559c03523cf 1738,1742,1745,1755,1759,1762
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleSettlement.spec.ts
+  s_a40848e8f8cca9::t_304bca50872e2e 743-783
+  s_a40848e8f8cca9::t_3bf77c054fbf77 911-923
+  s_a40848e8f8cca9::t_013e2752f65aec 901-903,939-941,958
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.spec.ts
+  s_a40848e8f8cca9::t_b8754e38ad8e73 62-93
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleRace.spec.ts
+  s_a40848e8f8cca9::t_29591435789063 124,162
+src/modules/AudioEngine/stores/preparedAudioBufferLifecycle.ts
+  s_a40848e8f8cca9::t_b02be572479932 118
+  s_a40848e8f8cca9::t_54b6f5a06b02dc 1093,1101-1116,1130-1134,1142-1145,1148
+  s_a40848e8f8cca9::t_ee8d409fed1f65 1352-1355,1358,1367,1397-1402,1409,1415,1420-1421
+  s_a40848e8f8cca9::t_94b8f70603ea3b 117,1135-1138,1240
+  s_a40848e8f8cca9::t_29c490a9929506 317-318,321,325,327-332
+  s_a40848e8f8cca9::t_b447908c96b8fd 1257,1263-1274,1285-1298
+  s_a40848e8f8cca9::t_85f68cb8e7508a 748-749,809,817-824,843
+  s_a40848e8f8cca9::t_ee5f843d12a823 1242-1249
+  s_a40848e8f8cca9::t_ed01a605c203b8 468,480,495,540,548,559,562,595,627-629,631-632,660,1281
+  s_a40848e8f8cca9::t_b3fe4492a723c2 995-1000
+  s_a40848e8f8cca9::t_756e1d251537f0 8,15-16,34,75-79,92
+  s_a40848e8f8cca9::t_36e3ed1bb7aa03 451,458-467,475,477,479,484,487,489,493,501-504,510,521-525,528,530-533,536,538-539,541-547,549-557,563-565,568,603-607,630,653-655,661
+  s_a40848e8f8cca9::t_242e2e8d76b499 696
+  s_a40848e8f8cca9::t_0c3d20bff8b468 99-101,103-104,106-116,119-123,1241,1250-1256,1258-1262,1275-1280,1282-1284,1299-1342,1443
+  s_a40848e8f8cca9::t_a72cbc6df57eff 7,580-582,584-593,597-598,608-626,633-652
+  s_a40848e8f8cca9::t_b1ad2f9aa669c9 558,560-561,594,596,600
+  s_a40848e8f8cca9::t_edac3d77b69ef9 946
+  s_a40848e8f8cca9::t_bc2f0ad72bb162 1343
+  s_a40848e8f8cca9::t_eb47f415182818 95-97
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_a40848e8f8cca9::t_ea84662bb26ddf 60-70,74,124-125,482,488,678
+  s_a40848e8f8cca9::t_a5b486cb1664be 17-18
+  s_a40848e8f8cca9::t_850c784848bb37 115-116,260-264,295,310-317,427-431,435,439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "05eb6537753a54b822c57eae971d7057476eff6e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
