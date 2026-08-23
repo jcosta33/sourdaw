@@ -1,0 +1,22 @@
+crates/daw-dsp/tests/support/retained_signal.rs
+  s_a40848e8f8cca9::t_03e58c20c41c17 1-56
+  s_a40848e8f8cca9::t_946ea4a8a6872e 57-59
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_a40848e8f8cca9::t_03e58c20c41c17 22-24,62,73,85,122,124-128,143,149,151-155,166-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "355b60dbca8a7d52f7128ff9947d6a192448439d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
