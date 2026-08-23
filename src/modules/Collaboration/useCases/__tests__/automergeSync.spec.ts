@@ -312,7 +312,7 @@ describe('AutomergeSync', () => {
         });
         expect(commitHandoff).toHaveBeenCalledOnce();
         expect(replaceCrdtDoc).not.toHaveBeenCalled();
-        expect(persistCrdtProject).not.toHaveBeenCalled();
+        expect(persistCrdtProject).toHaveBeenCalledExactlyOnceWith([...getHeads(canonical)].map(String).toSorted());
     });
 
     it('abandons a no-op root owner handoff when the session stops before adoption', async () => {
@@ -413,6 +413,111 @@ describe('AutomergeSync', () => {
         expect(handoffPrepared).toBe(true);
         expect(onPersistError).toHaveBeenCalledExactlyOnceWith(expect.any(Error));
         expect(commitHandoff).not.toHaveBeenCalled();
+    });
+
+    it('keeps owner authority on the persisted root until a no-op retry durably saves the exact published root', async () => {
+        const previousOwnerId = 'project:persisted-owner';
+        const nextOwnerId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const peer = makePeerManager() as unknown as PeerConnectionManager;
+        const transfer = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            previousOwnerId
+        );
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['persisted-owner-original']),
+            'persisted-owner.wav',
+            'asset-stage-persisted-owner'
+        );
+        transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
+        const commitHandoff = vi.fn(async (commit: () => Promise<void>) => commit());
+        const persistFailure = new Error('exact root save interrupted');
+        let persistenceAttempts = 0;
+        let restartedProjectOwnerId = previousOwnerId;
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            persistenceAttempts += 1;
+            if (persistenceAttempts <= 2) {
+                throw persistFailure;
+            }
+            restartedProjectOwnerId = (live as Doc<SeededDoc>).projectMeta?.projectId ?? previousOwnerId;
+        });
+        const onPersistError = vi.fn();
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async ({ projectId }) => {
+                const transition = await transfer.prepareDurableOwnerRebind(projectId!);
+                if (transition.status === 'failed') {
+                    throw new Error(transition.reason);
+                }
+                return {
+                    commit: () => commitHandoff(transition.commit),
+                    abort: transition.abort,
+                };
+            },
+            onPersistError,
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: nextOwnerId };
+            draft.peerProbe = 'published-before-save';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        const publishedHeads = [...getHeads(live)].map(String).toSorted();
+        expect(persistCrdtProject).toHaveBeenCalledExactlyOnceWith(publishedHeads);
+        expect(commitHandoff).not.toHaveBeenCalled();
+
+        const sendNoOpHostFrame = async (peerId: PeerId, actorId: string) => {
+            const unchangedRemote = clone(live, actorId);
+            for (const syncMessageBase64 of createPeerSyncMessages({ remote: unchangedRemote, local: live })) {
+                sync.receiveSync({ peerId, docId: 'root', syncMessageBase64 });
+            }
+            await sync.flushPersistence();
+        };
+
+        await sendNoOpHostFrame('host-peer-retry-1', 'cccccccccccccccc');
+
+        expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+        expect(persistCrdtProject).toHaveBeenLastCalledWith(publishedHeads);
+        expect(commitHandoff).not.toHaveBeenCalled();
+        expect(restartedProjectOwnerId).toBe(previousOwnerId);
+        expect(onPersistError).toHaveBeenCalledTimes(2);
+        const restartedPersistedOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            restartedProjectOwnerId
+        );
+        await expect(
+            restartedPersistedOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toMatchObject({ status: 'opened' });
+        restartedPersistedOwner.dispose();
+
+        await sendNoOpHostFrame('host-peer-retry-2', 'dddddddddddddddd');
+
+        expect(persistCrdtProject).toHaveBeenCalledTimes(3);
+        expect(persistCrdtProject).toHaveBeenLastCalledWith(publishedHeads);
+        expect(commitHandoff).toHaveBeenCalledOnce();
+        expect(restartedProjectOwnerId).toBe(nextOwnerId);
+        const restartedAdoptedOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            restartedProjectOwnerId
+        );
+        await expect(
+            restartedAdoptedOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toMatchObject({ status: 'opened' });
+        await restartedAdoptedOwner.releaseDurableStagedAsset(staged.leaseId, staged.hash);
+        restartedAdoptedOwner.dispose();
+        transfer.dispose();
     });
 
     it('prepares an identity-bearing root delivery even before the peer converges', async () => {

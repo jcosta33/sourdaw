@@ -47,17 +47,23 @@ describe('getAssetTransfer durable live-stage ownership', () => {
         runtime.state.assetTransfer = null;
     });
 
-    it('preserves one live confirmation stage across no-session and session transfer swaps', async () => {
+    it('preserves one transfer-safe stage across no-session and session swaps before confirmation owns it', async () => {
         const projectTransfer = getAssetTransfer();
         if (!projectTransfer) {
             throw new TypeError('Expected project asset transfer');
         }
-        const staged = await projectTransfer.stageDurableAsset(
-            new Blob(['pending-confirmation']),
-            'pending-confirmation.wav',
-            'asset-stage-project-session-swap'
+        const promoted = await projectTransfer.stageDurableAsset(
+            new Blob(['pending-confirmation-promote']),
+            'pending-confirmation-promote.wav',
+            'asset-stage-project-session-swap-promote',
+            { protectAcrossTransfer: true }
         );
-        projectTransfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
+        const cancelled = await projectTransfer.stageDurableAsset(
+            new Blob(['pending-confirmation-cancel']),
+            'pending-confirmation-cancel.wav',
+            'asset-stage-project-session-swap-cancel',
+            { protectAcrossTransfer: true }
+        );
 
         const sessionTransfer = createSessionTransfer();
         runtime.state.assetTransfer = sessionTransfer;
@@ -69,20 +75,44 @@ describe('getAssetTransfer durable live-stage ownership', () => {
         await replacementProjectTransfer?.reopenDurableAsset('sha256:missing');
 
         await expect(
-            replacementProjectTransfer?.reopenDurableStagedAsset(staged.leaseId, staged.hash)
-        ).resolves.toMatchObject({ status: 'opened', leaseId: staged.leaseId });
+            replacementProjectTransfer?.reopenDurableStagedAsset(promoted.leaseId, promoted.hash)
+        ).resolves.toMatchObject({ status: 'opened', leaseId: promoted.leaseId });
         await expect(
-            replacementProjectTransfer?.releaseDurableStagedAsset(staged.leaseId, staged.hash)
-        ).resolves.toMatchObject({ status: 'released' });
+            replacementProjectTransfer?.reopenDurableStagedAsset(cancelled.leaseId, cancelled.hash)
+        ).resolves.toMatchObject({ status: 'opened', leaseId: cancelled.leaseId });
+        await expect(
+            replacementProjectTransfer?.prepareDurablePromotionRecovery('stem-promotion:session-swap', [
+                { leaseId: promoted.leaseId, expectedHash: promoted.hash },
+            ])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(
+            replacementProjectTransfer?.commitDurablePromotionRecovery('stem-promotion:session-swap')
+        ).resolves.toMatchObject({ status: 'committed' });
+        await expect(
+            replacementProjectTransfer?.completeDurablePromotionRecovery('stem-promotion:session-swap')
+        ).resolves.toMatchObject({ status: 'completed' });
+        await expect(
+            replacementProjectTransfer?.prepareDurableCleanupRecovery('stem-cleanup:session-swap', [
+                { leaseId: cancelled.leaseId, expectedHash: cancelled.hash },
+            ])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(
+            replacementProjectTransfer?.completeDurableCleanupRecovery('stem-cleanup:session-swap')
+        ).resolves.toMatchObject({ status: 'completed' });
 
         const cleanupTransfer = createSessionTransfer();
         runtime.state.assetTransfer = cleanupTransfer;
         getAssetTransfer();
         await cleanupTransfer.reopenDurableAsset('sha256:missing');
-        await expect(cleanupTransfer.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+        await expect(cleanupTransfer.reopenDurableAsset(promoted.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: promoted.hash,
+        });
+        await expect(cleanupTransfer.reopenDurableStagedAsset(cancelled.leaseId, cancelled.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'lease-terminal-conflict',
         });
+        await cleanupTransfer.releaseDurableAsset(promoted.hash);
         cleanupTransfer.dispose();
     });
 });

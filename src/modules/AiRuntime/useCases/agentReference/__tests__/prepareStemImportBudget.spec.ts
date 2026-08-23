@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     assetTransfer: null as null | {
-        stageDurableAsset: (file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>;
+        stageDurableAsset: (
+            file: File,
+            name: string,
+            leaseId: string,
+            options?: { protectAcrossTransfer?: boolean }
+        ) => Promise<{ hash: string; leaseId: string }>;
         stageLocalAsset: (file: File, name: string) => Promise<{ hash: string; leaseId: string }>;
         prepareDurableCleanupRecovery: (recoveryId: string, bindings: unknown[]) => Promise<{ status: string }>;
         completeDurableCleanupRecovery: (recoveryId: string) => Promise<{ status: string; reason?: string }>;
@@ -138,8 +143,18 @@ describe('prepareStemImport budget admission', () => {
             }),
         ]);
         expect(mocks.stageDurableAsset).toHaveBeenCalledTimes(2);
-        expect(mocks.stageDurableAsset.mock.calls[0]?.slice(0, 2)).toEqual([files[0], 'kick.wav']);
-        expect(mocks.stageDurableAsset.mock.calls[1]?.slice(0, 2)).toEqual([files[1], 'snare.wav']);
+        expect(mocks.stageDurableAsset.mock.calls[0]).toEqual([
+            files[0],
+            'kick.wav',
+            expect.stringMatching(/^asset-stage-stem-/u),
+            { protectAcrossTransfer: true },
+        ]);
+        expect(mocks.stageDurableAsset.mock.calls[1]).toEqual([
+            files[1],
+            'snare.wav',
+            expect.stringMatching(/^asset-stage-stem-/u),
+            { protectAcrossTransfer: true },
+        ]);
         expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
     });
 

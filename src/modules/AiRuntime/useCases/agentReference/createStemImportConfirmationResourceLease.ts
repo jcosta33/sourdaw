@@ -24,13 +24,6 @@ export function createStemImportConfirmationResourceLease(
         }
         return { leaseId: stem.assetLeaseId, expectedHash: stem.assetHash };
     });
-    const protectionTransfer = getAssetTransfer();
-    if (!protectionTransfer) {
-        throw new Error('Asset transfer is unavailable for prepared stem ownership');
-    }
-    for (const binding of bindings) {
-        protectionTransfer.protectDurableStagedAssetAcrossTransfer(binding.leaseId);
-    }
     if (runId) {
         preparedStemImportResources.release({ runId, stems });
     }

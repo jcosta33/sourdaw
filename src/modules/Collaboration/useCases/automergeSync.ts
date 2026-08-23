@@ -565,12 +565,15 @@ export class AutomergeSync {
             this.hooks.prepareSyncPersistence !== undefined
         ) {
             this.persistenceBarrierCount += 1;
-            const persistence = runCrdtPersistenceBarrier(async () => {
+            const persistence = runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
                 if (generation !== this.lifecycleGeneration) {
                     return;
                 }
+                let transition: { commit: () => Promise<void>; abort: () => Promise<void> } | undefined;
+                let exactPersistenceStarted = false;
+                let exactPersistenceCompleted = false;
                 try {
-                    const transition = await this.hooks.prepareSyncPersistence?.({
+                    transition = await this.hooks.prepareSyncPersistence?.({
                         peerId,
                         docId,
                         projectId,
@@ -586,24 +589,29 @@ export class AutomergeSync {
                         await transition?.abort();
                         return;
                     }
-                    let commitStarted = false;
-                    try {
-                        peerStates.set(docId, newSyncState);
-                        this.syncStates.set(peerId, peerStates);
-                        if (converged) {
-                            this.hooks.onSyncConverged?.({ peerId, docId });
-                        }
-                        commitStarted = true;
-                        await transition?.commit();
-                    } catch (error) {
-                        if (!commitStarted) {
-                            await transition?.abort();
-                        }
-                        throw error;
+                    exactPersistenceStarted = true;
+                    await persistCurrentProject(rootHeads);
+                    exactPersistenceCompleted = true;
+                    peerStates.set(docId, newSyncState);
+                    this.syncStates.set(peerId, peerStates);
+                    if (converged) {
+                        this.hooks.onSyncConverged?.({ peerId, docId });
                     }
+                    await transition?.commit();
                 } catch (error) {
+                    // Once exact persistence has started, the root may already
+                    // be durable even if the operation reports a late failure.
+                    // Retain the prepared handoff for the next exact retry,
+                    // matching the changed-root publication barrier below.
+                    if (!exactPersistenceStarted) {
+                        await transition?.abort();
+                    }
                     logger.warn('[AutomergeSync] No-op root owner adoption failed:', error);
-                    this.hooks.onPostPersistError?.(error);
+                    if (exactPersistenceStarted && !exactPersistenceCompleted) {
+                        this.hooks.onPersistError?.(error);
+                    } else {
+                        this.hooks.onPostPersistError?.(error);
+                    }
                 }
             });
             this.persistenceTail = persistence.finally(() => {

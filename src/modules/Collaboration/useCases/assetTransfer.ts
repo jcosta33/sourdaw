@@ -135,6 +135,10 @@ type AssetTransferDurabilityOptions = {
     handoffSourceOwnerIds?: readonly string[];
 };
 
+type DurableAssetStageOptions = {
+    protectAcrossTransfer?: boolean;
+};
+
 /**
  * Content-addressed asset transfer over WebRTC data channels.
  *
@@ -349,15 +353,28 @@ export class AssetTransfer {
     }
 
     /** Stage a caller-keyed restartable original for future #2648 integration. */
-    async stageDurableAsset(blob: Blob, name: string, leaseId: string): Promise<{ hash: string; leaseId: string }> {
+    async stageDurableAsset(
+        blob: Blob,
+        name: string,
+        leaseId: string,
+        options: DurableAssetStageOptions = {}
+    ): Promise<{ hash: string; leaseId: string }> {
         this.protectedStageRecoveryIds.add(getDefaultStageRecoveryId(leaseId));
         return this.runOwnerOperation(async (durableAssets) => {
             if (!this.durableStagingReady) {
                 throw new Error('Durable asset staging is unavailable until synchronized owner persistence completes');
             }
             const staged = await durableAssets.stageAsset(leaseId, blob, name);
+            const recoveryId = getDefaultStageRecoveryId(staged.leaseId);
+            if (options.protectAcrossTransfer) {
+                // Register while this owner's durable operation is still held.
+                // A replacement transfer's startup recovery is serialized
+                // behind this point and therefore cannot release the stage in
+                // the gap between durable commit and the caller receiving it.
+                protectLiveStageRecovery(this.ownerId, recoveryId);
+            }
             if (!this.disposed) {
-                this.protectedStageRecoveryIds.add(getDefaultStageRecoveryId(staged.leaseId));
+                this.protectedStageRecoveryIds.add(recoveryId);
                 this.durableAssetCache.set(staged.hash, { blob: staged.blob, name: staged.name });
             }
             return { hash: staged.hash, leaseId: staged.leaseId };

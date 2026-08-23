@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
     completeDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
     prepareDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
     prepareDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
-    protectDurableStagedAssetAcrossTransfer: vi.fn(),
     releaseDurableStagedAsset: vi.fn().mockResolvedValue({ status: 'released' }),
     releasePreviewAudioBuffer: vi.fn(),
     releaseStagedAsset: vi.fn(),
@@ -32,7 +31,6 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
         completeDurablePromotionRecovery: mocks.completeDurablePromotionRecovery,
         prepareDurableCleanupRecovery: mocks.prepareDurableCleanupRecovery,
         prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
-        protectDurableStagedAssetAcrossTransfer: mocks.protectDurableStagedAssetAcrossTransfer,
         releaseDurableStagedAsset: mocks.releaseDurableStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,
         transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
@@ -117,7 +115,6 @@ describe('prepared stem import resource cleanup', () => {
             { type: 'importStemSet', payload: { stems } },
         ] as never);
 
-        expect(mocks.protectDurableStagedAssetAcrossTransfer).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
         await expect(lease?.release()).rejects.toThrow('cleanup remains pending');
         await expect(lease?.release()).resolves.toBeUndefined();
 

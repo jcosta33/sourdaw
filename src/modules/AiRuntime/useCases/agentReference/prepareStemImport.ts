@@ -143,7 +143,8 @@ export async function prepareStemImport(
             const stagedAsset = await assetTransfer.stageDurableAsset(
                 file,
                 file.name,
-                `asset-stage-${pendingStem.stemId}`
+                `asset-stage-${pendingStem.stemId}`,
+                { protectAcrossTransfer: true }
             );
             Object.assign(pendingStem, {
                 assetHash: stagedAsset.hash,
