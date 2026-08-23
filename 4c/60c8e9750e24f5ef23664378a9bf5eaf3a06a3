@@ -1,0 +1,21 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_a40848e8f8cca9::t_b8bee6a80817af 1830,1933,1935
+src/app/__tests__/agentProtocolVersioning.spec.ts
+  s_a40848e8f8cca9::t_b8bee6a80817af 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4c60c8e9750e24f5ef23664378a9bf5eaf3a06a3",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
