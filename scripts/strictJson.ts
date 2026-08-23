@@ -1,7 +1,7 @@
 import { parseDocument } from 'yaml';
 
 /** Parse strict JSON after YAML enforces unique object keys. */
-export function parseJsonWithUniqueKeys<T>(source: string, label: string): T {
+export function parseJsonWithUniqueKeys<Value>(source: string, label: string): Value {
     const document = parseDocument(source, { uniqueKeys: true });
     const yamlError = document.errors[0];
     if (yamlError !== undefined) {
@@ -12,9 +12,9 @@ export function parseJsonWithUniqueKeys<T>(source: string, label: string): T {
         throw new Error(`${label}: invalid JSON: ${message}`);
     }
     try {
-        return JSON.parse(source) as T;
+        return JSON.parse(source) as Value;
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${label}: invalid JSON: ${message}`);
+        throw new Error(`${label}: invalid JSON: ${message}`, { cause: error });
     }
 }
