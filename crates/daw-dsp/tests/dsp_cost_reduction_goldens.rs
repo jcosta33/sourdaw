@@ -6,7 +6,7 @@
 //! shadow module tree, so release/native production contains no reference
 //! switch, field, API, or alternate branch.
 //!
-//! Five goldens compare same-process renders, removing cross-platform libm
+//! Six goldens compare same-process renders, removing cross-platform libm
 //! variation from the oracle. The mechanical-noise golden keeps its captured
 //! absolute hash because that arithmetic has remained stable on every runner.
 
@@ -127,6 +127,16 @@ fn grinder_render(
 #[test]
 fn serial_routing_output_is_unchanged_by_gating_the_dual_amp_chain() {
     let params = [("routingMode", 0.0), ("cabType", 2.0)];
+    let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
+    let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
+    assert_equivalent_renders(&optimized, &reference);
+}
+
+/// F9: DualAmp uses both amp chains in the optimized and pre-F9 engines. Fresh
+/// engines configured directly for that routing must remain bit-identical.
+#[test]
+fn direct_dual_amp_output_is_unchanged_by_serial_gating() {
+    let params = [("routingMode", 3.0), ("cabType", 2.0)];
     let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
     let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
     assert_equivalent_renders(&optimized, &reference);
