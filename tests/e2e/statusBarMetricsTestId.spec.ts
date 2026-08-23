@@ -16,7 +16,7 @@ test.describe('Status bar metrics — live readout formats', () => {
     });
 
     test('Rate readout shows a real sample-rate value after boot', async ({ page }) => {
-        const status = page.getByRole('status').last();
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status).toBeVisible({ timeout: 5000 });
 
         // The Rate readout starts as the literal "0kHz" placeholder; after the
@@ -24,20 +24,16 @@ test.describe('Status bar metrics — live readout formats', () => {
         // "48kHz" — the "0kHz" placeholder is gone.
         const rateRow = status.getByText('Rate').locator('..');
         const rateValue = rateRow.locator('span').last();
-        await expect
-            .poll(async () => rateValue.innerText(), { timeout: 15_000 })
-            .not.toBe('0kHz');
+        await expect.poll(async () => rateValue.innerText(), { timeout: 15_000 }).not.toBe('0kHz');
     });
 
     test('Latency readout shows a real ms value after boot', async ({ page }) => {
-        const status = page.getByRole('status').last();
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status).toBeVisible({ timeout: 5000 });
 
         // Same contract: the "0.0ms" placeholder is replaced by a live value.
         const latencyRow = status.getByText('Latency').locator('..');
         const latencyValue = latencyRow.locator('span').last();
-        await expect
-            .poll(async () => latencyValue.innerText(), { timeout: 15_000 })
-            .not.toBe('0.0ms');
+        await expect.poll(async () => latencyValue.innerText(), { timeout: 15_000 }).not.toBe('0.0ms');
     });
 });
