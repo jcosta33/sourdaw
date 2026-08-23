@@ -474,6 +474,7 @@ export async function sendChatMessage(
                     }
                     const plannedAuthority = compileAgentActionExecution({
                         actions: result.actions,
+                        actionCommandGraph: result.actionCommandGraph,
                         actionLabels: confirmationDescription.actionLabels,
                         context,
                         group: generateGroupId(userText),
@@ -575,6 +576,7 @@ export async function sendChatMessage(
                 const commandGroup = generateGroupId(userText);
                 const compiledActionExecution = compileAgentActionExecution({
                     actions: result.actions,
+                    actionCommandGraph: result.actionCommandGraph,
                     actionLabels: confirmationDescription.actionLabels,
                     context,
                     group: commandGroup,

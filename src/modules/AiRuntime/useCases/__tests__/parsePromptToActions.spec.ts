@@ -390,6 +390,82 @@ describe('parsePromptToActions', () => {
         expect(result.requiresConfirmation).toBe(true);
     });
 
+    it('materializes compiler-owned binding scope and preserves its action graph', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['createBus', 'setTrackGain'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Create and gain a drum bus.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['createBus', 'setTrackGain'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate the dependency graph.'],
+                                stoppingConditions: ['Stop if the revision changes.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'create-drum-bus',
+                                        name: 'createBus',
+                                        arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                                    },
+                                    {
+                                        id: 'gain-drum-bus',
+                                        name: 'setTrackGain',
+                                        arguments: { trackId: '$drum-bus', gain: 0.8 },
+                                        dependsOn: ['create-drum-bus'],
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'Create a Drum Bus, then set its gain to 0.8.',
+            baseContext,
+            undefined,
+            'revision-binding'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actionCommandGraph).toEqual({
+            dependenciesByActionIndex: [[], [0]],
+            batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
+        });
+        const createdBusId = result.actions[0]?.type === 'createBus' ? result.actions[0].payload.busId : undefined;
+        expect(createdBusId).toMatch(/^bus-ai-/u);
+        expect(result.actions[1]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: createdBusId, gain: 0.8 },
+        });
+        expect(result.providerProposal?.scope.targetIds).toEqual([createdBusId]);
+    });
+
     it('rejects a fast-path plan before confirmation when it conflicts with locked production intent', async () => {
         vi.mocked(tryParameterizedPath).mockReturnValue([{ type: 'setTempo', payload: { bpm: 128 } }]);
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(false);

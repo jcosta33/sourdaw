@@ -621,14 +621,35 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    const effectiveProviderProposal =
+                        providerProposal === null || bridged.actionCommandGraph === undefined
+                            ? providerProposal
+                            : {
+                                  ...providerProposal,
+                                  scope: {
+                                      ...providerProposal.scope,
+                                      targetIds: [
+                                          ...new Set([
+                                              ...providerProposal.scope.targetIds,
+                                              ...(bridged.batchLocalActionIdentities ?? []).flatMap((identity) =>
+                                                  identity.actionType === 'createBus' ? [identity.busId] : []
+                                              ),
+                                          ]),
+                                      ],
+                                  },
+                              };
+
                     return {
                         actions: guarded.actions,
+                        ...(bridged.actionCommandGraph === undefined
+                            ? {}
+                            : { actionCommandGraph: bridged.actionCommandGraph }),
                         rawText: prompt,
                         requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
-                        ...(providerProposal === null ? {} : { providerProposal }),
+                        ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                     };
                 }
 

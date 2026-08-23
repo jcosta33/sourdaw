@@ -368,38 +368,41 @@ function checkCommandWriteConflict(input: {
     return { status: 'accepted', commandKey };
 }
 
-function detectDependencyCycle(items: readonly SemanticCommandListItem[]): string | null {
+function stableTopologicalSort(
+    items: readonly SemanticCommandListItem[]
+): { status: 'accepted'; items: SemanticCommandListItem[] } | RejectedCompilation {
     const dependencies = new Map<string, string[]>();
     for (const item of items) {
         const id = item.id;
         if (!isSafeId(id) || dependencies.has(id)) {
-            return 'Structured command list item IDs must be unique stable identifiers.';
+            return {
+                status: 'rejected',
+                reason: 'Structured command list item IDs must be unique stable identifiers.',
+            };
         }
         const dependsOn =
             item.dependsOn === undefined ? [] : parseIdList(item.dependsOn, 'Structured command dependencies');
         if ('status' in dependsOn) {
-            return dependsOn.reason;
+            return dependsOn;
         }
         dependencies.set(id, dependsOn);
     }
-    const visiting = new Set<string>();
-    const visited = new Set<string>();
-    const visit = (id: string): boolean => {
-        if (visiting.has(id)) {
-            return true;
-        }
-        if (visited.has(id)) {
-            return false;
-        }
-        visiting.add(id);
-        const cycle = (dependencies.get(id) ?? []).some(
-            (dependency) => !dependencies.has(dependency) || visit(dependency)
+    if ([...dependencies.values()].some((itemDependencies) => itemDependencies.some((id) => !dependencies.has(id)))) {
+        return { status: 'rejected', reason: 'Structured command list has an unknown dependency.' };
+    }
+    const remaining = new Set(items.map((item) => item.id));
+    const sorted: SemanticCommandListItem[] = [];
+    while (remaining.size > 0) {
+        const next = items.find(
+            (item) => remaining.has(item.id) && (dependencies.get(item.id) ?? []).every((id) => !remaining.has(id))
         );
-        visiting.delete(id);
-        visited.add(id);
-        return cycle;
-    };
-    return [...dependencies.keys()].some(visit) ? 'Structured command list has an unknown or cyclic dependency.' : null;
+        if (next === undefined) {
+            return { status: 'rejected', reason: 'Structured command list has a cyclic dependency.' };
+        }
+        sorted.push(next);
+        remaining.delete(next.id);
+    }
+    return { status: 'accepted', items: sorted };
 }
 
 const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
@@ -623,11 +626,11 @@ export function compileArbitraryCommandList(input: {
     if (parsedList.status === 'rejected') {
         return parsedList;
     }
-    const items = parsedList.value.items;
-    const dependencyRejection = detectDependencyCycle(items);
-    if (dependencyRejection !== null) {
-        return { status: 'rejected', reason: dependencyRejection };
+    const sortedItems = stableTopologicalSort(parsedList.value.items);
+    if (sortedItems.status === 'rejected') {
+        return sortedItems;
     }
+    const items = sortedItems.items;
     const candidates = collectCandidates(input.context);
     const protectedTargetIds = new Set(plan?.scope.protectedTargetIds ?? []);
     const commands: ToolCallResult[] = [];
@@ -640,7 +643,7 @@ export function compileArbitraryCommandList(input: {
     const itemsById = new Map(items.map((item) => [item.id, item]));
     const producersByBinding = new Map<string, BatchLocalBindingProducer>();
 
-    for (const [index, item] of items.entries()) {
+    for (const item of items) {
         const commandStart = commands.length;
         if (containsForbiddenProviderAuthority(item.arguments)) {
             return { status: 'rejected', reason: 'Provider supplied application-owned authority or expected state.' };
@@ -656,13 +659,6 @@ export function compileArbitraryCommandList(input: {
             item.dependsOn === undefined ? [] : parseIdList(item.dependsOn, 'Structured command dependencies');
         if ('status' in dependsOn) {
             return dependsOn;
-        }
-        const priorIds = new Set(items.slice(0, index).map((entry) => entry.id));
-        if (dependsOn.some((dependency) => !priorIds.has(dependency))) {
-            return {
-                status: 'rejected',
-                reason: 'Structured command dependencies must refer to earlier ordered items.',
-            };
         }
         const repeat = item.repeat?.count ?? 1;
         if (repeat < 1 || repeat > SEMANTIC_COMMAND_LIST_MAX_REPEAT) {
@@ -809,7 +805,11 @@ export function compileArbitraryCommandList(input: {
         const canonicalStableIds: string[] = [];
         let omittedCommandCount = 0;
         const isDestructive = /^remove|^delete/u.test(item.name);
-        for (const stableId of resolved.stableIds) {
+        const groundedStableIds = [
+            ...resolved.stableIds,
+            ...targetValidation.directTargets.flatMap((target) => target.stableIds),
+        ];
+        for (const stableId of groundedStableIds) {
             const previousWrite = targetWrites.get(stableId);
             if (previousWrite && (isDestructive || previousWrite.destructive) && previousWrite.itemId !== item.id) {
                 return {

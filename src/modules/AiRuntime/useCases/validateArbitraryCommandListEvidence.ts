@@ -1,5 +1,6 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 
+import { type ActionCommandGraph } from '../models/ActionCommandGraph';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type SemanticCommandListEntity } from '../models/SemanticCommandList';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -25,12 +26,19 @@ type Candidate = {
     enabled?: boolean;
 };
 
-export type CompilerResolvedTargetOverride = {
-    argument: string;
-    capability: string;
-    cardinality: 'one' | 'many';
-    stableIds: string[];
-};
+export type CompilerResolvedTargetOverride =
+    | {
+          argument: string;
+          capability: string;
+          cardinality: 'one' | 'many';
+          stableIds: string[];
+      }
+    | {
+          argument: string;
+          batchLocalBinding: string;
+          capability: string;
+          cardinality: 'one';
+      };
 
 function collectCandidates(context: ProjectContext): Candidate[] {
     const tracks = context.tracks.map((track) => ({
@@ -101,6 +109,29 @@ function capabilityRequiresConcreteDependency(capability: string): boolean {
     return capability === 'device' || capability === 'device-parameter';
 }
 
+const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+
+function evidenceDependsTransitivelyOn(
+    itemId: string,
+    dependencyId: string,
+    itemsById: ReadonlyMap<string, ArbitraryCommandListEvidence['items'][number]>
+): boolean {
+    const visited = new Set<string>();
+    const pending = [...(itemsById.get(itemId)?.dependsOn ?? [])];
+    while (pending.length > 0) {
+        const candidateId = pending.pop();
+        if (candidateId === undefined || visited.has(candidateId)) {
+            continue;
+        }
+        if (candidateId === dependencyId) {
+            return true;
+        }
+        visited.add(candidateId);
+        pending.push(...(itemsById.get(candidateId)?.dependsOn ?? []));
+    }
+    return false;
+}
+
 /** Re-checks bounded, app-owned compiler proof at the bridge boundary before any grounding bypass. */
 export function validateArbitraryCommandListEvidence(input: {
     evidence: ArbitraryCommandListEvidence;
@@ -108,7 +139,11 @@ export function validateArbitraryCommandListEvidence(input: {
     context: ProjectContext;
     revision: string | undefined;
 }):
-    | { status: 'accepted'; targetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> }
+    | {
+          status: 'accepted';
+          actionCommandGraph: ActionCommandGraph;
+          targetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]>;
+      }
     | { status: 'rejected'; reason: string } {
     const { evidence } = input;
     if (evidence.schemaVersion !== 1 || input.revision !== evidence.snapshotRevision || input.revision === undefined) {
@@ -155,8 +190,10 @@ export function validateArbitraryCommandListEvidence(input: {
         selectorByItemId.set(selector.itemId, selector);
     }
     const itemIds = new Set<string>();
+    const itemsById = new Map(evidence.items.map((item) => [item.itemId, item]));
     const resolvedTargetIds: string[] = [];
     const targetOverridesByCallIndex = new Map<number, readonly CompilerResolvedTargetOverride[]>();
+    const producerByBinding = new Map<string, { commandIndex: number; itemId: string }>();
     let commandCursor = 0;
     for (const item of evidence.items) {
         if (
@@ -401,6 +438,57 @@ export function validateArbitraryCommandListEvidence(input: {
                 }
             }
         }
+        const itemCommands = evidence.commands.slice(item.commandStart, item.commandStart + item.commandCount);
+        for (const targetRule of groundingRules.targetRules) {
+            for (const [offset, command] of itemCommands.entries()) {
+                const target = command.arguments[targetRule.argument];
+                if (typeof target !== 'string' || !target.startsWith('$')) {
+                    continue;
+                }
+                const binding = target.slice(1);
+                const producer = producerByBinding.get(binding);
+                if (
+                    targetRule.cardinality === 'many' ||
+                    targetRule.allowBatchLocal === false ||
+                    !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+                    producer === undefined ||
+                    !evidenceDependsTransitivelyOn(item.itemId, producer.itemId, itemsById)
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Structured command compiler evidence batch-local target is invalid.',
+                    };
+                }
+                const commandIndex = item.commandStart + offset;
+                const overrides = targetOverridesByCallIndex.get(commandIndex) ?? [];
+                targetOverridesByCallIndex.set(commandIndex, [
+                    ...overrides.filter((override) => override.argument !== targetRule.argument),
+                    {
+                        argument: targetRule.argument,
+                        batchLocalBinding: binding,
+                        capability: targetRule.capability,
+                        cardinality: 'one',
+                    },
+                ]);
+            }
+        }
+        if (item.commandName === 'createBus') {
+            const binding = itemCommands[0]?.arguments.binding;
+            if (binding !== undefined) {
+                if (
+                    itemCommands.length !== 1 ||
+                    typeof binding !== 'string' ||
+                    !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+                    producerByBinding.has(binding)
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Structured command compiler evidence batch-local producer is invalid.',
+                    };
+                }
+                producerByBinding.set(binding, { commandIndex: item.commandStart, itemId: item.itemId });
+            }
+        }
         itemIds.add(item.itemId);
         commandCursor += item.commandCount;
     }
@@ -410,5 +498,44 @@ export function validateArbitraryCommandListEvidence(input: {
     ) {
         return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
     }
-    return { status: 'accepted', targetOverridesByCallIndex };
+    const dependenciesByActionIndex = evidence.commands.map((): number[] => []);
+    const commandIndexesByItemId = new Map(
+        evidence.items.map((item) => [
+            item.itemId,
+            Array.from({ length: item.commandCount }, (_unused, offset) => item.commandStart + offset),
+        ])
+    );
+    const resolveDependencyIndexes = (itemId: string, visited = new Set<string>()): number[] => {
+        if (visited.has(itemId)) {
+            return [];
+        }
+        visited.add(itemId);
+        const commandIndexes = commandIndexesByItemId.get(itemId) ?? [];
+        if (commandIndexes.length > 0) {
+            return commandIndexes;
+        }
+        return (itemsById.get(itemId)?.dependsOn ?? []).flatMap((dependencyId) =>
+            resolveDependencyIndexes(dependencyId, visited)
+        );
+    };
+    for (const item of evidence.items) {
+        const dependencyIndexes = [
+            ...new Set(item.dependsOn.flatMap((dependencyId) => resolveDependencyIndexes(dependencyId))),
+        ];
+        for (const commandIndex of commandIndexesByItemId.get(item.itemId) ?? []) {
+            dependenciesByActionIndex[commandIndex] = dependencyIndexes;
+        }
+    }
+    return {
+        status: 'accepted',
+        actionCommandGraph: {
+            dependenciesByActionIndex,
+            batchLocalBindings: [...producerByBinding.entries()].map(([binding, producer]) => ({
+                bindingId: `$${binding}`,
+                producerActionIndex: producer.commandIndex,
+                producerArgument: 'busId',
+            })),
+        },
+        targetOverridesByCallIndex,
+    };
 }

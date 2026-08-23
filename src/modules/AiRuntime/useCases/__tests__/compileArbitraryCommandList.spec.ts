@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { commandTrackDefaultsPort, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
+import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { planAgentRun } from '../planAgentRun';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
@@ -88,6 +92,7 @@ const deviceParameter = (id: string) => ({
 describe('compileArbitraryCommandList', () => {
     afterEach(() => {
         clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
     it('carries every direct secondary target through exact compiler and command-batch planning scope', () => {
@@ -111,7 +116,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick', 'track-mix-bus']),
+                        plan: plan(['track-mix-bus', 'track-kick']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -137,7 +142,7 @@ describe('compileArbitraryCommandList', () => {
         if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
             return;
         }
-        expect(result.compilerEvidence.proposalScope.targetIds).toEqual(['track-kick', 'track-mix-bus']);
+        expect(result.compilerEvidence.proposalScope.targetIds).toEqual(['track-mix-bus', 'track-kick']);
         expect(
             validateArbitraryCommandListEvidence({
                 evidence: result.compilerEvidence,
@@ -1017,6 +1022,12 @@ describe('compileArbitraryCommandList', () => {
                                     selector,
                                     dependsOn: ['mute-kick'],
                                 },
+                                {
+                                    id: 'enable-metronome',
+                                    name: 'setMetronomeEnabled',
+                                    arguments: { enabled: true },
+                                    dependsOn: ['mute-kick-again'],
+                                },
                             ],
                         },
                     },
@@ -1030,6 +1041,7 @@ describe('compileArbitraryCommandList', () => {
         }
         expect(result.compilerEvidence?.commands).toEqual([
             { name: 'muteTrack', arguments: { muted: true, trackId: 'track-kick' } },
+            { name: 'setMetronomeEnabled', arguments: { enabled: true } },
         ]);
         expect(result.compilerEvidence?.items).toEqual([
             expect.objectContaining({ itemId: 'mute-kick', commandStart: 0, commandCount: 1 }),
@@ -1040,7 +1052,22 @@ describe('compileArbitraryCommandList', () => {
                 declaredCommandCount: 1,
                 omittedCommandCount: 1,
             }),
+            expect.objectContaining({ itemId: 'enable-metronome', commandStart: 1, commandCount: 1 }),
         ]);
+        if (result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context,
+                revision: 'revision-1',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            actionCommandGraph: { dependenciesByActionIndex: [[], [0]] },
+        });
     });
 
     it.each([
@@ -2146,6 +2173,10 @@ describe('compileArbitraryCommandList', () => {
                 { id: 'same', name: 'muteTrack', arguments: { muted: true } },
             ],
         ],
+        [
+            'an unknown dependency',
+            [{ id: 'one', name: 'muteTrack', arguments: { muted: true }, dependsOn: ['missing'] }],
+        ],
     ])('rejects %s before command materialization', (_label, items) => {
         const result = compileArbitraryCommandList({
             context,
@@ -2160,6 +2191,141 @@ describe('compileArbitraryCommandList', () => {
 
         expect(result.status).toBe('rejected');
     });
+
+    it('stably topologically sorts out-of-order acyclic items and expands one-to-many dependencies', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-topology',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'track-hat']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'enable-metronome',
+                                    name: 'setMetronomeEnabled',
+                                    arguments: { enabled: true },
+                                    dependsOn: ['mute-drums'],
+                                },
+                                {
+                                    id: 'independent-master-gain',
+                                    name: 'setMasterGain',
+                                    arguments: { gain: 0.9 },
+                                },
+                                {
+                                    id: 'mute-drums',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.commands.map((command) => command.name)).toEqual([
+            'setMasterGain',
+            'muteTrack',
+            'muteTrack',
+            'setMetronomeEnabled',
+        ]);
+        expect(result.compilerEvidence.items.map((item) => item.itemId)).toEqual([
+            'independent-master-gain',
+            'mute-drums',
+            'enable-metronome',
+        ]);
+        const validation = validateArbitraryCommandListEvidence({
+            evidence: result.compilerEvidence,
+            calls: result.compilerEvidence.commands,
+            context,
+            revision: 'revision-topology',
+        });
+        expect(validation).toMatchObject({
+            status: 'accepted',
+            actionCommandGraph: {
+                dependenciesByActionIndex: [[], [], [], [1, 2]],
+                batchLocalBindings: [],
+            },
+        });
+    });
+
+    it.each(['remove-first', 'route-first'] as const)(
+        'rejects a removed bus referenced by a direct routing target when %s',
+        (order) => {
+            const routingContext = {
+                ...context,
+                tracks: [
+                    ...context.tracks.map((track) => ({ ...track, outputId: 'master' })),
+                    {
+                        ...context.tracks[0]!,
+                        id: 'track-drum-bus',
+                        name: 'Drum Bus',
+                        kind: 'bus',
+                        outputId: 'master',
+                    },
+                ],
+            };
+            const remove = {
+                id: 'remove-drum-bus',
+                name: 'removeTrack',
+                arguments: {},
+                selector: {
+                    targetArgument: 'trackId',
+                    entity: 'track',
+                    where: { name: 'Drum Bus' },
+                    quantity: { unit: 'targets', exactly: 1 },
+                },
+            };
+            const route = {
+                id: 'route-kick',
+                name: 'setTrackOutput',
+                arguments: { outputId: 'track-drum-bus' },
+                selector: {
+                    targetArgument: 'trackId',
+                    entity: 'track',
+                    where: { name: 'Kick' },
+                    quantity: { unit: 'targets', exactly: 1 },
+                },
+            };
+            const items =
+                order === 'remove-first'
+                    ? [remove, { ...route, dependsOn: ['remove-drum-bus'] }]
+                    : [route, { ...remove, dependsOn: ['route-kick'] }];
+
+            expect(
+                compileArbitraryCommandList({
+                    context: routingContext,
+                    revision: 'revision-contradiction',
+                    calls: [
+                        {
+                            name: 'command.batch.propose',
+                            arguments: {
+                                plan: plan(['track-kick', 'track-drum-bus']),
+                                list: { schemaVersion: 1, items },
+                            },
+                        },
+                    ],
+                })
+            ).toEqual({
+                status: 'rejected',
+                reason: 'Structured command list contains contradictory target dependencies.',
+            });
+        }
+    );
 
     it('rejects a later destructive command that contradicts an earlier target write', () => {
         const selector = {
@@ -2312,6 +2478,123 @@ describe('compileArbitraryCommandList', () => {
             { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } },
             { name: 'setTrackGain', arguments: { trackId: '$drum-bus', gain: 0.8 } },
         ]);
+    });
+
+    it('carries semantic dependencies and batch-local producers through the command-batch boundary', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-graph',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'create-drum-bus',
+                                    name: 'createBus',
+                                    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                                },
+                                {
+                                    id: 'gain-drum-bus',
+                                    name: 'setTrackGain',
+                                    arguments: { trackId: '$drum-bus', gain: 0.8 },
+                                    dependsOn: ['create-drum-bus'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        const bridged = bridgeGroundedLlmToolCalls({
+            calls: result.compilerEvidence.commands,
+            compilerEvidence: result.compilerEvidence,
+            context,
+            projectRevision: 'revision-graph',
+            prompt: 'Create a Drum Bus, then set its gain to 0.8.',
+        });
+        expect(bridged.rejections).toEqual([]);
+        const materialized = materializeBatchLocalActionIdentities(
+            bridged.actions,
+            bridged.batchLocalActionIdentities ?? []
+        );
+        expect(materialized.status).toBe('accepted');
+        if (materialized.status !== 'accepted') {
+            return;
+        }
+        const guarded = materializeActionStateGuards(materialized.actions, context);
+        expect(guarded.status).toBe('accepted');
+        if (guarded.status !== 'accepted') {
+            return;
+        }
+        registerHandlerMap(getArrangementHandlers());
+        commandTrackDefaultsPort.setTrackColorProvider(() => '#123456');
+        const compileInput = {
+            actions: guarded.actions,
+            actionLabels: ['Create Drum Bus', 'Set Drum Bus gain'],
+            actionCommandGraph: bridged.actionCommandGraph,
+            autoCommit: false,
+            context,
+            group: { groupId: 'group-graph', groupLabel: 'Create Drum Bus' },
+            intent: 'Create a Drum Bus, then set its gain to 0.8.',
+            projectRevision: 'revision-graph',
+            runId: 'run-graph',
+        };
+        const compiled = compilePlannedActionCommandBatch(compileInput);
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.commandBatch.serialized);
+        expect(parsed.status).toBe('valid');
+        if (parsed.status !== 'valid') {
+            return;
+        }
+        const [producer, consumer] = parsed.envelope.commands;
+        expect(consumer?.dependencyIds).toEqual([producer?.commandId]);
+        expect(parsed.envelope.dependencies).toEqual([
+            { commandId: consumer?.commandId, dependsOn: [producer?.commandId] },
+        ]);
+        expect(parsed.envelope.batchLocalBindings).toEqual([
+            {
+                bindingId: '$drum-bus',
+                producerArgument: 'busId',
+                producerCommandId: producer?.commandId,
+            },
+        ]);
+        const busId = guarded.actions[0]?.type === 'createBus' ? guarded.actions[0].payload.busId : undefined;
+        expect(compiled.commandBatch.authority.scope.targetIds).toEqual([busId]);
+        expect(
+            planAgentRun({
+                request: 'Create a Drum Bus, then set its gain to 0.8.',
+                revision: 'revision-graph',
+                actions: guarded.actions,
+                actionLabels: ['Create Drum Bus', 'Set Drum Bus gain'],
+                scope: {
+                    ...compiled.commandBatch.authority.scope,
+                    targetIds: [...compiled.commandBatch.authority.scope.targetIds],
+                    targetRanges: [...compiled.commandBatch.authority.scope.targetRanges],
+                    protectedTargetIds: [...compiled.commandBatch.authority.scope.protectedTargetIds],
+                    protectedRanges: [...compiled.commandBatch.authority.scope.protectedRanges],
+                },
+                grants: {
+                    ...compiled.commandBatch.authority.grants,
+                    allowedOperationPrefixes: [...compiled.commandBatch.authority.grants.allowedOperationPrefixes],
+                },
+                budgets: { limits: compiled.commandBatch.authority.budgets, consumed: {} },
+                requiresConfirmation: true,
+                providerProposal: {
+                    ...plan([busId!]),
+                    semantic: { classification: 'simple' as const, uncertainty: [] },
+                    objective: 'Create and gain a drum bus.',
+                },
+                requireProviderProposal: true,
+            })
+        ).toMatchObject({ status: 'planned' });
     });
 
     it('rejects contradictory selectorless writes to one validated batch-local target', () => {

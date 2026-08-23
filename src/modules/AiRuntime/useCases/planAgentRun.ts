@@ -38,7 +38,19 @@ type PlanAgentRunResult =
     | { status: 'rejected'; reason: string };
 
 function sameScope(left: AgentRunScope, right: AgentRunScope): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    const hasExactIdSet = (leftIds: readonly string[], rightIds: readonly string[]): boolean => {
+        if (leftIds.length !== rightIds.length) {
+            return false;
+        }
+        const ids = new Set(leftIds);
+        return ids.size === rightIds.length && rightIds.every((id) => ids.has(id));
+    };
+    return (
+        hasExactIdSet(left.targetIds, right.targetIds) &&
+        hasExactIdSet(left.protectedTargetIds, right.protectedTargetIds) &&
+        JSON.stringify(left.targetRanges) === JSON.stringify(right.targetRanges) &&
+        JSON.stringify(left.protectedRanges) === JSON.stringify(right.protectedRanges)
+    );
 }
 
 function isComplex(input: PlanAgentRunInput): boolean {

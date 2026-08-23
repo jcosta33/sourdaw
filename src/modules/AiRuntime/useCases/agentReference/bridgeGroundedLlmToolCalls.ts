@@ -4,6 +4,7 @@ import {
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
+import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
@@ -95,6 +96,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
+    actionCommandGraph?: ActionCommandGraph;
 };
 
 type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
@@ -3622,7 +3624,11 @@ function groundToolCall({
         const compilerTargetOverride = resolvedTargetOverrides?.find(
             (override) => override.argument === targetRule.argument
         );
-        if (targetRule.cardinality === 'many' && compilerTargetOverride !== undefined) {
+        if (
+            targetRule.cardinality === 'many' &&
+            compilerTargetOverride !== undefined &&
+            'stableIds' in compilerTargetOverride
+        ) {
             if (
                 compilerTargetOverride.cardinality !== 'many' ||
                 targetRule.capability !== compilerTargetOverride.capability ||
@@ -3699,6 +3705,20 @@ function groundToolCall({
                     `Batch-local bus cannot satisfy target capability ${targetRule.capability}`
                 );
             }
+            if (compilerTargetOverride !== undefined && 'batchLocalBinding' in compilerTargetOverride) {
+                if (
+                    compilerTargetOverride.capability !== targetRule.capability ||
+                    compilerTargetOverride.batchLocalBinding !== batchLocalReference.binding.binding
+                ) {
+                    return rejection(
+                        index,
+                        call.name,
+                        `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
+                    );
+                }
+                groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
+                continue;
+            }
             if (
                 !containsBatchLocalBusEvidence(
                     targetPrompt,
@@ -3719,7 +3739,7 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
-        if (compilerTargetOverride !== undefined) {
+        if (compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride) {
             if (
                 compilerTargetOverride.cardinality !== 'one' ||
                 compilerTargetOverride.stableIds.length !== 1 ||
@@ -3978,6 +3998,7 @@ export function bridgeGroundedLlmToolCalls({
     workflowCapabilityId,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
+    let compilerActionCommandGraph: ActionCommandGraph | undefined;
     if (compilerEvidence !== undefined) {
         const compilerValidation = validateArbitraryCommandListEvidence({
             evidence: compilerEvidence,
@@ -3989,6 +4010,7 @@ export function bridgeGroundedLlmToolCalls({
             return { actions: [], rejections: [rejection(0, '<batch>', compilerValidation.reason)] };
         }
         compilerTargetOverridesByCallIndex = compilerValidation.targetOverridesByCallIndex;
+        compilerActionCommandGraph = compilerValidation.actionCommandGraph;
     }
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({
@@ -4602,6 +4624,17 @@ export function bridgeGroundedLlmToolCalls({
         }
         return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
     });
+    if (
+        compilerActionCommandGraph !== undefined &&
+        rejections.length === 0 &&
+        (bridged.actions.length !== compilerActionCommandGraph.dependenciesByActionIndex.length ||
+            bridged.actions.some((action, index) => action.type !== effectiveCalls[index]?.name))
+    ) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'Compiler action graph no longer matches the bridged command batch')],
+        };
+    }
     if (rejections.some((bridgeRejection) => bridgeRejection.name === 'glueClips')) {
         return { actions: [], rejections: [rejection(0, '<batch>', invalidGlueRequestReason)] };
     }
@@ -4626,6 +4659,9 @@ export function bridgeGroundedLlmToolCalls({
             ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
             ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
             ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
+            ...(rejections.length === 0 && compilerActionCommandGraph !== undefined
+                ? { actionCommandGraph: compilerActionCommandGraph }
+                : {}),
             rejections,
         };
     }
@@ -4639,6 +4675,7 @@ export function bridgeGroundedLlmToolCalls({
         ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
         ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
         batchLocalActionIdentities,
+        ...(compilerActionCommandGraph === undefined ? {} : { actionCommandGraph: compilerActionCommandGraph }),
         rejections,
     };
 }
