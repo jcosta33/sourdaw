@@ -1,0 +1,47 @@
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_6172e686c7663f 68,327,369
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_9bbb4d914f8493 73
+  s_a40848e8f8cca9::t_165272a53635e1 69-72,74-91
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_b109776b33b371 175-180,200-205,216-221
+  s_a40848e8f8cca9::t_ea34af194d09da 4,93-174,181-199,206-215,222-230,236-256,270-271
+  s_a40848e8f8cca9::t_7753a10e8ea6f9 231-235
+  s_a40848e8f8cca9::t_14fecdcb04e452 257-269
+  s_a40848e8f8cca9::t_8b13d96686c0e2 272
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_6172e686c7663f 5-6,15,36
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_6172e686c7663f 47,2343,2361-2363
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_3331d7559a5435 982-1047
+  s_a40848e8f8cca9::t_165272a53635e1 948-981,1048-1049
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_6172e686c7663f 133-143,145-156,4562-4574,4577-4578
+  s_a40848e8f8cca9::t_8dae5e2cdbd58b 144
+  s_a40848e8f8cca9::t_71677180af1c88 4575-4576
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_6172e686c7663f 245,301-322,364,369,373-377,379,396-407,411-413,688,743,894
+src/modules/Command/useCases/__tests__/getExecutableAppActionGroundingRules.spec.ts
+  s_a40848e8f8cca9::t_6172e686c7663f 31,63-65
+  s_a40848e8f8cca9::t_fb888badd600b8 49
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_165272a53635e1 474-477,479-514
+  s_a40848e8f8cca9::t_9bbb4d914f8493 478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "79f8e5c1a63eda7a98a1eee600f19c509812dfdd",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
