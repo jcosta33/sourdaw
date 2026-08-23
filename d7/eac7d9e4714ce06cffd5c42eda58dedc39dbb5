@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/preset/__tests__/sidebarInstrumentPresets.spec.ts
+  s_a40848e8f8cca9::t_eb3fd3503ef522 1-20
+src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts
+  s_a40848e8f8cca9::t_fb204b4d0ebaeb 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d7eac7d9e4714ce06cffd5c42eda58dedc39dbb5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
