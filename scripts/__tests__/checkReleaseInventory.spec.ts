@@ -1274,8 +1274,10 @@ describe('release inventory', () => {
                 readFileSync(join(repositoryRoot, 'public/wasm', id, 'package.json'), 'utf8')
             ) as {
                 private?: unknown;
+                license?: unknown;
             };
             expect(metadata.private).toBe(true);
+            expect(metadata.license).toBe('Apache-2.0');
             expect(scripts.scripts[buildScript]).toContain(`markWasmPackageInternal.ts ${id}`);
         }
     });

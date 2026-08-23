@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -290,13 +290,43 @@ describe('project license', () => {
             mkdirSync(dirname(helper), { recursive: true });
             mkdirSync(dirname(packagePath), { recursive: true });
             mkdirSync(crateDirectory, { recursive: true });
+            mkdirSync(join(helperRoot, 'node_modules'), { recursive: true });
+            symlinkSync(join(process.cwd(), 'node_modules/yaml'), join(helperRoot, 'node_modules/yaml'), 'dir');
             writeFileSync(helper, readFileSync(sourceHelper));
+            writeFileSync(
+                join(helperRoot, 'scripts/strictJson.ts'),
+                readFileSync(join(dirname(sourceHelper), 'strictJson.ts'))
+            );
             writeFileSync(packagePath, '{"name":"daw-dsp","private":false}\n');
 
             execFileSync(process.execPath, [helper, 'daw-dsp'], { cwd: crateDirectory, encoding: 'utf8' });
 
             expect(JSON.parse(readFileSync(packagePath, 'utf8'))).toMatchObject({ private: true });
             expect(existsSync(join(crateDirectory, 'public/wasm/daw-dsp/package.json'))).toBe(false);
+        } finally {
+            rmSync(helperRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects duplicate WASM package metadata before marking it internal', () => {
+        const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-mark-wasm-duplicate-'));
+        try {
+            const scriptsDirectory = join(dirname(fileURLToPath(import.meta.url)), '..');
+            const helper = join(helperRoot, 'scripts/markWasmPackageInternal.ts');
+            const packagePath = join(helperRoot, 'public/wasm/daw-dsp/package.json');
+            const crateDirectory = join(helperRoot, 'crates/daw-dsp');
+            mkdirSync(dirname(helper), { recursive: true });
+            mkdirSync(dirname(packagePath), { recursive: true });
+            mkdirSync(crateDirectory, { recursive: true });
+            mkdirSync(join(helperRoot, 'node_modules'), { recursive: true });
+            symlinkSync(join(process.cwd(), 'node_modules/yaml'), join(helperRoot, 'node_modules/yaml'), 'dir');
+            writeFileSync(helper, readFileSync(join(scriptsDirectory, 'markWasmPackageInternal.ts')));
+            writeFileSync(join(helperRoot, 'scripts/strictJson.ts'), readFileSync(join(scriptsDirectory, 'strictJson.ts')));
+            writeFileSync(packagePath, '{"name":"daw-dsp","private":false,"private":true}\n');
+
+            expect(() =>
+                execFileSync(process.execPath, [helper, 'daw-dsp'], { cwd: crateDirectory, encoding: 'utf8' })
+            ).toThrow(/duplicate key/);
         } finally {
             rmSync(helperRoot, { recursive: true, force: true });
         }

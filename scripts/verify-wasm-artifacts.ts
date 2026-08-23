@@ -35,8 +35,10 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 const failures: string[] = [];
@@ -173,13 +175,33 @@ function checkNoStrayBinaries(): void {
     collectStrayBinaries('src/modules/AudioEngine/wasm');
 }
 
+export type WasmPackageMetadata = {
+    private?: unknown;
+    license?: unknown;
+};
+
+export function readWasmPackageMetadata(path: string): WasmPackageMetadata {
+    return parseJsonWithUniqueKeys<WasmPackageMetadata>(readFileSync(path, 'utf8'), path);
+}
+
+export function validateWasmPackageMetadata(path: string, metadata: WasmPackageMetadata): string[] {
+    const errors: string[] = [];
+    if (metadata.private !== true) {
+        errors.push(`${path}: internal WASM package must set private: true`);
+    }
+    if (metadata.license !== 'Apache-2.0') {
+        errors.push(`${path}: internal WASM package must set license: Apache-2.0`);
+    }
+    return errors;
+}
+
 function checkInternalPackages(): void {
     for (const spec of wasmArtifacts.packages) {
         const path = `public/wasm/${spec.id}/package.json`;
         try {
-            const metadata = JSON.parse(readFileSync(wasmArtifacts.absolute(path), 'utf8')) as { private?: unknown };
-            if (metadata.private !== true) {
-                fail(`${path}: internal WASM package must set private: true`);
+            const metadata = readWasmPackageMetadata(wasmArtifacts.absolute(path));
+            for (const error of validateWasmPackageMetadata(path, metadata)) {
+                fail(error);
             }
         } catch (error) {
             fail(
@@ -261,4 +283,6 @@ function run(): void {
     );
 }
 
-run();
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+    run();
+}
