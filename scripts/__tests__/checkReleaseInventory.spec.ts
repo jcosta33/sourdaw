@@ -9,12 +9,25 @@ import { describe, expect, it } from 'vitest';
 
 import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import {
+    adaptedMitSourceReleaseInventoryContract,
+    ADAPTED_MIT_COMMIT,
+    ADAPTED_MIT_LICENSE_PATH,
+    ADAPTED_MIT_LICENSE_PROOF_PATH,
+    ADAPTED_MIT_NOTICE_PATH,
+    ADAPTED_MIT_SOURCE_PATH,
+    ADAPTED_MIT_UPSTREAM_PROOF_PATH,
+    ADAPTED_ORIGINAL_COMMIT,
+    ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
+    ADAPTED_ORIGINAL_SOURCE_PATH,
+    ADAPTED_ORIGINAL_SOURCE_SHA256,
+    ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH,
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
     assertDdspReleaseInventory,
     assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
+    assertProjectLicenseDistributionReleaseInventory,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
     audioWorkletReleaseInventoryContract,
@@ -32,6 +45,8 @@ import {
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
     ownerVisualAssetReleaseInventoryContract,
+    projectLicenseDistributionReleaseInventoryContract,
+    readReleaseInventory,
     REQUIRED_SNAPSHOT_PATHS,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
@@ -40,6 +55,7 @@ import {
     validateReleaseInventory,
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
+import { DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
@@ -315,7 +331,6 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
         'crates/daw-dsp/benches/wasm/deviceRecipes.js',
         'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
         'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-        'public/wasm/manifest.json',
     ];
     for (const path of sourcePaths) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -1028,7 +1043,25 @@ describe('release inventory', () => {
             const { jsonPath } = writeGrandBouleMeasurementFixture(root);
             expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
 
+            const measuredSourcePath = join(root, 'crates/daw-dsp/benches/quantum.rs');
+            const originalSource = readFileSync(measuredSourcePath, 'utf8');
+            writeFileSync(measuredSourcePath, `${originalSource}\ncurrent source mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('source digest drifted');
+            writeFileSync(measuredSourcePath, originalSource);
+
             const original = readFileSync(jsonPath, 'utf8');
+            const unresolvedRevision = 'f'.repeat(40);
+            const unresolved = JSON.parse(original) as {
+                sourceRevision: string;
+                machine: { gitSha: string };
+            };
+            unresolved.sourceRevision = unresolvedRevision;
+            unresolved.machine.gitSha = unresolvedRevision;
+            writeFileSync(jsonPath, JSON.stringify(unresolved));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                `source revision ${unresolvedRevision} cannot provide crates/daw-dsp/benches/quantum.rs`
+            );
+
             const data = JSON.parse(original) as {
                 sourceDigests: Record<string, string>;
                 rows: Array<{ warmVerify: { detail: string } }>;
@@ -1042,7 +1075,9 @@ describe('release inventory', () => {
             };
             changed.sourceDigests['crates/daw-dsp/benches/quantum.rs'] = '0'.repeat(64);
             writeFileSync(jsonPath, JSON.stringify(changed));
-            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('source digest drifted');
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'recorded digest does not match source revision'
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1153,7 +1188,7 @@ describe('release inventory', () => {
             expect(before.kind).toBe('owner-created-asset');
             expect(before.paths).toEqual(OWNER_VISUAL_ASSET_PATHS);
             expect(before.sources).toContain('owner attestation: Jose Costa, 2026-08-21');
-            expect(before.licenses).toEqual(['owner-created:pending-OS-10-project-license']);
+            expect(before.licenses).toEqual(['Apache-2.0']);
 
             writeFileSync(join(root, 'build/icons/nested/icon.png'), 'changed');
             expect(ownerVisualAssetReleaseInventoryContract(root).digests).not.toEqual(before.digests);
@@ -1199,6 +1234,67 @@ describe('release inventory', () => {
         }
     });
 
+    it('binds the adapted MIT source and exact upstream license bytes', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-adapted-mit-'));
+        mkdirSync(join(root, 'crates/daw-dsp/src/toaster/engines'), { recursive: true });
+        mkdirSync(join(root, 'public/legal'), { recursive: true });
+        mkdirSync(join(root, 'release/upstream-proofs'), { recursive: true });
+        writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'adapted source');
+        writeFileSync(
+            join(root, ADAPTED_MIT_LICENSE_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_MIT_LICENSE_PATH))
+        );
+        writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'original upstream license');
+        writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'public notice');
+        writeFileSync(
+            join(root, ADAPTED_MIT_UPSTREAM_PROOF_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_MIT_UPSTREAM_PROOF_PATH))
+        );
+        writeFileSync(
+            join(root, ADAPTED_MIT_LICENSE_PROOF_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_MIT_LICENSE_PROOF_PATH))
+        );
+        writeFileSync(
+            join(root, ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH))
+        );
+
+        try {
+            const before = adaptedMitSourceReleaseInventoryContract(root);
+            expect(before.licenses).toEqual(['MIT']);
+            expect(before.revisions).toEqual([ADAPTED_MIT_COMMIT, ADAPTED_ORIGINAL_COMMIT]);
+            expect(before.sources).toContain(
+                `git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`
+            );
+            expect(before.digests).toContain(
+                `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`
+            );
+            expect(before.digests).toContain(
+                `sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`
+            );
+
+            writeFileSync(join(root, ADAPTED_MIT_LICENSE_PROOF_PATH), 'changed upstream license proof');
+            expect(() => adaptedMitSourceReleaseInventoryContract(root)).toThrow(
+                'pinned upstream license proof drifted'
+            );
+            writeFileSync(
+                join(root, ADAPTED_MIT_LICENSE_PROOF_PATH),
+                readFileSync(join(repositoryRoot, ADAPTED_MIT_LICENSE_PROOF_PATH))
+            );
+
+            writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'changed');
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
+
+            writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'changed original license');
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[7]).not.toBe(before.digests[7]);
+
+            writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'changed public notice');
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[8]).not.toBe(before.digests[8]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('binds the WASM manifest to its toolchain and crate closures', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-wasm-provenance-'));
         mkdirSync(join(root, 'public/wasm'), { recursive: true });
@@ -1236,8 +1332,71 @@ describe('release inventory', () => {
         }
     });
 
+    it('keeps every served WASM package out of npm publication and rebuild scripts restore that state', () => {
+        const scripts = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8')) as {
+            scripts: Record<string, string>;
+        };
+        for (const { id, buildScript } of wasmArtifacts.packages) {
+            const metadata = JSON.parse(
+                readFileSync(join(repositoryRoot, 'public/wasm', id, 'package.json'), 'utf8')
+            ) as {
+                private?: unknown;
+                license?: unknown;
+            };
+            expect(metadata.private).toBe(true);
+            expect(metadata.license).toBe('Apache-2.0');
+            expect(scripts.scripts[buildScript]).toContain(`markWasmPackageInternal.ts ${id}`);
+        }
+    });
+
     it('accepts complete classified coverage', () => {
         expect(validateReleaseInventory(inventory(), snapshot())).toEqual([]);
+    });
+
+    it('rejects unresolved rights on a retained keep surface', () => {
+        const value = inventory();
+        value.surfaces[0]!.retention = 'keep';
+        value.surfaces[0]!.licenses = ['Apache-2.0', 'unverified:unknown-rights'];
+
+        expect(validateReleaseInventory(value, snapshot())).toContain(
+            'runtime: keep surfaces cannot carry unverified rights'
+        );
+    });
+
+    it('rejects duplicate inventory keys before JSON consumption', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-duplicate-inventory-'));
+        try {
+            mkdirSync(join(root, 'release'), { recursive: true });
+            writeFileSync(join(root, 'release/open-source-inventory.json'), '{"surface":{"id":"one","id":"two"}}');
+            expect(() => readReleaseInventory(root)).toThrow('duplicate key');
+            writeFileSync(join(root, 'release/open-source-inventory.json'), '');
+            expect(() => readReleaseInventory(root)).toThrow('invalid JSON');
+            writeFileSync(join(root, 'release/open-source-inventory.json'), '{"surface":]');
+            expect(() => readReleaseInventory(root)).toThrow('invalid JSON');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('binds the project-license distribution surface to generated legal evidence', () => {
+        const contract = projectLicenseDistributionReleaseInventoryContract(repositoryRoot);
+        expect(contract.paths).toContain('release/dependency-license-proofs.json');
+        expect(contract.paths).toContain('release/upstream-proofs/**');
+        expect(
+            contract.digests.some((digest) =>
+                /^sha256:[0-9a-f]{64}:public\/legal\/DEPENDENCY-LICENSES\.txt$/u.test(digest)
+            )
+        ).toBe(true);
+        const surface = readReleaseInventory(repositoryRoot).surfaces.find(
+            (candidate) => candidate.id === 'project-license-distribution'
+        );
+        expect(() => assertProjectLicenseDistributionReleaseInventory(repositoryRoot, surface)).not.toThrow();
+        expect(() =>
+            assertProjectLicenseDistributionReleaseInventory(repositoryRoot, {
+                ...(surface ?? {}),
+                digests: ['sha256:stale:LICENSE'],
+            })
+        ).toThrow('project license distribution release inventory digests does not match provenance');
     });
 
     it('rejects a new release file without a classification', () => {
@@ -1300,6 +1459,34 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toContain(
             'required snapshots missing from inventory:\n- pnpm-lock.yaml'
         );
+    });
+
+    it('binds every dependency lock digest to its owning surface snapshot', () => {
+        const value = inventory();
+        for (const id of ['javascript-dependencies', 'collaboration-server', 'rust-dependencies']) {
+            value.surfaces.push({ ...value.surfaces[0]!, id, digests: ['sha256:stale'] });
+        }
+
+        expect(validateReleaseInventory(value, snapshot())).toEqual(
+            expect.arrayContaining([
+                `javascript-dependencies: digest must match pnpm-lock.yaml snapshot (sha256:${fixtureDigest})`,
+                `javascript-dependencies: digest must match server/package-lock.json snapshot (sha256:${fixtureDigest})`,
+                `collaboration-server: digest must match server/package-lock.json snapshot (sha256:${fixtureDigest})`,
+                `rust-dependencies: digest must match Cargo.lock snapshot (sha256:${fixtureDigest})`,
+            ])
+        );
+    });
+
+    it('runs the project-license preflight before loading the inventory', () => {
+        let called = false;
+
+        expect(() =>
+            checkReleaseInventory('/inventory-is-not-read', () => {
+                called = true;
+                throw new Error('project license preflight sentinel');
+            })
+        ).toThrow('project license preflight sentinel');
+        expect(called).toBe(true);
     });
 
     it('rejects snapshots outside the tracked repository', () => {
@@ -1389,6 +1576,26 @@ describe('release inventory', () => {
             ]);
             expect(result.fileDigests['notes.txt']).toMatch(/^[0-9a-f]{64}$/);
             expect(result.markPaths).toEqual({ Hammond: ['src/peer.ts'], Neve: [] });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not treat verbatim dependency license text as product provenance or trademark claims', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
+        mkdirSync(dirname(join(root, DEPENDENCY_LICENSE_REPORT_PATH)), { recursive: true });
+        writeFileSync(
+            join(root, DEPENDENCY_LICENSE_REPORT_PATH),
+            'Exact third-party terms mention https://license.example and Roland.'
+        );
+
+        try {
+            const result = loadRepositorySnapshot(root, { snapshots: [], marks: [{ value: 'Roland', paths: [] }] }, [
+                DEPENDENCY_LICENSE_REPORT_PATH,
+            ]);
+            expect(result.releaseFiles).toEqual([DEPENDENCY_LICENSE_REPORT_PATH]);
+            expect(result.externalReferences).toEqual([]);
+            expect(result.markPaths).toEqual({ Roland: [] });
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

@@ -10,7 +10,7 @@
 //!
 //! Adapted from mi-plaits-dsp-rs by Oliver Rockstedt (sourcebox)
 //! Original: Mutable Instruments Plaits by Émilie Gillet
-//! License: MIT — Copyright (c) 2021 Oliver Rockstedt
+//! License: MIT — Copyright (c) 2022 Oliver Rockstedt
 //! https://github.com/sourcebox/mi-plaits-dsp-rs
 
 use crate::toaster::adaa::pulse_shape_diode;

@@ -16,7 +16,9 @@
                 ".github/**",
                 "crates/**",
                 "docs/**",
+                "release/desktop-runtime-material.json",
                 "release/open-source-inventory.json",
+                "release/web-artifact-manifest.json",
                 "scripts/**",
                 "server/**",
                 "src/**",
@@ -65,12 +67,79 @@
                 "vite.config.ts"
             ],
             "sources": ["git:github.com/jcosta33/sourdaw", "package.json", "server/package.json", "Cargo.toml"],
-            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553", "pnpm-lock.yaml", "Cargo.lock"],
-            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
-            "licenses": ["pending:OS-10"],
+            "revisions": ["release-proof:exact-candidate-revision", "pnpm-lock.yaml", "Cargo.lock"],
+            "digests": ["release-proof:source-archive-sha256"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["repository source"],
             "evidence": ["Git history and the dependency manifests named in paths."],
-            "obligations": ["Apply Apache-2.0 metadata without erasing third-party notices."]
+            "obligations": ["Preserve Apache-2.0 metadata and every third-party notice."]
+        },
+        {
+            "id": "project-license-distribution",
+            "kind": "distribution",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "web", "desktop", "server"],
+            "paths": [
+                ".gitattributes",
+                "LICENSE",
+                "NOTICE",
+                "public/legal/Apache-2.0.txt",
+                "public/legal/DEPENDENCY-LICENSES.txt",
+                "public/legal/SOURDAW-NOTICE.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "package.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md",
+                "server/package.json",
+                "Cargo.toml",
+                "crates/**",
+                "release/dependency-license-proofs.json",
+                "release/dependency-license-proofs/**",
+                "release/spdx-license-texts/**",
+                "release/upstream-proofs/**",
+                "scripts/dependencyLicenseReport.ts"
+            ],
+            "sources": [
+                ".gitattributes",
+                "LICENSE",
+                "NOTICE",
+                "public/legal/Apache-2.0.txt",
+                "public/legal/DEPENDENCY-LICENSES.txt",
+                "public/legal/SOURDAW-NOTICE.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "package.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md",
+                "server/package.json",
+                "Cargo.toml",
+                "crates/**",
+                "release/dependency-license-proofs.json",
+                "release/dependency-license-proofs/**",
+                "release/spdx-license-texts/**",
+                "release/upstream-proofs/**",
+                "scripts/dependencyLicenseReport.ts"
+            ],
+            "revisions": ["current tracked project license and pinned dependency evidence"],
+            "digests": [
+                "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
+                "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
+                "sha256:f6c78ac5891e95105794a3d463af3e5ba7c98f657c6f2101cb859d13277abc52:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:362b8480e9be35c45a075a17d01b1b957e1ba92a423fa6fef7fda72cf1fb7614:release/dependency-license-proofs.json"
+            ],
+            "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
+            "productSurfaces": [
+                "source distribution",
+                "web distribution",
+                "desktop distribution",
+                "server distribution"
+            ],
+            "evidence": [
+                "Project license files, package metadata, Cargo metadata, and generated dependency notices are checked together."
+            ],
+            "obligations": ["Keep third-party components under their own terms and ship their notices."]
         },
         {
             "id": "desktop-shell",
@@ -82,6 +151,8 @@
                 "electron/**",
                 "build/**",
                 "electron-builder.yml",
+                "release/desktop-runtime-material.json",
+                "release/web-artifact-manifest.json",
                 "public/legal/ELECTRON-SOURCES.json",
                 "public/legal/RELINKING.md",
                 "public/legal/THIRD-PARTY-NOTICES.md",
@@ -95,20 +166,22 @@
                 "https://github.com/nodejs/node",
                 "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
                 "package.json",
-                "public/legal/ELECTRON-SOURCES.json"
+                "public/legal/ELECTRON-SOURCES.json",
+                "release/desktop-runtime-material.json"
             ],
             "revisions": [
                 "electron 43.4.1 340bae15aaef12b7e96f1c857be986aa9f65c21c",
                 "Chromium 150.0.7871.224 36bfd07adec25f5027aaecf2023b35821f30ee4e",
                 "Node v24.18.1 9623d9ad85d37d2f0610ec4a82b48182cf2c6061",
                 "FFmpeg ad41607c61898cf7150e0fb20fe4bbabd44922a3",
-                "pnpm-lock.yaml"
+                "pnpm-lock.yaml",
+                "release-proof:exact-candidate-revision"
             ],
             "digests": [
                 "npm-integrity:sha512-5b+EuiwkgG5iRcsEL34rimgRpkYp15SsfZOa0pC5kXs0Tb82TH4n95rpQzTZa7yRCbA7tm0WoEbuBL6NaAhAcA==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
-                "pending:OS-12-final-desktop-package"
+                "release-proof:desktop-mac-arm64-artifact"
             ],
             "licenses": [
                 "MIT:Electron",
@@ -142,10 +215,10 @@
             "sources": ["package.json", "server/package.json", "server/package-lock.json", "pnpm-lock.yaml"],
             "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
             "digests": [
-                "sha256:419dc35165521cd97f925fcb7ed27ca86300c5f77f7065e71d0c65c7a8772378",
-                "sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
+                "sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f",
+                "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
-            "licenses": ["individual dependency terms pending OS-10 notice assembly"],
+            "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
             "productSurfaces": ["browser application", "desktop application", "collaboration server"],
             "evidence": [
                 "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
@@ -206,7 +279,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:81e57ae60e0bb0448091c1865d2e5ef8ec31fc27205f304922e2715782dde9a9:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:0db0f48652f73072ac262100dfdaa0ffb2ec1d9f40f085a048180592da1a4e5d:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -235,8 +308,8 @@
             "paths": ["Cargo.toml", "Cargo.lock", "crates/**"],
             "sources": ["Cargo.toml", "Cargo.lock"],
             "revisions": ["exact Cargo lock graph"],
-            "digests": ["sha256:e3b3d4ad90a892b92acf9a72c701a99d5ef4f1f9ecc04254cd19283d81f7c88a"],
-            "licenses": ["individual dependency terms pending OS-10 notice assembly"],
+            "digests": ["sha256:f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5"],
+            "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
             "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
             "obligations": ["Reconcile every distributed dependency license and notice before release."]
@@ -445,7 +518,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:81e57ae60e0bb0448091c1865d2e5ef8ec31fc27205f304922e2715782dde9a9:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:0db0f48652f73072ac262100dfdaa0ffb2ec1d9f40f085a048180592da1a4e5d:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -630,14 +703,69 @@
             "retention": "keep-with-obligations",
             "owner": "OS-10",
             "releaseModes": ["source", "server"],
-            "paths": ["server/collab-server.ts", "server/package.json", "server/package-lock.json"],
-            "sources": ["server/collab-server.ts", "server/package-lock.json"],
+            "paths": [
+                "server/collab-server.ts",
+                "server/package.json",
+                "server/package-lock.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md"
+            ],
+            "sources": [
+                "server/collab-server.ts",
+                "server/package-lock.json",
+                "server/LICENSE",
+                "server/NOTICE",
+                "server/THIRD-PARTY-NOTICES.md"
+            ],
             "revisions": ["exact collaboration-server npm lock graph"],
-            "digests": ["sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"],
-            "licenses": ["project grant and dependency notices pending OS-10"],
+            "digests": ["sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"],
+            "licenses": ["Apache-2.0", "MIT:ws"],
             "productSurfaces": ["self-hosted collaboration WebSocket server"],
             "evidence": ["The server binds a configurable host and port with authenticated WebSocket sessions."],
-            "obligations": ["Publish accurate deployment, authentication, dependency, and notice requirements."]
+            "obligations": ["Ship the sibling project license, project notice, and ws notice with the server."]
+        },
+        {
+            "id": "mi-plaits-dsp-rs-adaptation",
+            "kind": "adapted-source",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
+                "release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
+                "release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
+                "public/legal/MI-PLAITS-DSP-RS-MIT.txt",
+                "public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
+                "public/legal/THIRD-PARTY-NOTICES.md"
+            ],
+            "sources": [
+                "git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:src/drums/analog_bass_drum.rs",
+                "git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
+                "git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
+                "crates/daw-dsp/src/toaster/engines/kick_808.rs"
+            ],
+            "revisions": ["6d3f7a5b84b25ec45d66c9f6be7109474690d795", "99432f2bf443219b3eb77e65e1a18583faad422e"],
+            "digests": [
+                "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
+                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
+                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
+                "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:public/legal/MI-PLAITS-DSP-RS-MIT.txt",
+                "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
+                "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
+                "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
+                "sha256:0db0f48652f73072ac262100dfdaa0ffb2ec1d9f40f085a048180592da1a4e5d:public/legal/THIRD-PARTY-NOTICES.md"
+            ],
+            "licenses": ["MIT"],
+            "productSurfaces": ["TR-808 kick DSP source and compiled distributions"],
+            "evidence": [
+                "The adapted source, both immutable upstream revisions, the original Plaits source digest, both bundled MIT texts, and the public notice are bound together."
+            ],
+            "obligations": [
+                "Preserve the mi-plaits-dsp-rs and original Mutable Instruments Plaits copyright and MIT permission notices."
+            ]
         },
         {
             "id": "grand-boule",
@@ -708,16 +836,16 @@
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:dd18da9efea26cd4ef482d69a2916e622d7e58a2743f3cb4bde328ed9950adab:grand-boule-release-proof"
+                "tracked-set-sha256:1c6cdea60cf1dcf3674b7a14abb6c87589ae1224784d90a2fa7aa2fa7f7e706f:grand-boule-release-proof"
             ],
-            "licenses": ["pending:OS-10-project-grant"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
-                "ADR 0036 records the dated source-admission record, finite FIR body design-around, frequency-only prompt/aftersound decay curves, retained Weinreich aftersound inputs, independently authored project parameters, and engineering-not-legal-certainty boundary.",
+                "ADR 0036 records the project owner's Apache-2.0 grant and admission basis for the listed bytes; it is not independent proof of authorship or rights ownership.",
                 "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
-                "The release checker pins admitted bytes and rejects legacy literals, including branded morph aliases; this constrains source identity and does not prove authorship."
+                "The release checker pins the admitted bytes and rejects legacy literals, including branded morph aliases."
             ],
-            "obligations": ["Complete the OS-10 project grant before public release."]
+            "obligations": ["Preserve the project-source admission and release-boundary checks."]
         },
         {
             "id": "levain-sample-bank",
@@ -742,13 +870,13 @@
                 "git-tree:0ecebcfca0c7e0fe501f71964027f8f59fa0e432",
                 "file-level:public/samples/levain/provenance.tsv"
             ],
-            "licenses": ["CC0-1.0", "pending:OS-10-project-license"],
+            "licenses": ["CC0-1.0", "Apache-2.0"],
             "productSurfaces": ["bundled Levain orchestral sample bank"],
             "evidence": [
                 "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
             ],
             "obligations": [
-                "Preserve the pinned source proof and CC0 sample classification; apply the OS-10 project license to generated manifests and provenance files."
+                "Preserve the pinned source proof and CC0 sample classification; keep generated manifests and provenance under the project license."
             ]
         },
         {
@@ -798,18 +926,20 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:7f25881db3c02d2131533e8447e0ab8e8518ab2e74d30ba37a074112db25fcef",
-                "daw-wasm-decoder sha256:393031c1be9300b682d97050e00c98f831cd0b6f94c8c29855a26a85743cfe26",
-                "proof-chamber sha256:3d5c8eb0168f12bc9503c5d3b74ca788d19e462b2beb6d05251cfae19207f386",
-                "scoring sha256:f9970202eddb5ebba49d78806a15274b5718d6f8affc049ca11b202c7620830b"
+                "daw-dsp sha256:12603973c6ecc95707d1c304117fdf640c569e1e789bf4e13b9e43a86c3f5e43",
+                "daw-wasm-decoder sha256:3cfe877aa4697636958db39a2cb8e05e9a16d64bf66296799980d6fc7d3689c1",
+                "proof-chamber sha256:a4436f7348cc10aa164109274b475ea95ebf7fc5bdd14f588aa3a400c2032f94",
+                "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
             ],
             "digests": [
-                "sha256:a105bd9a3329326902535f1e2ff29cc62852c6870e572ad4c0339b825f16c8a3:public/wasm/manifest.json"
+                "sha256:50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e:public/wasm/manifest.json"
             ],
-            "licenses": ["pending:OS-10-project-grant", "pending:OS-10-Cargo-dependency-notices"],
+            "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
             "evidence": ["The WASM gate binds every artifact to its crate closure and pinned toolchain."],
-            "obligations": ["Keep generated hashes, package metadata, project grant, and third-party notices aligned."]
+            "obligations": [
+                "Keep generated hashes, package metadata, Apache-2.0 project licensing, and third-party notices aligned."
+            ]
         },
         {
             "id": "audio-worklet-sources",
@@ -830,12 +960,12 @@
                 "sha256:2bf7b626f838702f91e2ebd4b40eb25ba4049c206e33245d675d4ca20b311c25:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
-            "licenses": ["pending:OS-10-project-grant"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
             "evidence": [
                 "Both shipped processors are direct project source; no generator or second source tree exists."
             ],
-            "obligations": ["Carry the project grant into every distribution."]
+            "obligations": ["Ship the project LICENSE and NOTICE with every distribution."]
         },
         {
             "id": "online-sample-sources",
@@ -893,10 +1023,10 @@
                 "tree-sha256:7dac68d653c32736b1507d07574e5a288049351ba7d58d8d82fe6602f995cadf:public/logo-parts",
                 "tree-sha256:3e010276cd1d29a68235a79227300c6e8d7ec61484ef9166eaed92bf490b7f14:build/icons"
             ],
-            "licenses": ["owner-created:pending-OS-10-project-license"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
             "evidence": ["Owner attested authorship on 2026-08-21; repository history binds every rendition."],
-            "obligations": ["Apply the project license in OS-10 and preserve attribution."]
+            "obligations": ["Preserve attribution and project-license metadata."]
         },
         {
             "id": "third-party-marks",
@@ -952,7 +1082,7 @@
             "sources": ["public/legal/TRADEMARKS.md", "current source text"],
             "revisions": ["current release text"],
             "digests": [
-                "sha256:e7a1cc9d47151f27d8992922228630de4db4c11269621562336154e5a56ea58c:public/legal/TRADEMARKS.md"
+                "sha256:edb8376058a291da86a78ea409a02b7c1b964ac8836fd6ffcea0dbcd0a335244:public/legal/TRADEMARKS.md"
             ],
             "licenses": ["not-applicable:trademark-rights-not-granted"],
             "productSurfaces": ["technical references", "compatibility identifiers", "presets", "model selectors"],
@@ -991,11 +1121,11 @@
             "retention": "keep-with-obligations",
             "owner": "OS-09",
             "releaseModes": ["source"],
-            "paths": ["CONTRIBUTING.md", "docs/**", "README.md", "SECURITY.md"],
+            "paths": ["CONTRIBUTING.md", "docs/**", "PRIVACY.md", "README.md", "SECURITY.md"],
             "sources": ["git:github.com/jcosta33/sourdaw"],
             "revisions": ["current release text"],
             "digests": ["not-applicable:living-project-documentation"],
-            "licenses": ["pending:OS-10-project-grant"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": [
                 "architecture documentation",
                 "engineering guidance",
@@ -1018,7 +1148,7 @@
             "sources": ["git:github.com/jcosta33/sourdaw"],
             "revisions": ["historical document state"],
             "digests": ["not-applicable:historical-planning-records"],
-            "licenses": ["pending:OS-10-project-grant"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["legacy feature plans", "implementation records"],
             "evidence": ["The archive index denies current-shipping authority and routes live planning to GitHub."],
             "obligations": ["Preserve useful intent without presenting archived plans as current behavior."]
@@ -1027,23 +1157,23 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "60b2e1c7b6fb2827aa8a7142355142df235cc276f1d1d56981676a9d17eeb6a5"
+            "sha256": "66563bdb8109f2155a7494f45f6f854e73a7596f5feca5e4b47ab30febd9b655"
         },
         {
             "path": "server/package.json",
-            "sha256": "f11fa2b36c59384c6a8eef6871568692aca840ddcf108ec9a494c015766a0e0d"
+            "sha256": "e52537024fa9b3cff993a31fc552f600584b0d0d77f67607744a8135ec674ed0"
         },
         {
             "path": "server/package-lock.json",
-            "sha256": "485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
+            "sha256": "1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "8ee35b15a3dbff5003eeda6e8d46a54a3b5089c935e16cc4672bc912d4a9256d"
+            "sha256": "e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "b262f0a313e3396fc0376799364b947775f05832f8c4b7a8d3f7858ab8db2f45"
+            "sha256": "284744213beac0c5c28b8f44860127c44a66c36b90915d6b049f160e50c6f85d"
         },
         {
             "path": "Cargo.lock",
@@ -1055,10 +1185,26 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "a105bd9a3329326902535f1e2ff29cc62852c6870e572ad4c0339b825f16c8a3"
+            "sha256": "50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e"
         }
     ],
     "externalReferences": [
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/rust-lang/crates.io-index"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://index.crates.io/"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://registry.npmjs.org/${slot}/-/${slot}-${slot}.tgz",
+            "templateSha256": "7e8d6289056275cf7b0f11ed3e5143bbf19fa89cbbe4de4ab4dea3624bc4dd30"
+        },
         {
             "surface": "desktop-shell",
             "file": "public/legal/ELECTRON-SOURCES.json",
@@ -1476,6 +1622,57 @@
             "surface": "community-links",
             "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
             "value": "https://discord.gg/bJHmmfY4"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/daw-dsp/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/daw-wasm-decoder/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/proof-chamber/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/scoring/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/Apache-2.0.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/ISC.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/LGPL-3.0-only.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/Unlicense.txt"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://crates.io/api/v1/crates/${slot}/${slot}/download",
+            "templateSha256": "76033b3c969dd78f5a5033be69b396efae1e6de3ab36abb07552ce9c721667ae"
         }
     ],
     "marks": [
