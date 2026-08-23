@@ -621,6 +621,12 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    const verifiedProviderProposalScope =
+                        compiledList.compilerEvidence?.proposalScope ??
+                        (workflowCapabilityId !== undefined && providerProposal !== null
+                            ? providerProposal.scope
+                            : undefined);
+
                     return {
                         actions: guarded.actions,
                         rawText: prompt,
@@ -629,9 +635,7 @@ export const parsePromptToActions = inject({ logger })(
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
-                        ...(compiledList.compilerEvidence === undefined
-                            ? {}
-                            : { verifiedProviderProposalScope: compiledList.compilerEvidence.proposalScope }),
+                        ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
                     };
                 }
 

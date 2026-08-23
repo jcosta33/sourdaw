@@ -20,6 +20,6 @@ export type IntentResult = {
     applicationToolReceipts?: ApplicationToolReceipt[];
     /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
     providerProposal?: AgentRunProviderProposal;
-    /** Compiler-verified provider proposal scope for a structured selector list; distinct from action scope. */
+    /** Provider scope verified by the structured-list compiler or an exact application-owned workflow capability. */
     verifiedProviderProposalScope?: AgentRunProviderProposal['scope'];
 };

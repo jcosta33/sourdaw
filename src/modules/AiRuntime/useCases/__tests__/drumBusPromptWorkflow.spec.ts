@@ -25,6 +25,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -43,7 +44,6 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 import {
     createHostedSemanticListPlanningResponder,
     createProviderSemanticListPlanningResponder,
@@ -79,6 +79,12 @@ const mf01ProviderPlan = [
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
+        applyRuntimeGraphDelta: vi.fn<
+            (delta: { edges: Array<{ sourceId: string; targetId: string }> }) => {
+                acceptance: 'accepted';
+                application: 'applied';
+            }
+        >(() => ({ acceptance: 'accepted', application: 'applied' })),
         backend,
         addDeviceToStrip: vi.fn(),
         clearReportedLatency: vi.fn(),
@@ -117,6 +123,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
@@ -217,7 +224,7 @@ function setMf01Project(overrides: Partial<Record<string, (track: Track) => Trac
 }
 
 function getHostedRequestBody(): string {
-    const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
+    const body = runtimeMocks.fetch.mock.calls.at(-1)?.[1]?.body;
     if (typeof body !== 'string') {
         throw new TypeError('Expected one hosted provider request body');
     }
@@ -228,29 +235,148 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
+
+function getProviderPlanScope(
+    plan: readonly ProviderPlanCall[],
+    protectedTargetIds: string[] = [],
+    targetRanges: ProviderScope['targetRanges'] = []
+): ProviderScope {
+    const targetIds = [
+        ...new Set(
+            plan.flatMap((call) => {
+                const trackId = call.arguments.trackId;
+                return typeof trackId === 'string' && !trackId.startsWith('$') ? [trackId] : [];
+            })
+        ),
+    ];
+    return { targetIds, targetRanges, protectedTargetIds, protectedRanges: [] };
+}
+
+function createSemanticProviderItems(plan: readonly ProviderPlanCall[]): SemanticCommandListItem[] {
+    return plan.map((call, index) => {
+        const id = `${call.name}-${String(index + 1)}`;
+        const trackId = call.arguments.trackId;
+        const dependsOn = index === 0 ? undefined : [`${plan[index - 1]!.name}-${String(index)}`];
+        if (typeof trackId !== 'string' || trackId.startsWith('$')) {
+            return { id, name: call.name, arguments: { ...call.arguments }, dependsOn };
+        }
+        const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+        if (track === undefined) {
+            throw new TypeError(`Expected provider fixture track ${trackId}`);
+        }
+        const { trackId: _trackId, ...argumentsWithoutTrackId } = call.arguments;
+        return {
+            id,
+            name: call.name,
+            arguments: argumentsWithoutTrackId,
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { name: track.name },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+            dependsOn,
+        };
+    });
+}
+
+function useWebLlmPlanFixture(
+    plan: readonly ProviderPlanCall[],
+    scope: ProviderScope,
+    workflowCapabilityId?: string
+): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+        Promise.resolve(
+            createProviderSemanticListPlanningResponder(
+                createSemanticProviderItems(plan),
+                scope,
+                workflowCapabilityId
+            )(userMessage)
+        )
+    );
+}
+
+function useHostedPlanFixture(
+    plan: readonly ProviderPlanCall[],
+    scope: ProviderScope,
+    workflowCapabilityId?: string
+): void {
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        const userMessage = getHostedUserMessage(init);
+        return Promise.resolve(
+            createHostedSemanticListPlanningResponder(
+                createSemanticProviderItems(plan),
+                scope,
+                workflowCapabilityId
+            )(userMessage)
+        );
+    });
+}
+
+function createCapabilityPlanResponse(
+    userMessage: string,
+    plan: readonly ProviderPlanCall[],
+    scope: ProviderScope,
+    workflowCapabilityId: string
+): string {
+    const commandNames = [...new Set(plan.map((call) => call.name))];
+    if (!decodeProviderPlanningFixtureContext(userMessage).hasCommandCatalogReceipt) {
+        return JSON.stringify([
+            { name: 'agent.catalog.discover', arguments: { category: 'command', names: commandNames } },
+        ]);
+    }
+    return JSON.stringify([
+        { name: 'selectWorkflowCapability', arguments: { capabilityId: workflowCapabilityId } },
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan,
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Execute the application-owned workflow capability.',
+                    constraints: [],
+                    scope,
+                    capabilityIds: commandNames,
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate the exact application-owned workflow plan.'],
+                    stoppingConditions: ['Stop if application validation fails.'],
+                },
+            },
+        },
+    ]);
+}
+
+function createHostedProviderResponse(calls: string): Response {
+    const plan = JSON.parse(calls) as ProviderPlanCall[];
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: plan.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
 function getHostedUserMessage(input: string | RequestInit | undefined): string {
     return decodeHostedProviderUserMessage(input);
 }
 
-function getProviderContext(userMessage: string): Record<string, unknown> {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context)) {
-        throw new TypeError('Expected object-shaped project context');
-    }
-    return context;
-}
-
 function createEx11ProviderPlanFromUserMessage(userMessage: string) {
-    const context = getProviderContext(userMessage);
-    const capability = context.drumRenderComparisonCapability;
+    const planningContext = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = planningContext.capabilityData.drumRenderComparisonCapability;
     if (
         !isRecord(capability) ||
-        capability.baseRevision !== context.projectRevision ||
+        capability.baseRevision !== planningContext.revision ||
         !Array.isArray(capability.orderedToolPlan)
     ) {
         throw new TypeError('Expected revision-bound EX-11 capability');
@@ -263,15 +389,42 @@ function createEx11ProviderPlanFromUserMessage(userMessage: string) {
     });
 }
 
+function getEx11ProviderScope(userMessage: string, plan: readonly ProviderPlanCall[]): ProviderScope {
+    const capability = decodeProviderPlanningFixtureContext(userMessage).capabilityData.drumRenderComparisonCapability;
+    if (
+        !isRecord(capability) ||
+        !Array.isArray(capability.protectedObjects) ||
+        !Array.isArray(capability.renderSections)
+    ) {
+        throw new TypeError('Expected complete EX-11 scope');
+    }
+    const protectedTargetIds = capability.protectedObjects.map((target) => {
+        if (!isRecord(target) || typeof target.id !== 'string') {
+            throw new TypeError('Expected exact EX-11 protected targets');
+        }
+        return target.id;
+    });
+    const targetRanges = capability.renderSections.map((section) => {
+        if (!isRecord(section) || typeof section.startBeat !== 'number' || typeof section.endBeat !== 'number') {
+            throw new TypeError('Expected exact EX-11 render ranges');
+        }
+        return { startBeat: section.startBeat, endBeat: section.endBeat };
+    });
+    return getProviderPlanScope(plan, protectedTargetIds, targetRanges);
+}
+
 function useEx11WebLlmFixture(): void {
-    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-        Promise.resolve(
-            JSON.stringify([
-                { name: 'selectWorkflowCapability', arguments: { capabilityId: 'drum-render-comparison' } },
-                ...createEx11ProviderPlanFromUserMessage(userMessage),
-            ])
-        )
-    );
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+        const plan = createEx11ProviderPlanFromUserMessage(userMessage);
+        return Promise.resolve(
+            createCapabilityPlanResponse(
+                userMessage,
+                plan,
+                getEx11ProviderScope(userMessage, plan),
+                'drum-render-comparison'
+            )
+        );
+    });
 }
 
 function useEx11HostedFixture(
@@ -282,29 +435,16 @@ function useEx11HostedFixture(
 ): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = transformPlan(createEx11ProviderPlanFromUserMessage(getHostedUserMessage(init.body)));
-        const calls = [
-            { name: 'selectWorkflowCapability', arguments: { capabilityId: 'drum-render-comparison' } },
-            ...plan,
-        ];
+        const userMessage = getHostedUserMessage(init);
+        const plan = transformPlan(createEx11ProviderPlanFromUserMessage(userMessage));
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: calls.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            createHostedProviderResponse(
+                createCapabilityPlanResponse(
+                    userMessage,
+                    plan,
+                    getEx11ProviderScope(userMessage, plan),
+                    'drum-render-comparison'
+                )
             )
         );
     });
@@ -332,20 +472,12 @@ function setEx11Project(): void {
 }
 
 function createMf01ProviderPlanFromUserMessage(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context)) {
-        throw new TypeError('Expected object-shaped project context');
-    }
-    const capability = context.drumRoutingCapability;
+    const planningContext = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = planningContext.capabilityData.drumRoutingCapability;
     if (!isRecord(capability) || capability.actionType !== 'setTrackOutput') {
         throw new TypeError('Expected app-owned MF-01 capability');
     }
-    if (typeof context.projectRevision !== 'string' || capability.baseRevision !== context.projectRevision) {
+    if (planningContext.revision === null || capability.baseRevision !== planningContext.revision) {
         throw new TypeError('Expected revision-bound MF-01 capability');
     }
     const allowedAction = capability.allowedAction;
@@ -388,41 +520,44 @@ function createMf01ProviderPlanFromUserMessage(userMessage: string) {
     }));
 }
 
+function getMf01ProviderScope(userMessage: string, plan: readonly ProviderPlanCall[]): ProviderScope {
+    const capability = decodeProviderPlanningFixtureContext(userMessage).capabilityData.drumRoutingCapability;
+    if (
+        !isRecord(capability) ||
+        !isRecord(capability.protectedReturn) ||
+        typeof capability.protectedReturn.id !== 'string'
+    ) {
+        throw new TypeError('Expected exact MF-01 protected return');
+    }
+    return getProviderPlanScope(plan, [capability.protectedReturn.id]);
+}
+
 function useMf01WebLlmFixture(): void {
-    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-        Promise.resolve(
-            JSON.stringify(
-                withWorkflowCapabilitySelection('drum-routing', createMf01ProviderPlanFromUserMessage(userMessage))
-            )
-        )
-    );
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+        const plan = createMf01ProviderPlanFromUserMessage(userMessage);
+        return Promise.resolve(
+            createProviderSemanticListPlanningResponder(
+                createSemanticProviderItems(plan),
+                getMf01ProviderScope(userMessage, plan),
+                'drum-routing'
+            )(userMessage)
+        );
+    });
 }
 
 function useMf01HostedFixture({ reverse = false }: { reverse?: boolean } = {}): void {
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = createMf01ProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+        const userMessage = getHostedUserMessage(init);
+        const plan = createMf01ProviderPlanFromUserMessage(userMessage);
         if (reverse) {
             plan.reverse();
         }
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: withWorkflowCapabilitySelection('drum-routing', plan).map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+            createHostedSemanticListPlanningResponder(
+                createSemanticProviderItems(plan),
+                getMf01ProviderScope(userMessage, plan),
+                'drum-routing'
+            )(userMessage)
         );
     });
 }
@@ -477,6 +612,15 @@ function setMf06Project(): void {
 }
 
 type Mf06ProviderPlan = { items: SemanticCommandListItem[]; scope: ProviderScope };
+
+function expectSidechainRoutingCapability(userMessage: string | undefined): void {
+    if (userMessage === undefined) {
+        throw new TypeError('Expected provider planning request');
+    }
+    expect(decodeProviderPlanningFixtureContext(userMessage).capabilityData.sidechainRoutingCapability).toMatchObject({
+        actionType: 'addSidechainRoute',
+    });
+}
 
 function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06ProviderPlan {
     const planningContext = decodeProviderPlanningFixtureContext(userMessage);
@@ -592,26 +736,13 @@ function useMf06HostedFixture({ reverse = false }: { reverse?: boolean } = {}): 
 describe('drum bus prompt workflow', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
+        runtimeMocks.applyRuntimeGraphDelta.mockReset();
+        runtimeMocks.applyRuntimeGraphDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        const providerScope = getProviderPlanScope(providerPlan, ['track-parallel']);
+        useWebLlmPlanFixture(providerPlan, providerScope);
+        useHostedPlanFixture(providerPlan, providerScope);
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -637,6 +768,7 @@ describe('drum bus prompt workflow', () => {
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         sidechainStore.set({ routes: [] });
         markerStore.set({ markers: [], sections: [] });
@@ -1022,7 +1154,7 @@ describe('drum bus prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
@@ -1122,7 +1254,7 @@ describe('drum bus prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
+        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls.at(-1)?.[1];
         expect(providerRequest).toContain(PROMPT);
         expect(providerRequest).toContain('track-kick');
         expect(providerRequest).toContain('track-snare');
@@ -1338,7 +1470,7 @@ describe('drum bus prompt workflow', () => {
             'bus-drums',
         ]);
         expect([getTrack('track-parallel'), getTrack('track-bass')]).toEqual(unchangedBefore);
-        expect(runtimeMocks.setTrackOutput).toHaveBeenCalledTimes(4);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(4);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
@@ -1405,8 +1537,10 @@ describe('drum bus prompt workflow', () => {
 
     it('fails closed when an editable audio track has no application-owned role evidence', async () => {
         setMf01Project({ 'track-room': (track) => ({ ...track, name: 'Audio 1' }) });
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan.slice(0, 3)))
+        useWebLlmPlanFixture(
+            mf01ProviderPlan.slice(0, 3),
+            getProviderPlanScope(mf01ProviderPlan.slice(0, 3), ['track-parallel']),
+            'drum-routing'
         );
 
         await sendChatMessage(MF01_PROMPT);
@@ -1430,22 +1564,47 @@ describe('drum bus prompt workflow', () => {
 
             const providerMessage =
                 backend === 'webllm'
-                    ? runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]
+                    ? runtimeMocks.generateWebLlmCompletion.mock.calls.at(-1)?.[1]
                     : getHostedUserMessage(getHostedRequestBody());
-            expect(providerMessage).toContain('"drumRoutingCapability"');
-            expect(providerMessage).toContain('"projectRevision"');
-            expect(providerMessage).toContain('"baseRevision"');
-            expect(providerMessage).toContain('"bus":{"id":"bus-drums","name":"Drum Bus"');
-            expect(providerMessage).toContain(
-                '"candidateDrums":[{"id":"track-kick","name":"Kick","kind":"audio","role":"kick","roleEvidence":"canonical-name:kick","currentOutputId":"master","frozen":false,"locked":false}'
+            if (providerMessage === undefined) {
+                throw new TypeError('Expected provider planning request');
+            }
+            const planningContext = decodeProviderPlanningFixtureContext(providerMessage);
+            expect(planningContext.revision).not.toBeNull();
+            const capability = planningContext.capabilityData.drumRoutingCapability;
+            expect(capability).toMatchObject({
+                baseRevision: planningContext.revision,
+                actionType: 'setTrackOutput',
+                bus: { id: 'bus-drums', name: 'Drum Bus' },
+                protectedReturn: { id: 'track-parallel' },
+                allowedAction: {
+                    type: 'setTrackOutput',
+                    exactTargetIds: ['track-kick', 'track-snare', 'track-hats', 'track-room'],
+                },
+            });
+            expect(isRecord(capability) ? capability.candidateDrums : undefined).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'track-kick',
+                        name: 'Kick',
+                        kind: 'audio',
+                        role: 'kick',
+                        roleEvidence: 'canonical-name:kick',
+                        currentOutputId: 'master',
+                        frozen: false,
+                        locked: false,
+                    }),
+                ])
             );
-            expect(providerMessage).toContain('"protectedReturn":{"id":"track-parallel"');
-            expect(providerMessage).toContain(
-                '"protectedNonDrums":[{"id":"track-bass","name":"Bass DI","kind":"audio","role":"bass-instrument"'
-            );
-            expect(providerMessage).toContain('"actionType":"setTrackOutput"');
-            expect(providerMessage).toContain(
-                '"exactTargetIds":["track-kick","track-snare","track-hats","track-room"]'
+            expect(isRecord(capability) ? capability.protectedNonDrums : undefined).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'track-bass',
+                        name: 'Bass DI',
+                        kind: 'audio',
+                        role: 'bass-instrument',
+                    }),
+                ])
             );
         }
     );
@@ -1497,9 +1656,7 @@ describe('drum bus prompt workflow', () => {
         ['duplicate', [...mf01ProviderPlan.slice(0, 3), mf01ProviderPlan[0]]],
     ])('rejects MF-01 provider %s without project, runtime, receipt, or history residue', async (_label, plan) => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', plan))
-        );
+        useWebLlmPlanFixture(plan, getProviderPlanScope(plan, ['track-parallel']), 'drum-routing');
         const before = structuredClone(trackStore.value?.tracks);
 
         await sendChatMessage(MF01_PROMPT);
@@ -1554,8 +1711,10 @@ describe('drum bus prompt workflow', () => {
                     tracks: [...trackStore.value!.tracks, createTrack('bus-drums-2', 'Drum Bus', 'bus')],
                 });
             }
-            runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-                JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
+            useWebLlmPlanFixture(
+                mf01ProviderPlan,
+                getProviderPlanScope(mf01ProviderPlan, ['track-parallel']),
+                'drum-routing'
             );
             const before = structuredClone(trackStore.value?.tracks);
 
@@ -1570,9 +1729,7 @@ describe('drum bus prompt workflow', () => {
 
     it('rejects MF-01 post-proposal enlargement against the immutable protected return snapshot', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
-        );
+        useMf01WebLlmFixture();
         await sendChatMessage(MF01_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -1611,9 +1768,7 @@ describe('drum bus prompt workflow', () => {
 
     it('aborts the whole MF-01 group before runtime when a later route guard conflicts', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
-        );
+        useMf01WebLlmFixture();
         await sendChatMessage(MF01_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -1657,15 +1812,13 @@ describe('drum bus prompt workflow', () => {
 
     it('reconciles a transient MF-01 runtime failure to the committed whole-group route', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
-        );
-        runtimeMocks.setTrackOutput
-            .mockImplementationOnce(() => undefined)
+        useMf01WebLlmFixture();
+        runtimeMocks.applyRuntimeGraphDelta
+            .mockReturnValueOnce({ acceptance: 'accepted', application: 'applied' })
             .mockImplementationOnce(() => {
                 throw new Error('injected Snare route runtime failure');
             })
-            .mockImplementation(() => undefined);
+            .mockReturnValue({ acceptance: 'accepted', application: 'applied' });
         await sendChatMessage(MF01_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -1682,8 +1835,8 @@ describe('drum bus prompt workflow', () => {
             'bus-drums',
         ]);
         expect(
-            runtimeMocks.setTrackOutput.mock.calls.filter(
-                ([trackId, outputId]) => trackId === 'track-snare' && outputId === 'bus-drums'
+            runtimeMocks.applyRuntimeGraphDelta.mock.calls.filter(([delta]) =>
+                delta.edges.some((edge) => edge.sourceId === 'track-snare' && edge.targetId === 'bus-drums')
             )
         ).toHaveLength(2);
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toHaveLength(4);
@@ -1696,9 +1849,7 @@ describe('drum bus prompt workflow', () => {
 
     it('preserves a collaborator route and keeps the whole MF-01 group retryable on undo conflict', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
-        );
+        useMf01WebLlmFixture();
         await sendChatMessage(MF01_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -1727,15 +1878,14 @@ describe('drum bus prompt workflow', () => {
     });
 
     it('rejects provider enlargement that would route the protected Parallel Compression track', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
-                ...providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
-                {
-                    name: 'setTrackOutput',
-                    arguments: { trackId: 'track-parallel', outputId: '$drum-bus' },
-                },
-            ])
-        );
+        const enlargedPlan = [
+            ...providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
+            {
+                name: 'setTrackOutput',
+                arguments: { trackId: 'track-parallel', outputId: '$drum-bus' },
+            },
+        ];
+        useWebLlmPlanFixture(enlargedPlan, getProviderPlanScope(enlargedPlan, ['track-parallel']));
         const before = structuredClone(trackStore.value?.tracks);
 
         await sendChatMessage(PROMPT);
@@ -1954,9 +2104,9 @@ describe('drum bus prompt workflow', () => {
 
         await sendChatMessage(EX06_PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
+        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls.at(-1)?.[1];
         expect(providerRequest).toContain(EX06_PROMPT);
-        expect(providerRequest).toContain('"sidechainRoutingCapability"');
+        expectSidechainRoutingCapability(providerRequest);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
@@ -2047,7 +2197,7 @@ describe('drum bus prompt workflow', () => {
 
         const userMessage = getHostedUserMessage(runtimeMocks.fetch.mock.calls.at(-1)?.[1]);
         expect(userMessage).toContain(EX06_PROMPT);
-        expect(userMessage).toContain('"sidechainRoutingCapability"');
+        expectSidechainRoutingCapability(userMessage);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
@@ -2160,7 +2310,7 @@ describe('drum bus prompt workflow', () => {
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
         );
-        expect(getHostedUserMessage(getHostedRequestBody())).toContain('"sidechainRoutingCapability"');
+        expectSidechainRoutingCapability(getHostedUserMessage(getHostedRequestBody()));
         expect(
             confirmation?.actions.flatMap((action) =>
                 action.type === 'addSidechainRoute' ? [action.payload.targetDeviceId] : []

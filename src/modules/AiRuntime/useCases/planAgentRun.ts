@@ -23,7 +23,7 @@ type PlanAgentRunInput = {
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
     providerProposal?: AgentRunProviderProposal;
-    /** Compiler-verified provider proposal scope for a structured selector list, before app-computed action expansion. */
+    /** Provider scope verified before app-computed action expansion. */
     verifiedProviderProposalScope?: AgentRunScope;
     /** Provider-originated actions cannot reach plan persistence without semantic evidence. */
     requireProviderProposal?: boolean;

@@ -345,6 +345,48 @@ describe('agent tool catalog', () => {
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 
+    it('admits repeated primitive commands only with an application-validated workflow selection', async () => {
+        const repeatedCommands = [
+            { name: 'setTrackOutput', arguments: { trackId: 'track-kick', outputId: '$drum-bus' } },
+            { name: 'setTrackOutput', arguments: { trackId: 'track-snare', outputId: '$drum-bus' } },
+        ];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTrackOutput'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'selectWorkflowCapability',
+                        arguments: { capabilityId: 'drum-render-comparison' },
+                    },
+                    { name: 'command.batch.propose', arguments: { commands: repeatedCommands } },
+                ],
+            });
+
+        await expect(
+            runApplicationOwnedToolLoop({
+                loopId: 'repeated-workflow-plan',
+                terminalToolNames: new Set(['selectWorkflowCapability', 'command.batch.propose']),
+                requestTurn,
+            })
+        ).resolves.toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                { name: 'selectWorkflowCapability' },
+                { name: 'command.batch.propose', arguments: { commands: repeatedCommands } },
+            ],
+        });
+    });
+
     it('rejects command discovery that attempts registry enumeration and accepts only named bounded pages', async () => {
         const requestTurn = vi
             .fn()

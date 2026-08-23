@@ -6,6 +6,7 @@ import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Pro
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ToolSchema } from '../models/ToolDefinitions';
+import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../models/WorkflowCapability';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -690,7 +691,8 @@ function recordDisclosedCommandSchemas(
 
 function validateCommandBatchProposal(
     call: ToolCallResult,
-    disclosedCommandSchemas: ReadonlyMap<string, string>
+    disclosedCommandSchemas: ReadonlyMap<string, string>,
+    allowRepeatedPrimitiveCommands: boolean
 ): string | null {
     const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
     const list = isRecord(call.arguments.list) ? call.arguments.list : null;
@@ -724,7 +726,7 @@ function validateCommandBatchProposal(
             command.name.length === 0 ||
             command.name.length > 128 ||
             !isRecord(command.arguments) ||
-            (hasPrimitiveCommands && names.has(command.name))
+            (hasPrimitiveCommands && !allowRepeatedPrimitiveCommands && names.has(command.name))
         ) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
@@ -752,11 +754,12 @@ function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
     disclosedCommandSchemas: ReadonlyMap<string, string>
 ): string | null {
+    const allowRepeatedPrimitiveCommands = calls.some(({ call }) => call.name === WORKFLOW_CAPABILITY_TOOL_NAME);
     for (const { call } of calls) {
         if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
             continue;
         }
-        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas);
+        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas, allowRepeatedPrimitiveCommands);
         if (rejection !== null) {
             return rejection;
         }
