@@ -1,0 +1,28 @@
+crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs
+  s_a40848e8f8cca9::t_9cd8789bfe6840 52-54,525
+  s_a40848e8f8cca9::t_735bb12a5eb7f2 498-501
+crates/proof-chamber/tests/support/plate_fine_structure.rs
+  s_a40848e8f8cca9::t_9cd8789bfe6840 1-107
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_9cd8789bfe6840 776,782,787,790
+  s_a40848e8f8cca9::t_735bb12a5eb7f2 769,773-775,788-789
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_a40848e8f8cca9::t_9cd8789bfe6840 34-36,628,640,642-654
+  s_a40848e8f8cca9::t_735bb12a5eb7f2 127-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0cdeaa6c52e281d41674b4fe345ea2c1d8546fd1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
