@@ -270,13 +270,34 @@ function isIdempotentSetCommand(name: string): boolean {
     return name.startsWith('set') || ['armTrack', 'bypassDevice', 'muteTrack', 'soloTrack'].includes(name);
 }
 
+function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson).join(',')}]`;
+    }
+    if (isRecord(value)) {
+        return `{${Object.keys(value)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+            .join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
+function getCanonicalCommandIdentity(command: ToolCallResult): string {
+    return canonicalJson(command);
+}
+
 function getTargetWriteIdentity(
+    name: string,
     targetRules: readonly { argument: string }[],
     arguments_: Readonly<Record<string, unknown>>
 ): string {
-    return JSON.stringify(
-        targetRules.map((targetRule) => [targetRule.argument, arguments_[targetRule.argument] ?? null])
-    );
+    return canonicalJson({
+        name,
+        targetArguments: Object.fromEntries(
+            targetRules.map((targetRule) => [targetRule.argument, arguments_[targetRule.argument]])
+        ),
+    });
 }
 
 function detectDependencyCycle(items: readonly Record<string, unknown>[]): string | null {
@@ -425,7 +446,7 @@ export function compileArbitraryCommandList(input: {
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = { name: item.name, arguments: { ...item.arguments } };
-                const commandKey = JSON.stringify(command);
+                const commandKey = getCanonicalCommandIdentity(command);
                 if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
                     omittedCommandCount += 1;
                     continue;
@@ -513,11 +534,8 @@ export function compileArbitraryCommandList(input: {
                     name: item.name,
                     arguments: { ...item.arguments, [selector.targetArgument]: stableId },
                 };
-                const commandKey = JSON.stringify(command);
-                const targetCommandKey = `${item.name}\u0000${getTargetWriteIdentity(
-                    rules.targetRules,
-                    command.arguments
-                )}`;
+                const commandKey = getCanonicalCommandIdentity(command);
+                const targetCommandKey = getTargetWriteIdentity(item.name, rules.targetRules, command.arguments);
                 const priorArguments = targetCommandArguments.get(targetCommandKey);
                 if (priorArguments !== undefined && priorArguments !== commandKey) {
                     return {
