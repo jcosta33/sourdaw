@@ -3,14 +3,12 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 /**
- * Navigates to the MIDI tab's "AI" sub-tab, which is where the generative
- * option grids live (the default "Patterns" sub-tab hosts PatternBrowser, and
- * the Audio tab shows the grids only when native audio generation is
- * available — never in a browser-run E2E session).
+ * Navigates to the Generate panel's "AI" tab, which is where the generative
+ * option grids live. The default "Patterns" tab hosts PatternBrowser.
  */
 async function openAiGenerationTab(page: Page): Promise<void> {
     await page.getByTestId('toggle-generate').click();
-    await expect(page.getByTestId('generate-tab-midi')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('button', { name: 'Patterns', exact: true })).toBeVisible({ timeout: 5000 });
 
     await page.getByRole('button', { name: 'AI', exact: true }).click();
     await expect(page.getByText('Describe the Music')).toBeVisible({ timeout: 5000 });
@@ -24,7 +22,7 @@ test.describe('Generate panel — generative option grids', () => {
         await launch_new_project(page);
     });
 
-    test('option grids expose multiple selectable options on the MIDI AI sub-tab', async ({ page }) => {
+    test('option grids expose multiple selectable options on the AI tab', async ({ page }) => {
         await openAiGenerationTab(page);
 
         const genreGrid = page.getByTestId('genre-grid');

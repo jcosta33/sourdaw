@@ -16,9 +16,9 @@ type SetupWorkspaceOptions = {
 };
 
 /**
- * Common setup for E2E tests: bypasses the onboarding tour and alpha notice
- * via local storage, then navigates to the root URL and ensures basic DOM
- * loading is complete.
+ * Common setup for E2E tests: bypasses the onboarding tour, alpha notice, and
+ * delayed first-load shortcut hint via local storage, then navigates to the
+ * root URL and ensures basic DOM loading is complete.
  */
 export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions = {}): Promise<void> {
     page.on('console', (msg) => console.log(`[Browser Console] ${msg.text()}`));
@@ -34,6 +34,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
             window.localStorage.clear();
             window.localStorage.setItem('wd:onboarding-completed', '1');
             window.localStorage.setItem('sourdaw-alpha-notice-dismissed', alphaDismissed);
+            window.localStorage.setItem('wd:first-load-hint-shown', '1');
             for (const entry of localStorage) {
                 window.localStorage.setItem(entry.name, entry.value);
             }
