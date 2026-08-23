@@ -33,7 +33,8 @@ type ImportCachedAudioBuffersInput = {
     shouldContinue?: () => boolean;
 };
 
-type PreparedAudioBuffers = { cancel: () => void; publish: () => number };
+type PreparedAudioBuffers = { publish: () => number };
+type PreparedStoredAudioBuffers = PreparedAudioBuffers & { cancel: () => void };
 type PreparedImportedAudioBuffers = PreparedAudioBuffers & { persist: () => Promise<boolean> };
 
 const {
@@ -56,7 +57,7 @@ const {
     stopRecording,
 } = vi.hoisted(() => {
     function prepared(): PreparedImportedAudioBuffers {
-        return { cancel: () => undefined, persist: () => Promise.resolve(true), publish: () => 0 };
+        return { persist: () => Promise.resolve(true), publish: () => 0 };
     }
     const engineGraph = { value: 'old-project' };
     const crdtAuthority = { value: 'Old Project' };
@@ -79,8 +80,8 @@ const {
             .mockResolvedValue(prepared()),
         notifyUser: vi.fn(),
         prepareCachedAudioBuffersFromIdb: vi
-            .fn<(input: PrepareCachedAudioBuffersInput) => Promise<PreparedAudioBuffers | null>>()
-            .mockResolvedValue(prepared()),
+            .fn<(input: PrepareCachedAudioBuffersInput) => Promise<PreparedStoredAudioBuffers | null>>()
+            .mockResolvedValue({ cancel: () => undefined, publish: () => 0 }),
         persistCrdtProject: vi.fn().mockResolvedValue(undefined),
         resetAudioGraph,
         resetCrdtProjectAuthority,
@@ -336,9 +337,10 @@ describe('applyImportedProjectData round-trip hydration', () => {
         importCachedAudioBuffers.mockResolvedValueOnce({ persist: persistEmbedded, publish: () => 0 });
         prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
             () =>
-                new Promise<PreparedAudioBuffers>((resolve) => {
+                new Promise<PreparedStoredAudioBuffers>((resolve) => {
                     completeRestore = () => {
                         resolve({
+                            cancel: () => undefined,
                             publish: () => {
                                 buffersRestored = true;
                                 return 2;
@@ -556,7 +558,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         importCachedAudioBuffers.mockResolvedValueOnce({ persist: persistEmbedded, publish: () => 0 });
         prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
             () =>
-                new Promise<PreparedAudioBuffers>((resolve) => {
+                new Promise<PreparedStoredAudioBuffers>((resolve) => {
                     finishPreparation = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );

@@ -1272,7 +1272,7 @@ export const audioBufferCache = {
         context: Pick<BaseAudioContext, 'createBuffer'>;
         ids?: string[];
         shouldContinue?: () => boolean;
-    }): Promise<PreparedAudioBuffers | null> {
+    }): Promise<PreparedStoredAudioBuffers | null> {
         return prepareBuffersFromIdb({ context, ids, shouldContinue });
     },
 

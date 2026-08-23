@@ -355,7 +355,7 @@ describe('loadRecentProject', () => {
                         completeFirstRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                     })
             )
-            .mockResolvedValueOnce({ publish: () => 0 });
+            .mockResolvedValueOnce({ cancel: () => undefined, publish: () => 0 });
 
         const firstLoad = loadRecentProject('first-project');
         const secondLoad = loadRecentProject('second-project');
