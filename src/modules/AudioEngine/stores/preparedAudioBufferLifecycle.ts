@@ -49,8 +49,13 @@ type PromotionSettlement = {
     settle: () => void;
 };
 
-type PersistPreparedAudioBufferInput = {
+type PreparedRuntimeSnapshot = {
     buffer: AudioBuffer;
+    lastAccessed: number;
+    owner: PreparedAudioBufferOwner;
+};
+
+type PersistPreparedAudioBufferInput = {
     data: PreparedSerializedAudioBuffer;
     id: string;
     leaseId: string;
@@ -81,6 +86,7 @@ type CollectPreparedAudioBufferRecoveriesInput = {
 type PreparedAudioBufferLifecycleHost = {
     bufferStoreName: string;
     claimDurableMutation: (id: string) => number;
+    createRuntimeBuffer: (data: PreparedSerializedAudioBuffer) => AudioBuffer;
     evictRuntime: (id: string) => void;
     finishDurableMutation: (id: string, generation: number) => void;
     hasPinnedReservation: (id: string) => boolean;
@@ -101,11 +107,17 @@ function estimateStoredRecoveryBytes(value: unknown, visited = new WeakSet<objec
     if (value === null || value === undefined) {
         return 0;
     }
+    if (typeof value === 'boolean') {
+        return 1;
+    }
     if (ArrayBuffer.isView(value)) {
-        return value.byteLength;
+        return Math.max(1, value.byteLength);
     }
     if (typeof value === 'number') {
         return 8;
+    }
+    if (typeof value === 'bigint') {
+        return Math.max(8, value.toString().length * 2);
     }
     if (typeof value === 'string') {
         return value.length * 2;
@@ -114,13 +126,39 @@ function estimateStoredRecoveryBytes(value: unknown, visited = new WeakSet<objec
         return 0;
     }
     visited.add(value);
+    if (value instanceof ArrayBuffer) {
+        return Math.max(1, value.byteLength);
+    }
+    if (typeof Blob !== 'undefined' && value instanceof Blob) {
+        return Math.max(1, value.size);
+    }
+    if (value instanceof Date) {
+        return 8;
+    }
+    if (value instanceof RegExp) {
+        return Math.max(1, (value.source.length + value.flags.length) * 2);
+    }
+    if (value instanceof Map) {
+        let total = 1;
+        for (const [key, entry] of value) {
+            total += estimateStoredRecoveryBytes(key, visited) + estimateStoredRecoveryBytes(entry, visited);
+        }
+        return total;
+    }
+    if (value instanceof Set) {
+        let total = 1;
+        for (const entry of value) {
+            total += estimateStoredRecoveryBytes(entry, visited);
+        }
+        return total;
+    }
     if (Array.isArray(value)) {
         const entries: unknown[] = value;
-        return entries.reduce<number>((total, entry) => total + estimateStoredRecoveryBytes(entry, visited), 0);
+        return entries.reduce<number>((total, entry) => total + estimateStoredRecoveryBytes(entry, visited), 1);
     }
     return Object.entries(value).reduce(
         (total, [key, entry]) => total + key.length * 2 + estimateStoredRecoveryBytes(entry, visited),
-        0
+        1
     );
 }
 
@@ -676,7 +714,40 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         }
     }
 
-    async function persist({ buffer, data, id, leaseId }: PersistPreparedAudioBufferInput) {
+    async function readPreparedRuntimeSnapshot(
+        id: string,
+        leaseId: string
+    ): Promise<PreparedRuntimeSnapshot | undefined> {
+        const database = await host.openDatabase();
+        const transaction = database.transaction([host.bufferStoreName, host.metadataStoreName], 'readonly');
+        const [data, metadata] = await Promise.all([
+            awaitPreparedRequest(
+                transaction.objectStore(host.bufferStoreName).get(id) as IDBRequest<
+                    PreparedSerializedAudioBuffer | undefined
+                >
+            ),
+            awaitPreparedRequest(
+                transaction.objectStore(host.metadataStoreName).get(id) as IDBRequest<
+                    PreparedAudioBufferMetadata | undefined
+                >
+            ),
+        ]);
+        await awaitPreparedTransaction(transaction);
+        if (!data || !metadata || !isValidPreparedAudioBufferPair(data, metadata)) {
+            return undefined;
+        }
+        const owner = readPreparedOwner(metadata);
+        if (owner === null || owner === 'invalid' || owner.leaseId !== leaseId) {
+            return undefined;
+        }
+        return {
+            buffer: host.createRuntimeBuffer(data),
+            lastAccessed: metadata.lastAccessed,
+            owner,
+        };
+    }
+
+    async function persist({ data, id, leaseId }: PersistPreparedAudioBufferInput) {
         const invalidIdentity = preparedIdentityFailure(id, leaseId);
         if (invalidIdentity) {
             return { status: 'failed' as const, reason: invalidIdentity };
@@ -702,7 +773,9 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         const attempt = persistenceAttempts.register(id, generation, leaseId);
         const persistenceRevision = crypto.randomUUID();
         let committedPersistenceRevision: string = persistenceRevision;
+        let committedData = data;
         let reconciledOwnerStatus: PreparedAudioBufferOwner['status'] | undefined;
+        let reconciledSnapshot: PreparedRuntimeSnapshot | undefined;
         let trackedTransaction: PreparedTransaction | undefined;
         let wroteTemporaryRow = false;
         try {
@@ -745,6 +818,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                         reason: 'Prepared audio retry does not match its durable PCM.',
                     };
                 }
+                committedData = existingData;
                 if (existingOwner.persistenceRevision === undefined) {
                     metadataStore.put(
                         {
@@ -815,20 +889,45 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 }
                 reconciledOwnerStatus = owner.status;
                 committedPersistenceRevision = owner.persistenceRevision ?? committedPersistenceRevision;
+                reconciledSnapshot = await readPreparedRuntimeSnapshot(id, leaseId);
+            }
+            const canPublish =
+                projectEpoch === admittedProjectEpoch &&
+                ((runtimeOwnerById.get(id)?.token === admittedToken && isRuntimeSlotAvailableForPersist(id, leaseId)) ||
+                    (reconciledOwnerStatus !== undefined &&
+                        runtimeOwnerById.get(id) === undefined &&
+                        !host.hasRuntime(id)));
+            let snapshot: PreparedRuntimeSnapshot | undefined;
+            if (canPublish && reconciledOwnerStatus !== undefined) {
+                snapshot = reconciledSnapshot;
+            } else if (canPublish) {
+                snapshot = {
+                    buffer: host.createRuntimeBuffer(committedData),
+                    lastAccessed: committedData.lastAccessed,
+                    owner: {
+                        schemaVersion: 1,
+                        leaseId,
+                        persistenceRevision: committedPersistenceRevision,
+                        status: 'temporary',
+                    },
+                };
             }
             const currentOwner = runtimeOwnerById.get(id);
             if (
+                snapshot !== undefined &&
                 projectEpoch === admittedProjectEpoch &&
+                !host.hasPinnedReservation(id) &&
+                projectReservationEpochById.get(id) === admittedReservationEpoch &&
                 ((currentOwner?.token === admittedToken && isRuntimeSlotAvailableForPersist(id, leaseId)) ||
                     (reconciledOwnerStatus !== undefined && currentOwner === undefined && !host.hasRuntime(id)))
             ) {
                 publishPreparedRuntime(
                     id,
                     leaseId,
-                    reconciledOwnerStatus ?? 'temporary',
-                    buffer,
-                    data.lastAccessed,
-                    committedPersistenceRevision
+                    snapshot.owner.status,
+                    snapshot.buffer,
+                    snapshot.lastAccessed,
+                    snapshot.owner.persistenceRevision ?? committedPersistenceRevision
                 );
             }
             return { status: 'persisted' as const, bufferId: id, leaseId };
@@ -1269,18 +1368,19 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                     ? (value as Record<string, unknown>)
                     : undefined;
             const recovery = readPreparedAudioRecoveryRecord(value);
-            const id = typeof candidate?.id === 'string' && candidate.id.trim().length > 0 ? candidate.id : undefined;
+            const id = typeof key === 'string' && key.trim().length > 0 ? key : undefined;
             const stagedAtMs =
                 typeof candidate?.stagedAtMs === 'number' && Number.isFinite(candidate.stagedAtMs)
                     ? candidate.stagedAtMs
                     : Number.NEGATIVE_INFINITY;
-            const valid = typeof key === 'string' && recovery !== null && recovery.id === key;
+            const valid = id !== undefined && recovery !== null && recovery.id === id;
             if (id !== undefined) {
                 tracked.push({ id, transaction: transactions.track(id, 'recovery-cleanup', transaction) });
             }
             return [
                 {
                     id,
+                    admittedReservationEpoch: id === undefined ? undefined : projectReservationEpochById.get(id),
                     key,
                     protected:
                         id !== undefined &&
@@ -1290,6 +1390,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                     sizeInBytes: estimateStoredRecoveryBytes(value),
                     stagedAtMs,
                     valid,
+                    value,
                 },
             ];
         });
@@ -1329,6 +1430,30 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 deletedCount++;
             }
             await awaitPreparedTransaction(transaction);
+            const atRisk = entries.filter(
+                (entry) =>
+                    deletions.has(entry.key) &&
+                    entry.id !== undefined &&
+                    (host.hasPinnedReservation(entry.id) ||
+                        projectReservationEpochById.get(entry.id) !== entry.admittedReservationEpoch)
+            );
+            if (atRisk.length > 0) {
+                const reconciliation = database.transaction(host.recoveryStoreName, 'readwrite');
+                const reconciliationStore = reconciliation.objectStore(host.recoveryStoreName);
+                for (const entry of atRisk) {
+                    const current = await awaitPreparedRequest(
+                        reconciliationStore.get(entry.key) as IDBRequest<unknown>
+                    );
+                    if (current === undefined) {
+                        reconciliationStore.put(entry.value, entry.key);
+                        remainingBytes += entry.sizeInBytes;
+                        deletedCount--;
+                    } else {
+                        remainingBytes += estimateStoredRecoveryBytes(current);
+                    }
+                }
+                await awaitPreparedTransaction(reconciliation);
+            }
             return { status: 'collected' as const, count: deletedCount, remainingBytes };
         } finally {
             for (const { id, transaction: trackedTransaction } of tracked) {

@@ -1,18 +1,40 @@
+import { vi } from 'vitest';
+
+class TestAudioBuffer {
+    readonly duration: number;
+    readonly length: number;
+    readonly numberOfChannels: number;
+    readonly sampleRate: number;
+
+    private readonly channels: Array<Float32Array<ArrayBuffer>>;
+
+    constructor({ length, numberOfChannels = 1, sampleRate }: AudioBufferOptions) {
+        this.channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+        this.duration = length / sampleRate;
+        this.length = length;
+        this.numberOfChannels = numberOfChannels;
+        this.sampleRate = sampleRate;
+    }
+
+    copyFromChannel(destination: Float32Array<ArrayBuffer>, channelNumber: number, startInChannel = 0): void {
+        destination.set(this.channels[channelNumber]!.subarray(startInChannel, startInChannel + destination.length));
+    }
+
+    copyToChannel(source: Float32Array<ArrayBuffer>, channelNumber: number, startInChannel = 0): void {
+        this.channels[channelNumber]!.set(source, startInChannel);
+    }
+
+    getChannelData(channelNumber: number): Float32Array<ArrayBuffer> {
+        return this.channels[channelNumber]!;
+    }
+}
+
+export function installTestAudioBufferConstructor(): void {
+    vi.stubGlobal('AudioBuffer', TestAudioBuffer);
+}
+
 export function createAudioBuffer({ length, sampleRate }: { length: number; sampleRate: number }): AudioBuffer {
-    const channels = Array.from({ length: 1 }, () => new Float32Array(length));
-    return {
-        copyFromChannel: (destination, channelNumber, startInChannel = 0) => {
-            destination.set(channels[channelNumber]!.subarray(startInChannel, startInChannel + destination.length));
-        },
-        copyToChannel: (source, channelNumber, startInChannel = 0) => {
-            channels[channelNumber]!.set(source, startInChannel);
-        },
-        duration: length / sampleRate,
-        getChannelData: (channelNumber) => channels[channelNumber]!,
-        length,
-        numberOfChannels: 1,
-        sampleRate,
-    };
+    return new TestAudioBuffer({ length, numberOfChannels: 1, sampleRate });
 }
 
 export function createTestContext(createBuffer: BaseAudioContext['createBuffer']): BaseAudioContext {
@@ -60,7 +82,7 @@ export function createTestContext(createBuffer: BaseAudioContext['createBuffer']
 
 export function openAudioDatabase(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('sourdaw-audio', 2);
+        const request = indexedDB.open('sourdaw-audio', 3);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
     });

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { audioBufferCache } from '../audioBufferCache';
 
 import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
 
 /**
  * AC-5 census. Base64 PCM may be produced by exactly one member of the audio
@@ -124,6 +125,7 @@ describe('audioBufferCache base64 surface (AC-5)', () => {
     let btoaSpy: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
+        installTestAudioBufferConstructor();
         installFakeAudioIndexedDb();
         realBtoa = globalThis.btoa.bind(globalThis);
     });

@@ -7,13 +7,18 @@ import {
     META_STORE,
     RECOVERY_STORE,
 } from './fakeAudioBufferIndexedDb';
-import { createAudioBuffer, createTestContext } from './preparedAudioBufferTestSupport';
+import {
+    createAudioBuffer,
+    createTestContext,
+    installTestAudioBufferConstructor,
+} from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 
 beforeEach(async () => {
     vi.resetModules();
+    installTestAudioBufferConstructor();
     ({ audioBufferCache, clearRuntimeAudioBufferCache } = await import('../audioBufferCache'));
 });
 
@@ -23,6 +28,30 @@ afterEach(() => {
 });
 
 describe('prepared audio-buffer persistence and admission', () => {
+    it('publishes the committed PCM snapshot when the caller mutates its buffer before commit', async () => {
+        const controls = installFakeAudioIndexedDb();
+        controls.pauseWriteSettlements();
+        const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        source.getChannelData(0)[0] = 0.25;
+        const persistence = audioBufferCache.persistPreparedBuffer({
+            id: 'committed-runtime-snapshot',
+            buffer: source,
+            leaseId: 'committed-runtime-snapshot-lease',
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        source.getChannelData(0)[0] = 0.875;
+        controls.releaseNextWriteSettlement();
+        await expect(persistence).resolves.toMatchObject({ status: 'persisted' });
+
+        const published = audioBufferCache.get('committed-runtime-snapshot');
+        expect(published).not.toBe(source);
+        expect(published?.getChannelData(0)[0]).toBeCloseTo(0.25);
+        expect(controls.committed.get('committed-runtime-snapshot')?.channelData[0]?.[0]).toBeCloseTo(0.25);
+    });
+
     it('persists user prepared IDs that share the retired recovery prefix', async () => {
         const controls = installFakeAudioIndexedDb({
             existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
@@ -39,7 +68,8 @@ describe('prepared audio-buffer persistence and admission', () => {
                 buffer,
             })
         ).resolves.toEqual({ status: 'persisted', bufferId: id, leaseId });
-        expect(audioBufferCache.get(id)).toBe(buffer);
+        expect(audioBufferCache.get(id)).not.toBe(buffer);
+        expect(audioBufferCache.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.5);
         expect(controls.committed.get(id)?.channelData[0]?.[0]).toBeCloseTo(0.5);
         expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'temporary' });
     });
@@ -87,10 +117,11 @@ describe('prepared audio-buffer persistence and admission', () => {
             leaseId: stagedProject.leaseId,
             disposition: 'project-owned',
         });
+        const projectRuntime = audioBufferCache.get('project-collision');
 
         for (const [id, original] of [
             ['legacy-collision', legacy],
-            ['project-collision', project],
+            ['project-collision', projectRuntime],
         ] as const) {
             const durablePcm = structuredClone(controls.committed.get(id));
             const durableMeta = structuredClone(controls.committedMeta.get(id));
@@ -193,7 +224,8 @@ describe('prepared audio-buffer persistence and admission', () => {
             bufferId: 'same-lease-reservation-race',
             leaseId: 'same-lease-reservation',
         });
-        expect(audioBufferCache.get('same-lease-reservation-race')).toBe(current);
+        expect(audioBufferCache.get('same-lease-reservation-race')).not.toBe(current);
+        expect(audioBufferCache.get('same-lease-reservation-race')?.getChannelData(0)[0]).toBeCloseTo(0.75);
         expect(controls.committed.get('same-lease-reservation-race')?.channelData[0]?.[0]).toBeCloseTo(0.75);
     });
 

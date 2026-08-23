@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flushIndexedDbTasks, installFakeAudioIndexedDb, type StoredBufferMeta } from './fakeAudioBufferIndexedDb';
-import { createAudioBuffer, createTestContext, encodeFloat32 } from './preparedAudioBufferTestSupport';
+import {
+    createAudioBuffer,
+    createTestContext,
+    encodeFloat32,
+    installTestAudioBufferConstructor,
+} from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
@@ -15,6 +20,7 @@ const malformedPreparedMetadataCases: ReadonlyArray<[string, (metadata: StoredBu
 
 beforeEach(async () => {
     vi.resetModules();
+    installTestAudioBufferConstructor();
     ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
         await import('../audioBufferCache'));
 });
@@ -392,7 +398,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
         ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
 
         expect(delayed?.publish()).toBe(0);
-        expect(audioBufferCache.get('delayed-prepare-promotion')).toBe(temporary);
+        expect(audioBufferCache.get('delayed-prepare-promotion')).not.toBe(temporary);
+        expect(audioBufferCache.get('delayed-prepare-promotion')?.getChannelData(0)[0]).toBeCloseTo(0);
     });
 
     it('evicts temporary reopens created after project preparation without disturbing durable runtime owners', async () => {
@@ -468,7 +475,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
         });
         expect(audioBufferCache.has(completedId)).toBe(false);
         expect(audioBufferCache.has(activeId)).toBe(false);
-        expect(audioBufferCache.get(projectOwnedId)).toBe(projectOwned);
+        expect(audioBufferCache.get(projectOwnedId)).not.toBe(projectOwned);
+        expect(audioBufferCache.get(projectOwnedId)?.getChannelData(0)[0]).toBeCloseTo(0);
         expect(audioBufferCache.get(ordinaryId)).toBe(ordinary);
         expect(project?.publish()).toBe(0);
         expect(audioBufferCache.has(completedId)).toBe(false);
@@ -809,7 +817,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
             status: 'failed',
             reason: 'Prepared audio discard was superseded.',
         });
-        expect(audioBufferCache.get(id)).toBe(replacement);
+        expect(audioBufferCache.get(id)).not.toBe(replacement);
+        expect(audioBufferCache.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.75);
         expect(controls.committed.get(id)?.channelData[0]?.[0]).toBeCloseTo(0.75);
         expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'temporary' });
     });
@@ -859,6 +868,9 @@ describe('prepared audio-buffer settlement and recovery', () => {
             }
             const stored = structuredClone(controls.committed.get(id));
             const metadata = structuredClone(controls.committedMeta.get(id));
+            if (!stored || !metadata) {
+                throw new TypeError('Expected late-pin discard fixture to remain durable');
+            }
             controls.pauseWriteSettlements();
             const discard = audioBufferCache.releasePreparedBuffer({
                 id,
@@ -1202,7 +1214,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
         controls.releaseNextWriteSettlement();
         await expect(projectRelease).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
 
-        expect(audioBufferCache.get('reopen-race')).toBe(replacement);
+        expect(audioBufferCache.get('reopen-race')).not.toBe(replacement);
+        expect(audioBufferCache.get('reopen-race')?.getChannelData(0)[0]).toBeCloseTo(0.75);
         expect(controls.committed.get('reopen-race')?.channelData[0]?.[0]).toBeCloseTo(0.75);
         expect(controls.committedMeta.get('reopen-race')?.preparedOwner?.leaseId).toBe(persisted.leaseId);
         expect(controls.committedMeta.get('reopen-race')?.preparedOwner?.status).toBe('project-owned');
@@ -1235,6 +1248,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(controls.committedMeta.get('commit-truth')?.preparedOwner?.leaseId).toBe(
             firstResult.status === 'persisted' ? firstResult.leaseId : undefined
         );
-        expect(audioBufferCache.get('commit-truth')).toBe(firstBuffer);
+        expect(audioBufferCache.get('commit-truth')).not.toBe(firstBuffer);
+        expect(audioBufferCache.get('commit-truth')?.getChannelData(0)[0]).toBeCloseTo(0.25);
     });
 });

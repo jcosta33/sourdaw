@@ -3,12 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPreparedAudioBufferLifecycle } from '../preparedAudioBufferLifecycle';
 
 import { BUFFER_STORE, flushIndexedDbTasks, installFakeAudioIndexedDb, META_STORE } from './fakeAudioBufferIndexedDb';
-import { createAudioBuffer, createTestContext, openAudioDatabase } from './preparedAudioBufferTestSupport';
+import {
+    createAudioBuffer,
+    createTestContext,
+    installTestAudioBufferConstructor,
+    openAudioDatabase,
+} from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 
 beforeEach(async () => {
     vi.resetModules();
+    installTestAudioBufferConstructor();
     ({ audioBufferCache } = await import('../audioBufferCache'));
 });
 
@@ -104,6 +110,17 @@ describe('prepared audio-buffer lifecycle races', () => {
         const lifecycleA = createPreparedAudioBufferLifecycle({
             bufferStoreName: 'buffers',
             claimDurableMutation: () => 1,
+            createRuntimeBuffer: (candidate) => {
+                const buffer = new AudioBuffer({
+                    length: candidate.channelData[0]!.length,
+                    numberOfChannels: candidate.numberOfChannels,
+                    sampleRate: candidate.sampleRate,
+                });
+                for (const [index, channel] of candidate.channelData.entries()) {
+                    buffer.getChannelData(index).set(channel);
+                }
+                return buffer;
+            },
             evictRuntime: (bufferId) => runtimeA.delete(bufferId),
             finishDurableMutation: () => undefined,
             hasPinnedReservation: () => false,
@@ -150,6 +167,17 @@ describe('prepared audio-buffer lifecycle races', () => {
         const lifecycleB = createPreparedAudioBufferLifecycle({
             bufferStoreName: 'buffers',
             claimDurableMutation: () => 1,
+            createRuntimeBuffer: (candidate) => {
+                const buffer = new AudioBuffer({
+                    length: candidate.channelData[0]!.length,
+                    numberOfChannels: candidate.numberOfChannels,
+                    sampleRate: candidate.sampleRate,
+                });
+                for (const [index, channel] of candidate.channelData.entries()) {
+                    buffer.getChannelData(index).set(channel);
+                }
+                return buffer;
+            },
             evictRuntime: (bufferId) => runtimeB.delete(bufferId),
             finishDurableMutation: () => undefined,
             hasPinnedReservation: () => false,

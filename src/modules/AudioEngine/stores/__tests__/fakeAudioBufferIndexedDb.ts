@@ -89,15 +89,12 @@ const RECOVERY_MIGRATION_MARKER_KEY = 0;
  * is noise. What it is exact about is the part that dominates: a
  * `Float32Array` costs its `byteLength`, so a record's PCM is counted in full
  * and a metadata row is not. */
-function measureBytes(value: unknown): number {
+function measureBytes(value: unknown, visited = new WeakSet<object>()): number {
     if (value === null || value === undefined) {
         return 0;
     }
     if (ArrayBuffer.isView(value)) {
-        return value.byteLength;
-    }
-    if (Array.isArray(value)) {
-        return value.reduce<number>((total, entry) => total + measureBytes(entry), 0);
+        return Math.max(1, value.byteLength);
     }
     if (typeof value === 'number') {
         return 8;
@@ -108,14 +105,47 @@ function measureBytes(value: unknown): number {
     if (typeof value === 'string') {
         return value.length * 2;
     }
-    if (typeof value === 'object') {
-        let total = 0;
-        for (const [key, entry] of Object.entries(value)) {
-            total += key.length * 2 + measureBytes(entry);
+    if (typeof value === 'bigint') {
+        return Math.max(8, value.toString().length * 2);
+    }
+    if (typeof value !== 'object' || visited.has(value)) {
+        return 0;
+    }
+    visited.add(value);
+    if (value instanceof ArrayBuffer) {
+        return Math.max(1, value.byteLength);
+    }
+    if (typeof Blob !== 'undefined' && value instanceof Blob) {
+        return Math.max(1, value.size);
+    }
+    if (value instanceof Date) {
+        return 8;
+    }
+    if (value instanceof RegExp) {
+        return Math.max(1, (value.source.length + value.flags.length) * 2);
+    }
+    if (value instanceof Map) {
+        let total = 1;
+        for (const [key, entry] of value) {
+            total += measureBytes(key, visited) + measureBytes(entry, visited);
         }
         return total;
     }
-    return 0;
+    if (value instanceof Set) {
+        let total = 1;
+        for (const entry of value) {
+            total += measureBytes(entry, visited);
+        }
+        return total;
+    }
+    if (Array.isArray(value)) {
+        return value.reduce<number>((total, entry) => total + measureBytes(entry, visited), 1);
+    }
+    let total = 1;
+    for (const [key, entry] of Object.entries(value)) {
+        total += key.length * 2 + measureBytes(entry, visited);
+    }
+    return total;
 }
 
 type FakeRequest<T> = {
@@ -461,7 +491,22 @@ type FakeConnection = {
     onversionchange: (() => void) | null;
     close: () => void;
     transaction: (storeNames: string | string[], mode?: IDBTransactionMode) => FakeTransaction;
+    version: number;
     isClosed: () => boolean;
+    isEstablished: () => boolean;
+    markEstablished: () => void;
+};
+
+type FakeOpenRequest = {
+    result: FakeConnection;
+    error: DOMException | null;
+    onsuccess: (() => void) | null;
+    onerror: (() => void) | null;
+    onupgradeneeded: (() => void) | null;
+    onblocked: (() => void) | null;
+    requestedVersion: number;
+    versionChangeDispatched: boolean;
+    blockedFired: boolean;
 };
 
 export type InstallFakeAudioIndexedDbInput = {
@@ -507,6 +552,12 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     tables.set(RECOVERY_STORE, committedRecovery);
 
     const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
+    let databaseVersion = 1;
+    if (existingStores.has(RECOVERY_STORE)) {
+        databaseVersion = 3;
+    } else if (existingStores.has(META_STORE)) {
+        databaseVersion = 2;
+    }
     const meters: ByteMeters = { read: 0, written: 0 };
     const transactionScopes: string[][] = [];
     let abortWrites = false;
@@ -531,6 +582,8 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     // Every `open()` yields its own connection over the shared committed data,
     // exactly as a browser does. Closing one must not disturb the others.
     const connections: FakeConnection[] = [];
+    const pendingOpenRequests: FakeOpenRequest[] = [];
+    let openProcessingScheduled = false;
 
     function transactionsConflict(alpha: ScheduledTransaction, beta: ScheduledTransaction): boolean {
         return (
@@ -576,11 +629,100 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
         startEligibleTransactions();
     }
 
-    function createConnection(): FakeConnection {
+    function scheduleOpenProcessing(): void {
+        if (openProcessingScheduled) {
+            return;
+        }
+        openProcessingScheduled = true;
+        setTimeout(() => {
+            openProcessingScheduled = false;
+            processNextOpen();
+        }, 0);
+    }
+
+    function finishOpen(request: FakeOpenRequest): void {
+        pendingOpenRequests.shift();
+        request.result.markEstablished();
+        request.onsuccess?.();
+        scheduleOpenProcessing();
+    }
+
+    function failOpen(request: FakeOpenRequest, error: DOMException): void {
+        pendingOpenRequests.shift();
+        request.error = error;
+        request.onerror?.();
+        scheduleOpenProcessing();
+    }
+
+    function performUpgrade(request: FakeOpenRequest): void {
+        const previousStores = new Set(existingStores);
+        try {
+            request.onupgradeneeded?.();
+            databaseVersion = request.requestedVersion;
+            finishOpen(request);
+        } catch (error) {
+            existingStores.clear();
+            for (const storeName of previousStores) {
+                existingStores.add(storeName);
+            }
+            failOpen(
+                request,
+                error instanceof DOMException
+                    ? error
+                    : new DOMException(error instanceof Error ? error.message : String(error), 'AbortError')
+            );
+        }
+    }
+
+    function processNextOpen(): void {
+        const request = pendingOpenRequests[0];
+        if (!request) {
+            return;
+        }
+        if (request.requestedVersion < databaseVersion) {
+            failOpen(
+                request,
+                new DOMException('The requested version is less than the existing database version.', 'VersionError')
+            );
+            return;
+        }
+        if (request.requestedVersion === databaseVersion) {
+            finishOpen(request);
+            return;
+        }
+        if (!request.versionChangeDispatched) {
+            request.versionChangeDispatched = true;
+            for (const connection of connections) {
+                if (connection.isEstablished() && !connection.isClosed()) {
+                    connection.onversionchange?.();
+                }
+            }
+            scheduleOpenProcessing();
+            return;
+        }
+        const blockers = connections.filter((connection) => connection.isEstablished() && !connection.isClosed());
+        if (blockers.length > 0) {
+            if (!request.blockedFired) {
+                request.blockedFired = true;
+                request.onblocked?.();
+            }
+            return;
+        }
+        performUpgrade(request);
+    }
+
+    function createConnection(version: number): FakeConnection {
         let closed = false;
+        let established = false;
         const connection: FakeConnection = {
             objectStoreNames: { contains: (name: string) => existingStores.has(name) },
             createObjectStore: (name: string) => {
+                if (existingStores.has(name)) {
+                    throw new DOMException(
+                        'An object store with the specified name already exists.',
+                        'ConstraintError'
+                    );
+                }
                 existingStores.add(name);
                 return undefined;
             },
@@ -592,6 +734,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                 }
                 closed = true;
                 closeCount++;
+                scheduleOpenProcessing();
             },
             transaction: (storeNames: string | string[], mode: IDBTransactionMode = 'readonly') => {
                 if (closed) {
@@ -644,7 +787,12 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                 scheduled = scheduleTransaction(transaction, scope, mode);
                 return transaction;
             },
+            version,
             isClosed: () => closed,
+            isEstablished: () => established,
+            markEstablished: () => {
+                established = true;
+            },
         };
         return connection;
     }
@@ -658,35 +806,41 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     }
 
     vi.stubGlobal('indexedDB', {
-        open: () => {
+        open: (_name: string, requestedVersion?: number) => {
             openRequestCount++;
-            const connection = createConnection();
+            const version = requestedVersion ?? databaseVersion;
+            const connection = createConnection(version);
             connections.push(connection);
-            const request = {
+            const request: FakeOpenRequest = {
                 result: connection,
                 error: null,
                 onsuccess: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 onupgradeneeded: null as (() => void) | null,
                 onblocked: null as (() => void) | null,
+                requestedVersion: version,
+                versionChangeDispatched: false,
+                blockedFired: false,
             };
-            setTimeout(() => {
-                if (input.blockOpens !== undefined) {
+            if (input.blockOpens !== undefined) {
+                setTimeout(() => {
                     request.onblocked?.();
                     if (input.blockOpens === 'forever') {
                         return;
                     }
-                    // The blocking context closed; the open completes normally,
-                    // whether or not anyone still wants the result.
                     setTimeout(() => {
-                        request.onupgradeneeded?.();
+                        if (request.requestedVersion > databaseVersion) {
+                            request.onupgradeneeded?.();
+                            databaseVersion = request.requestedVersion;
+                        }
+                        request.result.markEstablished();
                         request.onsuccess?.();
                     }, 0);
-                    return;
-                }
-                request.onupgradeneeded?.();
-                request.onsuccess?.();
-            }, 0);
+                }, 0);
+                return request;
+            }
+            pendingOpenRequests.push(request);
+            scheduleOpenProcessing();
             return request;
         },
     });

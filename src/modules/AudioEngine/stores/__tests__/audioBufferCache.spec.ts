@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
 
 // Loaded fresh per test. The cache holds one IndexedDB connection for the life
 // of the module (audit M-045), and these tests install a new `indexedDB` double
@@ -10,6 +11,7 @@ let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 
 beforeEach(async () => {
     vi.resetModules();
+    installTestAudioBufferConstructor();
     ({ audioBufferCache } = await import('../audioBufferCache'));
 });
 

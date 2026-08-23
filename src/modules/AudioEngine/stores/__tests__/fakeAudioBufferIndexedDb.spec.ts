@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { BUFFER_STORE, flushIndexedDbTasks, installFakeAudioIndexedDb, META_STORE } from './fakeAudioBufferIndexedDb';
+import {
+    BUFFER_STORE,
+    flushIndexedDbTasks,
+    installFakeAudioIndexedDb,
+    META_STORE,
+    RECOVERY_STORE,
+} from './fakeAudioBufferIndexedDb';
 
-function openDatabase(): Promise<IDBDatabase> {
+function openDatabase(
+    version = 2,
+    onUpgrade?: (database: IDBDatabase) => void,
+    onBlocked?: () => void
+): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('sourdaw-audio', 2);
+        const request = indexedDB.open('sourdaw-audio', version);
+        request.onupgradeneeded = () => onUpgrade?.(request.result);
+        request.onblocked = () => onBlocked?.();
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
     });
@@ -19,6 +31,51 @@ function transactionSettled(transaction: IDBTransaction): Promise<void> {
 }
 
 describe('fakeAudioBufferIndexedDb', () => {
+    it('serializes concurrent upgrades behind versionchange and upgrades a version only once', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
+        const blocker = await openDatabase(2);
+        let versionChangeCount = 0;
+        blocker.onversionchange = () => {
+            versionChangeCount++;
+        };
+        let upgradeCount = 0;
+        let blockedCount = 0;
+        let firstSettled = false;
+        let secondSettled = false;
+        const first = openDatabase(
+            3,
+            (database) => {
+                upgradeCount++;
+                database.createObjectStore(RECOVERY_STORE);
+            },
+            () => {
+                blockedCount++;
+            }
+        ).then((database) => {
+            firstSettled = true;
+            return database;
+        });
+        const second = openDatabase(3, () => {
+            upgradeCount++;
+        }).then((database) => {
+            secondSettled = true;
+            return database;
+        });
+
+        await flushIndexedDbTasks(4);
+        expect(versionChangeCount).toBe(1);
+        expect(blockedCount).toBe(1);
+        expect(firstSettled).toBe(false);
+        expect(secondSettled).toBe(false);
+
+        blocker.close();
+        const [firstConnection, secondConnection] = await Promise.all([first, second]);
+        expect(upgradeCount).toBe(1);
+        expect(firstConnection.version).toBe(3);
+        expect(secondConnection.version).toBe(3);
+        expect(controls.storeNames()).toContain(RECOVERY_STORE);
+    });
+
     it('serializes overlapping readwrite transactions before the later transaction reads', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         controls.pauseWriteSettlements();

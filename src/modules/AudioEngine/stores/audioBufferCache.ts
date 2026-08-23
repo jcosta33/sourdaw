@@ -530,6 +530,19 @@ function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     };
 }
 
+function createRuntimeBuffer(data: SerializedBuffer): AudioBuffer {
+    const length = data.channelData[0]!.length;
+    const buffer = new AudioBuffer({
+        length,
+        numberOfChannels: data.numberOfChannels,
+        sampleRate: data.sampleRate,
+    });
+    for (let channel = 0; channel < data.numberOfChannels; channel++) {
+        buffer.getChannelData(channel).set(data.channelData[channel]!);
+    }
+    return buffer;
+}
+
 function isValidSerializedBuffer(data: unknown): data is SerializedBuffer {
     return isValidPreparedSerializedAudioBuffer(data);
 }
@@ -813,6 +826,7 @@ function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
 const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
     bufferStoreName: STORE_NAME,
     claimDurableMutation: claimPersistenceGeneration,
+    createRuntimeBuffer,
     evictRuntime: dropCachedBufferEntry,
     finishDurableMutation: (id, generation) => {
         if (persistenceGenerationById.get(id) === generation) {
@@ -1001,7 +1015,6 @@ type ReleasePreparedBufferInput = {
 async function persistPreparedBuffer({ id, buffer, leaseId }: PersistPreparedBufferInput) {
     return preparedAudioBufferLifecycle.persist({
         id,
-        buffer,
         leaseId: leaseId ?? `prepared-audio-${crypto.randomUUID()}`,
         data: serializeBuffer(buffer),
     });
