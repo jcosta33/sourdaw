@@ -1,0 +1,28 @@
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_a40848e8f8cca9::t_982c9fac949fa9 3,97-98,130-131,133-141
+tests/e2e/instrumentPanels.spec.ts
+  s_a40848e8f8cca9::t_982c9fac949fa9 17,19-23
+  s_a40848e8f8cca9::t_8f8fc5280b8667 6
+tests/e2e/browserAiHardware.ts
+  s_a40848e8f8cca9::t_982c9fac949fa9 1-28,31
+  s_a40848e8f8cca9::t_8ff905f05106f9 29-30
+  s_a40848e8f8cca9::t_9c0c0ece1488fc 32-33
+tests/e2e/llmBadgeDownload.spec.ts
+  s_a40848e8f8cca9::t_982c9fac949fa9 1,5,37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "3d9cc11862ca23783ed5798fa2860b01101347aa",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
