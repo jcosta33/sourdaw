@@ -48,6 +48,7 @@ export type StoredBufferMeta = {
         schemaVersion: 1;
         createdAtMs?: number;
         leaseId: string;
+        persistenceRevision?: string;
         promotionRevision?: string;
         status: 'project-owned' | 'temporary';
     };

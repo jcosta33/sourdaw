@@ -613,6 +613,7 @@ describe('audioBufferCache conversions', () => {
             schemaVersion: 1,
             createdAtMs: expect.any(Number),
             leaseId: persisted.leaseId,
+            persistenceRevision: expect.any(String),
             status: 'temporary',
         });
 

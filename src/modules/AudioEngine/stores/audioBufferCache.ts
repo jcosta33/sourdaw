@@ -446,22 +446,46 @@ function isFloat32Array(value: unknown): value is Float32Array {
     return Object.prototype.toString.call(value) === '[object Float32Array]';
 }
 
-function isValidSerializedBuffer(data: SerializedBuffer | undefined): data is SerializedBuffer {
-    if (!data || !Array.isArray(data.channelData)) {
+function isValidSerializedBuffer(data: unknown): data is SerializedBuffer {
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
         return false;
     }
-    const length = data.channelData[0]?.length ?? 0;
-    const sizeInBytes = data.channelData.reduce((total, channel) => total + channel.byteLength, 0);
+    const candidate = data as Record<string, unknown>;
+    const channelData = candidate.channelData;
+    if (!Array.isArray(channelData) || !channelData.every(isFloat32Array)) {
+        return false;
+    }
+    const length = channelData[0]?.length ?? 0;
+    const sizeInBytes = channelData.reduce((total, channel) => total + channel.byteLength, 0);
     return (
-        Number.isFinite(data.sampleRate) &&
-        data.sampleRate > 0 &&
-        Number.isInteger(data.numberOfChannels) &&
-        data.numberOfChannels > 0 &&
+        typeof candidate.sampleRate === 'number' &&
+        Number.isFinite(candidate.sampleRate) &&
+        candidate.sampleRate > 0 &&
+        typeof candidate.numberOfChannels === 'number' &&
+        Number.isInteger(candidate.numberOfChannels) &&
+        candidate.numberOfChannels > 0 &&
         length > 0 &&
-        data.channelData.length === data.numberOfChannels &&
-        data.channelData.every((channel) => isFloat32Array(channel) && channel.length === length) &&
-        Number.isFinite(data.lastAccessed) &&
-        data.sizeInBytes === sizeInBytes
+        channelData.length === candidate.numberOfChannels &&
+        channelData.every((channel) => channel.length === length) &&
+        typeof candidate.lastAccessed === 'number' &&
+        Number.isFinite(candidate.lastAccessed) &&
+        candidate.sizeInBytes === sizeInBytes
+    );
+}
+
+function isValidBufferMetadata(metadata: unknown, data: SerializedBuffer): metadata is BufferMeta {
+    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return false;
+    }
+    const candidate = metadata as Record<string, unknown>;
+    return (
+        typeof candidate.lastAccessed === 'number' &&
+        Number.isFinite(candidate.lastAccessed) &&
+        candidate.sizeInBytes === data.sizeInBytes &&
+        (candidate.freezeProjectId === undefined ||
+            (typeof candidate.freezeProjectId === 'number' &&
+                Number.isSafeInteger(candidate.freezeProjectId) &&
+                candidate.freezeProjectId >= 0))
     );
 }
 
@@ -1192,10 +1216,11 @@ export const audioBufferCache = {
                         awaitRequest(store.get(id) as IDBRequest<SerializedBuffer | undefined>),
                         awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>),
                     ]);
+                    const durableOwner = preparedAudioBufferLifecycle.readPreparedOwner(metadata);
                     if (
-                        !data ||
-                        (data.channelData[0]?.length ?? 0) === 0 ||
-                        metadata?.preparedOwner?.status === 'temporary'
+                        !isValidSerializedBuffer(data) ||
+                        (metadata !== undefined && !isValidBufferMetadata(metadata, data)) ||
+                        preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, durableOwner)
                     ) {
                         continue;
                     }

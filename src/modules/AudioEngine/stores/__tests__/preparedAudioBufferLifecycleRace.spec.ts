@@ -159,14 +159,24 @@ describe('prepared audio-buffer lifecycle races', () => {
             openDatabase: openAudioDatabase,
             publishRuntime: (bufferId, buffer) => runtimeB.set(bufferId, buffer),
         });
-        await lifecycleB.reopen({ id, leaseId, context });
+        let reopened = false;
+        const recoveredReopen = lifecycleB.reopen({ id, leaseId, context }).then((result) => {
+            reopened = true;
+            return result;
+        });
+        await settlePendingWrites(controls, () => reopened);
+        await expect(recoveredReopen).resolves.toEqual({
+            status: 'reopened',
+            bufferId: id,
+            ownership: 'temporary',
+        });
         let newerSettled = false;
         const newerPromotion = lifecycleB.release({ id, leaseId, disposition: 'project-owned' }).then((result) => {
             newerSettled = true;
             return result;
         });
         await settlePendingWrites(controls, () => newerSettled);
-        await expect(newerPromotion).resolves.toEqual({ status: 'already-settled', disposition: 'project-owned' });
+        await expect(newerPromotion).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
 
         releaseRollbackDatabase!(await openAudioDatabase());
         await settlePendingWrites(controls, () => staleSettled);

@@ -2,6 +2,7 @@ export type PreparedAudioBufferOwner = {
     schemaVersion: 1;
     createdAtMs?: number;
     leaseId: string;
+    persistenceRevision?: string;
     promotionRevision?: string;
     status: 'project-owned' | 'temporary';
 };
@@ -31,27 +32,51 @@ export function preparedIdentityFailure(id: string, leaseId: string): string | u
     return undefined;
 }
 
-export function readPreparedOwner(
-    metadata: PreparedAudioBufferMetadata | undefined
-): PreparedAudioBufferOwner | null | 'invalid' {
-    const owner = metadata?.preparedOwner;
+export function readPreparedOwner(metadata: unknown): PreparedAudioBufferOwner | null | 'invalid' {
+    if (metadata === undefined) {
+        return null;
+    }
+    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return 'invalid';
+    }
+    const owner = (metadata as Record<string, unknown>).preparedOwner;
     if (owner === undefined) {
         return null;
     }
+    if (owner === null || typeof owner !== 'object' || Array.isArray(owner)) {
+        return 'invalid';
+    }
+    const candidate = owner as Record<string, unknown>;
+    const createdAtMs = candidate.createdAtMs;
+    const leaseId = candidate.leaseId;
+    const persistenceRevision = candidate.persistenceRevision;
+    const promotionRevision = candidate.promotionRevision;
+    const status = candidate.status;
     if (
-        owner === null ||
-        typeof owner !== 'object' ||
-        owner.schemaVersion !== 1 ||
-        typeof owner.leaseId !== 'string' ||
-        owner.leaseId.trim().length === 0 ||
-        (owner.promotionRevision !== undefined && owner.promotionRevision.trim().length === 0) ||
-        (owner.status === 'temporary' && owner.promotionRevision !== undefined) ||
-        (owner.createdAtMs !== undefined && !Number.isFinite(owner.createdAtMs)) ||
-        (owner.status !== 'temporary' && owner.status !== 'project-owned')
+        candidate.schemaVersion !== 1 ||
+        typeof leaseId !== 'string' ||
+        leaseId.trim().length === 0 ||
+        (persistenceRevision !== undefined &&
+            (typeof persistenceRevision !== 'string' || persistenceRevision.trim().length === 0)) ||
+        (promotionRevision !== undefined &&
+            (typeof promotionRevision !== 'string' || promotionRevision.trim().length === 0)) ||
+        (status === 'temporary' && promotionRevision !== undefined) ||
+        (createdAtMs !== undefined && (typeof createdAtMs !== 'number' || !Number.isFinite(createdAtMs))) ||
+        (status !== 'temporary' && status !== 'project-owned')
     ) {
         return 'invalid';
     }
-    return owner;
+    const validated: PreparedAudioBufferOwner = { schemaVersion: 1, leaseId, status };
+    if (createdAtMs !== undefined) {
+        validated.createdAtMs = createdAtMs;
+    }
+    if (persistenceRevision !== undefined) {
+        validated.persistenceRevision = persistenceRevision;
+    }
+    if (promotionRevision !== undefined) {
+        validated.promotionRevision = promotionRevision;
+    }
+    return validated;
 }
 
 export function serializedBuffersEqual(
@@ -78,6 +103,27 @@ export function promotedOwner(owner: PreparedAudioBufferOwner, promotionRevision
     return { ...owner, promotionRevision, status: 'project-owned' };
 }
 
+export function finalizedOwner(owner: PreparedAudioBufferOwner): PreparedAudioBufferOwner {
+    const finalized: PreparedAudioBufferOwner = {
+        schemaVersion: 1,
+        leaseId: owner.leaseId,
+        status: 'project-owned',
+    };
+    if (owner.createdAtMs !== undefined) {
+        finalized.createdAtMs = owner.createdAtMs;
+    }
+    if (owner.persistenceRevision !== undefined) {
+        finalized.persistenceRevision = owner.persistenceRevision;
+    }
+    return finalized;
+}
+
+export function requiresPromotionReconciliation(
+    owner: PreparedAudioBufferOwner
+): owner is PreparedAudioBufferOwner & { promotionRevision: string; status: 'project-owned' } {
+    return owner.status === 'project-owned' && owner.promotionRevision !== undefined;
+}
+
 export function temporaryOwner(owner: PreparedAudioBufferOwner): PreparedAudioBufferOwner {
     const temporary: PreparedAudioBufferOwner = {
         schemaVersion: 1,
@@ -86,6 +132,9 @@ export function temporaryOwner(owner: PreparedAudioBufferOwner): PreparedAudioBu
     };
     if (owner.createdAtMs !== undefined) {
         temporary.createdAtMs = owner.createdAtMs;
+    }
+    if (owner.persistenceRevision !== undefined) {
+        temporary.persistenceRevision = owner.persistenceRevision;
     }
     return temporary;
 }

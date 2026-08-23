@@ -106,6 +106,48 @@ describe('prepared audio-buffer persistence and admission', () => {
         expect(controls.committedMeta.get('ordinary-abort-race')?.preparedOwner?.status).toBe('temporary');
     });
 
+    it('keeps a newer same-lease reservation when an older persistence attempt aborts', async () => {
+        const controls = installFakeAudioIndexedDb();
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        const stale = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        stale.getChannelData(0)[0] = 0.25;
+        const first = audioBufferCache.persistPreparedBuffer({
+            id: 'same-lease-reservation-race',
+            buffer: stale,
+            leaseId: 'same-lease-reservation',
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        const current = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        current.getChannelData(0)[0] = 0.75;
+        const second = audioBufferCache.persistPreparedBuffer({
+            id: 'same-lease-reservation-race',
+            buffer: current,
+            leaseId: 'same-lease-reservation',
+        });
+        while (controls.writeTransactionCount() < 2) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.releaseNextWriteSettlement();
+        await expect(first).resolves.toMatchObject({ status: 'failed' });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+
+        await expect(second).resolves.toEqual({
+            status: 'persisted',
+            bufferId: 'same-lease-reservation-race',
+            leaseId: 'same-lease-reservation',
+        });
+        expect(audioBufferCache.get('same-lease-reservation-race')).toBe(current);
+        expect(controls.committed.get('same-lease-reservation-race')?.channelData[0]?.[0]).toBeCloseTo(0.75);
+    });
+
     it('keeps temporary prepared PCM out of non-lease restore and export until project promotion', async () => {
         installFakeAudioIndexedDb();
         const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
@@ -195,6 +237,42 @@ describe('prepared audio-buffer persistence and admission', () => {
                 ),
             })
         ).resolves.toEqual({ status: 'reopened', bufferId: 'clear-race', ownership: 'temporary' });
+    });
+
+    it('does not let an empty to ordinary to empty ABA admit a stale reopen', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'reopen-vacant-aba';
+        const leaseId = 'reopen-vacant-aba-lease';
+        await audioBufferCache.persistPreparedBuffer({
+            id,
+            buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            leaseId,
+        });
+        clearRuntimeAudioBufferCache();
+        controls.pauseReadonlySettlements();
+        const reopen = audioBufferCache.reopenPreparedBuffer({
+            id,
+            leaseId,
+            context: createTestContext(
+                vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+        });
+        while (controls.pendingReadonlySettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.abortNextWrite();
+        audioBufferCache.set(id, createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+        audioBufferCache.remove(id);
+        controls.releaseNextReadonlySettlement();
+
+        await expect(reopen).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio reopen was superseded.',
+        });
+        expect(audioBufferCache.has(id)).toBe(false);
     });
 
     it('invalidates prepared persist and reopen publication across retained project transitions', async () => {

@@ -95,6 +95,10 @@ describe('prepared audio-buffer settlement and recovery', () => {
             await flushIndexedDbTasks(1);
         }
         controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
 
         await expect(promotion).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
         await expect(retry).resolves.toEqual({
@@ -205,6 +209,70 @@ describe('prepared audio-buffer settlement and recovery', () => {
             }
         }
     );
+
+    it('keeps a doubly failed rollback fail-closed and recovers it as temporary after reload', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'double-rollback-failure';
+        const leaseId = 'double-rollback-failure-lease';
+        await audioBufferCache.persistPreparedBuffer({
+            id,
+            buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            leaseId,
+        });
+        controls.pauseWriteSettlements();
+        const writeCountBeforePromotion = controls.writeTransactionCount();
+        let promotionSettled = false;
+        const promotion = audioBufferCache
+            .releasePreparedBuffer({ id, leaseId, disposition: 'project-owned' })
+            .then((result) => {
+                promotionSettled = true;
+                return result;
+            });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.abortWrites();
+        controls.releaseNextWriteSettlement();
+        clearRuntimeAudioBufferCache();
+        for (let turn = 0; turn < 40 && !promotionSettled; turn++) {
+            if (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+            }
+            await flushIndexedDbTasks(1);
+        }
+
+        await expect(promotion).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio promotion was superseded.',
+        });
+        expect(controls.writeTransactionCount() - writeCountBeforePromotion).toBe(3);
+        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({
+            leaseId,
+            status: 'project-owned',
+        });
+        expect(controls.committedMeta.get(id)?.preparedOwner?.promotionRevision).toEqual(expect.any(String));
+        await expect(audioBufferCache.exportBuffers([id])).resolves.toEqual({});
+
+        controls.allowWrites();
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        const reopen = audioBufferCache.reopenPreparedBuffer({
+            id,
+            leaseId,
+            context: createTestContext(
+                vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        await expect(reopen).resolves.toEqual({ status: 'reopened', bufferId: id, ownership: 'temporary' });
+        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'temporary' });
+    });
 
     it('does not let delayed non-lease publish evict a lease promoted after preparation', async () => {
         installFakeAudioIndexedDb();
@@ -352,6 +420,55 @@ describe('prepared audio-buffer settlement and recovery', () => {
         await expect(audioBufferCache.restoreFromIdb({ context, ids: ['invalid-owner-pcm'] })).resolves.toBe(0);
         await expect(audioBufferCache.exportBuffers(['invalid-owner-pcm'])).resolves.toEqual({});
         expect(audioBufferCache.has('invalid-owner-pcm')).toBe(false);
+    });
+
+    it('totally validates malformed promotion ownership in the final export transaction', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const stored = {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.4])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        };
+        controls.committed.set('malformed-promotion-owner', structuredClone(stored));
+        controls.committedMeta.set('malformed-promotion-owner', {
+            lastAccessed: 1,
+            sizeInBytes: 4,
+            preparedOwner: {
+                schemaVersion: 1,
+                leaseId: 'malformed-promotion-lease',
+                promotionRevision: 42 as unknown as string,
+                status: 'project-owned',
+            },
+        });
+        controls.committed.set('legacy-data-only', structuredClone(stored));
+        controls.committedMeta.set('metadata-only', {
+            lastAccessed: 1,
+            sizeInBytes: 4,
+            preparedOwner: {
+                schemaVersion: 1,
+                leaseId: 'metadata-only-lease',
+                status: 'project-owned',
+            },
+        });
+
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id: 'malformed-promotion-owner',
+                leaseId: 'malformed-promotion-lease',
+                context: createTestContext(vi.fn()),
+            })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio ownership metadata is invalid.' });
+        await expect(
+            audioBufferCache.exportBuffers(['malformed-promotion-owner', 'legacy-data-only', 'metadata-only'])
+        ).resolves.toEqual({
+            'legacy-data-only': {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [encodeFloat32([0.4])],
+            },
+        });
     });
 
     it('does not let prepared discard evict a newer ordinary runtime buffer', async () => {
@@ -566,6 +683,10 @@ describe('prepared audio-buffer settlement and recovery', () => {
             leaseId: persisted.leaseId,
             disposition: 'project-owned',
         });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
         while (controls.pendingWriteSettlementCount() === 0) {
             await flushIndexedDbTasks(1);
         }

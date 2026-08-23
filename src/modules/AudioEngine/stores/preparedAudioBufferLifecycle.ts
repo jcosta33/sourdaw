@@ -1,7 +1,9 @@
 import {
+    finalizedOwner,
     preparedIdentityFailure,
     promotedOwner,
     readPreparedOwner,
+    requiresPromotionReconciliation,
     serializedBuffersEqual,
     temporaryOwner,
     type PreparedAudioBufferMetadata,
@@ -32,6 +34,11 @@ type TemporaryPublicationSnapshot = {
     leaseId: string;
     projectEpoch: number;
     token: number;
+};
+
+type PromotionSettlement = {
+    settled: Promise<void>;
+    settle: () => void;
 };
 
 type PersistPreparedAudioBufferInput = {
@@ -83,8 +90,11 @@ function failureReason(error: unknown): string {
  * reclaim its lease.
  */
 export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLifecycleHost) {
+    let nextReopenToken = 0;
     let nextRuntimeToken = 0;
     let projectEpoch = 0;
+    const activeReopenTokenById = new Map<string, number>();
+    const activePromotionSettlementsById = new Map<string, Set<PromotionSettlement>>();
     const runtimeOwnerById = new Map<string, RuntimeOwner>();
     const projectReservationEpochById = new Map<string, number>();
     const transactions = createPreparedAudioBufferTransactionLedger();
@@ -98,18 +108,60 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         return ++nextRuntimeToken;
     }
 
+    function invalidateReopen(id: string): void {
+        activeReopenTokenById.delete(id);
+    }
+
+    function beginPromotionSettlement(id: string): PromotionSettlement {
+        let settle = (): void => undefined;
+        const settled = new Promise<void>((resolve) => {
+            settle = resolve;
+        });
+        const promotion = { settled, settle };
+        const active = activePromotionSettlementsById.get(id) ?? new Set<PromotionSettlement>();
+        active.add(promotion);
+        activePromotionSettlementsById.set(id, active);
+        return promotion;
+    }
+
+    function finishPromotionSettlement(id: string, promotion: PromotionSettlement | undefined): void {
+        if (!promotion) {
+            return;
+        }
+        promotion.settle();
+        const active = activePromotionSettlementsById.get(id);
+        active?.delete(promotion);
+        if (active?.size === 0) {
+            activePromotionSettlementsById.delete(id);
+        }
+    }
+
+    async function waitForPromotionSettlements(id: string): Promise<void> {
+        for (;;) {
+            const active = activePromotionSettlementsById.get(id);
+            if (!active || active.size === 0) {
+                return;
+            }
+            await Promise.all([...active].map((promotion) => promotion.settled));
+        }
+    }
+
     function recordOrdinaryRuntimeMutation(id: string): void {
+        invalidateReopen(id);
         runtimeOwnerById.set(id, { kind: 'ordinary', token: nextToken() });
         transactions.abort(id, 'promotion');
     }
 
     function recordRuntimeVacated(id: string): void {
+        invalidateReopen(id);
         runtimeOwnerById.delete(id);
         nextToken();
+        transactions.abort(id, 'promotion');
     }
 
     function beginProjectTransition(retainedIds?: ReadonlySet<string>): void {
         projectEpoch++;
+        activeReopenTokenById.clear();
         transactions.abortAll('promotion');
         transactions.abortAll('reclamation');
         for (const [id, owner] of runtimeOwnerById) {
@@ -187,6 +239,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         buffer: AudioBuffer,
         lastAccessed: number
     ): void {
+        invalidateReopen(id);
         runtimeOwnerById.set(id, { kind: 'prepared', leaseId, status, token: nextToken() });
         host.publishRuntime(id, buffer, lastAccessed);
     }
@@ -196,6 +249,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         if (owner?.kind !== 'prepared' || owner.leaseId !== leaseId || owner.status !== 'temporary') {
             return;
         }
+        invalidateReopen(id);
         runtimeOwnerById.delete(id);
         nextToken();
         host.evictRuntime(id);
@@ -213,7 +267,11 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         return readPreparedOwner(metadata);
     }
 
-    async function discardTemporaryLeaseIfExact(id: string, leaseId: string): Promise<void> {
+    async function discardTemporaryLeaseIfExact(
+        id: string,
+        leaseId: string,
+        persistenceRevision: string
+    ): Promise<void> {
         const database = await host.openDatabase();
         const transaction = database.transaction([host.bufferStoreName, host.metadataStoreName], 'readwrite');
         const tracked = transactions.track(id, 'reconciliation', transaction);
@@ -223,7 +281,12 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 metadataStore.get(id) as IDBRequest<PreparedAudioBufferMetadata | undefined>
             );
             const owner = readPreparedOwner(metadata);
-            if (owner !== 'invalid' && owner?.status === 'temporary' && owner.leaseId === leaseId) {
+            if (
+                owner !== 'invalid' &&
+                owner?.status === 'temporary' &&
+                owner.leaseId === leaseId &&
+                owner.persistenceRevision === persistenceRevision
+            ) {
                 transaction.objectStore(host.bufferStoreName).delete(id);
                 metadataStore.delete(id);
             }
@@ -233,10 +296,11 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         }
     }
 
-    async function rollbackPromotionIfExact(id: string, leaseId: string, promotionRevision: string): Promise<void> {
+    async function rollbackPromotionIfExact(id: string, leaseId: string, promotionRevision: string): Promise<boolean> {
         const database = await host.openDatabase();
         const transaction = database.transaction(host.metadataStoreName, 'readwrite');
         const tracked = transactions.track(id, 'reconciliation', transaction);
+        let rolledBack = false;
         try {
             const metadataStore = transaction.objectStore(host.metadataStoreName);
             const metadata = await awaitPreparedRequest(
@@ -257,8 +321,44 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                     } satisfies PreparedAudioBufferMetadata,
                     id
                 );
+                rolledBack = true;
             }
             await awaitPreparedTransaction(transaction);
+            return rolledBack;
+        } finally {
+            transactions.untrack(id, tracked);
+        }
+    }
+
+    async function finalizePromotionIfExact(id: string, leaseId: string, promotionRevision: string): Promise<boolean> {
+        const database = await host.openDatabase();
+        const transaction = database.transaction(host.metadataStoreName, 'readwrite');
+        const tracked = transactions.track(id, 'promotion', transaction);
+        let finalized = false;
+        try {
+            const metadataStore = transaction.objectStore(host.metadataStoreName);
+            const metadata = await awaitPreparedRequest(
+                metadataStore.get(id) as IDBRequest<PreparedAudioBufferMetadata | undefined>
+            );
+            const owner = readPreparedOwner(metadata);
+            if (
+                metadata !== undefined &&
+                owner !== 'invalid' &&
+                owner?.status === 'project-owned' &&
+                owner.leaseId === leaseId &&
+                owner.promotionRevision === promotionRevision
+            ) {
+                metadataStore.put(
+                    {
+                        ...metadata,
+                        preparedOwner: finalizedOwner(owner),
+                    } satisfies PreparedAudioBufferMetadata,
+                    id
+                );
+                finalized = true;
+            }
+            await awaitPreparedTransaction(transaction);
+            return finalized;
         } finally {
             transactions.untrack(id, tracked);
         }
@@ -275,6 +375,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         if (!isRuntimeSlotAvailableForPersist(id, leaseId)) {
             return { status: 'failed' as const, reason: 'Prepared audio buffer ID is already occupied.' };
         }
+        transactions.abort(id, 'promotion');
         transactions.abort(id, 'reclamation');
         const admittedOwner = runtimeOwnerById.get(id);
         const admittedToken = nextToken();
@@ -287,6 +388,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         const admittedReservationEpoch = projectReservationEpochById.get(id);
         const generation = host.claimDurableMutation(id);
         const attempt = persistenceAttempts.register(id, generation, leaseId);
+        const persistenceRevision = crypto.randomUUID();
         let reconciledOwnerStatus: PreparedAudioBufferOwner['status'] | undefined;
         let trackedTransaction: PreparedTransaction | undefined;
         let wroteTemporaryRow = false;
@@ -341,6 +443,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                             schemaVersion: 1,
                             createdAtMs: Date.now(),
                             leaseId,
+                            persistenceRevision,
                             status: 'temporary',
                         },
                         sizeInBytes: data.sizeInBytes,
@@ -352,15 +455,28 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             }
             if (host.hasPinnedReservation(id) || projectReservationEpochById.get(id) !== admittedReservationEpoch) {
                 if (wroteTemporaryRow) {
-                    await discardTemporaryLeaseIfExact(id, leaseId);
+                    await discardTemporaryLeaseIfExact(id, leaseId, persistenceRevision);
                 }
                 return { status: 'failed' as const, reason: 'Prepared audio buffer ID is reserved by the project.' };
             }
             if (!host.isDurableMutationCurrent(id, generation)) {
                 await persistenceAttempts.waitForSuperseding(id, generation);
-                const owner = await readDurableOwner(id);
+                let owner = await readDurableOwner(id);
                 if (owner === 'invalid' || owner?.leaseId !== leaseId) {
                     return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+                }
+                if (requiresPromotionReconciliation(owner)) {
+                    await waitForPromotionSettlements(id);
+                    owner = await readDurableOwner(id);
+                    if (owner === 'invalid' || owner?.leaseId !== leaseId) {
+                        return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+                    }
+                    if (requiresPromotionReconciliation(owner)) {
+                        return {
+                            status: 'failed' as const,
+                            reason: 'Prepared audio ownership requires reconciliation.',
+                        };
+                    }
                 }
                 reconciledOwnerStatus = owner.status;
             }
@@ -381,14 +497,22 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         } finally {
             transactions.untrack(id, trackedTransaction);
             const runtimeOwner = runtimeOwnerById.get(id);
-            if (runtimeOwner?.kind === 'prepared' && runtimeOwner.reservationLeaseId === leaseId) {
+            if (
+                runtimeOwner?.kind === 'prepared' &&
+                runtimeOwner.reservationLeaseId === leaseId &&
+                runtimeOwner.token === admittedToken
+            ) {
                 runtimeOwnerById.set(id, {
                     kind: 'prepared',
                     leaseId: runtimeOwner.leaseId,
                     status: runtimeOwner.status,
                     token: runtimeOwner.token,
                 });
-            } else if (runtimeOwner?.kind === 'reservation' && runtimeOwner.leaseId === leaseId) {
+            } else if (
+                runtimeOwner?.kind === 'reservation' &&
+                runtimeOwner.leaseId === leaseId &&
+                runtimeOwner.token === admittedToken
+            ) {
                 runtimeOwnerById.delete(id);
             }
             persistenceAttempts.unregister(id, leaseId, attempt);
@@ -408,6 +532,8 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         const admittedOwner = runtimeOwnerById.get(id);
         const admittedToken = admittedOwner?.token;
         const admittedProjectEpoch = projectEpoch;
+        const reopenToken = ++nextReopenToken;
+        activeReopenTokenById.set(id, reopenToken);
         try {
             const database = await host.openDatabase();
             const transaction = database.transaction([host.bufferStoreName, host.metadataStoreName], 'readonly');
@@ -425,18 +551,29 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             ]);
             await awaitPreparedTransaction(transaction);
             const currentOwner = runtimeOwnerById.get(id);
-            if (projectEpoch !== admittedProjectEpoch || currentOwner?.token !== admittedToken) {
+            if (
+                projectEpoch !== admittedProjectEpoch ||
+                currentOwner?.token !== admittedToken ||
+                activeReopenTokenById.get(id) !== reopenToken
+            ) {
                 return { status: 'failed' as const, reason: 'Prepared audio reopen was superseded.' };
             }
             if (!data || !metadata) {
                 return { status: 'missing' as const };
             }
-            const owner = readPreparedOwner(metadata);
+            let owner = readPreparedOwner(metadata);
             if (owner === 'invalid') {
                 return { status: 'failed' as const, reason: 'Prepared audio ownership metadata is invalid.' };
             }
             if (!owner || owner.leaseId !== leaseId) {
                 return { status: 'mismatched' as const };
+            }
+            if (requiresPromotionReconciliation(owner)) {
+                const reconciled = await rollbackPromotionIfExact(id, leaseId, owner.promotionRevision);
+                if (!reconciled) {
+                    return { status: 'failed' as const, reason: 'Prepared audio ownership reconciliation failed.' };
+                }
+                owner = temporaryOwner(owner);
             }
             if (!host.isValidSerializedBuffer(data)) {
                 return { status: 'failed' as const, reason: 'Prepared audio PCM is invalid.' };
@@ -447,6 +584,13 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             if (!isRuntimeSlotAvailable(id, leaseId)) {
                 return { status: 'failed' as const, reason: 'Prepared audio buffer ID is already occupied.' };
             }
+            if (
+                projectEpoch !== admittedProjectEpoch ||
+                runtimeOwnerById.get(id)?.token !== admittedToken ||
+                activeReopenTokenById.get(id) !== reopenToken
+            ) {
+                return { status: 'failed' as const, reason: 'Prepared audio reopen was superseded.' };
+            }
             const length = data.channelData[0]!.length;
             const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
             for (let channel = 0; channel < data.numberOfChannels; channel++) {
@@ -455,7 +599,18 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             publishPreparedRuntime(id, leaseId, owner.status, buffer, metadata.lastAccessed);
             return { status: 'reopened' as const, bufferId: id, ownership: owner.status };
         } catch (error) {
+            if (
+                projectEpoch !== admittedProjectEpoch ||
+                runtimeOwnerById.get(id)?.token !== admittedToken ||
+                activeReopenTokenById.get(id) !== reopenToken
+            ) {
+                return { status: 'failed' as const, reason: 'Prepared audio reopen was superseded.' };
+            }
             return { status: 'failed' as const, reason: failureReason(error) };
+        } finally {
+            if (activeReopenTokenById.get(id) === reopenToken) {
+                activeReopenTokenById.delete(id);
+            }
         }
     }
 
@@ -467,6 +622,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         const admittedProjectEpoch = projectEpoch;
         const admittedRuntimeToken = runtimeOwnerById.get(id)?.token;
         const promotionRevision = crypto.randomUUID();
+        const promotionSettlement = disposition === 'project-owned' ? beginPromotionSettlement(id) : undefined;
         let generation = persistenceAttempts.isLeaseActive(id, leaseId) ? host.claimDurableMutation(id) : undefined;
         let promotionCommitted = false;
         let trackedTransaction: PreparedTransaction | undefined;
@@ -495,7 +651,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 }
                 return { status: 'missing' as const };
             }
-            const owner = readPreparedOwner(metadata);
+            let owner = readPreparedOwner(metadata);
             if (owner === 'invalid') {
                 await awaitPreparedTransaction(transaction);
                 return { status: 'failed' as const, reason: 'Prepared audio ownership metadata is invalid.' };
@@ -503,6 +659,16 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             if (!owner || owner.leaseId !== leaseId) {
                 await awaitPreparedTransaction(transaction);
                 return { status: 'mismatched' as const };
+            }
+            if (requiresPromotionReconciliation(owner)) {
+                owner = temporaryOwner(owner);
+                metadataStore.put(
+                    {
+                        ...metadata,
+                        preparedOwner: owner,
+                    } satisfies PreparedAudioBufferMetadata,
+                    id
+                );
             }
             if (generation === undefined && owner.status === 'temporary') {
                 const runtimeOwner = runtimeOwnerById.get(id);
@@ -513,15 +679,6 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 generation = host.claimDurableMutation(id);
             }
             if (owner.status === 'project-owned') {
-                if (disposition === 'project-owned') {
-                    metadataStore.put(
-                        {
-                            ...metadata,
-                            preparedOwner: promotedOwner(owner, promotionRevision),
-                        } satisfies PreparedAudioBufferMetadata,
-                        id
-                    );
-                }
                 await awaitPreparedTransaction(transaction);
                 if (
                     disposition === 'project-owned' &&
@@ -548,6 +705,14 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 );
                 await awaitPreparedTransaction(transaction);
                 promotionCommitted = true;
+                if (!isPromotionCurrent(id, leaseId, admittedProjectEpoch, admittedRuntimeToken)) {
+                    await rollbackPromotionIfExact(id, leaseId, promotionRevision);
+                    return { status: 'failed' as const, reason: 'Prepared audio promotion was superseded.' };
+                }
+                const finalized = await finalizePromotionIfExact(id, leaseId, promotionRevision);
+                if (!finalized) {
+                    return { status: 'failed' as const, reason: 'Prepared audio promotion could not be finalized.' };
+                }
                 if (!isPromotionCurrent(id, leaseId, admittedProjectEpoch, admittedRuntimeToken)) {
                     await rollbackPromotionIfExact(id, leaseId, promotionRevision);
                     return { status: 'failed' as const, reason: 'Prepared audio promotion was superseded.' };
@@ -588,6 +753,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             return { status: 'failed' as const, reason: failureReason(error) };
         } finally {
             transactions.untrack(id, trackedTransaction);
+            finishPromotionSettlement(id, promotionSettlement);
             if (generation !== undefined) {
                 host.finishDurableMutation(id, generation);
             }
@@ -638,7 +804,10 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 return true;
             }
         }
-        return durableOwner?.status === 'temporary';
+        return (
+            durableOwner?.status === 'temporary' ||
+            (durableOwner !== null && requiresPromotionReconciliation(durableOwner))
+        );
     }
 
     async function reclaimOrphans({ createdBeforeMs, liveLeaseIds }: ReclaimPreparedAudioBufferOrphansInput) {
@@ -663,7 +832,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 if (
                     typeof id !== 'string' ||
                     owner === 'invalid' ||
-                    owner?.status !== 'temporary' ||
+                    (owner?.status !== 'temporary' && !(owner !== null && requiresPromotionReconciliation(owner))) ||
                     owner.createdAtMs === undefined ||
                     owner.createdAtMs >= createdBeforeMs ||
                     liveLeases.has(owner.leaseId) ||
