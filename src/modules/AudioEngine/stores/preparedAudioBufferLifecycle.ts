@@ -1219,6 +1219,16 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 ) {
                     return { status: 'failed' as const, reason: 'Prepared audio promotion was superseded.' };
                 }
+                if (disposition === 'project-owned' && runtimeOwnerById.get(id) === undefined && !host.hasRuntime(id)) {
+                    publishPreparedRuntime(
+                        id,
+                        leaseId,
+                        'project-owned',
+                        host.createRuntimeBuffer(data),
+                        metadata.lastAccessed,
+                        owner.persistenceRevision
+                    );
+                }
                 return { status: 'already-settled' as const, disposition: 'project-owned' as const };
             }
             if (disposition === 'project-owned') {

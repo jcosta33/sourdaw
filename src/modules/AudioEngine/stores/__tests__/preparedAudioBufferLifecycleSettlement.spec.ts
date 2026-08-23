@@ -1281,6 +1281,39 @@ describe('prepared audio-buffer settlement and recovery', () => {
         ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
     });
 
+    it('repopulates exact project-owned PCM when its release is replayed after reload', async () => {
+        installFakeAudioIndexedDb();
+        const id = 'project-owned-release-reload';
+        const source = createAudioBuffer({ length: 3, sampleRate: 48_000 });
+        source.getChannelData(0).set([0.125, -0.5, 0.875]);
+        const persisted = await audioBufferCache.persistPreparedBuffer({ id, buffer: source });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected project-owned release fixture to persist');
+        }
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id,
+                leaseId: persisted.leaseId,
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+
+        clearRuntimeAudioBufferCache();
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        expect(audioBufferCache.has(id)).toBe(false);
+
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id,
+                leaseId: persisted.leaseId,
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'already-settled', disposition: 'project-owned' });
+        expect(audioBufferCache.has(id)).toBe(true);
+        expect([...audioBufferCache.get(id)!.getChannelData(0)]).toEqual([0.125, -0.5, 0.875]);
+    });
+
     it('does not let a stale reopen overwrite a newer prepared buffer in memory after it commits', async () => {
         const controls = installFakeAudioIndexedDb({
             existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
