@@ -29,6 +29,7 @@ import {
     assertProjectLicenseDistributionReleaseInventory,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
+    assertDdspReleaseInventory,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
     DDSP_ADMISSION_DECISION_PATH,
@@ -787,6 +788,47 @@ describe('release inventory', () => {
             expect(() => validate(mutated), id).toThrow(`${label} release inventory kind does not match provenance`);
         }
         expect(laterValidationCalls).toBe(1);
+    });
+
+    it.each([
+        {
+            id: 'ddsp-tfjs-runtime',
+            label: 'DDSP TF.js runtime',
+            mutate: (inventory: ReleaseInventory) => {
+                inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-tfjs-runtime');
+            },
+        },
+        {
+            id: 'ddsp-tfjs-runtime',
+            label: 'DDSP TF.js runtime',
+            mutate: (inventory: ReleaseInventory) => {
+                inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime')!.kind = 'hostile';
+            },
+        },
+        {
+            id: 'ddsp-models',
+            label: 'DDSP models',
+            mutate: (inventory: ReleaseInventory) => {
+                inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-models');
+            },
+        },
+        {
+            id: 'ddsp-models',
+            label: 'DDSP models',
+            mutate: (inventory: ReleaseInventory) => {
+                inventory.surfaces.find((surface) => surface.id === 'ddsp-models')!.kind = 'hostile';
+            },
+        },
+    ])('directly rejects absent or malformed %s release inventory surfaces', ({ id, label, mutate }) => {
+        const liveInventory = JSON.parse(
+            readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
+        ) as ReleaseInventory;
+        const mutated = structuredClone(liveInventory);
+        mutate(mutated);
+
+        expect(() => assertDdspReleaseInventory(repositoryRoot, mutated), id).toThrow(
+            `${label} release inventory kind does not match provenance`
+        );
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
