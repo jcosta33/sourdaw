@@ -183,7 +183,10 @@ export type AutomergeSyncHooks = {
         projectId?: string;
         rootHeads: readonly string[];
         senderIsHost: boolean;
-    }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
+    }) =>
+        | Promise<{ commit: () => Promise<void>; abort: () => Promise<void> } | undefined>
+        | { commit: () => Promise<void>; abort: () => Promise<void> }
+        | undefined;
     /** Called when a prepared side effect fails after document persistence. */
     onPostPersistError?: (error: unknown) => void;
     /** Called when an async persist after a received sync fails. */
@@ -567,7 +570,7 @@ export class AutomergeSync {
                     return;
                 }
                 try {
-                    const afterPersist = await this.hooks.prepareSyncPersistence?.({
+                    const transition = await this.hooks.prepareSyncPersistence?.({
                         peerId,
                         docId,
                         projectId,
@@ -575,18 +578,29 @@ export class AutomergeSync {
                         senderIsHost: acceptance.senderIsHost,
                     });
                     if (generation !== this.lifecycleGeneration) {
+                        await transition?.abort();
                         return;
                     }
                     const currentRoot = getCrdtDoc(DOC_PREFIX_ROOT);
                     if (!currentRoot || !haveSameHeads(rootHeads, getHeads(currentRoot))) {
+                        await transition?.abort();
                         return;
                     }
-                    peerStates.set(docId, newSyncState);
-                    this.syncStates.set(peerId, peerStates);
-                    if (converged) {
-                        this.hooks.onSyncConverged?.({ peerId, docId });
+                    let commitStarted = false;
+                    try {
+                        peerStates.set(docId, newSyncState);
+                        this.syncStates.set(peerId, peerStates);
+                        if (converged) {
+                            this.hooks.onSyncConverged?.({ peerId, docId });
+                        }
+                        commitStarted = true;
+                        await transition?.commit();
+                    } catch (error) {
+                        if (!commitStarted) {
+                            await transition?.abort();
+                        }
+                        throw error;
                     }
-                    await afterPersist?.();
                 } catch (error) {
                     logger.warn('[AutomergeSync] No-op root owner adoption failed:', error);
                     this.hooks.onPostPersistError?.(error);
@@ -635,9 +649,10 @@ export class AutomergeSync {
                 if (generation !== this.lifecycleGeneration) {
                     return;
                 }
-                let afterPersist: (() => Promise<void>) | undefined;
+                let transition: { commit: () => Promise<void>; abort: () => Promise<void> } | undefined;
+                let publicationStarted = false;
                 try {
-                    afterPersist = await this.hooks.prepareSyncPersistence?.({
+                    transition = await this.hooks.prepareSyncPersistence?.({
                         peerId,
                         docId,
                         projectId,
@@ -645,25 +660,31 @@ export class AutomergeSync {
                         senderIsHost: acceptance.senderIsHost,
                     });
                     if (generation !== this.lifecycleGeneration) {
+                        await transition?.abort();
                         return;
                     }
                     const currentHeads = getCrdtDoc(DOC_PREFIX_ROOT);
                     if (!currentHeads || !haveSameHeads(before_heads, getHeads(currentHeads))) {
                         retryAgainstNewerLocalRoot = true;
+                        await transition?.abort();
                         return;
                     }
+                    publicationStarted = true;
                     publish();
                     await persistCurrentProject(rootHeads);
                 } catch (error) {
+                    if (!publicationStarted) {
+                        await transition?.abort();
+                    }
                     logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
                     this.hooks.onPersistError?.(error);
                     return;
                 }
-                if (!afterPersist) {
+                if (!transition) {
                     return;
                 }
                 try {
-                    await afterPersist();
+                    await transition.commit();
                 } catch (error) {
                     logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
                     this.hooks.onPostPersistError?.(error);

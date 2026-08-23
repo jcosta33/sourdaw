@@ -55,11 +55,18 @@ export type ReleaseOwnedAssetResult = { status: 'released'; hash: string; assetR
 export type RebindDurableAssetOwnerResult =
     { status: 'rebound'; previousOwnerId: string; ownerId: string; reboundHashes: string[] } | DurableAssetFailure;
 export type PrepareDurableAssetOwnerHandoffResult =
-    { status: 'prepared'; previousOwnerId: string; ownerId: string } | DurableAssetFailure;
+    { status: 'prepared'; previousOwnerId: string; ownerId: string; created: boolean } | DurableAssetFailure;
 export type AbortDurableAssetOwnerHandoffResult =
     { status: 'aborted' | 'missing'; previousOwnerId: string; ownerId: string } | DurableAssetFailure;
 export type ResumeDurableAssetOwnerHandoffsResult =
-    { status: 'resumed'; ownerId: string; handoffCount: number; reboundHashes: string[] } | DurableAssetFailure;
+    | {
+          status: 'resumed';
+          ownerId: string;
+          handoffCount: number;
+          previousOwnerIds: string[];
+          reboundHashes: string[];
+      }
+    | DurableAssetFailure;
 export type ReleaseDurableAssetOwnerResult = {
     status: 'released';
     ownerId: string;

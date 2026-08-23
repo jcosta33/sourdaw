@@ -397,4 +397,63 @@ describe('AssetTransfer durable ownership', () => {
         expect(await reopened.blob?.text()).toBe('restart-safe-original');
         freshTransfer.dispose();
     });
+
+    it('keeps a live staged lease protected across same-owner transfer replacement', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['live-confirmation-original'], { type: 'audio/wav' }),
+            'live-confirmation.wav',
+            'asset-stage-live-confirmation'
+        );
+        transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
+        transfer.dispose();
+        const replacement = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+
+        // Queue an ordinary owner operation behind constructor recovery so the
+        // assertion observes what startup did before the confirmation resumes.
+        await replacement.reopenDurableAsset('sha256:missing');
+
+        await expect(replacement.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            leaseId: staged.leaseId,
+        });
+        await expect(replacement.releaseDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'released',
+        });
+        replacement.dispose();
+
+        const afterRelease = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await afterRelease.reopenDurableAsset('sha256:missing');
+        await expect(afterRelease.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-terminal-conflict',
+        });
+        afterRelease.dispose();
+    });
+
+    it('moves live staged-lease protection with a durable owner handoff', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['live-handoff-original'], { type: 'audio/wav' }),
+            'live-handoff.wav',
+            'asset-stage-live-handoff'
+        );
+        transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
+        transfer.dispose();
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            'collaboration-join:live-handoff',
+            undefined,
+            { handoffSourceOwnerIds: [TEST_OWNER], durableStagingReady: false }
+        );
+
+        await joining.prepareDurableOwnerRebind('project:live-handoff-target');
+        await joining.commitDurableOwnerRebind('project:live-handoff-target');
+        await joining.reopenDurableAsset('sha256:missing');
+
+        await expect(joining.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            leaseId: staged.leaseId,
+        });
+        joining.dispose();
+    });
 });

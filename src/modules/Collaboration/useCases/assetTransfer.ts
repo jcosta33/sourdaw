@@ -89,6 +89,47 @@ type DurableAssetCacheEntry = Pick<LocalAssetEntry, 'blob' | 'name'>;
 // settles, so a handoff cannot overtake staging already accepted by any transfer.
 let durableOwnerOperationTail: Promise<void> = Promise.resolve();
 
+function runDurableOwnerOperation<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const task = durableOwnerOperationTail.then(operation);
+    durableOwnerOperationTail = task.then(
+        () => undefined,
+        () => undefined
+    );
+    return task;
+}
+
+// A pending confirmation outlives the transport object that happened to stage
+// its bytes. Keep one live owner per exact default recovery until that caller
+// promotes or releases it. A renderer restart clears this process registry, so
+// abandoned stages still follow durable default-release recovery on startup.
+const liveStageRecoveryOwnerById = new Map<string, string>();
+
+function protectLiveStageRecovery(ownerId: string, recoveryId: string): void {
+    if (!liveStageRecoveryOwnerById.has(recoveryId)) {
+        liveStageRecoveryOwnerById.set(recoveryId, ownerId);
+    }
+}
+
+function releaseLiveStageRecovery(recoveryId: string): void {
+    liveStageRecoveryOwnerById.delete(recoveryId);
+}
+
+function getLiveStageRecoveries(ownerId: string): ReadonlySet<string> {
+    return new Set(
+        [...liveStageRecoveryOwnerById.entries()].flatMap(([recoveryId, protectedOwnerId]) =>
+            protectedOwnerId === ownerId ? [recoveryId] : []
+        )
+    );
+}
+
+function rebindLiveStageRecoveries(previousOwnerId: string, nextOwnerId: string): void {
+    for (const [recoveryId, protectedOwnerId] of liveStageRecoveryOwnerById) {
+        if (protectedOwnerId === previousOwnerId) {
+            liveStageRecoveryOwnerById.set(recoveryId, nextOwnerId);
+        }
+    }
+}
+
 type AssetTransferDurabilityOptions = {
     durableStagingReady?: boolean;
     handoffSourceOwnerIds?: readonly string[];
@@ -111,7 +152,6 @@ export class AssetTransfer {
     private durableStagingReady: boolean;
     private ownerRecoveryPending = true;
     private readonly protectedStageRecoveryIds = new Set<string>();
-    private protectPendingStageRecoveries = false;
     /** Serializes every operation whose durable authority is bound to ownerId. */
     private ownerOperationTail = Promise.resolve();
 
@@ -324,18 +364,30 @@ export class AssetTransfer {
         });
     }
 
+    /** Keep one caller-owned staged lease live while its transport object is replaced. */
+    protectDurableStagedAssetAcrossTransfer(leaseId: string): void {
+        if (this.disposed) {
+            throw new Error('AssetTransfer is disposed');
+        }
+        const recoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectedStageRecoveryIds.add(recoveryId);
+        protectLiveStageRecovery(this.ownerId, recoveryId);
+    }
+
     /** Verify and reopen one exact staged original after owner recreation. */
     async reopenDurableStagedAsset(leaseId: string, expectedHash: string): Promise<ReopenStagedAssetResult> {
         // Possession of the exact lease/hash pair is the live caller renewing
         // ownership of a pending stage after recreation. Protect its default
         // release claim before startup recovery can treat it as abandoned.
         const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
-        this.protectPendingStageRecoveries = true;
         this.protectedStageRecoveryIds.add(defaultRecoveryId);
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.reopenStagedAsset(leaseId, expectedHash);
             if (result.status === 'failed') {
-                this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+                if (result.reason !== 'lease-hash-mismatch' && result.reason !== 'lease-owner-mismatch') {
+                    this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+                    releaseLiveStageRecovery(defaultRecoveryId);
+                }
             }
             if (result.status === 'opened' && !this.disposed) {
                 this.durableAssetCache.set(result.hash, { blob: result.blob, name: result.name });
@@ -358,7 +410,6 @@ export class AssetTransfer {
     /** Release one hash-bound staging reference exactly once. */
     async releaseDurableStagedAsset(leaseId: string, expectedHash: string): Promise<ReleaseStagedAssetResult> {
         const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
-        this.protectPendingStageRecoveries = true;
         this.protectedStageRecoveryIds.add(defaultRecoveryId);
         const result = await this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.releaseStagedAsset(leaseId, expectedHash);
@@ -369,6 +420,7 @@ export class AssetTransfer {
         });
         if (result.status !== 'failed') {
             this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+            releaseLiveStageRecovery(defaultRecoveryId);
         }
         return result;
     }
@@ -376,7 +428,6 @@ export class AssetTransfer {
     /** Atomically release a complete prepared resource set or leave every lease staged. */
     async releaseDurableStagedAssets(bindings: readonly StagedAssetBinding[]): Promise<ReleaseStagedAssetsResult> {
         const defaultRecoveryIds = bindings.map((binding) => getDefaultStageRecoveryId(binding.leaseId));
-        this.protectPendingStageRecoveries = true;
         for (const recoveryId of defaultRecoveryIds) {
             this.protectedStageRecoveryIds.add(recoveryId);
         }
@@ -394,6 +445,7 @@ export class AssetTransfer {
         if (result.status !== 'failed') {
             for (const recoveryId of defaultRecoveryIds) {
                 this.protectedStageRecoveryIds.delete(recoveryId);
+                releaseLiveStageRecovery(recoveryId);
             }
         }
         return result;
@@ -402,7 +454,6 @@ export class AssetTransfer {
     /** Promote one hash-bound staging reference exactly once. */
     async promoteDurableStagedAsset(leaseId: string, expectedHash: string): Promise<PromoteStagedAssetResult> {
         const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
-        this.protectPendingStageRecoveries = true;
         this.protectedStageRecoveryIds.add(defaultRecoveryId);
         const result = await this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.promoteStagedAsset(leaseId, expectedHash);
@@ -413,6 +464,7 @@ export class AssetTransfer {
         });
         if (result.status !== 'failed') {
             this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+            releaseLiveStageRecovery(defaultRecoveryId);
         }
         return result;
     }
@@ -428,7 +480,9 @@ export class AssetTransfer {
         );
         if (result.status !== 'failed') {
             for (const binding of bindings) {
-                this.protectedStageRecoveryIds.delete(getDefaultStageRecoveryId(binding.leaseId));
+                const recoveryId = getDefaultStageRecoveryId(binding.leaseId);
+                this.protectedStageRecoveryIds.delete(recoveryId);
+                releaseLiveStageRecovery(recoveryId);
             }
         }
         return result;
@@ -462,7 +516,9 @@ export class AssetTransfer {
         );
         if (result.status !== 'failed') {
             for (const binding of bindings) {
-                this.protectedStageRecoveryIds.delete(getDefaultStageRecoveryId(binding.leaseId));
+                const recoveryId = getDefaultStageRecoveryId(binding.leaseId);
+                this.protectedStageRecoveryIds.delete(recoveryId);
+                releaseLiveStageRecovery(recoveryId);
             }
         }
         return result;
@@ -490,21 +546,82 @@ export class AssetTransfer {
     /** Journal the exact provisional-to-project handoff before CRDT persistence begins. */
     async prepareDurableOwnerRebind(nextOwnerId: string) {
         return this.runOwnerOperation(async (durableAssets) => {
-            const current = await durableAssets.prepareOwnerRebind(nextOwnerId);
-            if (current.status === 'failed') {
-                return current;
-            }
-            for (const source of this.durableOwnerHandoffSources.values()) {
-                const incoming = await source.resumeOwnerRebinds();
-                if (incoming.status === 'failed') {
-                    return incoming;
+            const createdRepositories: DurableAssetRepository[] = [];
+            const prepare = async (repository: DurableAssetRepository) => {
+                const prepared = await repository.prepareOwnerRebind(nextOwnerId);
+                if (prepared.status !== 'failed' && prepared.created) {
+                    createdRepositories.push(repository);
                 }
-                const prepared = await source.prepareOwnerRebind(nextOwnerId);
-                if (prepared.status === 'failed') {
-                    return prepared;
+                return prepared;
+            };
+            const rollbackCreated = async () => {
+                const failures: string[] = [];
+                for (const repository of createdRepositories.toReversed()) {
+                    try {
+                        const aborted = await repository.abortOwnerRebind(nextOwnerId);
+                        if (aborted.status === 'failed') {
+                            failures.push(aborted.reason);
+                        }
+                    } catch (error) {
+                        failures.push(error instanceof Error ? error.message : String(error));
+                    }
                 }
+                if (failures.length > 0) {
+                    throw new Error(`Durable asset owner handoff rollback failed: ${failures.join('; ')}`);
+                }
+            };
+
+            let current: Awaited<ReturnType<DurableAssetRepository['prepareOwnerRebind']>>;
+            try {
+                current = await prepare(durableAssets);
+                if (current.status === 'failed') {
+                    return current;
+                }
+                for (const source of this.durableOwnerHandoffSources.values()) {
+                    const incoming = await source.resumeOwnerRebinds();
+                    if (incoming.status === 'failed') {
+                        await rollbackCreated();
+                        return incoming;
+                    }
+                    const prepared = await prepare(source);
+                    if (prepared.status === 'failed') {
+                        await rollbackCreated();
+                        return prepared;
+                    }
+                }
+            } catch (error) {
+                await rollbackCreated();
+                throw error;
             }
-            return current;
+
+            let settled: 'pending' | 'committing' | 'committed' | 'aborted' = 'pending';
+            return {
+                ...current,
+                commit: async () => {
+                    if (settled === 'aborted') {
+                        throw new Error('Durable asset owner handoff was already aborted');
+                    }
+                    if (settled === 'committed') {
+                        return;
+                    }
+                    settled = 'committing';
+                    const committed = await this.commitDurableOwnerRebind(nextOwnerId);
+                    if (committed.status === 'failed') {
+                        throw new Error(`Durable asset owner rebind failed: ${committed.reason}`);
+                    }
+                    settled = 'committed';
+                },
+                abort: async () => {
+                    if (settled === 'committing' || settled === 'committed') {
+                        throw new Error('Durable asset owner handoff commit already started');
+                    }
+                    if (settled === 'aborted') {
+                        return;
+                    }
+                    await runDurableOwnerOperation(rollbackCreated);
+                    settled = 'aborted';
+                },
+            };
         });
     }
 
@@ -515,12 +632,21 @@ export class AssetTransfer {
             const reboundHashes = new Set<string>();
             for (const source of [durableAssets, ...this.durableOwnerHandoffSources.values()]) {
                 const result = await source.commitOwnerRebind(nextOwnerId);
-                if (result.status === 'failed' || this.disposed) {
+                if (result.status === 'failed') {
                     return result;
                 }
+                rebindLiveStageRecoveries(result.previousOwnerId, nextOwnerId);
                 for (const hash of result.reboundHashes) {
                     reboundHashes.add(hash);
                 }
+            }
+            if (this.disposed) {
+                return {
+                    status: 'rebound',
+                    previousOwnerId,
+                    ownerId: nextOwnerId,
+                    reboundHashes: [...reboundHashes],
+                };
             }
             this.unsubscribeInvalidation?.();
             this.ownerId = nextOwnerId;
@@ -550,7 +676,7 @@ export class AssetTransfer {
         options: { resumeRecoveries?: boolean } = {}
     ): Promise<Result> {
         const transferPredecessor = this.ownerOperationTail;
-        const task = durableOwnerOperationTail.then(async () => {
+        const task = runDurableOwnerOperation(async () => {
             await transferPredecessor;
             if (this.disposed) {
                 throw new Error('AssetTransfer is disposed');
@@ -561,13 +687,19 @@ export class AssetTransfer {
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);
                     }
+                    for (const previousOwnerId of recovery.previousOwnerIds) {
+                        rebindLiveStageRecoveries(previousOwnerId, recovery.ownerId);
+                    }
                     this.ownerRecoveryPending = false;
                 }
                 if (options.resumeRecoveries !== false) {
+                    const protectedRecoveryIds = new Set([
+                        ...this.protectedStageRecoveryIds,
+                        ...getLiveStageRecoveries(this.ownerId),
+                    ]);
                     const recovery = await this.durableAssets.resumeRecoveries(
-                        this.protectedStageRecoveryIds,
-                        durableAssetCommitProof.isProven,
-                        this.protectPendingStageRecoveries
+                        protectedRecoveryIds,
+                        durableAssetCommitProof.isProven
                     );
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset promotion recovery failed: ${recovery.reason}`);
@@ -576,10 +708,6 @@ export class AssetTransfer {
                 return operation(this.durableAssets);
             })();
         });
-        durableOwnerOperationTail = task.then(
-            () => undefined,
-            () => undefined
-        );
         this.ownerOperationTail = task.then(
             () => undefined,
             () => undefined

@@ -129,6 +129,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
     getAssetTransfer: () => ({
+        protectDurableStagedAssetAcrossTransfer: vi.fn(),
         stageLocalAsset: mocks.stageLocalAsset,
         promoteStagedAsset: mocks.promoteStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,

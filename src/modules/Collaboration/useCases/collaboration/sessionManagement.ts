@@ -82,7 +82,15 @@ const sessionState: {
      * the store's error text.
      */
     sessionEndedByHostDeparture: boolean;
-    synchronizeAssetOwner: ((nextOwnerId: string) => Promise<(() => Promise<void>) | undefined>) | null;
+    synchronizeAssetOwner:
+        | ((nextOwnerId: string) => Promise<
+              | {
+                    commit: () => Promise<void>;
+                    abort: () => Promise<void>;
+                }
+              | undefined
+          >)
+        | null;
     assetOwnershipTask: Promise<void>;
 } = {
     peerManager: null,
@@ -543,23 +551,23 @@ function initializeSessionRuntime(
                 if (prepared.status === 'failed') {
                     throw new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`);
                 }
-                return async () => {
-                    await queueAssetOwnershipTask(async () => {
-                        let failureReason = 'unknown';
-                        for (let attempt = 0; attempt < 3; attempt += 1) {
-                            try {
-                                const result = await assetTransfer.commitDurableOwnerRebind(nextOwnerId);
-                                if (result.status !== 'failed') {
+                return {
+                    commit: async () => {
+                        await queueAssetOwnershipTask(async () => {
+                            let failureReason = 'unknown';
+                            for (let attempt = 0; attempt < 3; attempt += 1) {
+                                try {
+                                    await prepared.commit();
                                     return;
+                                } catch (error) {
+                                    failureReason = error instanceof Error ? error.message : 'unexpected failure';
                                 }
-                                failureReason = result.reason;
-                            } catch (error) {
-                                failureReason = error instanceof Error ? error.message : 'unexpected failure';
+                                await Promise.resolve();
                             }
-                            await Promise.resolve();
-                        }
-                        throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
-                    });
+                            throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
+                        });
+                    },
+                    abort: prepared.abort,
                 };
             });
     }

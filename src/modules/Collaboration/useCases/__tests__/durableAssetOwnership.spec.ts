@@ -206,6 +206,8 @@ describe('durable asset ownership lifecycle', () => {
             'pre-join.wav',
             'asset-stage-pre-join-release'
         );
+        settled.protectDurableStagedAssetAcrossTransfer(promotedLease.leaseId);
+        settled.protectDurableStagedAssetAcrossTransfer(releasedLease.leaseId);
         settled.dispose();
 
         const joining = new AssetTransfer(
@@ -270,6 +272,10 @@ describe('durable asset ownership lifecycle', () => {
             'late-release.wav',
             'asset-stage-late-pre-join-release'
         );
+        // The pending caller claims transfer-safe ownership before the queued
+        // owner handoff can overtake these already-started staging operations.
+        settled.protectDurableStagedAssetAcrossTransfer('asset-stage-late-pre-join-promote');
+        settled.protectDurableStagedAssetAcrossTransfer('asset-stage-late-pre-join-release');
 
         const joining = new AssetTransfer(
             peer,
@@ -715,6 +721,29 @@ describe('durable asset ownership lifecycle', () => {
             status: 'failed',
             reason: 'asset-not-owned',
         });
+    });
+
+    it('rolls back newly prepared owners when a later handoff source conflicts', async () => {
+        const sourceOwner = 'project:partial-prepare-source';
+        const provisionalOwner = 'collaboration-join:partial-prepare';
+        await createDurableAssetRepository(sourceOwner).prepareOwnerRebind('project:existing-target');
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            createDurableAssetRepository(provisionalOwner),
+            { handoffSourceOwnerIds: [sourceOwner] }
+        );
+
+        await expect(joining.prepareDurableOwnerRebind('project:rejected-target')).resolves.toEqual({
+            status: 'failed',
+            reason: 'owner-handoff-conflict',
+        });
+
+        await expect(
+            createDurableAssetRepository(provisionalOwner).prepareOwnerRebind('project:replacement-target')
+        ).resolves.toMatchObject({ status: 'prepared', created: true });
+        joining.dispose();
     });
 
     it('routes cleanup to the lease owner when the active project owner changed without a handoff', async () => {

@@ -267,7 +267,12 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                 if (consumed.status === 'failed') {
                     return consumed;
                 }
-                return { status: 'prepared' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
+                return {
+                    status: 'prepared' as const,
+                    previousOwnerId: ownerId,
+                    ownerId: nextOwnerId,
+                    created: false,
+                };
             }
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readwrite');
@@ -286,7 +291,12 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                     return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
                 }
                 await completion;
-                return { status: 'prepared' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
+                return {
+                    status: 'prepared' as const,
+                    previousOwnerId: ownerId,
+                    ownerId: nextOwnerId,
+                    created: false,
+                };
             }
             store.put({
                 schemaVersion: OWNER_HANDOFF_SCHEMA_VERSION,
@@ -295,7 +305,12 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                 preparedAt: Date.now(),
             } satisfies OwnerHandoffRecord);
             await completion;
-            return { status: 'prepared' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
+            return {
+                status: 'prepared' as const,
+                previousOwnerId: ownerId,
+                ownerId: nextOwnerId,
+                created: true,
+            };
         },
 
         commitOwnerRebind(nextOwnerId: string) {
@@ -351,6 +366,7 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                 status: 'resumed' as const,
                 ownerId,
                 handoffCount: values.length,
+                previousOwnerIds: (values as OwnerHandoffRecord[]).map((handoff) => handoff.previousOwnerId),
                 reboundHashes: [...reboundHashes],
             };
         },

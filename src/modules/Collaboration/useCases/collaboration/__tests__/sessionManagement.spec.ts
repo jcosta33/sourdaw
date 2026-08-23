@@ -58,7 +58,10 @@ const automergeSyncMock = vi.hoisted(() => ({
                 projectId?: string;
                 rootHeads: readonly string[];
                 senderIsHost?: boolean;
-            }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
+            }) =>
+                | Promise<{ commit: () => Promise<void>; abort: () => Promise<void> } | undefined>
+                | { commit: () => Promise<void>; abort: () => Promise<void> }
+                | undefined;
             onPostPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
             onSyncConverged?: (input: { peerId: PeerId; docId: string }) => void;
@@ -80,7 +83,13 @@ const assetTransferMock = vi.hoisted(() => ({
         getAsset: ReturnType<typeof vi.fn>;
         dispose: ReturnType<typeof vi.fn>;
         releaseStagedAsset: ReturnType<typeof vi.fn>;
-        prepareDurableOwnerRebind: Mock<(ownerId: string) => Promise<{ status: 'prepared' }>>;
+        prepareDurableOwnerRebind: Mock<
+            (ownerId: string) => Promise<{
+                status: 'prepared';
+                commit: () => Promise<void>;
+                abort: () => Promise<void>;
+            }>
+        >;
         commitDurableOwnerRebind: Mock<
             (ownerId: string) => Promise<{ status: 'rebound' } | { status: 'failed'; reason: 'owner-handoff-conflict' }>
         >;
@@ -176,7 +185,10 @@ vi.mock('../../automergeSync', () => ({
                 projectId?: string;
                 rootHeads: readonly string[];
                 senderIsHost?: boolean;
-            }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
+            }) =>
+                | Promise<{ commit: () => Promise<void>; abort: () => Promise<void> } | undefined>
+                | { commit: () => Promise<void>; abort: () => Promise<void> }
+                | undefined;
             onPostPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
             onSyncConverged?: (input: { peerId: PeerId; docId: string }) => void;
@@ -213,21 +225,29 @@ vi.mock('../../assetTransfer', () => ({
             handoffSourceOwnerIds?: readonly string[];
         }
     ) {
+        const commitDurableOwnerRebind = vi
+            .fn<
+                (
+                    ownerId: string
+                ) => Promise<{ status: 'rebound' } | { status: 'failed'; reason: 'owner-handoff-conflict' }>
+            >()
+            .mockResolvedValue({ status: 'rebound' });
         const instance = {
             handleMessage: vi.fn(),
             getAsset: vi.fn(),
             dispose: vi.fn(),
             releaseStagedAsset: vi.fn(),
-            prepareDurableOwnerRebind: vi
-                .fn<(ownerId: string) => Promise<{ status: 'prepared' }>>()
-                .mockResolvedValue({ status: 'prepared' }),
-            commitDurableOwnerRebind: vi
-                .fn<
-                    (
-                        ownerId: string
-                    ) => Promise<{ status: 'rebound' } | { status: 'failed'; reason: 'owner-handoff-conflict' }>
-                >()
-                .mockResolvedValue({ status: 'rebound' }),
+            prepareDurableOwnerRebind: vi.fn().mockImplementation(async (ownerId: string) => ({
+                status: 'prepared' as const,
+                commit: async () => {
+                    const result = await commitDurableOwnerRebind(ownerId);
+                    if (result.status === 'failed') {
+                        throw new Error(result.reason);
+                    }
+                },
+                abort: vi.fn().mockResolvedValue(undefined),
+            })),
+            commitDurableOwnerRebind,
             options,
             durabilityOptions,
         };
@@ -469,14 +489,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
 
             currentOwnerId = 'project:host-authoritative';
-            const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
+            const transition = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
                 projectId: 'project:host-authoritative',
                 rootHeads: ['host-head'],
                 senderIsHost: true,
             });
-            await afterPersist?.();
+            await transition?.commit();
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(assetTransfer.prepareDurableOwnerRebind).toHaveBeenCalledExactlyOnceWith(
@@ -510,23 +530,23 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             );
             const assetTransfer = latestAssetTransfer();
             currentOwnerId = 'project:intermediate-projection';
-            const firstAfterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
+            const firstTransition = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
                 projectId: 'project:intermediate-projection',
                 rootHeads: ['intermediate-head'],
                 senderIsHost: true,
             });
-            await firstAfterPersist?.();
+            await firstTransition?.commit();
             currentOwnerId = 'project:host-authoritative';
-            const secondAfterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
+            const secondTransition = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
                 projectId: 'project:host-authoritative',
                 rootHeads: ['host-head'],
                 senderIsHost: true,
             });
-            await secondAfterPersist?.();
+            await secondTransition?.commit();
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(assetTransfer.prepareDurableOwnerRebind.mock.calls).toEqual([
@@ -565,14 +585,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 rebindToSynchronizedOwner: true,
             });
 
-            const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
+            const transition = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
                 projectId: 'project:same-local-and-host-id',
                 rootHeads: ['same-head'],
                 senderIsHost: true,
             });
-            await afterPersist?.();
+            await transition?.commit();
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(latestAssetTransfer().prepareDurableOwnerRebind).toHaveBeenCalledExactlyOnceWith(
@@ -605,14 +625,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 rebindToSynchronizedOwner: true,
             });
 
-            const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
+            const transition = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'collaborator-peer',
                 docId: 'root',
                 projectId: 'project:non-host',
                 rootHeads: ['non-host-head'],
                 senderIsHost: false,
             });
-            await afterPersist?.();
+            await transition?.commit();
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(latestAssetTransfer().prepareDurableOwnerRebind).not.toHaveBeenCalled();
@@ -702,14 +722,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 .mockResolvedValueOnce({ status: 'failed', reason: 'owner-handoff-conflict' })
                 .mockResolvedValueOnce({ status: 'rebound' });
 
-            const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
+            const transition = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
                 projectId: 'project:retry-authoritative',
                 rootHeads: ['retry-head'],
                 senderIsHost: true,
             });
-            await expect(afterPersist?.()).resolves.toBeUndefined();
+            await expect(transition?.commit()).resolves.toBeUndefined();
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(assetTransfer.commitDurableOwnerRebind).toHaveBeenCalledTimes(3);
