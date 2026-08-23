@@ -1,0 +1,83 @@
+src/modules/AiRuntime/useCases/recoverAgentRunRuntimeEffects.ts
+  s_a40848e8f8cca9::t_7ff57b7751a365 48-52
+  s_a40848e8f8cca9::t_2dc32765e80616 1-8,10-20,22-47,53-60,72-83
+  s_a40848e8f8cca9::t_68991047c1153d 61-71
+  s_a40848e8f8cca9::t_6f909a89cf056b 9,21
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_cf75c41ebec1eb 17,24-27,40-43,106-107,233-281
+  s_a40848e8f8cca9::t_08866e532aea71 282-283
+src/modules/Command/useCases/commandRuntimeRepairPort.ts
+  s_a40848e8f8cca9::t_d39a8fccf95e13 1-15
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_5fa17f41a829ea 11
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_7023009cff0ddc 22,34,126-129,133-134,157-164,182-190,200,211-249
+  s_a40848e8f8cca9::t_6f909a89cf056b 116-117,130-132,135-156,165-181,191-199,201-210
+  s_a40848e8f8cca9::t_6d8f6fab6e43a2 104
+  s_a40848e8f8cca9::t_1af332435c51cb 1355-1358,1406,1480
+  s_a40848e8f8cca9::t_2be163a2904c3d 250
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_6f909a89cf056b 10,26
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_4f31cb0b0c7e16 51,877-881
+  s_a40848e8f8cca9::t_345032c8189bdd 161
+  s_a40848e8f8cca9::t_9df62478c965b3 15,21,23,131,713-715,832-841,888-889
+  s_a40848e8f8cca9::t_017d93d723b5b6 48,817-824,858-873
+src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_914478b81aeb97 1,8,22,175-201
+  s_a40848e8f8cca9::t_fdfb0d5551edbb 202-203
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_9ed2a87d0b5558 266
+  s_a40848e8f8cca9::t_6d8f6fab6e43a2 196-198,1076,1107
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_abab07a9b20f37 324-327,332-333,335-366,419
+  s_a40848e8f8cca9::t_6f909a89cf056b 328-331,334
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_f04e510f0a1672 17,203,593-655,657
+  s_a40848e8f8cca9::t_5bc9a991eba690 656,658-660,1007-1009
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_9ed2a87d0b5558 25-27,33-36,40-71,74,82-87,89
+  s_a40848e8f8cca9::t_a189b0f5ca633d 93
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_5fa17f41a829ea 53,80,150,200-203
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_2dc32765e80616 15,21,259-265,305-308,314,336-368
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_94a7c60ccda80e 459-467,469-478,480
+  s_a40848e8f8cca9::t_4bef8072fa22d3 393
+  s_a40848e8f8cca9::t_4c807e5dcb8306 498-504,521,610-616,629
+  s_a40848e8f8cca9::t_d39a8fccf95e13 18,253,572-609,617-628,630-631
+  s_a40848e8f8cca9::t_7d0b996eacdd57 23,29,139,411-458,468,479,481-497,505-520,522-571
+  s_a40848e8f8cca9::t_1d241c6f1c08ab 194
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_6d8f6fab6e43a2 138,148,991,1034
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_2dc32765e80616 72
+src/modules/Command/useCases/getVersionedCommandBatchIdempotentReplay.ts
+  s_a40848e8f8cca9::t_6b0d579b4fe4dd 33-35
+  s_a40848e8f8cca9::t_d7c707551e76a5 5,19-32,36-38
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_17cd0f4b9f1340 6-7,38-44,86,96-98,102-148,150-166
+  s_a40848e8f8cca9::t_6b0d579b4fe4dd 48-50,99-101
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_17822e57d78e69 474-482
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_17822e57d78e69 93-97,839-859
+  s_a40848e8f8cca9::t_6f909a89cf056b 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "165ed6f59bdb8c20fbe62b3588ecc7d1bac63964",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
