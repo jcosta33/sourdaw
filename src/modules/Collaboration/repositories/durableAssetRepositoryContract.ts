@@ -30,6 +30,14 @@ export type ReleaseStagedAssetResult =
       }
     | DurableAssetFailure;
 export type StagedAssetBinding = { leaseId: string; expectedHash: string };
+export type PrepareDurableAssetPromotionRecoveryResult =
+    { status: 'prepared'; recoveryId: string; ownerId: string } | DurableAssetFailure;
+export type CompleteDurableAssetPromotionRecoveryResult =
+    { status: 'completed' | 'missing'; recoveryId: string; promotedHashes: string[] } | DurableAssetFailure;
+export type CancelDurableAssetPromotionRecoveryResult =
+    { status: 'cancelled' | 'missing'; recoveryId: string } | DurableAssetFailure;
+export type ResumeDurableAssetPromotionRecoveriesResult =
+    { status: 'resumed'; ownerId: string; recoveryCount: number; promotedHashes: string[] } | DurableAssetFailure;
 export type ReleasedStagedAsset = Exclude<ReleaseStagedAssetResult, DurableAssetFailure>;
 export type ReleaseStagedAssetsResult = { status: 'released'; releases: ReleasedStagedAsset[] } | DurableAssetFailure;
 export type ReleaseOwnedAssetResult = { status: 'released'; hash: string; assetRemoved: boolean } | DurableAssetFailure;
@@ -61,5 +69,12 @@ export type DurableAssetRepository = {
     prepareOwnerRebind: (nextOwnerId: string) => Promise<PrepareDurableAssetOwnerHandoffResult>;
     commitOwnerRebind: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
     resumeOwnerRebinds: () => Promise<ResumeDurableAssetOwnerHandoffsResult>;
+    preparePromotionRecovery: (
+        recoveryId: string,
+        bindings: readonly StagedAssetBinding[]
+    ) => Promise<PrepareDurableAssetPromotionRecoveryResult>;
+    completePromotionRecovery: (recoveryId: string) => Promise<CompleteDurableAssetPromotionRecoveryResult>;
+    cancelPromotionRecovery: (recoveryId: string) => Promise<CancelDurableAssetPromotionRecoveryResult>;
+    resumePromotionRecoveries: () => Promise<ResumeDurableAssetPromotionRecoveriesResult>;
     subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };

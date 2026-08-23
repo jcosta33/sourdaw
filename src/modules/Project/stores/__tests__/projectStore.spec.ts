@@ -164,9 +164,23 @@ describe('projectStore', () => {
 
     it('publishes only a canonical project identity whose migration has settled', () => {
         const settledProjectId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
-        projectStore.set({ ...create_default_state(), projectId: settledProjectId, identityMigrationPending: false });
+        projectStore.set({
+            ...create_default_state(),
+            projectId: settledProjectId,
+            identityMigrationPending: false,
+            initialized: true,
+        });
         expect(getSettledProjectId()).toBe(settledProjectId);
         expect(getSettledProjectIdentity()).toEqual({ projectId: settledProjectId });
+
+        projectStore.set({
+            ...create_default_state(),
+            projectId: settledProjectId,
+            identityMigrationPending: false,
+            initialized: false,
+        });
+        expect(getSettledProjectId()).toBeUndefined();
+        expect(getSettledProjectIdentity()).toBeUndefined();
 
         projectStore.set({ ...create_default_state(), projectId: 'not-a-uuid', identityMigrationPending: false });
         expect(getSettledProjectId()).toBeUndefined();
@@ -177,12 +191,19 @@ describe('projectStore', () => {
         projectStore.set({ ...create_default_state(), projectId: undefined, identityMigrationPending: false });
         expect(getSettledProjectId()).toBeUndefined();
 
-        expect(readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: false })).toBe(
-            settledProjectId
-        );
-        expect(readSettledProjectIdentity({ projectId: settledProjectId, identityMigrationPending: false })).toEqual({
-            projectId: settledProjectId,
-        });
+        expect(
+            readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: false, initialized: true })
+        ).toBe(settledProjectId);
+        expect(
+            readSettledProjectIdentity({
+                projectId: settledProjectId,
+                identityMigrationPending: false,
+                initialized: true,
+            })
+        ).toEqual({ projectId: settledProjectId });
+        expect(
+            readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: false, initialized: false })
+        ).toBeUndefined();
         expect(readSettledProjectId({ projectId: 'not-a-uuid', identityMigrationPending: false })).toBeUndefined();
         expect(readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: true })).toBeUndefined();
         expect(

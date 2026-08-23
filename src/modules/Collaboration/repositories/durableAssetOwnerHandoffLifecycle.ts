@@ -7,9 +7,12 @@ import {
     OWNER_HANDOFF_SCHEMA_VERSION,
     OWNER_HANDOFF_STORE,
     OWNER_HANDOFF_TARGET_INDEX,
+    PROMOTION_RECOVERY_OWNER_INDEX,
+    PROMOTION_RECOVERY_STORE,
     type AssetRecord,
     type LeaseRecord,
     type OwnerHandoffRecord,
+    type PromotionRecoveryRecord,
 } from './durableAssetIndexedDb';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
 import { type RebindDurableAssetOwnerResult } from './durableAssetRepositoryContract';
@@ -46,22 +49,28 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         return { status: 'rebound', previousOwnerId, ownerId: nextOwnerId, reboundHashes: [] };
     }
     const database = await records.openDurableAssetDatabase();
-    const transaction = database.transaction([ASSET_STORE, LEASE_STORE, OWNER_HANDOFF_STORE], 'readwrite');
+    const transaction = database.transaction(
+        [ASSET_STORE, LEASE_STORE, OWNER_HANDOFF_STORE, PROMOTION_RECOVERY_STORE],
+        'readwrite'
+    );
     const completion = records.awaitTransaction(transaction);
     const assetStore = transaction.objectStore(ASSET_STORE);
     const leaseStore = transaction.objectStore(LEASE_STORE);
     const handoffStore = transaction.objectStore(OWNER_HANDOFF_STORE);
-    const [handoffValue, ownedAssetValues, leasedAssetValues, leaseValues] = await Promise.all([
+    const promotionStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
+    const [handoffValue, ownedAssetValues, leasedAssetValues, leaseValues, promotionValues] = await Promise.all([
         records.readStoredValue(handoffStore, previousOwnerId),
         records.readIndexedValues(assetStore, ASSET_OWNER_INDEX, previousOwnerId),
         records.readIndexedValues(assetStore, ASSET_LEASE_OWNER_INDEX, previousOwnerId),
         records.readIndexedValues(leaseStore, LEASE_OWNER_INDEX, previousOwnerId),
+        records.readIndexedValues(promotionStore, PROMOTION_RECOVERY_OWNER_INDEX, previousOwnerId),
     ]);
     const indexedAssetValues = [...ownedAssetValues, ...leasedAssetValues];
     if (
         (handoffValue !== undefined && !records.isOwnerHandoffRecord(handoffValue)) ||
         indexedAssetValues.some((value) => !records.isAssetRecord(value)) ||
-        leaseValues.some((value) => !records.isLeaseRecord(value))
+        leaseValues.some((value) => !records.isLeaseRecord(value)) ||
+        promotionValues.some((value) => !records.isPromotionRecoveryRecord(value))
     ) {
         transaction.abort();
         await completion.catch(() => undefined);
@@ -79,6 +88,20 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         transaction.abort();
         await completion.catch(() => undefined);
         return { status: 'failed', reason: 'owner-handoff-conflict' };
+    }
+    if (handoffValue !== undefined) {
+        // Queue deletion inside this same transaction before any later awaits
+        // can leave an otherwise empty handoff transaction inactive. A later
+        // validation failure aborts and rolls this mutation back atomically.
+        handoffStore.delete(previousOwnerId);
+    }
+    for (const recovery of promotionValues as PromotionRecoveryRecord[]) {
+        if (recovery.ownerId !== previousOwnerId) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'failed', reason: 'corrupt-record' };
+        }
+        promotionStore.put({ ...recovery, ownerId: nextOwnerId } satisfies PromotionRecoveryRecord);
     }
 
     const leases = leaseValues as LeaseRecord[];
@@ -181,9 +204,6 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         if (lease.ownerId === previousOwnerId) {
             leaseStore.put({ ...lease, ownerId: nextOwnerId } satisfies LeaseRecord);
         }
-    }
-    if (handoffValue !== undefined) {
-        handoffStore.delete(previousOwnerId);
     }
     await completion;
     for (const hash of reboundHashes) {

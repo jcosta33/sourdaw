@@ -76,7 +76,10 @@ type LocalAssetEntry = {
 
 type DurableAssetCacheEntry = Pick<LocalAssetEntry, 'blob' | 'name'>;
 
-type AssetTransferDurabilityOptions = { durableStagingReady?: boolean };
+type AssetTransferDurabilityOptions = {
+    durableStagingReady?: boolean;
+    handoffSourceOwnerIds?: readonly string[];
+};
 
 /**
  * Content-addressed asset transfer over WebRTC data channels.
@@ -88,6 +91,7 @@ export class AssetTransfer {
     private peerManager: PeerConnectionManager;
     private callbacks: AssetTransferCallbacks;
     private durableAssets: DurableAssetRepository;
+    private readonly durableOwnerHandoffSources: Map<string, DurableAssetRepository>;
     private ownerId: string;
     private unsubscribeInvalidation: (() => void) | null;
     private disposed = false;
@@ -175,6 +179,11 @@ export class AssetTransfer {
         this.callbacks = callbacks;
         this.ownerId = ownerId;
         this.durableAssets = durableAssets;
+        this.durableOwnerHandoffSources = new Map(
+            [...new Set(durabilityOptions.handoffSourceOwnerIds ?? [])]
+                .filter((sourceOwnerId) => sourceOwnerId !== ownerId)
+                .map((sourceOwnerId) => [sourceOwnerId, createDurableAssetRepository(sourceOwnerId)])
+        );
         this.durableStagingReady = durabilityOptions.durableStagingReady ?? true;
         this.unsubscribeInvalidation = durableAssets.subscribeInvalidation((event) => {
             if (this.disposed) {
@@ -352,6 +361,25 @@ export class AssetTransfer {
         });
     }
 
+    /** Persist exact committed-asset promotion ownership before the project transaction starts. */
+    async prepareDurablePromotionRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
+        return this.runOwnerOperation((durableAssets) => durableAssets.preparePromotionRecovery(recoveryId, bindings));
+    }
+
+    /** Prove every committed lease promoted before retiring its durable recovery journal. */
+    async completeDurablePromotionRecovery(recoveryId: string) {
+        return this.runOwnerOperation((durableAssets) => durableAssets.completePromotionRecovery(recoveryId), {
+            resumePromotionRecoveries: false,
+        });
+    }
+
+    /** Retire a pre-commit recovery claim before releasing its staged leases. */
+    async cancelDurablePromotionRecovery(recoveryId: string) {
+        return this.runOwnerOperation((durableAssets) => durableAssets.cancelPromotionRecovery(recoveryId), {
+            resumePromotionRecoveries: false,
+        });
+    }
+
     /** Release this project identity's durable reference without affecting another project. */
     async releaseDurableAsset(hash: string): Promise<ReleaseOwnedAssetResult> {
         return this.runOwnerOperation((durableAssets) => durableAssets.releaseOwnedAsset(hash));
@@ -359,19 +387,39 @@ export class AssetTransfer {
 
     /** Journal the exact provisional-to-project handoff before CRDT persistence begins. */
     async prepareDurableOwnerRebind(nextOwnerId: string) {
-        return this.runOwnerOperation((durableAssets) => durableAssets.prepareOwnerRebind(nextOwnerId));
+        return this.runOwnerOperation(async (durableAssets) => {
+            const current = await durableAssets.prepareOwnerRebind(nextOwnerId);
+            if (current.status === 'failed') {
+                return current;
+            }
+            for (const source of this.durableOwnerHandoffSources.values()) {
+                const prepared = await source.prepareOwnerRebind(nextOwnerId);
+                if (prepared.status === 'failed') {
+                    return prepared;
+                }
+            }
+            return current;
+        });
     }
 
     /** Commit a journaled handoff after CRDT persistence has adopted the project owner. */
     async commitDurableOwnerRebind(nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
         return this.runOwnerOperation(async (durableAssets) => {
-            const result = await durableAssets.commitOwnerRebind(nextOwnerId);
-            if (result.status === 'failed' || this.disposed) {
-                return result;
+            const previousOwnerId = this.ownerId;
+            const reboundHashes = new Set<string>();
+            for (const source of [durableAssets, ...this.durableOwnerHandoffSources.values()]) {
+                const result = await source.commitOwnerRebind(nextOwnerId);
+                if (result.status === 'failed' || this.disposed) {
+                    return result;
+                }
+                for (const hash of result.reboundHashes) {
+                    reboundHashes.add(hash);
+                }
             }
             this.unsubscribeInvalidation?.();
             this.ownerId = nextOwnerId;
             this.durableAssets = createDurableAssetRepository(nextOwnerId);
+            this.durableOwnerHandoffSources.clear();
             this.ownerRecoveryPending = true;
             this.durableStagingReady = true;
             this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
@@ -382,12 +430,18 @@ export class AssetTransfer {
                     this.durableAssetCache.delete(event.hash);
                 }
             });
-            return result;
+            return {
+                status: 'rebound',
+                previousOwnerId,
+                ownerId: nextOwnerId,
+                reboundHashes: [...reboundHashes],
+            };
         });
     }
 
     private runOwnerOperation<Result>(
-        operation: (durableAssets: DurableAssetRepository) => Promise<Result>
+        operation: (durableAssets: DurableAssetRepository) => Promise<Result>,
+        options: { resumePromotionRecoveries?: boolean } = {}
     ): Promise<Result> {
         const task = this.ownerOperationTail.then(() => {
             if (this.disposed) {
@@ -400,6 +454,12 @@ export class AssetTransfer {
                         throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);
                     }
                     this.ownerRecoveryPending = false;
+                }
+                if (options.resumePromotionRecoveries !== false) {
+                    const recovery = await this.durableAssets.resumePromotionRecoveries();
+                    if (recovery.status === 'failed') {
+                        throw new Error(`Durable asset promotion recovery failed: ${recovery.reason}`);
+                    }
                 }
                 return operation(this.durableAssets);
             })();

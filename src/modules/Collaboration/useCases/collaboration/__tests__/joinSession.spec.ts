@@ -16,7 +16,12 @@ import { leaveSession } from '../leaveSession';
 const mockRuntime = vi.hoisted(() => ({
     cleanup: vi.fn<() => void>(),
     initialize:
-        vi.fn<(assetOwnerId: string, options?: { rebindToSynchronizedOwner?: boolean }) => PeerConnectionManager>(),
+        vi.fn<
+            (
+                assetOwnerId: string,
+                options?: { handoffSourceOwnerIds?: readonly string[]; rebindToSynchronizedOwner?: boolean }
+            ) => PeerConnectionManager
+        >(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -28,7 +33,7 @@ const mockRuntime = vi.hoisted(() => ({
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 vi.mock('../getCollaborationAssetOwnerId', () => ({
-    getCollaborationAssetOwnerId: () => 'project-owner-1',
+    collaborationAssetOwnership: { getOwnerId: () => 'project-owner-1' },
 }));
 
 type Offer = Extract<SignalingMessage, { type: 'offer' }>;
@@ -114,6 +119,7 @@ describe('joinSession', () => {
         expect(mockRuntime.initialize).toHaveBeenCalledWith(
             expect.stringMatching(/^collaboration-join:session-1:joiner-1:/u),
             {
+                handoffSourceOwnerIds: ['project-owner-1'],
                 rebindToSynchronizedOwner: true,
             }
         );

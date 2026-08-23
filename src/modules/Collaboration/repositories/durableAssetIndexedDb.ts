@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sourdaw-collaboration-original-assets';
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 export const ASSET_STORE = 'assets';
 export const LEASE_STORE = 'leases';
 export const ASSET_OWNER_INDEX = 'by-owner';
@@ -7,8 +7,12 @@ export const ASSET_LEASE_OWNER_INDEX = 'by-lease-owner';
 export const LEASE_OWNER_INDEX = 'by-owner';
 export const OWNER_HANDOFF_STORE = 'ownerHandoffs';
 export const OWNER_HANDOFF_TARGET_INDEX = 'by-next-owner';
+export const PROMOTION_RECOVERY_STORE = 'promotionRecoveries';
+export const PROMOTION_RECOVERY_OWNER_INDEX = 'by-owner';
+export const PROMOTION_RECOVERY_LEASE_INDEX = 'by-lease';
 export const RECORD_SCHEMA_VERSION = 2;
 export const OWNER_HANDOFF_SCHEMA_VERSION = 1;
+export const PROMOTION_RECOVERY_SCHEMA_VERSION = 1;
 
 export type LeaseState = 'staged' | 'promoted' | 'released';
 export type ActiveLease = { leaseId: string; ownerId: string };
@@ -33,6 +37,14 @@ export type OwnerHandoffRecord = {
     schemaVersion: typeof OWNER_HANDOFF_SCHEMA_VERSION;
     previousOwnerId: string;
     nextOwnerId: string;
+    preparedAt: number;
+};
+export type PromotionRecoveryRecord = {
+    schemaVersion: typeof PROMOTION_RECOVERY_SCHEMA_VERSION;
+    recoveryId: string;
+    ownerId: string;
+    leaseIds: string[];
+    bindings: Array<{ leaseId: string; expectedHash: string }>;
     preparedAt: number;
 };
 
@@ -119,6 +131,15 @@ function ensureIndexes(request: IDBOpenDBRequest, oldVersion: number): void {
         : database.createObjectStore(OWNER_HANDOFF_STORE, { keyPath: 'previousOwnerId' });
     if (!handoffStore.indexNames.contains(OWNER_HANDOFF_TARGET_INDEX)) {
         handoffStore.createIndex(OWNER_HANDOFF_TARGET_INDEX, 'nextOwnerId');
+    }
+    const promotionRecoveryStore = database.objectStoreNames.contains(PROMOTION_RECOVERY_STORE)
+        ? request.transaction!.objectStore(PROMOTION_RECOVERY_STORE)
+        : database.createObjectStore(PROMOTION_RECOVERY_STORE, { keyPath: 'recoveryId' });
+    if (!promotionRecoveryStore.indexNames.contains(PROMOTION_RECOVERY_OWNER_INDEX)) {
+        promotionRecoveryStore.createIndex(PROMOTION_RECOVERY_OWNER_INDEX, 'ownerId');
+    }
+    if (!promotionRecoveryStore.indexNames.contains(PROMOTION_RECOVERY_LEASE_INDEX)) {
+        promotionRecoveryStore.createIndex(PROMOTION_RECOVERY_LEASE_INDEX, 'leaseIds', { multiEntry: true });
     }
     if (oldVersion === 1) {
         migrateVersionOneRecords(assetStore, leaseStore);
@@ -243,6 +264,47 @@ function isOwnerHandoffRecord(value: unknown): value is OwnerHandoffRecord {
     );
 }
 
+function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRecord {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    const recoveryLeaseIds = Array.isArray(record.leaseIds)
+        ? record.leaseIds.filter((leaseId): leaseId is string => typeof leaseId === 'string')
+        : [];
+    if (
+        record.schemaVersion !== PROMOTION_RECOVERY_SCHEMA_VERSION ||
+        typeof record.recoveryId !== 'string' ||
+        record.recoveryId.length === 0 ||
+        typeof record.ownerId !== 'string' ||
+        record.ownerId.length === 0 ||
+        !Array.isArray(record.leaseIds) ||
+        recoveryLeaseIds.length !== record.leaseIds.length ||
+        !Array.isArray(record.bindings) ||
+        record.bindings.length === 0 ||
+        typeof record.preparedAt !== 'number' ||
+        !Number.isSafeInteger(record.preparedAt)
+    ) {
+        return false;
+    }
+    const leaseIds = new Set<string>();
+    for (const binding of record.bindings) {
+        if (
+            typeof binding !== 'object' ||
+            binding === null ||
+            typeof (binding as { leaseId?: unknown }).leaseId !== 'string' ||
+            (binding as { leaseId: string }).leaseId.length === 0 ||
+            typeof (binding as { expectedHash?: unknown }).expectedHash !== 'string' ||
+            (binding as { expectedHash: string }).expectedHash.length === 0 ||
+            leaseIds.has((binding as { leaseId: string }).leaseId)
+        ) {
+            return false;
+        }
+        leaseIds.add((binding as { leaseId: string }).leaseId);
+    }
+    return leaseIds.size === recoveryLeaseIds.length && recoveryLeaseIds.every((leaseId) => leaseIds.has(leaseId));
+}
+
 async function hashBlob(blob: Blob): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
     return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
@@ -256,6 +318,7 @@ export function createDurableAssetIndexedDb() {
         isAssetRecord,
         isLeaseRecord,
         isOwnerHandoffRecord,
+        isPromotionRecoveryRecord,
         openDurableAssetDatabase,
         readIndexedValues,
         readStoredValue,

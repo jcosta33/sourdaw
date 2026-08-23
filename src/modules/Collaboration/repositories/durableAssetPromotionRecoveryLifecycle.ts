@@ -1,0 +1,260 @@
+import {
+    ASSET_STORE,
+    LEASE_STORE,
+    PROMOTION_RECOVERY_OWNER_INDEX,
+    PROMOTION_RECOVERY_SCHEMA_VERSION,
+    PROMOTION_RECOVERY_STORE,
+    type PromotionRecoveryRecord,
+} from './durableAssetIndexedDb';
+import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
+import {
+    type DurableAssetFailure,
+    type PromoteStagedAssetResult,
+    type ReopenDurableAssetResult,
+    type StagedAssetBinding,
+} from './durableAssetRepositoryContract';
+
+const records = createDurableAssetRecordAccess();
+
+function normalizeBindings(bindings: readonly StagedAssetBinding[]): StagedAssetBinding[] | DurableAssetFailure {
+    if (bindings.length === 0) {
+        return { status: 'failed', reason: 'corrupt-record' };
+    }
+    const byLeaseId = new Map<string, StagedAssetBinding>();
+    for (const binding of bindings) {
+        if (binding.leaseId.length === 0 || binding.expectedHash.length === 0) {
+            return { status: 'failed', reason: 'corrupt-record' };
+        }
+        const existing = byLeaseId.get(binding.leaseId);
+        if (existing && existing.expectedHash !== binding.expectedHash) {
+            return { status: 'failed', reason: 'lease-hash-mismatch' };
+        }
+        byLeaseId.set(binding.leaseId, { ...binding });
+    }
+    return [...byLeaseId.values()].sort((left, right) => left.leaseId.localeCompare(right.leaseId));
+}
+
+function haveSameBindings(left: readonly StagedAssetBinding[], right: readonly StagedAssetBinding[]): boolean {
+    const normalizedLeft = normalizeBindings(left);
+    const normalizedRight = normalizeBindings(right);
+    return (
+        !('status' in normalizedLeft) &&
+        !('status' in normalizedRight) &&
+        normalizedLeft.length === normalizedRight.length &&
+        normalizedLeft.every(
+            (binding, index) =>
+                binding.leaseId === normalizedRight[index]?.leaseId &&
+                binding.expectedHash === normalizedRight[index]?.expectedHash
+        )
+    );
+}
+
+/** Own crash-restart promotion of committed project asset leases without replaying their project action. */
+export function createDurableAssetPromotionRecoveryLifecycle(
+    ownerId: string,
+    promoteStagedAsset: (leaseId: string, expectedHash: string) => Promise<PromoteStagedAssetResult>,
+    reopenDurableAsset: (hash: string) => Promise<ReopenDurableAssetResult>
+) {
+    async function readRecovery(recoveryId: string): Promise<PromotionRecoveryRecord | DurableAssetFailure | null> {
+        const database = await records.openDurableAssetDatabase();
+        const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readonly');
+        const completion = records.awaitTransaction(transaction);
+        const value = await records.readStoredValue(transaction.objectStore(PROMOTION_RECOVERY_STORE), recoveryId);
+        await completion;
+        if (value === undefined) {
+            return null;
+        }
+        if (!records.isPromotionRecoveryRecord(value) || value.recoveryId !== recoveryId) {
+            return { status: 'failed', reason: 'corrupt-record' };
+        }
+        if (value.ownerId !== ownerId) {
+            return { status: 'failed', reason: 'lease-owner-mismatch' };
+        }
+        return value;
+    }
+
+    async function deleteRecovery(recoveryId: string): Promise<DurableAssetFailure | null> {
+        const database = await records.openDurableAssetDatabase();
+        const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readwrite');
+        const completion = records.awaitTransaction(transaction);
+        const store = transaction.objectStore(PROMOTION_RECOVERY_STORE);
+        const value = await records.readStoredValue(store, recoveryId);
+        if (value !== undefined && (!records.isPromotionRecoveryRecord(value) || value.ownerId !== ownerId)) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'failed', reason: 'corrupt-record' };
+        }
+        store.delete(recoveryId);
+        await completion;
+        return null;
+    }
+
+    async function completeRecord(record: PromotionRecoveryRecord) {
+        const promotedHashes = new Set<string>();
+        for (const binding of record.bindings) {
+            const promoted = await promoteStagedAsset(binding.leaseId, binding.expectedHash);
+            if (promoted.status === 'failed') {
+                if (promoted.reason !== 'unknown-lease') {
+                    return promoted;
+                }
+                const reopened = await reopenDurableAsset(binding.expectedHash);
+                if (reopened.status === 'failed') {
+                    return promoted;
+                }
+            }
+            promotedHashes.add(binding.expectedHash);
+        }
+        const deletionFailure = await deleteRecovery(record.recoveryId);
+        if (deletionFailure) {
+            return deletionFailure;
+        }
+        return {
+            status: 'completed' as const,
+            recoveryId: record.recoveryId,
+            promotedHashes: [...promotedHashes],
+        };
+    }
+
+    return {
+        async preparePromotionRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
+            if (recoveryId.length === 0) {
+                throw new Error('Durable asset promotion recovery identity is required');
+            }
+            const normalized = normalizeBindings(bindings);
+            if ('status' in normalized) {
+                return normalized;
+            }
+            const database = await records.openDurableAssetDatabase();
+            const transaction = database.transaction([ASSET_STORE, LEASE_STORE, PROMOTION_RECOVERY_STORE], 'readwrite');
+            const completion = records.awaitTransaction(transaction);
+            const assetStore = transaction.objectStore(ASSET_STORE);
+            const leaseStore = transaction.objectStore(LEASE_STORE);
+            const recoveryStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
+            const values = await Promise.all([
+                records.readStoredValue(recoveryStore, recoveryId),
+                ...normalized.map((binding) => records.readStoredValue(leaseStore, binding.leaseId)),
+                ...normalized.map((binding) => records.readStoredValue(assetStore, binding.expectedHash)),
+            ]);
+            const existing = values[0];
+            const leaseValues = values.slice(1, normalized.length + 1);
+            const assetValues = values.slice(normalized.length + 1);
+            for (const [index, binding] of normalized.entries()) {
+                const leaseValue = leaseValues[index];
+                const assetValue = assetValues[index];
+                if (!records.isLeaseRecord(leaseValue) || !records.isAssetRecord(assetValue)) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
+                }
+                const lease = leaseValue;
+                const asset = assetValue;
+                if (lease.leaseId !== binding.leaseId || asset.hash !== binding.expectedHash) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
+                }
+                if (lease.ownerId !== ownerId) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'lease-owner-mismatch' as const };
+                }
+                if (lease.hash !== binding.expectedHash) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'lease-hash-mismatch' as const };
+                }
+                if (lease.state === 'released') {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'lease-terminal-conflict' as const };
+                }
+                const exactBacklink =
+                    lease.state === 'staged'
+                        ? asset.activeLeases.some(
+                              (candidate) => candidate.leaseId === binding.leaseId && candidate.ownerId === ownerId
+                          )
+                        : asset.ownerIds.includes(ownerId) &&
+                          !asset.activeLeases.some((candidate) => candidate.leaseId === binding.leaseId);
+                if (!exactBacklink) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
+                }
+            }
+            if (
+                existing !== undefined &&
+                (!records.isPromotionRecoveryRecord(existing) ||
+                    existing.ownerId !== ownerId ||
+                    !haveSameBindings(existing.bindings, normalized))
+            ) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+            }
+            recoveryStore.put({
+                schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                recoveryId,
+                ownerId,
+                leaseIds: normalized.map((binding) => binding.leaseId),
+                bindings: normalized,
+                preparedAt: records.isPromotionRecoveryRecord(existing) ? existing.preparedAt : Date.now(),
+            } satisfies PromotionRecoveryRecord);
+            await completion;
+            return { status: 'prepared' as const, recoveryId, ownerId };
+        },
+
+        async completePromotionRecovery(recoveryId: string) {
+            const recovery = await readRecovery(recoveryId);
+            if (recovery === null) {
+                return { status: 'missing' as const, recoveryId, promotedHashes: [] };
+            }
+            if ('status' in recovery) {
+                return recovery;
+            }
+            return completeRecord(recovery);
+        },
+
+        async cancelPromotionRecovery(recoveryId: string) {
+            const recovery = await readRecovery(recoveryId);
+            if (recovery === null) {
+                return { status: 'missing' as const, recoveryId };
+            }
+            if ('status' in recovery) {
+                return recovery;
+            }
+            const deletionFailure = await deleteRecovery(recoveryId);
+            return deletionFailure ?? { status: 'cancelled' as const, recoveryId };
+        },
+
+        async resumePromotionRecoveries() {
+            const database = await records.openDurableAssetDatabase();
+            const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readonly');
+            const completion = records.awaitTransaction(transaction);
+            const values = await records.readIndexedValues(
+                transaction.objectStore(PROMOTION_RECOVERY_STORE),
+                PROMOTION_RECOVERY_OWNER_INDEX,
+                ownerId
+            );
+            await completion;
+            if (values.some((value) => !records.isPromotionRecoveryRecord(value))) {
+                return { status: 'failed' as const, reason: 'corrupt-record' as const };
+            }
+            const promotedHashes = new Set<string>();
+            for (const recovery of values as PromotionRecoveryRecord[]) {
+                const completed = await completeRecord(recovery);
+                if (completed.status === 'failed') {
+                    return completed;
+                }
+                for (const hash of completed.promotedHashes) {
+                    promotedHashes.add(hash);
+                }
+            }
+            return {
+                status: 'resumed' as const,
+                ownerId,
+                recoveryCount: values.length,
+                promotedHashes: [...promotedHashes],
+            };
+        },
+    };
+}

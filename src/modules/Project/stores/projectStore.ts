@@ -392,10 +392,12 @@ export function readSettledProjectId(value: unknown): string | undefined {
     }
     const projectId = get_own_value({ value, key: 'projectId' });
     const migrationPending = get_own_value({ value, key: 'identityMigrationPending' });
+    const initialized = get_own_value({ value, key: 'initialized' });
     if (
         !projectId.found ||
         !isCanonicalProjectId(projectId.value) ||
-        (migrationPending.found && migrationPending.value !== false)
+        (migrationPending.found && migrationPending.value !== false) ||
+        (initialized.found && initialized.value !== true)
     ) {
         return undefined;
     }

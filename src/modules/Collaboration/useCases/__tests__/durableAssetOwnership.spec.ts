@@ -189,6 +189,53 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('carries pre-join project staging through the synchronized host-owner handoff', async () => {
+        const settledOwner = 'project:pre-join-settled';
+        const provisionalOwner = 'collaboration-join:with-prepared-assets';
+        const hostOwner = 'project:host-after-join';
+        const settled = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, settledOwner);
+        const promotedLease = await settled.stageDurableAsset(
+            new Blob(['pre-join-original'], { type: 'audio/wav' }),
+            'pre-join.wav',
+            'asset-stage-pre-join-promote'
+        );
+        const releasedLease = await settled.stageDurableAsset(
+            new Blob(['pre-join-original'], { type: 'audio/wav' }),
+            'pre-join.wav',
+            'asset-stage-pre-join-release'
+        );
+        settled.dispose();
+
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            undefined,
+            { durableStagingReady: false, handoffSourceOwnerIds: [settledOwner] }
+        );
+        // Mirrors AutomergeSync's fenced host-root lifecycle: journal every
+        // captured source at acceptance, persist the root, then commit handoff.
+        await expect(joining.prepareDurableOwnerRebind(hostOwner)).resolves.toMatchObject({ status: 'prepared' });
+        await expect(joining.commitDurableOwnerRebind(hostOwner)).resolves.toMatchObject({ status: 'rebound' });
+        joining.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, hostOwner);
+        await expect(
+            recreated.reopenDurableStagedAsset(promotedLease.leaseId, promotedLease.hash)
+        ).resolves.toMatchObject({ status: 'opened', hash: promotedLease.hash });
+        await expect(
+            recreated.promoteDurableStagedAsset(promotedLease.leaseId, promotedLease.hash)
+        ).resolves.toMatchObject({ status: 'promoted', hash: promotedLease.hash });
+        await expect(
+            recreated.releaseDurableStagedAsset(releasedLease.leaseId, releasedLease.hash)
+        ).resolves.toMatchObject({ status: 'released', hash: releasedLease.hash });
+        await expect(recreated.reopenDurableAsset(promotedLease.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: promotedLease.hash,
+        });
+        recreated.dispose();
+    });
+
     it('resumes a prepared owner handoff after restart before reopening its exact lease', async () => {
         const provisionalOwner = 'collaboration-join:crash-before-handoff-commit';
         const projectOwner = 'project:restart-authoritative';
@@ -320,6 +367,47 @@ describe('durable asset ownership lifecycle', () => {
             reason: 'lease-terminal-conflict',
         });
         await expect(transfer.reopenDurableAsset(staged.hash)).resolves.toMatchObject({ status: 'opened' });
+    });
+
+    it('recovers committed promotion after two failed attempts and transfer recreation', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['committed-recovery'], { type: 'audio/wav' }),
+            'committed-recovery.wav',
+            'asset-stage-committed-recovery'
+        );
+        await transfer.reopenDurableStagedAsset(staged.leaseId, staged.hash);
+        await expect(
+            transfer.prepareDurablePromotionRecovery('stem-promotion:committed-recovery', [
+                { leaseId: staged.leaseId, expectedHash: staged.hash },
+            ])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(
+            createDurableAssetRepository(TEST_OWNER).releaseStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toEqual({ status: 'failed', reason: 'lease-terminal-conflict' });
+        durableAssetIndexedDb.failNextReadwriteTransactions(3);
+
+        await expect(transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash)).rejects.toThrow('aborted');
+        await expect(transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash)).rejects.toThrow('aborted');
+        await expect(transfer.completeDurablePromotionRecovery('stem-promotion:committed-recovery')).rejects.toThrow(
+            'aborted'
+        );
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(1);
+        transfer.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        await expect(recreated.promoteDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'already-promoted',
+            hash: staged.hash,
+        });
+        await expect(
+            recreated.cancelDurablePromotionRecovery('stem-promotion:committed-recovery')
+        ).resolves.toMatchObject({ status: 'missing' });
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
+        recreated.dispose();
     });
 
     it('makes concurrent promotion from two repository owners transactionally idempotent', async () => {

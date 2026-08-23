@@ -145,7 +145,9 @@ const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 
 type PendingActionResourceLease = {
     bytes: number;
+    prepareForCommit?: () => void | Promise<void>;
     release: () => void | Promise<void>;
+    retain?: () => void | Promise<void>;
 };
 
 const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>();
@@ -454,6 +456,11 @@ export function clearPendingActionConfirmations(): void {
     pendingActionConfirmationStore.set({ confirmations: [] });
 }
 
+/** Persist resource recovery ownership before the project command may commit. */
+export async function preparePendingActionResourceLeaseForCommit(confirmationId: string): Promise<void> {
+    await pendingActionResourceLeases.get(confirmationId)?.prepareForCommit?.();
+}
+
 type SettlePendingActionResourceLeaseInput = {
     confirmationId: string;
     disposition: 'discard' | 'retain';
@@ -464,7 +471,17 @@ export async function settlePendingActionResourceLease(input: SettlePendingActio
         await releasePendingActionResourceLease(input.confirmationId);
         return;
     }
-    pendingActionResourceLeases.delete(input.confirmationId);
+    const lease = pendingActionResourceLeases.get(input.confirmationId);
+    if (!lease) {
+        return;
+    }
+    try {
+        await lease.retain?.();
+    } finally {
+        if (pendingActionResourceLeases.get(input.confirmationId) === lease) {
+            pendingActionResourceLeases.delete(input.confirmationId);
+        }
+    }
 }
 
 /** Settle without replacing the caller's primary outcome; failed leases stay registered for retry. */

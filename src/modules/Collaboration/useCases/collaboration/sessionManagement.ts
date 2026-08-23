@@ -466,7 +466,10 @@ function getLocalPeerInfo(): CollaborationPeer {
     };
 }
 
-type InitializeSessionRuntimeOptions = { rebindToSynchronizedOwner?: boolean };
+type InitializeSessionRuntimeOptions = {
+    handoffSourceOwnerIds?: readonly string[];
+    rebindToSynchronizedOwner?: boolean;
+};
 
 function initializeSessionRuntime(
     assetOwnerId: string,
@@ -513,7 +516,10 @@ function initializeSessionRuntime(
         },
         assetOwnerId,
         undefined,
-        { durableStagingReady: options.rebindToSynchronizedOwner !== true }
+        {
+            durableStagingReady: options.rebindToSynchronizedOwner !== true,
+            handoffSourceOwnerIds: options.handoffSourceOwnerIds,
+        }
     );
 
     const assetTransfer = sessionState.assetTransfer;

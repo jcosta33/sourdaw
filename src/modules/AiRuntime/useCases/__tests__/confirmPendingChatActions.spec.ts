@@ -426,12 +426,22 @@ describe('confirmPendingChatActions transaction admission', () => {
             groupLabel: 'Set tempo batch',
             projectRevision,
         };
-        proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch' });
+        const prepareForCommit = vi.fn().mockResolvedValue(undefined);
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockRejectedValue(new Error('promotion remains pending'));
+        proposePendingActionConfirmation({
+            ...proposal,
+            id: 'confirmation-recovery-batch',
+            resourceLease: { bytes: 1, prepareForCommit, release, retain },
+        });
 
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch' })).resolves.toEqual({
             status: 'executed',
         });
         expect(effectAttempts).toBe(2);
+        expect(prepareForCommit).toHaveBeenCalledOnce();
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
 
         proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch-retry' });
         await expect(

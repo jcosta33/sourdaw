@@ -24,6 +24,7 @@ import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistory
 import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
+    preparePendingActionResourceLeaseForCommit,
     recordPendingActionExecution,
     refreshPendingActionConfirmationApproval,
     replacePendingActionExecutions,
@@ -787,6 +788,7 @@ export async function confirmPendingChatActions(
             !hasPriorVerifiedBatchReceipt && approved
                 ? issueAgentCommandApprovalBinding({ approval: approved, commandBatch })
                 : undefined;
+        await preparePendingActionResourceLeaseForCommit(confirmation.id);
         const versionedResult = await executeVersionedCommandBatchEnvelope({
             authority: commandBatch.authority,
             ...(approvalBinding ? { approvalBinding } : {}),

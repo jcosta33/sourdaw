@@ -310,6 +310,8 @@ class FakeObjectStore {
             candidate = value.leaseId;
         } else if (this.storeName === 'ownerHandoffs') {
             candidate = value.previousOwnerId;
+        } else if (this.storeName === 'promotionRecoveries') {
+            candidate = value.recoveryId;
         }
         if (typeof candidate !== 'string') {
             throw new DOMException('The record has no supported key', 'DataError');
@@ -389,7 +391,7 @@ export type FakeDurableAssetIndexedDb = {
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     seedOwnerHandoff: (input: { previousOwnerId: string; nextOwnerId: string }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
-    countRecords: (store: 'assets' | 'leases' | 'ownerHandoffs') => number;
+    countRecords: (store: 'assets' | 'leases' | 'ownerHandoffs' | 'promotionRecoveries') => number;
     failNextReadwriteTransactions: (count: number) => void;
     getFullScanCount: () => number;
 };

@@ -89,6 +89,10 @@ const assetTransferMock = vi.hoisted(() => ({
             onProgress: (hash: string, received: number, total: number) => void;
             onTransferFailed: (hash: string, reason: string) => void;
         };
+        durabilityOptions: {
+            durableStagingReady?: boolean;
+            handoffSourceOwnerIds?: readonly string[];
+        };
     }[],
 }));
 
@@ -201,6 +205,12 @@ vi.mock('../../assetTransfer', () => ({
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
             onTransferFailed: (hash: string, reason: string) => void;
+        },
+        _ownerId: string,
+        _repository: unknown,
+        durabilityOptions: {
+            durableStagingReady?: boolean;
+            handoffSourceOwnerIds?: readonly string[];
         }
     ) {
         const instance = {
@@ -219,6 +229,7 @@ vi.mock('../../assetTransfer', () => ({
                 >()
                 .mockResolvedValue({ status: 'rebound' }),
             options,
+            durabilityOptions,
         };
         assetTransferMock.instances.push(instance);
         return instance;
@@ -431,6 +442,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('rebinds a provisional join owner only after an authoritative host root sync', async () => {
             sessionRuntimePrimitives.initialize('collaboration-join:attempt-1', {
+                handoffSourceOwnerIds: ['project:local-before-sync'],
                 rebindToSynchronizedOwner: true,
             });
             collaborationStore.set(
@@ -451,6 +463,10 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 })
             );
             const assetTransfer = latestAssetTransfer();
+            expect(assetTransfer.durabilityOptions).toEqual({
+                durableStagingReady: false,
+                handoffSourceOwnerIds: ['project:local-before-sync'],
+            });
 
             currentOwnerId = 'project:host-authoritative';
             const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({

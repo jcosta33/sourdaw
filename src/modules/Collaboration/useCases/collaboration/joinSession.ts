@@ -2,11 +2,13 @@ import { createCollaborationError } from '../../errors/CollaborationError';
 import { type SignalingMessage, PEER_COLORS, sanitizePeerName } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
 
+import { collaborationAssetOwnership } from './getCollaborationAssetOwnerId';
 import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function joinSession(inviteString: string, name: string): Promise<string> {
     runtime.cleanup();
+    const settledAssetOwnerId = collaborationAssetOwnership.getOwnerId();
     const joinAttempt = joinAttemptAuthority.begin();
     collaborationStore.set({
         isEnabled: true,
@@ -85,6 +87,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
 
         runtimeStarted = true;
         const peerManager = runtime.initialize(`collaboration-join:${invite.sessionId}:${peerId}:${joinAttempt}`, {
+            handoffSourceOwnerIds: [settledAssetOwnerId],
             rebindToSynchronizedOwner: true,
         });
         runtime.startPlayheadBroadcast();

@@ -4,6 +4,9 @@ import {
     ASSET_STORE,
     LEASE_OWNER_INDEX,
     LEASE_STORE,
+    PROMOTION_RECOVERY_OWNER_INDEX,
+    PROMOTION_RECOVERY_LEASE_INDEX,
+    PROMOTION_RECOVERY_STORE,
     type AssetRecord,
     type LeaseRecord,
 } from './durableAssetIndexedDb';
@@ -64,9 +67,10 @@ async function releaseStagedAssetSet(
     }
 
     const database = await records.openDurableAssetDatabase();
-    const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
+    const transaction = database.transaction([ASSET_STORE, LEASE_STORE, PROMOTION_RECOVERY_STORE], 'readwrite');
     const assetStore = transaction.objectStore(ASSET_STORE);
     const leaseStore = transaction.objectStore(LEASE_STORE);
+    const promotionStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
     const completion = records.awaitTransaction(transaction);
     // Enqueue both reads before yielding. IndexedDB may auto-commit a
     // transaction between promise turns when it has no outstanding requests.
@@ -75,15 +79,44 @@ async function releaseStagedAssetSet(
     const values = await Promise.all([
         ...leaseIds.map((leaseId) => records.readStoredValue(leaseStore, leaseId)),
         ...hashes.map((hash) => records.readStoredValue(assetStore, hash)),
+        ...leaseIds.map((leaseId) =>
+            records.readIndexedValues(promotionStore, PROMOTION_RECOVERY_LEASE_INDEX, leaseId)
+        ),
     ]);
     const leaseValues = values.slice(0, leaseIds.length);
-    const assetValues = values.slice(leaseIds.length);
+    const assetValues = values.slice(leaseIds.length, leaseIds.length + hashes.length);
+    const promotionValues = values.slice(leaseIds.length + hashes.length);
     const leases = new Map(leaseIds.map((leaseId, index) => [leaseId, leaseValues[index]]));
     const assets = new Map(hashes.map((hash, index) => [hash, assetValues[index]]));
     const leaseEntries = [...uniqueBindings.values()].map((binding) => ({
         binding,
         value: leases.get(binding.leaseId),
     }));
+
+    for (const [index, valuesForLease] of promotionValues.entries()) {
+        if (!Array.isArray(valuesForLease)) {
+            return fail('corrupt-record');
+        }
+        const binding = uniqueBindings.get(leaseIds[index]!);
+        if (!binding) {
+            return fail('corrupt-record');
+        }
+        for (const recovery of valuesForLease) {
+            if (
+                !records.isPromotionRecoveryRecord(recovery) ||
+                recovery.ownerId !== ownerId ||
+                !recovery.bindings.some(
+                    (candidate) =>
+                        candidate.leaseId === binding.leaseId && candidate.expectedHash === binding.expectedHash
+                )
+            ) {
+                return fail('corrupt-record');
+            }
+        }
+        if (valuesForLease.length > 0) {
+            return fail('lease-terminal-conflict');
+        }
+    }
 
     async function fail(reason: DurableAssetFailure['reason']): Promise<DurableAssetFailure> {
         transaction.abort();
@@ -220,19 +253,22 @@ export function createDurableAssetOwnershipLifecycle(ownerId: string) {
 
         async releaseOwner() {
             const database = await records.openDurableAssetDatabase();
-            const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
+            const transaction = database.transaction([ASSET_STORE, LEASE_STORE, PROMOTION_RECOVERY_STORE], 'readwrite');
             const completion = records.awaitTransaction(transaction);
             const assetStore = transaction.objectStore(ASSET_STORE);
             const leaseStore = transaction.objectStore(LEASE_STORE);
-            const [ownedValues, leasedValues, leaseValues] = await Promise.all([
+            const promotionStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
+            const [ownedValues, leasedValues, leaseValues, promotionValues] = await Promise.all([
                 records.readIndexedValues(assetStore, ASSET_OWNER_INDEX, ownerId),
                 records.readIndexedValues(assetStore, ASSET_LEASE_OWNER_INDEX, ownerId),
                 records.readIndexedValues(leaseStore, LEASE_OWNER_INDEX, ownerId),
+                records.readIndexedValues(promotionStore, PROMOTION_RECOVERY_OWNER_INDEX, ownerId),
             ]);
             if (
                 ownedValues.some((value) => !records.isAssetRecord(value)) ||
                 leasedValues.some((value) => !records.isAssetRecord(value)) ||
-                leaseValues.some((value) => !records.isLeaseRecord(value))
+                leaseValues.some((value) => !records.isLeaseRecord(value)) ||
+                promotionValues.some((value) => !records.isPromotionRecoveryRecord(value))
             ) {
                 transaction.abort();
                 await completion.catch(() => undefined);
@@ -264,6 +300,14 @@ export function createDurableAssetOwnershipLifecycle(ownerId: string) {
             }
             for (const lease of leaseValues as LeaseRecord[]) {
                 leaseStore.delete(lease.leaseId);
+            }
+            for (const recovery of promotionValues) {
+                if (!records.isPromotionRecoveryRecord(recovery) || recovery.ownerId !== ownerId) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    throw new Error(`Collaboration asset promotion records are corrupt: ${ownerId}`);
+                }
+                promotionStore.delete(recovery.recoveryId);
             }
             await completion;
             for (const hash of releasedHashes) {

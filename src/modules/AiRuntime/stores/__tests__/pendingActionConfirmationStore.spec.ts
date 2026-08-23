@@ -286,4 +286,29 @@ describe('pendingActionConfirmationStore', () => {
         ).resolves.toBeUndefined();
         expect(release).toHaveBeenCalledTimes(2);
     });
+
+    it('hands a committed resource lease to its durable recovery owner before forgetting it', async () => {
+        const release = vi.fn();
+        const retain = vi.fn().mockRejectedValue(new Error('promotion remains pending'));
+        proposePendingActionConfirmation({
+            id: 'confirmation-promotion-recovery',
+            prompt: 'commit prepared stems',
+            assistantMessageId: 'message-promotion-recovery',
+            actions: [{ type: 'createBus', payload: { name: 'Recovery', busId: 'bus-recovery' } }],
+            actionLabels: ['Recovery'],
+            projectRevision: 'revision-promotion-recovery',
+            resourceLease: { bytes: 1, release, retain },
+        });
+
+        await expect(
+            settlePendingActionResourceLeaseBestEffort({
+                confirmationId: 'confirmation-promotion-recovery',
+                disposition: 'retain',
+            })
+        ).resolves.toBeUndefined();
+        clearPendingActionConfirmations();
+
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
+    });
 });
