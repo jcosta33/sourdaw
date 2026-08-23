@@ -1,0 +1,29 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_c572fde38373c1 15,1215-1218,1225-1228,1247-1255
+  s_0a3429e31e555d::t_361252da7d6dd6 1244-1246,1261,1264
+release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt
+  s_0a3429e31e555d::t_c572fde38373c1 1-21
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_9c81fd666aa3db 833
+  s_0a3429e31e555d::t_9ed41a6e57860f 731,739,748
+  s_0a3429e31e555d::t_361252da7d6dd6 747
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_361252da7d6dd6 905
+  s_0a3429e31e555d::t_c572fde38373c1 83,86,889,897,906,926-931
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "b8eb1c8de51fa3b8d44f4bad73a1e7a6a99534ac",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
