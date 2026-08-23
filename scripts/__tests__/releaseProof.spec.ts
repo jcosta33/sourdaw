@@ -1,13 +1,27 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from '../electronRuntimeContract';
-import { ELECTRON_FFMPEG_BUILD_INPUTS, assembleReleaseProof, validateReleaseProof } from '../releaseProof';
+import {
+    ELECTRON_FFMPEG_BUILD_INPUTS,
+    assembleReleaseProof,
+    type ReleaseBuildRunner,
+    validateReleaseProof,
+} from '../releaseProof';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const fixtureRoots: string[] = [];
@@ -18,12 +32,17 @@ type Fixture = {
     base: string;
     root: string;
     candidate: string;
-    webDist: string;
-    desktopArtifact: string;
     electronSource: string;
     ffmpegSource: string;
     contract: ElectronRuntimeContract;
     revision: string;
+    desktopOptions: DesktopOptions;
+};
+
+type DesktopOptions = {
+    arch?: 'arm64' | 'x64';
+    appName?: string;
+    artifactName?: string;
 };
 
 function hash(path: string): string {
@@ -110,10 +129,7 @@ function arm64MachO(arch: 'arm64' | 'x64'): Buffer {
     return value;
 }
 
-function createDesktopZip(
-    fixture: Omit<Fixture, 'desktopArtifact' | 'revision'>,
-    options: { arch?: 'arm64' | 'x64'; appName?: string } = {}
-): string {
+function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: DesktopOptions = {}): string {
     const appName = options.appName ?? 'Sourdaw.app';
     const packageRoot = join(fixture.base, 'desktop-package');
     const appRoot = join(packageRoot, appName);
@@ -140,12 +156,13 @@ function createDesktopZip(
     for (const path of ['ELECTRON-SOURCES.json', 'RELINKING.md', 'THIRD-PARTY-NOTICES.md']) {
         write(join(resources, `legal/${path}`), readFileSync(join(fixture.root, 'public/legal', path)));
     }
-    const archive = join(fixture.base, 'Sourdaw-1.0.0-mac-arm64.zip');
+    mkdirSync(archiveDirectory, { recursive: true });
+    const archive = join(archiveDirectory, options.artifactName ?? 'Sourdaw-1.0.0-mac-arm64.zip');
     execFileSync('zip', ['-X', '-q', '-r', archive, appName], { cwd: packageRoot });
     return archive;
 }
 
-function createFixture(options: { arch?: 'arm64' | 'x64'; appName?: string } = {}): Fixture {
+function createFixture(options: DesktopOptions = {}): Fixture {
     const base = mkdtempSync(join(workspaceRoot, 'release-proof-fixture-'));
     fixtureRoots.push(base);
 
@@ -182,6 +199,10 @@ function createFixture(options: { arch?: 'arm64' | 'x64'; appName?: string } = {
     write(join(root, 'public/legal/DEPENDENCY-LICENSES.txt'), 'fixture dependency licenses');
     write(join(root, 'public/legal/SOURDAW-NOTICE.txt'), 'fixture Sourdaw notice');
     write(join(root, 'package.json'), '{}\n');
+    write(
+        join(root, '.gitignore'),
+        'dist/\nelectron/out/\nrelease/desktop/\n/crates/sourdaw-native/*.node\n/crates/sourdaw-native/*.dylib\n'
+    );
     write(join(root, 'LICENSE'), 'fixture license\n');
     write(join(root, 'NOTICE'), 'fixture notice\n');
     writeJson(join(root, 'release/open-source-inventory.json'), {});
@@ -202,35 +223,45 @@ function createFixture(options: { arch?: 'arm64' | 'x64'; appName?: string } = {
     execFileSync('git', ['remote', 'add', 'origin', 'https://example.test/sourdaw/sourdaw'], { cwd: root });
     const revision = commit(root, 'fixture release');
 
-    const webDist = join(base, 'web-dist');
-    write(join(webDist, 'index.html'), '<!doctype html>');
-    write(join(webDist, 'assets/app.js'), 'console.log("fixture");');
-    for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'THIRD-PARTY-NOTICES.md']) {
-        write(join(webDist, `legal/${path}`), readFileSync(join(root, 'public/legal', path)));
-    }
-
-    const fixtureWithoutArtifact = {
+    return {
         base,
         root,
         candidate: join(base, 'candidate'),
-        webDist,
         electronSource,
         ffmpegSource,
         contract,
+        revision,
+        desktopOptions: options,
     };
-    const desktopArtifact = createDesktopZip(fixtureWithoutArtifact, options);
-    return { ...fixtureWithoutArtifact, desktopArtifact, revision };
 }
 
-function assemble(fixture: Fixture): void {
+function writeWebBuild(fixture: Fixture, marker = 'current'): void {
+    const webDist = join(fixture.root, 'dist');
+    write(join(webDist, 'index.html'), `<!doctype html><title>${marker}</title>`);
+    write(join(webDist, 'assets/app.js'), `console.log("${marker}");`);
+    for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'THIRD-PARTY-NOTICES.md']) {
+        write(join(webDist, `legal/${path}`), readFileSync(join(fixture.root, 'public/legal', path)));
+    }
+}
+
+function fixtureBuildRunner(fixture: Fixture): ReleaseBuildRunner {
+    return (phase) => {
+        if (phase === 'web') {
+            writeWebBuild(fixture);
+            return;
+        }
+        createDesktopZip(fixture, join(fixture.root, 'release/desktop'), fixture.desktopOptions);
+    };
+}
+
+function assemble(fixture: Fixture, buildRunner: ReleaseBuildRunner = fixtureBuildRunner(fixture)): void {
     assembleReleaseProof(
         fixture.root,
         fixture.candidate,
-        fixture.webDist,
-        fixture.desktopArtifact,
         fixture.electronSource,
         fixture.ffmpegSource,
-        fixture.contract
+        fixture.contract,
+        buildRunner
     );
 }
 
@@ -282,8 +313,14 @@ describe('release proof', () => {
 
     it('rejects random bytes renamed as a desktop ZIP', () => {
         const fixture = createFixture();
-        write(fixture.desktopArtifact, 'not a ZIP');
-        expect(() => assemble(fixture)).toThrow(/zip archive is unreadable|desktop archive/u);
+        const runner: ReleaseBuildRunner = (phase) => {
+            if (phase === 'web') {
+                writeWebBuild(fixture);
+                return;
+            }
+            write(join(fixture.root, 'release/desktop/Sourdaw-1.0.0-mac-arm64.zip'), 'not a ZIP');
+        };
+        expect(() => assemble(fixture, runner)).toThrow(/zip archive is unreadable|desktop archive/u);
     });
 
     it('rejects a desktop census not derived from the packaged archive', () => {
@@ -342,6 +379,101 @@ describe('release proof', () => {
     ])('rejects a desktop ZIP with %s', (_label, options, message) => {
         const fixture = createFixture(options);
         expect(() => assemble(fixture)).toThrow(message);
+    });
+
+    it('clears foreign ignored outputs and snapshots only the sequential builds', () => {
+        const fixture = createFixture();
+        write(join(fixture.root, 'dist/index.html'), 'foreign web output');
+        write(join(fixture.root, 'release/desktop/Sourdaw-foreign-mac-arm64.zip'), 'foreign desktop output');
+        const phases: string[] = [];
+        const runner: ReleaseBuildRunner = (phase) => {
+            phases.push(phase);
+            if (phase === 'web') {
+                expect(existsSync(join(fixture.root, 'dist/index.html'))).toBe(false);
+                writeWebBuild(fixture, 'fresh-web');
+                return;
+            }
+            expect(existsSync(join(fixture.root, 'dist'))).toBe(false);
+            expect(existsSync(join(fixture.root, 'release/desktop'))).toBe(false);
+            createDesktopZip(fixture, join(fixture.root, 'release/desktop'));
+        };
+        assemble(fixture, runner);
+        expect(phases).toEqual(['web', 'desktop']);
+        expect(readFileSync(join(fixture.candidate, 'web/contents/index.html'), 'utf8')).toContain('fresh-web');
+        expect(readFileSync(join(fixture.candidate, 'release-proof.json'), 'utf8')).not.toContain('foreign');
+    });
+
+    it.each([
+        ['zero ZIPs', 'zero', /no release directory|exactly one new ZIP/u],
+        ['multiple ZIPs', 'multiple', /exactly one new ZIP/u],
+        ['a wrongly named ZIP', 'wrong', /wrong macOS arm64 identity/u],
+    ])('rejects a desktop build producing %s', (_label, result, message) => {
+        const fixture = createFixture();
+        const runner: ReleaseBuildRunner = (phase) => {
+            if (phase === 'web') {
+                writeWebBuild(fixture);
+                return;
+            }
+            if (result === 'multiple') {
+                createDesktopZip(fixture, join(fixture.root, 'release/desktop'));
+                createDesktopZip(fixture, join(fixture.root, 'release/desktop'), {
+                    artifactName: 'Sourdaw-2.0.0-mac-arm64.zip',
+                });
+            } else if (result === 'wrong') {
+                createDesktopZip(fixture, join(fixture.root, 'release/desktop'), {
+                    artifactName: 'Foreign-1.0.0-mac-arm64.zip',
+                });
+            }
+        };
+        expect(() => assemble(fixture, runner)).toThrow(message);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('rejects tracked source changes made by a build and leaves no partial candidate', () => {
+        const fixture = createFixture();
+        const runner: ReleaseBuildRunner = (phase) => {
+            if (phase === 'web') {
+                writeWebBuild(fixture);
+                write(join(fixture.root, 'package.json'), '{"changed":true}\n');
+            }
+        };
+        expect(() => assemble(fixture, runner)).toThrow('release build changed tracked source files');
+        expect(existsSync(fixture.candidate)).toBe(false);
+        expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.tmp-'))).toBe(false);
+    });
+
+    it('rejects unreferenced files outside the closed candidate census', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        write(join(fixture.candidate, 'desktop/stale-output.zip'), 'stale');
+        expect(validate(fixture)).toContain('release candidate file census contains missing or unreferenced files');
+    });
+
+    it('rejects build tree claims not derived from pinned commit objects', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const path = join(fixture.candidate, 'desktop/ffmpeg-build-material.json');
+        const material = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+        (material.electron as Record<string, unknown>).treeSha1 = '0'.repeat(40);
+        writeJson(path, material);
+        refreshProofHash(fixture, 'ffmpegBuildSha256', 'desktop/ffmpeg-build-material.json');
+        expect(validate(fixture)).toContain('was not generated from the pinned Electron and FFmpeg sources');
+    });
+
+    it('rejects a runtime source archive under an unpinned basename', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const value = proof(fixture);
+        const desktop = desktopProof(value);
+        const oldPath = desktop.electronSourcePath as string;
+        const newPath = 'desktop/caller-electron-source.tar.gz';
+        write(join(fixture.candidate, newPath), readFileSync(join(fixture.candidate, oldPath)));
+        rmSync(join(fixture.candidate, oldPath));
+        desktop.electronSourcePath = newPath;
+        writeJson(join(fixture.candidate, 'release-proof.json'), value);
+        expect(validate(fixture)).toContain(
+            `desktop material basename must be electron-${fixture.contract.revision}.tar.gz`
+        );
     });
 
     it('accepts a complete candidate assembled from the exact artifacts and Git commits', () => {

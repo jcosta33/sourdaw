@@ -12,6 +12,7 @@ import {
     openSync,
     readFileSync,
     readdirSync,
+    renameSync,
     rmSync,
     statSync,
     utimesSync,
@@ -81,10 +82,12 @@ export type ReleaseProofOptions = {
 };
 
 type GitIdentity = {
-    revision: string;
     tree: string;
     commitObject: Buffer;
 };
+
+export type ReleaseBuildPhase = 'web' | 'desktop';
+export type ReleaseBuildRunner = (phase: ReleaseBuildPhase, root: string) => void;
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -712,6 +715,14 @@ function validateBuildMaterial(
     },
     errors: string[]
 ): void {
+    const electronTree =
+        paths.electronCommit === undefined
+            ? undefined
+            : commitTree(readFileSync(paths.electronCommit), runtimeContract.revision, 'Electron source', errors);
+    const ffmpegTree =
+        paths.ffmpegCommit === undefined
+            ? undefined
+            : commitTree(readFileSync(paths.ffmpegCommit), runtimeContract.ffmpeg.revision, 'FFmpeg source', errors);
     if (paths.electronArchive !== undefined && paths.electronCommit !== undefined) {
         validateGitArchive(
             paths.electronArchive,
@@ -751,10 +762,12 @@ function validateBuildMaterial(
         build.arch !== 'arm64' ||
         electron?.repository !== runtimeContract.repository ||
         electron.revision !== runtimeContract.revision ||
+        electron.treeSha1 !== electronTree ||
         electron.sourceArchiveSha256 !== desktop.electronSourceSha256 ||
         electron.commitObjectSha256 !== desktop.electronCommitSha256 ||
         ffmpeg?.repository !== runtimeContract.ffmpeg.repository ||
         ffmpeg.revision !== runtimeContract.ffmpeg.revision ||
+        ffmpeg.treeSha1 !== ffmpegTree ||
         ffmpeg.sourceArchiveSha256 !== desktop.ffmpegSourceSha256 ||
         ffmpeg.commitObjectSha256 !== desktop.ffmpegCommitSha256 ||
         commands?.configure !== ELECTRON_CONFIGURE_COMMAND ||
@@ -800,6 +813,22 @@ function validateDesktop(
     }
     if (desktop.platform !== 'darwin' || desktop.arch !== 'arm64') {
         errors.push('desktop proof must target darwin arm64');
+    }
+    const materialNames = [
+        [desktop.runtimeManifestPath, 'ELECTRON-SOURCES.json'],
+        [desktop.electronSourcePath, `electron-${runtimeContract.revision}.tar.gz`],
+        [desktop.electronCommitPath, `electron-${runtimeContract.revision}.commit`],
+        [desktop.ffmpegSourcePath, `ffmpeg-${runtimeContract.ffmpeg.revision}.tar.gz`],
+        [desktop.ffmpegCommitPath, `ffmpeg-${runtimeContract.ffmpeg.revision}.commit`],
+        [desktop.ffmpegBuildPath, 'ffmpeg-build-material.json'],
+    ] as const;
+    for (const [path, expectedName] of materialNames) {
+        if (typeof path !== 'string' || basename(path) !== expectedName) {
+            errors.push(`desktop material basename must be ${expectedName}`);
+        }
+    }
+    if (desktop.buildInputsPath !== 'desktop/build-inputs/electron') {
+        errors.push('desktop build input adjacency path drifted');
     }
     const artifactPath = verifyFileHash(
         candidate,
@@ -931,6 +960,63 @@ function validateDesktop(
     );
 }
 
+function addCensusPath(value: unknown, label: string, expected: Set<string>, errors: string[]): void {
+    const path = safeRelativePath(value, label, errors);
+    if (path !== undefined) {
+        expected.add(path);
+    }
+}
+
+function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: string[]): void {
+    const expected = new Set<string>([PROOF_FILE]);
+    const source = isRecord(proof.source) ? proof.source : undefined;
+    const web = isRecord(proof.web) ? proof.web : undefined;
+    const desktop = isRecord(proof.desktop) ? proof.desktop : undefined;
+    for (const [value, label] of [
+        [source?.archivePath, 'source.archivePath'],
+        [source?.manifestPath, 'source.manifestPath'],
+        [source?.commitPath, 'source.commitPath'],
+        [web?.archivePath, 'web.archivePath'],
+        [web?.manifestPath, 'web.manifestPath'],
+        [desktop?.artifactPath, 'desktop.artifactPath'],
+        [desktop?.contentsManifestPath, 'desktop.contentsManifestPath'],
+        [desktop?.runtimeManifestPath, 'desktop.runtimeManifestPath'],
+        [desktop?.electronSourcePath, 'desktop.electronSourcePath'],
+        [desktop?.electronCommitPath, 'desktop.electronCommitPath'],
+        [desktop?.ffmpegSourcePath, 'desktop.ffmpegSourcePath'],
+        [desktop?.ffmpegCommitPath, 'desktop.ffmpegCommitPath'],
+        [desktop?.ffmpegBuildPath, 'desktop.ffmpegBuildPath'],
+    ] as const) {
+        addCensusPath(value, label, expected, errors);
+    }
+
+    const webContents = safeRelativePath(web?.contentsPath, 'web.contentsPath', errors);
+    const webManifest = candidatePath(candidate, web?.manifestPath, 'web.manifestPath', errors);
+    if (webContents !== undefined && webManifest !== undefined && existsSync(webManifest)) {
+        const manifest = readJsonForValidation(webManifest, 'web manifest census', errors);
+        const files = manifest === undefined ? {} : stringMap(manifest.files, 'web manifest census.files', errors);
+        for (const path of Object.keys(files)) {
+            expected.add(posix.join(webContents, path));
+        }
+    }
+
+    const buildInputs = safeRelativePath(desktop?.buildInputsPath, 'desktop.buildInputsPath', errors);
+    const buildManifest = candidatePath(candidate, desktop?.ffmpegBuildPath, 'desktop.ffmpegBuildPath', errors);
+    if (buildInputs !== undefined && buildManifest !== undefined && existsSync(buildManifest)) {
+        const manifest = readJsonForValidation(buildManifest, 'FFmpeg build census', errors);
+        const files =
+            manifest === undefined ? {} : stringMap(manifest.buildInputs, 'FFmpeg build census.inputs', errors);
+        for (const path of Object.keys(files)) {
+            expected.add(posix.join(buildInputs, path));
+        }
+    }
+
+    const actual = listFiles(candidate, 'release candidate', errors);
+    if (!sameValue(actual, [...expected].sort())) {
+        errors.push('release candidate file census contains missing or unreferenced files');
+    }
+}
+
 export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     const errors: string[] = [];
     const runtimeContract = options.runtimeContract ?? ELECTRON_RUNTIME_CONTRACT;
@@ -977,6 +1063,7 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     validateSourceManifest(options.candidate, proof, options.expectedRevision, errors);
     validateWebManifest(options.root, options.candidate, proof, options.expectedRevision, errors);
     validateDesktop(options.root, options.candidate, proof, options.expectedRevision, errors, runtimeContract);
+    validateCandidateCensus(options.candidate, proof, errors);
     return errors;
 }
 
@@ -1026,7 +1113,7 @@ function verifyGitCheckout(checkout: string, repository: string, revision: strin
     if (gitObjectId('commit', commitObject) !== revision) {
         throw new Error(`${label} commit object is invalid`);
     }
-    return { revision, tree, commitObject };
+    return { tree, commitObject };
 }
 
 function createGitArchive(checkout: string, revision: string, prefix: string, output: string): void {
@@ -1097,14 +1184,80 @@ function argument(args: readonly string[], name: string): string {
     return value;
 }
 
+function assertBuildState(root: string, revision: string): void {
+    if (gitRevision(root) !== revision) {
+        throw new Error('release build changed the candidate Git revision');
+    }
+    const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+        cwd: root,
+        encoding: 'utf8',
+    });
+    if (status.trim() !== '') {
+        throw new Error('release build changed tracked source files');
+    }
+}
+
+function removeIgnoredOutput(root: string, path: string): void {
+    const ignorePath = extname(path) === '' ? `${path}/` : path;
+    const ignored = spawnSync('git', ['check-ignore', '--no-index', '--quiet', '--', ignorePath], { cwd: root });
+    if (ignored.status !== 0) {
+        throw new Error(`refusing to clear non-ignored build output ${path}`);
+    }
+    rmSync(resolve(root, ...path.split('/')), { recursive: true, force: true });
+}
+
+function clearWebBuildOutputs(root: string): void {
+    removeIgnoredOutput(root, 'dist');
+}
+
+function clearDesktopBuildOutputs(root: string): void {
+    for (const path of ['dist', 'electron/out', 'release/desktop']) {
+        removeIgnoredOutput(root, path);
+    }
+    const nativeRoot = resolve(root, 'crates/sourdaw-native');
+    if (!existsSync(nativeRoot)) {
+        return;
+    }
+    for (const entry of readdirSync(nativeRoot, { withFileTypes: true })) {
+        if (entry.isFile() && /\.(?:dylib|node)$/u.test(entry.name)) {
+            removeIgnoredOutput(root, `crates/sourdaw-native/${entry.name}`);
+        }
+    }
+}
+
+function runProjectBuild(phase: ReleaseBuildPhase, root: string): void {
+    execFileSync('pnpm', [phase === 'web' ? 'build' : 'desktop:build'], { cwd: root, stdio: 'inherit' });
+}
+
+function selectDesktopArtifact(root: string): string {
+    const directory = resolve(root, 'release/desktop');
+    if (!existsSync(directory) || !statSync(directory).isDirectory()) {
+        throw new Error('desktop build produced no release directory');
+    }
+    const zipFiles = readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && extname(entry.name).toLowerCase() === '.zip')
+        .map((entry) => entry.name)
+        .sort();
+    if (zipFiles.length !== 1) {
+        throw new Error('desktop build must produce exactly one new ZIP artifact');
+    }
+    const artifactName = zipFiles[0];
+    if (artifactName === undefined) {
+        throw new Error('desktop build must produce exactly one new ZIP artifact');
+    }
+    if (!/^Sourdaw(?:-.+)?-mac-arm64\.zip$/u.test(artifactName)) {
+        throw new Error('desktop build produced a ZIP with the wrong macOS arm64 identity');
+    }
+    return join(directory, artifactName);
+}
+
 export function assembleReleaseProof(
     root: string,
     output: string,
-    webDist: string,
-    desktopArtifact: string,
     electronSource: string,
     ffmpegSource: string,
-    runtimeContract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT
+    runtimeContract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT,
+    buildRunner: ReleaseBuildRunner = runProjectBuild
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
@@ -1126,32 +1279,62 @@ export function assembleReleaseProof(
         runtimeContract.ffmpeg.revision,
         'FFmpeg source'
     );
-    if (!existsSync(webDist) || !statSync(webDist).isDirectory()) {
-        throw new Error('web dist directory is missing');
+    if (existsSync(output)) {
+        throw new Error('assembly output must not already exist');
     }
-    if (!existsSync(desktopArtifact) || !statSync(desktopArtifact).isFile()) {
-        throw new Error('desktop artifact is missing');
-    }
-    if (
-        extname(desktopArtifact).toLowerCase() !== '.zip' ||
-        !/^Sourdaw(?:-.+)?-mac-arm64\.zip$/u.test(basename(desktopArtifact))
-    ) {
-        throw new Error('desktop artifact must be a Sourdaw macOS arm64 ZIP');
-    }
-    const desktop = desktopSnapshot(desktopArtifact);
-    if (existsSync(output) && readdirSync(output).length > 0) {
-        throw new Error('assembly output must be empty');
-    }
-    mkdirSync(output, { recursive: true });
+    mkdirSync(dirname(output), { recursive: true });
+    const candidate = mkdtempSync(join(dirname(output), `.${basename(output)}.tmp-`));
     try {
-        const sourceDir = join(output, 'source');
-        const webDir = join(output, 'web');
+        const sourceDir = join(candidate, 'source');
+        const webDir = join(candidate, 'web');
         const webContents = join(webDir, 'contents');
-        const desktopDir = join(output, 'desktop');
+        const desktopDir = join(candidate, 'desktop');
         const buildInputsDir = join(desktopDir, 'build-inputs/electron');
         mkdirSync(sourceDir, { recursive: true });
         mkdirSync(webContents, { recursive: true });
         mkdirSync(buildInputsDir, { recursive: true });
+
+        clearWebBuildOutputs(root);
+        buildRunner('web', root);
+        assertBuildState(root, revision);
+        const webDist = resolve(root, 'dist');
+        if (!existsSync(webDist) || !statSync(webDist).isDirectory()) {
+            throw new Error('web build produced no dist directory');
+        }
+        copyDirectory(webDist, webContents);
+        const webManifest = join(webContents, 'web-artifact-manifest.json');
+        writeJson(webManifest, {
+            schemaVersion: SCHEMA_VERSION,
+            artifact: 'web',
+            sourceRevision: revision,
+            buildCommand: 'pnpm build',
+            files: fileMap(webContents),
+        });
+        const webArchive = join(webDir, 'sourdaw-web.zip');
+        createDeterministicWebArchive(webContents, webArchive);
+
+        clearDesktopBuildOutputs(root);
+        buildRunner('desktop', root);
+        assertBuildState(root, revision);
+        const desktopArtifact = selectDesktopArtifact(root);
+        const artifactName = basename(desktopArtifact);
+        const desktopArtifactOut = join(desktopDir, artifactName);
+        cpSync(desktopArtifact, desktopArtifactOut);
+        const desktop = desktopSnapshot(desktopArtifactOut);
+        const runtimeManifest = join(desktopDir, 'ELECTRON-SOURCES.json');
+        cpSync(resolve(root, 'public/legal/ELECTRON-SOURCES.json'), runtimeManifest);
+        const contentsManifest = join(desktopDir, 'desktop-contents-manifest.json');
+        writeJson(contentsManifest, {
+            schemaVersion: SCHEMA_VERSION,
+            artifact: 'desktop-contents',
+            sourceRevision: revision,
+            archiveSha256: desktop.archiveSha256,
+            resourceRoot: DESKTOP_RESOURCE_ROOT,
+            executablePath: DESKTOP_EXECUTABLE,
+            frameworkExecutablePath: DESKTOP_FRAMEWORK_EXECUTABLE,
+            nativeAddonPath: DESKTOP_NATIVE_ADDON,
+            files: desktop.files,
+        });
 
         const sourceArchive = join(sourceDir, `sourdaw-${revision}.tar.gz`);
         const sourceCommit = join(sourceDir, `sourdaw-${revision}.commit`);
@@ -1166,36 +1349,6 @@ export function assembleReleaseProof(
             treeSha1: sourceIdentity.tree,
             archiveSha256: sha256File(sourceArchive),
             commitObjectSha256: sha256File(sourceCommit),
-        });
-
-        copyDirectory(webDist, webContents);
-        const webManifest = join(webContents, 'web-artifact-manifest.json');
-        writeJson(webManifest, {
-            schemaVersion: SCHEMA_VERSION,
-            artifact: 'web',
-            sourceRevision: revision,
-            buildCommand: 'pnpm build',
-            files: fileMap(webContents),
-        });
-        const webArchive = join(webDir, 'sourdaw-web.zip');
-        createDeterministicWebArchive(webContents, webArchive);
-
-        const artifactName = basename(desktopArtifact);
-        const desktopArtifactOut = join(desktopDir, artifactName);
-        cpSync(desktopArtifact, desktopArtifactOut);
-        const runtimeManifest = join(desktopDir, 'ELECTRON-SOURCES.json');
-        cpSync(resolve(root, 'public/legal/ELECTRON-SOURCES.json'), runtimeManifest);
-        const contentsManifest = join(desktopDir, 'desktop-contents-manifest.json');
-        writeJson(contentsManifest, {
-            schemaVersion: SCHEMA_VERSION,
-            artifact: 'desktop-contents',
-            sourceRevision: revision,
-            archiveSha256: desktop.archiveSha256,
-            resourceRoot: DESKTOP_RESOURCE_ROOT,
-            executablePath: DESKTOP_EXECUTABLE,
-            frameworkExecutablePath: DESKTOP_FRAMEWORK_EXECUTABLE,
-            nativeAddonPath: DESKTOP_NATIVE_ADDON,
-            files: desktop.files,
         });
 
         const electronArchive = join(desktopDir, `electron-${runtimeContract.revision}.tar.gz`);
@@ -1280,13 +1433,15 @@ export function assembleReleaseProof(
                 buildInputsPath: 'desktop/build-inputs/electron',
             },
         };
-        writeJson(join(output, PROOF_FILE), proof);
-        const errors = validateReleaseProof({ root, candidate: output, expectedRevision: revision, runtimeContract });
+        writeJson(join(candidate, PROOF_FILE), proof);
+        const errors = validateReleaseProof({ root, candidate, expectedRevision: revision, runtimeContract });
         if (errors.length > 0) {
             throw new Error(errors.join('\n'));
         }
+        assertBuildState(root, revision);
+        renameSync(candidate, output);
     } catch (error) {
-        rmSync(output, { recursive: true, force: true });
+        rmSync(candidate, { recursive: true, force: true });
         throw error;
     }
 }
@@ -1308,8 +1463,6 @@ function main(args: readonly string[]): void {
         assembleReleaseProof(
             root,
             resolve(argument(args, '--output')),
-            resolve(argument(args, '--web-dist')),
-            resolve(argument(args, '--desktop-artifact')),
             resolve(argument(args, '--electron-source')),
             resolve(argument(args, '--ffmpeg-source'))
         );
