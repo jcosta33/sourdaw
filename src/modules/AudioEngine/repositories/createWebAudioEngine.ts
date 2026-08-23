@@ -410,6 +410,7 @@ class AudioEngineImpl implements AudioEngine {
                 providedContext ??
                 new AudioContext({
                     latencyHint: this.latencyHint ?? getAudioContextLatencyHint(DEFAULT_AUDIO_LATENCY_PROFILE),
+                    sampleRate: 48_000,
                 });
             this.masterGainNode = this.context.createGain();
             this.masterGainNode.gain.value = 0.8;

@@ -2,7 +2,7 @@
 type: adr
 id: 0030
 title: Exact model artifacts require release admission
-status: accepted
+status: partially superseded by 0035 (DDSP checkpoints only)
 date: 2026-08-17
 owner: The Sourdaw team
 sources:
@@ -18,6 +18,9 @@ sources:
 ---
 
 # 0030 — Exact model artifacts require release admission
+
+> **Partially superseded by ADR 0035.** The DDSP checkpoint row and its DDSP-specific consequences
+> are superseded. The exact-artifact admission rule and every other stack decision remain accepted.
 
 **Accepted 2026-08-17.** This narrows ADR 0016: browser-capable model features still require exact
 artifact admission. Browser WebLLM architecture remains, but its quantized artifacts are withheld.

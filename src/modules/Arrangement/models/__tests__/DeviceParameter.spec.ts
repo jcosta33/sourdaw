@@ -25,8 +25,8 @@ describe('isDeviceSupportedOnCurrentPlatform', () => {
         expect(isDeviceSupportedOnCurrentPlatform(first.id)).toBe(true);
     });
 
-    it('withholds devices that have not passed release admission', () => {
-        expect(isDeviceSupportedOnCurrentPlatform('grand-boule')).toBe(false);
+    it('supports Grand Boule after release admission', () => {
+        expect(isDeviceSupportedOnCurrentPlatform('grand-boule')).toBe(true);
     });
 
     it('reports a built-in plugin as supported when running under the native desktop runtime', () => {
@@ -43,11 +43,11 @@ describe('isDeviceSupportedOnCurrentPlatform', () => {
         }
     });
 
-    it('does not let the desktop runtime bypass release admission', () => {
+    it('keeps admitted Grand Boule supported in the desktop runtime', () => {
         (window as unknown as { sourdaw?: unknown }).sourdaw = {};
 
         try {
-            expect(isDeviceSupportedOnCurrentPlatform('grand-boule')).toBe(false);
+            expect(isDeviceSupportedOnCurrentPlatform('grand-boule')).toBe(true);
         } finally {
             delete (window as unknown as { sourdaw?: unknown }).sourdaw;
         }

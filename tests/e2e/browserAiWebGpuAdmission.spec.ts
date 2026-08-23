@@ -103,7 +103,7 @@ test('renders an exact-duration DDSP preview from verified OPFS artifacts with h
         contentType: 'application/json',
     });
 
-    expect(rendered).toMatchObject({ admissionWithheld: true, backend: 'webgpu', finite: true });
+    expect(rendered).toMatchObject({ admissionWithheld: false, backend: 'webgpu', finite: true });
     expect(rendered.peak).toBeGreaterThan(0);
     expect(rendered.peak).toBeLessThanOrEqual(1);
     expect(rendered.pcmLength).toBe(Math.round(0.503 * 44_100));

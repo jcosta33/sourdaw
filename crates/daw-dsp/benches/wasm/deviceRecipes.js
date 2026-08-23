@@ -52,6 +52,7 @@ export const DEVICE_IDS = [
     'fermenter_automation_90',
     'fermenter_automation_105',
     'fermenter_automation_1050',
+    'grand_boule',
     'grand_boule_ring_consumer',
     'toaster',
     'levain',
@@ -64,9 +65,9 @@ export const DEVICE_IDS = [
 /**
  * Where a row's cost is actually charged.
  *
- * Grand Boule DSP is absent because the complete Rust module is gated out of
- * wasm32. Its preserved ring consumer remains a host-only audio-thread row and
- * constructs no DSP instance.
+ * Grand Boule renders on its live Worker. The harness times the same DSP kernel
+ * here and assigns the row to that production cost site. Its audio-thread work
+ * is measured separately by the ring-consumer row.
  *
  * `offline` marks a figure that exists only in an `OfflineAudioContext` render
  * — bounce and export, where there is no deadline at all.
@@ -84,6 +85,7 @@ export const COST_SITE = {
     fermenter_automation_90: 'audio-thread',
     fermenter_automation_105: 'audio-thread',
     fermenter_automation_1050: 'audio-thread',
+    grand_boule: 'worker',
     grand_boule_ring_consumer: 'audio-thread',
     toaster: 'audio-thread',
     levain: 'audio-thread',
@@ -156,10 +158,8 @@ export function spreadNotes(count) {
  * Quanta between re-strikes for a device whose voices decay. 375 is one second
  * of audio.
  *
- * The Toaster row needs it: over the 53 s a row is timed for, 16 struck pads
- * decay to exact zero. Held-and-forgotten, they report the cost of an
- * instrument that has stopped making sound. Re-striking keeps the measured
- * state representative of production use.
+ * Grand Boule and Toaster decay during the timed run. Re-striking keeps both
+ * rows audible instead of measuring instruments that have stopped sounding.
  */
 export const RESTRIKE_INTERVAL_QUANTA = 375;
 
@@ -203,9 +203,8 @@ export function buildDevices({
     const devices = [];
     /**
      * Constructing a device allocates: Levain and Crumbs each load a one-second
-     * sample. When the worklet is measuring one row it builds only that row, so
-     * an unrelated device's setup cost and heap residency never land in someone
-     * else's figure.
+     * sample, and Grand Boule builds 64 physical-model voices. When the worklet
+     * measures one row, it builds only that row.
      */
     const wanted = (id) => only === undefined || only === id;
 
@@ -771,19 +770,13 @@ export function buildDevices({
     };
 
     if (wanted('fermenter_automation_16')) {
-        devices.push(
-            automatedFermenter({ id: 'fermenter_automation_16', scheduleCount: 16 })
-        );
+        devices.push(automatedFermenter({ id: 'fermenter_automation_16', scheduleCount: 16 }));
     }
     if (wanted('fermenter_automation_90')) {
-        devices.push(
-            automatedFermenter({ id: 'fermenter_automation_90', scheduleCount: 90 })
-        );
+        devices.push(automatedFermenter({ id: 'fermenter_automation_90', scheduleCount: 90 }));
     }
     if (wanted('fermenter_automation_105')) {
-        devices.push(
-            automatedFermenter({ id: 'fermenter_automation_105', scheduleCount: 105 })
-        );
+        devices.push(automatedFermenter({ id: 'fermenter_automation_105', scheduleCount: 105 }));
     }
     // An amplifier, not a product configuration. Fermenter cannot have 1050
     // automatable parameters and this row does not claim it can.
@@ -804,14 +797,38 @@ export function buildDevices({
     // of them fit, so per-schedule cost here can only be dearer than in the
     // configuration being decided about.
     if (wanted('fermenter_automation_1050')) {
+        devices.push(automatedFermenter({ id: 'fermenter_automation_1050', scheduleCount: 1050 }));
+    }
+
+    // -- Grand Boule — physical-model grand piano --------------------------
+    if (wanted('grand_boule')) {
+        const struck = 64;
+        const notes = spreadNotes(struck);
+        const instance = new dsp.GrandBouleInstance(SAMPLE_RATE, 64);
+        const strike = () => {
+            for (const note of notes) {
+                instance.note_on(note, 0.8);
+            }
+        };
+        strike();
         devices.push(
-            automatedFermenter({ id: 'fermenter_automation_1050', scheduleCount: 1050 })
+            heldInstrument({
+                id: 'grand_boule',
+                label: 'Grand Boule (64 voices, re-struck 1/s) — production Worker cost site',
+                note: 'the harness times the production DSP kernel; the ring consumer carries the separate audio-thread cost',
+                instance,
+                module: dsp,
+                struck,
+                expectSounding: struck,
+                activeVoices: () => instance.active_voices(),
+                restrike: strike,
+            })
         );
     }
 
-    // -- Retained Grand Boule ring consumer --------------------------------
+    // -- Grand Boule ring consumer -----------------------------------------
     //
-    // The preserved live transport's audio-thread side copies rendered frames
+    // The live transport's audio-thread side copies rendered frames
     // out of the SAB ring. This row times the real `readBlockAcquire` from
     // `worklets/grandBouleProcessor.ts` — the server strips its types on the
     // way out, so this is the function production runs, not a reproduction —
@@ -843,11 +860,11 @@ export function buildDevices({
 
         devices.push({
             id: 'grand_boule_ring_consumer',
-            label: 'Grand Boule retained ring consumer (host transport only)',
-            note: 'retained host transport only, with no Grand Boule WASM DSP or constructor; reproduces the successful consumer branch from grandBouleProcessor.ts',
+            label: 'Grand Boule ring consumer',
+            note: 'live audio-thread transport; reproduces the successful consumer branch from grandBouleProcessor.ts',
             feed(frame) {
-                // Keep the producer ahead of the consumer, as the retained
-                // Worker design does. Producer work is untimed because this
+                // Keep the producer ahead of the consumer, as the live Worker
+                // does. Producer work is untimed because this
                 // row measures only the host consumer branch.
                 consumerContextFrame = frame * QUANTUM;
                 const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
@@ -960,7 +977,28 @@ export function buildDevices({
         const instance = new dsp.LevainInstance(SAMPLE_RATE, 64);
         const sampleId = instance.add_sample(loopSample(frameCount), frameCount, 1, SAMPLE_RATE);
         instance.add_zone(
-            0, sampleId, 0, 69, 0.0, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frameCount, 0, 0.0, 0.005, 0.1, 1.0, 0.3
+            0,
+            sampleId,
+            0,
+            69,
+            0.0,
+            0,
+            127,
+            0,
+            127,
+            0,
+            1,
+            0,
+            false,
+            1,
+            0,
+            frameCount,
+            0,
+            0.0,
+            0.005,
+            0.1,
+            1.0,
+            0.3
         );
         instance.build_zone_map(1, 1);
         for (const note of spreadNotes(struck)) {

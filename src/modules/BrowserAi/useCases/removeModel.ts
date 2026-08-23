@@ -19,6 +19,9 @@ type RemoveModelInput = {
 export const removeModel = inject({ logger, deleteModel, getStorageStatus })(
     ({ logger, deleteModel, getStorageStatus }) =>
         async function removeModel({ modelId, family }: RemoveModelInput): Promise<void> {
+            if (family === 'ddsp') {
+                throw new Error('Use the dedicated DDSP instrument removal boundary');
+            }
             logger.info(`[BrowserAi] Removing model: ${modelId}`);
             await deleteModel({ family, modelId });
             updateModelStatus(modelId, { status: 'not-downloaded', downloadProgress: 0 });

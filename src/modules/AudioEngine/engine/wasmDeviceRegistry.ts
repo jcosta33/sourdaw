@@ -1590,7 +1590,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
     matches: isGrandBouleDevice,
     runtime: noteSourceRuntime(),
     create({ context, deviceId, deviceType, signal, onLoaded, onRuntimeFailure: replaceRuntimeFailure }) {
-        const pendingParams: Array<[string, number]> = [];
+        const pendingParams: Array<[string, number, number | undefined]> = [];
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: GrandBouleNodeResult | null = null;
@@ -1635,8 +1635,8 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             noteOn: () => {},
             noteOff: () => {},
             noteExpression: () => {},
-            setParam: (name, value) => {
-                pendingParams.push([name, value]);
+            setParam: (name, value, sampleFrame) => {
+                pendingParams.push([name, value, sampleFrame]);
             },
             setSustain: () => {},
             setUnaCorda: () => {},
@@ -1657,8 +1657,8 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                     result.destroy();
                     return;
                 }
-                for (const [name, value] of pendingParams) {
-                    result.setParam(name, value);
+                for (const [name, value, sampleFrame] of pendingParams) {
+                    result.setParam(name, value, sampleFrame);
                 }
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,

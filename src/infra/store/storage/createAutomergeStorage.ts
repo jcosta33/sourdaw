@@ -118,6 +118,15 @@ type AutomergeStorageOptions<TData> = {
     }) => TData | null;
 };
 
+/**
+ * An Automerge-backed adapter can force only its own rAF-deferred, unscoped
+ * write to settle. The method is bound to the adapter's private commit owner;
+ * callers cannot broaden it to another adapter or an open action transaction.
+ */
+export type AutomergeStorageAdapter<TData> = StorageAdapter<TData> & {
+    flushPendingUnscopedWrite(): void;
+};
+
 type AutomergeStorageWriteContext = {
     readonly commitOwner: object;
     readonly scoped: boolean;
@@ -824,7 +833,7 @@ export const createAutomergeStorage = <TData>(
     docId: AutomergeStorageDocId,
     key: string,
     options?: AutomergeStorageOptions<TData>
-): StorageAdapter<TData> => {
+): AutomergeStorageAdapter<TData> => {
     const toCrdt = options?.toCrdt;
     const fromCrdt = options?.fromCrdt;
     const hydrateMissing = options?.hydrateMissing;
@@ -1214,7 +1223,18 @@ export const createAutomergeStorage = <TData>(
         }
     };
 
-    const adapter: StorageAdapter<TData> = {
+    const adapter: AutomergeStorageAdapter<TData> = {
+        flushPendingUnscopedWrite(): void {
+            const commitOwner = unscopedCommitOwner;
+            if (!commitOwner) {
+                return;
+            }
+            const pending = pendingWritesByOwner.get(commitOwner);
+            if (pending) {
+                flushAutomergeStorageWriteOwner(pending.write);
+            }
+        },
+
         registerInboundSanitizer(sanitize): void {
             inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), (value) =>
                 sanitize(fromCrdt ? fromCrdt(value as TData) : value)

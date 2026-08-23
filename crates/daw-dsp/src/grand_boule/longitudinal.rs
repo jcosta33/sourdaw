@@ -1,41 +1,34 @@
-//! Longitudinal (phantom) partial generator for bass strings (§A5.1).
+//! Longitudinal partial generator for bass strings.
 //!
 //! Bass piano strings exhibit longitudinal vibration modes coupled
-//! nonlinearly to the transverse modes. Per Bank & Sujbert (2005, JASA
-//! 117(4):2268) the longitudinal forcing term is the divergence of the
-//! squared transverse slope, and after modal expansion the longitudinal
-//! mode `k` is excited by pairwise products `y_m·y_n` of transverse modes
-//! whose **sum frequencies** match the longitudinal mode frequency:
+//! nonlinearly to the transverse modes. This project approximation excites
+//! sum-frequency components from transverse-mode pairs:
 //!
 //! ```text
 //! f_phantom ≈ f_m + f_n  (and difference frequencies)
 //! ```
 //!
-//! Conklin (1999, JASA 105(1):536) showed that phantom partials are
-//! inharmonic with **roughly one-quarter** the inharmonicity coefficient of
-//! the transverse partials. Each phantom resonator is therefore tuned to a
-//! sum-frequency in `f_p ≈ f₀·p·√(1 + ¼·B·p²)` rather than to the steel
+//! Each phantom resonator uses one-quarter of the project inharmonicity
+//! coefficient and is tuned to a sum-frequency in
+//! `f_p ≈ f₀·p·√(1 + ¼·B·p²)` rather than to the steel
 //! longitudinal-wave frequencies (which produce a single fixed formant
-//! rather than the rich harmonic shimmer of the real instrument).
+//! rather than the project voicing's harmonic shimmer).
 //!
-//! Per Bank & Lehtonen (2010) phantoms are audible only in the first three
-//! octaves at fortissimo, so the bank stays disabled above C5 (key ≥ 52).
+//! The project voicing enables the bank only in the lower register.
 
 use super::parameters::{has_longitudinal_modes, inharmonicity_b, key_fundamental_hz};
 use crate::primitives::flush_denormal;
 
 /// Number of phantom-partial resonators per voice.
 ///
-/// Conklin (1999) measured 6–10 audible phantom partials in the first
-/// three octaves; 6 is the sweet spot between richness and CPU.
+/// Six project-tuned phantom components balance richness and CPU cost.
 pub const LONGITUDINAL_MODES: usize = 6;
 
 /// Overall amplitude of the phantom partials relative to the transverse
 /// signal. Subtle metallic shimmer — the bass character of a grand.
 const DRIVE: f32 = 0.006;
 
-/// Bandwidth of every phantom resonator (Hz). Longitudinal/bridge modes are
-/// strongly damped — Conklin reports decay times around 100–200 ms.
+/// Project bandwidth of every phantom resonator (Hz).
 const BANDWIDTH_HZ: f32 = 22.0;
 
 #[derive(Clone, Debug)]
@@ -78,10 +71,10 @@ impl LongitudinalBank {
     /// Configure the bank for a given key. If the key lies above C5 the
     /// bank deactivates and `tick` becomes a no-op.
     ///
-    /// Phantom partial frequencies follow Conklin's quarter-inharmonicity
+    /// Phantom partial frequencies use the project's quarter-inharmonicity
     /// rule: `f_p ≈ f₀·p·√(1 + ¼·B·p²)`. We tune resonator `k` to the
     /// (k+1)th sum-frequency pair (`m=1`, `n=k+1`), which captures the
-    /// dominant Bank/Sujbert phantoms without enumerating every pair.
+    /// selected project phantoms without enumerating every pair.
     pub fn configure(&mut self, key: u32, sample_rate: f32) {
         use core::f32::consts::{PI, TAU};
         if !has_longitudinal_modes(key) {
@@ -92,7 +85,7 @@ impl LongitudinalBank {
 
         let f1 = key_fundamental_hz(key);
         let b = inharmonicity_b(key);
-        // Quarter-inharmonicity per Conklin (1999).
+        // Quarter-strength inharmonicity for the project voicing.
         let phantom_b = b * 0.25;
         let nyquist = sample_rate * 0.5;
         for index in 0..LONGITUDINAL_MODES {
@@ -108,8 +101,7 @@ impl LongitudinalBank {
             }
             let theta = TAU * freq / sample_rate;
             let r = (-PI * BANDWIDTH_HZ / sample_rate).exp();
-            // Phantom amplitudes fall off as 1/p² — Conklin's measurements
-            // show successive phantoms drop ~6 dB.
+            // Phantom amplitudes use a simple 1/p² project rolloff.
             let amp = 1.0 / (partial * partial);
             self.c0[index] = DRIVE * amp * (1.0 - r * r) * theta.sin() * 0.5;
             self.c1[index] = 2.0 * r * theta.cos();

@@ -1,4 +1,4 @@
-//! Native device coverage and the shipped browser-WASM Grand Boule exclusion.
+//! Native and browser-WASM device benchmark coverage.
 //!
 //! # Why this test exists
 //!
@@ -20,10 +20,8 @@
 //! A directory under `src/` whose `mod.rs` declares a `#[wasm_bindgen]`
 //! `pub struct <Name>Instance` **and** a `pub fn process(`. That is the shape
 //! every worklet drives, and it is the shape the bench's budget claim is about.
-//! Grand Boule remains in this native population even though `lib.rs` gates its
-//! complete module out of wasm32. The separate browser-WASM assertion below
-//! prevents its withheld constructor from returning to browser benchmark
-//! imports, recipes, runner totals, or the `DEVICE_IDS` census.
+//! The separate browser-WASM assertion pins Grand Boule's constructor, recipe,
+//! Worker total, and ring-consumer measurement.
 //!
 //! # What counts as covered
 //!
@@ -57,7 +55,156 @@ fn crate_root() -> PathBuf {
 /// than re-implementing the check inside the test — a fixture test that
 /// reimplements the predicate proves the reimplementation, not the guard.
 fn device_is_covered(bench_source: &str, type_name: &str) -> bool {
-    bench_source.contains(&format!("{type_name}::new"))
+    executable_function_bodies(bench_source).iter().any(|body| {
+        let marker = format!("{type_name}::new");
+        body.find(&marker)
+            .is_some_and(|index| !body[..index].contains("return"))
+    })
+}
+
+fn source_without_non_code(source: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut chars = source.chars().peekable();
+    let mut mode = 0_u8;
+    let mut escaped = false;
+    while let Some(ch) = chars.next() {
+        if mode == 1 {
+            if ch == '\n' {
+                mode = 0;
+                output.push('\n');
+            } else {
+                output.push(' ');
+            }
+        } else if mode == 2 {
+            if ch == '*' && chars.peek() == Some(&'/') {
+                output.push(' ');
+                output.push(' ');
+                chars.next();
+                mode = 0;
+            } else {
+                output.push(if ch == '\n' { '\n' } else { ' ' });
+            }
+        } else if mode == 3 || mode == 4 {
+            output.push(if ch == '\n' { '\n' } else { ' ' });
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if (mode == 3 && ch == '"') || (mode == 4 && ch == '\'') {
+                mode = 0;
+            }
+        } else if ch == '/' && chars.peek() == Some(&'/') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            mode = 1;
+        } else if ch == '/' && chars.peek() == Some(&'*') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            mode = 2;
+        } else if ch == '"' {
+            output.push(' ');
+            mode = 3;
+        } else if ch == '\'' {
+            output.push(' ');
+            mode = 4;
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
+fn executable_function_bodies(source: &str) -> Vec<String> {
+    let source = source_without_non_code(source);
+    let bytes = source.as_bytes();
+    let mut bodies = Vec::new();
+    let mut cursor = 0;
+    while let Some(offset) = source[cursor..].find("fn ") {
+        let start = cursor + offset;
+        let Some(open_offset) = source[start..].find('{') else {
+            break;
+        };
+        let open = start + open_offset;
+        let mut depth = 0_i32;
+        for index in open..bytes.len() {
+            match bytes[index] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        bodies.push(source[open + 1..index].to_string());
+                        cursor = index + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if cursor <= open {
+            break;
+        }
+    }
+    bodies
+}
+
+fn named_function_body(source: &str, name: &str) -> Option<String> {
+    let source = source_without_non_code(source);
+    let declaration = format!("fn {name}");
+    let start = source.find(&declaration)?;
+    let open = start + source[start..].find('{')?;
+    let mut depth = 0_i32;
+    for (offset, byte) in source.as_bytes()[open..].iter().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(source[open + 1..open + offset].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// A census marker must be executable source, never a stale prose reference.
+/// The recipes contain both line and block comments, so strip both before
+/// checking construction evidence.
+fn source_without_comments(source: &str) -> String {
+    let mut result = String::with_capacity(source.len());
+    let mut characters = source.chars().peekable();
+    let mut in_block_comment = false;
+    let mut in_line_comment = false;
+
+    while let Some(character) = characters.next() {
+        if in_line_comment {
+            if character == '\n' {
+                in_line_comment = false;
+                result.push(character);
+            }
+            continue;
+        }
+        if in_block_comment {
+            if character == '*' && characters.peek() == Some(&'/') {
+                characters.next();
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if character == '/' && characters.peek() == Some(&'/') {
+            characters.next();
+            in_line_comment = true;
+        } else if character == '/' && characters.peek() == Some(&'*') {
+            characters.next();
+            in_block_comment = true;
+        } else {
+            result.push(character);
+        }
+    }
+    result
 }
 
 /// A device found in the crate: its module directory name and its type name.
@@ -73,6 +220,7 @@ struct Device {
 /// Kept as a free function over a `&str` so the broken-fixture tests at the
 /// bottom can drive it without writing files.
 fn device_type_in_module_source(source: &str) -> Option<String> {
+    let source = source_without_non_code(source);
     if !source.contains("#[wasm_bindgen]") {
         return None;
     }
@@ -189,7 +337,7 @@ fn every_native_device_is_constructed_by_the_native_cost_bench() {
 }
 
 #[test]
-fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
+fn released_grand_boule_is_in_the_browser_wasm_bench() {
     let root = crate_root();
     let processor = std::fs::read_to_string(root.join("benches/wasm/quantumCostProcessor.js"))
         .expect("browser WASM processor source must be readable");
@@ -197,32 +345,43 @@ fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
         .expect("browser WASM recipes must be readable");
     let runner = std::fs::read_to_string(root.join("benches/wasm/run.mjs"))
         .expect("browser WASM runner must be readable");
-    let current_record = std::fs::read_to_string(root.join("benches/quantum-cost-table.json"))
-        .expect("current browser WASM cost record must be readable");
-
+    let executable_recipes = source_without_non_code(&recipes);
+    let processor = source_without_comments(&processor);
+    let recipes = source_without_comments(&recipes);
+    let runner = source_without_comments(&runner);
     assert!(
-        !processor.contains("GrandBouleInstance"),
-        "the browser WASM processor must not statically import the withheld GrandBouleInstance export"
+        processor.contains("GrandBouleInstance"),
+        "the browser WASM processor must import GrandBouleInstance"
     );
-    for forbidden in [
-        "'grand_boule',",
+    for required in [
+        "    'grand_boule',",
+        "grand_boule: 'worker'",
         "wanted('grand_boule')",
-        "new dsp.GrandBouleInstance",
+        "new dsp.GrandBouleInstance(SAMPLE_RATE, 64)",
     ] {
         assert!(
-            !recipes.contains(forbidden),
-            "the browser WASM recipe/census must not contain withheld Grand Boule marker `{forbidden}`"
+            recipes.contains(required),
+            "the browser WASM recipe/census is missing Grand Boule marker `{required}`"
         );
     }
-    for forbidden in ["REFERENCE_PROJECT_WORKER", "['grand_boule', 1]"] {
+    for required in [
+        "activeVoices: () => instance.active_voices()",
+        "expectSounding: struck",
+    ] {
         assert!(
-            !runner.contains(forbidden),
-            "the browser WASM runner must not contain withheld Grand Boule marker `{forbidden}`"
+            executable_recipes.contains(required),
+            "the browser Grand Boule measurement lacks executable exact-occupancy proof `{required}`"
+        );
+    }
+    for required in ["const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]]"] {
+        assert!(
+            runner.contains(required),
+            "the browser WASM runner is missing Grand Boule Worker marker `{required}`"
         );
     }
     assert!(
-        !current_record.contains("\"id\": \"grand_boule\""),
-        "the current browser WASM cost record must not retain a Grand Boule DSP row"
+        processor.contains("const produced = device.render()"),
+        "the browser WASM processor must render the selected Worker recipe in its timed path"
     );
 
     for required in [
@@ -234,7 +393,7 @@ fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
     ] {
         assert!(
             recipes.contains(required),
-            "the retained host ring-consumer benchmark must reproduce the production consumed branch marker `{required}`"
+            "the ring-consumer benchmark must reproduce production marker `{required}`"
         );
     }
     assert!(
@@ -247,12 +406,15 @@ fn withheld_grand_boule_is_absent_from_the_browser_wasm_bench() {
 fn grand_boule_remains_in_the_native_cost_bench() {
     let bench = std::fs::read_to_string(crate_root().join("benches/quantum.rs"))
         .expect("native cost bench must be readable");
-    assert!(bench.contains("GrandBouleInstance::new"));
-    assert!(bench.contains("bench_grand_boule_process_block"));
-    assert!(bench.contains("bench_grand_boule_instance"));
-    assert!(!bench.contains("REFERENCE_PROJECT_WORKER"));
-    assert!(!bench.contains("WORKER line item, Grand Boule"));
-    assert!(bench.contains("native-only evidence"));
+    assert!(device_is_covered(&bench, "GrandBouleInstance"));
+    let row = named_function_body(&bench, "row_grand_boule")
+        .expect("Grand Boule measured row must exist");
+    for required in ["active_voices", "assert_eq!", "GRAND_BOULE_POOL"] {
+        assert!(
+            row.contains(required),
+            "Grand Boule measured row lacks executable {required}"
+        );
+    }
 }
 
 /// The deliberately broken fixtures ADR 0015 rule 2 (iv) requires.
@@ -318,13 +480,15 @@ mod the_extractor_can_go_red {
         let device = device_type_in_module_source(WASM_DEVICE).expect("fixture is a device");
 
         // Crust's exact shape: the bench names other devices and not this one.
-        let bench_without_it = "let mut i = daw_dsp::gluten::GlutenInstance::new(SAMPLE_RATE);";
+        let bench_without_it =
+            "fn row() { let mut i = daw_dsp::gluten::GlutenInstance::new(SAMPLE_RATE); }";
         assert!(
             !device_is_covered(bench_without_it, &device),
             "a bench that never constructs the device must not count as covering it"
         );
 
-        let bench_with_it = format!("let mut i = daw_dsp::sourdough::{device}::new(SAMPLE_RATE);");
+        let bench_with_it =
+            format!("fn row() {{ let mut i = daw_dsp::sourdough::{device}::new(SAMPLE_RATE); }}");
         assert!(
             device_is_covered(&bench_with_it, &device),
             "a bench that does construct the device must count as covering it, or the census \
@@ -346,5 +510,21 @@ mod the_extractor_can_go_red {
             "prose naming the device must not satisfy the census — that is the exact way the \
              Crust gap survived"
         );
+    }
+
+    #[test]
+    fn comment_only_constructor_markers_are_not_coverage() {
+        assert!(!device_is_covered(
+            "// SourdoughInstance::new(SAMPLE_RATE)\n/* SourdoughInstance::new(SAMPLE_RATE) */",
+            "SourdoughInstance"
+        ));
+    }
+
+    #[test]
+    fn string_and_unreachable_constructor_markers_are_not_coverage() {
+        assert!(!device_is_covered(
+            r#"fn decoy() { let marker = "SourdoughInstance::new(SAMPLE_RATE)"; return; SourdoughInstance::new(SAMPLE_RATE); }"#,
+            "SourdoughInstance"
+        ));
     }
 }
