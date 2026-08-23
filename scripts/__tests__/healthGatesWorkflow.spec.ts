@@ -1,5 +1,5 @@
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -34,11 +34,25 @@ const CURRENT_HEAD_REVIEW_GUARD = `if [ "$EVENT" = "pull_request_review" ] && { 
   printf 'approval is not for the current pull-request head\\n'
   exit 1
 fi`;
-const HEAVY_SUCCESS_FILTER = `["codeql", "secrets"][] as $job
+const HEAVY_SUCCESS_FILTER = `["dependency-review", "codeql", "secrets"][] as $job
     | select(.[$job].result != "success")
     | "\\($job): \\(.[$job].result // "missing")"`;
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
+const DEPENDENCY_REVIEW_CONDITION =
+    "github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && needs.decide.outputs.heavy == 'true')";
+const REVIEW_HEAD_CONDITION = "github.event_name == 'pull_request_review'";
+const NON_REVIEW_CONDITION = "github.event_name != 'pull_request_review'";
+const REVIEW_HEAD_REPOSITORY = '${{ github.event.pull_request.head.repo.full_name }}';
+const REVIEW_HEAD_SHA = '${{ github.event.review.commit_id }}';
+const DEPENDENCY_BASE_SHA = '${{ github.event.pull_request.base.sha }}';
+const DEPENDENCY_HEAD_SHA =
+    "${{ github.event_name == 'pull_request_review' && github.event.review.commit_id || github.event.pull_request.head.sha }}";
+const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
 const SECRET_SCAN_CONDITION = "needs.decide.outputs.heavy == 'true'";
+const TRUSTED_GITLEAKS_BASE_SHA =
+    "${{ github.event_name == 'pull_request_review' && github.event.pull_request.base.sha || github.sha }}";
+const TRUSTED_GITLEAKS_CONFIG = '$RUNNER_TEMP/gitleaks.toml';
+const TRUSTED_GITLEAKS_IGNORE = '$RUNNER_TEMP/gitleaksignore';
 const REVIEW_ISOLATED_CONCURRENCY_GROUP =
     "health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}";
 const PULL_REQUEST_CONCURRENCY_CANCELLATION =
@@ -95,6 +109,55 @@ function stringAt(record: UnknownRecord, key: string): string {
     return value;
 }
 
+function assertDependencyReviewChain(candidate: UnknownRecord): void {
+    const dependencyReview = jobAt(candidate, 'dependency-review');
+    if (dependencyReview.needs !== 'decide') {
+        throw new Error('dependency review must depend directly on decide');
+    }
+    if (dependencyReview.if !== DEPENDENCY_REVIEW_CONDITION) {
+        throw new Error('dependency review must run on pull requests and trusted approval events');
+    }
+
+    const reviewCheckout = stepNamed(dependencyReview, 'Checkout reviewed head');
+    if (reviewCheckout.if !== REVIEW_HEAD_CONDITION) {
+        throw new Error('dependency review must isolate its reviewed-head checkout to review events');
+    }
+    const reviewCheckoutOptions = recordAt(reviewCheckout, 'with');
+    if (reviewCheckoutOptions.repository !== REVIEW_HEAD_REPOSITORY) {
+        throw new Error('dependency review must checkout the pull-request head repository');
+    }
+    if (reviewCheckoutOptions.ref !== REVIEW_HEAD_SHA) {
+        throw new Error('dependency review must checkout the exact reviewed commit');
+    }
+    if (reviewCheckoutOptions['persist-credentials'] !== false) {
+        throw new Error('dependency review checkout must not persist credentials');
+    }
+
+    const pullRequestCheckout = stepNamed(dependencyReview, 'Checkout');
+    if (pullRequestCheckout.if !== NON_REVIEW_CONDITION) {
+        throw new Error('ordinary dependency review checkout must stay on pull-request events');
+    }
+    if (recordAt(pullRequestCheckout, 'with')['persist-credentials'] !== false) {
+        throw new Error('ordinary dependency review checkout must not persist credentials');
+    }
+
+    const review = stepNamed(dependencyReview, 'Review dependency changes');
+    if (review.uses !== DEPENDENCY_REVIEW_ACTION) {
+        throw new Error('dependency review action must remain pinned');
+    }
+    const reviewOptions = recordAt(review, 'with');
+    if (reviewOptions['base-ref'] !== DEPENDENCY_BASE_SHA) {
+        throw new Error('dependency review must compare from the exact pull-request base sha');
+    }
+    if (reviewOptions['head-ref'] !== DEPENDENCY_HEAD_SHA) {
+        throw new Error('dependency review must compare through the exact event head sha');
+    }
+
+    if (!arrayAt(jobAt(candidate, 'gate'), 'needs').includes('dependency-review')) {
+        throw new Error('gate must depend on dependency review');
+    }
+}
+
 function assertHeavyScanChain(candidate: UnknownRecord): string {
     const decide = jobAt(candidate, 'decide');
     if (decide.if !== APPROVED_REVIEW_CONDITION) {
@@ -117,6 +180,7 @@ function assertHeavyScanChain(candidate: UnknownRecord): string {
     if (!gateNeeds.includes('secrets')) {
         throw new Error('gate must depend on the secret scan job');
     }
+    assertDependencyReviewChain(candidate);
     assertGateContract(candidate);
     return stringAt(scope, 'run');
 }
@@ -304,11 +368,156 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
     if (/github\.event|GITHUB_EVENT/i.test(installCommand)) {
         throw new Error('Gitleaks installation must be event-independent');
     }
-    if (stringAt(scan, 'run') !== 'gitleaks git --redact --no-banner --verbose .') {
-        throw new Error('secret scan must invoke the event-independent Gitleaks CLI');
+
+    const policy = stepNamed(secrets, 'Load trusted Gitleaks policy');
+    const policyEnvironment = recordAt(policy, 'env');
+    if (policyEnvironment.TRUSTED_BASE_SHA !== TRUSTED_GITLEAKS_BASE_SHA) {
+        throw new Error('Gitleaks policy must come from the trusted base sha');
+    }
+    const policyCommand = stringAt(policy, 'run');
+    if (UNTRUSTED_EVENT_INTERPOLATION.test(policyCommand)) {
+        throw new Error('Gitleaks policy shell must receive event data through its environment');
+    }
+    if (!policyCommand.includes(`trusted_config="${TRUSTED_GITLEAKS_CONFIG}"`)) {
+        throw new Error('trusted Gitleaks config must be written outside the checked-out repository');
+    }
+    if (!policyCommand.includes(`trusted_ignore="${TRUSTED_GITLEAKS_IGNORE}"`)) {
+        throw new Error('trusted Gitleaks ignore file must be written outside the checked-out repository');
+    }
+    if (!policyCommand.includes('git show "${TRUSTED_BASE_SHA}:.gitleaks.toml" > "$trusted_config"')) {
+        throw new Error('Gitleaks config must be loaded from the trusted base commit');
+    }
+    if (!policyCommand.includes('git show "${TRUSTED_BASE_SHA}:.gitleaksignore" > "$trusted_ignore"')) {
+        throw new Error('Gitleaks ignore file must be loaded from the trusted base commit when present');
+    }
+
+    const scanCommand = stringAt(scan, 'run');
+    for (const requiredArgument of [
+        `--config "${TRUSTED_GITLEAKS_CONFIG}"`,
+        `--gitleaks-ignore-path "${TRUSTED_GITLEAKS_IGNORE}"`,
+        '--ignore-gitleaks-allow',
+        '--redact',
+        '--no-banner',
+        '--verbose',
+    ]) {
+        if (!scanCommand.includes(requiredArgument)) {
+            throw new Error(`secret scan must include ${requiredArgument}`);
+        }
     }
     if (scan.env !== undefined) {
         throw new Error('secret scan command must not receive an environment token');
+    }
+}
+
+function runGit(repository: string, args: string[]): string {
+    return execFileSync('git', args, {
+        cwd: repository,
+        encoding: 'utf8',
+        env: process.env,
+    }).trim();
+}
+
+function runSecretSuppressionFixture(
+    candidate: UnknownRecord,
+    transformScan: (script: string) => string
+): number | null {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-gitleaks-policy-'));
+    const runnerTemp = join(fixtureRoot, 'runner-temp');
+    const repository = join(fixtureRoot, 'repository');
+    const bin = join(fixtureRoot, 'bin');
+    const fixtureSecret = ['glpat', '0123456789abcdefghij'].join('-');
+    mkdirSync(runnerTemp);
+    mkdirSync(repository);
+    mkdirSync(bin);
+
+    try {
+        runGit(repository, ['init', '-b', 'main']);
+        runGit(repository, ['config', 'user.name', 'Fixture']);
+        runGit(repository, ['config', 'user.email', 'fixture@example.com']);
+        writeFileSync(join(repository, '.gitleaks.toml'), 'title = "trusted-policy"\n\n[extend]\nuseDefault = true\n');
+        runGit(repository, ['add', '.gitleaks.toml']);
+        runGit(repository, ['commit', '--no-gpg-sign', '-m', 'test: trusted base policy']);
+        const trustedBase = runGit(repository, ['rev-parse', 'HEAD']);
+
+        writeFileSync(
+            join(repository, '.gitleaks.toml'),
+            'title = "PR-controlled empty rule set"\n\n[[rules]]\nid = "never-match"\ndescription = "never"\nregex = "this-pattern-cannot-match-fixture"\n'
+        );
+        writeFileSync(join(repository, 'fixture.txt'), `${fixtureSecret} # gitleaks:allow\n`);
+        runGit(repository, ['add', '.gitleaks.toml', 'fixture.txt']);
+        runGit(repository, ['commit', '--no-gpg-sign', '-m', 'test: add suppressed fixture']);
+        const fixtureCommit = runGit(repository, ['rev-parse', 'HEAD']);
+        const fixtureFingerprint = `${fixtureCommit}:fixture.txt:gitlab-pat:1`;
+        writeFileSync(join(repository, '.gitleaksignore'), `${fixtureFingerprint}\n`);
+        runGit(repository, ['add', '.gitleaksignore']);
+        runGit(repository, ['commit', '--no-gpg-sign', '-m', 'test: add PR-controlled ignore']);
+
+        const policy = stepNamed(jobAt(candidate, 'secrets'), 'Load trusted Gitleaks policy');
+        const policyResult = spawnSync('bash', ['-c', stringAt(policy, 'run')], {
+            cwd: repository,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RUNNER_TEMP: runnerTemp,
+                TRUSTED_BASE_SHA: trustedBase,
+            },
+            shell: false,
+        });
+        if (policyResult.status !== 0) {
+            throw new Error(`trusted Gitleaks policy fixture failed: ${policyResult.stderr}`);
+        }
+
+        const mockGitleaks = join(bin, 'gitleaks');
+        writeFileSync(
+            mockGitleaks,
+            `#!/bin/sh
+set -eu
+[ "$1" = "git" ] || exit 64
+shift
+config=
+ignore=
+ignore_allow=false
+target=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --config) config=$2; shift ;;
+    --gitleaks-ignore-path) ignore=$2; shift ;;
+    --ignore-gitleaks-allow) ignore_allow=true ;;
+    --redact|--no-banner|--verbose) ;;
+    .) target=. ;;
+    *) exit 64 ;;
+  esac
+  shift
+done
+[ "$target" = "." ] || exit 64
+if [ -z "$config" ] && grep -q 'PR-controlled empty rule set' .gitleaks.toml; then exit 0; fi
+if [ -z "$ignore" ] && grep -Fq "$FIXTURE_FINGERPRINT" .gitleaksignore; then exit 0; fi
+if [ "$ignore_allow" != "true" ] && grep -F "$FIXTURE_SECRET" fixture.txt | grep -q 'gitleaks:allow'; then exit 0; fi
+[ "$config" = "$RUNNER_TEMP/gitleaks.toml" ] || exit 65
+[ "$ignore" = "$RUNNER_TEMP/gitleaksignore" ] || exit 65
+grep -q 'trusted-policy' "$config" || exit 65
+if grep -Fq "$FIXTURE_FINGERPRINT" "$ignore"; then exit 0; fi
+grep -Fq "$FIXTURE_SECRET" fixture.txt && exit 1
+exit 0
+`
+        );
+        chmodSync(mockGitleaks, 0o755);
+
+        const scan = stepNamed(jobAt(candidate, 'secrets'), 'Scan history for secrets');
+        return spawnSync('bash', ['-c', transformScan(stringAt(scan, 'run'))], {
+            cwd: repository,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                FIXTURE_FINGERPRINT: fixtureFingerprint,
+                FIXTURE_SECRET: fixtureSecret,
+                PATH: `${bin}:${process.env.PATH ?? ''}`,
+                RUNNER_TEMP: runnerTemp,
+            },
+            shell: false,
+        }).status;
+    } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
     }
 }
 
@@ -327,14 +536,18 @@ describe('health gates workflow contract', () => {
         expect(concurrency['cancel-in-progress']).toBe(PULL_REQUEST_CONCURRENCY_CANCELLATION);
     });
 
-    it('should fail closed until a current-head approval completes both heavy security jobs', () => {
+    it('should fail closed until a current-head approval completes every security job', () => {
         const gateScript = stringAt(
             stepNamed(jobAt(workflow, 'gate'), 'Require every job to have succeeded or been skipped'),
             'run'
         );
         const successfulResults = gateResults(workflow, 'success');
         const skippedResults = gateResults(workflow, 'skipped');
-        const approvedResults = gateResults(workflow, 'skipped', { codeql: 'success', secrets: 'success' });
+        const approvedResults = gateResults(workflow, 'skipped', {
+            'dependency-review': 'success',
+            codeql: 'success',
+            secrets: 'success',
+        });
 
         expect({
             approvedWithSkippedCodeql:
@@ -342,14 +555,14 @@ describe('health gates workflow contract', () => {
                     gateScript,
                     'pull_request_review',
                     'approved',
-                    gateResults(workflow, 'skipped', { secrets: 'success' })
+                    gateResults(workflow, 'skipped', { 'dependency-review': 'success', secrets: 'success' })
                 ) === 0,
             approvedWithSkippedSecrets:
                 runGateScript(
                     gateScript,
                     'pull_request_review',
                     'approved',
-                    gateResults(workflow, 'skipped', { codeql: 'success' })
+                    gateResults(workflow, 'skipped', { 'dependency-review': 'success', codeql: 'success' })
                 ) === 0,
             pullRequest: runGateScript(gateScript, 'pull_request', '', successfulResults) === 0,
         }).toEqual({
@@ -376,14 +589,19 @@ describe('health gates workflow contract', () => {
             )
         ).not.toBe(0);
         expect(runGateScript(gateScript, 'pull_request', '', gateResults(workflow, 'failure'))).not.toBe(0);
-        for (const job of ['codeql', 'secrets']) {
+        for (const job of ['dependency-review', 'codeql', 'secrets']) {
             for (const result of ['skipped', 'failure'] as const) {
                 expect(
                     runGateScript(
                         gateScript,
                         'pull_request_review',
                         'approved',
-                        gateResults(workflow, 'skipped', { codeql: 'success', secrets: 'success', [job]: result })
+                        gateResults(workflow, 'skipped', {
+                            'dependency-review': 'success',
+                            codeql: 'success',
+                            secrets: 'success',
+                            [job]: result,
+                        })
                     )
                 ).not.toBe(0);
             }
@@ -428,6 +646,19 @@ describe('health gates workflow contract', () => {
 
     it('should run a checksum-bound event-independent scanner without credentials or secrets', () => {
         expect(() => assertCredentiallessScanner(workflow)).not.toThrow();
+    });
+
+    it('should reject PR-controlled config, ignore, and inline suppressions for the fixture secret', () => {
+        expect(runSecretSuppressionFixture(workflow, (script) => script)).not.toBe(0);
+
+        const suppressions = [
+            '--config "$RUNNER_TEMP/gitleaks.toml" \\\n',
+            '--gitleaks-ignore-path "$RUNNER_TEMP/gitleaksignore" \\\n',
+            '--ignore-gitleaks-allow \\\n',
+        ];
+        for (const suppression of suppressions) {
+            expect(runSecretSuppressionFixture(workflow, (script) => script.replace(suppression, ''))).toBe(0);
+        }
     });
 
     it('should reject disconnected scope output and the old token-bearing Gitleaks action', () => {
@@ -479,6 +710,29 @@ describe('health gates workflow contract', () => {
         expect(() => assertHeavyScanChain(retargetedGateNeeds)).toThrow('gate must depend on the secret scan job');
     });
 
+    it('should reject a push-only or revision-unbound dependency review', () => {
+        const pushOnly = asRecord(structuredClone(workflow), 'push-only dependency review workflow');
+        jobAt(pushOnly, 'dependency-review').if = "github.event_name == 'pull_request'";
+        expect(() => assertDependencyReviewChain(pushOnly)).toThrow(
+            'dependency review must run on pull requests and trusted approval events'
+        );
+
+        const staleCheckout = asRecord(structuredClone(workflow), 'stale dependency review checkout workflow');
+        recordAt(stepNamed(jobAt(staleCheckout, 'dependency-review'), 'Checkout reviewed head'), 'with').ref =
+            '${{ github.event.pull_request.head.sha }}';
+        expect(() => assertDependencyReviewChain(staleCheckout)).toThrow(
+            'dependency review must checkout the exact reviewed commit'
+        );
+
+        const unboundComparison = asRecord(structuredClone(workflow), 'unbound dependency comparison workflow');
+        delete recordAt(stepNamed(jobAt(unboundComparison, 'dependency-review'), 'Review dependency changes'), 'with')[
+            'head-ref'
+        ];
+        expect(() => assertDependencyReviewChain(unboundComparison)).toThrow(
+            'dependency review must compare through the exact event head sha'
+        );
+    });
+
     it('should reject the legacy gate shell that admits non-approved reviews', () => {
         const legacyGate = asRecord(structuredClone(workflow), 'legacy gate workflow');
         const legacyStep = stepNamed(jobAt(legacyGate, 'gate'), 'Require every job to have succeeded or been skipped');
@@ -489,7 +743,11 @@ describe('health gates workflow contract', () => {
                 stringAt(legacyStep, 'run'),
                 'pull_request_review',
                 'commented',
-                gateResults(legacyGate, 'skipped', { codeql: 'success', secrets: 'success' })
+                gateResults(legacyGate, 'skipped', {
+                    'dependency-review': 'success',
+                    codeql: 'success',
+                    secrets: 'success',
+                })
             )
         ).toBe(0);
         expect(() => assertGateContract(legacyGate)).toThrow(

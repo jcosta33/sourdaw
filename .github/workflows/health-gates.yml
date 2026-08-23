@@ -490,18 +490,32 @@ jobs:
   dependency-review:
     name: Dependency review
     needs: decide
-    # Only a pull request has two commits to diff, and this is seconds, so it
-    # sits in the fast lane rather than waiting for an approval.
-    if: github.event_name == 'pull_request'
+    # Run on every pull-request update for fast feedback, then repeat against
+    # the exact commit approved by the trusted reviewer. Gate requires that
+    # second result, so a failed or skipped push-time review cannot be reused.
+    if: github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && needs.decide.outputs.heavy == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
+      - name: Checkout reviewed head
+        if: github.event_name == 'pull_request_review'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.review.commit_id }}
+          persist-credentials: false
+
+      - name: Checkout
+        if: github.event_name != 'pull_request_review'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event_name == 'pull_request_review' && github.event.review.commit_id || github.event.pull_request.head.sha }}
           fail-on-severity: high
 
   codeql:
@@ -578,8 +592,35 @@ jobs:
           tar --extract --gzip --file "$archive" --directory "$install_dir" gitleaks
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
+      - name: Load trusted Gitleaks policy
+        env:
+          TRUSTED_BASE_SHA: ${{ github.event_name == 'pull_request_review' && github.event.pull_request.base.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'trusted Gitleaks base must be a full commit sha\n' >&2
+            exit 1
+          fi
+          trusted_config="$RUNNER_TEMP/gitleaks.toml"
+          trusted_ignore="$RUNNER_TEMP/gitleaksignore"
+          git show "${TRUSTED_BASE_SHA}:.gitleaks.toml" > "$trusted_config"
+          if git cat-file -e "${TRUSTED_BASE_SHA}:.gitleaksignore" 2>/dev/null; then
+            git show "${TRUSTED_BASE_SHA}:.gitleaksignore" > "$trusted_ignore"
+          else
+            : > "$trusted_ignore"
+          fi
+
       - name: Scan history for secrets
-        run: gitleaks git --redact --no-banner --verbose .
+        run: |
+          set -euo pipefail
+          gitleaks git \
+            --config "$RUNNER_TEMP/gitleaks.toml" \
+            --gitleaks-ignore-path "$RUNNER_TEMP/gitleaksignore" \
+            --ignore-gitleaks-allow \
+            --redact \
+            --no-banner \
+            --verbose \
+            .
 
   nightly-report:
     name: Nightly failure report
@@ -695,7 +736,7 @@ jobs:
             exit 1
           fi
           if [ "$EVENT" = "pull_request_review" ]; then
-            heavy_failed=$(printf '%s' "$RESULTS" | jq -r '["codeql", "secrets"][] as $job
+            heavy_failed=$(printf '%s' "$RESULTS" | jq -r '["dependency-review", "codeql", "secrets"][] as $job
               | select(.[$job].result != "success")
               | "\($job): \(.[$job].result // "missing")"')
             if [ -n "$heavy_failed" ]; then
