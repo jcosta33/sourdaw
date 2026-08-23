@@ -1,0 +1,25 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_a40848e8f8cca9::t_3ca6435346ddac 330-351,353-358,360-368,370-378
+  s_a40848e8f8cca9::t_9dd50cf463d74f 359
+  s_a40848e8f8cca9::t_9803ae1274f7a7 6,133-134,136-137,160,176,192,229,259,294,320,352,369,402,430
+tests/e2e/instrumentPanels.spec.ts
+  s_a40848e8f8cca9::t_065df05360ece2 12
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_a40848e8f8cca9::t_065df05360ece2 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a7a4071d81f3256b0e3c265a3326477a542f104d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
