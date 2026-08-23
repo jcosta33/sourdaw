@@ -193,6 +193,9 @@ function recordTrackedAgentRunReceipt(
             runId: confirmation.runId,
             receipt,
             actions: confirmation.actions,
+            ...(confirmation.approvalSnapshot.commandBatch
+                ? { commandBatch: confirmation.approvalSnapshot.commandBatch }
+                : {}),
             ...(input?.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             ...(input?.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
             committedRevision: captureProjectRevision(),
@@ -260,7 +263,7 @@ function settleVerifiedBatchReplay(
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'failed',
             error: [reason, persistenceWarning].filter(Boolean).join(' '),
-            content: `The project change is durably committed, but its runtime graph effect failed: ${reason}. Retry only through a newly confirmed copy of this exact batch on the authoritative collaboration host; the project mutation will not replay.${persistenceWarning ? ` ${persistenceWarning}` : ''}`,
+            content: `The project change is durably committed, but its runtime graph effect failed: ${reason}. Use the retained runtime recovery action on the authoritative collaboration host; the project mutation will not replay.${persistenceWarning ? ` ${persistenceWarning}` : ''}`,
         });
         return createCommittedRuntimeFailureResult(receipt, reason);
     }
@@ -1070,7 +1073,7 @@ export async function confirmPendingChatActions(
                 }
             }
             if (runtimeEffectsPending) {
-                content = `The project change is durably committed:\n\n${executionReceipt}\n\nThe runtime graph effect failed: ${runtimeEffectsPendingReason}. Retry only through a newly confirmed copy of this exact batch on the authoritative collaboration host; the project mutation will not replay.`;
+                content = `The project change is durably committed:\n\n${executionReceipt}\n\nThe runtime graph effect failed: ${runtimeEffectsPendingReason}. Use the retained Retry runtime effect or Repair audio graph action on the authoritative collaboration host; the project mutation will not replay.`;
             }
             if (batchResult.status === 'executed-with-warning') {
                 content = `Executed after confirmation:\n\n${executionReceipt}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
@@ -1101,7 +1104,7 @@ export async function confirmPendingChatActions(
                     pendingActionConfirmationStatus: runtimeEffectsPending ? 'failed' : 'executed',
                     error: warning,
                     content: runtimeEffectsPending
-                        ? `The project change is durably committed and its runtime graph effect failed, but reporting also failed: ${warning}. Retry only through a newly confirmed copy of this exact batch.\n\n${executionReceipt}`
+                        ? `The project change is durably committed and its runtime graph effect failed, but reporting also failed: ${warning}. Use the retained runtime recovery action on the authoritative collaboration host.\n\n${executionReceipt}`
                         : `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.\n\n${executionReceipt}`,
                 });
             } catch (reportingError) {

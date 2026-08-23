@@ -47,7 +47,7 @@ type PendingPostCommitEffectBase = {
     reason: string;
     state: 'pending';
 };
-type PendingPostCommitEffect = PendingPostCommitEffectBase &
+export type PendingPostCommitEffect = PendingPostCommitEffectBase &
     (
         | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
         | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
@@ -90,7 +90,11 @@ type ExecuteAppActionBatchOptions = ExecuteOptions & {
     preExecutionValidation?: () => string | null;
     prepareValidation?: () => CommandBatchValidationPreparation;
     requireCompensation?: boolean;
-    onProjectCommitPrepared?: (result: { status: 'committed'; actions: readonly ExecutedBatchAction[] }) => void;
+    onProjectCommitPrepared?: (result: {
+        status: 'committed';
+        actions: readonly ExecutedBatchAction[];
+        pendingEffects: readonly PendingPostCommitEffect[];
+    }) => void;
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
 
@@ -832,9 +836,27 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
 
             try {
-                storageTransaction.scope(() =>
-                    options?.onProjectCommitPrepared?.({ status: 'committed', actions: executedBatchActions })
-                );
+                storageTransaction.scope(() => {
+                    const pendingEffects = executedActions.flatMap((executed): PendingPostCommitEffect[] =>
+                        executed.afterCommit
+                            ? [
+                                  {
+                                      commandId: executed.envelope.commandId,
+                                      kind: 'external-effect',
+                                      operation: executed.action.type,
+                                      reason: 'Post-commit effect has not completed',
+                                      remediation: executed.afterAmbiguousCommit ? 'reconcile' : 'manual-repair',
+                                      state: 'pending',
+                                  },
+                              ]
+                            : []
+                    );
+                    options?.onProjectCommitPrepared?.({
+                        status: 'committed',
+                        actions: executedBatchActions,
+                        pendingEffects,
+                    });
+                });
                 storageTransaction.commit();
             } catch (error) {
                 const cleanupWarning = clearBatchSemanticContext();

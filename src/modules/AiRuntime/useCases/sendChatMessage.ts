@@ -135,6 +135,7 @@ function tryRecordCommittedAgentRunWork(input: {
     runId: string;
     receipt: NonNullable<AgentApplyReceipt>;
     actions: Parameters<typeof recordAgentRunReceiptSaga>[0]['actions'];
+    commandBatch?: Parameters<typeof recordAgentRunReceiptSaga>[0]['commandBatch'];
     revertGroupId?: string;
     committedRevision?: string;
     completesRun?: boolean;
@@ -144,6 +145,7 @@ function tryRecordCommittedAgentRunWork(input: {
             runId: input.runId,
             receipt: input.receipt,
             actions: input.actions,
+            ...(input.commandBatch ? { commandBatch: input.commandBatch } : {}),
             ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
             ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
@@ -986,6 +988,7 @@ export async function sendChatMessage(
                         runId,
                         receipt: execution.receipt,
                         actions: result.actions,
+                        commandBatch,
                         revertGroupId: commandGroup.groupId,
                         committedRevision: captureProjectRevision(),
                         completesRun: commandLeaseSettlement.accepted,
@@ -1028,6 +1031,7 @@ export async function sendChatMessage(
                         runId,
                         receipt: execution.receipt,
                         actions: result.actions,
+                        commandBatch,
                         completesRun: commandLeaseSettlement.accepted,
                     });
                     if (runPersistenceWarning) {

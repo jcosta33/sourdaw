@@ -3,6 +3,8 @@ import { type ActionHandler, type AppAction, type HandlerAfterCommit } from '#/u
 import { type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
 
 import { commandBatchPreviewPort } from './commandBatchPreviewPort';
+import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 import { getCommandHandler } from './getCommandHandler';
 import { parseStoredVerifiedBatchReceipt } from './parseStoredVerifiedBatchReceipt';
 
@@ -33,9 +35,19 @@ export async function reconcileProjectCommandBatchEffects(
     if (!receipt) {
         return { status: 'failed', reason: 'Stored project idempotency receipt is invalid' };
     }
+    if (receipt.pendingEffects.length === 0) {
+        return { status: 'reconciled' };
+    }
+    if (receipt.pendingEffects.some((effect) => effect.remediation === 'manual-repair')) {
+        return { status: 'failed', reason: 'Pending external effect requires manual repair' };
+    }
+    const pendingCommandIds = new Set(receipt.pendingEffects.map(({ commandId }) => commandId));
     const committedCommandIds = new Set(
         receipt.commandOutcomes.filter(({ outcome }) => outcome === 'committed').map(({ commandId }) => commandId)
     );
+    if ([...pendingCommandIds].some((commandId) => !committedCommandIds.has(commandId))) {
+        return { status: 'failed', reason: 'Pending external effect does not belong to a committed command' };
+    }
     let workspace;
     try {
         workspace = commandBatchPreviewPort.createRecovery(input.envelope.baseRevision);
@@ -71,7 +83,7 @@ export async function reconcileProjectCommandBatchEffects(
             if (result?.status === 'conflict' || result?.status === 'no-write') {
                 return { status: 'failed', reason: `Action recovery conflicts with its base snapshot: ${action.type}` };
             }
-            if (result?.afterCommit) {
+            if (pendingCommandIds.has(command.commandId) && result?.afterAmbiguousCommit) {
                 reconciliations.push(result.afterAmbiguousCommit);
             }
         }
@@ -81,7 +93,77 @@ export async function reconcileProjectCommandBatchEffects(
         workspace.release();
     }
 
+    let requiresCurrentProjectRepair = receipt.pendingEffects.some(
+        (effect) => effect.kind === 'runtime-graph' && effect.remediation === 'repair'
+    );
+    if (!requiresCurrentProjectRepair && reconciliations.length !== receipt.pendingEffects.length) {
+        return { status: 'failed', reason: 'Pending external effect cannot be retried exactly' };
+    }
+    if (!requiresCurrentProjectRepair) {
+        let currentWorkspace: ReturnType<typeof commandBatchPreviewPort.create> = null;
+        try {
+            if (!commandProjectRevisionPort.isConfigured()) {
+                requiresCurrentProjectRepair = true;
+            } else {
+                currentWorkspace = commandBatchPreviewPort.create(commandProjectRevisionPort.capture());
+                if (!currentWorkspace) {
+                    requiresCurrentProjectRepair = true;
+                } else {
+                    for (const [actionIndex, action] of actions.entries()) {
+                        const command = input.envelope.commands[actionIndex]!;
+                        if (!pendingCommandIds.has(command.commandId)) {
+                            continue;
+                        }
+                        const handler = getCommandHandler(action);
+                        if (
+                            !handler ||
+                            handler.executionKind === 'runtime' ||
+                            handler.previewExecution !== 'isolated-project'
+                        ) {
+                            requiresCurrentProjectRepair = true;
+                            break;
+                        }
+                        const before = JSON.stringify(currentWorkspace.getProjectDocument());
+                        const result = currentWorkspace.scope(() =>
+                            handler.execute(action, {
+                                actions,
+                                actionIndex,
+                                executionMode: 'isolated-preview',
+                            })
+                        );
+                        const after = JSON.stringify(currentWorkspace.getProjectDocument());
+                        if (result?.status === 'conflict' || before !== after) {
+                            requiresCurrentProjectRepair = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch {
+            requiresCurrentProjectRepair = true;
+        } finally {
+            currentWorkspace?.release();
+        }
+    }
+
     try {
+        if (requiresCurrentProjectRepair) {
+            if (input.shouldReconcile?.() === false) {
+                return {
+                    status: 'failed',
+                    reason: 'Only the authoritative collaboration host can reconcile a durable command batch',
+                };
+            }
+            const repair = commandRuntimeRepairPort.repair();
+            if (!repair) {
+                return {
+                    status: 'failed',
+                    reason: 'Current-project runtime repair is unavailable; manual repair is required',
+                };
+            }
+            await repair;
+            return { status: 'reconciled' };
+        }
         for (const reconcile of reconciliations) {
             if (input.shouldReconcile?.() === false) {
                 return {

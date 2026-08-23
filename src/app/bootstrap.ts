@@ -50,6 +50,7 @@ import {
     configureOfflineYeastMidiProcessing,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    resetAudioGraph,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -76,6 +77,7 @@ import {
     commandProjectRevisionPort,
     commandProjectDivergencePort,
     commandTrackDefaultsPort,
+    commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
@@ -145,6 +147,7 @@ import {
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
     stopPlayback,
+    ensureTrackStrips,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
@@ -194,6 +197,10 @@ agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
 commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
+commandRuntimeRepairPort.setProvider(() => {
+    resetAudioGraph();
+    ensureTrackStrips();
+});
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>

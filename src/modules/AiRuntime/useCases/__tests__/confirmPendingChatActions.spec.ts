@@ -12,12 +12,15 @@ import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     commandBatchPreviewPort,
+    commandRuntimeRepairPort,
     configureCommandBatchIdempotency,
     commandProjectDivergencePort,
     getVersionedCommandBatchIdempotentReplay,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     resetActionReplayAuthority,
+    redo,
     serializeVersionedCommandEnvelope,
+    undo,
     commandProjectRevisionPort,
 } from '#/modules/Command/useCases';
 import {
@@ -42,8 +45,10 @@ import {
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { recoverAgentRunRuntimeEffects } from '../recoverAgentRunRuntimeEffects';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -123,6 +128,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandProjectDivergencePort.setProvider(null);
+        commandRuntimeRepairPort.setProvider(null);
         chatStore.set({
             messages: [
                 {
@@ -152,6 +158,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         commandBatchPreviewPort.setRecoveryProvider(null);
         commandProjectRevisionPort.setProvider(null);
         commandProjectDivergencePort.setProvider(null);
+        commandRuntimeRepairPort.setProvider(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         removeCrdtDoc('root');
     });
@@ -703,7 +710,9 @@ describe('confirmPendingChatActions transaction admission', () => {
         };
         runtimeMocks.applyRuntimeGraphDelta
             .mockReturnValueOnce(rejectedRuntimeDelta)
-            .mockReturnValueOnce(appliedRuntimeDelta);
+            .mockReturnValue(appliedRuntimeDelta);
+        const repairRuntimeFromCurrentProject = vi.fn();
+        commandRuntimeRepairPort.setProvider(repairRuntimeFromCurrentProject);
         resetAiWorkflowCommandPreflightFixture();
         configureAiWorkflowCommandPreflightFixture('project-runtime-effect');
         configureCommandBatchIdempotency({ canExecute: () => true });
@@ -805,12 +814,30 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
             phase: 'partially-completed',
+            runtimeEffectContinuations: [
+                {
+                    batchId: 'group-runtime-effect',
+                    commandIds: [envelope.commandId],
+                    mode: 'retry-exact-effect',
+                    serializedBatch: commandBatch.serialized,
+                },
+            ],
             saga: {
                 steps: expect.arrayContaining([
                     expect.objectContaining({ owner: 'external-effect', state: 'external-pending' }),
                 ]),
             },
         });
+
+        await undo();
+        expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual(['device-eq']);
+        expect(undoStore.value).toMatchObject({ past: [], future: [expect.anything()] });
+        await redo();
+        expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual([
+            'device-eq',
+            'device-compressor',
+        ]);
+        expect(undoStore.value).toMatchObject({ past: [expect.anything()], future: [] });
 
         configureCommandBatchIdempotency({ canExecute: () => true });
         await expect(
@@ -828,31 +855,38 @@ describe('confirmPendingChatActions transaction admission', () => {
                 }),
             ],
         });
-        proposePendingActionConfirmation({
-            id: 'confirmation-runtime-effect-retry',
-            runId: 'run-runtime-effect',
-            prompt: 'Insert the compressor after EQ on Bass.',
-            assistantMessageId: 'assistant-1',
-            actions: [action],
-            actionLabels: ['Insert compressor after EQ on Bass'],
-            commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
-            executionMode: 'atomic',
-            groupId: 'group-runtime-effect',
-            groupLabel: 'Insert compressor',
-            projectRevision,
+
+        expect(recoverInterruptedAgentRuns()).toEqual({ recoveredRunIds: ['run-runtime-effect'] });
+        expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
+            manualResume: { required: false },
+            runtimeEffectContinuations: [
+                {
+                    batchId: 'group-runtime-effect',
+                    mode: 'retry-exact-effect',
+                    serializedBatch: commandBatch.serialized,
+                },
+            ],
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ owner: 'external-effect', state: 'external-pending' }),
+                ]),
+            },
         });
 
         await expect(
-            confirmPendingChatActions({ confirmationId: 'confirmation-runtime-effect-retry' })
-        ).resolves.toEqual({ status: 'executed' });
+            recoverAgentRunRuntimeEffects({
+                runId: 'run-runtime-effect',
+                batchId: 'group-runtime-effect',
+            })
+        ).resolves.toEqual({ status: 'recovered' });
 
         expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual([
             'device-eq',
             'device-compressor',
         ]);
         expect(undoStore.value?.past).toHaveLength(1);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(3);
+        expect(repairRuntimeFromCurrentProject).toHaveBeenCalledOnce();
         expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
             phase: 'completed',
             saga: {

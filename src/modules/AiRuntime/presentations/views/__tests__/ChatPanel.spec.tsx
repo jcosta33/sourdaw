@@ -14,11 +14,15 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/stores/chatStore', () => ({
-    chatStore: {},
+    chatStore: { kind: 'chat' },
     clearChatMessages: vi.fn(),
     toggleReasoning: vi.fn(),
     setChatMode: vi.fn(),
     stopGenerating: vi.fn(),
+}));
+
+vi.mock('#/modules/AiRuntime/stores/agentRunStore', () => ({
+    agentRunStore: { kind: 'agent-runs' },
 }));
 
 vi.mock('#/modules/AiRuntime/useCases/sendChatMessage', () => ({
@@ -31,6 +35,10 @@ vi.mock('../../../useCases/confirmPendingChatActions', () => ({
 
 vi.mock('../../../useCases/cancelPendingChatActions', () => ({
     cancelPendingChatActions: vi.fn(),
+}));
+
+vi.mock('../../../useCases/recoverAgentRunRuntimeEffects', () => ({
+    recoverAgentRunRuntimeEffects: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat', () => ({
@@ -95,6 +103,8 @@ const { useStore } = await import('#/infra/store/useStore');
 const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
+const { recoverAgentRunRuntimeEffects } = await import('../../../useCases/recoverAgentRunRuntimeEffects');
+const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
     await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
@@ -218,6 +228,57 @@ describe('ChatPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry missing section renders' }));
         expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
+    });
+
+    it('owns persisted retry and repair continuations after chat history is gone', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [
+                          {
+                              runId: 'run-retry',
+                              runtimeEffectContinuations: [
+                                  {
+                                      batchId: 'batch-retry',
+                                      mode: 'retry-exact-effect',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                          {
+                              runId: 'run-repair',
+                              runtimeEffectContinuations: [
+                                  {
+                                      batchId: 'batch-repair',
+                                      mode: 'repair-current-runtime',
+                                      lastError: 'The graph needs reconciliation.',
+                                  },
+                              ],
+                          },
+                      ],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Retry runtime effect' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
+        expect(recoverAgentRunRuntimeEffects).toHaveBeenNthCalledWith(1, {
+            runId: 'run-retry',
+            batchId: 'batch-retry',
+        });
+        expect(recoverAgentRunRuntimeEffects).toHaveBeenNthCalledWith(2, {
+            runId: 'run-repair',
+            batchId: 'batch-repair',
+        });
+        expect(screen.getByText('The graph needs reconciliation.')).toBeInTheDocument();
     });
 
     it('should have correct accessibility attributes', () => {

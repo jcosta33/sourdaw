@@ -19,6 +19,7 @@ import {
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
+    type AgentRunRuntimeEffectContinuation,
     type AgentRunSaga,
     type AgentRunSagaStep,
     type AgentRunState,
@@ -30,6 +31,7 @@ import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 const MAX_RUNS = 50;
 const MAX_COLLECTION_LENGTH = 256;
 const MAX_TEXT_LENGTH = 128 * 1024;
+const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -99,7 +101,7 @@ function readNumberRecord(value: unknown): Record<string, number> | null {
     return result;
 }
 
-function readRanges(value: unknown): Array<{ startBeat: number; endBeat: number }> | null {
+function readRanges(value: unknown, allowPoint = false): Array<{ startBeat: number; endBeat: number }> | null {
     if (!Array.isArray(value) || value.length > MAX_COLLECTION_LENGTH) {
         return null;
     }
@@ -111,13 +113,139 @@ function readRanges(value: unknown): Array<{ startBeat: number; endBeat: number 
             !Number.isFinite(candidate.startBeat) ||
             typeof candidate.endBeat !== 'number' ||
             !Number.isFinite(candidate.endBeat) ||
-            candidate.endBeat <= candidate.startBeat
+            candidate.endBeat < candidate.startBeat ||
+            (!allowPoint && candidate.endBeat === candidate.startBeat)
         ) {
             return null;
         }
         ranges.push({ startBeat: candidate.startBeat, endBeat: candidate.endBeat });
     }
     return ranges;
+}
+
+function readCommandBatchAuthority(value: unknown): AgentRunRuntimeEffectContinuation['authority'] | null {
+    if (!isRecord(value) || !isRecord(value.scope) || !isRecord(value.grants) || !isRecord(value.budgets)) {
+        return null;
+    }
+    const scope = value.scope;
+    const grants = value.grants;
+    const budgets = value.budgets;
+    const projectId = readString(value.projectId);
+    const baseRevision = readString(value.baseRevision);
+    const targetIds = readStringArray(scope.targetIds);
+    const targetRanges = readRanges(scope.targetRanges, true);
+    const protectedTargetIds = readStringArray(scope.protectedTargetIds);
+    const protectedRanges = readRanges(scope.protectedRanges);
+    const allowedOperationPrefixes = readStringArray(grants.allowedOperationPrefixes);
+    const create = typeof grants.create === 'boolean' ? grants.create : null;
+    const deleteGrant = typeof grants.delete === 'boolean' ? grants.delete : null;
+    const routing = typeof grants.routing === 'boolean' ? grants.routing : null;
+    const tempo = typeof grants.tempo === 'boolean' ? grants.tempo : null;
+    const master = typeof grants.master === 'boolean' ? grants.master : null;
+    const file = typeof grants.file === 'boolean' ? grants.file : null;
+    const audioUpload = typeof grants.audioUpload === 'boolean' ? grants.audioUpload : null;
+    const remoteGeneration = typeof grants.remoteGeneration === 'boolean' ? grants.remoteGeneration : null;
+    const autoCommit = typeof grants.autoCommit === 'boolean' ? grants.autoCommit : null;
+    const maxCommands = readNonNegativeInteger(budgets.maxCommands);
+    const maxCreatedTracks = readNonNegativeInteger(budgets.maxCreatedTracks);
+    const maxDeletedObjects = readNonNegativeInteger(budgets.maxDeletedObjects);
+    const maxAffectedTracks = readNonNegativeInteger(budgets.maxAffectedTracks);
+    const maxAffectedClips = readNonNegativeInteger(budgets.maxAffectedClips);
+    const maxAutomationPoints = readNonNegativeInteger(budgets.maxAutomationPoints);
+    const maxImportedAssets = readNonNegativeInteger(budgets.maxImportedAssets);
+    const maxRenderJobs = readNonNegativeInteger(budgets.maxRenderJobs);
+    if (
+        projectId === null ||
+        baseRevision === null ||
+        targetIds === null ||
+        targetRanges === null ||
+        protectedTargetIds === null ||
+        protectedRanges === null ||
+        allowedOperationPrefixes === null ||
+        create === null ||
+        deleteGrant === null ||
+        routing === null ||
+        tempo === null ||
+        master === null ||
+        file === null ||
+        audioUpload === null ||
+        remoteGeneration === null ||
+        autoCommit === null ||
+        maxCommands === null ||
+        maxCreatedTracks === null ||
+        maxDeletedObjects === null ||
+        maxAffectedTracks === null ||
+        maxAffectedClips === null ||
+        maxAutomationPoints === null ||
+        maxImportedAssets === null ||
+        maxRenderJobs === null
+    ) {
+        return null;
+    }
+    return {
+        projectId,
+        baseRevision,
+        scope: { targetIds, targetRanges, protectedTargetIds, protectedRanges },
+        grants: {
+            allowedOperationPrefixes,
+            create,
+            delete: deleteGrant,
+            routing,
+            tempo,
+            master,
+            file,
+            audioUpload,
+            remoteGeneration,
+            autoCommit,
+        },
+        budgets: {
+            maxCommands,
+            maxCreatedTracks,
+            maxDeletedObjects,
+            maxAffectedTracks,
+            maxAffectedClips,
+            maxAutomationPoints,
+            maxImportedAssets,
+            maxRenderJobs,
+        },
+    };
+}
+
+function readRuntimeEffectContinuation(value: unknown): AgentRunRuntimeEffectContinuation | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const batchId = readString(value.batchId);
+    const commandIds = readStringArray(value.commandIds);
+    const receiptIdentity = readString(value.receiptIdentity);
+    const serializedBatch =
+        typeof value.serializedBatch === 'string' &&
+        value.serializedBatch.length > 0 &&
+        value.serializedBatch.length <= MAX_SERIALIZED_BATCH_LENGTH
+            ? value.serializedBatch
+            : null;
+    const authority = readCommandBatchAuthority(value.authority);
+    const lastError = readNullableString(value.lastError);
+    if (
+        batchId === null ||
+        commandIds === null ||
+        receiptIdentity === null ||
+        serializedBatch === null ||
+        authority === null ||
+        lastError === undefined ||
+        (value.mode !== 'retry-exact-effect' && value.mode !== 'repair-current-runtime')
+    ) {
+        return null;
+    }
+    return {
+        batchId,
+        commandIds,
+        receiptIdentity,
+        mode: value.mode,
+        serializedBatch,
+        authority,
+        lastError,
+    };
 }
 
 function readBatch(value: unknown): AgentRunBatch | null {
@@ -1224,6 +1352,10 @@ function readAgentRun(value: unknown): AgentRun | null {
     const committedWork = readCollection(value.committedWork, readCommittedWork);
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
+    const runtimeEffectContinuations =
+        value.runtimeEffectContinuations === undefined
+            ? []
+            : readCollection(value.runtimeEffectContinuations, readRuntimeEffectContinuation);
     const workLeases = readCollection(value.workLeases, readWorkLease);
     const contextEvidence =
         value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
@@ -1271,6 +1403,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         committedWork === null ||
         retriableWork === null ||
         temporaryAssets === null ||
+        runtimeEffectContinuations === null ||
         workLeases === null ||
         (contextEvidence === null && value.contextEvidence !== undefined && value.contextEvidence !== null) ||
         cancellationGeneration === null ||
@@ -1344,6 +1477,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         committedWork,
         retriableWork,
         temporaryAssets,
+        runtimeEffectContinuations,
         manualResume: {
             required: value.manualResume.required,
             reason: manualResumeReason,

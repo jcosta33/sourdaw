@@ -12,11 +12,13 @@ import { cn } from '#/utils/Styles/cn';
 
 import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from '../../models/AgentExecutionMode';
 import { type ChatMessage } from '../../models/Chat';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
+import { recoverAgentRunRuntimeEffects } from '../../useCases/recoverAgentRunRuntimeEffects';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { ChatComposer } from '../components/ChatComposer';
 
@@ -254,6 +256,13 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         chatMode: 'chat',
         enableReasoning: false,
     });
+    const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
+    const runtimeEffectContinuations = (agentRunState?.runs ?? []).flatMap((run) =>
+        run.runtimeEffectContinuations.map((continuation) => ({
+            ...continuation,
+            runId: run.runId,
+        }))
+    );
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
         chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
     );
@@ -293,12 +302,16 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         void cancelPendingChatActions({ confirmationId });
     };
 
+    const handleRecoverRuntimeEffects = (runId: string, batchId: string): void => {
+        void recoverAgentRunRuntimeEffects({ runId, batchId });
+    };
+
     if (!chatState) {
         return <></>;
     }
 
     let chatPanelContent;
-    if (chatState.messages.length === 0) {
+    if (chatState.messages.length === 0 && runtimeEffectContinuations.length === 0) {
         chatPanelContent = (
             <Stack align="center" justify="center" className="h-full text-center px-6 opacity-60">
                 <Bot className="size-8 mx-auto mb-3 text-muted-foreground" />
@@ -320,6 +333,39 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         onCancelPendingActions={handleCancelPendingActions}
                     />
                 ))}
+                {runtimeEffectContinuations.map((continuation) => {
+                    const repairsCurrentRuntime = continuation.mode === 'repair-current-runtime';
+                    const actionLabel = repairsCurrentRuntime ? 'Repair audio graph' : 'Retry runtime effect';
+                    return (
+                        <div
+                            key={`${continuation.runId}:${continuation.batchId}`}
+                            className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs"
+                        >
+                            <p className="font-medium text-foreground">
+                                Committed project change needs runtime recovery
+                            </p>
+                            <p className="mt-1 text-muted-foreground">
+                                {repairsCurrentRuntime
+                                    ? 'Rebuild the audio graph from the current project without replaying project actions.'
+                                    : 'Retry only the receipt-bound runtime effect without replaying project actions.'}
+                            </p>
+                            {continuation.lastError ? (
+                                <p className="mt-1 text-destructive">{continuation.lastError}</p>
+                            ) : null}
+                            <Button
+                                size="xs"
+                                variant="secondary"
+                                className="mt-2 h-7 gap-1.5 text-[11px]"
+                                disabled={chatState.isGenerating}
+                                aria-label={actionLabel}
+                                onClick={() => handleRecoverRuntimeEffects(continuation.runId, continuation.batchId)}
+                            >
+                                <RotateCw className="size-3" />
+                                {actionLabel}
+                            </Button>
+                        </div>
+                    );
+                })}
                 <div ref={messagesEndRef} className="h-2 w-full shrink-0" />
             </Stack>
         );

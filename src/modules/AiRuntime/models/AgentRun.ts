@@ -321,6 +321,49 @@ export type AgentRunManualResume = {
     requiredAt: number | null;
 };
 
+export type AgentRunCommandBatchAuthority = {
+    projectId: string;
+    baseRevision: string;
+    scope: {
+        targetIds: readonly string[];
+        targetRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+        protectedTargetIds: readonly string[];
+        protectedRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+    };
+    grants: {
+        allowedOperationPrefixes: readonly string[];
+        create: boolean;
+        delete: boolean;
+        routing: boolean;
+        tempo: boolean;
+        master: boolean;
+        file: boolean;
+        audioUpload: boolean;
+        remoteGeneration: boolean;
+        autoCommit: boolean;
+    };
+    budgets: {
+        maxCommands: number;
+        maxCreatedTracks: number;
+        maxDeletedObjects: number;
+        maxAffectedTracks: number;
+        maxAffectedClips: number;
+        maxAutomationPoints: number;
+        maxImportedAssets: number;
+        maxRenderJobs: number;
+    };
+};
+
+export type AgentRunRuntimeEffectContinuation = {
+    batchId: string;
+    commandIds: string[];
+    receiptIdentity: string;
+    mode: 'retry-exact-effect' | 'repair-current-runtime';
+    serializedBatch: string;
+    authority: AgentRunCommandBatchAuthority;
+    lastError: string | null;
+};
+
 export type AgentRunWorkOwnerKind = 'provider' | 'command' | 'render' | 'analysis' | 'cleanup';
 
 export type AgentRunWorkTerminalState = 'completed' | 'failed' | 'cancelled' | 'orphaned';
@@ -373,6 +416,7 @@ export type AgentRun = {
     committedWork: AgentRunCommittedWork[];
     retriableWork: AgentRunRetriableWork[];
     temporaryAssets: AgentRunTemporaryAsset[];
+    runtimeEffectContinuations: AgentRunRuntimeEffectContinuation[];
     manualResume: AgentRunManualResume;
     workLeases: AgentRunWorkLease[];
     contextEvidence: AgentContextEvidence | null;

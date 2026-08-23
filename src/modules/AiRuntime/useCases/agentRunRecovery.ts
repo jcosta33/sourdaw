@@ -22,18 +22,56 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             return run;
         }
         recoveredRunIds.push(run.runId);
+        const recoverableRuntimeBatchIds = new Set(
+            run.runtimeEffectContinuations.map((continuation) => continuation.batchId)
+        );
         const orphanedWorkIds = [
             ...run.workLeases.filter((lease) => lease.terminalState === null).map((lease) => lease.workId),
             ...run.saga.steps
                 .filter(
                     (step) =>
-                        step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+                        (step.state === 'pending' ||
+                            step.state === 'external-pending' ||
+                            step.state === 'uncompensated') &&
+                        !(step.state === 'external-pending' && recoverableRuntimeBatchIds.has(step.workId))
                 )
                 .map((step) => step.workId),
         ];
+        const uniqueOrphanedWorkIds = [...new Set(orphanedWorkIds)];
+        const requiresManualResume = uniqueOrphanedWorkIds.length > 0 || hasLiveTemporaryAsset;
+        const recoveryError = requiresManualResume
+            ? normalizeAgentFailure({
+                  category: 'internal',
+                  source: 'restart-recovery',
+                  occurredAt: recoveredAt,
+                  related: {
+                      workIds: uniqueOrphanedWorkIds,
+                      receiptIdentities: run.saga.steps
+                          .filter(
+                              (step) =>
+                                  step.receiptIdentity !== null &&
+                                  step.state !== 'committed' &&
+                                  !(step.state === 'external-pending' && recoverableRuntimeBatchIds.has(step.workId))
+                          )
+                          .map((step) => step.receiptIdentity)
+                          .filter((receiptIdentity): receiptIdentity is string => receiptIdentity !== null),
+                  },
+                  retry: uniqueOrphanedWorkIds.every((workId) =>
+                      run.retriableWork.some((work) => work.workId === workId && work.idempotent && work.retriable)
+                  )
+                      ? 'owner-proven-idempotent'
+                      : 'never',
+                  compensation: run.saga.steps.some(
+                      (step) => step.state === 'external-pending' && !recoverableRuntimeBatchIds.has(step.workId)
+                  )
+                      ? 'manual-repair'
+                      : 'not-needed',
+                  knownDomain: true,
+              })
+            : null;
         return {
             ...run,
-            phase: 'paused',
+            phase: requiresManualResume ? 'paused' : 'partially-completed',
             workLeases: run.workLeases.map((lease) =>
                 lease.terminalState === null ? { ...lease, terminalState: 'orphaned', settledAt: recoveredAt } : lease
             ),
@@ -41,39 +79,18 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
                 asset.status === 'live' ? { ...asset, status: 'cleanup-pending' } : asset
             ),
             manualResume: {
-                required: true,
-                reason: 'The application restarted before this run finished. Its exact continuation is unavailable; start a new run from the retained request and receipts.',
-                workIds: [...new Set(orphanedWorkIds)],
-                requiredAt: recoveredAt,
+                required: requiresManualResume,
+                reason: requiresManualResume
+                    ? 'The application restarted before this run finished. Its exact continuation is unavailable; start a new run from the retained request and receipts.'
+                    : null,
+                workIds: uniqueOrphanedWorkIds,
+                requiredAt: requiresManualResume ? recoveredAt : null,
             },
-            errors: [
-                ...run.errors,
-                normalizeAgentFailure({
-                    category: 'internal',
-                    source: 'restart-recovery',
-                    occurredAt: recoveredAt,
-                    related: {
-                        workIds: [...new Set(orphanedWorkIds)],
-                        receiptIdentities: run.saga.steps
-                            .filter((step) => step.receiptIdentity !== null && step.state !== 'committed')
-                            .map((step) => step.receiptIdentity)
-                            .filter((receiptIdentity): receiptIdentity is string => receiptIdentity !== null),
-                    },
-                    retry: orphanedWorkIds.every((workId) =>
-                        run.retriableWork.some((work) => work.workId === workId && work.idempotent && work.retriable)
-                    )
-                        ? 'owner-proven-idempotent'
-                        : 'never',
-                    compensation: run.saga.steps.some((step) => step.state === 'external-pending')
-                        ? 'manual-repair'
-                        : 'not-needed',
-                    knownDomain: true,
-                }),
-            ],
+            errors: recoveryError ? [...run.errors, recoveryError] : run.errors,
             saga: {
                 schemaVersion: 1,
                 steps: run.saga.steps.map((step) =>
-                    step.state === 'external-pending'
+                    step.state === 'external-pending' && !recoverableRuntimeBatchIds.has(step.workId)
                         ? { ...step, state: 'manual-repair', updatedAt: recoveredAt }
                         : step
                 ),

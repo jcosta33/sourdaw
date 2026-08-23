@@ -471,7 +471,15 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         status: 'committed-with-warning' as const,
                         actions: committedResult.actions,
                         warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                        warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                        warningDetails: [
+                            { kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING },
+                            ...committedResult.pendingEffects.map((pendingEffect) => ({
+                                kind: 'external-effect' as const,
+                                commandId: pendingEffect.commandId,
+                                message: pendingEffect.reason,
+                                pendingEffect,
+                            })),
+                        ],
                     };
                     projectCommitRecovery.receipt = createVerifiedBatchReceipt({
                         envelope: resolvedEnvelope,

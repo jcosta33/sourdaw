@@ -7,6 +7,7 @@ import { commandProjectDivergencePort } from './commandProjectDivergencePort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { type PendingPostCommitEffect } from './executeAppActionBatch';
 import { getCommandDivergenceTargetIds } from './getCommandDivergenceTargetIds';
 import { getCommandHandler } from './getCommandHandler';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
@@ -22,6 +23,7 @@ type ExecuteVersionedCommandBatchInput = {
         onProjectCommitPrepared?: (result: {
             status: 'committed';
             actions: readonly { action: AppAction; label: string; receipt?: VersionedCommandReceipt }[];
+            pendingEffects: readonly PendingPostCommitEffect[];
         }) => void;
         prepareValidation?: (input: { allowCompatibleProjectDivergence: boolean }) => CommandBatchValidationPreparation;
         requireCompensation?: boolean;

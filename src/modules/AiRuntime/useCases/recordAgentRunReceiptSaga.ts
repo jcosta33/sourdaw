@@ -1,10 +1,11 @@
-import { type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+import { type compileVersionedCommandBatchEnvelope, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { createAgentSagaStep } from './createAgentSagaStep';
 
 type VerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type CommandBatch = Pick<ReturnType<typeof compileVersionedCommandBatchEnvelope>, 'authority' | 'serialized'>;
 
 function getAgentRunReceiptIdentity(receipt: VerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
@@ -18,6 +19,7 @@ export function recordAgentRunReceiptSaga(input: {
     revertGroupId?: string;
     committedRevision?: string;
     completesRun?: boolean;
+    commandBatch?: CommandBatch;
 }): { effectsPending: boolean } {
     const receiptIdentity = getAgentRunReceiptIdentity(input.receipt);
     const recordedAt = Date.now();
@@ -168,6 +170,35 @@ export function recordAgentRunReceiptSaga(input: {
                 updatedAt: recordedAt,
                 compensationAvailable: false,
             }),
+        });
+    }
+    if (pendingRuntimeEffects.length > 0 && input.commandBatch) {
+        agentRunLifecycle.recordRuntimeEffectContinuation({
+            runId: input.runId,
+            recordedAt,
+            continuation: {
+                authority: structuredClone(input.commandBatch.authority),
+                batchId: input.receipt.batchId,
+                commandIds: pendingRuntimeEffects.map(({ commandId }) => commandId),
+                lastError: null,
+                mode: pendingRuntimeEffects.some(({ remediation }) => remediation === 'repair')
+                    ? 'repair-current-runtime'
+                    : 'retry-exact-effect',
+                receiptIdentity,
+                serializedBatch: input.commandBatch.serialized,
+            },
+        });
+    } else if (
+        pendingRuntimeEffects.length === 0 &&
+        agentRunLifecycle
+            .get(input.runId)
+            ?.runtimeEffectContinuations.some(({ batchId }) => batchId === input.receipt.batchId)
+    ) {
+        agentRunLifecycle.completeRuntimeEffectContinuation({
+            runId: input.runId,
+            batchId: input.receipt.batchId,
+            receiptIdentity,
+            completedAt: recordedAt,
         });
     }
     return { effectsPending: input.receipt.outcome === 'partially-committed' };

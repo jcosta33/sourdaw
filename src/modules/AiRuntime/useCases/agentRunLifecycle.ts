@@ -14,6 +14,7 @@ import {
     type AgentRunPlan,
     type AgentRunPhase,
     type AgentRunProviderUsage,
+    type AgentRunRuntimeEffectContinuation,
     type AgentRunSagaStep,
     type AgentRunScope,
 } from '../models/AgentRun';
@@ -199,6 +200,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         committedWork: [],
         retriableWork: [],
         temporaryAssets: [],
+        runtimeEffectContinuations: [],
         manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         workLeases: [],
         contextEvidence: null,
@@ -588,6 +590,74 @@ function recordAgentRunSagaStep(input: { runId: string; step: AgentRunSagaStep; 
     });
 }
 
+function recordAgentRunRuntimeEffectContinuation(input: {
+    runId: string;
+    continuation: AgentRunRuntimeEffectContinuation;
+    recordedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
+        ...run,
+        phase: run.committedWork.length > 0 ? 'partially-completed' : run.phase,
+        runtimeEffectContinuations: [
+            ...run.runtimeEffectContinuations.filter(
+                (continuation) => continuation.batchId !== input.continuation.batchId
+            ),
+            structuredClone(input.continuation),
+        ],
+    }));
+}
+
+function failAgentRunRuntimeEffectContinuation(input: {
+    runId: string;
+    batchId: string;
+    reason: string;
+    failedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.failedAt ?? Date.now(), (run) => ({
+        ...run,
+        runtimeEffectContinuations: run.runtimeEffectContinuations.map((continuation) =>
+            continuation.batchId === input.batchId ? { ...continuation, lastError: input.reason } : continuation
+        ),
+    }));
+}
+
+function completeAgentRunRuntimeEffectContinuation(input: {
+    runId: string;
+    batchId: string;
+    receiptIdentity: string;
+    completedAt?: number;
+}): AgentRun {
+    const completedAt = input.completedAt ?? Date.now();
+    return updateAgentRun(input.runId, completedAt, (run) => {
+        const runtimeEffectContinuations = run.runtimeEffectContinuations.filter(
+            (continuation) => continuation.batchId !== input.batchId
+        );
+        const steps = run.saga.steps.map((step) =>
+            step.owner === 'external-effect' && step.workId === input.batchId
+                ? {
+                      ...step,
+                      receiptIdentity: input.receiptIdentity,
+                      state: 'committed' as const,
+                      updatedAt: completedAt,
+                  }
+                : step
+        );
+        const hasUnsettledSaga = steps.some(
+            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+        );
+        return {
+            ...run,
+            phase: !hasUnsettledSaga && runtimeEffectContinuations.length === 0 ? 'completed' : run.phase,
+            runtimeEffectContinuations,
+            manualResume:
+                runtimeEffectContinuations.length === 0 && !hasUnsettledSaga
+                    ? { required: false, reason: null, workIds: [], requiredAt: null }
+                    : run.manualResume,
+            saga: { schemaVersion: 1, steps },
+        };
+    });
+}
+
 function recordAgentRunSagaCompensation(input: {
     runId: string;
     stepId: string;
@@ -934,6 +1004,9 @@ export const agentRunLifecycle = {
     recordCommittedWork: recordAgentRunCommittedWork,
     recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
+    recordRuntimeEffectContinuation: recordAgentRunRuntimeEffectContinuation,
+    failRuntimeEffectContinuation: failAgentRunRuntimeEffectContinuation,
+    completeRuntimeEffectContinuation: completeAgentRunRuntimeEffectContinuation,
     recordSagaStep: recordAgentRunSagaStep,
     recordSagaCompensation: recordAgentRunSagaCompensation,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
