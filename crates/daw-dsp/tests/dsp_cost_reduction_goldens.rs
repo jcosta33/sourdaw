@@ -280,9 +280,9 @@ fn grand_boule_held_voice_renders_identically_across_the_demotion_boundary() {
 
     assert_non_silent(&optimized);
     assert!(optimized_age > 48_000 && reference_age > 48_000);
+    assert_eq!(hash_samples(&optimized), hash_samples(&reference));
     assert!(!optimized_high && optimized_standard);
     assert!(reference_high && !reference_standard);
-    assert_eq!(hash_samples(&optimized), hash_samples(&reference));
 }
 
 /// F17: the shipping string skips the f32 slots whose coefficients were zeroed
