@@ -1,0 +1,23 @@
+src/modules/Project/useCases/__tests__/getDurableProjectOwnerId.spec.ts
+  s_a40848e8f8cca9::t_2c03f66f6ba20d 1-71
+src/modules/Project/useCases/getDurableProjectOwnerId.ts
+  s_a40848e8f8cca9::t_7867891f87c2e9 1-12
+src/modules/Project/useCases/index.ts
+  s_a40848e8f8cca9::t_7867891f87c2e9 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "55a92ba8d17aa5c5a9aecab609c4657a5f4c1019",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
