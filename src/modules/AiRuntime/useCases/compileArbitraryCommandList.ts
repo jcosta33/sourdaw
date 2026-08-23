@@ -258,12 +258,8 @@ function resolveSelector(input: {
     };
 }
 
-function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stableIds: readonly string[]): boolean {
-    return (
-        plan !== null &&
-        plan.scope.targetIds.length === stableIds.length &&
-        plan.scope.targetIds.every((id, index) => id === stableIds[index])
-    );
+function containsResolvedTargets(plan: ReturnType<typeof normalizeAgentPlanProposal>, stableIds: readonly string[]) {
+    return plan !== null && stableIds.every((id) => plan.scope.targetIds.includes(id));
 }
 
 function isIdempotentSetCommand(name: string): boolean {
@@ -540,10 +536,10 @@ export function compileArbitraryCommandList(input: {
             targetCapability: targetRule.capability,
         });
     }
-    if (!hasExactScope(plan, orderedTargetIds)) {
+    if (!containsResolvedTargets(plan, orderedTargetIds)) {
         return {
             status: 'rejected',
-            reason: 'Structured command list resolved scope does not exactly match the provider proposal.',
+            reason: 'Structured command list proposal omits a compiler-resolved target.',
         };
     }
     return {

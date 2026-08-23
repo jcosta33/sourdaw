@@ -227,10 +227,9 @@ export function validateArbitraryCommandListEvidence(input: {
     }
     if (
         commandCursor !== evidence.commands.length ||
-        evidence.proposalScope.targetIds.length !== resolvedTargetIds.length ||
-        !evidence.proposalScope.targetIds.every((stableId, index) => stableId === resolvedTargetIds[index])
+        resolvedTargetIds.some((stableId) => !evidence.proposalScope.targetIds.includes(stableId))
     ) {
-        return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
+        return { status: 'rejected', reason: 'Structured command compiler evidence omits a resolved selector target.' };
     }
     return { status: 'accepted', targetOverridesByCallIndex };
 }

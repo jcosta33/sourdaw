@@ -142,6 +142,33 @@ function createMixerContext(): ProjectContext {
     };
 }
 
+function createSendContext(): ProjectContext {
+    return {
+        ...createMixerContext(),
+        tracks: [
+            ...createMixerContext().tracks,
+            {
+                id: 'bus-reverb',
+                name: 'Reverb',
+                kind: 'bus',
+                muted: false,
+                soloed: false,
+                soloSafe: false,
+                armed: false,
+                gain: 0.8,
+                pan: 0,
+                automationMode: 'read',
+                outputId: 'master',
+                clipCount: 0,
+                deviceCount: 0,
+                clips: [],
+                devices: [],
+                sends: [],
+            },
+        ],
+    };
+}
+
 type CompletePlanOutcome = {
     status: 'complete';
     toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
@@ -388,6 +415,296 @@ describe('parsePromptToActions', () => {
         }
         expect(result.rejectionReason).toBeUndefined();
         expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it.each([
+        {
+            name: 'rejects selector-only scope after a direct send destination is grounded',
+            targetIds: ['track-vocals'],
+            protectedTargetIds: [],
+            protectedRanges: [],
+            accepted: false,
+        },
+        {
+            name: 'accepts the exact grounded send source and destination scope',
+            targetIds: ['track-vocals', 'bus-reverb'],
+            protectedTargetIds: [],
+            protectedRanges: [],
+            accepted: true,
+        },
+        {
+            name: 'preserves conservative protected scope after grounding exact send targets',
+            targetIds: ['track-vocals', 'bus-reverb'],
+            protectedTargetIds: ['track-guitar'],
+            protectedRanges: [{ startBeat: 16, endBeat: 32 }],
+            accepted: true,
+        },
+        {
+            name: 'rejects a provider target that does not affect the grounded send',
+            targetIds: ['track-vocals', 'bus-reverb', 'track-guitar'],
+            protectedTargetIds: [],
+            protectedRanges: [],
+            accepted: false,
+        },
+    ])('$name', async ({ targetIds, protectedTargetIds, protectedRanges, accepted }) => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-add-send',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['addSend'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'semantic-add-send',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Send Vocals to Reverb.',
+                                constraints: [],
+                                scope: {
+                                    targetIds,
+                                    targetRanges: [],
+                                    protectedTargetIds,
+                                    protectedRanges,
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate selector and routing authority.'],
+                                stoppingConditions: ['Stop if grounding fails.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'send-vocals-to-reverb',
+                                        name: 'addSend',
+                                        arguments: { busId: 'bus-reverb', level: 0.25 },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { name: 'Vocals' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'send Vocals to Reverb at 25%',
+            createSendContext(),
+            undefined,
+            'revision-1'
+        );
+
+        if (!accepted) {
+            expect(result.actions).toEqual([]);
+            expect(result.requiresConfirmation).toBe(false);
+            expect(result.rejectionReason).toContain('proposal scope omits or enlarges');
+            return;
+        }
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: {
+                    trackId: 'track-vocals',
+                    busId: 'bus-reverb',
+                    level: 0.25,
+                    expectedAbsent: true,
+                },
+            },
+        ]);
+        expect(result.verifiedProviderProposalScope).toEqual({
+            targetIds: ['track-vocals', 'bus-reverb'],
+            targetRanges: [],
+            protectedTargetIds,
+            protectedRanges,
+        });
+    });
+
+    it('excludes an application-generated bus identity from verified structured-list scope', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-create-send',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['createBus', 'addSend'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'semantic-create-send',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Create Vocal Plate and send Vocals to it.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: ['track-vocals'],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate generated routing identity.'],
+                                stoppingConditions: ['Stop if grounding fails.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'create-vocal-plate',
+                                        name: 'createBus',
+                                        arguments: { name: 'Vocal Plate', binding: 'vocal-plate' },
+                                    },
+                                    {
+                                        id: 'send-vocals',
+                                        name: 'addSend',
+                                        arguments: { busId: '$vocal-plate', level: 0.25 },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { name: 'Vocals' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                        dependsOn: ['create-vocal-plate'],
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'create a bus called Vocal Plate and send Vocals to it at 25%',
+            createMixerContext(),
+            undefined,
+            'revision-1'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions.map((action) => action.type)).toEqual(['createBus', 'addSend']);
+        const createdBus = result.actions[0];
+        if (createdBus?.type !== 'createBus') {
+            throw new Error('Expected one application-generated bus identity');
+        }
+        expect(createdBus.payload.busId).toMatch(/^bus-ai-/u);
+        expect(result.verifiedProviderProposalScope).toEqual({
+            targetIds: ['track-vocals'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        });
+        expect(result.verifiedProviderProposalScope?.targetIds).not.toContain(createdBus.payload.busId);
+    });
+
+    it.each([
+        { name: 'rejects an omitted grounded beat range', targetRanges: [], accepted: false },
+        {
+            name: 'accepts the exact grounded beat range',
+            targetRanges: [{ startBeat: 0, endBeat: 8 }],
+            accepted: true,
+        },
+    ])('$name in a structured command list', async ({ targetRanges, accepted }) => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-loop-region',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setLoopRegion'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'semantic-loop-region',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Set the loop from beat 0 to beat 8.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges,
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate loop bounds.'],
+                                stoppingConditions: ['Stop if grounding fails.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'set-loop-region',
+                                        name: 'setLoopRegion',
+                                        arguments: { startBeat: 0, endBeat: 8 },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'set the loop from beat 0 to beat 8',
+            baseContext,
+            undefined,
+            'revision-1'
+        );
+
+        if (!accepted) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('proposal scope omits or enlarges');
+            return;
+        }
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            {
+                type: 'setLoopRegion',
+                payload: { startBeat: 0, endBeat: 8 },
+            },
+        ]);
+        expect(result.verifiedProviderProposalScope).toEqual({
+            targetIds: [],
+            targetRanges: [{ startBeat: 0, endBeat: 8 }],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        });
     });
 
     it('rejects a fast-path plan before confirmation when it conflicts with locked production intent', async () => {

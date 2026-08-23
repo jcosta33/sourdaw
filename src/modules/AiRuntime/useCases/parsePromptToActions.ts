@@ -1,10 +1,12 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { markerStore } from '#/modules/Arrangement/stores';
-import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { getAppActionStaticAuthority, requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { type AgentRunScope } from '../models/AgentRun';
 import { type IntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -25,6 +27,7 @@ import {
 } from '../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import { type BatchLocalActionIdentity } from './agentReference/BatchLocalActionIdentity';
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
@@ -66,6 +69,56 @@ type CreateFastPathResultInput = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getGeneratedTargetIds(identities: readonly BatchLocalActionIdentity[]): ReadonlySet<string> {
+    return new Set(
+        identities.map((identity) => (identity.actionType === 'createBus' ? identity.busId : identity.deviceId))
+    );
+}
+
+function deriveVerifiedProviderProposalScope(
+    actions: readonly AppAction[],
+    identities: readonly BatchLocalActionIdentity[],
+    protectedScope: Pick<AgentRunScope, 'protectedTargetIds' | 'protectedRanges'>
+): AgentRunScope {
+    const generatedTargetIds = getGeneratedTargetIds(identities);
+    const targetIds = new Set<string>();
+    const targetRanges: AgentRunScope['targetRanges'] = [];
+    for (const action of actions) {
+        const authority = getAppActionStaticAuthority(action);
+        for (const targetId of authority.targetIds) {
+            if (!generatedTargetIds.has(targetId)) {
+                targetIds.add(targetId);
+            }
+        }
+        if (authority.targetRange) {
+            targetRanges.push(authority.targetRange);
+        }
+    }
+    return {
+        targetIds: [...targetIds],
+        targetRanges,
+        protectedTargetIds: [...protectedScope.protectedTargetIds],
+        protectedRanges: protectedScope.protectedRanges.map((range) => ({ ...range })),
+    };
+}
+
+function hasSameProviderScope(left: AgentRunScope, right: AgentRunScope): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hasProtectedScopeConflict(scope: AgentRunScope): boolean {
+    const protectedTargetIds = new Set(scope.protectedTargetIds);
+    return (
+        scope.targetIds.some((targetId) => protectedTargetIds.has(targetId)) ||
+        scope.targetRanges.some((targetRange) =>
+            scope.protectedRanges.some(
+                (protectedRange) =>
+                    targetRange.startBeat <= protectedRange.endBeat && protectedRange.startBeat <= targetRange.endBeat
+            )
+        )
+    );
 }
 
 function expandCatalogProposals(calls: readonly ToolCallResult[]) {
@@ -622,7 +675,29 @@ export const parsePromptToActions = inject({ logger })(
                     }
 
                     const verifiedProviderProposalScope =
-                        compiledList.compilerEvidence?.proposalScope ?? bridged.verifiedProviderProposalScope;
+                        bridged.verifiedProviderProposalScope ??
+                        (compiledList.compilerEvidence === undefined
+                            ? undefined
+                            : deriveVerifiedProviderProposalScope(
+                                  guarded.actions,
+                                  bridged.batchLocalActionIdentities ?? [],
+                                  compiledList.compilerEvidence.proposalScope
+                              ));
+                    if (
+                        providerProposal !== null &&
+                        verifiedProviderProposalScope !== undefined &&
+                        (!hasSameProviderScope(providerProposal.scope, verifiedProviderProposalScope) ||
+                            hasProtectedScopeConflict(verifiedProviderProposalScope))
+                    ) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            rejectionReason:
+                                'Provider action rejected: proposal scope omits or enlarges the application-verified grounded action scope.',
+                        };
+                    }
 
                     return {
                         actions: guarded.actions,
