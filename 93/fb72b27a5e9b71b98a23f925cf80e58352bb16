@@ -1,0 +1,22 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_da5e29366bb99c 750-752,764-766,779-780
+  s_a40848e8f8cca9::t_f518af52a345ec 747-749
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_6769cac34aa063 839
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "93fb72b27a5e9b71b98a23f925cf80e58352bb16",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
