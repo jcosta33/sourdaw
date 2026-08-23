@@ -1,5 +1,5 @@
 /**
- * Per-note physical parameter overrides for the Grand Boule piano (§3.1).
+ * Per-note physical parameter overrides for the Grand Boule piano.
  *
  * Each key (1–88) may carry up to 8 multiplier parameters that deviate from
  * the global voicing curve. All values are multipliers where 1.0 = neutral
@@ -28,7 +28,7 @@ export type GrandBoulePerNoteValues = {
     hammerMass: number;
     /** Multiplier on inharmonicity B. */
     stringStiffness: number;
-    /** Coupling strength to soundboard (0 = disconnected). */
+    /** Per-note bridge contribution (0 = disconnected). */
     bridgeCoupling: number;
     /** Damper bandwidth multiplier. */
     damperFirmness: number;

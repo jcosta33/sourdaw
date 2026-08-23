@@ -12,6 +12,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 
 import { type CapabilityReport } from '../../models/CapabilityReport';
 import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
+import { type StorageStatus } from '../../models/StorageStatus';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { initBrowserAi } from '../initBrowserAi';
@@ -29,6 +30,21 @@ function create_logger_mock(): { info: (m: string) => void; warn: (m: string) =>
         debug: vi.fn(),
     };
 }
+
+async function pass_through_ddsp_lock<TResult>(
+    _id: string,
+    _mode: 'exclusive' | 'shared',
+    operation: () => Promise<TResult>
+): Promise<TResult> {
+    return operation();
+}
+
+const empty_storage_status: StorageStatus = {
+    usedBytes: 0,
+    limitBytes: 2 * 1024 * 1024 * 1024,
+    persisted: false,
+    availableBytes: null,
+};
 
 const supported_report: CapabilityReport = {
     capability: 'supported',
@@ -83,6 +99,9 @@ describe('BrowserAi capabilityColdStart', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
@@ -102,6 +121,9 @@ describe('BrowserAi capabilityColdStart', () => {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         // First cold start: healthy runtime.

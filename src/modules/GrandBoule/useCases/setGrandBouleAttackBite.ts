@@ -3,8 +3,8 @@ import { type Store } from '#/infra/store/types';
  * Update the Grand Boule attack-bite (string-precursor) amount.
  *
  * Scales the velocity passed to the longitudinal "string precursor" noise
- * burst that fires alongside `KeyDown` and `HammerLetoff` on every note-on
- * (realism appendix §A6). 0.0 disables the chirp entirely, 1.0 = neutral
+ * burst that fires alongside `KeyDown` and `HammerLetoff` on every note-on.
+ * 0.0 disables the chirp; 1.0 keeps the project default
  * (full physical model), > 1.0 over-emphasises the bite for samples that
  * need extra presence.
  */

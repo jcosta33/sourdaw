@@ -26,9 +26,9 @@
 //! Each render is hashed rather than compared element-wise so the assertion
 //! is sensitive to every bit of every sample while staying readable.
 
+use daw_dsp::grand_boule::engine::GrandBouleEngine;
 use daw_dsp::grand_boule::mechanical_noise::{MechanicalNoise, NoiseEvent};
 use daw_dsp::grand_boule::string::ModalString;
-use daw_dsp::grand_boule::voice::{PianoVoice, PianoVoiceStart};
 use daw_dsp::grinder::engine::GrinderEngine;
 
 fn hash_samples(samples: &[f32]) -> u64 {
@@ -175,43 +175,29 @@ fn mechanical_noise_bursts_render_identically_with_precomputed_coefficients() {
 
 /// F8 adds a per-sample output follower to every voice and F17 skips the
 /// zeroed f32 prefix inside each string, both under the same held chord; F14
-/// is pinned by the mechanical-noise golden above. The chord renders once
-/// through `tick` and once through the pre-cost-reduction reference path,
-/// and neither may move a sample at the shipped default tier.
+/// is pinned by the mechanical-noise golden above. The approved Grand Boule
+/// engine path, including the project-authored FIR body and tuning redesign,
+/// renders once normally and once through the pre-cost-reduction voice path.
 #[test]
 fn grand_boule_held_chord_renders_identically() {
     fn render(reference: bool) -> Vec<f32> {
-        // midi 48/60/67 → keys 28/40/47 (A0 = midi 21 = key 1).
-        let chord = [(48_u8, 28_u32, 0.9_f32), (60, 40, 0.7), (67, 47, 0.5)];
-        let mut voices = chord
-            .iter()
-            .map(|&(midi_note, key, velocity)| {
-                let mut voice = PianoVoice::new(48_000.0);
-                voice.note_on(PianoVoiceStart {
-                    midi_note,
-                    channel: 0,
-                    velocity,
-                    key,
-                    pitch_ratio: 1.0,
-                    stiffness_scale: 1.0,
-                    mass_scale: 1.0,
-                    attack_length: 0,
-                });
-                voice
-            })
-            .collect::<Vec<_>>();
+        let mut engine = GrandBouleEngine::new(48_000.0, 32);
+        engine.note_on(48, 0.9);
+        engine.note_on(60, 0.7);
+        engine.note_on(67, 0.5);
 
         let mut render = Vec::with_capacity(8192);
-        for _ in 0..8192 {
-            let mut sample = 0.0_f32;
-            for voice in voices.iter_mut() {
-                sample += if reference {
-                    voice.tick_reference_render()
-                } else {
-                    voice.tick()
-                };
+        let mut left = vec![0.0_f32; 512];
+        let mut right = vec![0.0_f32; 512];
+        for _ in 0..16 {
+            left.fill(0.0);
+            right.fill(0.0);
+            if reference {
+                engine.process_block_reference(&mut left, &mut right);
+            } else {
+                engine.process_block(&mut left, &mut right);
             }
-            render.push(sample);
+            render.extend_from_slice(&left);
         }
         render
     }

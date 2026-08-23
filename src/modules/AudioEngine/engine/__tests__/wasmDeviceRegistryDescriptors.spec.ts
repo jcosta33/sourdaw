@@ -1530,10 +1530,10 @@ describe('wasmDeviceRegistry descriptors', () => {
 
             const { placeholder, loadPromise } = requireDescriptor('grand-boule').create(deps);
             expect(placeholder.grandBouleControls?.ready).toBe(false);
-            placeholder.grandBouleControls?.setParam('hammer-hardness', 0.6);
+            placeholder.grandBouleControls?.setParam('hammer-hardness', 0.6, 2_048);
             await loadPromise;
 
-            expect(result.setParam).toHaveBeenCalledWith('hammer-hardness', 0.6);
+            expect(result.setParam).toHaveBeenCalledWith('hammer-hardness', 0.6, 2_048);
             expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'gb-1', deviceType: 'grand-boule' });
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);

@@ -84,30 +84,29 @@ pub struct GrandBouleEngine {
     sample_rate: f32,
     /// Active historical temperament.
     temperament: Temperament,
-    // --- Piano model parameters (morph system) ---
-    /// Hammer stiffness multiplier from piano model (0.5..2.0, 1.0 = neutral).
+    // --- Product voicing parameters (morph system) ---
+    /// Hammer stiffness multiplier from product voicing (0.5..2.0, 1.0 = neutral).
     hammer_hardness_scale: f32,
-    /// Hammer mass multiplier from piano model (0.5..2.0, 1.0 = neutral).
+    /// Hammer mass multiplier from product voicing (0.5..2.0, 1.0 = neutral).
     hammer_mass_scale: f32,
-    /// Soundboard brightness: interpolates the soundboard drive amount (0..1).
+    /// Crossfade between the fixed warm and open body FIR kernels (0..1).
     soundboard_brightness: f32,
     /// MPE member channel the in-flight note-on belongs to (audit MD-2).
     /// `note_on_with_pitch` has three voice-allocation exits; rather than
     /// thread the channel through all of them, `note_on_with_channel` sets this
     /// for the duration of one call. Defaults to 0 (non-MPE).
     pending_channel: u8,
-    /// Sympathetic resonance level from piano model (0..1).
+    /// Sympathetic resonance level from product voicing (0..1).
     sympathetic_level: f32,
-    /// Soundboard body resonance strength from piano model (0..1).
+    /// Late body diffusion gain from product voicing (0..1).
     body_resonance: f32,
-    /// Overall tone color offset from piano model (-1..+1).
+    /// Early-to-diffuse body crossfade from product voicing (-1..+1).
     tone_color: f32,
-    /// Multiplier for the Steinway D Railsback stretched-tuning curve
-    /// (§A8). 0.0 = no stretch (equal-tempered fundamentals), 1.0 = the
-    /// measured Jaatinen & Pätynen Steinway D curve, > 1.0 = exaggerated
-    /// stretch. Per-note jitter is preserved at full strength.
+    /// Multiplier for the project-authored stretched-tuning curve. 0.0
+    /// disables smooth stretch, 1.0 applies the default project curve, and
+    /// values above 1.0 exaggerate it. Per-note variation stays unchanged.
     stretch_amount: f32,
-    /// Velocity multiplier for the §A6 string-precursor "bite" noise burst.
+    /// Velocity multiplier for the string-precursor "bite" noise burst.
     /// 0.0 disables the burst entirely, 1.0 = neutral (matches the
     /// hammer's actual MIDI velocity), > 1.0 over-emphasises the chirp.
     attack_bite: f32,
@@ -137,7 +136,7 @@ impl GrandBouleEngine {
             sympathetic: Sympathetic::new(sample_rate),
             noise: MechanicalNoise::new(sample_rate),
             attack_samples: AttackSampleSet::new(),
-            master_gain: 0.15,
+            master_gain: 0.1,
             soundboard_send: 0.6,
             sympathetic_send: 0.25,
             hammer_hardness_offset: 0.0,
@@ -146,13 +145,13 @@ impl GrandBouleEngine {
             velocity_curve: 1.0,
             sample_rate,
             temperament: Temperament::Equal,
-            hammer_hardness_scale: 1.0,
-            hammer_mass_scale: 1.0,
-            soundboard_brightness: 0.55,
+            hammer_hardness_scale: 0.92,
+            hammer_mass_scale: 1.08,
+            soundboard_brightness: 0.48,
             pending_channel: 0,
-            sympathetic_level: 0.5,
-            body_resonance: 0.6,
-            tone_color: 0.0,
+            sympathetic_level: 0.58,
+            body_resonance: 0.52,
+            tone_color: -0.08,
             stretch_amount: 1.0,
             attack_bite: 1.0,
             voice_quality: VoiceQuality::Standard,
@@ -199,6 +198,11 @@ impl GrandBouleEngine {
         self.voices.len()
     }
 
+    /// Number of currently sounding playable voices.
+    pub fn active_voice_count(&self) -> usize {
+        self.voices.iter().filter(|voice| !voice.is_idle()).count()
+    }
+
     pub fn pedals(&self) -> &PedalState {
         &self.pedals
     }
@@ -232,12 +236,9 @@ impl GrandBouleEngine {
         // Apply historical temperament offset on top of the caller's pitch ratio.
         let temperament_cents = temperament_offset_cents(self.temperament, midi_note);
         let temperament_ratio = (2.0_f32).powf(temperament_cents / 1200.0);
-        // Stretched-tuning amount (§A8). The default Railsback curve baked
-        // into `key_fundamental_hz` is the full Steinway D measurement
-        // (Jaatinen & Pätynen 2022). Users who want less or more stretch
-        // dial that in via the `stretch_amount` knob (0..2). We compute
-        // the residual cent offset against equal temperament and apply
-        // `(stretch_amount − 1)` worth of it as a multiplicative ratio.
+        // Scale the project stretch curve by the configured amount. The base
+        // key frequency already carries one copy, so apply only the residual
+        // `(stretch_amount - 1)` contribution here.
         let smooth_cents = railsback_smooth_cents(key);
         let stretch_offset_cents = (self.stretch_amount - 1.0) * smooth_cents;
         let stretch_ratio = (2.0_f32).powf(stretch_offset_cents / 1200.0);
@@ -252,7 +253,7 @@ impl GrandBouleEngine {
         self.noise.trigger(NoiseEvent::KeyDown, shaped_velocity);
         self.noise
             .trigger(NoiseEvent::HammerLetoff, shaped_velocity);
-        // §A6 string-precursor "bite" — the longitudinal pulse that
+        // String-precursor "bite": a longitudinal pulse that
         // reaches the bridge before the transverse wave. Velocity-scaled
         // so soft notes barely whisper it but ff hits get a clear chirp.
         // The `attack_bite` user knob multiplies that velocity, letting
@@ -288,7 +289,7 @@ impl GrandBouleEngine {
             }
         }
 
-        // Voice stealing per §4.2.
+        // Steal the lowest-priority active voice when the pool is full.
         let (highest_midi, lowest_midi) = self.extreme_notes();
         let mut victim_index: Option<usize> = None;
         let mut best_priority: Option<(u8, u8, u64)> = None;
@@ -520,7 +521,7 @@ impl GrandBouleEngine {
     pub fn set_param(&mut self, name: &str, value: f32) {
         let was_sleeping = self.lifecycle() == ProcessLifecycle::Sleep;
         match name {
-            "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
+            "master_gain" => self.master_gain = value.clamp(0.0, 1.0),
             "soundboard_send" => self.soundboard_send = value.clamp(0.0, 1.0),
             "sympathetic_send" => self.sympathetic_send = value.clamp(0.0, 1.0),
             "lid_position" => {
@@ -542,14 +543,29 @@ impl GrandBouleEngine {
             "temperament" => self.temperament = Temperament::from_u8(value as u8),
             "hammer_hardness_scale" => self.hammer_hardness_scale = value.clamp(0.5, 2.0),
             "hammer_mass_scale" => self.hammer_mass_scale = value.clamp(0.5, 2.0),
-            "soundboard_brightness" => self.soundboard_brightness = value.clamp(0.0, 1.0),
+            "soundboard_brightness" => {
+                if value.is_finite() {
+                    self.soundboard_brightness = value.clamp(0.0, 1.0);
+                    self.soundboard.set_brightness(self.soundboard_brightness);
+                }
+            }
             "sympathetic_level" => self.sympathetic_level = value.clamp(0.0, 1.0),
-            "body_resonance" => self.body_resonance = value.clamp(0.0, 1.0),
-            "tone_color" => self.tone_color = value.clamp(-1.0, 1.0),
+            "body_resonance" => {
+                if value.is_finite() {
+                    self.body_resonance = value.clamp(0.0, 1.0);
+                    self.soundboard.set_body_resonance(self.body_resonance);
+                }
+            }
+            "tone_color" => {
+                if value.is_finite() {
+                    self.tone_color = value.clamp(-1.0, 1.0);
+                    self.soundboard.set_tone_color(self.tone_color);
+                }
+            }
             "stretch_amount" => self.stretch_amount = value.clamp(0.0, 2.0),
             "attack_bite" => self.attack_bite = value.clamp(0.0, 2.0),
             // Voice rendering tier: 0 = Standard (power-law hammer),
-            // 1 = High (Stulov hysteresis hammer, §A2). Without this the
+            // 1 = High (Stulov hysteresis hammer). Without this the
             // Stulov path was unreachable in the shipped instrument.
             "quality" => {
                 let quality = if value >= 0.5 {
@@ -559,7 +575,7 @@ impl GrandBouleEngine {
                 };
                 self.set_voice_quality(quality);
             }
-            // Half-pedal damper-lift point (research §7.3 `threshold_low`),
+            // Lower edge of the half-pedal damper-lift curve,
             // calibrated per controller from the MIDI calibration panel.
             "sustain_threshold" => self.pedals.set_half_pedal_low(value),
             // Time constant smoothing the continuous sustain controller on its
@@ -637,6 +653,23 @@ impl GrandBouleEngine {
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_block_inner::<false>(left, right);
+    }
+
+    /// Reference render for the cost-reduction goldens. This keeps the full
+    /// Grand Boule engine path from the released baseline while asking each
+    /// voice to execute its pre-F8/F17 computation. Never call this in
+    /// production.
+    #[doc(hidden)]
+    pub fn process_block_reference(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_block_inner::<true>(left, right);
+    }
+
+    fn process_block_inner<const REFERENCE_RENDER: bool>(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+    ) {
         let frames = left.len().min(right.len());
         // Advance the continuous-CC smoother before the damper coefficients
         // are rebuilt from it, so a block never renders with a pedal position
@@ -658,7 +691,11 @@ impl GrandBouleEngine {
             //    attack if armed.
             let mut bridge = 0.0_f32;
             for voice in self.voices.iter_mut() {
-                let modelled = voice.tick();
+                let modelled = if REFERENCE_RENDER {
+                    voice.tick_reference_render()
+                } else {
+                    voice.tick()
+                };
                 let mixed = if let Some((key, pos, length)) = voice.attack_playhead() {
                     let sample = self.attack_samples.sample(key, pos as usize);
                     let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);
@@ -675,7 +712,11 @@ impl GrandBouleEngine {
                 let tail_index = self.active_steal_tails[tail_position];
                 let tail = &mut self.steal_tails[tail_index];
                 let fade_gain = tail.amplitude();
-                let modelled = tail.tick();
+                let modelled = if REFERENCE_RENDER {
+                    tail.tick_reference_render()
+                } else {
+                    tail.tick()
+                };
                 let mixed = if let Some((key, pos, length)) = tail.attack_playhead() {
                     let sample = self.attack_samples.sample(key, pos as usize);
                     let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);
@@ -703,31 +744,21 @@ impl GrandBouleEngine {
             let sym_amount = self.effective_sympathetic_send() * self.sympathetic_level * 2.0;
             let sympathetic = self.sympathetic.tick(bridge) * sym_amount;
 
-            // 3. The completed bridge bus feeds the independent soundboard
-            //    resonator stage. Model body_resonance scales that stage's
-            //    output, never the string-modal coefficients.
-            let bridge_signal = RenderedBridgeSignal::new(bridge + sympathetic);
-            let (sb_l_raw, sb_r_raw) = self.soundboard.process_rendered_bridge(bridge_signal);
-            let body = self.body_resonance;
-            let sb_l = sb_l_raw * body;
-            let sb_r = sb_r_raw * body;
+            // 3. The completed aggregate bridge bus feeds the independent FIR
+            //    body once. Soundboard send is strictly the input gain; the
+            //    three body controls select already-constructed FIR output.
+            let bridge_signal =
+                RenderedBridgeSignal::new((bridge + sympathetic) * self.soundboard_send);
+            let (sb_l, sb_r) = self.soundboard.process_rendered_bridge(bridge_signal);
 
             // 4. Mechanical noise is summed at the output (noise-floor layer).
             let noise_sample = self.noise.tick();
 
-            // 5. Dry voice signal + stereo soundboard + noise.
-            // Combined tilt from preset tone_tilt and model tone_color.
-            // tone_tilt: -1..+1 from preset, tone_color: -1..+1 from model.
-            let combined_tilt = (self.tone_tilt + self.tone_color * 0.5).clamp(-1.0, 1.0);
-            let tilt_dry = (1.0 - self.soundboard_send) + combined_tilt * 0.5;
-            // soundboard_brightness scales how much the soundboard contributes.
-            let tilt_sb =
-                self.soundboard_send * self.soundboard_brightness * 2.0 - combined_tilt * 0.5;
-            let mono = bridge * tilt_dry.clamp(0.0, 1.0)
-                + (sb_l + sb_r) * 0.5 * tilt_sb.clamp(0.0, 1.0)
-                + sympathetic
-                + noise_sample;
-            let side = (sb_l - sb_r) * 0.5 * tilt_sb.clamp(0.0, 1.0);
+            // 5. Dry bridge signal + stereo FIR body + noise. Preset tone tilt
+            // remains a dry-path gain; product tone color belongs to the body.
+            let dry_gain = (0.4 + self.tone_tilt * 0.2).clamp(0.2, 0.6);
+            let mono = bridge * dry_gain + (sb_l + sb_r) * 0.5 + sympathetic + noise_sample;
+            let side = (sb_l - sb_r) * 0.5;
 
             // Stereo width: 0 = mono, 1 = full stereo spread.
             let w = self.stereo_width;
@@ -795,12 +826,27 @@ impl GrandBouleEngine {
 mod tests {
     use super::*;
 
+    #[test]
+    fn constructor_uses_the_balanced_grand_voicing() {
+        let engine = GrandBouleEngine::new(48_000.0, DEFAULT_VOICE_COUNT);
+        let actual = (
+            engine.hammer_hardness_scale,
+            engine.hammer_mass_scale,
+            engine.soundboard_brightness,
+            engine.sympathetic_level,
+            engine.body_resonance,
+            engine.tone_color,
+        );
+        assert_eq!(actual, (0.92, 1.08, 0.48, 0.58, 0.52, -0.08));
+        assert_ne!(actual, (1.0, 1.0, 0.55, 0.5, 0.6, 0.0));
+    }
+
     /// Render long enough for every strike burst to finish, so a later burst
     /// count reads only what the event under test triggered.
     ///
     /// 48 blocks of 512 is ~512 ms at 48 kHz. The pedal-down burst is the
     /// longest of these: its 20 ms envelope needs roughly 230 ms to fall
-    /// under the resonator's silence floor, so a 20-block window is not
+    /// under the shared tail's silence floor, so a 20-block window is not
     /// enough to clear it.
     fn settle_noise(engine: &mut GrandBouleEngine) {
         let mut left = vec![0.0_f32; 512];
@@ -1068,6 +1114,7 @@ mod tests {
         altered_soundboard.set_param("soundboard_send", 0.0);
         altered_soundboard.set_param("soundboard_brightness", 1.0);
         altered_soundboard.set_param("body_resonance", 0.0);
+        altered_soundboard.set_param("tone_color", -1.0);
         let _ = altered_soundboard
             .soundboard
             .process_rendered_bridge(RenderedBridgeSignal::new(1.0));
@@ -1078,11 +1125,11 @@ mod tests {
             exercise_mid_note_decay_reset(&mut altered_soundboard);
         assert_eq!(
             neutral_before_reset, altered_before_reset,
-            "soundboard controls and resonator state must not reach initial string-modal configuration"
+            "soundboard controls and FIR state must not reach initial string-modal configuration"
         );
         assert_eq!(
             neutral_after_reset, altered_after_reset,
-            "soundboard controls and resonator state must not reach pedal-driven string-modal decay reset"
+            "soundboard controls and FIR state must not reach pedal-driven string-modal decay reset"
         );
     }
 
@@ -1370,7 +1417,8 @@ mod tests {
         let sample = engine.attack_samples.sample(key, position as usize);
         let sample_gain = AttackSampleSet::sample_gain(position as usize, length as usize);
         let model_gain = AttackSampleSet::model_gain(position as usize, length as usize);
-        let expected = modelled * model_gain + sample * sample_gain * fade_gain;
+        let dry_gain = (0.4 + engine.tone_tilt * 0.2).clamp(0.2, 0.6);
+        let expected = (modelled * model_gain + sample * sample_gain * fade_gain) * dry_gain;
 
         let mut left = [0.0; 1];
         let mut right = [0.0; 1];
@@ -1760,7 +1808,10 @@ mod tests {
         }
         assert!(!any_nan, "output contains NaN or Inf");
         assert!(peak_overall > 0.01, "no audio produced");
-        assert!(peak_overall < 2.0, "output is clipping: {peak_overall}");
+        assert!(
+            peak_overall <= 0.98,
+            "output exceeds the shipped peak ceiling: {peak_overall}"
+        );
         assert!(
             peak_at_1s > 0.0001,
             "signal is dead at 1 second: {peak_at_1s}"
@@ -1796,33 +1847,32 @@ mod tests {
                 (peak, energy)
             };
 
-        // Steinway D defaults
-        let (peak_s, energy_s) = measure(1.0, 1.0, 0.55, 0.6, 0.0);
-        // Bösendorfer: softer, heavier, darker
-        let (peak_b, energy_b) = measure(0.6, 1.4, 0.25, 0.9, -0.7);
-        // Yamaha CFX: harder, lighter, brighter
-        let (peak_y, energy_y) = measure(1.5, 0.7, 0.85, 0.35, 0.7);
+        let (peak_balanced, energy_balanced) = measure(0.92, 1.08, 0.48, 0.52, -0.08);
+        let (peak_mellow, energy_mellow) = measure(0.72, 1.25, 0.32, 0.82, -0.58);
+        let (peak_clear, energy_clear) = measure(1.34, 0.82, 0.78, 0.42, 0.56);
 
-        eprintln!("\n--- Model comparison (C4, v=0.8, 1s) ---");
-        eprintln!("  Steinway:    peak={peak_s:.6} energy={energy_s:.4}");
-        eprintln!("  Bösendorfer: peak={peak_b:.6} energy={energy_b:.4}");
-        eprintln!("  Yamaha CFX:  peak={peak_y:.6} energy={energy_y:.4}");
+        eprintln!("\n--- Product voicing comparison (C4, v=0.8, 1s) ---");
+        eprintln!("  Balanced: peak={peak_balanced:.6} energy={energy_balanced:.4}");
+        eprintln!("  Mellow:   peak={peak_mellow:.6} energy={energy_mellow:.4}");
+        eprintln!("  Clear:    peak={peak_clear:.6} energy={energy_clear:.4}");
 
-        // The models must produce measurably different output.
-        let peak_range = (peak_s - peak_b).abs().max((peak_s - peak_y).abs());
-        let energy_range = (energy_s - energy_b).abs().max((energy_s - energy_y).abs());
+        let peak_range = (peak_balanced - peak_mellow)
+            .abs()
+            .max((peak_balanced - peak_clear).abs());
+        let energy_range = (energy_balanced - energy_mellow)
+            .abs()
+            .max((energy_balanced - energy_clear).abs());
         assert!(
             peak_range > 0.001 || energy_range > 0.01,
-            "model params should produce different peak/energy: peak_range={peak_range}, energy_range={energy_range}"
+            "product voicings should produce different peak/energy: peak_range={peak_range}, energy_range={energy_range}"
         );
     }
 
     #[test]
     fn stretch_amount_changes_audio_output_at_treble() {
-        // Property: at C8 the smooth Steinway D Railsback offset is ~+45 c,
-        // so an engine with `stretch_amount = 0` (correction folded back to
-        // equal temperament) must produce a *different* sample stream than
-        // one with `stretch_amount = 1` (full stretch). We render both for
+        // At C8 the project stretch curve is deliberately non-zero, so an
+        // engine with `stretch_amount = 0` must produce a different sample
+        // stream from one with `stretch_amount = 1`. We render both for
         // a few hundred samples and require their L²-distance to be
         // measurably non-zero. If the parameter were silently dropped, the
         // outputs would be bit-identical and this test would fail.
@@ -2311,7 +2361,7 @@ mod tests {
 
     // ── Half-pedal engagement threshold (`sustain_threshold`) ──────────────
     //
-    // Research §7.3 fixes the damper curve at `smoothstep(CC64, low, high)`
+    // The damper curve is `smoothstep(CC64, low, high)`.
     // with `low = 0.15`. The Grand Boule MIDI-calibration panel exposes that
     // `low` edge as "Sus Thresh" so a pedal whose travel or rest position
     // differs from the reference can be calibrated to it. These prove the

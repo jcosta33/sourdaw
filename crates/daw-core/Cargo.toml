@@ -3,6 +3,9 @@ name = "daw-core"
 version = "0.1.0"
 edition = "2021"
 description = "Core Domain Types (TrackId, Beats) for Sourdaw, used everywhere."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["rlib"]

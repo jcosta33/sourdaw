@@ -1,16 +1,14 @@
 //! Coupled-string assembly with two-stage decay for the Grand Boule piano.
 //!
-//! Per spec §3.4, each piano key hosts 1–3 unison strings. Each string has
-//! two polarizations coupled through the bridge:
+//! Each piano key hosts one to three unison strings. Each string has two
+//! project-voiced polarization banks:
 //!
-//! * **Vertical** (aligned with the hammer strike) — fast decay, "prompt
-//!   sound". Extra damping `σ_fast = σ_string + σ_bridge`.
-//! * **Horizontal** (transverse to the strike) — slow decay, "aftersound".
-//!   Extra damping `σ_slow = σ_string + σ_bridge / 100`.
+//! * **Prompt** — the immediate, faster-decaying response.
+//! * **Aftersound** — a quieter, slower-decaying continuation.
 //!
-//! The bridge admittance used to derive `σ_bridge` is `Y ≈ 10⁻³ s/kg`; the
-//! concrete bandwidth constant is tuned to give a plausible ~0.5 s prompt
-//! decay and several-second aftersound.
+//! Their decay curves are authored for this project from the detuned string
+//! frequency alone. No body or soundboard property enters string coefficient
+//! derivation.
 //!
 //! The assembly is allocation-free and holds at most [`MAX_UNISONS`] unisons
 //! with two [`ModalString`] banks each.
@@ -21,57 +19,55 @@ use super::string::{ModalString, StringModalParameters};
 /// Maximum number of unison strings per key (trichord).
 pub const MAX_UNISONS: usize = 3;
 
-/// Bridge-induced bandwidth added to the fast (vertical) polarization, in Hz.
-/// Scales with frequency: bass strings couple more weakly through the bridge
-/// (longer prompt sound, T60 ≈ 2–3 s) while treble strings couple more
-/// strongly (shorter prompt, T60 ≈ 0.3–0.8 s). This matches measurements
-/// from Askenfelt & Jansson.
-fn sigma_bridge_hz(fundamental_hz: f32) -> f32 {
-    // Bass A0 (27.5): ~0.9 Hz → T60 ≈ 2.4 s
-    // Mid  C4 (261):  ~1.8 Hz → T60 ≈ 1.2 s
-    // High C7 (2093): ~9.2 Hz → T60 ≈ 0.24 s
-    0.8 + fundamental_hz * 0.004
+#[derive(Clone, Copy, Debug)]
+struct PolarizationDecay {
+    prompt_hz: f32,
+    aftersound_hz: f32,
 }
 
-/// Slow-polarization multiplier (`σ_bridge / 100`) from the spec.
-const SIGMA_SLOW_SCALE: f32 = 0.01;
+/// Project-authored polarization decay bandwidths derived only from string
+/// frequency. The normalized register spans A0 through C8 and clamps outside
+/// that range so malformed callers cannot produce unbounded damping.
+fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
+    let register = ((note_frequency_hz.max(27.5) / 27.5).log2() / 7.25).clamp(0.0, 1.0);
+    PolarizationDecay {
+        prompt_hz: 0.58 + 0.72 * register + 7.2 * register.powf(2.4),
+        aftersound_hz: 0.012 + 0.025 * register + 0.105 * register * register,
+    }
+}
 
-/// Gain applied to the vertical output before feeding it into the horizontal
-/// (slow) polarization. With `configure_aftersound`, the horizontal C0 is
-/// computed from the fast bandwidth (matched impulse response). The gain
-/// controls how quickly the aftersound builds up to its steady-state level
-/// relative to the prompt. Weinreich (1977) measured the aftersound plateau
-/// at roughly 15–20 dB below the prompt peak on a Steinway D; 30× coupling
-/// with 0.7 mix achieves this ratio.
-const BRIDGE_COUPLING_GAIN: f32 = 30.0;
+/// Gain applied to the prompt output before feeding it into the aftersound
+/// polarization. With `configure_aftersound`, the aftersound C0 is computed
+/// from the prompt bandwidth. The gain controls how quickly the aftersound
+/// builds relative to the prompt; both constants are project voicing.
+const POLARIZATION_TRANSFER_GAIN: f32 = 30.0;
 
-/// Relative output mix for the horizontal (slow) polarization.
+/// Relative output mix for the aftersound polarization.
 ///
-/// The horizontal polarization is driven by bridge coupling from the
-/// vertical output (Weinreich 1977). Combined with BRIDGE_COUPLING_GAIN,
-/// this sets the aftersound plateau at ~15–20 dB below the prompt peak.
-const HORIZONTAL_MIX: f32 = 0.7;
+/// Combined with `POLARIZATION_TRANSFER_GAIN`, this sets the project
+/// aftersound balance.
+const AFTERSOUND_MIX: f32 = 0.7;
 
-/// One unison: a vertical + horizontal polarization pair.
+/// One unison: a prompt + aftersound polarization pair.
 #[derive(Clone, Debug)]
 struct UnisonString {
-    vertical: ModalString,
-    horizontal: ModalString,
+    prompt: ModalString,
+    aftersound: ModalString,
     detune_cents: f32,
 }
 
 impl UnisonString {
     fn new() -> Self {
         Self {
-            vertical: ModalString::new(),
-            horizontal: ModalString::new(),
+            prompt: ModalString::new(),
+            aftersound: ModalString::new(),
             detune_cents: 0.0,
         }
     }
 
     fn reset(&mut self) {
-        self.vertical.reset();
-        self.horizontal.reset();
+        self.prompt.reset();
+        self.aftersound.reset();
     }
 }
 
@@ -79,7 +75,7 @@ impl UnisonString {
 ///
 /// Holds two polarizations per unison and exposes a single `tick` entry
 /// point that injects the hammer force into every active string and returns
-/// the mixed bridge signal.
+/// the mixed string signal.
 #[derive(Clone, Debug)]
 pub struct CoupledStringAssembly {
     unisons: [UnisonString; MAX_UNISONS],
@@ -129,13 +125,12 @@ impl CoupledStringAssembly {
         let count = unison_count(key).min(MAX_UNISONS as u32) as usize;
         self.active_unisons = count;
 
-        let bridge = sigma_bridge_hz(fundamental_hz);
-        let fast_damp = bridge + extra_damping_hz;
-        let slow_damp = bridge * SIGMA_SLOW_SCALE + extra_damping_hz;
-
         for unison_index in 0..count {
             let cents = unison_detune_cents(key, unison_index as u32);
             let detuned = fundamental_hz * (2.0_f32).powf(cents / 1200.0);
+            let decay = polarization_decay_hz(detuned);
+            let prompt_damping_hz = decay.prompt_hz + extra_damping_hz;
+            let aftersound_damping_hz = decay.aftersound_hz + extra_damping_hz;
             let parameters = StringModalParameters::new(
                 detuned,
                 key,
@@ -146,15 +141,17 @@ impl CoupledStringAssembly {
             let unison = &mut self.unisons[unison_index];
             unison.detune_cents = cents;
             unison
-                .vertical
-                .configure_from_string_parameters(parameters, fast_damp);
-            // Horizontal (aftersound) polarization: C0 uses fast bandwidth
-            // for efficient energy pickup from bridge coupling, but C1/C2
-            // use slow bandwidth for the long-ringing aftersound tail
-            // (Weinreich 1977, §3.4).
+                .prompt
+                .configure_from_string_parameters(parameters, prompt_damping_hz);
+            // The aftersound C0 follows the prompt bandwidth for a matched
+            // pickup response; C1/C2 retain the independently authored tail.
             unison
-                .horizontal
-                .configure_aftersound_from_string_parameters(parameters, fast_damp, slow_damp);
+                .aftersound
+                .configure_aftersound_from_string_parameters(
+                    parameters,
+                    prompt_damping_hz,
+                    aftersound_damping_hz,
+                );
         }
     }
 
@@ -169,31 +166,33 @@ impl CoupledStringAssembly {
         base_bandwidth_hz: f32,
         extra_damping_hz: f32,
     ) {
-        let bridge = sigma_bridge_hz(fundamental_hz);
-        let fast_damp = bridge + extra_damping_hz;
-        let slow_damp = bridge * SIGMA_SLOW_SCALE + extra_damping_hz;
         for unison_index in 0..self.active_unisons {
             let unison = &mut self.unisons[unison_index];
             let detuned = fundamental_hz * (2.0_f32).powf(unison.detune_cents / 1200.0);
-            unison
-                .vertical
-                .reset_decay(detuned, key, sample_rate, base_bandwidth_hz, fast_damp);
-            unison
-                .horizontal
-                .reset_decay(detuned, key, sample_rate, base_bandwidth_hz, slow_damp);
+            let decay = polarization_decay_hz(detuned);
+            unison.prompt.reset_decay(
+                detuned,
+                key,
+                sample_rate,
+                base_bandwidth_hz,
+                decay.prompt_hz + extra_damping_hz,
+            );
+            unison.aftersound.reset_decay(
+                detuned,
+                key,
+                sample_rate,
+                base_bandwidth_hz,
+                decay.aftersound_hz + extra_damping_hz,
+            );
         }
     }
 
-    /// Process one sample. The vertical polarization is driven by the hammer
-    /// force directly; the horizontal polarization receives energy through
-    /// bridge coupling from the vertical output (Weinreich 1977, §3.4).
+    /// Process one sample. The prompt polarization is driven by the hammer
+    /// force; its output excites the quieter aftersound polarization.
     ///
-    /// The `BRIDGE_COUPLING_GAIN` compensates for the horizontal resonators'
-    /// very small C0 (narrow decay bandwidth) so that energy transfers at a
-    /// realistic rate. No cross-unison feedback is applied to the horizontal
-    /// drive — each unison's horizontal is driven only by its own vertical
-    /// output, avoiding the positive-feedback instability that arises when
-    /// high-Q resonators are cross-coupled.
+    /// The transfer gain compensates for the aftersound resonators' narrow C0.
+    /// Each unison's aftersound is driven only by its own prompt output, with no
+    /// cross-unison feedback.
     #[inline]
     pub fn tick(&mut self, hammer_force: f32) -> f32 {
         self.tick_inner(hammer_force, false)
@@ -214,29 +213,29 @@ impl CoupledStringAssembly {
         for unison_index in 0..n {
             let unison = &mut self.unisons[unison_index];
             let v = if reference_render {
-                unison.vertical.tick_including_zeroed_prefix(hammer_force)
+                unison.prompt.tick_including_zeroed_prefix(hammer_force)
             } else {
-                unison.vertical.tick(hammer_force)
+                unison.prompt.tick(hammer_force)
             };
             prompt += v;
-            let drive = v * BRIDGE_COUPLING_GAIN;
+            let drive = v * POLARIZATION_TRANSFER_GAIN;
             aftersound += if reference_render {
-                unison.horizontal.tick_including_zeroed_prefix(drive)
+                unison.aftersound.tick_including_zeroed_prefix(drive)
             } else {
-                unison.horizontal.tick(drive)
+                unison.aftersound.tick(drive)
             };
         }
-        prompt + HORIZONTAL_MIX * aftersound
+        prompt + AFTERSOUND_MIX * aftersound
     }
 
     /// Cheaper tick — used by progressive simplification. Runs only the
-    /// vertical polarization of the first unison.
+    /// prompt polarization of the first unison.
     #[inline]
     pub fn tick_simplified(&mut self, hammer_force: f32) -> f32 {
         if self.active_unisons == 0 {
             return 0.0;
         }
-        self.unisons[0].vertical.tick_simplified(hammer_force)
+        self.unisons[0].prompt.tick_simplified(hammer_force)
     }
 
     #[cfg(test)]
@@ -247,8 +246,8 @@ impl CoupledStringAssembly {
                 .fold(0_u64, |signature, unison| {
                     signature
                         .wrapping_mul(31)
-                        .wrapping_add(unison.vertical.coefficient_signature())
-                        .wrapping_add(unison.horizontal.coefficient_signature())
+                        .wrapping_add(unison.prompt.coefficient_signature())
+                        .wrapping_add(unison.aftersound.coefficient_signature())
                 });
         signature
             .wrapping_mul(31)
@@ -272,7 +271,7 @@ mod tests {
     /// `reset_decay` is the engine's existing mid-note retune primitive — it
     /// rewrites c1/c2 for a new fundamental and never touches the ringing
     /// state (x1/x2/y1/y2), which only `reset()` clears. `PianoVoice::tick`
-    /// already calls it mid-note for the §A5.2 pitch glide, so retuning a
+    /// already calls it mid-note for pitch glide, so retuning a
     /// sounding string is a shipping code path, not a redesign. The open
     /// question is only whether doing it *every block, per bent voice* fits
     /// the audio deadline.
@@ -328,6 +327,20 @@ mod tests {
         let mut assembly = CoupledStringAssembly::new();
         assembly.configure(27.5, 1, 1.0 / 7.0, 48_000.0, 0.25, 0.0);
         assert_eq!(assembly.active_unisons(), 1);
+    }
+
+    #[test]
+    fn project_polarization_decay_curve_is_frequency_only_and_pinned() {
+        let bass = polarization_decay_hz(27.5);
+        let middle = polarization_decay_hz(440.0);
+        let treble = polarization_decay_hz(4_186.009);
+
+        assert!((bass.prompt_hz - 0.58).abs() < 1.0e-6);
+        assert!((bass.aftersound_hz - 0.012).abs() < 1.0e-6);
+        assert!((middle.prompt_hz - 2.704_929).abs() < 1.0e-5);
+        assert!((middle.aftersound_hz - 0.057_755).abs() < 1.0e-6);
+        assert!((treble.prompt_hz - 8.5).abs() < 1.0e-4);
+        assert!((treble.aftersound_hz - 0.142).abs() < 1.0e-5);
     }
 
     #[test]
