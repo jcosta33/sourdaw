@@ -18,8 +18,10 @@ import {
     renameSync,
     rmSync,
     statSync,
+    symlinkSync,
     utimesSync,
     writeFileSync,
+    writeSync,
 } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
@@ -27,7 +29,8 @@ import { fileURLToPath } from 'node:url';
 
 import { extractFile, listPackage, statFile } from '@electron/asar';
 import { FuseV1Options, type FuseState } from '@electron/fuses';
-import { t as listTar } from 'tar';
+import { Unzip, UnzipInflate } from 'fflate';
+import { Parser as TarParser } from 'tar';
 
 import { checkReleaseInventory } from './checkReleaseInventory.ts';
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from './electronRuntimeContract.ts';
@@ -91,6 +94,16 @@ const ELECTRON_BUILD_COMMAND = 'TARGET_ARCH=arm64 e build --target electron:rele
 const ELECTRON_BUILD_TARGET = 'electron:release_build';
 const FFMPEG_OUTPUT = 'src/out/Default/Electron Framework.framework/Libraries/libffmpeg.dylib';
 const HASH_CHUNK_BYTES = 1024 * 1024;
+
+export const RELEASE_PROOF_TYPE_LIMITS = {
+    jsonBytes: 8 * 1024 * 1024,
+    commitObjectBytes: 1024 * 1024,
+    machLoadCommandBytes: 16 * 1024 * 1024,
+    fuseWireBytes: 64 * 1024,
+    asarHeaderBytes: 16 * 1024 * 1024,
+    asarRendererEntryBytes: 64 * 1024 * 1024,
+    buildInputBytes: 4 * 1024 * 1024,
+} as const;
 
 export const RELEASE_PROOF_ARCHIVE_LIMITS = {
     entries: 60_000,
@@ -158,8 +171,28 @@ function writeJson(path: string, value: unknown): void {
     writeFileSync(path, `${JSON.stringify(value, null, 4)}\n`);
 }
 
+function readBoundedFile(path: string, maxBytes: number, label: string): Buffer {
+    const size = statSync(path).size;
+    if (size > maxBytes) {
+        throw new Error(`${label} exceeds the ${String(maxBytes)}-byte read limit`);
+    }
+    return readFileSync(path);
+}
+
 function readJson(path: string): unknown {
-    return parseJsonWithUniqueKeys(readFileSync(path, 'utf8'), path);
+    return parseJsonWithUniqueKeys(
+        readBoundedFile(path, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, 'JSON document').toString('utf8'),
+        path
+    );
+}
+
+function readCommitObject(path: string, label: string, errors: string[]): Buffer | undefined {
+    try {
+        return readBoundedFile(path, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes, `${label} commit object`);
+    } catch (error) {
+        errors.push(error instanceof Error ? error.message : `${label} commit object cannot be read`);
+        return undefined;
+    }
 }
 
 function expectedDesktopArtifactName(root: string): string {
@@ -263,10 +296,26 @@ function listFiles(root: string, label: string, errors: string[], allowContained
         return [];
     }
     const files: string[] = [];
-    const visit = (directory: string): void => {
+    const directories = [root];
+    let entryCount = 0;
+    let aggregateBytes = 0;
+    while (directories.length > 0) {
+        const directory = directories.pop();
+        if (directory === undefined) {
+            break;
+        }
         for (const entry of readdirSync(directory, { withFileTypes: true })) {
             const child = join(directory, entry.name);
             const childPath = relative(root, child).split(sep).join('/');
+            entryCount += 1;
+            if (entryCount > RELEASE_PROOF_ARCHIVE_LIMITS.entries) {
+                errors.push(`${label}: traversal exceeds the entry count limit`);
+                return files.sort();
+            }
+            if (childPath.split('/').length > RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth) {
+                errors.push(`${label}: traversal contains a path exceeding the depth limit (${childPath})`);
+                continue;
+            }
             const metadata = lstatSync(child);
             if (metadata.isSymbolicLink()) {
                 if (!allowContainedLinks) {
@@ -275,8 +324,17 @@ function listFiles(root: string, label: string, errors: string[], allowContained
                     containedRealPath(root, child, `${label} symbolic link ${childPath}`, errors);
                 }
             } else if (metadata.isDirectory()) {
-                visit(child);
+                directories.push(child);
             } else if (metadata.isFile()) {
+                if (metadata.size > RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes) {
+                    errors.push(`${label}: file exceeds the candidate file-size limit (${childPath})`);
+                    continue;
+                }
+                aggregateBytes += metadata.size;
+                if (aggregateBytes > RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes) {
+                    errors.push(`${label}: traversal exceeds the aggregate byte limit`);
+                    return files.sort();
+                }
                 if (containedRealPath(root, child, `${label} file ${childPath}`, errors) !== undefined) {
                     files.push(childPath);
                 }
@@ -284,8 +342,7 @@ function listFiles(root: string, label: string, errors: string[], allowContained
                 errors.push(`${label}: unsupported entry ${childPath}`);
             }
         }
-    };
-    visit(root);
+    }
     return files.sort();
 }
 
@@ -369,45 +426,83 @@ type ArchiveEntry = {
     path: string;
     type: 'file' | 'directory' | 'symlink';
     expandedBytes: number;
+    mode: number;
+};
+
+type ArchiveLimits = {
+    entries: number;
+    pathDepth: number;
+    entryBytes: number;
+    expandedBytes: number;
+    candidateFileBytes: number;
+};
+
+type ZipArchiveRead = {
+    entries: ArchiveEntry[];
+    hashes: Map<string, string>;
+    linkTargets: Map<string, Buffer>;
 };
 
 function archiveLimitError(message: string): Error {
     return new Error(`release archive limit exceeded: ${message}`);
 }
 
-function validateArchiveEntryBounds(entries: readonly ArchiveEntry[], label: string, errors: string[]): void {
+function validateArchiveEntryBounds(
+    entries: readonly ArchiveEntry[],
+    label: string,
+    errors: string[],
+    limits: ArchiveLimits = RELEASE_PROOF_ARCHIVE_LIMITS
+): void {
     if (entries.length === 0) {
         errors.push(`${label} is empty`);
         return;
     }
-    if (entries.length > RELEASE_PROOF_ARCHIVE_LIMITS.entries) {
+    if (entries.length > limits.entries) {
         errors.push(`${label} exceeds the entry count limit`);
     }
     let total = 0;
     for (const entry of entries) {
         const depth = entry.path.split('/').filter(Boolean).length;
-        if (depth > RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth) {
+        if (depth > limits.pathDepth) {
             errors.push(`${label} contains a path exceeding the depth limit`);
         }
-        if (entry.expandedBytes > RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes) {
+        if (entry.expandedBytes > limits.entryBytes) {
             errors.push(`${label} contains an entry exceeding the expanded-size limit`);
         }
         total += entry.expandedBytes;
-        if (total > RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes) {
+        if (total > limits.expandedBytes) {
             errors.push(`${label} exceeds the aggregate expanded-size limit`);
             break;
         }
     }
 }
 
-function tarEntries(path: string, errors: string[]): ArchiveEntry[] {
+function normalizedArchivePath(path: string): string {
+    return path.replace(/^\.\//u, '').replace(/\/$/u, '');
+}
+
+function archivePathIsUnsafe(path: string): boolean {
+    return path.startsWith('/') || path.includes('\\') || path.split('/').includes('..');
+}
+
+function archivePathContainsGitMetadata(path: string): boolean {
+    return path.split('/').some((segment) => segment.toLowerCase() === '.git');
+}
+
+function streamTarArchive(
+    path: string,
+    destination?: string,
+    limits: ArchiveLimits = RELEASE_PROOF_ARCHIVE_LIMITS
+): ArchiveEntry[] {
     const entries: ArchiveEntry[] = [];
     let total = 0;
+    const input = openSync(path, 'r');
+    const outputs = new Set<number>();
     try {
-        listTar({
+        const parser = new TarParser({
             file: path,
-            sync: true,
             strict: true,
+            maxMetaEntrySize: Math.min(RELEASE_PROOF_TYPE_LIMITS.jsonBytes, limits.entryBytes),
             onReadEntry(entry) {
                 let type: ArchiveEntry['type'] | undefined;
                 if (entry.type === 'File') {
@@ -418,28 +513,102 @@ function tarEntries(path: string, errors: string[]): ArchiveEntry[] {
                 if (type === undefined) {
                     throw new Error(`unsupported TAR entry metadata: ${entry.type}`);
                 }
-                if (entry.size > RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes) {
+                const archivePath = normalizedArchivePath(entry.path);
+                if (archivePath.split('/').filter(Boolean).length > limits.pathDepth) {
+                    throw archiveLimitError('a path exceeds the depth limit');
+                }
+                if (
+                    destination !== undefined &&
+                    (archivePathIsUnsafe(archivePath) || archivePathContainsGitMetadata(archivePath))
+                ) {
+                    throw new Error('TAR entry path is unsafe for extraction');
+                }
+                if (entry.size > limits.entryBytes) {
                     throw archiveLimitError('an entry exceeds the expanded-size limit');
                 }
-                total += entry.size;
-                if (total > RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes) {
-                    throw archiveLimitError('aggregate expanded bytes exceed the limit');
-                }
-                entries.push({
-                    path: entry.path.replace(/^\.\//u, '').replace(/\/$/u, ''),
-                    type,
-                    expandedBytes: entry.size,
-                });
-                if (entries.length > RELEASE_PROOF_ARCHIVE_LIMITS.entries) {
+                entries.push({ path: archivePath, type, expandedBytes: entry.size, mode: entry.mode ?? 0 });
+                if (entries.length > limits.entries) {
                     throw archiveLimitError('entry count exceeds the limit');
                 }
+                let actualBytes = 0;
+                let output: number | undefined;
+                let outputPath: string | undefined;
+                if (destination !== undefined && archivePath.length > 0) {
+                    outputPath = resolve(destination, ...archivePath.split('/'));
+                    if (!isContained(destination, outputPath)) {
+                        throw new Error('TAR entry path escapes the extraction root');
+                    }
+                    if (type === 'directory') {
+                        mkdirSync(outputPath, { recursive: true });
+                    } else {
+                        mkdirSync(dirname(outputPath), { recursive: true });
+                        output = openSync(outputPath, 'w', entry.mode ?? 0o644);
+                        outputs.add(output);
+                    }
+                }
+                entry.on('data', (chunk: Buffer) => {
+                    actualBytes += chunk.length;
+                    total += chunk.length;
+                    if (actualBytes > limits.entryBytes) {
+                        throw archiveLimitError('an entry exceeds the actual expanded-size limit');
+                    }
+                    if (total > limits.expandedBytes) {
+                        throw archiveLimitError('actual aggregate expanded bytes exceed the limit');
+                    }
+                    if (output !== undefined) {
+                        writeSync(output, chunk);
+                    }
+                });
+                entry.on('end', () => {
+                    if (actualBytes !== entry.size) {
+                        throw new Error('TAR entry expanded bytes do not match its header');
+                    }
+                    if (output !== undefined) {
+                        closeSync(output);
+                        outputs.delete(output);
+                        if (outputPath !== undefined) {
+                            chmodSync(outputPath, (entry.mode ?? 0o644) & 0o777);
+                        }
+                    }
+                });
+                entry.resume();
             },
         });
+        const size = statSync(path).size;
+        let position = 0;
+        while (position < size) {
+            const chunk = Buffer.allocUnsafe(Math.min(HASH_CHUNK_BYTES, size - position));
+            const bytesRead = readSync(input, chunk, 0, chunk.length, position);
+            if (bytesRead === 0) {
+                throw new Error('TAR archive is truncated');
+            }
+            parser.write(chunk.subarray(0, bytesRead));
+            position += bytesRead;
+        }
+        parser.end();
+        return entries.filter((entry) => entry.path.length > 0);
     } catch (error) {
-        errors.push(error instanceof Error ? `tar archive is unreadable: ${error.message}` : 'tar archive is unreadable');
+        if (destination !== undefined) {
+            rmSync(destination, { recursive: true, force: true });
+        }
+        throw error;
+    } finally {
+        for (const output of outputs) {
+            closeSync(output);
+        }
+        closeSync(input);
+    }
+}
+
+function tarEntries(path: string, errors: string[]): ArchiveEntry[] {
+    try {
+        return streamTarArchive(path);
+    } catch (error) {
+        errors.push(
+            error instanceof Error ? `tar archive is unreadable: ${error.message}` : 'tar archive is unreadable'
+        );
         return [];
     }
-    return entries.filter((entry) => entry.path.length > 0);
 }
 
 function readZipBuffer(descriptor: number, length: number, position: number): Buffer | undefined {
@@ -447,11 +616,15 @@ function readZipBuffer(descriptor: number, length: number, position: number): Bu
     return readSync(descriptor, value, 0, length, position) === length ? value : undefined;
 }
 
-function zipEntries(path: string, errors: string[]): ArchiveEntry[] {
+function zipEntries(
+    path: string,
+    errors: string[],
+    limits: ArchiveLimits = RELEASE_PROOF_ARCHIVE_LIMITS
+): ArchiveEntry[] {
     let descriptor: number | undefined;
     try {
         const size = statSync(path).size;
-        if (size > RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes) {
+        if (size > limits.candidateFileBytes) {
             errors.push('zip archive exceeds the candidate file-size limit');
             return [];
         }
@@ -487,11 +660,11 @@ function zipEntries(path: string, errors: string[]): ArchiveEntry[] {
         ) {
             throw new Error('ZIP64 and multi-disk metadata are unsupported');
         }
-        if (entryCount > RELEASE_PROOF_ARCHIVE_LIMITS.entries) {
+        if (entryCount > limits.entries) {
             throw archiveLimitError('entry count exceeds the limit');
         }
         if (
-            centralBytes > RELEASE_PROOF_ARCHIVE_LIMITS.entries * 4096 ||
+            centralBytes > limits.entries * 4096 ||
             centralOffset + centralBytes > size ||
             centralOffset + centralBytes > size - tailLength + endOffset
         ) {
@@ -524,7 +697,11 @@ function zipEntries(path: string, errors: string[]): ArchiveEntry[] {
                 throw new Error('unsupported ZIP entry metadata');
             }
             const bytes = readZipBuffer(descriptor, pathLength, position + 46);
-            if (bytes === undefined || bytes.includes(0) || (flags & 0x800) === 0 && bytes.some((value) => value > 0x7f)) {
+            if (
+                bytes === undefined ||
+                bytes.includes(0) ||
+                ((flags & 0x800) === 0 && bytes.some((value) => value > 0x7f))
+            ) {
                 throw new Error('unsupported ZIP entry filename metadata');
             }
             const rawPath = bytes.toString('utf8');
@@ -544,14 +721,14 @@ function zipEntries(path: string, errors: string[]): ArchiveEntry[] {
             if (type === undefined) {
                 throw new Error('unsupported ZIP entry metadata');
             }
-            if (expandedBytes > RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes) {
+            if (expandedBytes > limits.entryBytes) {
                 throw archiveLimitError('an entry exceeds the expanded-size limit');
             }
             total += expandedBytes;
-            if (total > RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes) {
+            if (total > limits.expandedBytes) {
                 throw archiveLimitError('aggregate expanded bytes exceed the limit');
             }
-            entries.push({ path: archivePath, type, expandedBytes });
+            entries.push({ path: archivePath, type, expandedBytes, mode: mode & 0o777 });
             position += entryLength;
         }
         if (position !== centralOffset + centralBytes) {
@@ -559,11 +736,180 @@ function zipEntries(path: string, errors: string[]): ArchiveEntry[] {
         }
         return entries.filter((entry) => entry.path.length > 0);
     } catch (error) {
-        errors.push(error instanceof Error ? `zip archive is unreadable: ${error.message}` : 'zip archive is unreadable');
+        errors.push(
+            error instanceof Error ? `zip archive is unreadable: ${error.message}` : 'zip archive is unreadable'
+        );
         return [];
     } finally {
         if (descriptor !== undefined) {
             closeSync(descriptor);
+        }
+    }
+}
+
+function streamZipArchive(
+    archive: string,
+    declaredEntries: readonly ArchiveEntry[],
+    options: {
+        destination?: string;
+        hashFiles?: boolean;
+        rejectGitMetadata?: boolean;
+        limits?: ArchiveLimits;
+    } = {}
+): ZipArchiveRead {
+    const limits = options.limits ?? RELEASE_PROOF_ARCHIVE_LIMITS;
+    const declaredByPath = new Map(declaredEntries.map((entry) => [entry.path, entry]));
+    const entries: ArchiveEntry[] = [];
+    const hashes = new Map<string, string>();
+    const linkTargets = new Map<string, Buffer>();
+    const seen = new Set<string>();
+    const outputs = new Set<number>();
+    let aggregateBytes = 0;
+    let failure: Error | undefined;
+    try {
+        const unzip = new Unzip((file) => {
+            if (failure !== undefined) {
+                file.terminate();
+                return;
+            }
+            try {
+                const path = normalizedArchivePath(file.name);
+                const declared = declaredByPath.get(path);
+                if (path.length === 0 || archivePathIsUnsafe(path)) {
+                    throw new Error('ZIP local entry path is unsafe');
+                }
+                if (options.rejectGitMetadata === true && archivePathContainsGitMetadata(path)) {
+                    throw new Error('ZIP local entry contains repository metadata');
+                }
+                if (path.split('/').length > limits.pathDepth) {
+                    throw archiveLimitError('an actual path exceeds the depth limit');
+                }
+                if (declared === undefined || seen.has(path)) {
+                    throw new Error('ZIP local entries do not match the central directory');
+                }
+                if ((file.name.endsWith('/') ? 'directory' : declared.type) !== declared.type) {
+                    throw new Error('ZIP local entry type does not match the central directory');
+                }
+                seen.add(path);
+                if (seen.size > limits.entries) {
+                    throw archiveLimitError('actual entry count exceeds the limit');
+                }
+                const hash = options.hashFiles === true && declared.type === 'file' ? createHash('sha256') : undefined;
+                const targetChunks: Buffer[] = [];
+                let actualBytes = 0;
+                let output: number | undefined;
+                let outputPath: string | undefined;
+                if (options.destination !== undefined) {
+                    outputPath = resolve(options.destination, ...path.split('/'));
+                    if (!isContained(options.destination, outputPath)) {
+                        throw new Error('ZIP entry escapes the extraction root');
+                    }
+                    if (declared.type === 'directory') {
+                        mkdirSync(outputPath, { recursive: true });
+                    } else if (declared.type === 'file') {
+                        mkdirSync(dirname(outputPath), { recursive: true });
+                        output = openSync(outputPath, 'w', declared.mode === 0 ? 0o644 : declared.mode);
+                        outputs.add(output);
+                    }
+                }
+                file.ondata = (error, data, final) => {
+                    if (failure !== undefined) {
+                        return;
+                    }
+                    try {
+                        if (error !== null) {
+                            throw error;
+                        }
+                        actualBytes += data.length;
+                        aggregateBytes += data.length;
+                        if (actualBytes > limits.entryBytes) {
+                            throw archiveLimitError('an entry exceeds the actual expanded-size limit');
+                        }
+                        if (aggregateBytes > limits.expandedBytes) {
+                            throw archiveLimitError('actual aggregate expanded bytes exceed the limit');
+                        }
+                        if (declared.type === 'directory' && data.length > 0) {
+                            throw new Error('ZIP directory entry contains data');
+                        }
+                        hash?.update(data);
+                        if (declared.type === 'symlink' && data.length > 0) {
+                            if (actualBytes > 8192) {
+                                throw archiveLimitError('a symbolic link target exceeds the limit');
+                            }
+                            targetChunks.push(Buffer.from(data));
+                        }
+                        if (output !== undefined && data.length > 0) {
+                            writeSync(output, data);
+                        }
+                        if (!final) {
+                            return;
+                        }
+                        if (
+                            actualBytes !== declared.expandedBytes ||
+                            (file.originalSize !== undefined && actualBytes !== file.originalSize)
+                        ) {
+                            throw new Error('ZIP entry expanded bytes do not match its declarations');
+                        }
+                        if (output !== undefined) {
+                            closeSync(output);
+                            outputs.delete(output);
+                            if (outputPath !== undefined) {
+                                chmodSync(outputPath, declared.mode === 0 ? 0o644 : declared.mode);
+                            }
+                        }
+                        entries.push({ ...declared, expandedBytes: actualBytes });
+                        if (hash !== undefined) {
+                            hashes.set(path, hash.digest('hex'));
+                        }
+                        if (declared.type === 'symlink') {
+                            linkTargets.set(path, Buffer.concat(targetChunks, actualBytes));
+                        }
+                    } catch (error) {
+                        failure = error instanceof Error ? error : new Error(String(error));
+                        file.terminate();
+                    }
+                };
+                file.start();
+            } catch (error) {
+                failure = error instanceof Error ? error : new Error(String(error));
+                file.terminate();
+            }
+        });
+        unzip.register(UnzipInflate);
+        const descriptor = openSync(archive, 'r');
+        try {
+            const size = statSync(archive).size;
+            let position = 0;
+            while (position < size) {
+                const chunk = Buffer.allocUnsafe(Math.min(HASH_CHUNK_BYTES, size - position));
+                const bytesRead = readSync(descriptor, chunk, 0, chunk.length, position);
+                if (bytesRead === 0) {
+                    throw new Error('ZIP archive is truncated');
+                }
+                unzip.push(chunk.subarray(0, bytesRead), position + bytesRead === size);
+                if (failure !== undefined) {
+                    throw failure;
+                }
+                position += bytesRead;
+            }
+        } finally {
+            closeSync(descriptor);
+        }
+        if (failure !== undefined) {
+            throw failure;
+        }
+        if (seen.size !== declaredEntries.length || entries.length !== declaredEntries.length) {
+            throw new Error('ZIP local entries do not match the central directory');
+        }
+        return { entries, hashes, linkTargets };
+    } catch (error) {
+        if (options.destination !== undefined) {
+            rmSync(options.destination, { recursive: true, force: true });
+        }
+        throw error;
+    } finally {
+        for (const output of outputs) {
+            closeSync(output);
         }
     }
 }
@@ -580,10 +926,10 @@ function validateArchivePaths(
 ): void {
     validateArchiveEntryBounds(entries, label, errors);
     const paths = entries.map((entry) => entry.path);
-    if (paths.some((entry) => entry.startsWith('/') || entry.includes('\\') || entry.split('/').includes('..'))) {
+    if (paths.some(archivePathIsUnsafe)) {
         errors.push(`${label} contains an unsafe path`);
     }
-    if (rejectGitMetadata && paths.some((entry) => entry.split('/').includes('.git'))) {
+    if (rejectGitMetadata && paths.some(archivePathContainsGitMetadata)) {
         errors.push(`${label} contains repository metadata`);
     }
     if (new Set(paths).size !== paths.length) {
@@ -595,33 +941,9 @@ function archiveHasPath(entries: readonly ArchiveEntry[], required: string): boo
     return entries.some((entry) => entry.path === required || entry.path.endsWith(`/${required}`));
 }
 
-function zipFileBytes(archive: string, path: string, maxBytes: number): Buffer | undefined {
-    try {
-        return execFileSync('unzip', ['-p', archive, path], { maxBuffer: maxBytes });
-    } catch {
-        return undefined;
-    }
-}
-
-function zipFileSha256(archive: string, path: string, maxBytes: number): string | undefined {
-    const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-release-zip-entry-'));
-    const output = join(temporary, 'entry');
-    const descriptor = openSync(output, 'w');
-    try {
-        const result = spawnSync('unzip', ['-p', archive, path], { stdio: ['ignore', descriptor, 'ignore'] });
-        if (result.status !== 0 || statSync(output).size > maxBytes) {
-            return undefined;
-        }
-        return sha256File(output);
-    } finally {
-        closeSync(descriptor);
-        rmSync(temporary, { recursive: true, force: true });
-    }
-}
-
 function validateZipLinks(
-    archive: string,
     entries: readonly ArchiveEntry[],
+    targets: ReadonlyMap<string, Buffer>,
     label: string,
     allowContainedLinks: boolean,
     errors: string[]
@@ -635,7 +957,7 @@ function validateZipLinks(
             errors.push(`${label} contains a symbolic link: ${entry.path}`);
             continue;
         }
-        const targetBytes = zipFileBytes(archive, entry.path, Math.min(entry.expandedBytes + 1, 8192));
+        const targetBytes = targets.get(entry.path);
         const target = targetBytes?.toString('utf8');
         if (
             target === undefined ||
@@ -668,15 +990,19 @@ function validateZipLinks(
     }
 }
 
-function extractArchive(path: string, type: 'tar' | 'zip', destination: string): void {
+function materializeZipLinks(destination: string, targets: ReadonlyMap<string, Buffer>): void {
+    for (const [path, targetBytes] of targets) {
+        const output = resolve(destination, ...path.split('/'));
+        mkdirSync(dirname(output), { recursive: true });
+        symlinkSync(targetBytes.toString('utf8'), output);
+    }
+}
+
+function extractTarArchive(path: string, destination: string): void {
     try {
-        if (type === 'tar') {
-            execFileSync('tar', ['-xzf', path, '-C', destination], { stdio: 'ignore' });
-        } else {
-            execFileSync('unzip', ['-qq', path, '-d', destination], { stdio: 'ignore' });
-        }
+        streamTarArchive(path, destination);
     } catch {
-        throw new Error(`${type} archive extraction failed`);
+        throw new Error('tar archive extraction failed');
     }
 }
 
@@ -730,7 +1056,7 @@ function validateGitArchive(
 
     const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-release-tree-'));
     try {
-        extractArchive(archive, 'tar', temporary);
+        extractTarArchive(archive, temporary);
         const sourceRoot = join(temporary, prefix);
         if (
             !existsSync(sourceRoot) ||
@@ -741,17 +1067,29 @@ function validateGitArchive(
             return;
         }
         const template = join(temporary, 'git-template');
+        const gitWorkspace = join(temporary, 'git-workspace');
+        const globalConfig = join(temporary, 'gitconfig');
         mkdirSync(template);
-        const environment = Object.fromEntries(
-            Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
-        );
+        mkdirSync(gitWorkspace);
+        writeFileSync(globalConfig, '');
+        const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
         const gitOptions = {
-            cwd: sourceRoot,
-            env: { ...environment, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1' },
+            cwd: temporary,
+            env: { ...environment, GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1' },
             stdio: 'ignore' as const,
         };
-        const gitConfig = ['-c', `core.hooksPath=${devNull}`, '-c', 'core.autocrlf=false'];
-        execFileSync('git', [...gitConfig, 'init', '--quiet', `--template=${template}`], gitOptions);
+        execFileSync('git', ['init', '--quiet', `--template=${template}`, gitWorkspace], gitOptions);
+        const gitDirectory = join(gitWorkspace, '.git');
+        const gitConfig = [
+            `--git-dir=${gitDirectory}`,
+            `--work-tree=${sourceRoot}`,
+            '-c',
+            `core.hooksPath=${devNull}`,
+            '-c',
+            'core.autocrlf=false',
+            '-c',
+            'core.bare=false',
+        ];
         execFileSync('git', [...gitConfig, 'add', '-f', '--all'], gitOptions);
         const actualTree = execFileSync('git', [...gitConfig, 'write-tree'], {
             ...gitOptions,
@@ -770,7 +1108,9 @@ function validateGitArchive(
 
 function archiveFileBytes(archive: string, prefix: string, path: string): Buffer | undefined {
     try {
-        return execFileSync('tar', ['-xOzf', archive, `${prefix}/${path}`], { maxBuffer: 32 * 1024 * 1024 });
+        return execFileSync('tar', ['-xOzf', archive, `${prefix}/${path}`], {
+            maxBuffer: RELEASE_PROOF_TYPE_LIMITS.buildInputBytes,
+        });
     } catch {
         return undefined;
     }
@@ -801,10 +1141,11 @@ function validateSourceManifest(
         'source commit object',
         errors
     );
-    if (archivePath !== undefined && commitPath !== undefined) {
+    const commitObject = commitPath === undefined ? undefined : readCommitObject(commitPath, 'source', errors);
+    if (archivePath !== undefined && commitObject !== undefined) {
         validateGitArchive(
             archivePath,
-            readFileSync(commitPath),
+            commitObject,
             expectedRevision,
             'sourdaw',
             SOURCE_REQUIRED_PATHS,
@@ -819,8 +1160,7 @@ function validateSourceManifest(
     if (manifest === undefined) {
         return;
     }
-    const tree =
-        commitPath === undefined ? undefined : commitTree(readFileSync(commitPath), expectedRevision, 'source', errors);
+    const tree = commitObject === undefined ? undefined : commitTree(commitObject, expectedRevision, 'source', errors);
     if (manifest.schemaVersion !== SCHEMA_VERSION || manifest.artifact !== 'source') {
         errors.push('source manifest identity drifted');
     }
@@ -836,20 +1176,32 @@ function validateSourceManifest(
     }
 }
 
-function validateWebArchive(path: string, errors: string[]): ArchiveEntry[] | undefined {
+function validateWebArchive(path: string, errors: string[]): ZipArchiveRead | undefined {
     const errorCount = errors.length;
     const entries = archiveEntries(path, 'zip', errors);
     validateArchivePaths(entries, 'web archive', errors);
-    validateZipLinks(path, entries, 'web archive', false, errors);
+    if (errors.length !== errorCount) {
+        return undefined;
+    }
+    let archive: ZipArchiveRead;
+    try {
+        archive = streamZipArchive(path, entries, { hashFiles: true });
+    } catch (error) {
+        errors.push(
+            error instanceof Error ? `zip archive is unreadable: ${error.message}` : 'zip archive is unreadable'
+        );
+        return undefined;
+    }
+    validateZipLinks(archive.entries, archive.linkTargets, 'web archive', false, errors);
     for (const required of ['index.html', 'web-artifact-manifest.json']) {
-        if (!archiveHasPath(entries, required)) {
+        if (!archiveHasPath(archive.entries, required)) {
             errors.push(`web archive is missing ${required}`);
         }
     }
-    if (!entries.some((entry) => entry.path.startsWith('assets/') || entry.path.includes('/assets/'))) {
+    if (!archive.entries.some((entry) => entry.path.startsWith('assets/') || entry.path.includes('/assets/'))) {
         errors.push('web archive is missing assets');
     }
-    return errors.length === errorCount ? entries : undefined;
+    return errors.length === errorCount ? archive : undefined;
 }
 
 function validateWebManifest(
@@ -866,7 +1218,7 @@ function validateWebManifest(
     const manifestPath = verifyFileHash(candidate, web.manifestPath, web.manifestSha256, 'web manifest', errors);
     const archivePath = verifyFileHash(candidate, web.archivePath, web.archiveSha256, 'web archive', errors);
     const contentsPath = candidatePath(candidate, web.contentsPath, 'web.contentsPath', errors);
-    const archiveEntries = archivePath === undefined ? undefined : validateWebArchive(archivePath, errors);
+    const archive = archivePath === undefined ? undefined : validateWebArchive(archivePath, errors);
     if (contentsPath === undefined || manifestPath === undefined) {
         return;
     }
@@ -898,16 +1250,14 @@ function validateWebManifest(
             errors.push(`web legal file ${required} is missing or drifted`);
         }
     }
-    if (archivePath !== undefined && archiveEntries !== undefined) {
-        const archiveFiles = archiveEntries.map((entry) => entry.path).sort();
+    if (archivePath !== undefined && archive !== undefined) {
+        const archiveFiles = archive.entries.map((entry) => entry.path).sort();
         const expectedFiles = ['web-artifact-manifest.json', ...Object.keys(files)].sort();
         if (!sameValue(archiveFiles, expectedFiles)) {
             errors.push('web archive file census does not match web contents');
         }
         for (const path of expectedFiles) {
-            const entry = archiveEntries.find((value) => value.path === path);
-            const archived =
-                entry === undefined ? undefined : zipFileSha256(archivePath, path, entry.expandedBytes);
+            const archived = archive.hashes.get(path);
             const adjacent = resolve(contentsPath, ...path.split('/'));
             if (
                 archived === undefined ||
@@ -943,7 +1293,21 @@ function machOError(path: string, expectedFileType: number): string | undefined 
     if (!existsSync(path) || !lstatSync(path).isFile()) {
         return 'file is missing';
     }
-    const bytes = readFileSync(path);
+    const descriptor = openSync(path, 'r');
+    let bytes: Buffer;
+    try {
+        const header = readZipBuffer(descriptor, MACH_HEADER_64_SIZE, 0);
+        if (header === undefined || header.readUInt32LE(0) !== 0xfeedfacf) {
+            return 'header is not a thin 64-bit little-endian Mach-O';
+        }
+        const commandBytes = header.readUInt32LE(20);
+        if (commandBytes > RELEASE_PROOF_TYPE_LIMITS.machLoadCommandBytes) {
+            return 'load-command table exceeds the read limit';
+        }
+        bytes = readZipBuffer(descriptor, MACH_HEADER_64_SIZE + commandBytes, 0) ?? Buffer.alloc(0);
+    } finally {
+        closeSync(descriptor);
+    }
     if (bytes.length < MACH_HEADER_64_SIZE || bytes.readUInt32LE(0) !== 0xfeedfacf) {
         return 'header is not a thin 64-bit little-endian Mach-O';
     }
@@ -986,37 +1350,98 @@ function validatePackagedFuses(path: string, errors: string[]): void {
         errors.push('desktop Electron framework fuse wire is missing');
         return;
     }
-    const bytes = readFileSync(path);
-    const sentinel = bytes.indexOf(FUSE_SENTINEL);
-    if (sentinel === -1 || bytes.includes(FUSE_SENTINEL, sentinel + 1)) {
-        errors.push('desktop Electron framework must contain exactly one fuse wire');
-        return;
+    const descriptor = openSync(path, 'r');
+    const sentinels: number[] = [];
+    try {
+        const size = statSync(path).size;
+        let position = 0;
+        let carry = Buffer.alloc(0);
+        while (position < size && sentinels.length < 2) {
+            const chunk = Buffer.allocUnsafe(Math.min(HASH_CHUNK_BYTES, size - position));
+            const bytesRead = readSync(descriptor, chunk, 0, chunk.length, position);
+            if (bytesRead === 0) {
+                break;
+            }
+            const data = Buffer.concat([carry, chunk.subarray(0, bytesRead)]);
+            let offset = data.indexOf(FUSE_SENTINEL);
+            while (offset !== -1) {
+                sentinels.push(position - carry.length + offset);
+                offset = data.indexOf(FUSE_SENTINEL, offset + 1);
+            }
+            carry = data.subarray(Math.max(0, data.length - FUSE_SENTINEL.length + 1));
+            position += bytesRead;
+        }
+        const [sentinel] = sentinels;
+        if (sentinel === undefined || sentinels.length !== 1) {
+            errors.push('desktop Electron framework must contain exactly one fuse wire');
+            return;
+        }
+        const header = sentinel + FUSE_SENTINEL.length;
+        const prefix = readZipBuffer(descriptor, 2, header);
+        if (prefix === undefined || prefix[0] !== 1) {
+            errors.push('desktop Electron framework fuse wire version is invalid');
+            return;
+        }
+        const length = prefix[1] ?? 0;
+        if (length === 0 || length > RELEASE_PROOF_TYPE_LIMITS.fuseWireBytes) {
+            errors.push('desktop Electron framework fuse wire is truncated');
+            return;
+        }
+        const states = readZipBuffer(descriptor, length, header + 2);
+        if (states === undefined) {
+            errors.push('desktop Electron framework fuse wire is truncated');
+            return;
+        }
+        const wire: Partial<Record<FuseV1Options, FuseState>> = {};
+        for (let index = 0; index < states.length; index += 1) {
+            wire[index as FuseV1Options] = states[index];
+        }
+        const mismatches = findFuseMismatches(wire);
+        if (mismatches.length > 0) {
+            errors.push(`desktop Electron REQUIRED_FUSES mismatch: ${mismatches.join('; ')}`);
+        }
+    } finally {
+        closeSync(descriptor);
     }
-    const header = sentinel + FUSE_SENTINEL.length;
-    if (header + 2 > bytes.length || bytes[header] !== 1) {
-        errors.push('desktop Electron framework fuse wire version is invalid');
-        return;
+}
+
+function validateAsarHeader(path: string): void {
+    if (!existsSync(path) || !lstatSync(path).isFile()) {
+        throw new Error('ASAR file is missing');
     }
-    const length = bytes[header + 1] ?? 0;
-    if (length === 0 || header + 2 + length > bytes.length) {
-        errors.push('desktop Electron framework fuse wire is truncated');
-        return;
-    }
-    const wire: Partial<Record<FuseV1Options, FuseState>> = {};
-    for (let index = 0; index < length; index += 1) {
-        wire[index] = bytes[header + 2 + index] as FuseState;
-    }
-    const mismatches = findFuseMismatches(wire);
-    if (mismatches.length > 0) {
-        errors.push(`desktop Electron REQUIRED_FUSES mismatch: ${mismatches.join('; ')}`);
+    const descriptor = openSync(path, 'r');
+    try {
+        const prefix = readZipBuffer(descriptor, 8, 0);
+        if (prefix === undefined) {
+            throw new Error('ASAR metadata header is truncated');
+        }
+        const headerBytes = prefix.readUInt32LE(4);
+        if (
+            headerBytes === 0 ||
+            headerBytes > RELEASE_PROOF_TYPE_LIMITS.asarHeaderBytes ||
+            headerBytes + 8 > statSync(path).size
+        ) {
+            throw new Error('ASAR metadata header exceeds the read limit');
+        }
+    } finally {
+        closeSync(descriptor);
     }
 }
 
 function asarRendererFiles(path: string, errors: string[]): Record<string, string> {
     const files: Record<string, string> = {};
     try {
-        for (const archivePath of listPackage(path, { isPack: false })) {
+        validateAsarHeader(path);
+        const archivePaths = listPackage(path, { isPack: false });
+        if (archivePaths.length > RELEASE_PROOF_ARCHIVE_LIMITS.entries) {
+            throw archiveLimitError('ASAR metadata exceeds the entry count limit');
+        }
+        let aggregateBytes = 0;
+        for (const archivePath of archivePaths) {
             const normalized = archivePath.replace(/^\//u, '');
+            if (normalized.split('/').filter(Boolean).length > RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth) {
+                throw archiveLimitError('ASAR metadata contains a path exceeding the depth limit');
+            }
             if (!normalized.startsWith('dist/')) {
                 continue;
             }
@@ -1027,6 +1452,13 @@ function asarRendererFiles(path: string, errors: string[]): Record<string, strin
             if ('link' in metadata || metadata.unpacked) {
                 errors.push(`desktop app.asar renderer contains unsupported entry ${normalized}`);
                 continue;
+            }
+            if (metadata.size > RELEASE_PROOF_TYPE_LIMITS.asarRendererEntryBytes) {
+                throw archiveLimitError('an ASAR renderer entry exceeds the read limit');
+            }
+            aggregateBytes += metadata.size;
+            if (aggregateBytes > RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes) {
+                throw archiveLimitError('ASAR renderer bytes exceed the aggregate limit');
             }
             files[normalized.slice('dist/'.length)] = sha256Bytes(extractFile(path, normalized, false));
         }
@@ -1052,16 +1484,30 @@ function requiredFuseClaims(): Record<string, boolean> {
 function desktopSnapshot(archive: string): DesktopSnapshot {
     const errors: string[] = [];
     const entries = archiveEntries(archive, 'zip', errors);
-    validateArchivePaths(entries, 'desktop archive', errors);
-    validateZipLinks(archive, entries, 'desktop archive', true, errors);
+    validateArchivePaths(entries, 'desktop archive', errors, true);
     if (entries.some((entry) => entry.path !== DESKTOP_APP_ROOT && !entry.path.startsWith(`${DESKTOP_APP_ROOT}/`))) {
         errors.push('desktop archive must contain exactly one top-level Sourdaw.app');
     }
     const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-desktop-proof-'));
     try {
         if (errors.length === 0) {
-            extractArchive(archive, 'zip', temporary);
-            validateExtractedPackage(temporary, errors);
+            try {
+                const extracted = streamZipArchive(archive, entries, {
+                    destination: temporary,
+                    rejectGitMetadata: true,
+                });
+                validateZipLinks(extracted.entries, extracted.linkTargets, 'desktop archive', true, errors);
+                if (errors.length === 0) {
+                    materializeZipLinks(temporary, extracted.linkTargets);
+                    validateExtractedPackage(temporary, errors);
+                }
+            } catch (error) {
+                errors.push(
+                    error instanceof Error
+                        ? `desktop archive extraction failed: ${error.message}`
+                        : 'desktop archive extraction failed'
+                );
+            }
         }
         const appRoot = join(temporary, DESKTOP_APP_ROOT);
         const infoPlist = join(appRoot, 'Contents/Info.plist');
@@ -1211,50 +1657,33 @@ function validateDesktopArchiveContents(
         }
     }
 
-    const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-desktop-legal-'));
-    try {
-        extractArchive(artifact, 'zip', temporary);
-        const resources = join(temporary, ...DESKTOP_RESOURCE_ROOT.split('/'));
-        const sourceFiles = [
-            ['legal/Apache-2.0.txt', 'public/legal/Apache-2.0.txt'],
-            ['legal/DEPENDENCY-LICENSES.txt', 'public/legal/DEPENDENCY-LICENSES.txt'],
-            ['legal/SOURDAW-NOTICE.txt', 'public/legal/SOURDAW-NOTICE.txt'],
-            ['legal/RELINKING.md', 'public/legal/RELINKING.md'],
-            ['legal/THIRD-PARTY-NOTICES.md', 'public/legal/THIRD-PARTY-NOTICES.md'],
-        ] as const;
-        for (const [packaged, source] of sourceFiles) {
-            const packagedPath = join(resources, ...packaged.split('/'));
-            const sourcePath = resolve(root, ...source.split('/'));
-            if (
-                !existsSync(packagedPath) ||
-                !existsSync(sourcePath) ||
-                sha256File(packagedPath) !== sha256File(sourcePath)
-            ) {
-                errors.push(`desktop legal file ${packaged} is missing or drifted`);
-            }
+    const sourceFiles = [
+        ['legal/Apache-2.0.txt', 'public/legal/Apache-2.0.txt'],
+        ['legal/DEPENDENCY-LICENSES.txt', 'public/legal/DEPENDENCY-LICENSES.txt'],
+        ['legal/SOURDAW-NOTICE.txt', 'public/legal/SOURDAW-NOTICE.txt'],
+        ['legal/RELINKING.md', 'public/legal/RELINKING.md'],
+        ['legal/THIRD-PARTY-NOTICES.md', 'public/legal/THIRD-PARTY-NOTICES.md'],
+    ] as const;
+    for (const [packaged, source] of sourceFiles) {
+        const sourcePath = resolve(root, ...source.split('/'));
+        if (!existsSync(sourcePath) || snapshot.files[packaged] !== sha256File(sourcePath)) {
+            errors.push(`desktop legal file ${packaged} is missing or drifted`);
         }
-        const target = runtimeContract.targets.find((item) => item.platform === 'darwin' && item.arch === 'arm64');
-        const electronLicense = join(resources, 'legal/electron-LICENSE.txt');
-        const electronNotices = join(resources, 'legal/electron-LICENSES.chromium.html');
-        if (target === undefined) {
-            errors.push('Electron runtime contract has no darwin arm64 target');
-        } else {
-            if (!existsSync(electronLicense) || sha256File(electronLicense) !== runtimeContract.licenseSha256) {
-                errors.push('desktop Electron license bytes are missing or drifted');
-            }
-            if (!existsSync(electronNotices) || sha256File(electronNotices) !== target.noticesSha256) {
-                errors.push('desktop Electron bundled notices are missing or drifted');
-            }
+    }
+    const target = runtimeContract.targets.find((item) => item.platform === 'darwin' && item.arch === 'arm64');
+    if (target === undefined) {
+        errors.push('Electron runtime contract has no darwin arm64 target');
+    } else {
+        if (snapshot.files['legal/electron-LICENSE.txt'] !== runtimeContract.licenseSha256) {
+            errors.push('desktop Electron license bytes are missing or drifted');
         }
-        const packagedRuntime = join(resources, 'legal/ELECTRON-SOURCES.json');
-        if (
-            !existsSync(packagedRuntime) ||
-            !sameValue(readJsonForValidation(packagedRuntime, 'packaged Electron manifest', errors), runtimeContract)
-        ) {
-            errors.push('desktop packaged runtime manifest does not match the pinned runtime contract');
+        if (snapshot.files['legal/electron-LICENSES.chromium.html'] !== target.noticesSha256) {
+            errors.push('desktop Electron bundled notices are missing or drifted');
         }
-    } finally {
-        rmSync(temporary, { recursive: true, force: true });
+    }
+    const runtimeManifest = resolve(root, 'public/legal/ELECTRON-SOURCES.json');
+    if (!existsSync(runtimeManifest) || snapshot.files['legal/ELECTRON-SOURCES.json'] !== sha256File(runtimeManifest)) {
+        errors.push('desktop packaged runtime manifest does not match the pinned runtime contract');
     }
 }
 
@@ -1271,18 +1700,24 @@ function validateBuildMaterial(
     },
     errors: string[]
 ): void {
-    const electronTree =
+    const electronCommit =
         paths.electronCommit === undefined
             ? undefined
-            : commitTree(readFileSync(paths.electronCommit), runtimeContract.revision, 'Electron source', errors);
-    const ffmpegTree =
-        paths.ffmpegCommit === undefined
+            : readCommitObject(paths.electronCommit, 'Electron source', errors);
+    const ffmpegCommit =
+        paths.ffmpegCommit === undefined ? undefined : readCommitObject(paths.ffmpegCommit, 'FFmpeg source', errors);
+    const electronTree =
+        electronCommit === undefined
             ? undefined
-            : commitTree(readFileSync(paths.ffmpegCommit), runtimeContract.ffmpeg.revision, 'FFmpeg source', errors);
-    if (paths.electronArchive !== undefined && paths.electronCommit !== undefined) {
+            : commitTree(electronCommit, runtimeContract.revision, 'Electron source', errors);
+    const ffmpegTree =
+        ffmpegCommit === undefined
+            ? undefined
+            : commitTree(ffmpegCommit, runtimeContract.ffmpeg.revision, 'FFmpeg source', errors);
+    if (paths.electronArchive !== undefined && electronCommit !== undefined) {
         validateGitArchive(
             paths.electronArchive,
-            readFileSync(paths.electronCommit),
+            electronCommit,
             runtimeContract.revision,
             'electron',
             ELECTRON_FFMPEG_BUILD_INPUTS,
@@ -1290,10 +1725,10 @@ function validateBuildMaterial(
             errors
         );
     }
-    if (paths.ffmpegArchive !== undefined && paths.ffmpegCommit !== undefined) {
+    if (paths.ffmpegArchive !== undefined && ffmpegCommit !== undefined) {
         validateGitArchive(
             paths.ffmpegArchive,
-            readFileSync(paths.ffmpegCommit),
+            ffmpegCommit,
             runtimeContract.ffmpeg.revision,
             'ffmpeg',
             ['BUILD.gn', 'COPYING.LGPLv2.1'],
@@ -1370,21 +1805,27 @@ function validateDesktop(
     if (desktop.platform !== 'darwin' || desktop.arch !== 'arm64') {
         errors.push('desktop proof must target darwin arm64');
     }
-    const materialNames = [
-        [desktop.runtimeManifestPath, 'ELECTRON-SOURCES.json'],
-        [desktop.electronSourcePath, `electron-${runtimeContract.revision}.tar.gz`],
-        [desktop.electronCommitPath, `electron-${runtimeContract.revision}.commit`],
-        [desktop.ffmpegSourcePath, `ffmpeg-${runtimeContract.ffmpeg.revision}.tar.gz`],
-        [desktop.ffmpegCommitPath, `ffmpeg-${runtimeContract.ffmpeg.revision}.commit`],
-        [desktop.ffmpegBuildPath, 'ffmpeg-build-material.json'],
-    ] as const;
-    for (const [path, expectedName] of materialNames) {
-        if (typeof path !== 'string' || basename(path) !== expectedName) {
-            errors.push(`desktop material basename must be ${expectedName}`);
-        }
+    let expectedArtifactName: string | undefined;
+    try {
+        expectedArtifactName = expectedDesktopArtifactName(root);
+    } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
     }
-    if (desktop.buildInputsPath !== 'desktop/build-inputs/electron') {
-        errors.push('desktop build input adjacency path drifted');
+    const canonicalPaths = [
+        [desktop.artifactPath, expectedArtifactName === undefined ? undefined : `desktop/${expectedArtifactName}`],
+        [desktop.contentsManifestPath, 'desktop/desktop-contents-manifest.json'],
+        [desktop.runtimeManifestPath, 'desktop/ELECTRON-SOURCES.json'],
+        [desktop.electronSourcePath, `desktop/electron-${runtimeContract.revision}.tar.gz`],
+        [desktop.electronCommitPath, `desktop/electron-${runtimeContract.revision}.commit`],
+        [desktop.ffmpegSourcePath, `desktop/ffmpeg-${runtimeContract.ffmpeg.revision}.tar.gz`],
+        [desktop.ffmpegCommitPath, `desktop/ffmpeg-${runtimeContract.ffmpeg.revision}.commit`],
+        [desktop.ffmpegBuildPath, 'desktop/ffmpeg-build-material.json'],
+        [desktop.buildInputsPath, 'desktop/build-inputs/electron'],
+    ] as const;
+    for (const [actual, expected] of canonicalPaths) {
+        if (expected !== undefined && actual !== expected) {
+            errors.push(`desktop material path must be ${expected}`);
+        }
     }
     const artifactPath = verifyFileHash(
         candidate,
@@ -1393,12 +1834,6 @@ function validateDesktop(
         'desktop artifact',
         errors
     );
-    let expectedArtifactName: string | undefined;
-    try {
-        expectedArtifactName = expectedDesktopArtifactName(root);
-    } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
-    }
     if (artifactPath !== undefined && basename(artifactPath) !== expectedArtifactName) {
         errors.push('desktop artifact must preserve the exact Sourdaw version-arm64-mac ZIP filename');
     }
@@ -1452,21 +1887,6 @@ function validateDesktop(
         errors
     );
     const buildInputs = candidatePath(candidate, desktop.buildInputsPath, 'desktop.buildInputsPath', errors);
-    for (const value of [
-        desktop.artifactPath,
-        desktop.contentsManifestPath,
-        desktop.runtimeManifestPath,
-        desktop.electronSourcePath,
-        desktop.electronCommitPath,
-        desktop.ffmpegSourcePath,
-        desktop.ffmpegCommitPath,
-        desktop.ffmpegBuildPath,
-        desktop.buildInputsPath,
-    ]) {
-        if (typeof value === 'string' && !value.startsWith('desktop/')) {
-            errors.push(`desktop material is not adjacent: ${value}`);
-        }
-    }
     const manifest =
         contentsManifestPath === undefined
             ? undefined
@@ -1678,7 +2098,10 @@ function verifyGitCheckout(checkout: string, repository: string, revision: strin
         head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim();
         remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: checkout, encoding: 'utf8' }).trim();
         tree = execFileSync('git', ['rev-parse', `${revision}^{tree}`], { cwd: checkout, encoding: 'utf8' }).trim();
-        commitObject = execFileSync('git', ['cat-file', 'commit', revision], { cwd: checkout });
+        commitObject = execFileSync('git', ['cat-file', 'commit', revision], {
+            cwd: checkout,
+            maxBuffer: RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes,
+        });
     } catch {
         throw new Error(`${label} Git checkout identity could not be verified`);
     }
@@ -1711,7 +2134,10 @@ function createGitArchive(checkout: string, revision: string, prefix: string, ou
 
 function gitFile(checkout: string, revision: string, path: string): Buffer {
     try {
-        return execFileSync('git', ['show', `${revision}:${path}`], { cwd: checkout, maxBuffer: 32 * 1024 * 1024 });
+        return execFileSync('git', ['show', `${revision}:${path}`], {
+            cwd: checkout,
+            maxBuffer: RELEASE_PROOF_TYPE_LIMITS.buildInputBytes,
+        });
     } catch {
         throw new Error(`pinned Electron source is missing build input ${path}`);
     }
@@ -1724,19 +2150,23 @@ function copyDirectory(source: string, destination: string): void {
 
 function normalizeTreeMetadata(root: string): void {
     const files: string[] = [];
-    const visit = (directory: string): void => {
+    const directories = [root];
+    while (directories.length > 0) {
+        const directory = directories.pop();
+        if (directory === undefined) {
+            break;
+        }
         for (const entry of readdirSync(directory, { withFileTypes: true })) {
             const child = join(directory, entry.name);
             if (entry.isDirectory()) {
                 chmodSync(child, 0o755);
-                visit(child);
+                directories.push(child);
             } else if (entry.isFile()) {
                 chmodSync(child, 0o644);
                 files.push(child);
             }
         }
-    };
-    visit(root);
+    }
     const epoch = new Date('1980-01-01T00:00:00.000Z');
     for (const file of files) {
         utimesSync(file, epoch, epoch);

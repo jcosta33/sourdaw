@@ -8,6 +8,7 @@ import {
     mkdtempSync,
     readFileSync,
     readdirSync,
+    renameSync,
     rmSync,
     symlinkSync,
     truncateSync,
@@ -23,6 +24,7 @@ import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from '../elec
 import {
     ELECTRON_FFMPEG_BUILD_INPUTS,
     RELEASE_PROOF_ARCHIVE_LIMITS,
+    RELEASE_PROOF_TYPE_LIMITS,
     assembleReleaseProof,
     type ReleaseBuildRunner,
     validateReleaseProof,
@@ -49,12 +51,15 @@ type DesktopOptions = {
     appName?: string;
     artifactName?: string;
     fuses?: 'valid' | 'invalid' | 'missing';
+    fusePaddingBytes?: number;
     invalidLoadCommands?: boolean;
+    oversizedLoadCommands?: boolean;
     nativeFileType?: number;
     packagedFfmpegArch?: 'arm64' | 'x64';
     packagedFfmpeg?: 'valid' | 'missing' | 'different';
     runtimeFfmpeg?: 'matching' | 'missing' | 'different';
     renderer?: 'matching' | 'mutated' | 'missing';
+    asarHeader?: 'valid' | 'oversized';
     symlink?: 'contained' | 'escaping' | 'none';
 };
 
@@ -138,7 +143,12 @@ function desktopMaterial(contract: ElectronRuntimeContract): unknown {
 function arm64MachO(
     arch: 'arm64' | 'x64',
     fileType: number,
-    options: { fuses?: 'valid' | 'invalid' | 'missing'; invalidLoadCommands?: boolean } = {}
+    options: {
+        fuses?: 'valid' | 'invalid' | 'missing';
+        fusePaddingBytes?: number;
+        invalidLoadCommands?: boolean;
+        oversizedLoadCommands?: boolean;
+    } = {}
 ): Buffer {
     const commandSize = 72;
     const fuseStates = Buffer.from([48, 49, 48, 48, 49, 49, 48, options.fuses === 'invalid' ? 49 : 48, 48]);
@@ -146,15 +156,19 @@ function arm64MachO(
         options.fuses === 'missing'
             ? Buffer.alloc(0)
             : Buffer.concat([Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX'), Buffer.from([1, 9]), fuseStates]);
-    const value = Buffer.alloc(32 + commandSize + fuseWire.length);
+    const fusePadding = Buffer.alloc(options.fusePaddingBytes ?? 0);
+    const value = Buffer.alloc(32 + commandSize + fusePadding.length + fuseWire.length);
     value.writeUInt32LE(0xfeedfacf, 0);
     value.writeUInt32LE(arch === 'arm64' ? 0x0100000c : 0x01000007, 4);
     value.writeUInt32LE(fileType, 12);
     value.writeUInt32LE(1, 16);
-    value.writeUInt32LE(commandSize, 20);
+    value.writeUInt32LE(
+        options.oversizedLoadCommands === true ? RELEASE_PROOF_TYPE_LIMITS.machLoadCommandBytes + 1 : commandSize,
+        20
+    );
     value.writeUInt32LE(0x19, 32);
     value.writeUInt32LE(options.invalidLoadCommands === true ? commandSize + 8 : commandSize, 36);
-    fuseWire.copy(value, 32 + commandSize);
+    fuseWire.copy(value, 32 + commandSize + fusePadding.length);
     return value;
 }
 
@@ -174,7 +188,9 @@ function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: D
         framework,
         arm64MachO(options.arch ?? 'arm64', 6, {
             fuses: options.fuses ?? 'valid',
+            fusePaddingBytes: options.fusePaddingBytes,
             invalidLoadCommands: options.invalidLoadCommands,
+            oversizedLoadCommands: options.oversizedLoadCommands,
         })
     );
     chmodSync(executable, 0o755);
@@ -192,6 +208,12 @@ function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: D
         rmSync(join(asarSource, 'dist/assets/app.js'));
     }
     execFileSync(resolve(workspaceRoot, 'node_modules/.bin/asar'), ['pack', asarSource, join(resources, 'app.asar')]);
+    if (options.asarHeader === 'oversized') {
+        const asar = join(resources, 'app.asar');
+        const bytes = readFileSync(asar);
+        bytes.writeUInt32LE(RELEASE_PROOF_TYPE_LIMITS.asarHeaderBytes + 1, 4);
+        writeFileSync(asar, bytes);
+    }
     const nativeAddon = join(resources, 'sourdaw-native.node');
     write(nativeAddon, arm64MachO(options.arch ?? 'arm64', options.nativeFileType ?? 8));
     chmodSync(nativeAddon, 0o755);
@@ -399,7 +421,7 @@ function patchZipMetadata(
     writeFileSync(archive, bytes);
 }
 
-function replaceSourceArchiveWithGitMetadata(fixture: Fixture, marker: string): void {
+function replaceSourceArchiveWithGitMetadata(fixture: Fixture, marker: string, directory = '.git'): void {
     const value = proof(fixture);
     const source = value.source as Record<string, unknown>;
     const archive = join(fixture.candidate, source.archivePath as string);
@@ -409,10 +431,7 @@ function replaceSourceArchiveWithGitMetadata(fixture: Fixture, marker: string): 
     const root = join(extracted, `sourdaw-${fixture.revision}`);
     write(join(root, '.gitattributes'), 'trigger filter=escape\n');
     write(join(root, 'trigger'), 'fixture');
-    write(
-        join(root, '.git/config'),
-        `[filter "escape"]\n\tclean = sh -c 'touch "${marker}"'\n`
-    );
+    write(join(root, directory, 'config'), `[filter "escape"]\n\tclean = sh -c 'touch "${marker}"'\n`);
     rmSync(archive);
     execFileSync('tar', ['-czf', archive, basename(root)], { cwd: extracted });
     source.archiveSha256 = hash(archive);
@@ -476,6 +495,29 @@ describe('release proof', () => {
         assemble(fixture);
         write(join(fixture.candidate, 'release-proof.json'), '{');
         expect(validate(fixture)).toContain('release-proof.json: malformed JSON');
+    });
+
+    it('caps whole-buffer JSON and commit-object reads before parsing', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const proofPath = join(fixture.candidate, 'release-proof.json');
+        const originalProof = readFileSync(proofPath);
+        truncateSync(proofPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
+        expect(validate(fixture)).toContain('JSON document exceeds');
+        writeFileSync(proofPath, originalProof);
+
+        const value = proof(fixture);
+        const source = value.source as Record<string, unknown>;
+        const commitPath = join(fixture.candidate, source.commitPath as string);
+        truncateSync(commitPath, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes + 1);
+        source.commitSha256 = hash(commitPath);
+        const manifestPath = join(fixture.candidate, source.manifestPath as string);
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+        manifest.commitObjectSha256 = source.commitSha256;
+        writeJson(manifestPath, manifest);
+        source.manifestSha256 = hash(manifestPath);
+        writeJson(proofPath, value);
+        expect(validate(fixture)).toContain('source commit object exceeds');
     });
 
     it('rejects a stale candidate revision', () => {
@@ -623,6 +665,13 @@ describe('release proof', () => {
         expect(() => assemble(fixture)).toThrow(message);
     });
 
+    it('caps Mach-O load-command and ASAR metadata reads before allocation', () => {
+        const fixture = createFixture({ oversizedLoadCommands: true, asarHeader: 'oversized' });
+        expect(() => assemble(fixture)).toThrow(
+            /load-command table exceeds the read limit[\s\S]*ASAR metadata header exceeds the read limit/u
+        );
+    });
+
     it.each([
         ['missing packaged libffmpeg', { packagedFfmpeg: 'missing' as const }, /packaged libffmpeg.*missing/u],
         ['non-arm64 packaged libffmpeg', { packagedFfmpegArch: 'x64' as const }, /packaged libffmpeg.*CPU type/u],
@@ -750,6 +799,25 @@ describe('release proof', () => {
         expect(validate(fixture)).toContain('release candidate file census contains missing or unreferenced files');
     });
 
+    it('bounds candidate traversal depth and aggregate bytes without recursion or large fixtures', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const sparseBytes = Math.floor(RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes / 2) + 1;
+        const first = join(fixture.candidate, 'sparse-a');
+        const second = join(fixture.candidate, 'sparse-b');
+        write(first, '');
+        write(second, '');
+        truncateSync(first, sparseBytes);
+        truncateSync(second, sparseBytes);
+        expect(validate(fixture)).toContain('release candidate: traversal exceeds the aggregate byte limit');
+        rmSync(first);
+        rmSync(second);
+
+        const deep = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file`;
+        write(join(fixture.candidate, deep), 'bounded');
+        expect(validate(fixture)).toContain('release candidate: traversal contains a path exceeding the depth limit');
+    });
+
     it('rejects build tree claims not derived from pinned commit objects', () => {
         const fixture = createFixture();
         assemble(fixture);
@@ -761,20 +829,32 @@ describe('release proof', () => {
         expect(validate(fixture)).toContain('was not generated from the pinned Electron and FFmpeg sources');
     });
 
-    it('rejects a runtime source archive under an unpinned basename', () => {
+    it('rejects relocation of every canonical desktop material path', () => {
         const fixture = createFixture();
         assemble(fixture);
         const value = proof(fixture);
         const desktop = desktopProof(value);
-        const oldPath = desktop.electronSourcePath as string;
-        const newPath = 'desktop/caller-electron-source.tar.gz';
-        write(join(fixture.candidate, newPath), readFileSync(join(fixture.candidate, oldPath)));
-        rmSync(join(fixture.candidate, oldPath));
-        desktop.electronSourcePath = newPath;
-        writeJson(join(fixture.candidate, 'release-proof.json'), value);
-        expect(validate(fixture)).toContain(
-            `desktop material basename must be electron-${fixture.contract.revision}.tar.gz`
-        );
+        for (const field of [
+            'artifactPath',
+            'contentsManifestPath',
+            'runtimeManifestPath',
+            'electronSourcePath',
+            'electronCommitPath',
+            'ffmpegSourcePath',
+            'ffmpegCommitPath',
+            'ffmpegBuildPath',
+            'buildInputsPath',
+        ]) {
+            const originalPath = desktop[field] as string;
+            const relocatedPath = `desktop/relocated/${basename(originalPath)}`;
+            mkdirSync(dirname(join(fixture.candidate, relocatedPath)), { recursive: true });
+            renameSync(join(fixture.candidate, originalPath), join(fixture.candidate, relocatedPath));
+            desktop[field] = relocatedPath;
+            writeJson(join(fixture.candidate, 'release-proof.json'), value);
+            expect(validate(fixture)).toContain(`desktop material path must be ${originalPath}`);
+            renameSync(join(fixture.candidate, relocatedPath), join(fixture.candidate, originalPath));
+            desktop[field] = originalPath;
+        }
     });
 
     it('fails validation closed when the repository is dirty or no longer at the expected revision', () => {
@@ -787,14 +867,16 @@ describe('release proof', () => {
         assemble(moved);
         write(join(moved.root, 'next-revision.txt'), 'next');
         commit(moved.root, 'advance fixture revision');
-        expect(validate(moved)).toContain('release proof validation checkout HEAD does not match the expected revision');
+        expect(validate(moved)).toContain(
+            'release proof validation checkout HEAD does not match the expected revision'
+        );
     });
 
-    it('rejects Git archive metadata before it can influence reconstructed Git execution', () => {
+    it.each(['.git', '.GIT'])('rejects %s archive metadata before reconstructed Git execution', (directory) => {
         const fixture = createFixture();
         assemble(fixture);
         const marker = join(fixture.base, 'git-filter-ran');
-        replaceSourceArchiveWithGitMetadata(fixture, marker);
+        replaceSourceArchiveWithGitMetadata(fixture, marker, directory);
         expect(validate(fixture)).toContain('source archive contains repository metadata');
         expect(existsSync(marker)).toBe(false);
     });
@@ -813,7 +895,10 @@ describe('release proof', () => {
         const file = createFixture();
         assemble(file);
         const fileSource = proof(file).source as Record<string, unknown>;
-        truncateSync(join(file.candidate, fileSource.archivePath as string), RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
+        truncateSync(
+            join(file.candidate, fileSource.archivePath as string),
+            RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1
+        );
         expect(validate(file)).toContain('source archive: file exceeds the candidate file-size limit');
 
         const entry = createFixture();
@@ -823,7 +908,18 @@ describe('release proof', () => {
             bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
         });
         refreshWebArchiveHash(entry);
-        expect(validate(entry)).toContain('zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit');
+        expect(validate(entry)).toContain(
+            'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
+        );
+
+        const actual = createFixture();
+        assemble(actual);
+        const actualArchive = replaceWebArchive(actual, ['actual.txt']);
+        patchZipMetadata(actualArchive, (bytes, centralOffset) => {
+            bytes.writeUInt32LE(0, centralOffset + 24);
+        });
+        refreshWebArchiveHash(actual);
+        expect(validate(actual)).toContain('ZIP entry expanded bytes do not match its declarations');
 
         const aggregate = createFixture();
         assemble(aggregate);
@@ -834,11 +930,17 @@ describe('release proof', () => {
             const size = Math.floor(RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes / entryCount) + 1;
             for (let index = 0; index < entryCount; index += 1) {
                 bytes.writeUInt32LE(size, offset + 24);
-                offset += 46 + bytes.readUInt16LE(offset + 28) + bytes.readUInt16LE(offset + 30) + bytes.readUInt16LE(offset + 32);
+                offset +=
+                    46 +
+                    bytes.readUInt16LE(offset + 28) +
+                    bytes.readUInt16LE(offset + 30) +
+                    bytes.readUInt16LE(offset + 32);
             }
         });
         refreshWebArchiveHash(aggregate);
-        expect(validate(aggregate)).toContain('zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit');
+        expect(validate(aggregate)).toContain(
+            'zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit'
+        );
 
         const count = createFixture();
         assemble(count);
@@ -849,13 +951,33 @@ describe('release proof', () => {
             bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 10);
         });
         refreshWebArchiveHash(count);
-        expect(validate(count)).toContain('zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit');
+        expect(validate(count)).toContain(
+            'zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit'
+        );
 
         const depth = createFixture();
         assemble(depth);
         const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
+    });
+
+    it('hashes ZIP entries without spawning one unzip process per file', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const marker = join(fixture.base, 'unzip-invoked');
+        const bin = join(fixture.base, 'bin');
+        const unzip = join(bin, 'unzip');
+        write(unzip, `#!/bin/sh\nprintf invoked > "${marker}"\nexit 99\n`);
+        chmodSync(unzip, 0o755);
+        const originalPath = process.env.PATH;
+        process.env.PATH = `${bin}:${originalPath ?? ''}`;
+        try {
+            expect(validate(fixture)).toBe('');
+        } finally {
+            process.env.PATH = originalPath;
+        }
+        expect(existsSync(marker)).toBe(false);
     });
 
     it('accepts a complete candidate assembled from the exact artifacts and Git commits', () => {
