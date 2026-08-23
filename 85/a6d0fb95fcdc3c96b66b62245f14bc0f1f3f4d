@@ -1,0 +1,97 @@
+src/modules/Collaboration/repositories/durableAssetOwnerHandoffLifecycle.ts
+  s_a40848e8f8cca9::t_5c34eb4bb9ded0 305,310-315,320-323,325-335
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_3d72b502e01255 148,461-465
+  s_a40848e8f8cca9::t_978625deff2830 158
+src/modules/Collaboration/repositories/durableAssetOwnershipLifecycle.ts
+  s_a40848e8f8cca9::t_59309e1c8d57b1 99,121-126,224-225
+  s_a40848e8f8cca9::t_400a1a723fabeb 226
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_3d72b502e01255 801
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_af42a45447f90c 59,333-336
+  s_a40848e8f8cca9::t_26359db05b2d8b 18
+  s_a40848e8f8cca9::t_b2dfb94423e6ba 60-66,337-344
+  s_a40848e8f8cca9::t_2fcd24fff3cbbf 233-236
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_2a354bc07a565c 268-301
+  s_a40848e8f8cca9::t_d302a10135c5c7 435-436
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_3d72b502e01255 2,34-36,41-42
+  s_a40848e8f8cca9::t_42c7b4b27729c3 33
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_a98adb750ed8ba 105-106
+  s_a40848e8f8cca9::t_b2dfb94423e6ba 33-39,88-89,103-104,107
+  s_a40848e8f8cca9::t_f07c41d098da04 59-60,83
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_a40848e8f8cca9::t_5a06480805df29 551-556,564-599
+  s_a40848e8f8cca9::t_c4feb9a974fdf0 557-563
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_26359db05b2d8b 8
+  s_a40848e8f8cca9::t_f07c41d098da04 11
+  s_a40848e8f8cca9::t_b2dfb94423e6ba 13
+  s_a40848e8f8cca9::t_d8e4423a12030c 9
+src/modules/Command/useCases/getVersionedCommandBatchCommitProof.ts
+  s_a40848e8f8cca9::t_e67a1593eaad67 1-21
+src/modules/Collaboration/useCases/configureDurableAssetCommitProof.ts
+  s_a40848e8f8cca9::t_b2dfb94423e6ba 1-17
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_3db9bad61bab78 23,35,421-425,427,567-568,571
+  s_a40848e8f8cca9::t_a98adb750ed8ba 114,333,361,379,405,569-570
+  s_a40848e8f8cca9::t_d302a10135c5c7 329-332,334,337-339
+  s_a40848e8f8cca9::t_9553b3794a998e 211,215
+  s_a40848e8f8cca9::t_26359db05b2d8b 21,36-39
+  s_a40848e8f8cca9::t_c927747401a3bb 360,362-363,370-373,378,380-383,394-399,404,406-407,414-417
+  s_a40848e8f8cca9::t_9e99b43fbe115b 113,320,426,429-434,460,463-468
+  s_a40848e8f8cca9::t_551ed29bf1c0b8 313
+  s_a40848e8f8cca9::t_51aed5d822a397 212-214
+  s_a40848e8f8cca9::t_aa57dca3408a8a 40
+src/modules/Command/useCases/isVersionedCommandBatchCommitProven.ts
+  s_a40848e8f8cca9::t_e67a1593eaad67 1-29
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_fa346a7ffecc56 22-23,368-369
+src/modules/Collaboration/repositories/durableAssetStageLifecycle.ts
+  s_a40848e8f8cca9::t_26359db05b2d8b 3,92
+  s_a40848e8f8cca9::t_af42a45447f90c 5,7,13,28-31,36,93-102
+  s_a40848e8f8cca9::t_f4e7ce967827cb 6,183,186,188,191,239-253
+  s_a40848e8f8cca9::t_0fc361384181da 254
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_2a354bc07a565c 530,771-795
+  s_a40848e8f8cca9::t_9553b3794a998e 607
+  s_a40848e8f8cca9::t_e05f8b3c143032 7,35,499-527
+  s_a40848e8f8cca9::t_5c34eb4bb9ded0 882,892-899
+  s_a40848e8f8cca9::t_16ac2ebbf36cac 528-529,617-650
+  s_a40848e8f8cca9::t_2e222b0adb9747 531
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_a98adb750ed8ba 433-434
+  s_a40848e8f8cca9::t_1df53fa2ab6bdb 13,309-310,408-412
+  s_a40848e8f8cca9::t_2b164f56f27f24 64-71,159-160,259-266,435-436
+  s_a40848e8f8cca9::t_e157919a209b0d 275,289-290,305-308,427-430,437
+src/modules/Collaboration/useCases/index.ts
+  s_a40848e8f8cca9::t_b2dfb94423e6ba 10
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_e05f8b3c143032 14-20,39-40,140-144
+  s_a40848e8f8cca9::t_42c7b4b27729c3 133,168
+  s_a40848e8f8cca9::t_787b192a695bbf 41
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_e67a1593eaad67 54-55
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_3d72b502e01255 70,84,219-220
+  s_a40848e8f8cca9::t_644a518b89e0af 221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "85a6d0fb95fcdc3c96b66b62245f14bc0f1f3f4d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
