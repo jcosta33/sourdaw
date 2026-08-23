@@ -22,6 +22,37 @@ export type PreparedSerializedAudioBuffer = {
     sizeInBytes: number;
 };
 
+function isFloat32Array(value: unknown): value is Float32Array {
+    return Object.prototype.toString.call(value) === '[object Float32Array]';
+}
+
+export function isValidPreparedSerializedAudioBuffer(data: unknown): data is PreparedSerializedAudioBuffer {
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+        return false;
+    }
+    const candidate = data as Record<string, unknown>;
+    const channelData = candidate.channelData;
+    if (!Array.isArray(channelData) || !channelData.every(isFloat32Array)) {
+        return false;
+    }
+    const length = channelData[0]?.length ?? 0;
+    const sizeInBytes = channelData.reduce((total, channel) => total + channel.byteLength, 0);
+    return (
+        typeof candidate.sampleRate === 'number' &&
+        Number.isFinite(candidate.sampleRate) &&
+        candidate.sampleRate > 0 &&
+        typeof candidate.numberOfChannels === 'number' &&
+        Number.isInteger(candidate.numberOfChannels) &&
+        candidate.numberOfChannels > 0 &&
+        length > 0 &&
+        channelData.length === candidate.numberOfChannels &&
+        channelData.every((channel) => channel.length === length) &&
+        typeof candidate.lastAccessed === 'number' &&
+        Number.isFinite(candidate.lastAccessed) &&
+        candidate.sizeInBytes === sizeInBytes
+    );
+}
+
 export function preparedIdentityFailure(id: string, leaseId: string): string | undefined {
     if (id.trim().length === 0) {
         return 'Prepared audio buffer ID is invalid.';
@@ -77,6 +108,33 @@ export function readPreparedOwner(metadata: unknown): PreparedAudioBufferOwner |
         validated.promotionRevision = promotionRevision;
     }
     return validated;
+}
+
+export function isValidPreparedAudioBufferPair(
+    data: unknown,
+    metadata: unknown
+): data is PreparedSerializedAudioBuffer {
+    if (
+        !isValidPreparedSerializedAudioBuffer(data) ||
+        metadata === null ||
+        typeof metadata !== 'object' ||
+        Array.isArray(metadata)
+    ) {
+        return false;
+    }
+    const candidate = metadata as Record<string, unknown>;
+    const owner = readPreparedOwner(metadata);
+    return (
+        owner !== null &&
+        owner !== 'invalid' &&
+        typeof candidate.lastAccessed === 'number' &&
+        Number.isFinite(candidate.lastAccessed) &&
+        candidate.sizeInBytes === data.sizeInBytes &&
+        (candidate.freezeProjectId === undefined ||
+            (typeof candidate.freezeProjectId === 'number' &&
+                Number.isSafeInteger(candidate.freezeProjectId) &&
+                candidate.freezeProjectId >= 0))
+    );
 }
 
 export function serializedBuffersEqual(

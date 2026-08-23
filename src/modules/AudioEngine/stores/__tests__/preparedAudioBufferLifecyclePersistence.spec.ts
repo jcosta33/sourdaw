@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { flushIndexedDbTasks, installFakeAudioIndexedDb, META_STORE } from './fakeAudioBufferIndexedDb';
 import { createAudioBuffer, createTestContext } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
@@ -202,7 +202,10 @@ describe('prepared audio-buffer persistence and admission', () => {
         });
         expect(audioBufferCache.has('metadata-failure-temporary')).toBe(true);
 
-        controls.fireVersionChange();
+        clearRuntimeAudioBufferCache();
+        vi.resetModules();
+        ({ audioBufferCache, clearRuntimeAudioBufferCache } = await import('../audioBufferCache'));
+        controls.failRequestsFrom(META_STORE);
 
         await expect(audioBufferCache.exportBuffers(['metadata-failure-temporary'])).resolves.toEqual({});
     });
@@ -402,18 +405,7 @@ describe('prepared audio-buffer persistence and admission', () => {
             leaseId: 'project-lease-a',
             disposition: 'project-owned',
         });
-        projectControls.committed.set('reopen-project-collision', {
-            sampleRate: 48_000,
-            numberOfChannels: 1,
-            channelData: [new Float32Array([0.75])],
-            lastAccessed: 2,
-            sizeInBytes: 4,
-        });
-        projectControls.committedMeta.set('reopen-project-collision', {
-            lastAccessed: 2,
-            sizeInBytes: 4,
-            preparedOwner: { schemaVersion: 1, leaseId: 'project-lease-b', status: 'temporary' },
-        });
+        clearRuntimeAudioBufferCache();
 
         await expect(
             audioBufferCache.reopenPreparedBuffer({
@@ -421,8 +413,12 @@ describe('prepared audio-buffer persistence and admission', () => {
                 leaseId: 'project-lease-b',
                 context,
             })
-        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is already occupied.' });
-        expect(audioBufferCache.get('reopen-project-collision')).toBe(projectA);
+        ).resolves.toEqual({ status: 'mismatched' });
+        expect(audioBufferCache.has('reopen-project-collision')).toBe(false);
+        expect(projectControls.committedMeta.get('reopen-project-collision')?.preparedOwner).toMatchObject({
+            leaseId: 'project-lease-a',
+            status: 'project-owned',
+        });
     });
 
     it('treats missing pinned project buffer IDs as occupied by the project', async () => {

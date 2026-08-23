@@ -1,7 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
-import { type PreparedAudioBufferMetadata, type PreparedSerializedAudioBuffer } from './preparedAudioBufferOwnership';
+import {
+    isValidPreparedSerializedAudioBuffer,
+    type PreparedAudioBufferMetadata,
+    type PreparedSerializedAudioBuffer,
+} from './preparedAudioBufferOwnership';
 
 /** Serialized form of an AudioBuffer embedded inside a .sourdaw project file.
  * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips.
@@ -442,35 +446,8 @@ function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     };
 }
 
-function isFloat32Array(value: unknown): value is Float32Array {
-    return Object.prototype.toString.call(value) === '[object Float32Array]';
-}
-
 function isValidSerializedBuffer(data: unknown): data is SerializedBuffer {
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-        return false;
-    }
-    const candidate = data as Record<string, unknown>;
-    const channelData = candidate.channelData;
-    if (!Array.isArray(channelData) || !channelData.every(isFloat32Array)) {
-        return false;
-    }
-    const length = channelData[0]?.length ?? 0;
-    const sizeInBytes = channelData.reduce((total, channel) => total + channel.byteLength, 0);
-    return (
-        typeof candidate.sampleRate === 'number' &&
-        Number.isFinite(candidate.sampleRate) &&
-        candidate.sampleRate > 0 &&
-        typeof candidate.numberOfChannels === 'number' &&
-        Number.isInteger(candidate.numberOfChannels) &&
-        candidate.numberOfChannels > 0 &&
-        length > 0 &&
-        channelData.length === candidate.numberOfChannels &&
-        channelData.every((channel) => channel.length === length) &&
-        typeof candidate.lastAccessed === 'number' &&
-        Number.isFinite(candidate.lastAccessed) &&
-        candidate.sizeInBytes === sizeInBytes
-    );
+    return isValidPreparedSerializedAudioBuffer(data);
 }
 
 function isValidBufferMetadata(metadata: unknown, data: SerializedBuffer): metadata is BufferMeta {

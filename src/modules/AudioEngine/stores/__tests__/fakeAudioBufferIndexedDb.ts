@@ -126,6 +126,10 @@ export type FakeAudioIndexedDbControls = {
     allowWrites: () => void;
     /** Abort exactly the next readwrite transaction, then resume normal writes. */
     abortNextWrite: () => void;
+    /** Fail every request issued against one store without making other stores unavailable. */
+    failRequestsFrom: (storeName: string) => void;
+    /** Resume request delivery for every store. */
+    allowRequests: () => void;
     /** Hold readonly completion after its requests have produced their snapshots. */
     pauseReadonlySettlements: () => void;
     /** Release the oldest held readonly completion. */
@@ -193,7 +197,8 @@ class FakeTransaction {
         private readonly willAbort: boolean,
         private readonly meters: ByteMeters,
         private readonly holdSettlement?: (settle: () => void) => void,
-        private readonly onSettled?: () => void
+        private readonly onSettled?: () => void,
+        private readonly shouldFailRequest?: (storeName: string) => boolean
     ) {
         for (const name of scope) {
             this.staged.set(name, new Map<string, StoredValue | null>());
@@ -230,7 +235,7 @@ class FakeTransaction {
                 'NotFoundError'
             );
         }
-        return new FakeObjectStore(this, committed, this.staged.get(name)!, this.meters);
+        return new FakeObjectStore(name, this, committed, this.staged.get(name)!, this.meters, this.shouldFailRequest);
     }
 
     abort(): void {
@@ -306,10 +311,12 @@ class FakeTransaction {
 
 class FakeObjectStore {
     constructor(
+        private readonly name: string,
         private readonly transaction: FakeTransaction,
         private readonly committed: Map<string, StoredValue>,
         private readonly staged: Map<string, StoredValue | null>,
-        private readonly meters: ByteMeters
+        private readonly meters: ByteMeters,
+        private readonly shouldFailRequest?: (storeName: string) => boolean
     ) {}
 
     get(key: string): FakeRequest<StoredValue | undefined> {
@@ -389,6 +396,11 @@ class FakeObjectStore {
         const request: FakeRequest<T> = { result: undefined, error: null, onsuccess: null, onerror: null };
         this.transaction.enqueue(
             () => {
+                if (this.shouldFailRequest?.(this.name)) {
+                    request.error = new DOMException('The request failed.', 'UnknownError');
+                    request.onerror?.();
+                    return;
+                }
                 request.result = run();
                 request.onsuccess?.();
             },
@@ -449,6 +461,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     let abortWrites = false;
     let abortWritesToStore: string | null = null;
     let abortNextWrite = false;
+    let failingRequestStore: string | null = null;
     let pauseReadonlySettlements = false;
     let pauseWriteSettlements = false;
     const pendingReadonlySettlements: Array<() => void> = [];
@@ -574,7 +587,8 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                     doomed,
                     meters,
                     heldSettlements ? (settle) => heldSettlements.push(settle) : undefined,
-                    () => finishTransaction(scheduled)
+                    () => finishTransaction(scheduled),
+                    (storeName) => failingRequestStore === storeName
                 );
                 scheduled = scheduleTransaction(transaction, scope, mode);
                 return transaction;
@@ -642,6 +656,12 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
         },
         abortNextWrite: () => {
             abortNextWrite = true;
+        },
+        failRequestsFrom: (storeName: string) => {
+            failingRequestStore = storeName;
+        },
+        allowRequests: () => {
+            failingRequestStore = null;
         },
         pauseReadonlySettlements: () => {
             pauseReadonlySettlements = true;

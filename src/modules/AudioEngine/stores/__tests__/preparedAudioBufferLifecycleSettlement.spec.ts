@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { flushIndexedDbTasks, installFakeAudioIndexedDb, type StoredBufferMeta } from './fakeAudioBufferIndexedDb';
 import { createAudioBuffer, createTestContext, encodeFloat32 } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let reclaimPreparedBufferOrphans: typeof import('../audioBufferCache').reclaimPreparedBufferOrphans;
+
+const malformedPreparedMetadataCases: ReadonlyArray<[string, (metadata: StoredBufferMeta) => void]> = [
+    ['non-finite last-access time', (metadata) => (metadata.lastAccessed = Number.NaN)],
+    ['mismatched byte size', (metadata) => (metadata.sizeInBytes += 4)],
+    ['invalid freeze-project ID', (metadata) => (metadata.freezeProjectId = -1)],
+];
 
 beforeEach(async () => {
     vi.resetModules();
@@ -304,7 +310,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
     });
 
     it('retries committed prepared persistence by caller-known lease after a module reload', async () => {
-        installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb();
         const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         source.getChannelData(0)[0] = 0.45;
         const input = { id: 'caller-known-retry', buffer: source, leaseId: 'caller-known-lease' };
@@ -314,6 +320,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
             bufferId: 'caller-known-retry',
             leaseId: 'caller-known-lease',
         });
+        delete controls.committedMeta.get(input.id)?.preparedOwner?.persistenceRevision;
         vi.resetModules();
         ({ audioBufferCache } = await import('../audioBufferCache'));
         await expect(audioBufferCache.persistPreparedBuffer(input)).resolves.toEqual({
@@ -321,6 +328,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
             bufferId: 'caller-known-retry',
             leaseId: 'caller-known-lease',
         });
+        expect(controls.committedMeta.get(input.id)?.preparedOwner?.persistenceRevision).toEqual(expect.any(String));
         await expect(
             audioBufferCache.releasePreparedBuffer({
                 id: 'caller-known-retry',
@@ -329,6 +337,59 @@ describe('prepared audio-buffer settlement and recovery', () => {
             })
         ).resolves.toEqual({ status: 'released', disposition: 'discarded' });
     });
+
+    it.each(malformedPreparedMetadataCases)(
+        'rejects exact-lease retry with %s after reload without publishing runtime PCM',
+        async (_label, corruptMetadata) => {
+            const controls = installFakeAudioIndexedDb();
+            const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            source.getChannelData(0)[0] = 0.45;
+            const input = { id: 'malformed-retry', buffer: source, leaseId: 'malformed-retry-lease' };
+            await expect(audioBufferCache.persistPreparedBuffer(input)).resolves.toMatchObject({
+                status: 'persisted',
+            });
+            clearRuntimeAudioBufferCache();
+            const metadata = controls.committedMeta.get(input.id)!;
+            corruptMetadata(metadata);
+            vi.resetModules();
+            ({ audioBufferCache } = await import('../audioBufferCache'));
+
+            await expect(audioBufferCache.persistPreparedBuffer(input)).resolves.toEqual({
+                status: 'failed',
+                reason: 'Prepared audio PCM metadata is invalid.',
+            });
+            expect(audioBufferCache.has(input.id)).toBe(false);
+            expect(controls.committed.has(input.id)).toBe(true);
+            expect(controls.committedMeta.get(input.id)).toBe(metadata);
+        }
+    );
+
+    it.each(['temporary', 'project-owned'] as const)(
+        'rejects %s promotion success when the durable metadata pair is malformed',
+        async (ownerStatus) => {
+            const controls = installFakeAudioIndexedDb();
+            const id = `malformed-${ownerStatus}-promotion`;
+            const leaseId = `malformed-${ownerStatus}-lease`;
+            await audioBufferCache.persistPreparedBuffer({
+                id,
+                buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+                leaseId,
+            });
+            if (ownerStatus === 'project-owned') {
+                await audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'project-owned' });
+            }
+            clearRuntimeAudioBufferCache();
+            controls.committedMeta.get(id)!.lastAccessed = Number.NaN;
+            vi.resetModules();
+            ({ audioBufferCache } = await import('../audioBufferCache'));
+
+            await expect(
+                audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'project-owned' })
+            ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio PCM metadata is invalid.' });
+            expect(audioBufferCache.has(id)).toBe(false);
+            expect(controls.committedMeta.get(id)?.preparedOwner?.status).toBe(ownerStatus);
+        }
+    );
 
     it('reclaims only expired unowned prepared PCM after restart', async () => {
         const controls = installFakeAudioIndexedDb();
@@ -504,6 +565,91 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(controls.committed.get('discard-race')?.channelData[0]?.[0]).toBeCloseTo(0.85);
         expect(controls.committedMeta.get('discard-race')?.preparedOwner).toBeUndefined();
     });
+
+    it('rejects discard when the project already pins the prepared PCM', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'discard-existing-project-pin';
+        const buffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        const persisted = await audioBufferCache.persistPreparedBuffer({
+            id,
+            buffer,
+            leaseId: 'discard-existing-project-pin-lease',
+        });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected discard-existing-project-pin prepared PCM to persist');
+        }
+        const metadata = structuredClone(controls.committedMeta.get(id));
+        const project = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: [id],
+            context: createTestContext(vi.fn()),
+        });
+        expect(project?.publish()).toBe(0);
+
+        await expect(
+            audioBufferCache.releasePreparedBuffer({ id, leaseId: persisted.leaseId, disposition: 'discard' })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is reserved by the project.' });
+        expect(controls.committed.has(id)).toBe(true);
+        expect(controls.committedMeta.get(id)).toEqual(metadata);
+        expect(audioBufferCache.get(id)).toBe(buffer);
+    });
+
+    it.each(['before-settlement', 'after-commit'] as const)(
+        'preserves prepared PCM when a project pin lands %s during discard',
+        async (pinTiming) => {
+            const controls = installFakeAudioIndexedDb();
+            const id = `discard-late-project-pin-${pinTiming}`;
+            const buffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            buffer.getChannelData(0)[0] = 0.65;
+            const persisted = await audioBufferCache.persistPreparedBuffer({
+                id,
+                buffer,
+                leaseId: `discard-late-project-pin-${pinTiming}-lease`,
+            });
+            if (persisted.status !== 'persisted') {
+                throw new TypeError('Expected late-pin discard fixture to persist');
+            }
+            const stored = structuredClone(controls.committed.get(id));
+            const metadata = structuredClone(controls.committedMeta.get(id));
+            controls.pauseWriteSettlements();
+            const discard = audioBufferCache.releasePreparedBuffer({
+                id,
+                leaseId: persisted.leaseId,
+                disposition: 'discard',
+            });
+            while (controls.pendingWriteSettlementCount() === 0) {
+                await flushIndexedDbTasks(1);
+            }
+
+            if (pinTiming === 'after-commit') {
+                controls.releaseNextWriteSettlement();
+            }
+            const project = audioBufferCache.importBuffers({
+                buffers: {},
+                cacheIds: [id],
+                context: createTestContext(vi.fn()),
+            });
+            expect(project?.publish()).toBe(0);
+            if (pinTiming === 'after-commit') {
+                while (controls.pendingWriteSettlementCount() === 0) {
+                    await flushIndexedDbTasks(1);
+                }
+            }
+            controls.releaseNextWriteSettlement();
+
+            await expect(discard).resolves.toEqual({
+                status: 'failed',
+                reason: 'Prepared audio buffer ID is reserved by the project.',
+            });
+            while (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+                await flushIndexedDbTasks(1);
+            }
+            expect(controls.committed.get(id)).toEqual(stored);
+            expect(controls.committedMeta.get(id)).toEqual(metadata);
+            expect(audioBufferCache.get(id)).toBe(buffer);
+        }
+    );
 
     it('evicts matching prepared PCM after overlapping discard retries commit deletion', async () => {
         const controls = installFakeAudioIndexedDb();
