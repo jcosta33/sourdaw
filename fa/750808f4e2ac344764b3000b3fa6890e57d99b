@@ -1,0 +1,38 @@
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_021ce7f0fd29ea 18,147,157-166,1912,1927
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_021ce7f0fd29ea 2159-2168
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_a40848e8f8cca9::t_4850b28c1bf134 180-219
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_8bda5130759957 73-135,535,562,570,578,586-587,594
+  s_a40848e8f8cca9::t_efd2cae6a5036d 534,536-558
+  s_a40848e8f8cca9::t_9cdaeffbda0893 560-561,563-569,571-577,579-585,588-593,595-596
+  s_a40848e8f8cca9::t_743a429546a67d 559
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_b7799037e63122 3567-3569
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_021ce7f0fd29ea 1-2,15,62-67
+  s_a40848e8f8cca9::t_8d39094f0420dc 68
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_021ce7f0fd29ea 217,239-248
+  s_a40848e8f8cca9::t_d426c8ba2064a9 249-252
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_ee5eea444253b6 4300-4341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fa750808f4e2ac344764b3000b3fa6890e57d99b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
