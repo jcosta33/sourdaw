@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { mkdirSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -690,10 +690,15 @@ export function shellPort(
         isAncestor: (ancestorSha, descendantSha, lane) =>
             isAncestorCommit(lane, ancestorSha, descendantSha, session.env, executables.git),
         push: (lane, branch, headSha) => {
+            const disabledHooksPath = join(session.configDir, 'disabled-hooks');
+            mkdirSync(disabledHooksPath, { recursive: true, mode: 0o700 });
             spawnRun(
                 executables.git,
                 gitAuthenticatedArgs(token, session.configDir, [
+                    '-c',
+                    `core.hooksPath=${disabledHooksPath}`,
                     'push',
+                    '--no-verify',
                     GITHUB_HTTPS_REMOTE,
                     `${headSha}:refs/heads/${branch}`,
                 ]),

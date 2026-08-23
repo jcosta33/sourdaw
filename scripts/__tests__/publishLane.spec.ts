@@ -1,13 +1,28 @@
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_LOCK_REASON, resolvePrimaryRoot, type GhSession } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_LOCK_REASON,
+    GITHUB_HTTPS_REMOTE,
+    createGhSession,
+    resolvePrimaryRoot,
+    type GhSession,
+} from '../githubAppIdentity.ts';
 import { composePublishBody } from '../prContract.ts';
 import {
     existingOpenPullRequestArgs,
@@ -350,6 +365,44 @@ describe('lane publish', () => {
         expect(resolveLane).toBeGreaterThanOrEqual(0);
         expect(authenticate).toBeGreaterThan(resolveLane);
         expect(cli).not.toMatch(/\bauthenticateRole\b/);
+    });
+
+    it('does not run a lane-controlled pre-push hook in the token-bearing Git child', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-hooks-'));
+        const primary = join(fixtureRoot, 'primary');
+        const lane = join(fixtureRoot, 'lane');
+        const remote = join(fixtureRoot, 'remote.git');
+        const hookMarker = join(fixtureRoot, 'hook-token');
+        const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        let session: GhSession | undefined;
+        try {
+            initializeRepository(primary);
+            writeFileSync(join(primary, 'base.txt'), 'base\n');
+            fixtureGit(primary, ['add', 'base.txt']);
+            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: hook fixture base']);
+            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/hook-proof', lane]);
+
+            mkdirSync(join(lane, '.githooks'));
+            const prePushHook = join(lane, '.githooks/pre-push');
+            writeFileSync(prePushHook, `#!/bin/sh\nprintf %s "$GH_TOKEN" > ${JSON.stringify(hookMarker)}\n`);
+            chmodSync(prePushHook, 0o700);
+            fixtureGit(lane, ['add', '.githooks/pre-push']);
+            fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'test: add hostile pre-push hook']);
+            fixtureGit(primary, ['config', 'core.hooksPath', '.githooks']);
+
+            execFileSync(systemGit, ['init', '--bare', remote], { cwd: fixtureRoot, encoding: 'utf8' });
+            fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
+            const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
+            session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
+
+            shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(lane, 'agent/12/hook-proof', headSha);
+
+            expect(existsSync(hookMarker)).toBe(false);
+            expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/hook-proof'])).toBe(headSha);
+        } finally {
+            session?.dispose();
+            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
     });
 
     it('pushes without force, opens one PR, and prints the number', () => {
