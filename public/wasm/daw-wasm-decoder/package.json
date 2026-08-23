@@ -18,5 +18,6 @@
   "main": "daw_wasm_decoder.js",
   "sideEffects": [
     "./snippets/*"
-  ]
+  ],
+  "private": true
 }

@@ -24,7 +24,7 @@ cargo:aws-lc-sys@0.44.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND
 cargo:base64@0.22.1 | MIT OR Apache-2.0 | sha256:0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:bitflags@2.13.1 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:block-buffer@0.12.1 | MIT OR Apache-2.0 | sha256:98181e7249d0c01737645ec982499ce99a0f07eb8f7d625b8840d799d10dbc01,sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5 | Cargo.lock
-cargo:block2@0.6.2 | MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4 | Cargo.lock
+cargo:block2@0.6.2 | MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
 cargo:borsh@1.8.0 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:7b724c8fa4a82af733caccabdaa21e2bf8bcb0822fe62d5cf03f99d458438705 | Cargo.lock
 cargo:bumpalo@3.20.3 | MIT OR Apache-2.0 | sha256:65f94e99ddaf4f5d1782a6dae23f35d4293a9a01444a13135a6887017d353cee,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:bytemuck@1.25.2 | Zlib OR Apache-2.0 OR MIT | sha256:84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151,sha256:9df9ba60a11af705f2e451b53762686e615d86f76b169cf075c3237730dbd7e2,sha256:e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb | Cargo.lock
@@ -50,7 +50,7 @@ cargo:dasp_sample@0.11.0 | MIT OR Apache-2.0 | sha256:756c8d2ab2dc24f256e1455b5f
 cargo:digest@0.11.3 | MIT OR Apache-2.0 | sha256:a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5,sha256:af59cea35d7f5e2777a713b8d155d65efa2c339eb43f3c14e868c6ac8506edad | Cargo.lock
 cargo:dirs@6.0.0 | MIT OR Apache-2.0 | sha256:6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9,sha256:d3174ad63e721d4c9dccb8ad4320848992d314369bc46319720b5802c9153fe9 | Cargo.lock
 cargo:dirs-sys@0.5.0 | MIT OR Apache-2.0 | sha256:6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9,sha256:d3174ad63e721d4c9dccb8ad4320848992d314369bc46319720b5802c9153fe9 | Cargo.lock
-cargo:dispatch2@0.3.1 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
+cargo:dispatch2@0.3.1 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
 cargo:displaydoc@0.2.7 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:dlopen2@0.9.0 | MIT | sha256:39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2 | Cargo.lock
 cargo:either@1.17.0 | MIT OR Apache-2.0 | sha256:7576269ea71f767b99297934c0b2367532690f8c4badc695edf8e04ab6a1e545,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
@@ -104,7 +104,7 @@ cargo:java-locator@0.1.9 | MIT/Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318
 cargo:jni@0.21.1 | MIT/Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960 | Cargo.lock
 cargo:jni@0.22.4 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960 | Cargo.lock
 cargo:jni-macros@0.22.4 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960 | Cargo.lock
-cargo:jni-min-helper@0.3.4 | MIT OR Apache-2.0 | sha256:1f4b7a7f83b056d8851f2232cad771420205bac631010be2e9516ae42b0353f0,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
+cargo:jni-min-helper@0.3.4 | MIT OR Apache-2.0 | sha256:1f4b7a7f83b056d8851f2232cad771420205bac631010be2e9516ae42b0353f0 | Cargo.lock
 cargo:jni-sys@0.3.1 | MIT OR Apache-2.0 | sha256:1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1,sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 | Cargo.lock
 cargo:jni-sys@0.4.1 | MIT OR Apache-2.0 | sha256:1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1,sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 | Cargo.lock
 cargo:jni-sys-macros@0.4.1 | MIT OR Apache-2.0 | sha256:1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1,sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 | Cargo.lock
@@ -136,13 +136,13 @@ cargo:num-integer@0.1.47 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f4
 cargo:num-traits@0.2.19 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:num_enum@0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | sha256:0be96d891d00e0ae0df75d7f3289b12871c000a1f5ac744f3b570768d4bb277c,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a | Cargo.lock
 cargo:num_enum_derive@0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | sha256:0be96d891d00e0ae0df75d7f3289b12871c000a1f5ac744f3b570768d4bb277c,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a | Cargo.lock
-cargo:objc2@0.6.4 | MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
-cargo:objc2-audio-toolbox@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
-cargo:objc2-avf-audio@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
-cargo:objc2-core-audio@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
-cargo:objc2-core-audio-types@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
-cargo:objc2-core-foundation@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
-cargo:objc2-encode@4.1.0 | MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4 | Cargo.lock
+cargo:objc2@0.6.4 | MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
+cargo:objc2-audio-toolbox@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
+cargo:objc2-avf-audio@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
+cargo:objc2-core-audio@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
+cargo:objc2-core-audio-types@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
+cargo:objc2-core-foundation@0.3.2 | Zlib OR Apache-2.0 OR MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
+cargo:objc2-encode@4.1.0 | MIT | sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 | Cargo.lock
 cargo:objc2-foundation@0.3.2 | MIT | sha256:23d608079a47693a26dfc8a5cb01894ad0136a50714d46221d9380aa4a4b4423,sha256:259b22f571b54fed25f68ec5abd8eda223e7b0547a806f13ba797a0eabecd64f | Cargo.lock
 cargo:once_cell@1.21.4 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:openssl-probe@0.2.1 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
@@ -165,7 +165,7 @@ cargo:rand@0.10.2 | MIT OR Apache-2.0 | sha256:209fbbe0ad52d9235e37badf9cadfe4db
 cargo:rand_core@0.10.1 | MIT OR Apache-2.0 | sha256:6df43f6f4b5d4587f3d8d71e45532c688fd168afa5fe89d571cb32fa09c4ef51,sha256:8b6e9feec03e7c9a5facb26855cecd31662bf989b636bcfe79521bdf8ac863f0,sha256:92b81db30f7ab6d693e0af5661a40d273ca1947e891123ed823924192c10cbc7 | Cargo.lock
 cargo:rand_pcg@0.10.2 | MIT OR Apache-2.0 | sha256:2234e3cefee876aeb686ad89e978bdb07bf118a1186ab1cf161bcdf69d4b4f57,sha256:6df43f6f4b5d4587f3d8d71e45532c688fd168afa5fe89d571cb32fa09c4ef51,sha256:90eb64f0279b0d9432accfa6023ff803bc4965212383697eee27a0f426d5f8d5 | Cargo.lock
 cargo:raw-window-handle@0.6.2 | MIT OR Apache-2.0 OR Zlib | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:9c5a80639a57c1c945570e7ebbca0706305849ce3c098021325cca9db2f7acc4,sha256:ae895c8576e682f310fb70d93d9f99b1dd82872094c54a8f6cdfe2ca5c2d6ecb | Cargo.lock
-cargo:realfft@3.5.0 | MIT | sha256:1e92c54e7fa08298d2a34ea9aa63b85626c47519873a91cd1028f234e1221608,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:d72ddbadf9bb55ed21ae973ac97f0bb4e8df2064af628c54b802b2c7d764c8de | Cargo.lock
+cargo:realfft@3.5.0 | MIT | sha256:1e92c54e7fa08298d2a34ea9aa63b85626c47519873a91cd1028f234e1221608,sha256:d72ddbadf9bb55ed21ae973ac97f0bb4e8df2064af628c54b802b2c7d764c8de | Cargo.lock
 cargo:redox_syscall@0.5.18 | MIT | sha256:efcfee7981ff72431fffb06925cad00a23dce079ed4354f61030ad5abdb78829 | Cargo.lock
 cargo:redox_users@0.5.2 | MIT | sha256:e6a8ae2d796083783efc94b1e66271aa2929dc4dfb231d34239aa9c7db8396db | Cargo.lock
 cargo:regex-lite@0.1.9 | MIT OR Apache-2.0 | sha256:6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
@@ -448,7 +448,7 @@ npm:argparse@1.0.10 | MIT | sha256:c8442419dc614089ea022b3da6bfc089b41a58fb7b903
 npm:aria-hidden@1.2.6 | MIT | sha256:30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9 | pnpm-lock.yaml
 npm:array-flatten@3.0.0 | MIT | sha256:4eeb3271453a891df609e5a9f4ee79a68307f730c13417a3bfeffa604ac8cf25 | pnpm-lock.yaml
 npm:asynckit@0.4.0 | MIT | sha256:1953150d5d4b10c7542cee6f6e0c613b2682545233f069d75cfff1936386ce10 | pnpm-lock.yaml
-npm:babel-plugin-add-module-exports@0.2.1 | MIT | sha256:5f4ec73d64724b7127a62414a2d4da25e57c8e68cc44c6794de3efa0d5d49eea,sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4,sha256:f62d1adc0b46f7ef8809e61418370e7fd707fd33348cbcc08e27f5e01214ff57 | pnpm-lock.yaml
+npm:babel-plugin-add-module-exports@0.2.1 | MIT | sha256:5f4ec73d64724b7127a62414a2d4da25e57c8e68cc44c6794de3efa0d5d49eea,sha256:f62d1adc0b46f7ef8809e61418370e7fd707fd33348cbcc08e27f5e01214ff57 | pnpm-lock.yaml
 npm:bail@2.0.2 | MIT | sha256:63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf | pnpm-lock.yaml
 npm:buffer-alloc@1.2.0 | MIT | sha256:14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c | pnpm-lock.yaml
 npm:buffer-alloc-unsafe@1.1.0 | MIT | sha256:14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c | pnpm-lock.yaml
@@ -509,7 +509,7 @@ npm:get-intrinsic@1.3.0 | MIT | sha256:39c5ec504cf6bd5cd782a7c695828e09189df79f5
 npm:get-nonce@1.0.1 | MIT | sha256:acf3b087b348d2f2e731b9d4131af185aad694c1204ce14a46909483fd42da05 | pnpm-lock.yaml
 npm:get-proto@1.0.1 | MIT | sha256:be46ce1e3b0479af9ce82d22b465a6d7d2ff084fca0aaf3d54172da2b5eb5781 | pnpm-lock.yaml
 npm:gopd@1.2.0 | MIT | sha256:d90bf0a089da4cf43d644ed240a0b3825dcdb705e64e38371d56995a4cc9e4c5 | pnpm-lock.yaml
-npm:guid-typescript@1.0.9 | ISC | sha256:ed86856ee95fe87eadd8552b6803a85b7fb4f6cce08603bf9c8385972b5badb6,sha256:f2ff9e66e9a9acdbffbcbf2ae4ff184d923325ce1a98d20ac64f3dd450263f3a | pnpm-lock.yaml
+npm:guid-typescript@1.0.9 | ISC | sha256:ed86856ee95fe87eadd8552b6803a85b7fb4f6cce08603bf9c8385972b5badb6 | pnpm-lock.yaml
 npm:has-flag@4.0.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 | pnpm-lock.yaml
 npm:has-symbols@1.1.0 | MIT | sha256:206c1adcf206dc0031b11232f5b054ec5f1662407ab1ca415247921cab2068ab | pnpm-lock.yaml
 npm:has-tostringtag@1.0.2 | MIT | sha256:e2560e002e13281578c75c850061d9255c33d16d732939e8c2db64c2506642fa | pnpm-lock.yaml
@@ -2447,7 +2447,7 @@ DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e =====
 ===== sha256:14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c =====
-Original filenames: LICENSE, buffer-alloc-LICENSE from https://github.com/LinusU/buffer-alloc@7559ddbb1f986f296df482c9aba6b9908921cfbb, buffer-alloc-unsafe-LICENSE from https://github.com/LinusU/buffer-alloc-unsafe@d21ff11dd0ac0aab325759dc9c085c59818bd9b1, buffer-fill-LICENSE from https://github.com/linusu/buffer-fill@77f87f79d728662a6ecdc25b3e538b948331134e
+Original filenames: LICENSE, LICENSE from npm:buffer-alloc-unsafe@1.1.0@sha512-TEM2iMIEQdJ2yjPJoSIsldnleVaAk1oW3DBVUykyOLsEsFmEc9kn+SFFPz+gl54KQNxlDnAwCXosOS9Okx2xAg==, LICENSE from npm:buffer-alloc@1.2.0@sha512-CFsHQgjtW1UChdXgbyJGtnm+O/uLQeZdtbDo8mfUgYXCHSM1wgrVxXm6bSyrUuErEb+4sYVGCzASBRot7zyrow==, LICENSE from npm:buffer-fill@1.0.0@sha512-T7zexNBwiiaCOGDg9xNX9PBmjrubblRkENuptryuI64URkXDFum9il/JGL8Lm8wYfAXpredVXXZz7eMHilimiQ==
 Packages:
 - npm:buffer-alloc-unsafe@1.1.0
 - npm:buffer-alloc@1.2.0
@@ -3003,7 +3003,7 @@ DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:1ad744e85fa784e84bc61758727c36e385908e740c80524e2a93c83d04a71883 =====
 ===== sha256:1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c =====
-Original filenames: LICENSE-MIT, rustls-platform-verifier-LICENSE-MIT from https://github.com/rustls/rustls-platform-verifier@00e6363e0f4e0d9a9dcf3f89733e7413ff5b61e4
+Original filenames: LICENSE-MIT, rustls-platform-verifier-LICENSE-MIT from https://crates.io/api/v1/crates/rustls-platform-verifier-android/0.1.1/download@sha256:f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f
 Packages:
 - cargo:rustls-platform-verifier-android@0.1.1
 - cargo:rustls-platform-verifier@0.7.0
@@ -3049,7 +3049,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ===== end sha256:1d5508a457f48bb2aee6eaad4492dd06e8d9dd36284719ecdc5b443408166368 =====
 ===== sha256:1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1 =====
-Original filenames: LICENSE-MIT, jni-sys-LICENSE-MIT from https://github.com/jni-rs/jni-sys@64d77b7a5f119d7b55b4e2c169a4668067ff59e6
+Original filenames: LICENSE-MIT, jni-sys-LICENSE-MIT from https://crates.io/api/v1/crates/jni-sys-macros/0.4.1/download@sha256:38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264
 Packages:
 - cargo:jni-sys-macros@0.4.1
 - cargo:jni-sys@0.3.1
@@ -3105,7 +3105,7 @@ SOFTWARE.
 
 ===== end sha256:1dd8eca0f83669e75fa119e34fb9e1be9d16e3e9b6368962b8019db6e8ae5f7b =====
 ===== sha256:1e92c54e7fa08298d2a34ea9aa63b85626c47519873a91cd1028f234e1221608 =====
-Original filenames: realfft-README.md from https://github.com/HEnquist/realfft@d0d4eee0525fd27c96c8a046d6d107acd5ed84a6
+Original filenames: README.md from https://crates.io/api/v1/crates/realfft/3.5.0/download@sha256:f821338fddb99d089116342c46e9f1fbf3828dba077674613e734e01d6ea8677
 Packages:
 - cargo:realfft@3.5.0
 
@@ -3324,7 +3324,7 @@ SOFTWARE.
 
 ===== end sha256:1ea20122ffdda9e68f47eb121b811011757f332d41d97f610ea91c598beff733 =====
 ===== sha256:1f4b7a7f83b056d8851f2232cad771420205bac631010be2e9516ae42b0353f0 =====
-Original filenames: jni-min-helper-Cargo.toml from https://crates.io/api/v1/crates/jni-min-helper/0.3.4/download@sha256:913370a00ba1851b0f3369b49d0f3e745da2d20d3f15ecc296a64234ccda45f7
+Original filenames: Cargo.toml from https://crates.io/api/v1/crates/jni-min-helper/0.3.4/download@sha256:913370a00ba1851b0f3369b49d0f3e745da2d20d3f15ecc296a64234ccda45f7
 Packages:
 - cargo:jni-min-helper@0.3.4
 
@@ -4543,7 +4543,7 @@ Packages:
 
 ===== end sha256:276fbb649bda6b64528dedc0db040efc6ec73a3a1881a737f850ffdcef114501 =====
 ===== sha256:2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef =====
-Original filenames: LICENSE
+Original filenames: LICENSE from https://registry.npmjs.org/ws/-/ws-8.21.1.tgz@sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==
 Packages:
 - npm:ws@8.21.1
 
@@ -4901,7 +4901,7 @@ Packages:
 
 ===== end sha256:2e54cd84a645bea25943c75dd8ae67cb291e66a47a11578333c9b4b3b6b86c85 =====
 ===== sha256:2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c =====
-Original filenames: onnxruntime-LICENSE from https://github.com/microsoft/onnxruntime@8f0278c77bf44b0cc83c098c6c722b92a36ac4b5
+Original filenames: LICENSE from npm:onnxruntime-common@1.27.0@sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==, LICENSE from npm:onnxruntime-web@1.27.0@sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==
 Packages:
 - npm:onnxruntime-common@1.27.0
 - npm:onnxruntime-web@1.27.0
@@ -5644,7 +5644,7 @@ SOFTWARE.
 
 ===== end sha256:39c5ec504cf6bd5cd782a7c695828e09189df79f5d94840e4f08feb97b9fd416 =====
 ===== sha256:39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2 =====
-Original filenames: dlopen2-LICENSE from https://github.com/OpenByteDev/dlopen2@c1ca06007390d89e9adf2a4400176eba51ba9c28
+Original filenames: LICENSE from https://crates.io/api/v1/crates/dlopen2/0.9.0/download@sha256:60768c353d76ba6dd1b6332a5dbbdd3bc2dddadc2935f4cc6a9d0f17ca8ecb6a
 Packages:
 - cargo:dlopen2@0.9.0
 
@@ -7191,7 +7191,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ===== end sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 =====
 ===== sha256:499d6d466d064e0460427967a344e2a32fcb86ea8c6cd1a285ec4f1fa03fba67 =====
-Original filenames: tr46-LICENSE.md from https://github.com/Sebmaster/tr46.js@7f1eb920768c794be40962a4f0cbad670a398d04
+Original filenames: LICENSE.md from npm:tr46@0.0.3@sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==
 Packages:
 - npm:tr46@0.0.3
 
@@ -8381,7 +8381,7 @@ DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:5080149357fd0be590bdc10cf92165412bb4d61ce496284d56f2d12874ae3121 =====
 ===== sha256:508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1 =====
-Original filenames: ndk-LICENSE-MIT from https://github.com/rust-mobile/ndk@49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25, ndk-context-LICENSE-MIT from https://github.com/rust-windowing/android-ndk-rs@10f2ba388fca20f7349996ebae26ccda7a6fda5c
+Original filenames: ndk-LICENSE-MIT from https://crates.io/api/v1/crates/ndk-sys/0.6.0+11769913/download@sha256:ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873, ndk-LICENSE-MIT from https://crates.io/api/v1/crates/ndk/0.9.0/download@sha256:c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4, ndk-context-LICENSE-MIT from https://crates.io/api/v1/crates/ndk-context/0.1.1/download@sha256:27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b
 Packages:
 - cargo:ndk-context@0.1.1
 - cargo:ndk-sys@0.6.0+11769913
@@ -10435,7 +10435,7 @@ SOFTWARE.
 
 ===== end sha256:5e325595b4ea8cfec3802f545b1def5d7b73e4a5b8e9ba63e32a320f67732292 =====
 ===== sha256:5f4ec73d64724b7127a62414a2d4da25e57c8e68cc44c6794de3efa0d5d49eea =====
-Original filenames: babel-plugin-add-module-exports-package.json from npm:babel-plugin-add-module-exports@0.2.1@sha512-3AN/9V/rKuv90NG65m4tTHsI04XrCKsWbztIcW7a8H5iIN7WlvWucRtVV0V/rT4QvtA11n5Vmp20fLwfMWqp6g==
+Original filenames: package.json from npm:babel-plugin-add-module-exports@0.2.1@sha512-3AN/9V/rKuv90NG65m4tTHsI04XrCKsWbztIcW7a8H5iIN7WlvWucRtVV0V/rT4QvtA11n5Vmp20fLwfMWqp6g==
 Packages:
 - npm:babel-plugin-add-module-exports@0.2.1
 
@@ -12754,7 +12754,7 @@ limitations under the License.
 
 ===== end sha256:751963a8b88c0e3a9f27e98933079fbcf09b9998b2c13ac49c2e4d58444520d6 =====
 ===== sha256:756c8d2ab2dc24f256e1455b5f03937f4933d83d7bc9f2d55009fc962377d512 =====
-Original filenames: dasp-LICENSE-APACHE from https://github.com/rustaudio/sample@97c3bb9b2363c0b46ac1633858bf1054fd02a980
+Original filenames: dasp-LICENSE-APACHE from https://crates.io/api/v1/crates/dasp_sample/0.11.0/download@sha256:0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f
 Packages:
 - cargo:dasp_sample@0.11.0
 
@@ -12898,7 +12898,7 @@ SOFTWARE.
 
 ===== end sha256:799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d =====
 ===== sha256:7a06f577e39ec132eb8657abc3471f81f668ff3810a160db79b9b18a9568242b =====
-Original filenames: hexane-LICENSE from https://github.com/automerge/automerge@8d20da046282a43b5af3c3bdacd4467b48545087
+Original filenames: LICENSE from https://crates.io/api/v1/crates/hexane/1.0.0-alpha.5/download@sha256:81df830f11babb0eee9a082e09135ef0a7d8791f3fe9b279bb9485bf7eaf23e0
 Packages:
 - cargo:hexane@1.0.0-alpha.5
 
@@ -13238,7 +13238,7 @@ THIS SOFTWARE.
 
 ===== end sha256:7cfafc877eccc46c0e346ccbaa5c51bb6b894d2b818e617d970211e232785ad4 =====
 ===== sha256:7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54 =====
-Original filenames: objc2-7b1a-LICENSE.md from https://github.com/madsmtm/objc2@7b1abfd750a2cacaea71d6a56ecfb83cb7de560b, objc2-8852-LICENSE.md from https://github.com/madsmtm/objc2@8852b424193ca41602281b3d7540d7c8ed51e49a, objc2-8d21-LICENSE.md from https://github.com/madsmtm/objc2@8d214f5477365ffcbcbb7de058c86ed9a518efb7, objc2-b416-LICENSE.md from https://github.com/madsmtm/objc2@b4167b582b2f75f9a1be75495c41b765344fd03c
+Original filenames: LICENSE.md from https://crates.io/api/v1/crates/block2/0.6.2/download@sha256:cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5, LICENSE.md from https://crates.io/api/v1/crates/dispatch2/0.3.1/download@sha256:1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38, LICENSE.md from https://crates.io/api/v1/crates/objc2-audio-toolbox/0.3.2/download@sha256:6948501a91121d6399b79abaa33a8aa4ea7857fe019f341b8c23ad6e81b79b08, LICENSE.md from https://crates.io/api/v1/crates/objc2-avf-audio/0.3.2/download@sha256:13a380031deed8e99db00065c45937da434ca987c034e13b87e4441f9e4090be, LICENSE.md from https://crates.io/api/v1/crates/objc2-core-audio-types/0.3.2/download@sha256:5a89f2ec274a0cf4a32642b2991e8b351a404d290da87bb6a9a9d8632490bd1c, LICENSE.md from https://crates.io/api/v1/crates/objc2-core-audio/0.3.2/download@sha256:e1eebcea8b0dbff5f7c8504f3107c68fc061a3eb44932051c8cf8a68d969c3b2, LICENSE.md from https://crates.io/api/v1/crates/objc2-core-foundation/0.3.2/download@sha256:2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536, LICENSE.md from https://crates.io/api/v1/crates/objc2-encode/4.1.0/download@sha256:ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33, LICENSE.md from https://crates.io/api/v1/crates/objc2/0.6.4/download@sha256:3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f
 Packages:
 - cargo:block2@0.6.2
 - cargo:dispatch2@0.3.1
@@ -15626,7 +15626,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ===== end sha256:a4cdda44b5adea4731d53dcae78fb5124f8fd853e994f01e25d8c33a7daf818b =====
 ===== sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 =====
-Original filenames: LICENSE, LICENSE-APACHE, jni-LICENSE-APACHE from https://github.com/jni-rs/jni-rs@5ae9458a4ec44c5318f37ddc7569c1d4ae8a69e7, jni-macros-LICENSE-APACHE from https://github.com/jni-rs/jni-rs@33045a124105c939d1e2cbdcb5a39e5d868ffa03
+Original filenames: LICENSE, LICENSE-APACHE, jni-LICENSE-APACHE from https://crates.io/api/v1/crates/jni/0.22.4/download@sha256:5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498, jni-macros-LICENSE-APACHE from https://crates.io/api/v1/crates/jni-macros/0.22.4/download@sha256:a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3
 Packages:
 - cargo:atomic-waker@1.1.2
 - cargo:automerge@0.11.0
@@ -15999,7 +15999,7 @@ SOFTWARE.
 
 ===== end sha256:a6db8096b2707bc0102d256917d4d33f298ba36d8c3f25de067a2b5bb379db27 =====
 ===== sha256:a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84 =====
-Original filenames: react-remove-scroll-bar-LICENSE from https://github.com/theKashey/react-remove-scroll-bar@8ca9ba5ea52de03308fe8ced94f7b159a44d28ff
+Original filenames: LICENSE from npm:react-remove-scroll-bar@2.3.8@sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==
 Packages:
 - npm:react-remove-scroll-bar@2.3.8
 
@@ -16027,7 +16027,7 @@ SOFTWARE.
 
 ===== end sha256:a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84 =====
 ===== sha256:a79c269bc0e74de72571cea54c5f92ed74cbc6e8d1250a9fdb40357383d9dc4b =====
-Original filenames: tfjs-layers-80cf3c-LICENSE from https://github.com/tensorflow/tfjs@80cf3c1519708b6e80fb8c96a0780bdec6002c8c
+Original filenames: LICENSE from npm:@tensorflow/tfjs-layers@3.21.0@sha512-CMVXsraakXgnXEnqD9QbtResA7nvV7Jz20pGmjFIodcQkClgmFFhdCG5N+zlVRHEz7VKG2OyfhltZ0dBq/OAhA==
 Packages:
 - npm:@tensorflow/tfjs-layers@3.21.0
 
@@ -16942,7 +16942,7 @@ DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:af59cea35d7f5e2777a713b8d155d65efa2c339eb43f3c14e868c6ac8506edad =====
 ===== sha256:b1d6df41ed3aa96806e74c729444d7c121d90e6660a6aed01d298e03fde475a0 =====
-Original filenames: dasp-LICENSE-MIT from https://github.com/rustaudio/sample@97c3bb9b2363c0b46ac1633858bf1054fd02a980
+Original filenames: dasp-LICENSE-MIT from https://crates.io/api/v1/crates/dasp_sample/0.11.0/download@sha256:0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f
 Packages:
 - cargo:dasp_sample@0.11.0
 
@@ -17100,7 +17100,7 @@ SOFTWARE.
 
 ===== end sha256:b405b5dbae5d4473f5f932af2b5d47df6114036a0b1382d9f6c411a62b71a547 =====
 ===== sha256:b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1 =====
-Original filenames: LICENSE-APACHE, winapi-LICENSE-APACHE from https://github.com/retep998/winapi-rs@796a8e6c2971dc2ff1bcff166e6671284f9b5b6b
+Original filenames: LICENSE-APACHE, winapi-LICENSE-APACHE from https://crates.io/api/v1/crates/winapi-i686-pc-windows-gnu/0.4.0/download@sha256:ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6, winapi-LICENSE-APACHE from https://crates.io/api/v1/crates/winapi-x86_64-pc-windows-gnu/0.4.0/download@sha256:712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f
 Packages:
 - cargo:winapi-i686-pc-windows-gnu@0.4.0
 - cargo:winapi-x86_64-pc-windows-gnu@0.4.0
@@ -18188,32 +18188,6 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 <LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
 
 ===== end sha256:c30152c94a6d75e021adbc52b3a52470366a46edb917e17deae3259251af244c =====
-===== sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4 =====
-Original filenames: SPDX-MIT.txt from https://github.com/HEnquist/realfft@d0d4eee0525fd27c96c8a046d6d107acd5ed84a6, SPDX-MIT.txt from https://github.com/madsmtm/objc2@7b1abfd750a2cacaea71d6a56ecfb83cb7de560b, SPDX-MIT.txt from https://github.com/madsmtm/objc2@8852b424193ca41602281b3d7540d7c8ed51e49a, SPDX-MIT.txt from https://github.com/madsmtm/objc2@8d214f5477365ffcbcbb7de058c86ed9a518efb7, SPDX-MIT.txt from https://github.com/madsmtm/objc2@b4167b582b2f75f9a1be75495c41b765344fd03c, SPDX-MIT.txt from npm:babel-plugin-add-module-exports@0.2.1@sha512-3AN/9V/rKuv90NG65m4tTHsI04XrCKsWbztIcW7a8H5iIN7WlvWucRtVV0V/rT4QvtA11n5Vmp20fLwfMWqp6g==
-Packages:
-- cargo:block2@0.6.2
-- cargo:dispatch2@0.3.1
-- cargo:objc2-audio-toolbox@0.3.2
-- cargo:objc2-avf-audio@0.3.2
-- cargo:objc2-core-audio-types@0.3.2
-- cargo:objc2-core-audio@0.3.2
-- cargo:objc2-core-foundation@0.3.2
-- cargo:objc2-encode@4.1.0
-- cargo:objc2@0.6.4
-- cargo:realfft@3.5.0
-- npm:babel-plugin-add-module-exports@0.2.1
-
-MIT License
-
-Copyright (c) <year> <copyright holders>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-===== end sha256:c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4 =====
 ===== sha256:c46324e45a005413535a6fb7a97e9eacd3cc6bf30335b7d5c10b8ee3af9e60c2 =====
 Original filenames: LICENSE.md
 Packages:
@@ -18241,7 +18215,7 @@ THE SOFTWARE.
 
 ===== end sha256:c46324e45a005413535a6fb7a97e9eacd3cc6bf30335b7d5c10b8ee3af9e60c2 =====
 ===== sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 =====
-Original filenames: LICENSE-APACHE, jni-sys-LICENSE-APACHE from https://github.com/jni-rs/jni-sys@64d77b7a5f119d7b55b4e2c169a4668067ff59e6
+Original filenames: LICENSE-APACHE, jni-sys-LICENSE-APACHE from https://crates.io/api/v1/crates/jni-sys-macros/0.4.1/download@sha256:38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264
 Packages:
 - cargo:hex@0.4.3
 - cargo:jni-sys-macros@0.4.1
@@ -18456,24 +18430,16 @@ Packages:
 
 ===== end sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 =====
 ===== sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 =====
-Original filenames: LICENSE, LICENSE from https://crates.io/api/v1/crates/jni-min-helper/0.3.4/download@sha256:913370a00ba1851b0f3369b49d0f3e745da2d20d3f15ecc296a64234ccda45f7, LICENSE from https://github.com/madsmtm/objc2@7b1abfd750a2cacaea71d6a56ecfb83cb7de560b, LICENSE from https://github.com/madsmtm/objc2@8852b424193ca41602281b3d7540d7c8ed51e49a, LICENSE-APACHE, ndk-LICENSE-APACHE from https://github.com/rust-mobile/ndk@49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25, ndk-context-LICENSE-APACHE from https://github.com/rust-windowing/android-ndk-rs@10f2ba388fca20f7349996ebae26ccda7a6fda5c, rustls-platform-verifier-LICENSE-APACHE from https://github.com/rustls/rustls-platform-verifier@00e6363e0f4e0d9a9dcf3f89733e7413ff5b61e4
+Original filenames: LICENSE, LICENSE-APACHE, ndk-LICENSE-APACHE from https://crates.io/api/v1/crates/ndk-sys/0.6.0+11769913/download@sha256:ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873, ndk-LICENSE-APACHE from https://crates.io/api/v1/crates/ndk/0.9.0/download@sha256:c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4, ndk-context-LICENSE-APACHE from https://crates.io/api/v1/crates/ndk-context/0.1.1/download@sha256:27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b, rustls-platform-verifier-LICENSE-APACHE from https://crates.io/api/v1/crates/rustls-platform-verifier-android/0.1.1/download@sha256:f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f
 Packages:
 - cargo:audioadapter-buffers@5.1.0
 - cargo:audioadapter-sample@5.1.0
 - cargo:audioadapter@5.0.0
 - cargo:cpal@0.18.2
-- cargo:dispatch2@0.3.1
 - cargo:java-locator@0.1.9
-- cargo:jni-min-helper@0.3.4
 - cargo:ndk-context@0.1.1
 - cargo:ndk-sys@0.6.0+11769913
 - cargo:ndk@0.9.0
-- cargo:objc2-audio-toolbox@0.3.2
-- cargo:objc2-avf-audio@0.3.2
-- cargo:objc2-core-audio-types@0.3.2
-- cargo:objc2-core-audio@0.3.2
-- cargo:objc2-core-foundation@0.3.2
-- cargo:objc2@0.6.4
 - cargo:quinn-proto@0.11.17
 - cargo:quinn-udp@0.5.15
 - cargo:quinn@0.11.11
@@ -20394,7 +20360,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:cda3dbd285a2b65894758565a565e7bc2e7c3696225af7b5bd01454240df0aea =====
 ===== sha256:ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b =====
-Original filenames: LICENSE-MIT, winapi-LICENSE-MIT from https://github.com/retep998/winapi-rs@796a8e6c2971dc2ff1bcff166e6671284f9b5b6b
+Original filenames: LICENSE-MIT, winapi-LICENSE-MIT from https://crates.io/api/v1/crates/winapi-i686-pc-windows-gnu/0.4.0/download@sha256:ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6, winapi-LICENSE-MIT from https://crates.io/api/v1/crates/winapi-x86_64-pc-windows-gnu/0.4.0/download@sha256:712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f
 Packages:
 - cargo:winapi-i686-pc-windows-gnu@0.4.0
 - cargo:winapi-x86_64-pc-windows-gnu@0.4.0
@@ -20450,7 +20416,7 @@ SOFTWARE.
 
 ===== end sha256:cf0547f95d22b91b11540bc053d4973ad8beed39f98b614254c074ca4ed6b6af =====
 ===== sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 =====
-Original filenames: LICENSE, LICENSE-APACHE, LICENSE-APACHE.md, license, tfjs-5f8c90-LICENSE from https://github.com/tensorflow/tfjs@5f8c90682cb59baff9b948028371dbbc85119243, tfjs-80cf3c-LICENSE from https://github.com/tensorflow/tfjs@80cf3c1519708b6e80fb8c96a0780bdec6002c8c
+Original filenames: LICENSE, LICENSE from npm:@tensorflow/tfjs-backend-cpu@3.21.0@sha512-88S21UAdzyK0CsLUrH17GPTD+26E85OP9CqmLZslaWjWUmBkeTQ5Zqyp6iK+gELnLxPx6q7JsNEeFuPv4254lQ==, LICENSE from npm:@tensorflow/tfjs-backend-cpu@4.22.0@sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==, LICENSE from npm:@tensorflow/tfjs-backend-webgl@3.21.0@sha512-N4zitIAT9IX8B8oe489qM3f3VcESxGZIZvHmVP8varOQakTvTX859aaPo1s8hK1qCy4BjSGbweooZe4U8D4kTQ==, LICENSE from npm:@tensorflow/tfjs-backend-webgpu@4.22.0@sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==, LICENSE from npm:@tensorflow/tfjs-converter@3.21.0@sha512-12Y4zVDq3yW+wSjSDpSv4HnpL2sDZrNiGSg8XNiDE4HQBdjdA+a+Q3sZF/8NV9y2yoBhL5L7V4mMLDdbZBd9/Q==, LICENSE from npm:@tensorflow/tfjs-converter@4.22.0@sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==, LICENSE from npm:@tensorflow/tfjs-core@3.21.0@sha512-YSfsswOqWfd+M4bXIhT3hwtAb+IV8+ODwIxwdFR/7jTAPZP1wMVnSlpKnXHAN64HFOiP+Tm3HmKusEZ0+09A0w==, LICENSE from npm:@tensorflow/tfjs-core@4.22.0@sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==, LICENSE from npm:@tensorflow/tfjs-data@3.21.0@sha512-eFLfw2wIcFNxnP2Iv/SnVlihehzKMumk1b5Prcx1ixk/SbkCo5u0Lt7OVOWaEOKVqvB2sT+dJcTjAh6lrCC/QA==, LICENSE from npm:@tensorflow/tfjs-layers@3.21.0@sha512-CMVXsraakXgnXEnqD9QbtResA7nvV7Jz20pGmjFIodcQkClgmFFhdCG5N+zlVRHEz7VKG2OyfhltZ0dBq/OAhA==, LICENSE from npm:@tensorflow/tfjs@3.21.0@sha512-khcARd3/872llL/oF4ouR40qlT71mylU66PGT8kHP/GJ5YKj44sv8lDRjU7lOVlJK7jsJFWEsNVHI3eMc/GWNQ==, LICENSE-APACHE, LICENSE-APACHE.md, license
 Packages:
 - cargo:clap-sys@0.5.0
 - cargo:encoding_rs@0.8.35
@@ -20678,7 +20644,7 @@ Packages:
 
 ===== end sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 =====
 ===== sha256:d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111 =====
-Original filenames: r-efi-AUTHORS from https://github.com/r-efi/r-efi@7e1b0322d31d625f81a5656096330934f9cd835d
+Original filenames: r-efi-AUTHORS from https://crates.io/api/v1/crates/r-efi/6.0.0/download@sha256:f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf
 Packages:
 - cargo:r-efi@6.0.0
 
@@ -21397,7 +21363,7 @@ SOFTWARE.
 
 ===== end sha256:d6b8c43135fb3694db3a9e1d59001bc4220daac9f045e4aa5fc9b207daa975fe =====
 ===== sha256:d72ddbadf9bb55ed21ae973ac97f0bb4e8df2064af628c54b802b2c7d764c8de =====
-Original filenames: realfft-Cargo.toml from https://github.com/HEnquist/realfft@d0d4eee0525fd27c96c8a046d6d107acd5ed84a6
+Original filenames: Cargo.toml from https://crates.io/api/v1/crates/realfft/3.5.0/download@sha256:f821338fddb99d089116342c46e9f1fbf3828dba077674613e734e01d6ea8677
 Packages:
 - cargo:realfft@3.5.0
 
@@ -22727,7 +22693,7 @@ DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055 =====
 ===== sha256:ed86856ee95fe87eadd8552b6803a85b7fb4f6cce08603bf9c8385972b5badb6 =====
-Original filenames: guid-typescript-package.json from npm:guid-typescript@1.0.9@sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==
+Original filenames: package.json from npm:guid-typescript@1.0.9@sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==
 Packages:
 - npm:guid-typescript@1.0.9
 
@@ -22906,21 +22872,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ===== end sha256:f2cf650a4c639ea1e7d472b17d90309bd038bc8f40523365bcbb5f94ee6aa60b =====
-===== sha256:f2ff9e66e9a9acdbffbcbf2ae4ff184d923325ce1a98d20ac64f3dd450263f3a =====
-Original filenames: SPDX-ISC.txt from npm:guid-typescript@1.0.9@sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==
-Packages:
-- npm:guid-typescript@1.0.9
-
-ISC License:
-
-Copyright (c) 2004-2010 by Internet Systems Consortium, Inc. ("ISC")
-Copyright (c) 1995-2003 by Internet Software Consortium
-
-Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL ISC BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-===== end sha256:f2ff9e66e9a9acdbffbcbf2ae4ff184d923325ce1a98d20ac64f3dd450263f3a =====
 ===== sha256:f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2 =====
 Original filenames: LICENSE
 Packages:
@@ -23083,7 +23034,7 @@ SOFTWARE.
 
 ===== end sha256:f6196c64e144f9a6fa9154c3a80bc8b89615a9567934b83a8951879f06ba2aef =====
 ===== sha256:f62d1adc0b46f7ef8809e61418370e7fd707fd33348cbcc08e27f5e01214ff57 =====
-Original filenames: babel-plugin-add-module-exports-README.md from npm:babel-plugin-add-module-exports@0.2.1@sha512-3AN/9V/rKuv90NG65m4tTHsI04XrCKsWbztIcW7a8H5iIN7WlvWucRtVV0V/rT4QvtA11n5Vmp20fLwfMWqp6g==
+Original filenames: README.md from npm:babel-plugin-add-module-exports@0.2.1@sha512-3AN/9V/rKuv90NG65m4tTHsI04XrCKsWbztIcW7a8H5iIN7WlvWucRtVV0V/rT4QvtA11n5Vmp20fLwfMWqp6g==
 Packages:
 - npm:babel-plugin-add-module-exports@0.2.1
 
@@ -24027,7 +23978,7 @@ THE SOFTWARE.
 
 ===== end sha256:fd9d36e800b506237769b003ca988319db06f585a9ebe27eb739a34f1be30d5f =====
 ===== sha256:fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960 =====
-Original filenames: LICENSE-MIT, jni-LICENSE-MIT from https://github.com/jni-rs/jni-rs@5ae9458a4ec44c5318f37ddc7569c1d4ae8a69e7, jni-macros-LICENSE-MIT from https://github.com/jni-rs/jni-rs@33045a124105c939d1e2cbdcb5a39e5d868ffa03
+Original filenames: LICENSE-MIT, jni-LICENSE-MIT from https://crates.io/api/v1/crates/jni/0.22.4/download@sha256:5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498, jni-macros-LICENSE-MIT from https://crates.io/api/v1/crates/jni-macros/0.22.4/download@sha256:a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3
 Packages:
 - cargo:jni-macros@0.22.4
 - cargo:jni@0.21.1

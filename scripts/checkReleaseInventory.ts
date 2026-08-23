@@ -14,6 +14,7 @@ import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
 import { checkProjectLicense } from './checkProjectLicense.ts';
 import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 export const RETENTION_CLASSES = [
@@ -78,6 +79,9 @@ export const ADAPTED_MIT_COMMIT = '6d3f7a5b84b25ec45d66c9f6be7109474690d795';
 export const ADAPTED_ORIGINAL_COMMIT = '99432f2bf443219b3eb77e65e1a18583faad422e';
 export const ADAPTED_ORIGINAL_SOURCE_PATH = 'plaits/dsp/drums/analog_bass_drum.h';
 export const ADAPTED_ORIGINAL_SOURCE_SHA256 = '46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea';
+export const ADAPTED_MIT_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs';
+export const ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mutable-instruments-analog_bass_drum.h';
+export const ADAPTED_MIT_UPSTREAM_SOURCE_SHA256 = 'f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949';
 
 const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
     'pnpm-lock.yaml': ['javascript-dependencies'],
@@ -206,6 +210,11 @@ export type RepositorySnapshot = {
 export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
+
+export function readReleaseInventory(root: string): ReleaseInventory {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    return parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
+}
 
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
 const markExtensions = new Set([...scannedExtensions, '.css', '.html', '.md', '.toml', '.txt', '.yaml', '.yml']);
@@ -468,7 +477,10 @@ function assertExactArtifactCensus(label: string, actual: string[], expected: st
 }
 
 function readWasmManifest(root: string): WasmManifest {
-    return JSON.parse(readFileSync(resolve(root, WASM_MANIFEST_PATH), 'utf8')) as WasmManifest;
+    return parseJsonWithUniqueKeys<WasmManifest>(
+        readFileSync(resolve(root, WASM_MANIFEST_PATH), 'utf8'),
+        WASM_MANIFEST_PATH
+    );
 }
 
 function isMirrorSourceOnly(path: string): boolean {
@@ -860,29 +872,91 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
 }
 
 export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceContract {
+    assertAdaptedMitSourceProofs(root);
     return {
         kind: 'adapted-source',
         paths: [
             ADAPTED_MIT_SOURCE_PATH,
+            ADAPTED_MIT_UPSTREAM_PROOF_PATH,
+            ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH,
             ADAPTED_MIT_LICENSE_PATH,
             ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
             ADAPTED_MIT_NOTICE_PATH,
         ],
         sources: [
-            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}`,
+            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:src/drums/analog_bass_drum.rs`,
             `git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
             ADAPTED_MIT_SOURCE_PATH,
         ],
         revisions: [ADAPTED_MIT_COMMIT, ADAPTED_ORIGINAL_COMMIT],
         digests: [
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_SOURCE_PATH))}:${ADAPTED_MIT_SOURCE_PATH}`,
+            `sha256:${ADAPTED_MIT_UPSTREAM_SOURCE_SHA256}:${ADAPTED_MIT_UPSTREAM_PROOF_PATH}`,
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH))}:${ADAPTED_MIT_LICENSE_PATH}`,
             `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
+            `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:${ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH}`,
             `sha256:${fileSha256(resolve(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH))}:${ADAPTED_ORIGINAL_MIT_LICENSE_PATH}`,
             `sha256:${fileSha256(resolve(root, ADAPTED_MIT_NOTICE_PATH))}:${ADAPTED_MIT_NOTICE_PATH}`,
         ],
         licenses: ['MIT'],
     };
+}
+
+export function assertAdaptedMitSourceProofs(root: string): void {
+    for (const [path, expected] of [
+        [ADAPTED_MIT_UPSTREAM_PROOF_PATH, ADAPTED_MIT_UPSTREAM_SOURCE_SHA256],
+        [ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH, ADAPTED_ORIGINAL_SOURCE_SHA256],
+    ] as const) {
+        if (fileSha256(resolve(root, path)) !== expected) {
+            throw new Error(`${path}: pinned upstream source proof drifted`);
+        }
+    }
+}
+
+export function projectLicenseDistributionReleaseInventoryContract(root: string): SurfaceContract {
+    const paths = [
+        '.gitattributes',
+        'LICENSE',
+        'NOTICE',
+        'public/legal/Apache-2.0.txt',
+        DEPENDENCY_LICENSE_REPORT_PATH,
+        'public/legal/SOURDAW-NOTICE.txt',
+        'public/legal/THIRD-PARTY-NOTICES.md',
+        'package.json',
+        'server/LICENSE',
+        'server/NOTICE',
+        'server/THIRD-PARTY-NOTICES.md',
+        'server/package.json',
+        'Cargo.toml',
+        'crates/**',
+        'release/dependency-license-proofs.json',
+        'release/dependency-license-proofs/**',
+        'release/upstream-proofs/**',
+    ];
+    return {
+        kind: 'distribution',
+        paths,
+        sources: paths,
+        revisions: ['current tracked project license and pinned dependency evidence'],
+        digests: [
+            `sha256:${fileSha256(resolve(root, 'LICENSE'))}:LICENSE`,
+            `sha256:${fileSha256(resolve(root, 'NOTICE'))}:NOTICE`,
+            `sha256:${fileSha256(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH))}:${DEPENDENCY_LICENSE_REPORT_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'release/dependency-license-proofs.json'))}:release/dependency-license-proofs.json`,
+        ],
+        licenses: ['Apache-2.0'],
+    };
+}
+
+export function assertProjectLicenseDistributionReleaseInventory(
+    root: string,
+    surface: Partial<ReleaseSurface> | undefined
+): void {
+    assertSurfaceContract(
+        surface,
+        projectLicenseDistributionReleaseInventoryContract(root),
+        'project license distribution'
+    );
 }
 
 type GrandBouleReleaseBoundary = {
@@ -1064,7 +1138,7 @@ export function grandBouleReleaseInventoryContract(
             ({ gitPathspecs, digestLabel }) =>
                 `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs)}:${digestLabel}`
         ),
-        licenses: ['Apache-2.0', 'unverified:HAL-parameter-source-reuse-terms'],
+        licenses: ['Apache-2.0'],
         productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
     };
 }
@@ -1470,6 +1544,9 @@ export function validateReleaseInventory(
         if (!RETENTION_CLASSES.includes(surface.retention)) {
             errors.push(`${surface.id}: invalid retention class ${String(surface.retention)}`);
         }
+        if (surface.retention === 'keep' && surface.licenses.some((license) => license.startsWith('unverified:'))) {
+            errors.push(`${surface.id}: keep surfaces cannot carry unverified rights`);
+        }
         for (const [field, values] of Object.entries({
             owner: [surface.owner],
             releaseModes: surface.releaseModes,
@@ -1710,8 +1787,7 @@ export function checkReleaseInventory(
     projectLicensePreflight = checkProjectLicense
 ): ReleaseInventoryCheckReceipt {
     projectLicensePreflight(root);
-    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
+    const inventory = readReleaseInventory(root);
     const snapshot = loadRepositorySnapshot(root, inventory);
     const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
@@ -1733,6 +1809,10 @@ export function checkReleaseInventory(
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
+    );
+    const projectLicenseSurface = inventory.surfaces.find((surface) => surface.id === 'project-license-distribution');
+    validateSurface('project-license-distribution', () =>
+        assertProjectLicenseDistributionReleaseInventory(root, projectLicenseSurface)
     );
     const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
     validateSurface('grand-boule', () => assertGrandBouleReleaseInventory(root, grandBouleSurface));

@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -17,10 +18,13 @@ import {
 import {
     collectNpmLockDependencyLicenses,
     DEPENDENCY_LICENSE_REPORT_PATH,
+    assertPlatformRestrictedNpmPackage,
     isPlatformRestrictedPackage,
     renderDependencyLicenseReport,
     renderServerThirdPartyNotices,
     SERVER_THIRD_PARTY_NOTICES_PATH,
+    validateDependencyLicenseProof,
+    type DependencyLicenseProof,
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
 
@@ -142,14 +146,22 @@ describe('project license', () => {
         expect(validateProjectLicense(root, cargo)).toContain('server/package-lock.json: license must be Apache-2.0');
     });
 
-    it('rejects stale proprietary headers and pending project grants', () => {
+    it('rejects stale proprietary headers and retired project-grant obligations', () => {
         write(root, ownershipFiles[0]!, 'all rights reserved');
-        write(root, 'release/open-source-inventory.json', 'pending:OS-10-project-grant');
+        write(
+            root,
+            'release/open-source-inventory.json',
+            'pending:OS-10-project-grant\nComplete the OS-10 project grant before public release.\n' +
+                'apply the OS-10 project license\nApply the project license in OS-10'
+        );
         expect(validateProjectLicense(root, cargo)).toEqual(
             expect.arrayContaining([
                 `${ownershipFiles[0]}: SPDX ownership header drifted`,
                 `${ownershipFiles[0]}: stale proprietary ownership claim`,
                 'release/open-source-inventory.json: stale project-license marker pending:OS-10-project-grant',
+                'release/open-source-inventory.json: stale project-license marker Complete the OS-10 project grant before public release.',
+                'release/open-source-inventory.json: stale project-license marker apply the OS-10 project license',
+                'release/open-source-inventory.json: stale project-license marker Apply the project license in OS-10',
             ])
         );
     });
@@ -189,44 +201,33 @@ describe('project license', () => {
         expect(report).toContain(`- server/package-lock.json sha256:${'c'.repeat(64)}`);
     });
 
-    it('collects the standalone server production closure and exact ws legal file', () => {
+    it('collects the standalone server production closure without server/node_modules', () => {
         write(
             root,
             'server/package-lock.json',
             JSON.stringify({
                 packages: {
                     '': { dependencies: { ws: '8.21.1' } },
-                    'node_modules/ws': { version: '8.21.1', license: 'MIT' },
+                    'node_modules/ws': {
+                        version: '8.21.1',
+                        license: 'MIT',
+                        resolved: 'https://registry.npmjs.org/ws/-/ws-8.21.1.tgz',
+                        integrity: 'sha512-ws',
+                    },
                     'node_modules/dev-only': { version: '1.0.0', license: 'MIT', dev: true },
                     'node_modules/unreachable': { version: '1.0.0', license: 'MIT' },
                 },
             })
         );
-        write(
-            root,
-            'server/node_modules/ws/package.json',
-            JSON.stringify({ name: 'ws', version: '8.21.1', license: 'MIT' })
-        );
-        write(root, 'server/node_modules/ws/LICENSE', 'exact ws terms\n');
-
         expect(collectNpmLockDependencyLicenses(root)).toEqual([
             expect.objectContaining({
                 ecosystem: 'npm',
                 name: 'ws',
                 version: '8.21.1',
                 graphs: ['server/package-lock.json'],
-                legalFiles: [expect.objectContaining({ contents: 'exact ws terms\n' })],
+                legalFiles: [],
             }),
         ]);
-
-        write(
-            root,
-            'server/node_modules/ws/package.json',
-            JSON.stringify({ name: 'ws', version: '8.20.0', license: 'MIT' })
-        );
-        expect(() => collectNpmLockDependencyLicenses(root)).toThrow(
-            'installed version does not match server/package-lock.json'
-        );
     });
 
     it('excludes host-selected package archives from the cross-platform dependency report', () => {
@@ -236,6 +237,58 @@ describe('project license', () => {
         expect(isPlatformRestrictedPackage({ cpu: 'arm64' })).toBe(true);
         expect(isPlatformRestrictedPackage({ libc: 'musl' })).toBe(true);
         expect(isPlatformRestrictedPackage({})).toBe(false);
+        expect(() => assertPlatformRestrictedNpmPackage('unknown-native@1.0.0')).toThrow(
+            'platform-restricted production package has no audited shipped-closure classification'
+        );
+    });
+
+    it('rejects empty, unrelated, stale, generic, and unbound fallback proof evidence', () => {
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'npm',
+            name: 'example',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [],
+        };
+        write(
+            root,
+            'pnpm-lock.yaml',
+            'lockfileVersion: 9.0\npackages:\n  example@1.0.0:\n    resolution:\n      integrity: sha512-example\n'
+        );
+        const path = 'release/dependency-license-proofs/example-1.0.0-LICENSE';
+        write(root, path, 'MIT License\nCopyright Example\n');
+        const digest = (contents: string): string => createHash('sha256').update(contents).digest('hex');
+        const proof: DependencyLicenseProof = {
+            source: 'npm:example@1.0.0',
+            revision: 'sha512-example',
+            files: [{ path, sourcePath: 'LICENSE', sha256: digest('MIT License\nCopyright Example\n') }],
+        };
+
+        expect(validateDependencyLicenseProof(root, record, proof)).toHaveLength(1);
+
+        write(root, path, '');
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('lacks legal or copyright content');
+
+        write(root, path, 'Apache License, Version 2.0\nCopyright Example\n');
+        proof.files[0]!.sha256 = digest('Apache License, Version 2.0\nCopyright Example\n');
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'does not substantiate declared license MIT'
+        );
+
+        write(root, path, 'MIT License\nCopyright Example\n');
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('dependency proof drifted');
+
+        proof.files[0]!.sha256 = digest('MIT License\nCopyright Example\n');
+        proof.revision = 'sha512-stale';
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'proof source identity does not match'
+        );
+
+        proof.revision = 'sha512-example';
+        proof.files[0]!.path = 'LICENSE';
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'package-specific checked-in source evidence'
+        );
     });
 
     it('rejects dependency report drift and absence', () => {

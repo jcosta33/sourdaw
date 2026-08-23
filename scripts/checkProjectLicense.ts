@@ -45,6 +45,9 @@ const RETIRED_PROJECT_LICENSE_MARKERS = [
     'project grant and dependency notices pending OS-10',
     'individual dependency terms pending OS-10 notice assembly',
     'pending:OS-10-Cargo-dependency-notices',
+    'Complete the OS-10 project grant before public release.',
+    'apply the OS-10 project license',
+    'Apply the project license in OS-10',
 ] as const;
 
 type CargoMetadata = {

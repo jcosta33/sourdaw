@@ -94,9 +94,11 @@
                 "Cargo.toml",
                 "crates/**",
                 "release/dependency-license-proofs.json",
-                "release/dependency-license-proofs/**"
+                "release/dependency-license-proofs/**",
+                "release/upstream-proofs/**"
             ],
             "sources": [
+                ".gitattributes",
                 "LICENSE",
                 "NOTICE",
                 "public/legal/Apache-2.0.txt",
@@ -109,11 +111,18 @@
                 "server/THIRD-PARTY-NOTICES.md",
                 "server/package.json",
                 "Cargo.toml",
+                "crates/**",
                 "release/dependency-license-proofs.json",
-                "release/dependency-license-proofs/"
+                "release/dependency-license-proofs/**",
+                "release/upstream-proofs/**"
             ],
-            "revisions": ["current project release metadata"],
-            "digests": ["metadata-bound:package.json,server/package.json,Cargo.toml"],
+            "revisions": ["current tracked project license and pinned dependency evidence"],
+            "digests": [
+                "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
+                "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
+                "sha256:46bf9487c49e702604a09d6a7f0aa1d64f4f2991f55ce239c1032487c0369688:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:ec635b491386d58cdb191ae480c565c89388ff589a684bb970647f1b5c2086d8:release/dependency-license-proofs.json"
+            ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": [
                 "source distribution",
@@ -684,10 +693,6 @@
             "retention": "keep-with-obligations",
             "owner": "OS-10",
             "releaseModes": ["source", "server"],
-            "paths": ["server/collab-server.ts", "server/package.json", "server/package-lock.json"],
-            "sources": ["server/collab-server.ts", "server/package-lock.json"],
-            "revisions": ["exact collaboration-server npm lock graph"],
-            "digests": ["sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"],
             "paths": [
                 "server/collab-server.ts",
                 "server/package.json",
@@ -703,6 +708,8 @@
                 "server/NOTICE",
                 "server/THIRD-PARTY-NOTICES.md"
             ],
+            "revisions": ["exact collaboration-server npm lock graph"],
+            "digests": ["sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"],
             "licenses": ["Apache-2.0", "MIT:ws"],
             "productSurfaces": ["self-hosted collaboration WebSocket server"],
             "evidence": ["The server binds a configurable host and port with authenticated WebSocket sessions."],
@@ -716,20 +723,24 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": [
                 "crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
+                "release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "public/legal/MI-PLAITS-DSP-RS-MIT.txt",
                 "public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
                 "public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "sources": [
-                "git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795",
+                "git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:src/drums/analog_bass_drum.rs",
                 "git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "crates/daw-dsp/src/toaster/engines/kick_808.rs"
             ],
             "revisions": ["6d3f7a5b84b25ec45d66c9f6be7109474690d795", "99432f2bf443219b3eb77e65e1a18583faad422e"],
             "digests": [
                 "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:public/legal/MI-PLAITS-DSP-RS-MIT.txt",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
+                "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
                 "sha256:d3b2225849a5324a9a7ebe9f2dceb5103b7de3f3c271fe92f344b50ffef6440a:public/legal/THIRD-PARTY-NOTICES.md"
             ],
@@ -811,16 +822,16 @@
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:8951a83fb62b7899fc575542b87bd46e663d2e873cf94c88e972920b84066d0c:grand-boule-release-proof"
+                "tracked-set-sha256:47f48cbdf958c0c6a5ba3a849fdba182084844b7290e922d4a4e7b252e5ec569:grand-boule-release-proof"
             ],
-            "licenses": ["Apache-2.0", "unverified:HAL-parameter-source-reuse-terms"],
+            "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
             "evidence": [
                 "ADR 0036 records the dated source-admission record, finite FIR body design-around, frequency-only prompt/aftersound decay curves, retained Weinreich aftersound inputs, independently authored project parameters, and engineering-not-legal-certainty boundary.",
                 "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
                 "The release checker pins admitted bytes and rejects legacy literals, including branded morph aliases; this constrains source identity and does not prove authorship."
             ],
-            "obligations": ["Complete the OS-10 project grant before public release."]
+            "obligations": ["Preserve the project-source admission and release-boundary checks."]
         },
         {
             "id": "levain-sample-bank",
@@ -851,7 +862,7 @@
                 "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
             ],
             "obligations": [
-                "Preserve the pinned source proof and CC0 sample classification; apply the OS-10 project license to generated manifests and provenance files."
+                "Preserve the pinned source proof and CC0 sample classification; keep generated manifests and provenance under the project license."
             ]
         },
         {
@@ -907,7 +918,7 @@
                 "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
             ],
             "digests": [
-                "sha256:f5638718de38b7e4a866fe07b0eae16fa265cd12854bebf3c8eab0be0ddbe635:public/wasm/manifest.json"
+                "sha256:50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e:public/wasm/manifest.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -999,7 +1010,7 @@
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
             "evidence": ["Owner attested authorship on 2026-08-21; repository history binds every rendition."],
-            "obligations": ["Apply the project license in OS-10 and preserve attribution."]
+            "obligations": ["Preserve attribution and project-license metadata."]
         },
         {
             "id": "third-party-marks",
@@ -1130,7 +1141,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "c04c55ffdf75172d66d34b3b6b4c8d114ac0feaa808550980281fbf8f88c7545"
+            "sha256": "7a71a48e51c61d5c513203fc87525a9367d0c373c511ae358d13a9b637ba2f81"
         },
         {
             "path": "server/package.json",
@@ -1158,7 +1169,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "f5638718de38b7e4a866fe07b0eae16fa265cd12854bebf3c8eab0be0ddbe635"
+            "sha256": "50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e"
         }
     ],
     "externalReferences": [
@@ -1599,6 +1610,12 @@
             "surface": "project-wasm",
             "file": "public/wasm/scoring/package.json",
             "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://crates.io/api/v1/crates/${slot}/${slot}/download",
+            "templateSha256": "76033b3c969dd78f5a5033be69b396efae1e6de3ab36abb07552ce9c721667ae"
         }
     ],
     "marks": [

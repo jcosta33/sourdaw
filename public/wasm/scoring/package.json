@@ -20,5 +20,6 @@
   "types": "scoring.d.ts",
   "sideEffects": [
     "./snippets/*"
-  ]
+  ],
+  "private": true
 }

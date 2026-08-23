@@ -14,15 +14,18 @@ import {
     ADAPTED_MIT_LICENSE_PATH,
     ADAPTED_MIT_NOTICE_PATH,
     ADAPTED_MIT_SOURCE_PATH,
+    ADAPTED_MIT_UPSTREAM_PROOF_PATH,
     ADAPTED_ORIGINAL_COMMIT,
     ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
     ADAPTED_ORIGINAL_SOURCE_PATH,
     ADAPTED_ORIGINAL_SOURCE_SHA256,
+    ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH,
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
     assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
+    assertProjectLicenseDistributionReleaseInventory,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
     audioWorkletReleaseInventoryContract,
@@ -39,6 +42,8 @@ import {
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
     ownerVisualAssetReleaseInventoryContract,
+    projectLicenseDistributionReleaseInventoryContract,
+    readReleaseInventory,
     REQUIRED_SNAPSHOT_PATHS,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
@@ -1185,10 +1190,19 @@ describe('release inventory', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-adapted-mit-'));
         mkdirSync(join(root, 'crates/daw-dsp/src/toaster/engines'), { recursive: true });
         mkdirSync(join(root, 'public/legal'), { recursive: true });
+        mkdirSync(join(root, 'release/upstream-proofs'), { recursive: true });
         writeFileSync(join(root, ADAPTED_MIT_SOURCE_PATH), 'adapted source');
         writeFileSync(join(root, ADAPTED_MIT_LICENSE_PATH), 'upstream license');
         writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'original upstream license');
         writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'public notice');
+        writeFileSync(
+            join(root, ADAPTED_MIT_UPSTREAM_PROOF_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_MIT_UPSTREAM_PROOF_PATH))
+        );
+        writeFileSync(
+            join(root, ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH),
+            readFileSync(join(repositoryRoot, ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH))
+        );
 
         try {
             const before = adaptedMitSourceReleaseInventoryContract(root);
@@ -1205,10 +1219,10 @@ describe('release inventory', () => {
             expect(adaptedMitSourceReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
 
             writeFileSync(join(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH), 'changed original license');
-            expect(adaptedMitSourceReleaseInventoryContract(root).digests[3]).not.toBe(before.digests[3]);
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[5]).not.toBe(before.digests[5]);
 
             writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'changed public notice');
-            expect(adaptedMitSourceReleaseInventoryContract(root).digests[4]).not.toBe(before.digests[4]);
+            expect(adaptedMitSourceReleaseInventoryContract(root).digests[6]).not.toBe(before.digests[6]);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1251,8 +1265,67 @@ describe('release inventory', () => {
         }
     });
 
+    it('keeps every served WASM package out of npm publication and rebuild scripts restore that state', () => {
+        const scripts = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8')) as {
+            scripts: Record<string, string>;
+        };
+        for (const { id, buildScript } of wasmArtifacts.packages) {
+            const metadata = JSON.parse(
+                readFileSync(join(repositoryRoot, 'public/wasm', id, 'package.json'), 'utf8')
+            ) as {
+                private?: unknown;
+            };
+            expect(metadata.private).toBe(true);
+            expect(scripts.scripts[buildScript]).toContain(`markWasmPackageInternal.ts ${id}`);
+        }
+    });
+
     it('accepts complete classified coverage', () => {
         expect(validateReleaseInventory(inventory(), snapshot())).toEqual([]);
+    });
+
+    it('rejects unresolved rights on a retained keep surface', () => {
+        const value = inventory();
+        value.surfaces[0]!.retention = 'keep';
+        value.surfaces[0]!.licenses = ['Apache-2.0', 'unverified:unknown-rights'];
+
+        expect(validateReleaseInventory(value, snapshot())).toContain(
+            'runtime: keep surfaces cannot carry unverified rights'
+        );
+    });
+
+    it('rejects duplicate inventory keys before JSON consumption', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-duplicate-inventory-'));
+        try {
+            mkdirSync(join(root, 'release'), { recursive: true });
+            writeFileSync(join(root, 'release/open-source-inventory.json'), '{"schemaVersion":1,"schemaVersion":1}');
+            expect(() => readReleaseInventory(root)).toThrow('duplicate key $.schemaVersion');
+            writeFileSync(join(root, 'release/open-source-inventory.json'), '');
+            expect(() => readReleaseInventory(root)).toThrow('expected value at byte 0');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('binds the project-license distribution surface to generated legal evidence', () => {
+        const contract = projectLicenseDistributionReleaseInventoryContract(repositoryRoot);
+        expect(contract.paths).toContain('release/dependency-license-proofs.json');
+        expect(contract.paths).toContain('release/upstream-proofs/**');
+        expect(
+            contract.digests.some((digest) =>
+                /^sha256:[0-9a-f]{64}:public\/legal\/DEPENDENCY-LICENSES\.txt$/u.test(digest)
+            )
+        ).toBe(true);
+        const surface = readReleaseInventory(repositoryRoot).surfaces.find(
+            (candidate) => candidate.id === 'project-license-distribution'
+        );
+        expect(() => assertProjectLicenseDistributionReleaseInventory(repositoryRoot, surface)).not.toThrow();
+        expect(() =>
+            assertProjectLicenseDistributionReleaseInventory(repositoryRoot, {
+                ...(surface ?? {}),
+                digests: ['sha256:stale:LICENSE'],
+            })
+        ).toThrow('project license distribution release inventory digests does not match provenance');
     });
 
     it('rejects a new release file without a classification', () => {

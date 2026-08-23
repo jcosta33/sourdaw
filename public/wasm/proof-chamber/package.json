@@ -20,5 +20,6 @@
   "types": "proof_chamber.d.ts",
   "sideEffects": [
     "./snippets/*"
-  ]
+  ],
+  "private": true
 }

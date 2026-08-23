@@ -20,5 +20,6 @@
   "types": "daw_dsp.d.ts",
   "sideEffects": [
     "./snippets/*"
-  ]
+  ],
+  "private": true
 }

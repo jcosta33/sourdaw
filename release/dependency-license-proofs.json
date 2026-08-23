@@ -1,233 +1,188 @@
 {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "packages": {
         "cargo:block2@0.6.2": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "b4167b582b2f75f9a1be75495c41b765344fd03c",
+            "source": "https://crates.io/api/v1/crates/block2/0.6.2/download",
+            "revision": "sha256:cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-b416-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:dispatch2@0.3.1": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "8852b424193ca41602281b3d7540d7c8ed51e49a",
+            "source": "https://crates.io/api/v1/crates/dispatch2/0.3.1/download",
+            "revision": "sha256:1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-8852-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:objc2@0.6.4": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "8852b424193ca41602281b3d7540d7c8ed51e49a",
+            "source": "https://crates.io/api/v1/crates/objc2/0.6.4/download",
+            "revision": "sha256:3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-8852-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:objc2-audio-toolbox@0.3.2": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+            "source": "https://crates.io/api/v1/crates/objc2-audio-toolbox/0.3.2/download",
+            "revision": "sha256:6948501a91121d6399b79abaa33a8aa4ea7857fe019f341b8c23ad6e81b79b08",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:objc2-avf-audio@0.3.2": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+            "source": "https://crates.io/api/v1/crates/objc2-avf-audio/0.3.2/download",
+            "revision": "sha256:13a380031deed8e99db00065c45937da434ca987c034e13b87e4441f9e4090be",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:objc2-core-audio@0.3.2": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+            "source": "https://crates.io/api/v1/crates/objc2-core-audio/0.3.2/download",
+            "revision": "sha256:e1eebcea8b0dbff5f7c8504f3107c68fc061a3eb44932051c8cf8a68d969c3b2",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:objc2-core-audio-types@0.3.2": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+            "source": "https://crates.io/api/v1/crates/objc2-core-audio-types/0.3.2/download",
+            "revision": "sha256:5a89f2ec274a0cf4a32642b2991e8b351a404d290da87bb6a9a9d8632490bd1c",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:objc2-core-foundation@0.3.2": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+            "source": "https://crates.io/api/v1/crates/objc2-core-foundation/0.3.2/download",
+            "revision": "sha256:2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-7b1a-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:objc2-encode@4.1.0": {
-            "source": "https://github.com/madsmtm/objc2",
-            "revision": "8d214f5477365ffcbcbb7de058c86ed9a518efb7",
+            "source": "https://crates.io/api/v1/crates/objc2-encode/4.1.0/download",
+            "revision": "sha256:ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/objc2-8d21-LICENSE.md",
-                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
+                    "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+                    "sourcePath": "LICENSE.md"
                 }
             ]
         },
         "cargo:dasp_sample@0.11.0": {
-            "source": "https://github.com/rustaudio/sample",
-            "revision": "97c3bb9b2363c0b46ac1633858bf1054fd02a980",
+            "source": "https://crates.io/api/v1/crates/dasp_sample/0.11.0/download",
+            "revision": "sha256:0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/dasp-LICENSE-APACHE",
-                    "sha256": "756c8d2ab2dc24f256e1455b5f03937f4933d83d7bc9f2d55009fc962377d512"
+                    "sha256": "756c8d2ab2dc24f256e1455b5f03937f4933d83d7bc9f2d55009fc962377d512",
+                    "sourcePath": "dasp-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/dasp-LICENSE-MIT",
-                    "sha256": "b1d6df41ed3aa96806e74c729444d7c121d90e6660a6aed01d298e03fde475a0"
+                    "sha256": "b1d6df41ed3aa96806e74c729444d7c121d90e6660a6aed01d298e03fde475a0",
+                    "sourcePath": "dasp-LICENSE-MIT"
                 }
             ]
         },
         "cargo:dlopen2@0.9.0": {
-            "source": "https://github.com/OpenByteDev/dlopen2",
-            "revision": "c1ca06007390d89e9adf2a4400176eba51ba9c28",
+            "source": "https://crates.io/api/v1/crates/dlopen2/0.9.0/download",
+            "revision": "sha256:60768c353d76ba6dd1b6332a5dbbdd3bc2dddadc2935f4cc6a9d0f17ca8ecb6a",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/dlopen2-LICENSE",
-                    "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+                    "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "cargo:hexane@1.0.0-alpha.5": {
-            "source": "https://github.com/automerge/automerge",
-            "revision": "8d20da046282a43b5af3c3bdacd4467b48545087",
+            "source": "https://crates.io/api/v1/crates/hexane/1.0.0-alpha.5/download",
+            "revision": "sha256:81df830f11babb0eee9a082e09135ef0a7d8791f3fe9b279bb9485bf7eaf23e0",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/hexane-LICENSE",
-                    "sha256": "7a06f577e39ec132eb8657abc3471f81f668ff3810a160db79b9b18a9568242b"
+                    "sha256": "7a06f577e39ec132eb8657abc3471f81f668ff3810a160db79b9b18a9568242b",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "cargo:jni@0.22.4": {
-            "source": "https://github.com/jni-rs/jni-rs",
-            "revision": "5ae9458a4ec44c5318f37ddc7569c1d4ae8a69e7",
+            "source": "https://crates.io/api/v1/crates/jni/0.22.4/download",
+            "revision": "sha256:5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/jni-LICENSE-APACHE",
-                    "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+                    "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+                    "sourcePath": "jni-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/jni-LICENSE-MIT",
-                    "sha256": "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960"
+                    "sha256": "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960",
+                    "sourcePath": "jni-LICENSE-MIT"
                 }
             ]
         },
         "cargo:jni-macros@0.22.4": {
-            "source": "https://github.com/jni-rs/jni-rs",
-            "revision": "33045a124105c939d1e2cbdcb5a39e5d868ffa03",
+            "source": "https://crates.io/api/v1/crates/jni-macros/0.22.4/download",
+            "revision": "sha256:a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/jni-macros-LICENSE-APACHE",
-                    "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+                    "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+                    "sourcePath": "jni-macros-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/jni-macros-LICENSE-MIT",
-                    "sha256": "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960"
+                    "sha256": "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960",
+                    "sourcePath": "jni-macros-LICENSE-MIT"
                 }
             ]
         },
         "cargo:jni-sys-macros@0.4.1": {
-            "source": "https://github.com/jni-rs/jni-sys",
-            "revision": "64d77b7a5f119d7b55b4e2c169a4668067ff59e6",
+            "source": "https://crates.io/api/v1/crates/jni-sys-macros/0.4.1/download",
+            "revision": "sha256:38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/jni-sys-LICENSE-APACHE",
-                    "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+                    "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+                    "sourcePath": "jni-sys-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/jni-sys-LICENSE-MIT",
-                    "sha256": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1"
+                    "sha256": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1",
+                    "sourcePath": "jni-sys-LICENSE-MIT"
                 }
             ]
         },
@@ -237,237 +192,257 @@
             "files": [
                 {
                     "path": "release/dependency-license-proofs/jni-min-helper-Cargo.toml",
-                    "sha256": "1f4b7a7f83b056d8851f2232cad771420205bac631010be2e9516ae42b0353f0"
-                },
-                {
-                    "path": "LICENSE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "1f4b7a7f83b056d8851f2232cad771420205bac631010be2e9516ae42b0353f0",
+                    "sourcePath": "Cargo.toml"
                 }
             ]
         },
         "cargo:ndk@0.9.0": {
-            "source": "https://github.com/rust-mobile/ndk",
-            "revision": "49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25",
+            "source": "https://crates.io/api/v1/crates/ndk/0.9.0/download",
+            "revision": "sha256:c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/ndk-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+                    "sourcePath": "ndk-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/ndk-LICENSE-MIT",
-                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+                    "sourcePath": "ndk-LICENSE-MIT"
                 }
             ]
         },
         "cargo:ndk-sys@0.6.0+11769913": {
-            "source": "https://github.com/rust-mobile/ndk",
-            "revision": "49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25",
+            "source": "https://crates.io/api/v1/crates/ndk-sys/0.6.0+11769913/download",
+            "revision": "sha256:ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/ndk-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+                    "sourcePath": "ndk-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/ndk-LICENSE-MIT",
-                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+                    "sourcePath": "ndk-LICENSE-MIT"
                 }
             ]
         },
         "cargo:ndk-context@0.1.1": {
-            "source": "https://github.com/rust-windowing/android-ndk-rs",
-            "revision": "10f2ba388fca20f7349996ebae26ccda7a6fda5c",
+            "source": "https://crates.io/api/v1/crates/ndk-context/0.1.1/download",
+            "revision": "sha256:27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/ndk-context-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+                    "sourcePath": "ndk-context-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/ndk-context-LICENSE-MIT",
-                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+                    "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+                    "sourcePath": "ndk-context-LICENSE-MIT"
                 }
             ]
         },
         "cargo:r-efi@6.0.0": {
-            "source": "https://github.com/r-efi/r-efi",
-            "revision": "7e1b0322d31d625f81a5656096330934f9cd835d",
+            "source": "https://crates.io/api/v1/crates/r-efi/6.0.0/download",
+            "revision": "sha256:f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/r-efi-AUTHORS",
-                    "sha256": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111"
+                    "sha256": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111",
+                    "sourcePath": "r-efi-AUTHORS"
                 }
             ]
         },
         "cargo:realfft@3.5.0": {
-            "source": "https://github.com/HEnquist/realfft",
-            "revision": "d0d4eee0525fd27c96c8a046d6d107acd5ed84a6",
+            "source": "https://crates.io/api/v1/crates/realfft/3.5.0/download",
+            "revision": "sha256:f821338fddb99d089116342c46e9f1fbf3828dba077674613e734e01d6ea8677",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/realfft-Cargo.toml",
-                    "sha256": "d72ddbadf9bb55ed21ae973ac97f0bb4e8df2064af628c54b802b2c7d764c8de"
+                    "sha256": "d72ddbadf9bb55ed21ae973ac97f0bb4e8df2064af628c54b802b2c7d764c8de",
+                    "sourcePath": "Cargo.toml"
                 },
                 {
                     "path": "release/dependency-license-proofs/realfft-README.md",
-                    "sha256": "1e92c54e7fa08298d2a34ea9aa63b85626c47519873a91cd1028f234e1221608"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
+                    "sha256": "1e92c54e7fa08298d2a34ea9aa63b85626c47519873a91cd1028f234e1221608",
+                    "sourcePath": "README.md"
                 }
             ]
         },
         "cargo:rustls-platform-verifier-android@0.1.1": {
-            "source": "https://github.com/rustls/rustls-platform-verifier",
-            "revision": "00e6363e0f4e0d9a9dcf3f89733e7413ff5b61e4",
+            "source": "https://crates.io/api/v1/crates/rustls-platform-verifier-android/0.1.1/download",
+            "revision": "sha256:f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/rustls-platform-verifier-LICENSE-APACHE",
-                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+                    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+                    "sourcePath": "rustls-platform-verifier-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/rustls-platform-verifier-LICENSE-MIT",
-                    "sha256": "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c"
+                    "sha256": "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c",
+                    "sourcePath": "rustls-platform-verifier-LICENSE-MIT"
                 }
             ]
         },
         "cargo:winapi-i686-pc-windows-gnu@0.4.0": {
-            "source": "https://github.com/retep998/winapi-rs",
-            "revision": "796a8e6c2971dc2ff1bcff166e6671284f9b5b6b",
+            "source": "https://crates.io/api/v1/crates/winapi-i686-pc-windows-gnu/0.4.0/download",
+            "revision": "sha256:ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/winapi-LICENSE-APACHE",
-                    "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+                    "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+                    "sourcePath": "winapi-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/winapi-LICENSE-MIT",
-                    "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b"
+                    "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
+                    "sourcePath": "winapi-LICENSE-MIT"
                 }
             ]
         },
         "cargo:winapi-x86_64-pc-windows-gnu@0.4.0": {
-            "source": "https://github.com/retep998/winapi-rs",
-            "revision": "796a8e6c2971dc2ff1bcff166e6671284f9b5b6b",
+            "source": "https://crates.io/api/v1/crates/winapi-x86_64-pc-windows-gnu/0.4.0/download",
+            "revision": "sha256:712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/winapi-LICENSE-APACHE",
-                    "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+                    "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+                    "sourcePath": "winapi-LICENSE-APACHE"
                 },
                 {
                     "path": "release/dependency-license-proofs/winapi-LICENSE-MIT",
-                    "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b"
+                    "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
+                    "sourcePath": "winapi-LICENSE-MIT"
                 }
             ]
         },
         "npm:@tensorflow/tfjs@3.21.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "80cf3c1519708b6e80fb8c96a0780bdec6002c8c",
+            "source": "npm:@tensorflow/tfjs@3.21.0",
+            "revision": "sha512-khcARd3/872llL/oF4ouR40qlT71mylU66PGT8kHP/GJ5YKj44sv8lDRjU7lOVlJK7jsJFWEsNVHI3eMc/GWNQ==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-backend-cpu@3.21.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "80cf3c1519708b6e80fb8c96a0780bdec6002c8c",
+            "source": "npm:@tensorflow/tfjs-backend-cpu@3.21.0",
+            "revision": "sha512-88S21UAdzyK0CsLUrH17GPTD+26E85OP9CqmLZslaWjWUmBkeTQ5Zqyp6iK+gELnLxPx6q7JsNEeFuPv4254lQ==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-backend-webgl@3.21.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "80cf3c1519708b6e80fb8c96a0780bdec6002c8c",
+            "source": "npm:@tensorflow/tfjs-backend-webgl@3.21.0",
+            "revision": "sha512-N4zitIAT9IX8B8oe489qM3f3VcESxGZIZvHmVP8varOQakTvTX859aaPo1s8hK1qCy4BjSGbweooZe4U8D4kTQ==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-converter@3.21.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "80cf3c1519708b6e80fb8c96a0780bdec6002c8c",
+            "source": "npm:@tensorflow/tfjs-converter@3.21.0",
+            "revision": "sha512-12Y4zVDq3yW+wSjSDpSv4HnpL2sDZrNiGSg8XNiDE4HQBdjdA+a+Q3sZF/8NV9y2yoBhL5L7V4mMLDdbZBd9/Q==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-core@3.21.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "80cf3c1519708b6e80fb8c96a0780bdec6002c8c",
+            "source": "npm:@tensorflow/tfjs-core@3.21.0",
+            "revision": "sha512-YSfsswOqWfd+M4bXIhT3hwtAb+IV8+ODwIxwdFR/7jTAPZP1wMVnSlpKnXHAN64HFOiP+Tm3HmKusEZ0+09A0w==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-data@3.21.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "80cf3c1519708b6e80fb8c96a0780bdec6002c8c",
+            "source": "npm:@tensorflow/tfjs-data@3.21.0",
+            "revision": "sha512-eFLfw2wIcFNxnP2Iv/SnVlihehzKMumk1b5Prcx1ixk/SbkCo5u0Lt7OVOWaEOKVqvB2sT+dJcTjAh6lrCC/QA==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-layers@3.21.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "80cf3c1519708b6e80fb8c96a0780bdec6002c8c",
+            "source": "npm:@tensorflow/tfjs-layers@3.21.0",
+            "revision": "sha512-CMVXsraakXgnXEnqD9QbtResA7nvV7Jz20pGmjFIodcQkClgmFFhdCG5N+zlVRHEz7VKG2OyfhltZ0dBq/OAhA==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-80cf3c-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 },
                 {
                     "path": "release/dependency-license-proofs/tfjs-layers-80cf3c-LICENSE",
-                    "sha256": "a79c269bc0e74de72571cea54c5f92ed74cbc6e8d1250a9fdb40357383d9dc4b"
+                    "sha256": "a79c269bc0e74de72571cea54c5f92ed74cbc6e8d1250a9fdb40357383d9dc4b",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-backend-cpu@4.22.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "5f8c90682cb59baff9b948028371dbbc85119243",
+            "source": "npm:@tensorflow/tfjs-backend-cpu@4.22.0",
+            "revision": "sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-backend-webgpu@4.22.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "5f8c90682cb59baff9b948028371dbbc85119243",
+            "source": "npm:@tensorflow/tfjs-backend-webgpu@4.22.0",
+            "revision": "sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-converter@4.22.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "5f8c90682cb59baff9b948028371dbbc85119243",
+            "source": "npm:@tensorflow/tfjs-converter@4.22.0",
+            "revision": "sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:@tensorflow/tfjs-core@4.22.0": {
-            "source": "https://github.com/tensorflow/tfjs",
-            "revision": "5f8c90682cb59baff9b948028371dbbc85119243",
+            "source": "npm:@tensorflow/tfjs-core@4.22.0",
+            "revision": "sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tfjs-5f8c90-LICENSE",
-                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
@@ -477,45 +452,46 @@
             "files": [
                 {
                     "path": "release/dependency-license-proofs/babel-plugin-add-module-exports-package.json",
-                    "sha256": "5f4ec73d64724b7127a62414a2d4da25e57c8e68cc44c6794de3efa0d5d49eea"
+                    "sha256": "5f4ec73d64724b7127a62414a2d4da25e57c8e68cc44c6794de3efa0d5d49eea",
+                    "sourcePath": "package.json"
                 },
                 {
                     "path": "release/dependency-license-proofs/babel-plugin-add-module-exports-README.md",
-                    "sha256": "f62d1adc0b46f7ef8809e61418370e7fd707fd33348cbcc08e27f5e01214ff57"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-MIT.txt",
-                    "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4"
+                    "sha256": "f62d1adc0b46f7ef8809e61418370e7fd707fd33348cbcc08e27f5e01214ff57",
+                    "sourcePath": "README.md"
                 }
             ]
         },
         "npm:buffer-alloc@1.2.0": {
-            "source": "https://github.com/LinusU/buffer-alloc",
-            "revision": "7559ddbb1f986f296df482c9aba6b9908921cfbb",
+            "source": "npm:buffer-alloc@1.2.0",
+            "revision": "sha512-CFsHQgjtW1UChdXgbyJGtnm+O/uLQeZdtbDo8mfUgYXCHSM1wgrVxXm6bSyrUuErEb+4sYVGCzASBRot7zyrow==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/buffer-alloc-LICENSE",
-                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c"
+                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:buffer-alloc-unsafe@1.1.0": {
-            "source": "https://github.com/LinusU/buffer-alloc-unsafe",
-            "revision": "d21ff11dd0ac0aab325759dc9c085c59818bd9b1",
+            "source": "npm:buffer-alloc-unsafe@1.1.0",
+            "revision": "sha512-TEM2iMIEQdJ2yjPJoSIsldnleVaAk1oW3DBVUykyOLsEsFmEc9kn+SFFPz+gl54KQNxlDnAwCXosOS9Okx2xAg==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/buffer-alloc-unsafe-LICENSE",
-                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c"
+                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:buffer-fill@1.0.0": {
-            "source": "https://github.com/linusu/buffer-fill",
-            "revision": "77f87f79d728662a6ecdc25b3e538b948331134e",
+            "source": "npm:buffer-fill@1.0.0",
+            "revision": "sha512-T7zexNBwiiaCOGDg9xNX9PBmjrubblRkENuptryuI64URkXDFum9il/JGL8Lm8wYfAXpredVXXZz7eMHilimiQ==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/buffer-fill-LICENSE",
-                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c"
+                    "sha256": "14275f5c8139d02054c5259d52a88ccbba662a86af18c30f071c8d082dc6004c",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
@@ -525,51 +501,63 @@
             "files": [
                 {
                     "path": "release/dependency-license-proofs/guid-typescript-package.json",
-                    "sha256": "ed86856ee95fe87eadd8552b6803a85b7fb4f6cce08603bf9c8385972b5badb6"
-                },
-                {
-                    "path": "release/dependency-license-proofs/SPDX-ISC.txt",
-                    "sha256": "f2ff9e66e9a9acdbffbcbf2ae4ff184d923325ce1a98d20ac64f3dd450263f3a"
+                    "sha256": "ed86856ee95fe87eadd8552b6803a85b7fb4f6cce08603bf9c8385972b5badb6",
+                    "sourcePath": "package.json"
                 }
             ]
         },
         "npm:onnxruntime-common@1.27.0": {
-            "source": "https://github.com/microsoft/onnxruntime",
-            "revision": "8f0278c77bf44b0cc83c098c6c722b92a36ac4b5",
+            "source": "npm:onnxruntime-common@1.27.0",
+            "revision": "sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/onnxruntime-LICENSE",
-                    "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+                    "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:onnxruntime-web@1.27.0": {
-            "source": "https://github.com/microsoft/onnxruntime",
-            "revision": "8f0278c77bf44b0cc83c098c6c722b92a36ac4b5",
+            "source": "npm:onnxruntime-web@1.27.0",
+            "revision": "sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/onnxruntime-LICENSE",
-                    "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+                    "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:react-remove-scroll-bar@2.3.8": {
-            "source": "https://github.com/theKashey/react-remove-scroll-bar",
-            "revision": "8ca9ba5ea52de03308fe8ced94f7b159a44d28ff",
+            "source": "npm:react-remove-scroll-bar@2.3.8",
+            "revision": "sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/react-remove-scroll-bar-LICENSE",
-                    "sha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84"
+                    "sha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84",
+                    "sourcePath": "LICENSE"
                 }
             ]
         },
         "npm:tr46@0.0.3": {
-            "source": "https://github.com/Sebmaster/tr46.js",
-            "revision": "7f1eb920768c794be40962a4f0cbad670a398d04",
+            "source": "npm:tr46@0.0.3",
+            "revision": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==",
             "files": [
                 {
                     "path": "release/dependency-license-proofs/tr46-LICENSE.md",
-                    "sha256": "499d6d466d064e0460427967a344e2a32fcb86ea8c6cd1a285ec4f1fa03fba67"
+                    "sha256": "499d6d466d064e0460427967a344e2a32fcb86ea8c6cd1a285ec4f1fa03fba67",
+                    "sourcePath": "LICENSE.md"
+                }
+            ]
+        },
+        "npm:ws@8.21.1": {
+            "source": "https://registry.npmjs.org/ws/-/ws-8.21.1.tgz",
+            "revision": "sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==",
+            "files": [
+                {
+                    "path": "release/dependency-license-proofs/ws-8.21.1-LICENSE",
+                    "sourcePath": "LICENSE",
+                    "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
                 }
             ]
         }

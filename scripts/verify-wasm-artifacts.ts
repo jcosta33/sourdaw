@@ -173,6 +173,22 @@ function checkNoStrayBinaries(): void {
     collectStrayBinaries('src/modules/AudioEngine/wasm');
 }
 
+function checkInternalPackages(): void {
+    for (const spec of wasmArtifacts.packages) {
+        const path = `public/wasm/${spec.id}/package.json`;
+        try {
+            const metadata = JSON.parse(readFileSync(wasmArtifacts.absolute(path), 'utf8')) as { private?: unknown };
+            if (metadata.private !== true) {
+                fail(`${path}: internal WASM package must set private: true`);
+            }
+        } catch (error) {
+            fail(
+                `${path}: cannot validate internal package metadata (${error instanceof Error ? error.message : String(error)})`
+            );
+        }
+    }
+}
+
 function collectStrayBinaries(relDir: string): void {
     for (const entry of readdirSync(wasmArtifacts.absolute(relDir), { withFileTypes: true })) {
         const relPath = `${relDir}/${entry.name}`;
@@ -229,6 +245,7 @@ function run(): void {
     checkPackages(manifest);
     checkDeclarations();
     checkNoStrayBinaries();
+    checkInternalPackages();
 
     if (failures.length > 0) {
         console.error(`✗ wasm:verify — ${failures.length} drift issue(s):`);
