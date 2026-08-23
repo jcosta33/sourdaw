@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_38a82fdbc201f6 29-32,108-109,111
+  s_a40848e8f8cca9::t_48521aeda66cff 104-107,110,112-116,226-240,534-535,542-545,547-550,555-557
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_082851c7ff508f 5-12,102-103,1082-1201
+  s_a40848e8f8cca9::t_db44d161e5fba6 1202,1204-1272
+  s_a40848e8f8cca9::t_f0d79ffd3256e1 1203
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_48521aeda66cff 49,55,644,677,679,705-707,709,712-714,725,731,817,819,855-857,859,862-864,878,884
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2dd9bfdfe9ee66022bbb62721822b09c42b26b82",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
