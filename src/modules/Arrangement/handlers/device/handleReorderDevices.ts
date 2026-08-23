@@ -100,7 +100,7 @@ function moveTopology(
 export const handleReorderDevices = createHandler<'reorderDevices'>({
     validate: (action, context) => resolveReorder(action, context) !== null,
     execute: (action, context) => {
-        const resolution = resolveReorder(action);
+        const resolution = resolveReorder(action, context);
         if (!resolution) {
             return { status: 'conflict' };
         }
