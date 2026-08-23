@@ -12,8 +12,6 @@ less likely to make the DAW behave like a different DAW by accident.
 - Do not include credentials, generated bundles, private project files, or other
   local-only material in a contribution.
 - Update public documentation when a supported behavior or limitation changes.
-- Use the repository's delivery tooling for issue and pull request flow. Do not
-  create a parallel release process in a contribution.
 
 ## Checks
 
@@ -34,9 +32,10 @@ choosing the checks affected by the change.
 
 ## Pull requests
 
-Keep the pull request scoped, describe what was verified, and call out known
-limitations. The repository delivery tooling owns the mechanics of the PR flow;
-contributors should not bypass it with ad-hoc publication steps.
+Create a focused branch and open a focused GitHub pull request. Complete the
+[pull request template](./.github/pull_request_template.md), link the relevant
+issue when one exists, and include evidence from the affected checks. Describe
+known limitations plainly.
 
 For security issues, use the process in [SECURITY.md](./SECURITY.md), not a public
 issue.

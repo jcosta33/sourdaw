@@ -4,7 +4,9 @@ Sourdaw is an open-source, browser-first digital audio workstation. It is active
 development software, not a finished commercial release. There are no published
 releases yet; `main` is the current source.
 
-The project is licensed under [Apache-2.0](./LICENSE).
+Sourdaw-owned source is licensed under [Apache-2.0](./LICENSE). Dependencies,
+samples, model weights, and other third-party material retain their own terms;
+see the [third-party notices](./public/legal/THIRD-PARTY-NOTICES.md).
 
 ## What works here
 
@@ -31,6 +33,12 @@ pnpm dev
 ```
 
 Build the browser app with `pnpm build`.
+
+The optional collaboration relay has its own dependencies:
+
+```sh
+npm --prefix server ci --include=dev
+```
 
 ## Build the desktop app
 

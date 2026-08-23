@@ -6,8 +6,9 @@ source build. Model weights are separate artifacts with separate terms.
 ## Language models
 
 - Hosted Anthropic, OpenAI, and OpenAI-compatible providers are available through
-  the desktop native gateway. Credentials stay in native credential sessions;
-  the renderer receives only an opaque session ID.
+  the desktop native gateway. Configure them with
+  `SOURDAW_ANTHROPIC_API_KEY`, `SOURDAW_OPENAI_API_KEY`, or
+  `SOURDAW_OPENAI_COMPATIBLE_API_KEY`, respectively.
 - WebLLM and its Qwen-oriented code are present in the repository, but the model
   artifacts are not admitted for the current release surface. Browser hosted
   credentials are not supported. An unauthenticated OpenAI-compatible loopback

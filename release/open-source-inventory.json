@@ -1115,7 +1115,7 @@
             "retention": "keep-with-obligations",
             "owner": "OS-09",
             "releaseModes": ["source"],
-            "paths": ["CONTRIBUTING.md", "docs/**", "README.md", "SECURITY.md"],
+            "paths": ["CONTRIBUTING.md", "docs/**", "PRIVACY.md", "README.md", "SECURITY.md"],
             "sources": ["git:github.com/jcosta33/sourdaw"],
             "revisions": ["current release text"],
             "digests": ["not-applicable:living-project-documentation"],
