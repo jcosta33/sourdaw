@@ -367,7 +367,13 @@ export const parsePromptToActions = inject({ logger })(
                         receipts:
                             receiptContext === null
                                 ? []
-                                : [{ id: 'application-tool-loop', summary: receiptContext.slice(0, 8_192) }],
+                                : [
+                                      {
+                                          id: 'application-tool-loop',
+                                          summary: receiptContext.slice(0, 8_192),
+                                          source: 'application-owned-tool-loop',
+                                      },
+                                  ],
                         capabilitySchemas: providerToolSchemas.map((schema) => ({
                             name: schema.function.name,
                             schemaVersion: 1,

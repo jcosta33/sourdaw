@@ -63,6 +63,12 @@ const context: ProjectContext = {
     playheadPosition: 0,
 };
 
+function parseMessageSection(message: string, heading: string): unknown {
+    const start = message.indexOf(`${heading}:\n`);
+    const end = message.indexOf('\n\n', start);
+    return JSON.parse(message.slice(start + heading.length + 2, end === -1 ? undefined : end));
+}
+
 describe('application-owned tool loop', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -82,7 +88,14 @@ describe('application-owned tool loop', () => {
             revisionToken: 'revision-2',
             queryType: 'project-summary',
             page: { offset: 0, limit: 20, total: 1 },
-            items: [{ id: 'project-1', kind: 'project', name: 'Song' }],
+            items: [
+                ...Array.from({ length: 6 }, (_, index) => ({
+                    id: `filler-${String(index)}`,
+                    kind: 'project',
+                    name: 'x'.repeat(128),
+                })),
+                { id: 'retained-query-item', kind: 'project', name: 'Song' },
+            ],
             nextCursor: null,
             warnings: [],
         });
@@ -134,10 +147,26 @@ describe('application-owned tool loop', () => {
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
-        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
-        expect(continuationMessage).toContain('"callId":"provider-query-1"');
-        expect(continuationMessage).toContain('revision-2');
-        expect(continuationMessage).toContain('project-summary');
+        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1] ?? '';
+        const relevantEvidence = parseMessageSection(continuationMessage, 'relevant_evidence') as {
+            receipts: Array<{ id: string; summary: { value: string; truncated: boolean } }>;
+        };
+        const correlatedReceiptContext = relevantEvidence.receipts[0];
+        expect(correlatedReceiptContext).toMatchObject({ id: 'application-tool-loop', summary: { truncated: false } });
+        const receiptEnvelope = JSON.parse(
+            correlatedReceiptContext!.summary.value.slice(correlatedReceiptContext!.summary.value.lastIndexOf('\n') + 1)
+        ) as {
+            receipts: Array<{
+                callId: string;
+                revision: string;
+                data: { queryType: string; items: Array<{ id: string }> };
+            }>;
+        };
+        const correlatedQuery = receiptEnvelope.receipts[0]!;
+        expect(correlatedQuery.callId).toBe('provider-query-1');
+        expect(correlatedQuery.revision).toBe('revision-2');
+        expect(correlatedQuery.data.queryType).toBe('project-summary');
+        expect(correlatedQuery.data.items.map((item) => item.id)).toContain('retained-query-item');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.applicationToolReceipts).toMatchObject([
             { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
@@ -269,9 +298,14 @@ describe('application-owned tool loop', () => {
     it('publishes the compact catalog and rejects unavailable tools before local execution', async () => {
         const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
         expect(schemas.map((schema) => schema.function.name)).toEqual(
-            expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
+            expect.arrayContaining([
+                'project.query',
+                'agent.catalog.discover',
+                'command.batch.propose',
+                'device.factory-manifest.read',
+            ])
         );
-        expect(schemas).toHaveLength(8);
+        expect(schemas).toHaveLength(9);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
         expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
 
@@ -542,6 +576,12 @@ describe('application-owned tool loop', () => {
         expect(receiptContext).toContain('query-large');
         expect(receiptContext).toContain('tool-receipt-too-large');
         expect(receiptContext).not.toContain('x'.repeat(1_000));
+        const receiptEnvelope = JSON.parse(receiptContext.slice(receiptContext.lastIndexOf('\n') + 1)) as {
+            receipts: Array<{ callId: string; status: string; error: { code: string } | null }>;
+        };
+        expect(receiptEnvelope.receipts).toMatchObject([
+            { callId: 'query-large', status: 'failure', error: { code: 'tool-receipt-too-large' } },
+        ]);
         expect(result).toMatchObject({ status: 'complete', toolCalls: [] });
     });
 

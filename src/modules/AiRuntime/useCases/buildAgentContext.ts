@@ -6,6 +6,7 @@ const MAX_CONTEXT_TARGETS = 64;
 const MAX_VALIDATION_FAILURES = 16;
 const MAX_SELECTED_CLIPS = 16;
 const MAX_IMPORTED_STRING_LENGTH = 512;
+const MAX_RELEVANT_EVIDENCE_SUMMARY_LENGTH = 8_192;
 const MAX_RECEIPTS = 16;
 const MAX_MEASUREMENTS = 16;
 
@@ -35,7 +36,11 @@ type BuildAgentContextInput = {
     context: ProjectContext;
     projectRevision?: string;
     run?: { grants: AgentRunGrants; budgets: AgentRunBudgets };
-    receipts?: Array<{ id: string; summary: string }>;
+    receipts?: Array<{
+        id: string;
+        summary: string;
+        source?: 'application-owned-tool-loop';
+    }>;
     capabilitySchemas?: Array<{ name: string; schemaVersion: number }>;
     capabilityData?: unknown;
     validationFailures?: Array<{ code: string }>;
@@ -63,6 +68,31 @@ function canonicalJson(value: unknown): string {
 
 function boundedString(value: string): { value: string; truncated: boolean } {
     return { value: value.slice(0, MAX_IMPORTED_STRING_LENGTH), truncated: value.length > MAX_IMPORTED_STRING_LENGTH };
+}
+
+function boundedReceiptSummaries(
+    receipts: NonNullable<BuildAgentContextInput['receipts']>
+): Array<{ value: string; truncated: boolean }> {
+    const summaries: Array<{ value: string; truncated: boolean }> = [];
+    let remainingLength = MAX_RELEVANT_EVIDENCE_SUMMARY_LENGTH;
+    const indexedReceipts = receipts.map((receipt, index) => ({ receipt, index }));
+    const budgetOrder = [
+        ...indexedReceipts.filter(({ receipt }) => receipt.source === 'application-owned-tool-loop'),
+        ...indexedReceipts.filter(({ receipt }) => receipt.source !== 'application-owned-tool-loop'),
+    ];
+
+    for (const { receipt, index } of budgetOrder) {
+        const maximumLength = Math.min(
+            remainingLength,
+            receipt.source === 'application-owned-tool-loop'
+                ? MAX_RELEVANT_EVIDENCE_SUMMARY_LENGTH
+                : MAX_IMPORTED_STRING_LENGTH
+        );
+        const value = receipt.summary.slice(0, maximumLength);
+        summaries[index] = { value, truncated: receipt.summary.length > maximumLength };
+        remainingLength -= value.length;
+    }
+    return summaries;
 }
 
 function digest(value: unknown): string {
@@ -249,9 +279,11 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         revision,
     });
     const validationFailures = (input.validationFailures ?? []).slice(-MAX_VALIDATION_FAILURES);
-    const receipts = (input.receipts ?? []).slice(-MAX_RECEIPTS).map((receipt) => ({
+    const retainedReceipts = (input.receipts ?? []).slice(-MAX_RECEIPTS);
+    const receiptSummaries = boundedReceiptSummaries(retainedReceipts);
+    const receipts = retainedReceipts.map((receipt, index) => ({
         id: boundedString(receipt.id).value,
-        summary: boundedString(receipt.summary),
+        summary: receiptSummaries[index]!,
     }));
     const capabilitySchemas = (input.capabilitySchemas ?? []).slice(0, MAX_CONTEXT_TARGETS).map((schema) => ({
         name: boundedString(schema.name).value,
