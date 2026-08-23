@@ -17,11 +17,12 @@ name: Health gates
 # already ran, which is deliberate — it costs nothing here, and the alternative
 # is a merge decided by results from an older head.
 #
-# `gate` is the only job the branch ruleset requires by name. It depends on
-# every job whose result should decide a merge, and passes when each either
-# succeeded or was legitimately skipped. A required check naming a filtered job
-# directly would sit pending forever on any pull request that skips it, so
-# nothing else may be required and `gate` must not be renamed.
+# `gate` is the only job the branch ruleset requires by name. It fails on each
+# pull-request push, then passes only when a current-head approval completes the
+# heavy security jobs. Scheduled and dispatched runs still accept legitimately
+# skipped jobs. A required check naming a filtered job directly would sit
+# pending forever on any pull request that skips it, so nothing else may be
+# required and `gate` must not be renamed.
 #
 # Runners are standard GitHub-hosted labels only. Public repositories bill
 # nothing for those; larger and GPU runners bill even here.
@@ -29,7 +30,7 @@ name: Health gates
 on:
   pull_request:
   pull_request_review:
-    types: [submitted]
+    types: [submitted, dismissed]
   schedule:
     # Catches what the path filters and the approval gate leave unobserved.
     # Nine repository-wide gates went red under exactly that blind spot while
@@ -42,9 +43,9 @@ permissions:
 
 concurrency:
   group: health-gates-${{ github.event.pull_request.number || github.ref }}
-  # Superseded pull-request runs are cancelled; a scheduled or dispatched run
-  # against main is not, because there is nothing newer to supersede it.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # A newer push or review supersedes any in-flight result for that pull
+  # request. Scheduled and dispatched runs against main remain independent.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
 
 env:
   NODE_VERSION: 24.19.0
@@ -601,9 +602,9 @@ jobs:
     # requirement: the ruleset matches by name, and a required check that no job
     # reports leaves every pull request pending forever.
     name: Gate
-    # The single required status check. It runs whatever happened upstream, so
-    # a pull request that legitimately skips every heavy leg still reports a
-    # conclusion instead of sitting pending.
+    # The single required status check. It always reports after its dependencies
+    # settle. Pull-request pushes and non-approved reviews fail closed; a
+    # current-head approval must complete both security jobs successfully.
     #
     # `unit` and `e2e` are deliberately absent. They run, and their results are
     # visible on the pull request, but they do not decide the merge yet — a gate
@@ -650,12 +651,31 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEW_COMMIT: ${{ github.event.review.commit_id }}
+          PULL_REQUEST_HEAD: ${{ github.event.pull_request.head.sha }}
           RESULTS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\n'
+            exit 1
+          fi
           if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_STATE" != "approved" ]; then
             printf 'non-approved pull-request review cannot satisfy Gate\n'
             exit 1
+          fi
+          if [ "$EVENT" = "pull_request_review" ] && { [ -z "$REVIEW_COMMIT" ] || [ "$REVIEW_COMMIT" != "$PULL_REQUEST_HEAD" ]; }; then
+            printf 'approval is not for the current pull-request head\n'
+            exit 1
+          fi
+          if [ "$EVENT" = "pull_request_review" ]; then
+            heavy_failed=$(printf '%s' "$RESULTS" | jq -r '["codeql", "secrets"][] as $job
+              | select(.[$job].result != "success")
+              | "\($job): \(.[$job].result // "missing")"')
+            if [ -n "$heavy_failed" ]; then
+              printf 'heavy security jobs must succeed:\n%s\n' "$heavy_failed"
+              exit 1
+            fi
           fi
           printf '%s\n' "$RESULTS"
           failed=$(printf '%s' "$RESULTS" | jq -r '

@@ -13,12 +13,28 @@ const APPROVED_REVIEW_CONDITION =
 const GATE_CONDITION = 'always()';
 const GATE_EVENT_REFERENCE = '${{ github.event_name }}';
 const GATE_REVIEW_STATE_REFERENCE = '${{ github.event.review.state }}';
+const GATE_REVIEW_COMMIT_REFERENCE = '${{ github.event.review.commit_id }}';
+const GATE_HEAD_SHA_REFERENCE = '${{ github.event.pull_request.head.sha }}';
+const FAIL_CLOSED_PULL_REQUEST_GUARD = `if [ "$EVENT" = "pull_request" ]; then
+  printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\\n'
+  exit 1
+fi`;
 const FAIL_CLOSED_REVIEW_GUARD = `if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_STATE" != "approved" ]; then
   printf 'non-approved pull-request review cannot satisfy Gate\\n'
   exit 1
 fi`;
+const CURRENT_HEAD_REVIEW_GUARD = `if [ "$EVENT" = "pull_request_review" ] && { [ -z "$REVIEW_COMMIT" ] || [ "$REVIEW_COMMIT" != "$PULL_REQUEST_HEAD" ]; }; then
+  printf 'approval is not for the current pull-request head\\n'
+  exit 1
+fi`;
+const HEAVY_SUCCESS_FILTER = `["codeql", "secrets"][] as $job
+    | select(.[$job].result != "success")
+    | "\\($job): \\(.[$job].result // "missing")"`;
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
 const SECRET_SCAN_CONDITION = "needs.decide.outputs.heavy == 'true'";
+const PULL_REQUEST_CONCURRENCY_CANCELLATION =
+    "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
+const UNTRUSTED_EVENT_INTERPOLATION = /\$\{\{\s*github\.(?:event_name|event\.)/;
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
@@ -114,26 +130,64 @@ function assertGateContract(candidate: UnknownRecord): string {
     if (environment.REVIEW_STATE !== GATE_REVIEW_STATE_REFERENCE) {
         throw new Error('gate must receive the exact pull-request review state');
     }
+    if (environment.REVIEW_COMMIT !== GATE_REVIEW_COMMIT_REFERENCE) {
+        throw new Error('gate must receive the reviewed commit id');
+    }
+    if (environment.PULL_REQUEST_HEAD !== GATE_HEAD_SHA_REFERENCE) {
+        throw new Error('gate must receive the pull-request head sha');
+    }
     const script = stringAt(step, 'run');
+    if (UNTRUSTED_EVENT_INTERPOLATION.test(script)) {
+        throw new Error('gate shell must receive untrusted event data through its environment');
+    }
+    if (!script.includes(FAIL_CLOSED_PULL_REQUEST_GUARD)) {
+        throw new Error('gate shell must fail closed for pull-request pushes');
+    }
     if (!script.includes(FAIL_CLOSED_REVIEW_GUARD)) {
         throw new Error('gate shell must fail closed for non-approved pull-request reviews');
+    }
+    if (!script.includes(CURRENT_HEAD_REVIEW_GUARD)) {
+        throw new Error('gate shell must reject approvals for a stale pull-request head');
+    }
+    if (!script.includes(HEAVY_SUCCESS_FILTER)) {
+        throw new Error('gate shell must require successful CodeQL and secret scan results');
     }
     return script;
 }
 
-function gateResults(candidate: UnknownRecord, result: 'failure' | 'skipped' | 'success'): string {
+type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
+
+function gateResults(
+    candidate: UnknownRecord,
+    result: JobResult,
+    overrides: Readonly<Record<string, JobResult>> = {}
+): string {
     return JSON.stringify(
-        Object.fromEntries(arrayAt(jobAt(candidate, 'gate'), 'needs').map((name) => [String(name), { result }]))
+        Object.fromEntries(
+            arrayAt(jobAt(candidate, 'gate'), 'needs').map((name) => {
+                const jobName = String(name);
+                return [jobName, { result: overrides[jobName] ?? result }];
+            })
+        )
     );
 }
 
-function runGateScript(script: string, eventName: string, reviewState: string, results: string): number | null {
+function runGateScript(
+    script: string,
+    eventName: string,
+    reviewState: string,
+    results: string,
+    reviewCommit = 'head-sha',
+    pullRequestHead = 'head-sha'
+): number | null {
     return spawnSync('bash', ['-c', script], {
         encoding: 'utf8',
         env: {
             ...process.env,
             EVENT: eventName,
             REVIEW_STATE: reviewState,
+            REVIEW_COMMIT: reviewCommit,
+            PULL_REQUEST_HEAD: pullRequestHead,
             RESULTS: results,
         },
         shell: false,
@@ -238,34 +292,73 @@ describe('health gates workflow contract', () => {
         expect(workflowDocument.errors).toEqual([]);
         const events = recordAt(workflow, 'on');
 
-        expect(recordAt(events, 'pull_request_review').types).toEqual(['submitted']);
+        expect(recordAt(events, 'pull_request_review').types).toEqual(['submitted', 'dismissed']);
         expect(Object.hasOwn(events, 'pull_request')).toBe(true);
         expect(Object.hasOwn(events, 'schedule')).toBe(true);
         expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(true);
         expect(recordAt(workflow, 'permissions')).toEqual({ contents: 'read' });
+        expect(recordAt(workflow, 'concurrency')['cancel-in-progress']).toBe(PULL_REQUEST_CONCURRENCY_CANCELLATION);
     });
 
-    it('should execute the complete approved-review heavy-scan chain and preserve ordinary scope', () => {
+    it('should fail closed until a current-head approval completes both heavy security jobs', () => {
         const gateScript = stringAt(
             stepNamed(jobAt(workflow, 'gate'), 'Require every job to have succeeded or been skipped'),
             'run'
         );
         const successfulResults = gateResults(workflow, 'success');
         const skippedResults = gateResults(workflow, 'skipped');
+        const approvedResults = gateResults(workflow, 'skipped', { codeql: 'success', secrets: 'success' });
 
-        expect(runGateScript(gateScript, 'pull_request', '', successfulResults)).toBe(0);
+        expect({
+            approvedWithSkippedCodeql:
+                runGateScript(
+                    gateScript,
+                    'pull_request_review',
+                    'approved',
+                    gateResults(workflow, 'skipped', { secrets: 'success' })
+                ) === 0,
+            approvedWithSkippedSecrets:
+                runGateScript(
+                    gateScript,
+                    'pull_request_review',
+                    'approved',
+                    gateResults(workflow, 'skipped', { codeql: 'success' })
+                ) === 0,
+            pullRequest: runGateScript(gateScript, 'pull_request', '', successfulResults) === 0,
+        }).toEqual({
+            approvedWithSkippedCodeql: false,
+            approvedWithSkippedSecrets: false,
+            pullRequest: false,
+        });
         expect(runGateScript(gateScript, 'schedule', '', skippedResults)).toBe(0);
         expect(runGateScript(gateScript, 'workflow_dispatch', '', skippedResults)).toBe(0);
-        expect(runGateScript(gateScript, 'pull_request_review', 'approved', skippedResults)).toBe(0);
+        expect(runGateScript(gateScript, 'pull_request_review', 'approved', approvedResults)).toBe(0);
+        expect(
+            runGateScript(gateScript, 'pull_request_review', 'approved', approvedResults, 'reviewed-sha', 'head-sha')
+        ).not.toBe(0);
         expect(runGateScript(gateScript, 'pull_request_review', 'commented', skippedResults)).not.toBe(0);
         expect(runGateScript(gateScript, 'pull_request_review', 'changes_requested', skippedResults)).not.toBe(0);
+        expect(runGateScript(gateScript, 'pull_request_review', 'dismissed', skippedResults)).not.toBe(0);
         expect(runGateScript(gateScript, 'pull_request', '', gateResults(workflow, 'failure'))).not.toBe(0);
+        for (const job of ['codeql', 'secrets']) {
+            for (const result of ['skipped', 'failure'] as const) {
+                expect(
+                    runGateScript(
+                        gateScript,
+                        'pull_request_review',
+                        'approved',
+                        gateResults(workflow, 'skipped', { codeql: 'success', secrets: 'success', [job]: result })
+                    )
+                ).not.toBe(0);
+            }
+        }
 
         const scopeScript = assertHeavyScanChain(workflow);
 
         expect(decideAdmits('pull_request_review', 'approved')).toBe(true);
         expect(decideAdmits('pull_request_review', 'commented')).toBe(false);
         expect(decideAdmits('pull_request_review', 'changes_requested')).toBe(false);
+        expect(decideAdmits('pull_request_review', 'dismissed')).toBe(false);
         expect(decideAdmits('pull_request', '')).toBe(true);
         expect(runScopeScript(scopeScript, 'pull_request_review')).toEqual({
             heavy: 'true',
@@ -364,11 +457,43 @@ describe('health gates workflow contract', () => {
                 stringAt(legacyStep, 'run'),
                 'pull_request_review',
                 'commented',
-                gateResults(legacyGate, 'skipped')
+                gateResults(legacyGate, 'skipped', { codeql: 'success', secrets: 'success' })
             )
         ).toBe(0);
         expect(() => assertGateContract(legacyGate)).toThrow(
             'gate shell must fail closed for non-approved pull-request reviews'
+        );
+    });
+
+    it('should reject a gate shell that lets a push reuse an earlier approval', () => {
+        const legacyGate = asRecord(structuredClone(workflow), 'push-admitting gate workflow');
+        const legacyStep = stepNamed(jobAt(legacyGate, 'gate'), 'Require every job to have succeeded or been skipped');
+        legacyStep.run = stringAt(legacyStep, 'run').replace(`${FAIL_CLOSED_PULL_REQUEST_GUARD}\n`, '');
+
+        expect(runGateScript(stringAt(legacyStep, 'run'), 'pull_request', '', gateResults(legacyGate, 'success'))).toBe(
+            0
+        );
+        expect(() => assertGateContract(legacyGate)).toThrow('gate shell must fail closed for pull-request pushes');
+    });
+
+    it('should reject a gate shell that accepts skipped heavy security jobs after approval', () => {
+        const weakenedGate = asRecord(structuredClone(workflow), 'heavy-scan-skipping gate workflow');
+        const weakenedStep = stepNamed(
+            jobAt(weakenedGate, 'gate'),
+            'Require every job to have succeeded or been skipped'
+        );
+        weakenedStep.run = stringAt(weakenedStep, 'run').replace('.[$job].result != "success"', 'false');
+
+        expect(
+            runGateScript(
+                stringAt(weakenedStep, 'run'),
+                'pull_request_review',
+                'approved',
+                gateResults(weakenedGate, 'skipped')
+            )
+        ).toBe(0);
+        expect(() => assertGateContract(weakenedGate)).toThrow(
+            'gate shell must require successful CodeQL and secret scan results'
         );
     });
 });
