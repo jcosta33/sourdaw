@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    configureAutomergeStoragePort,
-    flushAutomergeStorageWrites,
-} from '#/infra/store/storage/createAutomergeStorage';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import * as audioEngineUseCases from '#/modules/AudioEngine/useCases';
@@ -61,8 +58,32 @@ const EX06_PROMPT = 'Reduce kick/bass masking without replacing either basic sou
 const EX11_PROMPT =
     'Create a Drum Bus for Kick, Snare, and Hats, create a parallel-compression bus fed post-fader from the Drum Bus at -12 dB, keep Drum Room routed directly to Master, lower the parallel-compression bus by 1.5 dB, and render Verse One and Chorus One for comparison.';
 
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
+
+function flushFixtureStorageOwner(key: string): void {
+    const storage = fixtureStorageOwners.get(`root:${key}`);
+    if (!storage) {
+        throw new Error(`Expected fixture-owned ${key} storage adapter`);
+    }
+    storage.flushPendingUnscopedWrite();
+}
+
 function settleFixtureProjectWrites(): void {
-    flushAutomergeStorageWrites();
+    for (const key of ['tracks', 'markers', 'sidechainRoutes']) {
+        flushFixtureStorageOwner(key);
+    }
 }
 
 function sendChatMessage(prompt: string) {
@@ -681,6 +702,7 @@ function setEx11Project(): void {
         selectedTrackId: null,
         ghostClips: [],
     });
+    flushFixtureStorageOwner('tracks');
     ensureRealTrackStrips(tracks.map((track) => track.id));
     markerStore.set({
         markers: [],
@@ -968,7 +990,9 @@ describe('drum bus prompt workflow', () => {
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         sidechainStore.set({ routes: [] });
+        flushFixtureStorageOwner('sidechainRoutes');
         markerStore.set({ markers: [], sections: [] });
+        flushFixtureStorageOwner('markers');
         const tracks = [
             createTrack('track-kick', 'Kick'),
             createTrack('track-snare', 'Snare'),
@@ -1366,6 +1390,7 @@ describe('drum bus prompt workflow', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        flushFixtureStorageOwner('tracks');
         const collaboratorState = structuredClone(trackStore.value?.tracks ?? []);
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });

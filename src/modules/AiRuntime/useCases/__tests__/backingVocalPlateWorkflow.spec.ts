@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    configureAutomergeStoragePort,
-    flushAutomergeStorageWrites,
-} from '#/infra/store/storage/createAutomergeStorage';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     getArrangementHandlers,
@@ -72,8 +69,32 @@ const PROMPT =
 const PARAPHRASE =
     'Consolidate the backing-vocal reverbs onto a filtered shared plate, automate the chorus sends and render each chorus, without changing the lead vocal.';
 
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
+
+function flushFixtureStorageOwner(key: string): void {
+    const storage = fixtureStorageOwners.get(`root:${key}`);
+    if (!storage) {
+        throw new Error(`Expected fixture-owned ${key} storage adapter`);
+    }
+    storage.flushPendingUnscopedWrite();
+}
+
 function settleFixtureProjectWrites(): void {
-    flushAutomergeStorageWrites();
+    for (const key of ['tracks', 'markers', 'automation', 'transport']) {
+        flushFixtureStorageOwner(key);
+    }
 }
 
 function sendChatMessage(prompt: string) {
@@ -802,6 +823,7 @@ describe('backing-vocal plate workflow', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        flushFixtureStorageOwner('tracks');
         projectFixtureTracksToLiveStrips([leadVocal, backingHigh, backingLow, spokenWord].map((track) => track.id));
         markerStore.set({
             markers: [],
