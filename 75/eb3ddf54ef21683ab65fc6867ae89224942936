@@ -1,0 +1,28 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_4ca7172d03b500 7,99,4000
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_4ca7172d03b500 625
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_08c5cf238d162b 434-435,446,995-1006,1008-1009,1011
+  s_a40848e8f8cca9::t_67804449ab2e23 1007
+  s_a40848e8f8cca9::t_07077c111770d7 1010
+  s_a40848e8f8cca9::t_2d72624b154ebb 1012-1013
+src/modules/AiRuntime/useCases/agentReference/bridgeDrumRenderComparisonPlan.ts
+  s_a40848e8f8cca9::t_4ca7172d03b500 1,22,116-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "75eb3ddf54ef21683ab65fc6867ae89224942936",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
