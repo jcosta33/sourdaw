@@ -802,18 +802,16 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 if (!finalized) {
                     return { status: 'failed' as const, reason: 'Prepared audio promotion could not be finalized.' };
                 }
-                if (!isPromotionCurrent(id, leaseId, admittedProjectEpoch, admittedRuntimeToken)) {
-                    await rollbackPromotionIfExact(id, leaseId, promotionRevision);
-                    return { status: 'failed' as const, reason: 'Prepared audio promotion was superseded.' };
-                }
-                const runtimeOwner = runtimeOwnerById.get(id);
-                if (runtimeOwner?.kind === 'prepared' && runtimeOwner.leaseId === leaseId) {
-                    runtimeOwnerById.set(id, {
-                        kind: 'prepared',
-                        leaseId,
-                        status: 'project-owned',
-                        token: nextToken(),
-                    });
+                if (isPromotionCurrent(id, leaseId, admittedProjectEpoch, admittedRuntimeToken)) {
+                    const runtimeOwner = runtimeOwnerById.get(id);
+                    if (runtimeOwner?.kind === 'prepared' && runtimeOwner.leaseId === leaseId) {
+                        runtimeOwnerById.set(id, {
+                            kind: 'prepared',
+                            leaseId,
+                            status: 'project-owned',
+                            token: nextToken(),
+                        });
+                    }
                 }
                 return { status: 'released' as const, disposition: 'project-owned' as const };
             }

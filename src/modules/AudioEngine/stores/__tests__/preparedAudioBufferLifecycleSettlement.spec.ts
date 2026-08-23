@@ -216,6 +216,92 @@ describe('prepared audio-buffer settlement and recovery', () => {
         }
     );
 
+    it.each(['ordinary runtime mutation', 'project transition'] as const)(
+        'keeps a finalized promotion authoritative after a later %s',
+        async (superseder) => {
+            const controls = installFakeAudioIndexedDb();
+            const id = `finalized-promotion-${superseder.replaceAll(' ', '-')}`;
+            const leaseId = `${id}-lease`;
+            const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            temporary.getChannelData(0)[0] = 0.25;
+            await audioBufferCache.persistPreparedBuffer({ id, buffer: temporary, leaseId });
+            controls.pauseWriteSettlements();
+            let promotionSettled = false;
+            const promotion = audioBufferCache
+                .releasePreparedBuffer({ id, leaseId, disposition: 'project-owned' })
+                .then((result) => {
+                    promotionSettled = true;
+                    return result;
+                });
+
+            while (controls.pendingWriteSettlementCount() === 0) {
+                await flushIndexedDbTasks(1);
+            }
+            controls.releaseNextWriteSettlement();
+            while (controls.pendingWriteSettlementCount() === 0) {
+                await flushIndexedDbTasks(1);
+            }
+            controls.releaseNextWriteSettlement();
+            expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({
+                leaseId,
+                status: 'project-owned',
+            });
+            expect(controls.committedMeta.get(id)?.preparedOwner?.promotionRevision).toBeUndefined();
+
+            let newerRuntime: AudioBuffer | undefined;
+            if (superseder === 'ordinary runtime mutation') {
+                const ordinaryWriteCount = controls
+                    .transactionScopes()
+                    .filter((scope) => scope.includes('buffers') && scope.includes('bufferMeta')).length;
+                controls.abortWrites();
+                newerRuntime = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+                newerRuntime.getChannelData(0)[0] = 0.75;
+                audioBufferCache.set(id, newerRuntime);
+                while (
+                    controls
+                        .transactionScopes()
+                        .filter((scope) => scope.includes('buffers') && scope.includes('bufferMeta')).length ===
+                    ordinaryWriteCount
+                ) {
+                    await flushIndexedDbTasks(1);
+                }
+                while (controls.pendingWriteSettlementCount() === 0) {
+                    await flushIndexedDbTasks(1);
+                }
+            } else {
+                clearRuntimeAudioBufferCache();
+            }
+            for (let turn = 0; turn < 40 && !promotionSettled; turn++) {
+                if (controls.pendingWriteSettlementCount() > 0) {
+                    controls.releaseNextWriteSettlement();
+                }
+                await flushIndexedDbTasks(1);
+            }
+            await flushIndexedDbTasks(2);
+            while (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+                await flushIndexedDbTasks(1);
+            }
+
+            await expect(promotion).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+            expect(controls.committed.has(id)).toBe(true);
+            expect(controls.committed.get(id)?.channelData[0]?.[0]).toBe(0.25);
+            expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({
+                leaseId,
+                status: 'project-owned',
+            });
+            expect(controls.committedMeta.get(id)?.preparedOwner?.promotionRevision).toBeUndefined();
+            expect(Number.isFinite(controls.committedMeta.get(id)?.lastAccessed)).toBe(true);
+            expect(controls.committedMeta.get(id)?.sizeInBytes).toBe(controls.committed.get(id)?.sizeInBytes);
+            await expect(audioBufferCache.exportBuffers([id])).resolves.toHaveProperty(id);
+            if (newerRuntime) {
+                expect(audioBufferCache.get(id)).toBe(newerRuntime);
+            } else {
+                expect(audioBufferCache.has(id)).toBe(false);
+            }
+        }
+    );
+
     it('keeps a doubly failed rollback fail-closed and recovers it as temporary after reload', async () => {
         const controls = installFakeAudioIndexedDb();
         const id = 'double-rollback-failure';
