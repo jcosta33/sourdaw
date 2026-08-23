@@ -1,0 +1,20 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_a40848e8f8cca9::t_6aa2261a2a2684 21-23,51,128-130,134-136
+  s_a40848e8f8cca9::t_c3a5eee08096f9 1-3,11-16,19-20,24-25,38-47,66-127,131-133,137-181,183-184,189,194-195,197-228,230,237-245,247-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "db4c87e1eccb46ae0d22944d2dadd74db8df21e0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
