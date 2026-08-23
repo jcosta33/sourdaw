@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { commandTrackDefaultsPort, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import {
+    commandBatchPreflightPort,
+    commandBatchPreviewPort,
+    commandTrackDefaultsPort,
+    compilePartialCommandBatchAcceptance,
+    executeVersionedCommandBatchEnvelope,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
@@ -92,6 +99,8 @@ const deviceParameter = (id: string) => ({
 describe('compileArbitraryCommandList', () => {
     afterEach(() => {
         clearHandlerRegistry();
+        commandBatchPreflightPort.setProvider(null);
+        commandBatchPreviewPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
@@ -1067,6 +1076,197 @@ describe('compileArbitraryCommandList', () => {
         ).toMatchObject({
             status: 'accepted',
             actionCommandGraph: { dependenciesByActionIndex: [[], [0]] },
+        });
+    });
+
+    it('retains an independent duplicate canonical prerequisite through partial acceptance', async () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-duplicate-closure',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'enable-metronome-once',
+                                    name: 'setMetronomeEnabled',
+                                    arguments: { enabled: true },
+                                },
+                                {
+                                    id: 'enable-metronome-again',
+                                    name: 'setMetronomeEnabled',
+                                    arguments: { enabled: true },
+                                },
+                                {
+                                    id: 'set-master-gain',
+                                    name: 'setMasterGain',
+                                    arguments: { gain: 0.9 },
+                                    dependsOn: ['enable-metronome-again'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        const bridged = bridgeGroundedLlmToolCalls({
+            calls: result.compilerEvidence.commands,
+            compilerEvidence: result.compilerEvidence,
+            context,
+            projectRevision: 'revision-duplicate-closure',
+            prompt: 'Enable the metronome and set the master gain to 0.9.',
+        });
+        expect(bridged.rejections).toEqual([]);
+        const guarded = materializeActionStateGuards(bridged.actions, context);
+        expect(guarded.status).toBe('accepted');
+        if (guarded.status !== 'accepted') {
+            return;
+        }
+        registerHandlerMap({
+            setMetronomeEnabled: {
+                describe: () => ({ label: 'Enable metronome' }),
+                execute: () => ({ status: 'written' }),
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            },
+            setMasterGain: {
+                describe: () => ({ label: 'Set master gain' }),
+                execute: () => ({ status: 'written' }),
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'revision-duplicate-closure',
+            projectInvariantsValid: true,
+            targetFingerprints: {},
+        }));
+        commandBatchPreviewPort.setProvider(() => ({
+            getProjectDocument: () => ({}),
+            release: () => undefined,
+            scope: (callback) => callback(),
+        }));
+        const compiled = compilePlannedActionCommandBatch({
+            actions: guarded.actions,
+            actionCommandGraph: bridged.actionCommandGraph,
+            actionLabels: ['Enable metronome', 'Set master gain'],
+            autoCommit: false,
+            context,
+            group: { groupId: 'group-duplicate-closure', groupLabel: 'Update master' },
+            intent: 'Enable the metronome and set the master gain to 0.9.',
+            mode: 'preview',
+            projectRevision: 'revision-duplicate-closure',
+            runId: 'run-duplicate-closure',
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.commandBatch.serialized);
+        expect(parsed.status).toBe('valid');
+        if (parsed.status !== 'valid') {
+            return;
+        }
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.commandBatch.authority,
+            serialized: compiled.commandBatch.serialized,
+        });
+        expect(preview.status).toBe('previewed');
+        if (preview.status !== 'previewed') {
+            return;
+        }
+        const dependentId = parsed.envelope.commands[1]!.commandId;
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'group-duplicate-partial',
+            previewSelection: preview.partialAcceptance,
+            runId: 'run-duplicate-partial',
+            selectedIntentGroupIds: [dependentId],
+        });
+
+        expect(partial).toMatchObject({
+            status: 'compiled',
+            includedOriginalCommandIds: parsed.envelope.commands.map((command) => command.commandId),
+        });
+        preview.resource.release();
+    });
+
+    it('expands a partially deduplicated selector item to every canonical representative', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-partial-dedup',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'track-hat']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'mute-all-drums',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                },
+                                {
+                                    id: 'enable-metronome',
+                                    name: 'setMetronomeEnabled',
+                                    arguments: { enabled: true },
+                                    dependsOn: ['mute-all-drums'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.items[1]).toMatchObject({
+            commandCount: 1,
+            omittedCommandCount: 1,
+            representativeCommandIndexes: [0, 1],
+        });
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context,
+                revision: 'revision-partial-dedup',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            actionCommandGraph: { dependenciesByActionIndex: [[], [], [0, 1]] },
         });
     });
 

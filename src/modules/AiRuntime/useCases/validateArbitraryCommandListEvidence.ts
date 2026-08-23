@@ -26,6 +26,10 @@ type Candidate = {
     enabled?: boolean;
 };
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export type CompilerResolvedTargetOverride =
     | {
           argument: string;
@@ -95,6 +99,19 @@ function sameToolCalls(left: readonly ToolCallResult[], right: readonly ToolCall
                 JSON.stringify(call.arguments) === JSON.stringify(right[index]?.arguments)
         )
     );
+}
+
+function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson).join(',')}]`;
+    }
+    if (isRecord(value)) {
+        return `{${Object.keys(value)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+            .join(',')}}`;
+    }
+    return JSON.stringify(value);
 }
 
 function hasExactStableIdSet(left: readonly string[], right: readonly string[]): boolean {
@@ -206,6 +223,21 @@ export function validateArbitraryCommandListEvidence(input: {
             !Number.isInteger(item.omittedCommandCount) ||
             item.omittedCommandCount < 0 ||
             item.declaredCommandCount !== item.commandCount + item.omittedCommandCount ||
+            item.declaredCommandIdentities.length !== item.declaredCommandCount ||
+            item.representativeCommandIndexes.length !== item.declaredCommandCount ||
+            item.representativeCommandIndexes.some(
+                (commandIndex) =>
+                    !Number.isSafeInteger(commandIndex) ||
+                    commandIndex < 0 ||
+                    commandIndex >= item.commandStart + item.commandCount
+            ) ||
+            item.declaredCommandIdentities.some(
+                (identity, index) =>
+                    identity !== canonicalJson(evidence.commands[item.representativeCommandIndexes[index]!])
+            ) ||
+            Array.from({ length: item.commandCount }, (_unused, offset) => item.commandStart + offset).some(
+                (commandIndex) => !item.representativeCommandIndexes.includes(commandIndex)
+            ) ||
             (item.targetCardinality !== undefined && item.targetCardinality !== 'many') ||
             item.dependsOn.some((dependency) => !itemIds.has(dependency))
         ) {
@@ -499,30 +531,30 @@ export function validateArbitraryCommandListEvidence(input: {
         return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
     }
     const dependenciesByActionIndex = evidence.commands.map((): number[] => []);
-    const commandIndexesByItemId = new Map(
-        evidence.items.map((item) => [
-            item.itemId,
-            Array.from({ length: item.commandCount }, (_unused, offset) => item.commandStart + offset),
-        ])
+    const representativeCommandIndexesByItemId = new Map(
+        evidence.items.map((item) => [item.itemId, [...new Set(item.representativeCommandIndexes)]])
     );
     const resolveDependencyIndexes = (itemId: string, visited = new Set<string>()): number[] => {
         if (visited.has(itemId)) {
             return [];
         }
         visited.add(itemId);
-        const commandIndexes = commandIndexesByItemId.get(itemId) ?? [];
-        if (commandIndexes.length > 0) {
-            return commandIndexes;
+        const item = itemsById.get(itemId);
+        const representativeIndexes = representativeCommandIndexesByItemId.get(itemId) ?? [];
+        if ((item?.commandCount ?? 0) > 0) {
+            return representativeIndexes;
         }
-        return (itemsById.get(itemId)?.dependsOn ?? []).flatMap((dependencyId) =>
-            resolveDependencyIndexes(dependencyId, visited)
-        );
+        return [
+            ...representativeIndexes,
+            ...(item?.dependsOn ?? []).flatMap((dependencyId) => resolveDependencyIndexes(dependencyId, visited)),
+        ];
     };
     for (const item of evidence.items) {
         const dependencyIndexes = [
             ...new Set(item.dependsOn.flatMap((dependencyId) => resolveDependencyIndexes(dependencyId))),
-        ];
-        for (const commandIndex of commandIndexesByItemId.get(item.itemId) ?? []) {
+        ].sort((left, right) => left - right);
+        for (let offset = 0; offset < item.commandCount; offset += 1) {
+            const commandIndex = item.commandStart + offset;
             dependenciesByActionIndex[commandIndex] = dependencyIndexes;
         }
     }

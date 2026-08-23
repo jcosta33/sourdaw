@@ -46,11 +46,13 @@ export type ArbitraryCommandListDirectTargetEvidence = {
 
 type CompiledItemEvidence = {
     canonicalStableIds: string[];
+    declaredCommandIdentities: string[];
     itemId: string;
     commandName: string;
     dependsOn: string[];
     declaredCommandCount: number;
     omittedCommandCount: number;
+    representativeCommandIndexes: number[];
     stableIds: string[];
     commandStart: number;
     commandCount: number;
@@ -639,7 +641,7 @@ export function compileArbitraryCommandList(input: {
     const orderedTargetIds: string[] = [];
     const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
     const targetCommandArguments = new Map<string, string>();
-    const canonicalCommandKeys = new Set<string>();
+    const canonicalCommandIndexByKey = new Map<string, number>();
     const itemsById = new Map(items.map((item) => [item.id, item]));
     const producersByBinding = new Map<string, BatchLocalBindingProducer>();
 
@@ -672,7 +674,9 @@ export function compileArbitraryCommandList(input: {
             return { status: 'rejected', reason: `Duplicate batch-local binding: ${declaredBinding}` };
         }
         if (item.selector === undefined) {
+            const declaredCommandIdentities: string[] = [];
             let omittedCommandCount = 0;
+            const representativeCommandIndexes: number[] = [];
             const targetValidation = validateTargetArgumentsWithoutSelectors({
                 context: input.context,
                 item,
@@ -698,11 +702,16 @@ export function compileArbitraryCommandList(input: {
                     return writeCheck;
                 }
                 const { commandKey } = writeCheck;
-                if (rules.mutationIdempotent && canonicalCommandKeys.has(commandKey)) {
+                declaredCommandIdentities.push(commandKey);
+                const canonicalCommandIndex = canonicalCommandIndexByKey.get(commandKey);
+                if (rules.mutationIdempotent && canonicalCommandIndex !== undefined) {
                     omittedCommandCount += 1;
+                    representativeCommandIndexes.push(canonicalCommandIndex);
                     continue;
                 }
-                canonicalCommandKeys.add(commandKey);
+                const commandIndex = commands.length;
+                canonicalCommandIndexByKey.set(commandKey, commandIndex);
+                representativeCommandIndexes.push(commandIndex);
                 commands.push(command);
             }
             if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
@@ -713,11 +722,13 @@ export function compileArbitraryCommandList(input: {
             }
             compiledItems.push({
                 canonicalStableIds: [],
+                declaredCommandIdentities,
                 itemId: item.id,
                 commandName: item.name,
                 dependsOn,
                 declaredCommandCount: repeat,
                 omittedCommandCount,
+                representativeCommandIndexes,
                 stableIds: [],
                 commandStart,
                 commandCount: commands.length - commandStart,
@@ -803,7 +814,9 @@ export function compileArbitraryCommandList(input: {
             };
         }
         const canonicalStableIds: string[] = [];
+        const declaredCommandIdentities: string[] = [];
         let omittedCommandCount = 0;
+        const representativeCommandIndexes: number[] = [];
         const isDestructive = /^remove|^delete/u.test(item.name);
         const groundedStableIds = [
             ...resolved.stableIds,
@@ -839,11 +852,16 @@ export function compileArbitraryCommandList(input: {
                     return writeCheck;
                 }
                 const { commandKey } = writeCheck;
-                if (rules.mutationIdempotent && canonicalCommandKeys.has(commandKey)) {
+                declaredCommandIdentities.push(commandKey);
+                const canonicalCommandIndex = canonicalCommandIndexByKey.get(commandKey);
+                if (rules.mutationIdempotent && canonicalCommandIndex !== undefined) {
                     omittedCommandCount += 1;
+                    representativeCommandIndexes.push(canonicalCommandIndex);
                     continue;
                 }
-                canonicalCommandKeys.add(commandKey);
+                const commandIndex = commands.length;
+                canonicalCommandIndexByKey.set(commandKey, commandIndex);
+                representativeCommandIndexes.push(commandIndex);
                 if (targetRule.cardinality === 'many') {
                     canonicalStableIds.push(...resolved.stableIds);
                 } else {
@@ -857,11 +875,13 @@ export function compileArbitraryCommandList(input: {
         }
         compiledItems.push({
             canonicalStableIds,
+            declaredCommandIdentities,
             itemId: item.id,
             commandName: item.name,
             dependsOn,
             declaredCommandCount: (targetRule.cardinality === 'many' ? 1 : resolved.stableIds.length) * repeat,
             omittedCommandCount,
+            representativeCommandIndexes,
             stableIds: [...resolved.stableIds],
             commandStart,
             commandCount: commands.length - commandStart,
