@@ -1,0 +1,98 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_34f8eb34b220cf 201,206,214,245,266,269,662,667,674,685,704,829,862,878,902,1032,1048,1062-1066,1083,1087,1091,1106,1126,1150,1154,1167
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_151fd3ada52cff 38-44,52-57,62-73,79-80,82-91,107-109,129
+  s_a40848e8f8cca9::t_76d1190dd4d536 113,152,159,163,167,175,200,217,220-232
+  s_a40848e8f8cca9::t_4060460c905dee 45-50,58-61,74-78,81
+  s_a40848e8f8cca9::t_6ffe402b2b0ab2 27,210-213
+  s_a40848e8f8cca9::t_8bde2408f5bf6e 1-26,28-37,92-106,110-112,114-128,130-151,153-158,160-162,164-166,168-174,176-199,201-209,214-216,218-219,233
+  s_a40848e8f8cca9::t_9818515fd90af4 51
+src/modules/Collaboration/repositories/durableAssetRecordAccess.ts
+  s_a40848e8f8cca9::t_9e593b0fe47e15 1-74
+src/modules/Collaboration/repositories/durableAssetOwnershipLifecycle.ts
+  s_a40848e8f8cca9::t_b643a64c1ddde6 1-352
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_b8196fb1cfa6b2 191,215,229
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_a40848e8f8cca9::t_780811310352c2 356
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_66140701b1b7fd 185-191,193-194,196-202,204,207-209
+  s_a40848e8f8cca9::t_1fdfd19b619217 84,192,195,203
+  s_a40848e8f8cca9::t_5823a2920bd0c5 205-206
+  s_a40848e8f8cca9::t_9185b647fd6262 210-216
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_9e593b0fe47e15 1-58
+src/modules/Collaboration/repositories/durableAssetReceiptRetention.ts
+  s_a40848e8f8cca9::t_81bc04cf306f4b 1-40
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_a40848e8f8cca9::t_715308d59664f1 464-466
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_a40848e8f8cca9::t_f779613c57b586 36
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_a40848e8f8cca9::t_41ac652041c6d5 5,11,36-55
+  s_a40848e8f8cca9::t_0d52ca2d9630f0 56-57
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_181663e74772c1 139
+src/modules/Collaboration/repositories/durableAssetStageLifecycle.ts
+  s_a40848e8f8cca9::t_e190574435db84 1-194
+  s_a40848e8f8cca9::t_a41ed100e8b11c 195-197
+src/modules/Collaboration/useCases/__tests__/assetTransferDurability.spec.ts
+  s_a40848e8f8cca9::t_4b791eac27672f 48,72-74,296-301
+  s_a40848e8f8cca9::t_1fe8448543600a 1-2,4-47,49-56,69-71,75-295,302-347
+  s_a40848e8f8cca9::t_12a3b82367e355 57-68
+  s_a40848e8f8cca9::t_76d1190dd4d536 3
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_aff2febdc1c28e 1-175,177-303
+  s_a40848e8f8cca9::t_52f6a916be086a 176
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_bcde41e705fc24 27
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_494529ef79e090 1-21,29-31
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_77aee986ccaeb3 49,59,134,333,351-352,367,404,485,507,597-598
+  s_a40848e8f8cca9::t_537aa7c3724a56 402-403,554,614,627,644,763
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_b422cef245ace4 484,486-491
+  s_a40848e8f8cca9::t_e973367e684413 73,209,220,231,242,279,485,500,762
+  s_a40848e8f8cca9::t_01596bd06d7b0d 206-207,211,759-761
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_512cf4f229816c 518,568,635,785,839
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_4b791eac27672f 803-804,808,812,815,817,823,832,835,839,843,850-855
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_afe971ce004789 145,147,152,157-158,185,187,190,204,241-243,253,442,444,454,456
+  s_a40848e8f8cca9::t_a96ccf03a73894 247-250
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_384c881255fd98 7
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_106c7d52d49ece 14,19
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_95490b82e62891 11,24,95,100-101,103,105-116,120-124,171,178,186-188,261
+  s_a40848e8f8cca9::t_303feab40d9477 26-27,40,196-198
+  s_a40848e8f8cca9::t_151fd3ada52cff 117-119,209,212
+  s_a40848e8f8cca9::t_1a7a73b91e62f0 96-97,130,172,179,189-191,262
+  s_a40848e8f8cca9::t_babc8ec9cab4e6 169,242-246
+  s_a40848e8f8cca9::t_0a83757ba7ad87 102,104
+  s_a40848e8f8cca9::t_5986ed3df9c580 223
+  s_a40848e8f8cca9::t_67d4674dff8c1a 204
+  s_a40848e8f8cca9::t_22625f7117df09 247-248
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_a40848e8f8cca9::t_a96ccf03a73894 6,8,230-240,243-252,254-294,296-298
+  s_a40848e8f8cca9::t_15208c389759aa 12-13,16,27,48,90,167-168,178,180,193,203-204,209-212,224-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4e15526c3e55c57a14a435e9b69faca52f02a4b5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
