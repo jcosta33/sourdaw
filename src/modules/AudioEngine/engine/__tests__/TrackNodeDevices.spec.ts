@@ -8,7 +8,7 @@ import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeDeps } from '../T
 
 const mocks = vi.hoisted(() => ({
     hasSharedArrayBuffer: vi.fn(() => true),
-    findWasmDescriptor: vi.fn(),
+    findReleasedWasmDescriptor: vi.fn(),
     loggerDebug: vi.fn(),
 }));
 
@@ -19,7 +19,7 @@ vi.mock('#/utils/capabilities', async (importOriginal) => ({
 
 vi.mock('../wasmDeviceRegistry', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../wasmDeviceRegistry')>()),
-    findWasmDescriptor: mocks.findWasmDescriptor,
+    findReleasedWasmDescriptor: mocks.findReleasedWasmDescriptor,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -124,7 +124,7 @@ function installDeferredWasmDevice({
         }
         return generation;
     };
-    mocks.findWasmDescriptor.mockReturnValue({
+    mocks.findReleasedWasmDescriptor.mockReturnValue({
         requiresContent,
         matches: () => true,
         create: (deps: {
@@ -239,7 +239,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         vi.clearAllMocks();
         workletInstances.length = 0;
         mocks.hasSharedArrayBuffer.mockReturnValue(true);
-        mocks.findWasmDescriptor.mockReturnValue(undefined);
+        mocks.findReleasedWasmDescriptor.mockReturnValue(undefined);
         vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
         vi.stubGlobal(
             'SharedArrayBuffer',
@@ -751,7 +751,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
         it('records a synchronous descriptor construction failure without retaining a pending token', () => {
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            mocks.findWasmDescriptor.mockReturnValue({
+            mocks.findReleasedWasmDescriptor.mockReturnValue({
                 requiresContent: false,
                 matches: () => true,
                 create: () => {
@@ -873,7 +873,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('preserves project order when unsupported predecessors have no live node', () => {
-            mocks.findWasmDescriptor.mockReturnValue(undefined);
+            mocks.findReleasedWasmDescriptor.mockReturnValue(undefined);
             const track = new TrackNode('t1', makeDeps(ctx));
             track.addDevice('last', 'builtin-gain');
             track.addDevice('unsupported', 'mystery-device');
@@ -884,7 +884,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('adds nothing when the type has no factory and no wasm descriptor', () => {
-            mocks.findWasmDescriptor.mockReturnValue(undefined);
+            mocks.findReleasedWasmDescriptor.mockReturnValue(undefined);
             const track = new TrackNode('t1', makeDeps(ctx));
 
             track.addDevice('mystery-1', 'mystery-device');
