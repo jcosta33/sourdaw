@@ -1,0 +1,73 @@
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_a40848e8f8cca9::t_3b3e925e56cbfc 858-861,876
+  s_a40848e8f8cca9::t_8a592e96166db7 883-884,899-904,910-914,916-925,933,937,953,970,997,999,1001-1005,1017,1019-1020,1024,1261,1653,1657-1660,1676-1681
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 64,68,234-236,240
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_a40848e8f8cca9::t_8a592e96166db7 74,78-85,87-92,94-98
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 36,59,560
+src/modules/AudioEngine/stores/preparedAudioBufferLifecycle.ts
+  s_a40848e8f8cca9::t_8a592e96166db7 609,629,634,654-667
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_a40848e8f8cca9::t_f07d47edf04b61 12-17
+  s_a40848e8f8cca9::t_ba6c11df5618f5 19,52-55,166,191,276-277,303-304
+src/modules/Project/useCases/arrangement/switchArrangement.ts
+  s_a40848e8f8cca9::t_8a592e96166db7 59,64-69,79
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 39
+src/modules/AudioEngine/useCases/prepareCachedAudioBuffersFromIdb.ts
+  s_a40848e8f8cca9::t_6deeeba2402d65 9-12
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_a40848e8f8cca9::t_b9f029dd7535ab 13,88-91
+  s_a40848e8f8cca9::t_f07d47edf04b61 32-33
+  s_a40848e8f8cca9::t_3b3e925e56cbfc 263-275
+  s_0a3429e31e555d::t_4abebd92b802cf 276
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_a40848e8f8cca9::t_8a592e96166db7 9
+  s_a40848e8f8cca9::t_f07d47edf04b61 37-38,163-166,217-220,310-323
+  s_a40848e8f8cca9::t_f364772e0cae2a 324
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 112-115
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 27,133
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 30
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleSettlement.spec.ts
+  s_a40848e8f8cca9::t_f07d47edf04b61 643-670
+  s_a40848e8f8cca9::t_a1c3a7e901bef9 672,949-1033,1035
+  s_a40848e8f8cca9::t_a74151dd4aad0e 671,1034
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheMetadataStore.spec.ts
+  s_a40848e8f8cca9::t_a1c3a7e901bef9 566-596
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 41,112,290,355,409,438
+  s_a40848e8f8cca9::t_15931293d13a0d 289,354,408,437
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_a40848e8f8cca9::t_aa825e1152a2a5 71
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_a40848e8f8cca9::t_8a592e96166db7 77,113,141,222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "0b6afe05df89b5b9d36e3f45f7e909fb9a4b7286",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
