@@ -1,6 +1,6 @@
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 
-import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
+import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
 
 export function createStemImportConfirmationResourceLease(actions: readonly ExecutableRuntimeAction[]) {
     const stems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
@@ -16,7 +16,8 @@ export function createStemImportConfirmationResourceLease(actions: readonly Exec
             if (released) {
                 return;
             }
-            releaseInFlight ??= discardPreparedStemImportResources(stems)
+            releaseInFlight ??= preparedStemImportCleanup
+                .discard(stems)
                 .then(() => {
                     released = true;
                 })
@@ -25,5 +26,6 @@ export function createStemImportConfirmationResourceLease(actions: readonly Exec
                 });
             await releaseInFlight;
         },
+        releaseBestEffort: () => preparedStemImportCleanup.discardBestEffort(stems),
     };
 }

@@ -226,6 +226,8 @@ type SnapshotTransaction = {
     readonly handle: object;
     /** Docs dirtied during the transaction, in first-touch order. */
     readonly dirtied: Set<DocId>;
+    /** Documents fenced against unowned writes without forcing snapshot capture. */
+    readonly reserved: Set<DocId>;
     /** Pre-mutation membership/content, captured lazily on first touch. */
     readonly before: CrdtDocumentSnapshot;
 };
@@ -557,7 +559,7 @@ class AutomergeRepository {
             return;
         }
         if (snapshotTransaction !== txn.handle) {
-            if (txn.dirtied.has(id)) {
+            if (txn.dirtied.has(id) || txn.reserved.has(id)) {
                 throw createSnapshotTransactionOverlapError(id);
             }
             return;
@@ -593,6 +595,17 @@ class AutomergeRepository {
         return run;
     }
 
+    /** Fence exact documents for an owning transaction without marking them mutated. */
+    reserveSnapshotTransactionDocuments(snapshotTransaction: object, docIds: readonly DocId[]): void {
+        const txn = this.activeTransaction;
+        if (!txn || snapshotTransaction !== txn.handle) {
+            throw new Error('[AutomergeRepository] Snapshot document reservation requires the active transaction');
+        }
+        for (const docId of docIds) {
+            txn.reserved.add(docId);
+        }
+    }
+
     waitForSnapshotTransaction(snapshotTransaction?: object): Promise<void> {
         if (snapshotTransaction !== undefined && snapshotTransaction === this.activeTransaction?.handle) {
             return Promise.resolve();
@@ -606,6 +619,7 @@ class AutomergeRepository {
         const txn: SnapshotTransaction = {
             handle: Object.freeze({}),
             dirtied: new Set<DocId>(),
+            reserved: new Set<DocId>(),
             before: new Map(),
         };
 

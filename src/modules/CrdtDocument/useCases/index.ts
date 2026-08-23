@@ -16,6 +16,7 @@ export { createCrdtProject } from './createCrdtProject';
 export { getPersistenceBackend } from './crdtProjectLifecycle';
 export { loadCrdtProject } from './loadCrdtProject';
 export { persistCrdtProject } from './persistCrdtProject';
+export { runCrdtPersistenceBarrier } from './runCrdtPersistenceBarrier';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { clearActionHistory } from './clearActionHistory';

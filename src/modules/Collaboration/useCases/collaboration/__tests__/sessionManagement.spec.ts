@@ -44,6 +44,11 @@ const peerConnectionMock = vi.hoisted(() => ({
 const automergeSyncMock = vi.hoisted(() => ({
     instances: [] as {
         hooks: {
+            captureSyncAcceptance?: (input: { peerId: PeerId; docId: string }) => {
+                accepted: boolean;
+                senderIsHost: boolean;
+                protectedProjectIdentity?: { projectId: string };
+            };
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             getProtectedProjectId?: (input: { peerId: PeerId; docId: string }) => string | undefined;
             onPersistError?: (error: unknown) => void;
@@ -52,6 +57,7 @@ const automergeSyncMock = vi.hoisted(() => ({
                 docId: string;
                 projectId?: string;
                 rootHeads: readonly string[];
+                senderIsHost?: boolean;
             }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
             onPostPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
@@ -152,6 +158,11 @@ vi.mock('../../automergeSync', () => ({
     AutomergeSync: vi.fn().mockImplementation(function (
         _peerManager: unknown,
         hooks: {
+            captureSyncAcceptance?: (input: { peerId: PeerId; docId: string }) => {
+                accepted: boolean;
+                senderIsHost: boolean;
+                protectedProjectIdentity?: { projectId: string };
+            };
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             getProtectedProjectId?: (input: { peerId: PeerId; docId: string }) => string | undefined;
             onPersistError?: (error: unknown) => void;
@@ -160,6 +171,7 @@ vi.mock('../../automergeSync', () => ({
                 docId: string;
                 projectId?: string;
                 rootHeads: readonly string[];
+                senderIsHost?: boolean;
             }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
             onPostPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
@@ -238,7 +250,10 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: trackStoreMock }));
 
 vi.mock('#/modules/Transport/stores', () => ({ transportStore: transportStoreMock }));
-vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: () => projectMock.settledId }));
+vi.mock('#/modules/Project/stores', () => ({
+    getSettledProjectId: () => projectMock.settledId,
+    getSettledProjectIdentity: () => ({ projectId: projectMock.settledId }),
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: audioEngineMock.getAudioContext,
@@ -443,6 +458,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 projectId: 'project:host-authoritative',
                 rootHeads: ['host-head'],
+                senderIsHost: true,
             });
             await afterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
@@ -483,6 +499,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 projectId: 'project:intermediate-projection',
                 rootHeads: ['intermediate-head'],
+                senderIsHost: true,
             });
             await firstAfterPersist?.();
             currentOwnerId = 'project:host-authoritative';
@@ -491,6 +508,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 projectId: 'project:host-authoritative',
                 rootHeads: ['host-head'],
+                senderIsHost: true,
             });
             await secondAfterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
@@ -536,6 +554,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 projectId: 'project:same-local-and-host-id',
                 rootHeads: ['same-head'],
+                senderIsHost: true,
             });
             await afterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
@@ -575,6 +594,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 projectId: 'project:non-host',
                 rootHeads: ['non-host-head'],
+                senderIsHost: false,
             });
             await afterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
@@ -612,6 +632,17 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 })
             );
             sessionRuntimePrimitives.initialize(projectMock.settledId);
+
+            expect(
+                latestAutomergeSync().hooks.captureSyncAcceptance?.({ peerId: 'guest-peer', docId: 'root' })
+            ).toEqual({
+                accepted: true,
+                senderIsHost: false,
+                protectedProjectIdentity: { projectId: projectMock.settledId },
+            });
+            expect(latestAutomergeSync().hooks.captureSyncAcceptance?.({ peerId: 'host-peer', docId: 'root' })).toEqual(
+                { accepted: true, senderIsHost: true, protectedProjectIdentity: undefined }
+            );
 
             expect(latestAutomergeSync().hooks.getProtectedProjectId?.({ peerId: 'guest-peer', docId: 'root' })).toBe(
                 projectMock.settledId
@@ -660,6 +691,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 projectId: 'project:retry-authoritative',
                 rootHeads: ['retry-head'],
+                senderIsHost: true,
             });
             await expect(afterPersist?.()).resolves.toBeUndefined();
             await sessionRuntimePrimitives.flushAssetOwnership();

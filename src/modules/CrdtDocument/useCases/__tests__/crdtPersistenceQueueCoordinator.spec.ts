@@ -12,12 +12,18 @@ const { mockAutomergeRepo, mockSaveAllToIdb, mockSaveIncrementals, mockLoadSnaps
         mockAutomergeRepo: {
             getAllDocs: vi.fn(() => new Map()),
             getDoc: vi.fn(() => null),
-            getDocIds: vi.fn(() => []),
+            getDocIds: vi.fn<() => string[]>(() => []),
             hasDoc: vi.fn(() => false),
             mergeBundle: vi.fn(),
             saveAll: vi.fn(),
             saveAllOffThread: vi.fn(),
             saveDocIncremental: vi.fn(),
+            getHeads: vi.fn(() => []),
+            reserveSnapshotTransactionDocuments: vi.fn(),
+            transactSnapshot: vi.fn(async (operation: (transaction: object) => Promise<void>) => {
+                await operation({});
+                return { before: new Map(), after: new Map() };
+            }),
         },
         mockSaveAllToIdb: vi.fn(() => Promise.resolve()),
         mockSaveIncrementals: vi.fn(() => Promise.resolve({ savedChunks: 0 })),
@@ -49,6 +55,30 @@ describe('crdtPersistenceQueueCoordinator', () => {
 
     it('runOperation with reset resolves immediately', async () => {
         await expect(crdtPersistenceQueueCoordinator.runOperation('reset')).resolves.toBeUndefined();
+    });
+
+    it('holds autosave behind a cross-store persistence barrier until publication commits', async () => {
+        const order: string[] = [];
+        mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
+        let releaseBarrier: (() => void) | undefined;
+        const blocked = new Promise<void>((resolve) => {
+            releaseBarrier = resolve;
+        });
+        const barrier = crdtPersistenceQueueCoordinator.runBarrier(async () => {
+            order.push('prepare-publication');
+            await blocked;
+            order.push('commit-publication');
+        });
+        const autosave = crdtPersistenceQueueCoordinator.runOperation('incremental').then(() => {
+            order.push('autosave');
+        });
+
+        await Promise.resolve();
+        expect(order).toEqual(['prepare-publication']);
+        releaseBarrier?.();
+        await Promise.all([barrier, autosave]);
+
+        expect(order).toEqual(['prepare-publication', 'commit-publication', 'autosave']);
     });
 
     it('runOperation with root-lineage-transition throws on invalid lineage', () => {

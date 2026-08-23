@@ -41,6 +41,7 @@ const command_mocks = vi.hoisted(() => ({
 
 const crdt_mocks = vi.hoisted(() => ({
     wait_for_document_transition: vi.fn<(docId: string) => Promise<'aborted' | 'committed'> | null>(),
+    persist_project: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -55,7 +56,14 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     removeCrdtDoc: vi.fn(),
     hasCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
-    persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+    persistCrdtProject: crdt_mocks.persist_project,
+    runCrdtPersistenceBarrier: vi.fn(
+        async (
+            operation: (input: {
+                persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<void>;
+            }) => Promise<void>
+        ) => operation({ persistCurrentProject: crdt_mocks.persist_project })
+    ),
     waitForCrdtDocumentTransition: crdt_mocks.wait_for_document_transition,
     sanitizeIncomingCrdtDocument: vi.fn((document) => document),
     DOC_PREFIX_ROOT: 'root',
@@ -231,6 +239,7 @@ describe('AutomergeSync', () => {
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
         vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
             live = doc;
+            order.push('publish-root');
         });
         vi.mocked(persistCrdtProject).mockImplementation(async () => {
             order.push('persist-project');
@@ -253,7 +262,7 @@ describe('AutomergeSync', () => {
         }
         await sync.flushPersistence();
 
-        expect(order.slice(-3)).toEqual(['prepare-handoff', 'persist-project', 'commit-handoff']);
+        expect(order.slice(-4)).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
     });
 
     it('retains a prepared handoff when project persistence fails before commit', async () => {
@@ -344,12 +353,16 @@ describe('AutomergeSync', () => {
             releasePrepare = resolve;
         });
         const persistInputs: unknown[][] = [];
+        let senderIsHost = true;
+        const preparedAuthorities: Array<boolean | undefined> = [];
         vi.mocked(persistCrdtProject).mockImplementation((...input: unknown[]) => {
             persistInputs.push(input);
             return Promise.resolve();
         });
         const sync = new AutomergeSync(makePeerManager(), {
-            prepareSyncPersistence: async ({ projectId }) => {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost }),
+            prepareSyncPersistence: async ({ projectId, senderIsHost: preparedAsHost }) => {
+                preparedAuthorities.push(preparedAsHost);
                 if (!projectId) {
                     return undefined;
                 }
@@ -364,19 +377,20 @@ describe('AutomergeSync', () => {
         for (const message of createPeerSyncMessages({ remote: firstRemote, local: live })) {
             sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
         }
-        for (let attempt = 0; attempt < 8 && (live as Doc<SeededDoc>).peerProbe !== 'first'; attempt += 1) {
+        for (let attempt = 0; attempt < 8; attempt += 1) {
             await Promise.resolve();
         }
-        const firstHeads = [...getHeads(live)].map(String).toSorted();
+        const firstHeads = [...getHeads(firstRemote)].map(String).toSorted();
 
-        const secondRemote = change(clone(live, 'cccccccccccccccc'), (draft) => {
-            (draft as SeededDoc).peerProbe = 'second';
+        const secondRemote = change(clone(firstRemote, 'cccccccccccccccc'), (draft) => {
+            draft.peerProbe = 'second';
         });
         for (const message of createPeerSyncMessages({ remote: secondRemote, local: live })) {
             sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
         }
+        senderIsHost = false;
 
-        expect((live as Doc<SeededDoc>).peerProbe).toBe('first');
+        expect((live as Doc<SeededDoc>).peerProbe).not.toBe('first');
         releasePrepare?.();
         await sync.flushPersistence();
         await Promise.resolve();
@@ -384,6 +398,81 @@ describe('AutomergeSync', () => {
 
         expect(persistInputs[0]).toEqual([firstHeads]);
         expect((live as Doc<SeededDoc>).peerProbe).toBe('second');
+        expect(preparedAuthorities).toEqual([true, true]);
+    });
+
+    it('drops a root delivery deferred behind preparation when the session stops', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        let releasePrepare: (() => void) | undefined;
+        const prepareBlocked = new Promise<void>((resolve) => {
+            releasePrepare = resolve;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                await prepareBlocked;
+                return undefined;
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'must-not-publish';
+        });
+
+        for (const message of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        sync.stop();
+        releasePrepare?.();
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).peerProbe).not.toBe('must-not-publish');
+    });
+
+    it('retries against a local root mutation instead of overwriting it after deferred preparation', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        let prepareCount = 0;
+        let releaseFirstPrepare: (() => void) | undefined;
+        const firstPrepare = new Promise<void>((resolve) => {
+            releaseFirstPrepare = resolve;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                prepareCount += 1;
+                if (prepareCount === 1) {
+                    await firstPrepare;
+                }
+                return undefined;
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'remote-change';
+        });
+
+        for (const message of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        await Promise.resolve();
+        live = change(live as Doc<SeededDoc>, (draft) => {
+            (draft as SeededDoc & { localProbe?: string }).localProbe = 'local-change';
+        });
+        releaseFirstPrepare?.();
+        await sync.flushPersistence();
+        await Promise.resolve();
+        await sync.flushPersistence();
+
+        expect(live).toMatchObject({ peerProbe: 'remote-change', localProbe: 'local-change' });
+        expect(prepareCount).toBeGreaterThanOrEqual(2);
     });
 
     it('preserves the host project identity while applying other guest root changes', async () => {
@@ -404,6 +493,38 @@ describe('AutomergeSync', () => {
                 projectId: 'bbbbbbbb-bbbb-8bbb-8bbb-bbbbbbbbbbbb',
                 name: 'Guest edit accepted',
             };
+        });
+
+        for (const message of createPeerSyncMessages({ remote: guest, local: live })) {
+            sync.receiveSync({ peerId: 'guest-peer', docId: 'root', syncMessageBase64: message });
+        }
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).projectMeta).toEqual({
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            name: 'Guest edit accepted',
+        });
+    });
+
+    it('removes a hostile migration-pending marker while preserving the canonical host identity', async () => {
+        const canonical = change(seedAmDoc(), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa', name: 'Host project' };
+        });
+        let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+        const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({
+                accepted: true,
+                senderIsHost: false,
+                protectedProjectIdentity: { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' },
+            }),
+        });
+        const guest = change(remoteSeed, (draft) => {
+            Object.assign(draft.projectMeta!, { identityMigrationPending: true, name: 'Guest edit accepted' });
         });
 
         for (const message of createPeerSyncMessages({ remote: guest, local: live })) {

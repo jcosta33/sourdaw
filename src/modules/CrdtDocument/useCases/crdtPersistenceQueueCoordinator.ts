@@ -136,6 +136,43 @@ export type LoadCrdtPersistenceOperation = (input: {
     shouldCommit: () => boolean;
 }) => Promise<LoadCrdtPersistenceOperationResult>;
 
+export type CrdtPersistenceBarrierOperation = (input: {
+    persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<void>;
+}) => Promise<void>;
+
+/**
+ * Run a cross-store lifecycle on the same tail as autosave and explicit CRDT
+ * persistence. The caller may publish one exact repository revision and then
+ * persist it without an autosave entering between those two steps.
+ */
+function runCrdtPersistenceBarrier(operation: CrdtPersistenceBarrierOperation): Promise<void> {
+    const generation = persistenceState.persistenceGeneration;
+    const run = persistenceState.operationTail.then(async () => {
+        if (generation !== persistenceState.persistenceGeneration) {
+            return;
+        }
+        await operation({
+            persistCurrentProject: async (expectedRootHeads) => {
+                if (!expectedRootHeads) {
+                    await persistIncrementalCrdtProject(generation);
+                    return;
+                }
+                await automergeRepository.transactSnapshot(async (snapshotTransaction) => {
+                    automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, [DOC_PREFIX_ROOT]);
+                    assertExpectedRootHeads(expectedRootHeads);
+                    await persistIncrementalCrdtProject(generation);
+                    assertExpectedRootHeads(expectedRootHeads);
+                });
+            },
+        });
+    });
+    persistenceState.operationTail = run.then(
+        () => undefined,
+        () => undefined
+    );
+    return run;
+}
+
 /** Serialize persistence operations and reset private lifecycle state. */
 function runCrdtPersistenceOperation(
     operation: CrdtPersistenceOperation,
@@ -857,6 +894,7 @@ function removePendingChunk(pending: PendingIncrementalChunk): void {
 }
 
 export const crdtPersistenceQueueCoordinator = Object.freeze({
+    runBarrier: runCrdtPersistenceBarrier,
     runOperation: runCrdtPersistenceOperation,
     runLoad: runCrdtPersistenceLoad,
 });

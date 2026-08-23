@@ -372,6 +372,19 @@ export function getSettledProjectId(): string | undefined {
     return readSettledProjectId(projectStore.value);
 }
 
+export type SettledProjectIdentity = Readonly<{ projectId: string }>;
+
+/** Capture the complete public identity contract used by foreign modules. */
+export function getSettledProjectIdentity(): SettledProjectIdentity | undefined {
+    return readSettledProjectIdentity(projectStore.value);
+}
+
+/** Read a canonical, migration-settled project identity from an exact snapshot. */
+export function readSettledProjectIdentity(value: unknown): SettledProjectIdentity | undefined {
+    const projectId = readSettledProjectId(value);
+    return projectId ? { projectId } : undefined;
+}
+
 /** Read the same settled identity contract from an exact persisted project-meta snapshot. */
 export function readSettledProjectId(value: unknown): string | undefined {
     if (!is_plain_object(value)) {

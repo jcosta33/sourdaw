@@ -14,7 +14,7 @@ vi.mock('../cancelAgentRun', () => ({
 
 vi.mock('../../stores/pendingActionConfirmationStore', () => ({
     getPendingActionConfirmation: mocks.getPendingActionConfirmation,
-    settlePendingActionResourceLease: mocks.settlePendingActionResourceLease,
+    settlePendingActionResourceLeaseBestEffort: mocks.settlePendingActionResourceLease,
     updatePendingActionConfirmationStatus: mocks.updatePendingActionConfirmationStatus,
 }));
 

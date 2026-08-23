@@ -515,7 +515,7 @@ export async function sendChatMessage(
                         requireProviderProposal: result.executionMode === 'atomic',
                     });
                     if (plannedRun.status === 'needs-user-decision') {
-                        await createStemImportConfirmationResourceLease(result.actions)?.release();
+                        await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
                         agentRunLifecycle.requireManualResume({
                             runId,
                             reason: plannedRun.decision.reason,
@@ -565,7 +565,7 @@ export async function sendChatMessage(
                         plan: plannedRun.plan,
                     });
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                    await createStemImportConfirmationResourceLease(result.actions)?.release();
+                    await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: `Planned without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
@@ -632,7 +632,7 @@ export async function sendChatMessage(
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();
-                    await createStemImportConfirmationResourceLease(result.actions)?.release();
+                    await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
                     agentRunLifecycle.requireManualResume({
                         runId,
                         reason: plannedRun.decision.reason,
@@ -782,7 +782,7 @@ export async function sendChatMessage(
                         throw error;
                     } finally {
                         releasePreviewCancellation();
-                        await resourceLease?.release();
+                        await resourceLease?.releaseBestEffort();
                     }
                     if (preview.status === 'previewed') {
                         preview.resource.release();

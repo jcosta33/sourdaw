@@ -24,6 +24,25 @@ function haveSameStringSet(left: readonly string[], right: readonly string[]): b
 
 async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
     if (nextOwnerId === previousOwnerId) {
+        const database = await records.openDurableAssetDatabase();
+        const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readwrite');
+        const completion = records.awaitTransaction(transaction);
+        const store = transaction.objectStore(OWNER_HANDOFF_STORE);
+        const handoffValue = await records.readStoredValue(store, previousOwnerId);
+        if (handoffValue !== undefined) {
+            if (!records.isOwnerHandoffRecord(handoffValue)) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed', reason: 'corrupt-record' };
+            }
+            if (handoffValue.previousOwnerId !== previousOwnerId || handoffValue.nextOwnerId !== nextOwnerId) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed', reason: 'owner-handoff-conflict' };
+            }
+            store.delete(previousOwnerId);
+        }
+        await completion;
         return { status: 'rebound', previousOwnerId, ownerId: nextOwnerId, reboundHashes: [] };
     }
     const database = await records.openDurableAssetDatabase();
@@ -181,6 +200,10 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                 throw new Error('Collaboration asset owner identity is required');
             }
             if (nextOwnerId === ownerId) {
+                const consumed = await commitOwnerRebind(ownerId, nextOwnerId);
+                if (consumed.status === 'failed') {
+                    return consumed;
+                }
                 return { status: 'prepared' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
             }
             const database = await records.openDurableAssetDatabase();
@@ -218,13 +241,24 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
 
         async resumeOwnerRebinds() {
             const database = await records.openDurableAssetDatabase();
-            const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readonly');
+            const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readwrite');
             const completion = records.awaitTransaction(transaction);
-            const values = await records.readIndexedValues(
-                transaction.objectStore(OWNER_HANDOFF_STORE),
-                OWNER_HANDOFF_TARGET_INDEX,
-                ownerId
-            );
+            const store = transaction.objectStore(OWNER_HANDOFF_STORE);
+            const [values, outgoing] = await Promise.all([
+                records.readIndexedValues(store, OWNER_HANDOFF_TARGET_INDEX, ownerId),
+                records.readStoredValue(store, ownerId),
+            ]);
+            if (outgoing !== undefined && !records.isOwnerHandoffRecord(outgoing)) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed' as const, reason: 'corrupt-record' as const };
+            }
+            // If this is the canonical owner after restart, any handoff sourced
+            // from it never crossed the project-persistence boundary. Retire
+            // that stale prepare record before it can block a later handoff.
+            if (outgoing !== undefined) {
+                store.delete(ownerId);
+            }
             await completion;
             if (values.some((value) => !records.isOwnerHandoffRecord(value))) {
                 return { status: 'failed' as const, reason: 'corrupt-record' as const };

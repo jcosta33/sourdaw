@@ -18,7 +18,7 @@ import {
     waitForCrdtDocumentTransition,
     DOC_PREFIX_ROOT,
 } from '#/modules/CrdtDocument/useCases';
-import { getSettledProjectId } from '#/modules/Project/stores';
+import { getSettledProjectId, getSettledProjectIdentity } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -363,6 +363,16 @@ function setPeerSyncQuarantined(peerId: PeerId, isQuarantined: boolean): void {
  */
 function buildAutomergeSyncHooks(): AutomergeSyncHooks {
     return {
+        captureSyncAcceptance: ({ peerId, docId }) => {
+            const state = collaborationStore.value;
+            const senderIsHost = state?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
+            return {
+                accepted: senderIsHost || docId !== DOC_BRANCHES,
+                senderIsHost,
+                protectedProjectIdentity:
+                    state && docId === DOC_PREFIX_ROOT && !senderIsHost ? getSettledProjectIdentity() : undefined,
+            };
+        },
         canApplySync: (peerId: PeerId, docId: string) => {
             // The host is the session authority: its syncs always apply.
             const senderIsHost =
@@ -390,9 +400,7 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
         },
-        prepareSyncPersistence: ({ peerId, docId, projectId }) => {
-            const senderIsHost =
-                collaborationStore.value?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
+        prepareSyncPersistence: ({ docId, projectId, senderIsHost }) => {
             if (senderIsHost && docId === DOC_PREFIX_ROOT && projectId) {
                 return sessionState.synchronizeAssetOwner?.(projectId);
             }

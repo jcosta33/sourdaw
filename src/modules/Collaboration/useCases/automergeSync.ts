@@ -25,12 +25,13 @@ import {
     hasCrdtDoc,
     getCrdtDocIds,
     persistCrdtProject,
+    runCrdtPersistenceBarrier,
     sanitizeIncomingCrdtDocument,
     waitForCrdtDocumentTransition,
     DOC_PREFIX_ROOT,
     DOC_BRANCHES,
 } from '#/modules/CrdtDocument/useCases';
-import { readSettledProjectId } from '#/modules/Project/stores';
+import { readSettledProjectId, type SettledProjectIdentity } from '#/modules/Project/stores';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
@@ -153,6 +154,12 @@ function touchesActionHistory({ docId, beforeHeads, syncedDoc }: TouchesActionHi
  * collaboration store or permission manager directly.
  */
 export type AutomergeSyncHooks = {
+    /** Bind structural host authority and canonical identity at delivery acceptance time. */
+    captureSyncAcceptance?: (input: { peerId: PeerId; docId: string }) => {
+        accepted: boolean;
+        senderIsHost: boolean;
+        protectedProjectIdentity?: SettledProjectIdentity;
+    };
     /**
      * Gate applied before a received project sync is written into the
      * repository. Return `false` to drop the sync. When omitted, all syncs
@@ -175,6 +182,7 @@ export type AutomergeSyncHooks = {
         docId: string;
         projectId?: string;
         rootHeads: readonly string[];
+        senderIsHost: boolean;
     }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
     /** Called when a prepared side effect fails after document persistence. */
     onPostPersistError?: (error: unknown) => void;
@@ -203,20 +211,21 @@ export type AutomergeSyncHooks = {
     onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
 };
 
-function protectProjectIdentity(document: Doc<unknown>, projectId: string | undefined): Doc<unknown> {
-    if (!projectId) {
+function protectProjectIdentity(document: Doc<unknown>, identity: SettledProjectIdentity | undefined): Doc<unknown> {
+    if (!identity) {
         return document;
     }
     const projectMeta = (document as Doc<Record<string, unknown>>).projectMeta;
-    if (readSettledProjectId(projectMeta) === projectId) {
+    if (readSettledProjectId(projectMeta) === identity.projectId) {
         return document;
     }
     return change(document as Doc<Record<string, unknown>>, 'Preserve host project identity', (draft) => {
         const current = draft.projectMeta;
         if (typeof current === 'object' && current !== null && !Array.isArray(current)) {
-            (current as Record<string, unknown>).projectId = projectId;
+            (current as Record<string, unknown>).projectId = identity.projectId;
+            delete (current as Record<string, unknown>).identityMigrationPending;
         } else {
-            draft.projectMeta = { projectId };
+            draft.projectMeta = { projectId: identity.projectId };
         }
     });
 }
@@ -273,6 +282,7 @@ export class AutomergeSync {
     private sanitationFailures = new Map<string, number>();
     private persistenceTail = Promise.resolve();
     private persistenceBarrierCount = 0;
+    private lifecycleGeneration = 0;
 
     constructor(peerManager: PeerSyncTransport, hooks: AutomergeSyncHooks = {}) {
         this.peerManager = peerManager;
@@ -308,6 +318,7 @@ export class AutomergeSync {
 
     /** Stop syncing and clean up. */
     stop(): void {
+        this.lifecycleGeneration += 1;
         if (this.unsubscribeFromChanges) {
             this.unsubscribeFromChanges();
             this.unsubscribeFromChanges = null;
@@ -399,41 +410,67 @@ export class AutomergeSync {
         docId: string;
         syncMessageBase64: string;
     }): void {
-        if (this.persistenceBarrierCount > 0) {
-            const barrier = this.persistenceTail;
-            void barrier.then(() => {
-                this.receiveSync({ peerId, docId, syncMessageBase64 });
-            });
-            return;
-        }
-        // Only accept syncs for documents this node is willing to host. A
-        // remote peer must not be able to mint arbitrary docs in our
-        // repository (which the next persist would write to IDB).
         if (!isKnownDocId(docId)) {
             logger.warn('[AutomergeSync] Dropping sync for unknown docId from peer', peerId, docId);
             return;
         }
-
-        // A quarantined channel is closed, so drop before any Automerge work
-        // happens. Merging first and rejecting afterwards is what made a
-        // single unsanitizable message cost a merge, a sanitation attempt and
-        // a log line on every exchange for the rest of the session.
         if (this.quarantinedChannels.has(AutomergeSync.channelKey(peerId, docId))) {
             return;
         }
-
-        // Edit boundary: a peer without edit capability (e.g. a viewer) must
-        // not be able to mutate the project via the sync channel.
-        if (this.hooks.canApplySync && !this.hooks.canApplySync(peerId, docId)) {
+        const captured = this.hooks.captureSyncAcceptance?.({ peerId, docId });
+        const accepted = captured?.accepted ?? !(this.hooks.canApplySync && !this.hooks.canApplySync(peerId, docId));
+        if (!accepted) {
             logger.warn('[AutomergeSync] Dropping sync rejected by canApplySync', peerId, docId);
+            return;
+        }
+        this.receiveAcceptedSync({
+            peerId,
+            docId,
+            syncMessageBase64,
+            generation: this.lifecycleGeneration,
+            acceptance: {
+                senderIsHost: captured?.senderIsHost ?? false,
+                protectedProjectIdentity:
+                    captured?.protectedProjectIdentity ??
+                    (docId === DOC_PREFIX_ROOT
+                        ? (() => {
+                              const projectId = this.hooks.getProtectedProjectId?.({ peerId, docId });
+                              return projectId ? { projectId } : undefined;
+                          })()
+                        : undefined),
+            },
+        });
+    }
+
+    private receiveAcceptedSync({
+        peerId,
+        docId,
+        syncMessageBase64,
+        generation,
+        acceptance,
+    }: {
+        peerId: PeerId;
+        docId: string;
+        syncMessageBase64: string;
+        generation: number;
+        acceptance: { senderIsHost: boolean; protectedProjectIdentity?: SettledProjectIdentity };
+    }): void {
+        if (generation !== this.lifecycleGeneration) {
+            return;
+        }
+        if (this.persistenceBarrierCount > 0) {
+            const barrier = this.persistenceTail;
+            void barrier.then(() => {
+                this.receiveAcceptedSync({ peerId, docId, syncMessageBase64, generation, acceptance });
+            });
             return;
         }
 
         const transition = waitForCrdtDocumentTransition(docId);
         if (transition) {
             void transition.then((outcome) => {
-                if (outcome === 'committed') {
-                    this.receiveSync({ peerId, docId, syncMessageBase64 });
+                if (outcome === 'committed' && generation === this.lifecycleGeneration) {
+                    this.receiveAcceptedSync({ peerId, docId, syncMessageBase64, generation, acceptance });
                 }
                 return undefined;
             });
@@ -457,7 +494,7 @@ export class AutomergeSync {
         let newSyncState: SyncState;
         try {
             const syncMessage = base64ToBytes(syncMessageBase64);
-            [newDoc, newSyncState] = receiveSyncMessage(doc, syncState, syncMessage);
+            [newDoc, newSyncState] = receiveSyncMessage(clone(doc), syncState, syncMessage);
         } catch (error) {
             logger.warn('[AutomergeSync] Malformed sync message from peer', peerId, error);
             return;
@@ -491,16 +528,13 @@ export class AutomergeSync {
         }
         sanitized_doc = protectProjectIdentity(
             sanitized_doc,
-            docId === DOC_PREFIX_ROOT ? this.hooks.getProtectedProjectId?.({ peerId, docId }) : undefined
+            docId === DOC_PREFIX_ROOT ? acceptance.protectedProjectIdentity : undefined
         );
 
         // A delivery that sanitizes ends the streak. The bound exists for
         // isolated allocation faults, so faults separated by working traffic
         // must never accumulate into a close.
         this.sanitationFailures.delete(AutomergeSync.channelKey(peerId, docId));
-
-        peerStates.set(docId, newSyncState);
-        this.syncStates.set(peerId, peerStates);
 
         // CC-3 — decide what this sync is allowed to invalidate *before* the
         // repository moves, while `doc` still holds the pre-sync heads.
@@ -510,36 +544,16 @@ export class AutomergeSync {
             syncedDoc: sanitized_doc,
         });
 
-        // Update the document in the repository.
-        // This triggers onChange → hydration. Guard the broadcast so the
-        // resulting change isn't echoed straight back to every peer.
-        this.isApplyingRemoteSync = true;
-        try {
-            replaceCrdtDoc({ id: docId, doc: sanitized_doc });
-        } finally {
-            this.isApplyingRemoteSync = false;
-        }
         const documentChanged = !haveSameHeads(before_heads, getHeads(sanitized_doc));
-        if (documentChanged) {
-            this.hooks.onSyncApplied?.({ peerId, docId });
-        }
         const converged = Boolean(
             newSyncState.theirHeads && haveSameHeads(getHeads(sanitized_doc), newSyncState.theirHeads)
         );
-        if (converged) {
-            this.hooks.onSyncConverged?.({ peerId, docId });
-        }
-
-        // Entry-level invalidation, run against the projected post-sync
-        // history: capabilities whose entry the sync removed or whose metadata
-        // it rewrote are revoked; every untouched entry keeps its replay
-        // authority, so collaborative revert-from-history stays usable during
-        // a live session.
-        if (reconciles_replay_authority) {
-            syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
-        }
-
         if (!documentChanged && this.hooks.prepareSyncPersistence !== undefined) {
+            peerStates.set(docId, newSyncState);
+            this.syncStates.set(peerId, peerStates);
+            if (converged) {
+                this.hooks.onSyncConverged?.({ peerId, docId });
+            }
             return;
         }
 
@@ -550,41 +564,88 @@ export class AutomergeSync {
                 ? readSettledProjectId((sanitized_doc as Doc<Record<string, unknown>>).projectMeta)
                 : undefined;
 
-        // Production root syncs provide the preparation hook. While one of
-        // those exact revisions is being prepared, persisted, and committed,
-        // a later delivery must not replace the repository document it is
-        // bound to. Tests and isolated callers without that cross-store hook
-        // retain the ordinary Automerge synchronous receive contract.
+        const publish = () => {
+            peerStates.set(docId, newSyncState);
+            this.syncStates.set(peerId, peerStates);
+            this.isApplyingRemoteSync = true;
+            try {
+                replaceCrdtDoc({ id: docId, doc: sanitized_doc });
+            } finally {
+                this.isApplyingRemoteSync = false;
+            }
+            if (documentChanged) {
+                this.hooks.onSyncApplied?.({ peerId, docId });
+            }
+            if (converged) {
+                this.hooks.onSyncConverged?.({ peerId, docId });
+            }
+            if (reconciles_replay_authority) {
+                syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
+            }
+        };
+
         const holdsRootPersistenceBarrier =
             docId === DOC_PREFIX_ROOT && this.hooks.prepareSyncPersistence !== undefined;
         if (holdsRootPersistenceBarrier) {
             this.persistenceBarrierCount += 1;
+            let retryAgainstNewerLocalRoot = false;
+            const persistence = runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+                if (generation !== this.lifecycleGeneration) {
+                    return;
+                }
+                let afterPersist: (() => Promise<void>) | undefined;
+                try {
+                    afterPersist = await this.hooks.prepareSyncPersistence?.({
+                        peerId,
+                        docId,
+                        projectId,
+                        rootHeads,
+                        senderIsHost: acceptance.senderIsHost,
+                    });
+                    if (generation !== this.lifecycleGeneration) {
+                        return;
+                    }
+                    const currentHeads = getCrdtDoc(DOC_PREFIX_ROOT);
+                    if (!currentHeads || !haveSameHeads(before_heads, getHeads(currentHeads))) {
+                        retryAgainstNewerLocalRoot = true;
+                        return;
+                    }
+                    publish();
+                    await persistCurrentProject(rootHeads);
+                } catch (error) {
+                    logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
+                    this.hooks.onPersistError?.(error);
+                    return;
+                }
+                if (!afterPersist) {
+                    return;
+                }
+                try {
+                    await afterPersist();
+                } catch (error) {
+                    logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
+                    this.hooks.onPostPersistError?.(error);
+                }
+            });
+            this.persistenceTail = persistence.finally(() => {
+                this.persistenceBarrierCount -= 1;
+                if (retryAgainstNewerLocalRoot && generation === this.lifecycleGeneration) {
+                    this.receiveAcceptedSync({ peerId, docId, syncMessageBase64, generation, acceptance });
+                }
+            });
+            return;
         }
+
+        publish();
         const persistence = this.persistenceTail.then(async () => {
-            let afterPersist: (() => Promise<void>) | undefined;
             try {
-                afterPersist = await this.hooks.prepareSyncPersistence?.({ peerId, docId, projectId, rootHeads });
                 await persistCrdtProject(docId === DOC_PREFIX_ROOT ? rootHeads : undefined);
             } catch (error) {
                 logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
                 this.hooks.onPersistError?.(error);
-                return;
-            }
-            if (!afterPersist) {
-                return;
-            }
-            try {
-                await afterPersist();
-            } catch (error) {
-                logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
-                this.hooks.onPostPersistError?.(error);
             }
         });
-        this.persistenceTail = persistence.finally(() => {
-            if (holdsRootPersistenceBarrier) {
-                this.persistenceBarrierCount -= 1;
-            }
-        });
+        this.persistenceTail = persistence;
     }
 
     /**

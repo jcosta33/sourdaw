@@ -2,7 +2,7 @@ import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 
-import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
+import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
 
 const CLEANUP_OWNER = 'stem-import-preparation';
 const registrations = new Map<string, () => void>();
@@ -26,7 +26,7 @@ function registerPreparedStemImportResources(input: {
             runId: input.runId,
             assetId: stem.audioBufferId,
             cleanupOwner: CLEANUP_OWNER,
-            cleanup: () => discardPreparedStemImportResources([stem]),
+            cleanup: () => preparedStemImportCleanup.discard([stem]),
         });
         registrations.set(key(input.runId, stem.audioBufferId), unregister);
     }

@@ -4,12 +4,14 @@ const mocks = vi.hoisted(() => ({
     assetTransfer: null as null | {
         stageDurableAsset: (file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>;
         stageLocalAsset: (file: File, name: string) => Promise<{ hash: string; leaseId: string }>;
+        releaseDurableStagedAsset: (leaseId: string, hash: string) => Promise<{ status: string; reason?: string }>;
     },
     decodeAudioFile: vi.fn(),
     detectTempo: vi.fn(() => 120),
     pickFiles: vi.fn<() => Promise<File[] | null>>(),
     stageDurableAsset: vi.fn(),
     stageLocalAsset: vi.fn(),
+    releaseDurableStagedAsset: vi.fn().mockResolvedValue({ status: 'released' }),
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
@@ -39,6 +41,7 @@ describe('prepareStemImport budget admission', () => {
         mocks.assetTransfer = {
             stageDurableAsset: mocks.stageDurableAsset,
             stageLocalAsset: mocks.stageLocalAsset,
+            releaseDurableStagedAsset: mocks.releaseDurableStagedAsset,
         };
     });
 
@@ -134,6 +137,25 @@ describe('prepareStemImport budget admission', () => {
         expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
     });
 
+    it('preserves the preparation error while a transient durable cleanup remains retryable', async () => {
+        const files = [new File(['kick'], 'kick.wav'), new File(['snare'], 'snare.wav')];
+        mocks.pickFiles.mockResolvedValue(files);
+        mocks.decodeAudioFile
+            .mockResolvedValueOnce({
+                id: 'buffer-kick.wav',
+                buffer: { duration: 1, length: 48_000, numberOfChannels: 2 },
+            })
+            .mockRejectedValueOnce(new Error('decode primary failure'));
+        mocks.stageDurableAsset.mockResolvedValue({ hash: 'hash-kick.wav', leaseId: 'asset-stage-kick' });
+        mocks.releaseDurableStagedAsset.mockResolvedValueOnce({
+            status: 'failed',
+            reason: 'transaction-aborted',
+        });
+
+        await expect(prepareStemImport(undefined, () => true)).rejects.toThrow('decode primary failure');
+        expect(mocks.releaseDurableStagedAsset).toHaveBeenCalledWith('asset-stage-kick', 'hash-kick.wav');
+    });
+
     it('reopens every prepared lease and hash after the settled-owner transfer is recreated', async () => {
         const files = [new File(['kick'], 'kick.wav'), new File(['snare'], 'snare.wav')];
         const durable = new Map<string, { hash: string; file: File; name: string }>();
@@ -163,6 +185,7 @@ describe('prepareStemImport budget admission', () => {
                           }
                         : { status: 'failed' as const, reason: 'unknown-lease' as const };
                 },
+                releaseDurableStagedAsset: async () => ({ status: 'released' as const }),
             };
         }
         mocks.pickFiles.mockResolvedValue(files);

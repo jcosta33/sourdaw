@@ -27,7 +27,7 @@ import {
     recordPendingActionExecution,
     refreshPendingActionConfirmationApproval,
     replacePendingActionExecutions,
-    settlePendingActionResourceLease,
+    settlePendingActionResourceLeaseBestEffort,
     type PendingActionExecution,
     type PendingAppActionConfirmation,
     updatePendingActionFollowUp,
@@ -83,15 +83,7 @@ async function settlePendingActionResourcesBestEffort(input: {
     confirmationId: string;
     disposition: 'discard' | 'retain';
 }): Promise<void> {
-    try {
-        await settlePendingActionResourceLease(input);
-    } catch (error) {
-        logger.error(
-            new Error('Confirmed AI action resource cleanup failed; the durable lease remains retryable', {
-                cause: error,
-            })
-        );
-    }
+    await settlePendingActionResourceLeaseBestEffort(input);
 }
 
 function getVerifiedReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {

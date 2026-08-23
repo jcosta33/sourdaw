@@ -9,8 +9,10 @@ import { isCanonicalProjectId } from '../../models/ProjectData';
 import {
     defaultProjectStoreState,
     getSettledProjectId,
+    getSettledProjectIdentity,
     projectStore,
     readSettledProjectId,
+    readSettledProjectIdentity,
     type ProjectStoreState,
 } from '../projectStore';
 
@@ -164,6 +166,7 @@ describe('projectStore', () => {
         const settledProjectId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
         projectStore.set({ ...create_default_state(), projectId: settledProjectId, identityMigrationPending: false });
         expect(getSettledProjectId()).toBe(settledProjectId);
+        expect(getSettledProjectIdentity()).toEqual({ projectId: settledProjectId });
 
         projectStore.set({ ...create_default_state(), projectId: 'not-a-uuid', identityMigrationPending: false });
         expect(getSettledProjectId()).toBeUndefined();
@@ -177,6 +180,9 @@ describe('projectStore', () => {
         expect(readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: false })).toBe(
             settledProjectId
         );
+        expect(readSettledProjectIdentity({ projectId: settledProjectId, identityMigrationPending: false })).toEqual({
+            projectId: settledProjectId,
+        });
         expect(readSettledProjectId({ projectId: 'not-a-uuid', identityMigrationPending: false })).toBeUndefined();
         expect(readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: true })).toBeUndefined();
         expect(

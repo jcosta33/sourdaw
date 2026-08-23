@@ -368,6 +368,34 @@ describe('durable asset ownership lifecycle', () => {
         expect(durableAssetIndexedDb.getFullScanCount()).toBe(0);
     });
 
+    it('consumes a stale self-handoff instead of leaving a permanent journal conflict', async () => {
+        const ownerId = 'project:self-handoff';
+        const repository = createDurableAssetRepository(ownerId);
+        await repository.reopenDurableAsset('sha256:initialize-schema');
+        durableAssetIndexedDb.seedOwnerHandoff({ previousOwnerId: ownerId, nextOwnerId: ownerId });
+
+        await expect(repository.prepareOwnerRebind(ownerId)).resolves.toMatchObject({ status: 'prepared' });
+
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+    });
+
+    it('retires an outgoing prepare record when restart confirms the previous owner remained canonical', async () => {
+        const ownerId = 'project:restart-canonical-owner';
+        const repository = createDurableAssetRepository(ownerId);
+        await repository.reopenDurableAsset('sha256:initialize-schema');
+        durableAssetIndexedDb.seedOwnerHandoff({
+            previousOwnerId: ownerId,
+            nextOwnerId: 'project:unpublished-candidate',
+        });
+
+        await expect(repository.resumeOwnerRebinds()).resolves.toMatchObject({ status: 'resumed', ownerId });
+        await expect(repository.prepareOwnerRebind('project:later-authoritative')).resolves.toMatchObject({
+            status: 'prepared',
+        });
+
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+    });
+
     it('reclaims an exact terminal project owner while retaining shared hashes and compacting its leases', async () => {
         const shared = new Blob(['shared-original']);
         const first = createDurableAssetRepository('project:terminal-first');

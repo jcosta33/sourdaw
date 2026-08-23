@@ -466,3 +466,14 @@ export async function settlePendingActionResourceLease(input: SettlePendingActio
     }
     pendingActionResourceLeases.delete(input.confirmationId);
 }
+
+/** Settle without replacing the caller's primary outcome; failed leases stay registered for retry. */
+export async function settlePendingActionResourceLeaseBestEffort(
+    input: SettlePendingActionResourceLeaseInput
+): Promise<void> {
+    try {
+        await settlePendingActionResourceLease(input);
+    } catch (error) {
+        reportResourceReleaseFailure(error);
+    }
+}

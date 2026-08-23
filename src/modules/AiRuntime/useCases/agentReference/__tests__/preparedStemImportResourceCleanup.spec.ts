@@ -19,6 +19,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
 import { createStemImportConfirmationResourceLease } from '../createStemImportConfirmationResourceLease';
+import { preparedStemImportCleanup } from '../discardPreparedStemImportResources';
 import { preparedStemImportResources } from '../registerPreparedStemImportResources';
 
 const stems = [
@@ -88,8 +89,8 @@ describe('prepared stem import resource cleanup', () => {
             { type: 'importStemSet', payload: { stems } },
         ] as never);
 
-        await expect(lease?.release()).rejects.toThrow('transaction-aborted');
-        await expect(lease?.release()).resolves.toBeUndefined();
+        await expect(lease?.release()).rejects.toThrow('cleanup remains pending');
+        await expect(preparedStemImportCleanup.retryPending()).resolves.toBeUndefined();
 
         expect(mocks.releaseDurableStagedAsset).toHaveBeenCalledTimes(2);
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();

@@ -387,6 +387,7 @@ export type FakeDurableAssetIndexedDb = {
     overwriteLeaseHash: (leaseId: string, hash: string) => void;
     overwriteLeaseTerminalAt: (leaseId: string, terminalAt: number) => void;
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
+    seedOwnerHandoff: (input: { previousOwnerId: string; nextOwnerId: string }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
     countRecords: (store: 'assets' | 'leases' | 'ownerHandoffs') => number;
     failNextReadwriteTransactions: (count: number) => void;
@@ -511,6 +512,14 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 hash,
                 state: 'promoted',
                 terminalAt,
+            });
+        },
+        seedOwnerHandoff: ({ previousOwnerId, nextOwnerId }) => {
+            durableStore('ownerHandoffs')?.set(previousOwnerId, {
+                schemaVersion: 1,
+                previousOwnerId,
+                nextOwnerId,
+                preparedAt: Date.now(),
             });
         },
         unlinkLeaseFromAsset: (leaseId, hash) => {

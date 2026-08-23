@@ -5,6 +5,7 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
     settlePendingActionResourceLease,
+    settlePendingActionResourceLeaseBestEffort,
 } from '../pendingActionConfirmationStore';
 
 describe('pendingActionConfirmationStore', () => {
@@ -250,6 +251,36 @@ describe('pendingActionConfirmationStore', () => {
         await expect(
             settlePendingActionResourceLease({
                 confirmationId: 'confirmation-retryable-release',
+                disposition: 'discard',
+            })
+        ).resolves.toBeUndefined();
+        expect(release).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves the primary outcome while a failed best-effort release remains retryable', async () => {
+        const release = vi
+            .fn<() => Promise<void>>()
+            .mockRejectedValueOnce(new Error('durable release interrupted'))
+            .mockResolvedValueOnce(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-best-effort-release',
+            prompt: 'retry cleanup',
+            assistantMessageId: 'message-best-effort-release',
+            actions: [{ type: 'createBus', payload: { name: 'Retry', busId: 'bus-best-effort' } }],
+            actionLabels: ['Retry'],
+            projectRevision: 'revision-best-effort-release',
+            resourceLease: { bytes: 1, release },
+        });
+
+        await expect(
+            settlePendingActionResourceLeaseBestEffort({
+                confirmationId: 'confirmation-best-effort-release',
+                disposition: 'discard',
+            })
+        ).resolves.toBeUndefined();
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-best-effort-release',
                 disposition: 'discard',
             })
         ).resolves.toBeUndefined();

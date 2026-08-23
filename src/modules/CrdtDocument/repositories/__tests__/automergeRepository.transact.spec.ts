@@ -90,6 +90,39 @@ describe('transactSnapshot - explicit mutation ownership', () => {
         expect([...after.keys()]).toEqual(['child-a']);
     });
 
+    it('fences a reserved exact revision while leaving unrelated documents writable', async () => {
+        automergeRepository.createProject('p');
+        automergeRepository.createChildDoc('branch_feature');
+        let releaseTransaction!: () => void;
+        let transactionStarted!: () => void;
+        const started = new Promise<void>((resolve) => {
+            transactionStarted = resolve;
+        });
+        const release = new Promise<void>((resolve) => {
+            releaseTransaction = resolve;
+        });
+        const pending = automergeRepository.transactSnapshot(async (transaction) => {
+            automergeRepository.reserveSnapshotTransactionDocuments(transaction, ['root']);
+            transactionStarted();
+            await release;
+        });
+        await started;
+
+        expect(() =>
+            automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+                document.overlap = true;
+            })
+        ).toThrow('overlaps the active snapshot transaction');
+        expect(() =>
+            automergeRepository.changeDoc('branch_feature', (document: Record<string, unknown>) => {
+                document.allowed = true;
+            })
+        ).not.toThrow();
+
+        releaseTransaction();
+        await pending;
+    });
+
     it('excludes an unrelated mutation while an owned transaction is paused', async () => {
         automergeRepository.createProject('p');
         automergeRepository.createChildDoc('owned');
