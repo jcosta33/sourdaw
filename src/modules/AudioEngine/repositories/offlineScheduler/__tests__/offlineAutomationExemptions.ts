@@ -125,10 +125,11 @@ export const DEVICE_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS: Readonly<Record<string,
 };
 
 /**
- * Factories with no descriptor anywhere in `getBuiltinPlugins()`. This is not an
- * exemption — a device with no descriptor is outside the range law and the
+ * Factories with no descriptor anywhere in `getBuiltinPlugins()`. This is not
+ * an exemption — a device with no descriptor is outside the range law and the
  * automatable law at once, and both of those fail **open**
  * (`DeviceParameterLaw.ts`: an unknown device type is returned unclamped and
- * reported automatable). SPEC-parameter-automation-coverage AC-6 owns it.
+ * reported automatable). Keep the empty population explicit so adding an
+ * undescribed factory turns the census red instead of silently reopening it.
  */
-export const NO_DESCRIPTOR_NATIVE_DEVICE_TYPES: readonly string[] = ['knead'];
+export const NO_DESCRIPTOR_NATIVE_DEVICE_TYPES: readonly string[] = [];

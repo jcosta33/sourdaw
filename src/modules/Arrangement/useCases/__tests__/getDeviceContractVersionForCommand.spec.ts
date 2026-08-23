@@ -22,6 +22,7 @@ describe('getDeviceContractVersionForCommand', () => {
             name: 'Knead',
             format: 'builtin',
             category: 'effect',
+            hasCustomUI: false,
             platform: 'both',
             parameters: [],
         });

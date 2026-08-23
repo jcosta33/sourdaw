@@ -9,7 +9,10 @@ const KNEAD_DESCRIPTOR_DATA: PluginDescriptor = {
     vendor: 'Sourdaw',
     format: 'builtin',
     category: 'effect',
-    hasCustomUI: true,
+    // `hasCustomUI` means a track-device panel opened from the inspector.
+    // Knead's editor is clip-owned and opened from the clip view instead; it
+    // deliberately has no device parameters or track-level panel.
+    hasCustomUI: false,
     platform: 'both',
     // Pitch blobs, retune speed, humanize, and formant preservation belong to
     // each clip's Knead state. They are not device parameters or automation
