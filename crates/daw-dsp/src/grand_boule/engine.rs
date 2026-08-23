@@ -653,23 +653,6 @@ impl GrandBouleEngine {
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
-        self.process_block_inner::<false>(left, right);
-    }
-
-    /// Reference render for the cost-reduction goldens. This keeps the full
-    /// Grand Boule engine path from the released baseline while asking each
-    /// voice to execute its pre-F8/F17 computation. Never call this in
-    /// production.
-    #[doc(hidden)]
-    pub fn process_block_reference(&mut self, left: &mut [f32], right: &mut [f32]) {
-        self.process_block_inner::<true>(left, right);
-    }
-
-    fn process_block_inner<const REFERENCE_RENDER: bool>(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-    ) {
         let frames = left.len().min(right.len());
         // Advance the continuous-CC smoother before the damper coefficients
         // are rebuilt from it, so a block never renders with a pedal position
@@ -691,11 +674,7 @@ impl GrandBouleEngine {
             //    attack if armed.
             let mut bridge = 0.0_f32;
             for voice in self.voices.iter_mut() {
-                let modelled = if REFERENCE_RENDER {
-                    voice.tick_reference_render()
-                } else {
-                    voice.tick()
-                };
+                let modelled = voice.tick();
                 let mixed = if let Some((key, pos, length)) = voice.attack_playhead() {
                     let sample = self.attack_samples.sample(key, pos as usize);
                     let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);
@@ -712,11 +691,7 @@ impl GrandBouleEngine {
                 let tail_index = self.active_steal_tails[tail_position];
                 let tail = &mut self.steal_tails[tail_index];
                 let fade_gain = tail.amplitude();
-                let modelled = if REFERENCE_RENDER {
-                    tail.tick_reference_render()
-                } else {
-                    tail.tick()
-                };
+                let modelled = tail.tick();
                 let mixed = if let Some((key, pos, length)) = tail.attack_playhead() {
                     let sample = self.attack_samples.sample(key, pos as usize);
                     let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);

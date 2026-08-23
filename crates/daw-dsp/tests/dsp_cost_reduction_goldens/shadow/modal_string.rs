@@ -134,6 +134,10 @@ impl ModalString {
         self.active_partials
     }
 
+    pub fn f64_partials(&self) -> usize {
+        self.f64_partials
+    }
+
     /// Configure the bank for a given key.
     ///
     /// This retained scalar API is a compatibility wrapper for existing Rust
@@ -404,7 +408,8 @@ impl ModalString {
         // `configure`, so starting there skips slots that can only ever add
         // zero — up to 8 wasted iterations per unison per polarization.
         let n = self.active_partials;
-        for index in self.f64_partials..n {
+        // Pre-F17 reference: retain the configured zero-coefficient prefix.
+        for index in 0..n {
             let y = self.c0[index] * (input - self.x2[index])
                 + self.c1[index] * self.y1[index]
                 + self.c2[index] * self.y2[index];
@@ -480,51 +485,5 @@ impl ModalString {
 impl Default for ModalString {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_bank_outputs_zero() {
-        let mut string = ModalString::new();
-        assert_eq!(string.tick(1.0), 0.0);
-    }
-
-    #[test]
-    fn configured_bank_rings() {
-        let mut string = ModalString::new();
-        string.configure(440.0, 49, 0.125, 48_000.0, 0.3, 0.0);
-        let first = string.tick(1.0);
-        let mut peak = first.abs();
-        for _ in 0..1_000 {
-            peak = peak.max(string.tick(0.0).abs());
-        }
-        assert!(peak > 0.0);
-    }
-
-    #[test]
-    fn extra_damping_shortens_decay() {
-        let mut quiet_decay = ModalString::new();
-        let mut fast_decay = ModalString::new();
-        quiet_decay.configure(220.0, 25, 0.125, 48_000.0, 0.25, 0.0);
-        fast_decay.configure(220.0, 25, 0.125, 48_000.0, 0.25, 30.0);
-
-        // Measure late-tail energy (skip the attack) so the faster decay
-        // dominates over the C0 gain increase from wider bandwidth.
-        let late_energy = |string: &mut ModalString| -> f32 {
-            string.tick(1.0);
-            for _ in 0..4_000 {
-                let _ = string.tick(0.0);
-            }
-            let mut total = 0.0;
-            for _ in 0..8_000 {
-                total += string.tick(0.0).abs();
-            }
-            total
-        };
-        assert!(late_energy(&mut quiet_decay) > late_energy(&mut fast_decay));
     }
 }

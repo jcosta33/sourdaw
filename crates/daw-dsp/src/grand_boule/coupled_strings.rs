@@ -195,35 +195,16 @@ impl CoupledStringAssembly {
     /// cross-unison feedback.
     #[inline]
     pub fn tick(&mut self, hammer_force: f32) -> f32 {
-        self.tick_inner(hammer_force, false)
-    }
-
-    /// Reference render for the cost-reduction goldens: both polarizations
-    /// run [`ModalString::tick_including_zeroed_prefix`], the pre-F17
-    /// computation. Bit-identical to [`Self::tick`] by contract; never call
-    /// this in production.
-    pub fn tick_including_zeroed_prefix(&mut self, hammer_force: f32) -> f32 {
-        self.tick_inner(hammer_force, true)
-    }
-
-    fn tick_inner(&mut self, hammer_force: f32, reference_render: bool) -> f32 {
         let mut prompt = 0.0_f32;
         let mut aftersound = 0.0_f32;
         let n = self.active_unisons;
         for unison_index in 0..n {
             let unison = &mut self.unisons[unison_index];
-            let v = if reference_render {
-                unison.prompt.tick_including_zeroed_prefix(hammer_force)
-            } else {
-                unison.prompt.tick(hammer_force)
-            };
-            prompt += v;
-            let drive = v * POLARIZATION_TRANSFER_GAIN;
-            aftersound += if reference_render {
-                unison.aftersound.tick_including_zeroed_prefix(drive)
-            } else {
-                unison.aftersound.tick(drive)
-            };
+            let immediate = unison.prompt.tick(hammer_force);
+            prompt += immediate;
+            aftersound += unison
+                .aftersound
+                .tick(immediate * POLARIZATION_TRANSFER_GAIN);
         }
         prompt + AFTERSOUND_MIX * aftersound
     }

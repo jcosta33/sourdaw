@@ -12,7 +12,6 @@ use super::longitudinal::LongitudinalBank;
 use super::parameters::{
     hammer_exponent_p, hammer_mass_kg, hammer_stiffness_k, hammer_strike_ratio, key_fundamental_hz,
 };
-use crate::primitives::flush_denormal;
 
 /// Hammer oversampling factor — 4× keeps the Störmer-Verlet integrator stable
 /// for top-octave keys without being too expensive.
@@ -534,11 +533,6 @@ impl PianoVoice {
         self.retune_strings();
     }
 
-    #[cfg(test)]
-    pub(crate) fn string_modal_coefficient_signature(&self) -> u64 {
-        self.strings.modal_coefficient_signature()
-    }
-
     /// Render one output sample from this voice.
     #[inline]
     pub fn tick(&mut self) -> f32 {
@@ -610,17 +604,8 @@ impl PianoVoice {
         output += transverse + longitudinal + duplex;
         output *= self.amplitude;
 
-        // Follow the voice's own output. `amplitude` is pinned at 1.0 for the
-        // whole `Active` stage, so it says nothing about how loud a held note
-        // still is; this follower does, and it keeps tracking through the
-        // release ramp because `output` already carries `amplitude`.
-        self.decay_envelope = flush_denormal(
-            self.decay_envelope
-                + self.decay_follower_coefficient * (output.abs() - self.decay_envelope),
-        );
-        if self.decay_envelope > self.decay_peak {
-            self.decay_peak = self.decay_envelope;
-        }
+        // Pre-F8 reference: the output follower did not run, so the
+        // demotion checks below continue to observe their reset state.
 
         if self.stage == VoiceStage::Releasing || self.stage == VoiceStage::Stealing {
             self.amplitude *= self.release_coefficient;
@@ -652,94 +637,5 @@ impl PianoVoice {
 
         self.age_samples = self.age_samples.saturating_add(1);
         output
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_new_note_restores_the_configured_quality_after_adaptive_demotion() {
-        let mut voice = PianoVoice::new(48_000.0);
-        voice.set_quality(VoiceQuality::High);
-        voice.quality = VoiceQuality::Simplified;
-
-        voice.note_on(PianoVoiceStart {
-            midi_note: 60,
-            channel: 0,
-            velocity: 0.8,
-            key: 40,
-            pitch_ratio: 1.0,
-            stiffness_scale: 1.0,
-            mass_scale: 1.0,
-            attack_length: 0,
-        });
-
-        assert_eq!(voice.quality(), VoiceQuality::High);
-    }
-
-    /// F8: the downgrade compared against `amplitude`, which is pinned at 1.0
-    /// for the whole `Active` stage, so a held note never gave up the
-    /// expensive hammer no matter how far it had decayed.
-    #[test]
-    fn a_held_voice_downgrades_from_high_as_it_decays() {
-        let mut voice = PianoVoice::new(48_000.0);
-        voice.set_quality(VoiceQuality::High);
-        voice.note_on(PianoVoiceStart {
-            midi_note: 60,
-            channel: 0,
-            velocity: 0.9,
-            key: 40,
-            pitch_ratio: 1.0,
-            stiffness_scale: 1.0,
-            mass_scale: 1.0,
-            attack_length: 0,
-        });
-        assert_eq!(voice.quality(), VoiceQuality::High);
-
-        // One second of a held note. The key is never released, so the voice
-        // stays `Active` and `amplitude` stays pinned at 1.0 throughout.
-        for _ in 0..48_000 {
-            let _ = voice.tick();
-        }
-
-        assert_eq!(
-            voice.stage(),
-            VoiceStage::Active,
-            "the note is still held: this is not a release-ramp downgrade"
-        );
-        assert_eq!(voice.amplitude(), 1.0, "amplitude is pinned during Active");
-        assert_eq!(
-            voice.quality(),
-            VoiceQuality::Standard,
-            "a decayed held voice must give up the Stulov hammer"
-        );
-    }
-
-    /// The same decay must not reach the Simplified tier while the note is
-    /// still sounding: `tick_simplified` drops the aftersound polarization and
-    /// every unison but the first, which is an audible cliff rather than a
-    /// transparent simplification.
-    #[test]
-    fn a_held_voice_never_reaches_the_simplified_tier() {
-        let mut voice = PianoVoice::new(48_000.0);
-        voice.note_on(PianoVoiceStart {
-            midi_note: 69,
-            channel: 0,
-            velocity: 0.8,
-            key: 49,
-            pitch_ratio: 1.0,
-            stiffness_scale: 1.0,
-            mass_scale: 1.0,
-            attack_length: 0,
-        });
-
-        for _ in 0..(48_000 * 5) {
-            let _ = voice.tick();
-        }
-
-        assert_eq!(voice.stage(), VoiceStage::Active);
-        assert_eq!(voice.quality(), VoiceQuality::Standard);
     }
 }
