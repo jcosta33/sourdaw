@@ -942,7 +942,7 @@ describe('shared vocal FX buses workflow', () => {
         clearPendingActionConfirmations();
         setArrangementEventBus({
             emit: (event, payload) => {
-                if (event === 'track.added' && 'trackId' in payload) {
+                if (event === 'track.added' && 'trackId' in payload && typeof payload.trackId === 'string') {
                     if ('kind' in payload && payload.kind === 'bus') {
                         ensureBusStrip(payload.trackId);
                     } else {
