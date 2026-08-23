@@ -785,6 +785,25 @@ describe('AssetTransfer', () => {
         dispose();
     });
 
+    it('preserves the two-argument live-session stage, promote, and release contract', async () => {
+        const stagedForRelease = await transfer.stageLocalAsset(new Blob(['session-release']), 'session-release.wav');
+        expect(transfer.hasAsset(stagedForRelease.hash)).toBe(true);
+        transfer.releaseStagedAsset(stagedForRelease.leaseId);
+        expect(transfer.hasAsset(stagedForRelease.hash)).toBe(false);
+
+        const stagedForCommit = await transfer.stageLocalAsset(new Blob(['session-commit']), 'session-commit.wav');
+        transfer.promoteStagedAsset(stagedForCommit.leaseId);
+        transfer.releaseStagedAsset(stagedForCommit.leaseId);
+        expect(transfer.hasAsset(stagedForCommit.hash)).toBe(true);
+
+        await transfer.handleMessage('requester', {
+            type: 'crdt-sync',
+            docId: DOC_ID_ASSET,
+            data: JSON.stringify({ type: 'asset.request', hash: stagedForCommit.hash, missingChunks: [] }),
+        });
+        expect(peer.sendCrdtSync).toHaveBeenCalledWith(expect.objectContaining({ peerId: 'requester' }));
+    });
+
     it('dispose clears armed stall timers so a discarded session reports nothing', async () => {
         vi.useFakeTimers();
         transfer.requestAsset(HASH);
@@ -812,9 +831,9 @@ describe('AssetTransfer', () => {
             stageAsset,
         });
 
-        const first = disposable.stageLocalAsset(new Blob(['first']), 'first.wav', 'lease-first');
+        const first = disposable.stageDurableAsset(new Blob(['first']), 'first.wav', 'lease-first');
         await firstStarted.promise;
-        const queued = disposable.stageLocalAsset(new Blob(['queued']), 'queued.wav', 'lease-queued');
+        const queued = disposable.stageDurableAsset(new Blob(['queued']), 'queued.wav', 'lease-queued');
         disposable.dispose();
         allowFirst.resolve();
 
@@ -836,7 +855,7 @@ describe('AssetTransfer', () => {
             },
         });
 
-        const write = disposable.stageLocalAsset(new Blob(['in-flight']), 'in-flight.wav', 'lease-in-flight');
+        const write = disposable.stageDurableAsset(new Blob(['in-flight']), 'in-flight.wav', 'lease-in-flight');
         await writeStarted.promise;
         disposable.dispose();
         allowWrite.resolve();

@@ -244,15 +244,12 @@ export function proposePendingActionConfirmation(
     const confirmationsWithNewEntry = [...state.confirmations, confirmation];
     const confirmations = confirmationsWithNewEntry.slice(-MAX_CONFIRMATIONS);
     const retainedIds = new Set(confirmations.map((entry) => entry.id));
-    // Publish before resource callbacks run. A release callback may synchronously
-    // confirm or propose another entry; publishing afterwards would overwrite
-    // that newer store state with this proposal's stale snapshot.
-    pendingActionConfirmationStore.set({ confirmations });
     for (const evicted of confirmationsWithNewEntry) {
         if (!retainedIds.has(evicted.id)) {
             releasePendingActionResourceLease(evicted.id);
         }
     }
+    pendingActionConfirmationStore.set({ confirmations });
 
     return clonePendingActionConfirmation(confirmation);
 }

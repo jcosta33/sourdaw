@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     releasePreviewAudioBuffer: vi.fn(),
+    releaseStagedAsset: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
+}));
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    getAssetTransfer: () => ({ releaseStagedAsset: mocks.releaseStagedAsset }),
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
@@ -15,6 +19,7 @@ import { preparedStemImportResources } from '../registerPreparedStemImportResour
 const stems = [
     {
         audioBufferId: 'decoded-buffer-1',
+        assetLeaseId: 'staged-asset-1',
     },
 ] as never;
 
@@ -24,7 +29,7 @@ describe('prepared stem import resource cleanup', () => {
         vi.clearAllMocks();
     });
 
-    it('deletes decoded audio after Collaboration transport teardown before metadata removal', async () => {
+    it('deletes decoded audio and staged assets through the registered production owner before metadata removal', async () => {
         agentRunLifecycle.create({
             runId: 'stem-delete',
             request: 'Import stems.',
@@ -39,6 +44,7 @@ describe('prepared stem import resource cleanup', () => {
             failedAssetIds: [],
         });
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
         expect(agentRunLifecycle.get('stem-delete')?.temporaryAssets).toEqual([]);
     });
 
@@ -59,6 +65,7 @@ describe('prepared stem import resource cleanup', () => {
             failedAssetIds: [],
         });
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
     });
 });

@@ -165,6 +165,13 @@ export type AutomergeSyncHooks = {
     onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
     /** Called once the installed document heads equal the heads advertised by this peer. */
     onSyncConverged?: (input: { peerId: PeerId; docId: string }) => void;
+    /** Prepare durable side effects before this converged document is persisted. */
+    prepareSyncPersistence?: (input: {
+        peerId: PeerId;
+        docId: string;
+    }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
+    /** Called when a prepared side effect fails after document persistence. */
+    onPostPersistError?: (error: unknown) => void;
     /** Called when an async persist after a received sync fails. */
     onPersistError?: (error: unknown) => void;
     /**
@@ -240,6 +247,7 @@ export class AutomergeSync {
      * deletes it, so faults separated by successful traffic never add up.
      */
     private sanitationFailures = new Map<string, number>();
+    private persistenceTail = Promise.resolve();
 
     constructor(peerManager: PeerSyncTransport, hooks: AutomergeSyncHooks = {}) {
         this.peerManager = peerManager;
@@ -283,6 +291,11 @@ export class AutomergeSync {
         this.sendQueues.clear();
         this.quarantinedChannels.clear();
         this.sanitationFailures.clear();
+    }
+
+    /** Wait for every received document persistence and prepared post-persist handoff. */
+    flushPersistence(): Promise<void> {
+        return this.persistenceTail;
     }
 
     private static channelKey(peerId: PeerId, docId: string): string {
@@ -466,7 +479,10 @@ export class AutomergeSync {
         if (!haveSameHeads(before_heads, getHeads(sanitized_doc))) {
             this.hooks.onSyncApplied?.({ peerId, docId });
         }
-        if (newSyncState.theirHeads && haveSameHeads(getHeads(sanitized_doc), newSyncState.theirHeads)) {
+        const converged = Boolean(
+            newSyncState.theirHeads && haveSameHeads(getHeads(sanitized_doc), newSyncState.theirHeads)
+        );
+        if (converged) {
             this.hooks.onSyncConverged?.({ peerId, docId });
         }
 
@@ -479,10 +495,28 @@ export class AutomergeSync {
             syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
         }
 
-        // Persist asynchronously — don't block the sync loop.
-        persistCrdtProject().catch((error) => {
-            logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
-            this.hooks.onPersistError?.(error);
+        // Persist asynchronously and in receive order. A converged root may
+        // prepare a cross-store handoff before save and complete it only after
+        // the exact persisted document is durable.
+        this.persistenceTail = this.persistenceTail.then(async () => {
+            let afterPersist: (() => Promise<void>) | undefined;
+            try {
+                afterPersist = converged ? await this.hooks.prepareSyncPersistence?.({ peerId, docId }) : undefined;
+                await persistCrdtProject();
+            } catch (error) {
+                logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
+                this.hooks.onPersistError?.(error);
+                return;
+            }
+            if (!afterPersist) {
+                return;
+            }
+            try {
+                await afterPersist();
+            } catch (error) {
+                logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
+                this.hooks.onPostPersistError?.(error);
+            }
         });
     }
 

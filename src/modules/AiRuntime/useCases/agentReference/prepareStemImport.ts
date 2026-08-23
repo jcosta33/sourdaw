@@ -1,5 +1,6 @@
 import { detectTempo } from '#/modules/AudioAnalysis/useCases';
 import { decodeAudioFile, releasePreviewAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { pickFiles } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { type StemImportRole } from '#/utils/handlerContract';
@@ -86,6 +87,8 @@ export async function prepareStemImport(
         sourceBytes: number;
         decodedBytes: number;
         audioBufferId: string;
+        assetHash?: string;
+        assetLeaseId?: string;
     }> = [];
     let totalDecodedBytes = 0;
     let totalDurationSeconds = 0;
@@ -133,6 +136,13 @@ export async function prepareStemImport(
                 audioBufferId: decoded.id,
             };
             prepared.push(pendingStem);
+            const stagedAsset = await getAssetTransfer()?.stageLocalAsset(file, file.name);
+            if (stagedAsset) {
+                Object.assign(pendingStem, {
+                    assetHash: stagedAsset.hash,
+                    assetLeaseId: stagedAsset.leaseId,
+                });
+            }
             throwIfAborted(signal);
         }
     } catch (error) {

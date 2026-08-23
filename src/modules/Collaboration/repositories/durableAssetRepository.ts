@@ -1,3 +1,4 @@
+import { createDurableAssetOwnerHandoffLifecycle } from './durableAssetOwnerHandoffLifecycle';
 import { createDurableAssetOwnershipLifecycle } from './durableAssetOwnershipLifecycle';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
 import { type DurableAssetRepository } from './durableAssetRepositoryContract';
@@ -8,6 +9,7 @@ export type {
     DurableAssetFailure,
     DurableAssetRepository,
     PromoteStagedAssetResult,
+    PrepareDurableAssetOwnerHandoffResult,
     RebindDurableAssetOwnerResult,
     ReleaseDurableAssetOwnerResult,
     ReleaseOwnedAssetResult,
@@ -15,6 +17,7 @@ export type {
     ReleaseStagedAssetsResult,
     ReopenDurableAssetResult,
     ReopenStagedAssetResult,
+    ResumeDurableAssetOwnerHandoffsResult,
     StagedAssetBinding,
 } from './durableAssetRepositoryContract';
 
@@ -28,6 +31,7 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
     return {
         ...createDurableAssetStageLifecycle(ownerId),
         ...createDurableAssetOwnershipLifecycle(ownerId),
+        ...createDurableAssetOwnerHandoffLifecycle(ownerId),
         subscribeInvalidation: records.subscribeInvalidation,
     };
 }

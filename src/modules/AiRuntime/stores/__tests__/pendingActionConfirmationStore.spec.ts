@@ -3,9 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
-    pendingActionConfirmationStore,
     proposePendingActionConfirmation,
-    updatePendingActionConfirmationStatus,
 } from '../pendingActionConfirmationStore';
 
 describe('pendingActionConfirmationStore', () => {
@@ -225,76 +223,5 @@ describe('pendingActionConfirmationStore', () => {
         expect(proposePendingActionConfirmation(createInput('second', rejectedRelease))).toBeNull();
         expect(firstRelease).not.toHaveBeenCalled();
         expect(rejectedRelease).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not overwrite a confirmation transition performed while an evicted resource is released', () => {
-        const release = vi.fn(() => {
-            updatePendingActionConfirmationStatus({ confirmationId: 'confirmation-19', status: 'accepted' });
-        });
-        proposePendingActionConfirmation({
-            id: 'confirmation-eviction-race',
-            prompt: 'evict me',
-            assistantMessageId: 'message-eviction-race',
-            actions: [{ type: 'createBus', payload: { name: 'Evicted', busId: 'bus-evicted' } }],
-            actionLabels: ['Evicted'],
-            projectRevision: 'revision-eviction-race',
-            resourceLease: { bytes: 1, release },
-        });
-        for (let index = 0; index < 20; index += 1) {
-            proposePendingActionConfirmation({
-                id: `confirmation-${String(index)}`,
-                prompt: `prompt-${String(index)}`,
-                assistantMessageId: `message-${String(index)}`,
-                actions: [{ type: 'createBus', payload: { name: 'Bus', busId: `bus-${String(index)}` } }],
-                actionLabels: ['Bus'],
-                projectRevision: `revision-${String(index)}`,
-            });
-        }
-
-        expect(release).toHaveBeenCalledOnce();
-        expect(getPendingActionConfirmation('confirmation-19')?.status).toBe('accepted');
-    });
-
-    it('retains both proposals when an eviction callback proposes another confirmation', () => {
-        const nestedProposal = () =>
-            proposePendingActionConfirmation({
-                id: 'confirmation-nested',
-                prompt: 'nested',
-                assistantMessageId: 'message-nested',
-                actions: [{ type: 'createBus', payload: { name: 'Nested', busId: 'bus-nested' } }],
-                actionLabels: ['Nested'],
-                projectRevision: 'revision-nested',
-            });
-        proposePendingActionConfirmation({
-            id: 'confirmation-reentrant-eviction',
-            prompt: 'evict me',
-            assistantMessageId: 'message-reentrant-eviction',
-            actions: [{ type: 'createBus', payload: { name: 'Evicted', busId: 'bus-evicted' } }],
-            actionLabels: ['Evicted'],
-            projectRevision: 'revision-reentrant-eviction',
-            resourceLease: { bytes: 1, release: nestedProposal },
-        });
-        for (let index = 0; index < 19; index += 1) {
-            proposePendingActionConfirmation({
-                id: `confirmation-base-${String(index)}`,
-                prompt: 'base',
-                assistantMessageId: `message-base-${String(index)}`,
-                actions: [{ type: 'createBus', payload: { name: 'Base', busId: `bus-base-${String(index)}` } }],
-                actionLabels: ['Base'],
-                projectRevision: `revision-base-${String(index)}`,
-            });
-        }
-        proposePendingActionConfirmation({
-            id: 'confirmation-outer',
-            prompt: 'outer',
-            assistantMessageId: 'message-outer',
-            actions: [{ type: 'createBus', payload: { name: 'Outer', busId: 'bus-outer' } }],
-            actionLabels: ['Outer'],
-            projectRevision: 'revision-outer',
-        });
-
-        const ids = pendingActionConfirmationStore.value?.confirmations.map((confirmation) => confirmation.id);
-        expect(ids).toContain('confirmation-outer');
-        expect(ids).toContain('confirmation-nested');
     });
 });

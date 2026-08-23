@@ -23,6 +23,7 @@ import {
     sanitizeIncomingCrdtDocument,
     hasCrdtDoc,
     getCrdtDocIds,
+    persistCrdtProject,
 } from '#/modules/CrdtDocument/useCases';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
@@ -140,6 +141,7 @@ describe('AutomergeSync', () => {
         vi.mocked(removeCrdtDoc).mockReset();
         vi.mocked(hasCrdtDoc).mockReset().mockReturnValue(false);
         vi.mocked(getCrdtDocIds).mockReset().mockReturnValue([]);
+        vi.mocked(persistCrdtProject).mockReset().mockResolvedValue(undefined);
     });
 
     it('subscribes to CRDT changes on start using injected dependencies', () => {
@@ -218,6 +220,75 @@ describe('AutomergeSync', () => {
         }
     );
 
+    it('journals a converged owner handoff before persistence and commits it afterward', async () => {
+        const order: string[] = [];
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            order.push('persist-project');
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                order.push('prepare-handoff');
+                return async () => {
+                    order.push('commit-handoff');
+                };
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectId = 'project:host-authoritative';
+            draft.peerProbe = 'host-root-advanced';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        expect(order.slice(-3)).toEqual(['prepare-handoff', 'persist-project', 'commit-handoff']);
+    });
+
+    it('retains a prepared handoff when project persistence fails before commit', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        let handoffPrepared = false;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            if (handoffPrepared) {
+                throw new Error('persistence interrupted');
+            }
+        });
+        const commitHandoff = vi.fn<() => Promise<void>>();
+        const onPersistError = vi.fn();
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                handoffPrepared = true;
+                return commitHandoff;
+            },
+            onPersistError,
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectId = 'project:host-authoritative';
+            draft.peerProbe = 'host-root-advanced';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        expect(handoffPrepared).toBe(true);
+        expect(onPersistError).toHaveBeenCalledExactlyOnceWith(expect.any(Error));
+        expect(commitHandoff).not.toHaveBeenCalled();
+    });
+
     it('defers an incoming branch-document sync until its owning transition releases the document', async () => {
         let releaseTransition: ((outcome: 'aborted' | 'committed') => void) | undefined;
         const transition = new Promise<'aborted' | 'committed'>((resolve) => {
@@ -272,6 +343,7 @@ describe('AutomergeSync', () => {
         const sync = new AutomergeSync(makePeerManager());
 
         sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: makeRealSyncMessage() });
+        await sync.flushPersistence();
 
         expect(sanitizeIncomingCrdtDocument).toHaveBeenCalledTimes(1);
         expect(replaceCrdtDoc).toHaveBeenCalledWith({ id: doc_id, doc: sanitized_document });
@@ -1017,9 +1089,7 @@ describe('AutomergeSync', () => {
         const sync = new AutomergeSync(makePeerManager(), { onPersistError });
 
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
-        // Let the rejected persist promise settle.
-        await Promise.resolve();
-        await Promise.resolve();
+        await sync.flushPersistence();
 
         expect(onPersistError).toHaveBeenCalled();
     });

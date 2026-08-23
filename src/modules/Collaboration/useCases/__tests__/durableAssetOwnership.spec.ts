@@ -44,84 +44,88 @@ describe('durable asset ownership lifecycle', () => {
     });
 
     it('does not delete a committed duplicate when an earlier staging owner is cancelled', async () => {
-        const first = await transfer.stageLocalAsset(new Blob(['same-content']), 'first.wav', 'asset-stage-same-first');
-        const second = await transfer.stageLocalAsset(
+        const first = await transfer.stageDurableAsset(
+            new Blob(['same-content']),
+            'first.wav',
+            'asset-stage-same-first'
+        );
+        const second = await transfer.stageDurableAsset(
             new Blob(['same-content']),
             'second.wav',
             'asset-stage-same-second'
         );
         expect(second.hash).toBe(first.hash);
 
-        await transfer.promoteStagedAsset(second.leaseId, second.hash);
-        await transfer.releaseStagedAsset(first.leaseId, first.hash);
+        await transfer.promoteDurableStagedAsset(second.leaseId, second.hash);
+        await transfer.releaseDurableStagedAsset(first.leaseId, first.hash);
 
         expect(transfer.hasAsset(second.hash)).toBe(true);
     });
 
     it('fails closed for unknown, mismatched, and missing durable lease bindings', async () => {
-        const staged = await transfer.stageLocalAsset(new Blob(['bound-original']), 'bound.wav', 'asset-stage-bound');
+        const staged = await transfer.stageDurableAsset(new Blob(['bound-original']), 'bound.wav', 'asset-stage-bound');
 
-        await expect(transfer.reopenStagedAsset(staged.leaseId, 'sha256:not-the-staged-hash')).resolves.toEqual({
+        await expect(transfer.reopenDurableStagedAsset(staged.leaseId, 'sha256:not-the-staged-hash')).resolves.toEqual({
             status: 'failed',
             reason: 'lease-hash-mismatch',
         });
-        await expect(transfer.promoteStagedAsset('asset-stage-unknown', staged.hash)).resolves.toEqual({
+        await expect(transfer.promoteDurableStagedAsset('asset-stage-unknown', staged.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'unknown-lease',
         });
-        await expect(transfer.releaseStagedAsset('asset-stage-unknown', staged.hash)).resolves.toEqual({
+        await expect(transfer.releaseDurableStagedAsset('asset-stage-unknown', staged.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'unknown-lease',
         });
 
         durableAssetIndexedDb.deleteAsset(staged.hash);
-        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+        await expect(transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'missing-asset',
         });
 
-        const corrupted = await transfer.stageLocalAsset(
+        const corrupted = await transfer.stageDurableAsset(
             new Blob(['corrupt-binding']),
             'corrupt.wav',
             'asset-stage-corrupt-binding'
         );
         durableAssetIndexedDb.overwriteLeaseHash(corrupted.leaseId, 'sha256:different-record');
-        await expect(transfer.reopenStagedAsset(corrupted.leaseId, corrupted.hash)).resolves.toEqual({
+        await expect(transfer.reopenDurableStagedAsset(corrupted.leaseId, corrupted.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'lease-hash-mismatch',
         });
 
-        const unbound = await transfer.stageLocalAsset(
+        const unbound = await transfer.stageDurableAsset(
             new Blob(['missing-backlink']),
             'unbound.wav',
             'asset-stage-unbound'
         );
         durableAssetIndexedDb.unlinkLeaseFromAsset(unbound.leaseId, unbound.hash);
-        await expect(transfer.releaseStagedAsset(unbound.leaseId, unbound.hash)).resolves.toEqual({
+        await expect(transfer.releaseDurableStagedAsset(unbound.leaseId, unbound.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'corrupt-record',
         });
 
-        const tampered = await transfer.stageLocalAsset(
+        const tampered = await transfer.stageDurableAsset(
             new Blob(['verified-bytes']),
             'tampered.wav',
             'asset-stage-tampered'
         );
         durableAssetIndexedDb.overwriteAssetBlob(tampered.hash, new Blob(['different-bytes']));
-        await expect(transfer.reopenStagedAsset(tampered.leaseId, tampered.hash)).resolves.toEqual({
+        await expect(transfer.reopenDurableStagedAsset(tampered.leaseId, tampered.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'stored-hash-mismatch',
         });
     });
 
     it('keeps promoted original bytes after session teardown and owner recreation', async () => {
-        const staged = await transfer.stageLocalAsset(
+        const staged = await transfer.stageDurableAsset(
             new Blob(['project-owned']),
             'project.wav',
             'asset-stage-project-owned'
         );
 
-        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+        await expect(transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
             status: 'promoted',
             hash: staged.hash,
         });
@@ -134,7 +138,7 @@ describe('durable asset ownership lifecycle', () => {
             TEST_OWNER
         );
 
-        const reopened = await freshTransfer.reopenLocalAsset(staged.hash);
+        const reopened = await freshTransfer.reopenDurableAsset(staged.hash);
         expect(reopened).toMatchObject({ status: 'opened', hash: staged.hash, name: 'project.wav' });
         expect(reopened.status === 'opened' ? await reopened.blob.text() : null).toBe('project-owned');
         freshTransfer.dispose();
@@ -142,8 +146,8 @@ describe('durable asset ownership lifecycle', () => {
 
     it('serves a project-owned original after recreation without manual cache priming', async () => {
         const blob = new Blob(['restart-serve-original'], { type: 'audio/wav' });
-        const staged = await transfer.stageLocalAsset(blob, 'restart-serve.wav', 'lease-restart-serve');
-        await transfer.promoteStagedAsset(staged.leaseId, staged.hash);
+        const staged = await transfer.stageDurableAsset(blob, 'restart-serve.wav', 'lease-restart-serve');
+        await transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash);
         const hash = staged.hash;
         transfer.dispose();
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
@@ -167,77 +171,105 @@ describe('durable asset ownership lifecycle', () => {
         const provisionalOwner = 'collaboration-join:attempt-1';
         const hostOwner = 'project:host-authoritative';
         const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
-        const staged = await joining.stageLocalAsset(
+        const staged = await joining.stageDurableAsset(
             new Blob(['host-bound-original'], { type: 'audio/wav' }),
             'host-bound.wav',
             'asset-stage-host-bound'
         );
 
-        await joining.rebindOwner(hostOwner);
+        await joining.prepareDurableOwnerRebind(hostOwner);
+        await joining.commitDurableOwnerRebind(hostOwner);
         joining.dispose();
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, hostOwner);
 
-        await expect(recreated.reopenStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
             status: 'opened',
             hash: staged.hash,
         });
         recreated.dispose();
     });
 
+    it('resumes a prepared owner handoff after restart before reopening its exact lease', async () => {
+        const provisionalOwner = 'collaboration-join:crash-before-handoff-commit';
+        const projectOwner = 'project:restart-authoritative';
+        const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
+        const staged = await joining.stageDurableAsset(
+            new Blob(['restart-handoff-original']),
+            'restart-handoff.wav',
+            'asset-stage-restart-handoff'
+        );
+        await expect(joining.prepareDurableOwnerRebind(projectOwner)).resolves.toMatchObject({
+            status: 'prepared',
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+        joining.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        await expect(
+            createDurableAssetRepository(provisionalOwner).reopenStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toEqual({ status: 'failed', reason: 'lease-owner-mismatch' });
+        recreated.dispose();
+    });
+
     it('releases exactly once and deletes only uncommitted unshared bytes', async () => {
-        const first = await transfer.stageLocalAsset(
+        const first = await transfer.stageDurableAsset(
             new Blob(['shared-staging']),
             'first.wav',
             'asset-stage-shared-first'
         );
-        const second = await transfer.stageLocalAsset(
+        const second = await transfer.stageDurableAsset(
             new Blob(['shared-staging']),
             'second.wav',
             'asset-stage-shared-second'
         );
 
-        await expect(transfer.releaseStagedAsset(first.leaseId, first.hash)).resolves.toMatchObject({
+        await expect(transfer.releaseDurableStagedAsset(first.leaseId, first.hash)).resolves.toMatchObject({
             status: 'released',
             assetRemoved: false,
         });
-        await expect(transfer.reopenStagedAsset(second.leaseId, second.hash)).resolves.toMatchObject({
+        await expect(transfer.reopenDurableStagedAsset(second.leaseId, second.hash)).resolves.toMatchObject({
             status: 'opened',
         });
-        await expect(transfer.releaseStagedAsset(second.leaseId, second.hash)).resolves.toMatchObject({
+        await expect(transfer.releaseDurableStagedAsset(second.leaseId, second.hash)).resolves.toMatchObject({
             status: 'released',
             assetRemoved: true,
         });
-        await expect(transfer.releaseStagedAsset(second.leaseId, second.hash)).resolves.toEqual({
+        await expect(transfer.releaseDurableStagedAsset(second.leaseId, second.hash)).resolves.toEqual({
             status: 'already-released',
             leaseId: second.leaseId,
             hash: second.hash,
             assetRemoved: true,
             ownerRetained: false,
         });
-        await expect(transfer.reopenStagedAsset(second.leaseId, second.hash)).resolves.toEqual({
+        await expect(transfer.reopenDurableStagedAsset(second.leaseId, second.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'lease-terminal-conflict',
         });
     });
 
     it('promotes exactly once without letting release undo committed ownership', async () => {
-        const staged = await transfer.stageLocalAsset(
+        const staged = await transfer.stageDurableAsset(
             new Blob(['commit-once']),
             'committed.wav',
             'asset-stage-commit-once'
         );
 
-        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+        await expect(transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
             status: 'promoted',
         });
-        await expect(transfer.promoteStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+        await expect(transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
             status: 'already-promoted',
         });
-        await expect(transfer.releaseStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+        await expect(transfer.releaseDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'lease-terminal-conflict',
         });
-        await expect(transfer.reopenLocalAsset(staged.hash)).resolves.toMatchObject({ status: 'opened' });
+        await expect(transfer.reopenDurableAsset(staged.hash)).resolves.toMatchObject({ status: 'opened' });
     });
 
     it('makes concurrent promotion from two repository owners transactionally idempotent', async () => {
@@ -276,7 +308,12 @@ describe('durable asset ownership lifecycle', () => {
         await expect(repository.releaseStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
             status: 'released',
         });
-        await expect(repository.rebindOwner('project:bounded-next')).resolves.toMatchObject({ status: 'rebound' });
+        await expect(repository.prepareOwnerRebind('project:bounded-next')).resolves.toMatchObject({
+            status: 'prepared',
+        });
+        await expect(repository.commitOwnerRebind('project:bounded-next')).resolves.toMatchObject({
+            status: 'rebound',
+        });
 
         expect(durableAssetIndexedDb.getFullScanCount()).toBe(0);
     });

@@ -11,7 +11,8 @@ export type DurableAssetFailure = {
         | 'stored-hash-mismatch'
         | 'corrupt-record'
         | 'lease-terminal-conflict'
-        | 'asset-not-owned';
+        | 'asset-not-owned'
+        | 'owner-handoff-conflict';
 };
 export type ReopenStagedAssetResult =
     | ({ status: 'opened'; leaseId: string; leaseState: Exclude<LeaseState, 'released'> } & DurableAsset)
@@ -34,6 +35,10 @@ export type ReleaseStagedAssetsResult = { status: 'released'; releases: Released
 export type ReleaseOwnedAssetResult = { status: 'released'; hash: string; assetRemoved: boolean } | DurableAssetFailure;
 export type RebindDurableAssetOwnerResult =
     { status: 'rebound'; previousOwnerId: string; ownerId: string; reboundHashes: string[] } | DurableAssetFailure;
+export type PrepareDurableAssetOwnerHandoffResult =
+    { status: 'prepared'; previousOwnerId: string; ownerId: string } | DurableAssetFailure;
+export type ResumeDurableAssetOwnerHandoffsResult =
+    { status: 'resumed'; ownerId: string; handoffCount: number; reboundHashes: string[] } | DurableAssetFailure;
 export type ReleaseDurableAssetOwnerResult = {
     status: 'released';
     ownerId: string;
@@ -53,6 +58,8 @@ export type DurableAssetRepository = {
     releaseStagedAssets: (bindings: readonly StagedAssetBinding[]) => Promise<ReleaseStagedAssetsResult>;
     releaseOwnedAsset: (hash: string) => Promise<ReleaseOwnedAssetResult>;
     releaseOwner: () => Promise<ReleaseDurableAssetOwnerResult>;
-    rebindOwner: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
+    prepareOwnerRebind: (nextOwnerId: string) => Promise<PrepareDurableAssetOwnerHandoffResult>;
+    commitOwnerRebind: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
+    resumeOwnerRebinds: () => Promise<ResumeDurableAssetOwnerHandoffsResult>;
     subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };

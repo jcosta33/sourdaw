@@ -133,7 +133,12 @@ class FakeObjectStore {
 
     put(value: StoredRecord): FakeRequest<IDBValidKey> {
         this.transaction.assertWritable();
-        const key = this.storeName === 'leases' ? value.leaseId : value.hash;
+        let key = value.hash;
+        if (this.storeName === 'leases') {
+            key = value.leaseId;
+        } else if (this.storeName === 'ownerHandoffs') {
+            key = value.previousOwnerId;
+        }
         if (typeof key !== 'string') {
             throw new DOMException('The record has no supported key', 'DataError');
         }
@@ -169,7 +174,7 @@ export type FakeDurableAssetIndexedDb = {
     overwriteLeaseTerminalAt: (leaseId: string, terminalAt: number) => void;
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
-    countRecords: (store: 'assets' | 'leases') => number;
+    countRecords: (store: 'assets' | 'leases' | 'ownerHandoffs') => number;
     getFullScanCount: () => number;
 };
 

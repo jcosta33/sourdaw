@@ -82,7 +82,7 @@ const sessionState: {
      * the store's error text.
      */
     sessionEndedByHostDeparture: boolean;
-    synchronizeAssetOwner: (() => void) | null;
+    synchronizeAssetOwner: (() => Promise<(() => Promise<void>) | undefined>) | null;
     assetOwnershipTask: Promise<void>;
 } = {
     peerManager: null,
@@ -382,12 +382,16 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
         },
-        onSyncConverged: ({ peerId, docId }) => {
+        prepareSyncPersistence: ({ peerId, docId }) => {
             const senderIsHost =
                 collaborationStore.value?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
             if (senderIsHost && docId === DOC_PREFIX_ROOT) {
-                sessionState.synchronizeAssetOwner?.();
+                return sessionState.synchronizeAssetOwner?.();
             }
+            return undefined;
+        },
+        onPostPersistError: () => {
+            setCollaborationError('Could not update ownership of shared audio. Restarting safely retries it.');
         },
         onSendError: () => {
             // The peer is still connected but has not received these changes.
@@ -491,53 +495,52 @@ function initializeSessionRuntime(
                 );
             },
         },
-        assetOwnerId
+        assetOwnerId,
+        undefined,
+        { durableStagingReady: options.rebindToSynchronizedOwner !== true }
     );
 
     const assetTransfer = sessionState.assetTransfer;
-    let requestedOwnerSynchronizationGeneration = 0;
-    let settledOwnerSynchronizationGeneration = 0;
-    let ownerSynchronizationQueued = false;
-    let synchronizedOwnerId: string | null = options.rebindToSynchronizedOwner ? null : assetOwnerId;
-    const queueAssetOwnershipTask = (task: () => Promise<void>): void => {
-        sessionState.assetOwnershipTask = sessionState.assetOwnershipTask
-            .then(async () => {
-                if (sessionState.assetTransfer !== assetTransfer) {
-                    return;
-                }
-                await task();
-            })
-            .catch((error: unknown) => {
-                logger.error(new Error('Collaboration durable asset ownership update failed', { cause: error }));
-                setCollaborationError('Could not update ownership of shared audio. The operation can be retried.');
-            });
+    const queueAssetOwnershipTask = <Result>(task: () => Promise<Result>): Promise<Result | undefined> => {
+        const result = sessionState.assetOwnershipTask.then(() => {
+            if (sessionState.assetTransfer !== assetTransfer) {
+                return undefined;
+            }
+            return task();
+        });
+        sessionState.assetOwnershipTask = result.then(
+            () => undefined,
+            () => undefined
+        );
+        return result;
     };
     if (options.rebindToSynchronizedOwner) {
-        sessionState.synchronizeAssetOwner = () => {
-            requestedOwnerSynchronizationGeneration += 1;
-            if (ownerSynchronizationQueued) {
-                return;
-            }
-            ownerSynchronizationQueued = true;
+        sessionState.synchronizeAssetOwner = () =>
             queueAssetOwnershipTask(async () => {
-                try {
-                    while (settledOwnerSynchronizationGeneration < requestedOwnerSynchronizationGeneration) {
-                        const targetGeneration = requestedOwnerSynchronizationGeneration;
-                        const nextOwnerId = collaborationAssetOwnership.getOwnerId();
-                        if (nextOwnerId !== synchronizedOwnerId) {
-                            const result = await assetTransfer.rebindOwner(nextOwnerId);
-                            if (result.status === 'failed') {
-                                throw new Error(`Durable asset owner rebind failed: ${result.reason}`);
-                            }
-                            synchronizedOwnerId = nextOwnerId;
-                        }
-                        settledOwnerSynchronizationGeneration = targetGeneration;
-                    }
-                } finally {
-                    ownerSynchronizationQueued = false;
+                const nextOwnerId = collaborationAssetOwnership.getOwnerId();
+                const prepared = await assetTransfer.prepareDurableOwnerRebind(nextOwnerId);
+                if (prepared.status === 'failed') {
+                    throw new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`);
                 }
+                return async () => {
+                    await queueAssetOwnershipTask(async () => {
+                        let failureReason = 'unknown';
+                        for (let attempt = 0; attempt < 3; attempt += 1) {
+                            try {
+                                const result = await assetTransfer.commitDurableOwnerRebind(nextOwnerId);
+                                if (result.status !== 'failed') {
+                                    return;
+                                }
+                                failureReason = result.reason;
+                            } catch (error) {
+                                failureReason = error instanceof Error ? error.message : 'unexpected failure';
+                            }
+                            await Promise.resolve();
+                        }
+                        throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
+                    });
+                };
             });
-        };
     }
 
     return peerManager;

@@ -1,11 +1,14 @@
 const DATABASE_NAME = 'sourdaw-collaboration-original-assets';
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 export const ASSET_STORE = 'assets';
 export const LEASE_STORE = 'leases';
 export const ASSET_OWNER_INDEX = 'by-owner';
 export const ASSET_LEASE_OWNER_INDEX = 'by-lease-owner';
 export const LEASE_OWNER_INDEX = 'by-owner';
+export const OWNER_HANDOFF_STORE = 'ownerHandoffs';
+export const OWNER_HANDOFF_TARGET_INDEX = 'by-next-owner';
 export const RECORD_SCHEMA_VERSION = 2;
+export const OWNER_HANDOFF_SCHEMA_VERSION = 1;
 
 export type LeaseState = 'staged' | 'promoted' | 'released';
 export type ActiveLease = { leaseId: string; ownerId: string };
@@ -25,6 +28,12 @@ export type LeaseRecord = {
     hash: string;
     state: LeaseState;
     terminalAt?: number;
+};
+export type OwnerHandoffRecord = {
+    schemaVersion: typeof OWNER_HANDOFF_SCHEMA_VERSION;
+    previousOwnerId: string;
+    nextOwnerId: string;
+    preparedAt: number;
 };
 
 let databasePromise: Promise<IDBDatabase> | null = null;
@@ -104,6 +113,12 @@ function ensureIndexes(request: IDBOpenDBRequest, oldVersion: number): void {
         : database.createObjectStore(LEASE_STORE, { keyPath: 'leaseId' });
     if (!leaseStore.indexNames.contains(LEASE_OWNER_INDEX)) {
         leaseStore.createIndex(LEASE_OWNER_INDEX, 'ownerId');
+    }
+    const handoffStore = database.objectStoreNames.contains(OWNER_HANDOFF_STORE)
+        ? request.transaction!.objectStore(OWNER_HANDOFF_STORE)
+        : database.createObjectStore(OWNER_HANDOFF_STORE, { keyPath: 'previousOwnerId' });
+    if (!handoffStore.indexNames.contains(OWNER_HANDOFF_TARGET_INDEX)) {
+        handoffStore.createIndex(OWNER_HANDOFF_TARGET_INDEX, 'nextOwnerId');
     }
     if (oldVersion === 1) {
         migrateVersionOneRecords(assetStore, leaseStore);
@@ -214,6 +229,20 @@ function isLeaseRecord(value: unknown): value is LeaseRecord {
     );
 }
 
+function isOwnerHandoffRecord(value: unknown): value is OwnerHandoffRecord {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return (
+        record.schemaVersion === OWNER_HANDOFF_SCHEMA_VERSION &&
+        typeof record.previousOwnerId === 'string' &&
+        typeof record.nextOwnerId === 'string' &&
+        typeof record.preparedAt === 'number' &&
+        Number.isSafeInteger(record.preparedAt)
+    );
+}
+
 async function hashBlob(blob: Blob): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
     return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
@@ -226,6 +255,7 @@ export function createDurableAssetIndexedDb() {
         hashBlob,
         isAssetRecord,
         isLeaseRecord,
+        isOwnerHandoffRecord,
         openDurableAssetDatabase,
         readIndexedValues,
         readStoredValue,
