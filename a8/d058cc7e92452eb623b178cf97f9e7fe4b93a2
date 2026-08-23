@@ -1,0 +1,27 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_428bcb51e98e94 839
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_61b8224116f12c 216-221,1821,1823-1827,1829-1831,1837
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_77839ace384e8a 736,740-752,754-789
+crates/daw-dsp/src/grinder/engine.rs
+  s_a40848e8f8cca9::t_7206558c1799f3 415,425,428,485,531
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_fce3d2576afa42 1,878-896
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a8d058cc7e92452eb623b178cf97f9e7fe4b93a2",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
