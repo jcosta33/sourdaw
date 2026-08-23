@@ -104,6 +104,11 @@ function createReplacementTopology(before: Track, replacementDevices: readonly D
     return { ...before, devices: toProjectDevices(replacementDevices) };
 }
 
+function isReplacementStillAuthoritative(after: Track): boolean {
+    const current = findUniqueTrack(after.id);
+    return current !== null && runtimeGraphTopology.matchesNode(current, runtimeGraphTopology.createNode(after));
+}
+
 function initializeMissingLiveStrip(after: Track): RuntimeDeviceDeltaResult {
     const tracks = getTrackStoreState()?.tracks ?? [];
     const projectTracks = tracks.some((track) => track.id === after.id)
@@ -160,6 +165,9 @@ function createPostCommitRuntimeEffect(
                 failure = presetFailure;
                 throw failure;
             }
+        }
+        if (result.application === 'discharged' && !isReplacementStillAuthoritative(after)) {
+            return;
         }
         // Parameter controls are intentionally separate from the topology
         // delta. They run only after the exact live chain was accepted.
