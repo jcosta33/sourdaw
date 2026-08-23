@@ -1,0 +1,46 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_cce71b04b7c1bc 35,37
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_a40848e8f8cca9::t_a03447fb902ea6 43,92
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_8deceed2b07892 45
+src/modules/CommandInterface/useCases/__tests__/selectAllClips.spec.ts
+  s_a40848e8f8cca9::t_8deceed2b07892 16
+src/modules/CrdtDocument/useCases/projection/__tests__/projectModulationSlot.spec.ts
+  s_a40848e8f8cca9::t_8deceed2b07892 17
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_a40848e8f8cca9::t_a03447fb902ea6 113
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_a40848e8f8cca9::t_cce71b04b7c1bc 13,15
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_aea4a65b8d3b1b 5
+  s_a40848e8f8cca9::t_8deceed2b07892 12
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_cce71b04b7c1bc 22,24
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_cce71b04b7c1bc 31-34
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_a40848e8f8cca9::t_8deceed2b07892 25
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_a40848e8f8cca9::t_a03447fb902ea6 148
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_a40848e8f8cca9::t_8deceed2b07892 27
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_a40848e8f8cca9::t_a03447fb902ea6 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "92490bfca363a51bc1cd850ecd6a825f3d989609",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
