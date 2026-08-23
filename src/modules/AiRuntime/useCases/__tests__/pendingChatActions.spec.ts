@@ -173,8 +173,45 @@ describe('pending chat action confirmation', () => {
             })
         );
         mocks.executeVersionedCommandBatchEnvelope.mockImplementation(
-            ({ serialized, options }: { serialized: string; options?: Parameters<ExecuteAppActionBatch>[1] }) =>
-                mocks.executeAppActionBatch(approvedActionsByBatch.get(serialized) ?? [], options)
+            async ({ serialized, options }: { serialized: string; options?: Parameters<ExecuteAppActionBatch>[1] }) => {
+                const result = await mocks.executeAppActionBatch(approvedActionsByBatch.get(serialized) ?? [], options);
+                if (
+                    result.status !== 'committed' &&
+                    result.status !== 'committed-with-warning' &&
+                    result.status !== 'executed' &&
+                    result.status !== 'executed-with-warning'
+                ) {
+                    return result;
+                }
+                return {
+                    ...result,
+                    receipt: {
+                        schemaVersion: 1,
+                        runId: 'test-run',
+                        batchId: 'test-batch',
+                        atomicity: 'atomic',
+                        base: {
+                            normalizedRevision: 'revision-1',
+                            documentIdentityEpoch: null,
+                            mutationEpoch: null,
+                            documents: [],
+                        },
+                        observedBase: null,
+                        resulting: null,
+                        commandOutcomes: [],
+                        affectedIds: [],
+                        createdBindings: [],
+                        errors: [],
+                        links: { analysis: [], render: [] },
+                        modelSummary: 'Verified test receipt',
+                        outcome: result.status,
+                        pendingEffects: [],
+                        compensation: { available: false, commandIds: [] },
+                        semanticDiff: null,
+                        warnings: [],
+                    },
+                };
+            }
         );
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });

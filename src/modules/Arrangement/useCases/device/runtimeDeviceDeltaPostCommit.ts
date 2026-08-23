@@ -21,6 +21,12 @@ type RuntimeDeltaSubject = 'Device' | 'Preset';
 
 export class RuntimeDeviceDeltaPostCommitError extends Error {
     public readonly outcome: RuntimeDeviceDeltaFailure;
+    public readonly pendingEffect: Readonly<{
+        kind: 'runtime-graph';
+        reason: string;
+        remediation: 'retry' | 'repair';
+        state: 'pending';
+    }>;
     public readonly remediation: 'retry' | 'repair';
 
     constructor(outcome: RuntimeDeviceDeltaFailure, subject: RuntimeDeltaSubject = 'Device') {
@@ -33,6 +39,12 @@ export class RuntimeDeviceDeltaPostCommitError extends Error {
         this.name = subject === 'Preset' ? 'RuntimePresetDeltaPostCommitError' : 'RuntimeDeviceDeltaPostCommitError';
         this.outcome = outcome;
         this.remediation = remediation;
+        this.pendingEffect = Object.freeze({
+            kind: 'runtime-graph',
+            reason: outcome.reason,
+            remediation,
+            state: 'pending',
+        });
     }
 }
 

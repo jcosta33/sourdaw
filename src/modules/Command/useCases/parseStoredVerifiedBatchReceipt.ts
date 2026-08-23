@@ -14,6 +14,17 @@ type StoredCommandOutcome = {
     affectedIds: string[];
     compensationAvailable: boolean;
 };
+type StoredPendingEffectBase = {
+    commandId: string;
+    operation: string;
+    reason: string;
+    state: 'pending';
+};
+type StoredPendingEffect = StoredPendingEffectBase &
+    (
+        | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
+        | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+    );
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,6 +94,24 @@ function isCompensation(value: unknown): boolean {
     return isRecord(value) && typeof value.available === 'boolean' && isStringArray(value.commandIds);
 }
 
+function isPendingEffect(
+    value: unknown,
+    commands: ReadonlyArray<{ commandId: string; operation: string }>
+): value is StoredPendingEffect {
+    return (
+        isRecord(value) &&
+        typeof value.commandId === 'string' &&
+        typeof value.operation === 'string' &&
+        typeof value.reason === 'string' &&
+        value.reason.trim().length > 0 &&
+        ((value.kind === 'runtime-graph' && (value.remediation === 'retry' || value.remediation === 'repair')) ||
+            (value.kind === 'external-effect' &&
+                (value.remediation === 'reconcile' || value.remediation === 'manual-repair'))) &&
+        value.state === 'pending' &&
+        commands.some((command) => command.commandId === value.commandId && command.operation === value.operation)
+    );
+}
+
 function isBatchOutcome(value: unknown): boolean {
     return (
         value === 'committed' ||
@@ -113,6 +142,7 @@ export function parseStoredVerifiedBatchReceipt(input: {
     } catch {
         return null;
     }
+    const pendingEffects = isRecord(value) && Array.isArray(value.pendingEffects) ? value.pendingEffects : undefined;
     if (
         !isRecord(value) ||
         value.schemaVersion !== 1 ||
@@ -138,6 +168,14 @@ export function parseStoredVerifiedBatchReceipt(input: {
         !value.createdBindings.every(isCreatedBinding) ||
         !isStringArray(value.warnings) ||
         !isStringArray(value.errors) ||
+        (value.pendingEffects !== undefined &&
+            (!pendingEffects ||
+                !pendingEffects.every((effect) => isPendingEffect(effect, input.commands)) ||
+                new Set(pendingEffects.map((effect) => (isRecord(effect) ? effect.commandId : null))).size !==
+                    pendingEffects.length ||
+                (pendingEffects.length > 0 &&
+                    (value.outcome !== 'partially-committed' ||
+                        value.atomicity !== 'durable-atomic-with-non-atomic-effects')))) ||
         !isArtifactLinks(value.links) ||
         !isCompensation(value.compensation) ||
         (value.semanticDiff !== null && !isRecord(value.semanticDiff)) ||
@@ -145,5 +183,8 @@ export function parseStoredVerifiedBatchReceipt(input: {
     ) {
         return null;
     }
-    return value as StoredVerifiedBatchReceipt;
+    return {
+        ...value,
+        pendingEffects: value.pendingEffects ?? [],
+    } as StoredVerifiedBatchReceipt;
 }

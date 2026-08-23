@@ -33,6 +33,15 @@ type BatchExecutionObservation = {
         kind: 'semantic-cleanup' | 'observer' | 'history' | 'external-effect';
         message: string;
         commandId?: string;
+        pendingEffect?: {
+            commandId: string;
+            operation: AppAction['type'];
+            reason: string;
+            state: 'pending';
+        } & (
+            | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
+            | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+        );
     }>;
     failureKind?: 'verification';
 };
@@ -307,7 +316,10 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
             kind === 'external-effect' && commandId ? [commandId] : []
         ) ?? []
     );
-    const hasFailedExternalEffect = failedExternalEffectCommandIds.size > 0;
+    const pendingEffects =
+        input.result.warningDetails?.flatMap(({ pendingEffect }) => (pendingEffect ? [pendingEffect] : [])) ?? [];
+    const hasFailedExternalEffect =
+        input.result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
 
     return {
         schemaVersion: VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION,
@@ -323,6 +335,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         createdBindings,
         warnings,
         errors,
+        pendingEffects,
         links: collectArtifactLinks(appliedCommands, failedExternalEffectCommandIds),
         compensation: {
             available: compensationAvailable,

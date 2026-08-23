@@ -12,6 +12,7 @@ import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { parseStoredVerifiedBatchReceipt } from '../parseStoredVerifiedBatchReceipt';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
@@ -133,9 +134,13 @@ function compileBatch(
     });
 }
 
-function receiptFrom(result: object) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function receiptFrom(result: object): Record<string, unknown> {
     expect(result).toHaveProperty('receipt');
-    if (!('receipt' in result)) {
+    if (!('receipt' in result) || !isRecord(result.receipt)) {
         throw new Error('Expected a verified batch receipt');
     }
     return result.receipt;
@@ -510,9 +515,17 @@ describe('verified batch receipt', () => {
 
     it('reports a durable commit with a failed non-atomic effect as partial', async () => {
         clearHandlerRegistry();
+        const runtimeFailure = Object.assign(new Error('audio graph update failed'), {
+            pendingEffect: {
+                kind: 'runtime-graph' as const,
+                reason: 'runtime graph revision is stale',
+                remediation: 'retry' as const,
+                state: 'pending' as const,
+            },
+        });
         registerTestHandlers({
             panAfterCommit: () => {
-                throw new Error('audio graph update failed');
+                throw runtimeFailure;
             },
         });
         const batch = compileBatch();
@@ -525,7 +538,8 @@ describe('verified batch receipt', () => {
 
         expect(result.status).toBe('committed-with-warning');
         expect(mutationCount).toBe(1);
-        expect(receiptFrom(result)).toMatchObject({
+        const receipt = receiptFrom(result);
+        expect(receipt).toMatchObject({
             outcome: 'partially-committed',
             atomicity: 'durable-atomic-with-non-atomic-effects',
             commandOutcomes: [{ outcome: 'committed' }, { outcome: 'committed' }],
@@ -533,9 +547,64 @@ describe('verified batch receipt', () => {
                 'setTrackPan post-commit effect failed: audio graph update failed; runtime reconciliation failed: audio graph update failed',
             ],
             errors: [],
+            pendingEffects: [
+                {
+                    commandId: PAN_COMMAND_ID,
+                    kind: 'runtime-graph',
+                    operation: 'setTrackPan',
+                    reason: 'runtime graph revision is stale',
+                    remediation: 'retry',
+                    state: 'pending',
+                },
+            ],
             resulting: { normalizedRevision: revision(1) },
             modelSummary: 'Committed 2 commands atomically, but at least one non-atomic follow-up effect failed.',
         });
+
+        const restartedReceipt = parseStoredVerifiedBatchReceipt({
+            baseRevision: revision(0),
+            batchId: 'batch-receipt',
+            commands: [
+                { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+            ],
+            runId: 'run-receipt',
+            serializedReceipt: JSON.stringify(receipt),
+        });
+        expect(restartedReceipt?.pendingEffects).toEqual([
+            {
+                commandId: PAN_COMMAND_ID,
+                kind: 'runtime-graph',
+                operation: 'setTrackPan',
+                reason: 'runtime graph revision is stale',
+                remediation: 'retry',
+                state: 'pending',
+            },
+        ]);
+        expect(
+            parseStoredVerifiedBatchReceipt({
+                baseRevision: revision(0),
+                batchId: 'batch-receipt',
+                commands: [
+                    { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                    { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+                ],
+                runId: 'run-receipt',
+                serializedReceipt: JSON.stringify({
+                    ...receipt,
+                    pendingEffects: [
+                        {
+                            commandId: PAN_COMMAND_ID,
+                            kind: 'runtime-graph',
+                            operation: 'setTrackPan',
+                            reason: 'runtime graph revision is stale',
+                            remediation: 'manual-repair',
+                            state: 'pending',
+                        },
+                    ],
+                }),
+            })
+        ).toBeNull();
     });
 
     it('reports observer warnings without claiming a partial project commit', async () => {

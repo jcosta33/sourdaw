@@ -25,6 +25,12 @@ type RuntimeTrackStripInitializationFailure = Exclude<
 
 class RuntimeTrackStripInitializationPostCommitError extends Error {
     public readonly outcome: RuntimeTrackStripInitializationFailure;
+    public readonly pendingEffect: Readonly<{
+        kind: 'runtime-graph';
+        reason: string;
+        remediation: 'retry' | 'repair';
+        state: 'pending';
+    }>;
     public readonly remediation: 'retry' | 'repair';
 
     constructor(outcome: RuntimeTrackStripInitializationFailure) {
@@ -37,6 +43,12 @@ class RuntimeTrackStripInitializationPostCommitError extends Error {
         this.name = 'RuntimeTrackStripInitializationPostCommitError';
         this.outcome = outcome;
         this.remediation = remediation;
+        this.pendingEffect = Object.freeze({
+            kind: 'runtime-graph',
+            reason: outcome.reason,
+            remediation,
+            state: 'pending',
+        });
     }
 }
 
@@ -162,7 +174,7 @@ export const handleAddDevice = createHandler<'addDevice'>({
         if (addedDevice !== null) {
             finalizeBareChain(action);
         }
-        if (addedDevice === null || context?.executionMode === 'isolated-preview' || !before) {
+        if (addedDevice === null || !before) {
             return toHandlerExecutionResult(addedDevice !== null);
         }
         const committedDevice = addedDevice;

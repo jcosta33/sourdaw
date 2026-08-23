@@ -57,11 +57,29 @@ type ApprovalDivergence = Extract<
     { status: 'ready' | 'conflicted' }
 >['divergence'];
 
+type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type RuntimeGraphPendingEffect = Extract<
+    CommandVerifiedBatchReceipt['pendingEffects'][number],
+    { kind: 'runtime-graph' }
+>;
+type CommittedRuntimeFailureResult = {
+    status: 'failed';
+    durableCommit: true;
+    reason: string;
+    effects: RuntimeGraphPendingEffect[];
+    continuation: {
+        authority: 'authoritative-collaboration-host';
+        idempotency: 'project-checkpoint';
+        kind: 'reconcile-exact-batch';
+    };
+};
+
 type ConfirmPendingChatActionsResult =
     | { status: 'missing' }
     | { status: 'not_pending'; currentStatus: ChatActionConfirmationStatus }
     | { status: 'busy' }
     | { status: 'executed' }
+    | CommittedRuntimeFailureResult
     | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence }
     | {
           status: 'reapproval_required';
@@ -72,12 +90,33 @@ type ConfirmPendingChatActionsResult =
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
 
-type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
-
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 const AGENT_RUN_STALE_COMPLETION_WARNING =
     'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
+
+function getRuntimeGraphPendingEffects(receipt: CommandVerifiedBatchReceipt): RuntimeGraphPendingEffect[] {
+    return receipt.pendingEffects.filter(
+        (effect): effect is RuntimeGraphPendingEffect => effect.kind === 'runtime-graph'
+    );
+}
+
+function createCommittedRuntimeFailureResult(
+    receipt: CommandVerifiedBatchReceipt,
+    reason = receipt.warnings[0] ?? receipt.modelSummary
+): CommittedRuntimeFailureResult {
+    return {
+        status: 'failed',
+        durableCommit: true,
+        reason,
+        effects: getRuntimeGraphPendingEffects(receipt),
+        continuation: {
+            authority: 'authoritative-collaboration-host',
+            idempotency: 'project-checkpoint',
+            kind: 'reconcile-exact-batch',
+        },
+    };
+}
 
 function getVerifiedReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
@@ -204,6 +243,27 @@ function settleVerifiedBatchReplay(
     recoveredExternalEffects = false,
     leaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null }
 ): ConfirmPendingChatActionsResult {
+    const pendingRuntimeEffects = getRuntimeGraphPendingEffects(receipt);
+    if (receipt.outcome === 'partially-committed' && pendingRuntimeEffects.length > 0) {
+        const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
+            ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
+            completesRun: false,
+        });
+        const reason = receipt.warnings[0] ?? receipt.modelSummary;
+        const persistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: [reason, persistenceWarning].filter(Boolean).join(' '),
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: [reason, persistenceWarning].filter(Boolean).join(' '),
+            content: `The project change is durably committed, but its runtime graph effect failed: ${reason}. Retry only through a newly confirmed copy of this exact batch on the authoritative collaboration host; the project mutation will not replay.${persistenceWarning ? ` ${persistenceWarning}` : ''}`,
+        });
+        return createCommittedRuntimeFailureResult(receipt, reason);
+    }
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
         const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
@@ -607,14 +667,17 @@ export async function confirmPendingChatActions(
     }
 
     const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
-    let hasPriorVerifiedBatchReceipt = false;
+    let priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null;
     if (approvedCommandBatch) {
-        const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+        priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
             authority: approvedCommandBatch.authority,
             serialized: approvedCommandBatch.serialized,
         });
-        hasPriorVerifiedBatchReceipt = priorReceipt !== null;
     }
+    const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
+    const recoveringRuntimeEffects =
+        priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
+        getRuntimeGraphPendingEffects(priorVerifiedBatchReceipt).length > 0;
 
     if (!hasPriorVerifiedBatchReceipt && captureProjectRevision() !== confirmation.projectRevision) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
@@ -791,8 +854,10 @@ export async function confirmPendingChatActions(
             versionedResult.status === 'conflicted' ||
             versionedResult.status === 'failed';
         if (
-            versionedResult.status === 'cancelled' ||
-            (failedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision)
+            (!recoveringRuntimeEffects && versionedResult.status === 'cancelled') ||
+            (!recoveringRuntimeEffects &&
+                failedBeforeCommit &&
+                captureProjectRevision() !== confirmation.projectRevision)
         ) {
             cancellationTriggeredByInvalidation = !aborter.signal.aborted;
             await agentRunCancellation.cancel({ runId: confirmation.runId, reason: versionedResult.reason });
@@ -804,6 +869,19 @@ export async function confirmPendingChatActions(
         batchResult = versionedResult;
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        if (recoveringRuntimeEffects && priorVerifiedBatchReceipt) {
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: 'failed',
+                error: reason,
+            });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'failed',
+                error: reason,
+                content: `The project change remains durably committed, but runtime reconciliation could not continue: ${reason}`,
+            });
+            return createCommittedRuntimeFailureResult(priorVerifiedBatchReceipt, reason);
+        }
         let canUpdateTrackedRun = true;
         if (trackedWorkLease) {
             canUpdateTrackedRun = settleTrackedAgentRunWorkLease(trackedWorkLease, 'failed').accepted;
@@ -869,7 +947,11 @@ export async function confirmPendingChatActions(
 
     const batchFailedBeforeCommit =
         batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
-    if (batchFailedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision) {
+    if (
+        !recoveringRuntimeEffects &&
+        batchFailedBeforeCommit &&
+        captureProjectRevision() !== confirmation.projectRevision
+    ) {
         return invalidatePendingConfirmation(confirmation);
     }
 
@@ -892,6 +974,10 @@ export async function confirmPendingChatActions(
             ...(executionKind === 'project' ? { revertGroupId: group.groupId } : {}),
             completesRun: trackedLeaseSettlement.accepted,
         });
+        const pendingRuntimeEffects = getRuntimeGraphPendingEffects(batchResult.receipt);
+        const runtimeEffectsPending =
+            batchResult.receipt.outcome === 'partially-committed' && pendingRuntimeEffects.length > 0;
+        const runtimeEffectsPendingReason = batchResult.receipt.warnings[0] ?? batchResult.receipt.modelSummary;
         const runPersistenceWarning = [
             receiptPersistenceWarning.warning,
             trackedLeaseSettlement.warning,
@@ -954,10 +1040,16 @@ export async function confirmPendingChatActions(
             };
             pushAiActionGroup(historyGroup);
             notifyAiChange(
-                `Confirmed: ${confirmation.prompt}`,
+                runtimeEffectsPending
+                    ? `Committed with pending runtime effects: ${confirmation.prompt}`
+                    : `Confirmed: ${confirmation.prompt}`,
                 executedLabels.map((entry) => entry.actionType)
             );
-            updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: runtimeEffectsPending ? 'failed' : 'executed',
+                ...(runtimeEffectsPending ? { error: warning } : {}),
+            });
             const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation);
             if (incompleteSectionRenders && batchResult.status === 'committed-with-warning') {
                 updatePendingActionFollowUp({
@@ -977,6 +1069,9 @@ export async function confirmPendingChatActions(
                     content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not replay the confirmed project actions. Retry missing renders below; only receipt-bound missing artifacts will run.`;
                 }
             }
+            if (runtimeEffectsPending) {
+                content = `The project change is durably committed:\n\n${executionReceipt}\n\nThe runtime graph effect failed: ${runtimeEffectsPendingReason}. Retry only through a newly confirmed copy of this exact batch on the authoritative collaboration host; the project mutation will not replay.`;
+            }
             if (batchResult.status === 'executed-with-warning') {
                 content = `Executed after confirmation:\n\n${executionReceipt}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
             }
@@ -984,7 +1079,7 @@ export async function confirmPendingChatActions(
                 content = `${content}\n\n${runPersistenceWarning}`;
             }
             updateChatMessage(confirmation.assistantMessageId, {
-                pendingActionConfirmationStatus: 'executed',
+                pendingActionConfirmationStatus: runtimeEffectsPending ? 'failed' : 'executed',
                 pendingActionFollowUpStatus: incompleteSectionRenders ? 'retryable' : undefined,
                 error: warning,
                 content,
@@ -995,7 +1090,7 @@ export async function confirmPendingChatActions(
             try {
                 updatePendingActionConfirmationStatus({
                     confirmationId: confirmation.id,
-                    status: 'executed',
+                    status: runtimeEffectsPending ? 'failed' : 'executed',
                     error: warning,
                 });
                 let executionDescription = 'project change committed';
@@ -1003,9 +1098,11 @@ export async function confirmPendingChatActions(
                     executionDescription = 'runtime command executed';
                 }
                 updateChatMessage(confirmation.assistantMessageId, {
-                    pendingActionConfirmationStatus: 'executed',
+                    pendingActionConfirmationStatus: runtimeEffectsPending ? 'failed' : 'executed',
                     error: warning,
-                    content: `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.\n\n${executionReceipt}`,
+                    content: runtimeEffectsPending
+                        ? `The project change is durably committed and its runtime graph effect failed, but reporting also failed: ${warning}. Retry only through a newly confirmed copy of this exact batch.\n\n${executionReceipt}`
+                        : `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.\n\n${executionReceipt}`,
                 });
             } catch (reportingError) {
                 logger.error(
@@ -1014,6 +1111,9 @@ export async function confirmPendingChatActions(
                     })
                 );
             }
+        }
+        if (runtimeEffectsPending) {
+            return createCommittedRuntimeFailureResult(batchResult.receipt, runtimeEffectsPendingReason);
         }
         return { status: 'executed' };
     }
@@ -1039,6 +1139,20 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'ambiguous') {
+        if (recoveringRuntimeEffects && priorVerifiedBatchReceipt) {
+            settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: 'failed',
+                error: batchResult.reason,
+            });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'failed',
+                error: batchResult.reason,
+                content: `The project change remains durably committed, but runtime reconciliation is still pending: ${batchResult.reason}`,
+            });
+            return createCommittedRuntimeFailureResult(priorVerifiedBatchReceipt, batchResult.reason);
+        }
         recordTrackedAgentRunFailure(confirmation, {
             category: 'conflict',
             retriable: false,
@@ -1057,6 +1171,21 @@ export async function confirmPendingChatActions(
             content: `The confirmed command stopped after an uncertain partial commit: ${batchResult.reason}. Do not retry it; inspect the project first.`,
         });
         return { status: 'failed', reason: batchResult.reason };
+    }
+
+    if (recoveringRuntimeEffects && priorVerifiedBatchReceipt) {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: batchResult.reason,
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: batchResult.reason,
+            content: `The project change remains durably committed, but runtime reconciliation could not continue: ${batchResult.reason}`,
+        });
+        return createCommittedRuntimeFailureResult(priorVerifiedBatchReceipt, batchResult.reason);
     }
 
     updatePendingActionConfirmationStatus({

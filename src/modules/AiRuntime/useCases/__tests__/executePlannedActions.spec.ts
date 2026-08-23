@@ -92,6 +92,7 @@ function idempotentReplayResult(outcome: ReplayOutcome, errors: string[] = []) {
             createdBindings: [],
             warnings: [],
             errors,
+            pendingEffects: [],
             links: { render: [], analysis: [] },
             compensation: { available: false, commandIds: [] },
             semanticDiff: null,

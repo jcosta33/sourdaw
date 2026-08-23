@@ -41,10 +41,23 @@ type ExecutedBatchAction = {
     receipt?: VersionedCommandReceipt;
 };
 
+type PendingPostCommitEffectBase = {
+    commandId: string;
+    operation: AppAction['type'];
+    reason: string;
+    state: 'pending';
+};
+type PendingPostCommitEffect = PendingPostCommitEffectBase &
+    (
+        | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
+        | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+    );
+
 type BatchWarningDetail = {
     kind: 'semantic-cleanup' | 'observer' | 'history' | 'external-effect';
     message: string;
     commandId?: string;
+    pendingEffect?: PendingPostCommitEffect;
 };
 
 type ExecuteAppActionBatchResult =
@@ -116,6 +129,42 @@ class AppActionBatchApprovalError extends Error {
 
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getPendingPostCommitEffect(
+    prepared: PreparedBatchAction,
+    error: unknown,
+    canReconcile: boolean
+): PendingPostCommitEffect {
+    const declared = isRecord(error) && isRecord(error.pendingEffect) ? error.pendingEffect : null;
+    if (
+        declared?.kind === 'runtime-graph' &&
+        declared.state === 'pending' &&
+        typeof declared.reason === 'string' &&
+        declared.reason.trim().length > 0 &&
+        (declared.remediation === 'retry' || declared.remediation === 'repair')
+    ) {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: declared.kind,
+            operation: prepared.action.type,
+            reason: declared.reason,
+            remediation: declared.remediation,
+            state: declared.state,
+        };
+    }
+    return {
+        commandId: prepared.envelope.commandId,
+        kind: 'external-effect',
+        operation: prepared.action.type,
+        reason: failureReason(error),
+        remediation: canReconcile ? 'reconcile' : 'manual-repair',
+        state: 'pending',
+    };
 }
 
 function createExecutedBatchAction(prepared: PreparedBatchAction): ExecutedBatchAction {
@@ -856,6 +905,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                             kind: 'external-effect',
                             message: warning,
                             commandId: executed.envelope.commandId,
+                            pendingEffect: getPendingPostCommitEffect(executed, effectError, false),
                         });
                         continue;
                     }
@@ -874,6 +924,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                             kind: 'external-effect',
                             message: warning,
                             commandId: executed.envelope.commandId,
+                            pendingEffect: getPendingPostCommitEffect(executed, effectError, true),
                         });
                     }
                 }

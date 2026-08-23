@@ -21,13 +21,36 @@ export function recordAgentRunReceiptSaga(input: {
 }): { effectsPending: boolean } {
     const receiptIdentity = getAgentRunReceiptIdentity(input.receipt);
     const recordedAt = Date.now();
+    const pendingRuntimeEffects = input.receipt.pendingEffects.filter(({ kind }) => kind === 'runtime-graph');
+    const pendingRuntimeEffectStepIds = new Set(
+        pendingRuntimeEffects.map(({ commandId }) => `runtime-effect:${input.receipt.batchId}:${commandId}`)
+    );
+    const completesRun = pendingRuntimeEffects.length > 0 ? false : input.completesRun;
+    for (const step of agentRunLifecycle.get(input.runId)?.saga.steps ?? []) {
+        if (
+            step.owner === 'external-effect' &&
+            step.workId === input.receipt.batchId &&
+            step.stepId.startsWith(`runtime-effect:${input.receipt.batchId}:`) &&
+            !pendingRuntimeEffectStepIds.has(step.stepId)
+        ) {
+            agentRunLifecycle.recordSagaStep({
+                runId: input.runId,
+                step: {
+                    ...step,
+                    receiptIdentity,
+                    state: 'committed',
+                    updatedAt: recordedAt,
+                },
+            });
+        }
+    }
     agentRunLifecycle.recordCommittedWork({
         runId: input.runId,
         workId: input.receipt.batchId,
         receiptIdentity,
         ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
         ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
-        ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
+        ...(completesRun !== undefined ? { completesRun } : {}),
         renderJobIds: input.receipt.links.render.map((link) => link.jobId),
         analysisIds: input.receipt.links.analysis.map((link) => link.analysisId),
     });
@@ -120,6 +143,28 @@ export function recordAgentRunReceiptSaga(input: {
                 receiptIdentity,
                 state: 'committed',
                 relatedArtifactIds: importedStems.map((stem) => stem.stemId),
+                updatedAt: recordedAt,
+                compensationAvailable: false,
+            }),
+        });
+    }
+    for (const [index, effect] of pendingRuntimeEffects.entries()) {
+        agentRunLifecycle.recordSagaStep({
+            runId: input.runId,
+            step: createAgentSagaStep({
+                stepId: `runtime-effect:${input.receipt.batchId}:${effect.commandId}`,
+                order:
+                    input.receipt.links.render.length +
+                    input.receipt.links.analysis.length +
+                    uncompensatedRenderJobIds.length +
+                    (importedStems.length > 0 ? 1 : 0) +
+                    index +
+                    1,
+                owner: 'external-effect',
+                workId: input.receipt.batchId,
+                receiptIdentity,
+                state: 'external-pending',
+                relatedArtifactIds: [],
                 updatedAt: recordedAt,
                 compensationAvailable: false,
             }),
