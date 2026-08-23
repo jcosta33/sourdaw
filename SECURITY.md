@@ -2,8 +2,8 @@
 
 ## Supported source
 
-There are no published releases yet. The supported security surface is the
-current source on `main` and builds made from it.
+There are no supported releases. Security reports against the current source on
+`main` are accepted.
 
 ## Report a vulnerability
 

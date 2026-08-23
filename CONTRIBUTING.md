@@ -18,13 +18,13 @@ less likely to make the DAW behave like a different DAW by accident.
 Run only checks that can fail because of the files you changed. Examples:
 
 - Markdown or other formatting: `pnpm format <changed-files>`
-- TypeScript or React: `pnpm lint <changed-files>` and the affected typecheck
+- TypeScript or React: `pnpm lint <changed-files>` and `pnpm typecheck`
 - A focused test: `pnpm test:run <file-or-narrow-directory>`
 - Electron code: `pnpm typecheck:electron`
 - Script code: `pnpm typecheck:scripts`
 - E2E code: `pnpm test:e2e <spec>` and, when needed, `pnpm typecheck:e2e`
-- Rust code: the affected crate's focused `pnpm cargo:test` and
-  `pnpm cargo:fmt --package <crate>` checks
+- Rust code: `pnpm cargo:test --package <crate> <filter>` and
+  `pnpm cargo:fmt --package <crate>`
 - Cross-module TypeScript changes: `pnpm deps:validate`
 
 There is no generic `pnpm test` script. A broad check is not a substitute for

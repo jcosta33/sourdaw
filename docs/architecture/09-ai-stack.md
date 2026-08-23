@@ -16,14 +16,14 @@ source build. Model weights are separate artifacts with separate terms.
 
 ## Audio and speech models
 
-| Capability      | Current truth                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------- |
-| Basic Pitch     | Bundled and admitted for audio-to-MIDI.                                                         |
-| Kokoro          | Code is present and admitted on demand; voice weights are downloaded and cached locally.        |
-| DDSP            | Code is present and admitted on demand; instruments are downloaded directly and cached locally. |
-| Whisper         | Desktop-native dictation uses a cached or explicitly supplied local model.                      |
-| RAVE            | Unavailable; its model path is withheld from admission.                                         |
-| Stem separation | Unavailable; no compatible model is admitted.                                                   |
+| Capability      | Current truth                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Basic Pitch     | Bundled and admitted for audio-to-MIDI.                                                                                                                             |
+| Kokoro          | Code is present and admitted on demand; voice weights are downloaded and cached locally.                                                                            |
+| DDSP            | Code is present and admitted on demand. Sourdaw downloads checkpoints directly and does not redistribute their weights; the exact checkpoint license is unverified. |
+| Whisper         | Desktop-native dictation uses a cached or explicitly supplied local model.                                                                                          |
+| RAVE            | Unavailable; its model path is withheld from admission.                                                                                                             |
+| Stem separation | Unavailable; no compatible model is admitted.                                                                                                                       |
 
 The source tree can contain runtime code, manifests, and integration paths that
 are not release-admitted. Admission is the product boundary, not the import graph.
@@ -32,7 +32,7 @@ weights. Check the terms attached to each downloaded artifact.
 
 ## Actions
 
-Model output does not write project state directly. It becomes a typed proposal,
-passes validation and any required confirmation, then enters the same application
-action path as a human edit. That preserves project persistence, undo, and
-collaboration semantics.
+Model output does not write project state directly. Only admitted actions can
+pass validation and any required confirmation into the shared application action
+path. Each action inherits only the persistence, undo, and collaboration
+semantics that its existing path provides.

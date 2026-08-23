@@ -43,11 +43,11 @@ Peers may also learn each other's public IP during connection setup; the data
 channel is direct when connectivity allows.
 
 Collaboration can also use an optional WebSocket relay. A relay can read the
-session, peer, action, cursor, and state payloads it forwards. Transport security,
-authentication, logging, and retention depend on the operator's deployment;
-relay transport is not end-to-end confidentiality. The included relay binds to
-loopback by default but can be configured otherwise. Native LAN discovery uses
-mDNS.
+session, peer, action, cursor, and state payloads it forwards. The included relay
+requires `COLLAB_AUTH_TOKEN` and binds to loopback by default, but can be
+configured otherwise. Transport security, logging, and retention depend on the
+operator's deployment; relay transport is not end-to-end confidentiality. Native
+LAN discovery uses mDNS.
 
 Sourdaw sends no application telemetry or analytics. AI providers, model hosts,
 STUN operators, and relay operators may log traffic under their own policies.
