@@ -665,7 +665,9 @@ jobs:
     # reports leaves every pull request pending forever.
     # A skipped job can satisfy a required check. Untrusted review events are
     # therefore renamed as well as skipped, so they cannot emit `Gate` at all.
-    name: ${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}
+    # Manual audits are allowed to pass without a reviewer-bot approval, so
+    # they also use a distinct name and can never satisfy the required check.
+    name: ${{ github.event_name == 'workflow_dispatch' && 'Manual health audit' || github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}
     # The single required status check. It always reports after its dependencies
     # settle. Pull-request pushes and non-approved reviews fail closed; a
     # current-head approval must complete both security jobs successfully.
