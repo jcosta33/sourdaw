@@ -3561,6 +3561,9 @@ function groundToolCall({
         ) {
             continue;
         }
+        if (call.name === 'addSidechainRoute' && targetRule.argument === 'targetDeviceId') {
+            continue;
+        }
         if (
             sidechainRoutingScope?.status === 'request' &&
             call.name === 'addSidechainRoute' &&

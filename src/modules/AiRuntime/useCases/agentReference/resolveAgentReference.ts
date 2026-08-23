@@ -186,8 +186,9 @@ function getTrackCandidates(
             'vca-member-track',
         ].includes(capability)
     ) {
+        const referenceCapability = capability === 'removable-track' ? 'track' : capability;
         return context.tracks.filter((track) =>
-            isAgentReferenceCapabilityCandidate({ capability, context, id: track.id })
+            isAgentReferenceCapabilityCandidate({ capability: referenceCapability, context, id: track.id })
         );
     }
     return null;
@@ -214,7 +215,7 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
         return clips.map((clip) => ({ id: clip.id, name: clip.name }));
     }
 
-    if (input.capability === 'device') {
+    if (input.capability === 'device' || input.capability === 'sidechain-capable-device') {
         let tracks = input.context.tracks;
         if (input.dependencyId) {
             tracks = tracks.filter((track) => track.id === input.dependencyId);
@@ -236,10 +237,20 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
             (input.context.availableDeviceTypes ?? []).map((deviceType) => [deviceType.id, deviceType.name])
         );
         return tracks.flatMap((track) =>
-            track.devices.map((device) => ({
-                id: device.id,
-                name: canonicalNamesByType.get(device.type) ?? device.type,
-            }))
+            track.devices.flatMap((device) =>
+                isAgentReferenceCapabilityCandidate({
+                    capability: input.capability,
+                    context: input.context,
+                    id: device.id,
+                })
+                    ? [
+                          {
+                              id: device.id,
+                              name: canonicalNamesByType.get(device.type) ?? device.type,
+                          },
+                      ]
+                    : []
+            )
         );
     }
 

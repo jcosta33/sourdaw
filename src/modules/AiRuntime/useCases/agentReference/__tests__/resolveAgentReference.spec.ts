@@ -177,6 +177,46 @@ describe('resolveAgentReference', () => {
         ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
     });
 
+    it('limits sidechain device grounding to supported devices on the owning track', () => {
+        const project = createProjectState();
+        const bass = project.tracks.find((track) => track.id === 'track-bass');
+        if (!bass) {
+            throw new Error('Expected Bass track fixture');
+        }
+        bass.devices = [
+            {
+                id: 'device-sidechain',
+                name: 'Mutable Sidechain Name',
+                type: 'builtin-sidechain-compressor',
+                bypassed: false,
+            },
+            { id: 'device-eq', name: 'Sidechain Compressor', type: 'builtin-eq', bypassed: false },
+        ];
+        project.availableDeviceTypes = [
+            { id: 'builtin-sidechain-compressor', name: 'Sidechain Compressor' },
+            { id: 'builtin-eq', name: 'Sidechain Compressor' },
+        ];
+
+        expect(
+            resolveAgentReference({
+                prompt: 'route into Sidechain Compressor on Bass',
+                assertedId: 'device-sidechain',
+                capability: 'sidechain-capable-device',
+                context: project,
+                dependencyId: bass.id,
+            })
+        ).toEqual({ status: 'resolved', id: 'device-sidechain', evidence: 'exact-name' });
+        expect(
+            resolveAgentReference({
+                prompt: 'route into Sidechain Compressor on Bass',
+                assertedId: 'device-eq',
+                capability: 'sidechain-capable-device',
+                context: project,
+                dependencyId: bass.id,
+            })
+        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+    });
+
     it('resolves unique exact names and explicit selection language', () => {
         expect(resolveTrack('mute Vocals', 'track-vocals')).toEqual({
             status: 'resolved',

@@ -70,6 +70,69 @@ const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
     stoppingConditions: [],
 });
 
+const supportedSidechainDevice = {
+    id: 'device-bass-compressor',
+    name: 'Bass Compressor',
+    type: 'builtin-sidechain-compressor',
+    bypassed: false,
+};
+
+function compileSidechainDeviceSelector(input: {
+    devices?: Array<typeof supportedSidechainDevice>;
+    arguments_?: { targetDeviceId?: string };
+    protectedTargetIds?: string[];
+}) {
+    const devices = input.devices ?? [supportedSidechainDevice];
+    const selectedDevice = devices[0]!;
+    return compileArbitraryCommandList({
+        context: {
+            ...context,
+            tracks: [
+                context.tracks[0]!,
+                {
+                    ...context.tracks[1]!,
+                    id: 'track-bass',
+                    name: 'Bass',
+                    devices,
+                },
+            ],
+        },
+        revision: 'revision-1',
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan([selectedDevice.id], input.protectedTargetIds),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'sidechain-bass',
+                                name: 'addSidechainRoute',
+                                arguments: {
+                                    sourceTrackId: 'track-kick',
+                                    targetTrackId: 'track-bass',
+                                    ...input.arguments_,
+                                },
+                                selector: {
+                                    targetArgument: 'targetDeviceId',
+                                    entity: 'device',
+                                    where: {
+                                        name: selectedDevice.name,
+                                        trackId: 'track-bass',
+                                        type: selectedDevice.type,
+                                    },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ],
+    });
+}
+
 describe('compileArbitraryCommandList', () => {
     it('preserves explicit order and dependencies for non-targeted catalog commands', () => {
         const result = compileArbitraryCommandList({
@@ -466,6 +529,69 @@ describe('compileArbitraryCommandList', () => {
         });
 
         expect(result.status).toBe('rejected');
+    });
+
+    it('admits one semantic sidechain compressor selector without provider-supplied device IDs', () => {
+        const result = compileSidechainDeviceSelector({});
+
+        expect(result).toMatchObject({
+            status: 'accepted',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [
+                            {
+                                name: 'addSidechainRoute',
+                                arguments: {
+                                    sourceTrackId: 'track-kick',
+                                    targetTrackId: 'track-bass',
+                                    targetDeviceId: 'device-bass-compressor',
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
+    });
+
+    it.each([
+        {
+            name: 'provider-supplied device ID',
+            devices: [supportedSidechainDevice],
+            arguments_: { targetDeviceId: 'device-bass-compressor' },
+            protectedTargetIds: [],
+            expectedReason: 'Provider may not supply target IDs for a semantic bulk selector.',
+        },
+        {
+            name: 'unsupported device',
+            devices: [{ ...supportedSidechainDevice, id: 'device-bass-eq', name: 'Bass EQ', type: 'builtin-eq' }],
+            arguments_: {},
+            protectedTargetIds: [],
+            expectedReason: 'Bulk selector resolved a target outside the command capability contract.',
+        },
+        {
+            name: 'protected device',
+            devices: [supportedSidechainDevice],
+            arguments_: {},
+            protectedTargetIds: ['device-bass-compressor'],
+            expectedReason: 'Bulk selector sidechain-bass resolved 0 targets, not its exact quantity.',
+        },
+        {
+            name: 'ambiguous device match',
+            devices: [
+                { ...supportedSidechainDevice, id: 'device-bass-compressor-a' },
+                { ...supportedSidechainDevice, id: 'device-bass-compressor-b' },
+            ],
+            arguments_: {},
+            protectedTargetIds: [],
+            expectedReason: 'Bulk selector sidechain-bass resolved 2 targets, not its exact quantity.',
+        },
+    ])('rejects a $name sidechain selector', ({ devices, arguments_, protectedTargetIds, expectedReason }) => {
+        const result = compileSidechainDeviceSelector({ devices, arguments_, protectedTargetIds });
+
+        expect(result).toEqual({ status: 'rejected', reason: expectedReason });
     });
 
     it.each([
