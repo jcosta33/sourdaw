@@ -1,0 +1,29 @@
+playwright.config.ts
+  s_a40848e8f8cca9::t_d6f5163f1783d6 34
+tests/e2e/e2eUtils.ts
+  s_a40848e8f8cca9::t_65279ffd30107f 15,34,42-47,49-53,60-65
+  s_a40848e8f8cca9::t_4c29f8dc7afaeb 66-67
+tests/e2e/llmBadgeDownload.spec.ts
+  s_a40848e8f8cca9::t_65279ffd30107f 3,11,16-26,28-31
+src/infra/release/modelReleaseAdmission.ts
+  s_a40848e8f8cca9::t_6b1beb830af64c 1-8,15-18
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_a40848e8f8cca9::t_65279ffd30107f 3,23
+  s_a40848e8f8cca9::t_96efbabc0952fb 32-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d865fb7e482ad3413a8d0087332ddd60d2214e11",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
