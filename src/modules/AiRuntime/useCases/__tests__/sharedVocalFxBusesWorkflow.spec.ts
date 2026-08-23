@@ -31,6 +31,7 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -46,7 +47,7 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { sendChatMessage } from '../sendChatMessage';
+import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -57,6 +58,39 @@ import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFi
 const SHARED_VOCAL_FX_PROMPT = 'Move vocal delays and reverbs to shared buses while preserving balance.';
 const SHARED_VOCAL_FX_PARAPHRASE =
     'Put the vocal delay and reverb effects on shared buses, keeping the current wet and dry balance intact.';
+
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
+
+function flushFixtureStorageOwner(key: string): void {
+    const storage = fixtureStorageOwners.get(`root:${key}`);
+    if (!storage) {
+        throw new Error(`Expected fixture-owned ${key} storage adapter`);
+    }
+    storage.flushPendingUnscopedWrite();
+}
+
+function settleFixtureProjectWrites(): void {
+    for (const key of ['tracks', 'markers', 'automation', 'transport']) {
+        flushFixtureStorageOwner(key);
+    }
+}
+
+function sendChatMessage(prompt: string) {
+    settleFixtureProjectWrites();
+    return sendChatMessageUseCase(prompt);
+}
 
 type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
 type RenderOfflineMock = (options: {
@@ -445,6 +479,11 @@ function asCommandBatchProposal(
  * request's `names` from a fixture's eventual final calls.
  */
 function catalogDiscoveryPlan(finalCalls: readonly ProviderPlanCall[]): ProviderPlanCall[] {
+    const names = getExpectedCatalogCommandNames(finalCalls);
+    return [{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }];
+}
+
+function getExpectedCatalogCommandNames(finalCalls: readonly ProviderPlanCall[]): string[] {
     const domainNames = finalCalls.flatMap((call) => {
         if (call.name === 'selectWorkflowCapability') {
             return [];
@@ -459,8 +498,73 @@ function catalogDiscoveryPlan(finalCalls: readonly ProviderPlanCall[]): Provider
         }
         return [call.name];
     });
-    const names = [...new Set(domainNames)];
-    return [{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }];
+    return [...new Set(domainNames)];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!isUnknownArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find((receipt) => {
+        if (!isRecord(receipt) || receipt.id !== 'application-tool-loop' || !isRecord(receipt.summary)) {
+            return false;
+        }
+        return receipt.summary.truncated === false && typeof receipt.summary.value === 'string';
+    });
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const lines = summary.value.split('\n');
+    const payload = lines[lines.length - 1];
+    if (!payload) {
+        throw new TypeError('Expected serialized application tool receipt payload');
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed) || !isUnknownArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderPlanCall[]): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !isUnknownArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set<string>();
+    for (const item of discoveryReceipt.data.items) {
+        if (
+            !isRecord(item) ||
+            !isRecord(item.function) ||
+            typeof item.function.name !== 'string' ||
+            !isRecord(item.function.parameters)
+        ) {
+            continue;
+        }
+        disclosedNames.add(item.function.name);
+    }
+    for (const name of getExpectedCatalogCommandNames(finalCalls)) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
 }
 
 /**
@@ -474,8 +578,15 @@ function createTurnTrackedWebLlmResponder(
     let turn = 0;
     return (_systemPrompt, userMessage) => {
         turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
         const finalCalls = buildFinalCalls(userMessage);
-        const response = turn === 1 ? catalogDiscoveryPlan(finalCalls) : finalCalls;
+        if (turn === 1) {
+            return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
+        }
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        const response = finalCalls;
         return Promise.resolve(JSON.stringify(response));
     };
 }
@@ -508,8 +619,15 @@ function createTurnTrackedHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
         const finalCalls = buildFinalCalls(getHostedUserMessage(init.body));
-        return Promise.resolve(toolCallsResponse(turn === 1 ? catalogDiscoveryPlan(finalCalls) : finalCalls));
+        if (turn === 1) {
+            return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
+        }
+        assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), finalCalls);
+        return Promise.resolve(toolCallsResponse(finalCalls));
     };
 }
 
@@ -757,6 +875,7 @@ function installSharedVocalFxFixture(): {
         selectedTrackId: null,
         ghostClips: [],
     });
+    flushFixtureStorageOwner('tracks');
     ensureRealTrackStrips([lead, leadDouble, backing, backingLow, drums, parallel].map((track) => track.id));
     return { lead, leadDouble, backing, backingLow, drums, parallel };
 }
@@ -851,6 +970,23 @@ describe('shared vocal FX buses workflow', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
+    it('captures the installed track baseline in the CRDT before planning', () => {
+        installSharedVocalFxFixture();
+
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toMatchObject({
+            tracks: {
+                tracks: [
+                    { id: 'track-lead-vocal' },
+                    { id: 'track-lead-double' },
+                    { id: 'track-bgv-high' },
+                    { id: 'track-bgv-low' },
+                    { id: 'track-drums' },
+                    { id: 'bus-vocal-parallel' },
+                ],
+            },
+        });
+    });
+
     afterEach(async () => {
         removeFixtureRuntimeStrips(trackStore.value?.tracks ?? []);
         resetAiWorkflowCommandPreflightFixture();
@@ -876,6 +1012,7 @@ describe('shared vocal FX buses workflow', () => {
 
         await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
 
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(createSharedVocalFxProviderPlanFromUserMessage(getWebLlmUserMessage())).toEqual(
             sharedVocalFxProviderPlan
@@ -1001,6 +1138,7 @@ describe('shared vocal FX buses workflow', () => {
 
         await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
 
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
         const requestBody = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
         if (typeof requestBody !== 'string') {
             throw new TypeError('Expected one hosted provider request body');

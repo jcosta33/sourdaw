@@ -508,6 +508,13 @@ function asCommandBatchProposal(
 function catalogDiscoveryPlan(
     finalCalls: readonly { name: string; arguments: Record<string, unknown> }[]
 ): Array<{ name: string; arguments: Record<string, unknown> }> {
+    const names = getExpectedCatalogCommandNames(finalCalls);
+    return [{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }];
+}
+
+function getExpectedCatalogCommandNames(
+    finalCalls: readonly { name: string; arguments: Record<string, unknown> }[]
+): string[] {
     const domainNames = finalCalls.flatMap((call) => {
         if (call.name === 'selectWorkflowCapability') {
             return [];
@@ -522,8 +529,76 @@ function catalogDiscoveryPlan(
         }
         return [call.name];
     });
-    const names = [...new Set(domainNames)];
-    return [{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }];
+    return [...new Set(domainNames)];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find((receipt) => {
+        if (!isRecord(receipt) || receipt.id !== 'application-tool-loop' || !isRecord(receipt.summary)) {
+            return false;
+        }
+        return receipt.summary.truncated === false && typeof receipt.summary.value === 'string';
+    });
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const lines = summary.value.split('\n');
+    const payload = lines[lines.length - 1];
+    if (!payload) {
+        throw new TypeError('Expected serialized application tool receipt payload');
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(
+    userMessage: string,
+    finalCalls: readonly { name: string; arguments: Record<string, unknown> }[]
+): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !Array.isArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set<string>();
+    for (const item of discoveryReceipt.data.items) {
+        if (
+            !isRecord(item) ||
+            !isRecord(item.function) ||
+            typeof item.function.name !== 'string' ||
+            !isRecord(item.function.parameters)
+        ) {
+            continue;
+        }
+        disclosedNames.add(item.function.name);
+    }
+    for (const name of getExpectedCatalogCommandNames(finalCalls)) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
 }
 
 /**
@@ -537,8 +612,15 @@ function createTurnTrackedWebLlmResponder(
     let turn = 0;
     return (_systemPrompt, userMessage) => {
         turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
         const finalCalls = buildFinalCalls(userMessage);
-        const response = turn === 1 ? catalogDiscoveryPlan(finalCalls) : finalCalls;
+        if (turn === 1) {
+            return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
+        }
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        const response = finalCalls;
         return Promise.resolve(JSON.stringify(response));
     };
 }
@@ -571,8 +653,15 @@ function createTurnTrackedHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
         const finalCalls = buildFinalCalls(getHostedUserMessage(init.body));
-        return Promise.resolve(toolCallsResponse(turn === 1 ? catalogDiscoveryPlan(finalCalls) : finalCalls));
+        if (turn === 1) {
+            return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
+        }
+        assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), finalCalls);
+        return Promise.resolve(toolCallsResponse(finalCalls));
     };
 }
 
@@ -1054,6 +1143,7 @@ describe('drum bus prompt workflow', () => {
 
         await sendChatMessage(EX11_PROMPT);
 
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
@@ -1239,6 +1329,7 @@ describe('drum bus prompt workflow', () => {
             'Build the close-drum and parallel buses, keep the room direct, trim the parallel return 1.5 dB, then render the first verse and chorus as a comparison.'
         );
 
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
         const hostedMessage = getHostedUserMessage(getHostedRequestBody());
         expect(hostedMessage).toContain('drumRenderComparisonCapability');
         expect(hostedMessage).toContain('track-room');
