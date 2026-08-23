@@ -87,8 +87,7 @@ const AUTHORIZED_APPROVAL_CONDITION =
     "github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')";
 const REVIEW_ISOLATED_CONCURRENCY_GROUP =
     "health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}";
-const AUTHORIZED_CANCELLATION_CONDITION =
-    "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.user.login == 'jcosta33-reviewer[bot]') }}";
+const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
 const AUTHORIZED_GATE_NAME =
     "${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}";
 const AUTHORIZED_GATE_CONDITION =
