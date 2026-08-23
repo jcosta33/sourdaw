@@ -4,7 +4,7 @@
     "scripts": {
         "dev": "tsx collab-server.ts",
         "build": "tsc",
-        "test": "tsx --test __tests__/*.spec.ts",
+        "test": "cd .. && pnpm test:run server/__tests__/collab-server.spec.ts",
         "start": "node dist/collab-server.js"
     },
     "dependencies": {

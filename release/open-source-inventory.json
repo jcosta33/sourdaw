@@ -1031,7 +1031,7 @@
         },
         {
             "path": "server/package.json",
-            "sha256": "ef552b98b85918dff58d7af933b26cc97eea053a84ee638fd2741d3ee9a5402e"
+            "sha256": "f11fa2b36c59384c6a8eef6871568692aca840ddcf108ec9a494c015766a0e0d"
         },
         {
             "path": "server/package-lock.json",
