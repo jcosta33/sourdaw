@@ -107,6 +107,42 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    it('does not invent one shared mutation identity for non-targeted commands', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                { id: 'tempo-up', name: 'setTempo', arguments: { bpm: 128 } },
+                                {
+                                    id: 'tempo-up-again',
+                                    name: 'setTempo',
+                                    arguments: { bpm: 130 },
+                                    dependsOn: ['tempo-up'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'setTempo', arguments: { bpm: 128 } },
+            { name: 'setTempo', arguments: { bpm: 130 } },
+        ]);
+    });
+
     it('canonicalizes idempotent selector repetition into one guarded write per stable target', () => {
         const result = compileArbitraryCommandList({
             context,
@@ -524,6 +560,68 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    it('rejects inverse routing writes from the same source to different destinations', () => {
+        const outputContext = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-mix-bus',
+                    name: 'Mix Bus',
+                    kind: 'bus' as const,
+                },
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-print-bus',
+                    name: 'Print Bus',
+                    kind: 'bus' as const,
+                },
+            ],
+        };
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: outputContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-kick-to-mix',
+                                    name: 'setTrackOutput',
+                                    arguments: { outputId: 'track-mix-bus' },
+                                    selector,
+                                },
+                                {
+                                    id: 'route-kick-to-print',
+                                    name: 'setTrackOutput',
+                                    arguments: { outputId: 'track-print-bus' },
+                                    selector,
+                                    dependsOn: ['route-kick-to-mix'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for setTrackOutput on track-kick are not safely composable.',
+        });
+    });
+
     it('rejects contradictory writes to the same parameter on the same selected device', () => {
         const deviceContext = {
             ...context,
@@ -902,6 +1000,94 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    it('rejects contradictory selectorless writes to one validated batch-local target', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'create-drum-bus',
+                                    name: 'createBus',
+                                    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                                },
+                                {
+                                    id: 'gain-drum-bus',
+                                    name: 'setTrackGain',
+                                    arguments: { trackId: '$drum-bus', gain: 0.8 },
+                                    dependsOn: ['create-drum-bus'],
+                                },
+                                {
+                                    id: 'regain-drum-bus',
+                                    name: 'setTrackGain',
+                                    arguments: { trackId: '$drum-bus', gain: 0.6 },
+                                    dependsOn: ['gain-drum-bus'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for setTrackGain on $drum-bus are not safely composable.',
+        });
+    });
+
+    it('deduplicates identical selectorless writes to one validated batch-local target', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'create-drum-bus',
+                                    name: 'createBus',
+                                    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                                },
+                                {
+                                    id: 'gain-drum-bus',
+                                    name: 'setTrackGain',
+                                    arguments: { trackId: '$drum-bus', gain: 0.8 },
+                                    dependsOn: ['create-drum-bus'],
+                                },
+                                {
+                                    id: 'gain-drum-bus-again',
+                                    name: 'setTrackGain',
+                                    arguments: { gain: 0.8, trackId: '$drum-bus' },
+                                    dependsOn: ['gain-drum-bus'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } },
+            { name: 'setTrackGain', arguments: { trackId: '$drum-bus', gain: 0.8 } },
+        ]);
+    });
+
     it('combines one exact many-target selector with an earlier batch-local destination', () => {
         const result = compileArbitraryCommandList({
             context,
@@ -1080,6 +1266,67 @@ describe('compileArbitraryCommandList', () => {
                 },
             ]);
         }
+    });
+
+    it('rejects different many-target writes when their expanded mutation identities partially overlap', () => {
+        const overlapContext = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-ride',
+                    name: 'Ride',
+                },
+            ],
+        };
+        const result = compileArbitraryCommandList({
+            context: overlapContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'track-hat', 'track-ride']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'lift-kick-and-hat',
+                                    name: 'automateTrackGainRange',
+                                    arguments: { sectionName: 'Chorus', gainDb: 1.5 },
+                                    selector: {
+                                        targetArgument: 'trackIds',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        excludeIds: ['track-ride'],
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                },
+                                {
+                                    id: 'lift-hat-and-ride',
+                                    name: 'automateTrackGainRange',
+                                    arguments: { sectionName: 'Chorus', gainDb: 2 },
+                                    selector: {
+                                        targetArgument: 'trackIds',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        excludeIds: ['track-kick'],
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                    dependsOn: ['lift-kick-and-hat'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for automateTrackGainRange on track-hat,track-ride are not safely composable.',
+        });
     });
 
     it('excludes protected targets from a many-target array and revalidates the exact evidence', () => {

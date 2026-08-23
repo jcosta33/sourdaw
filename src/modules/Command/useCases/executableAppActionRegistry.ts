@@ -36,6 +36,11 @@ export type ExecutableAppActionTargetRule = {
     optional?: boolean;
 };
 
+export type ExecutableAppActionMutationIdentityRule = {
+    argument: string;
+    cardinality?: 'many';
+};
+
 export type ExecutableAppActionValueRule =
     | {
           argument: string;
@@ -103,6 +108,7 @@ type ExecutableAppActionDescriptor = {
     selectionPhrases?: readonly string[];
     directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
+    mutationIdentityRules?: readonly ExecutableAppActionMutationIdentityRule[];
     valueRules?: readonly ExecutableAppActionValueRule[];
     parameters: {
         properties: Record<string, unknown>;
@@ -1783,6 +1789,7 @@ export const executableAppActionDescriptors = [
                 dependsOn: 'deviceId',
             },
         ],
+        mutationIdentityRules: [{ argument: 'deviceId' }, { argument: 'paramId' }],
         valueRules: [{ argument: 'value', kind: 'number-if-present', qualitativeDirection: 'device-parameter' }],
         parameters: {
             properties: {
@@ -1885,6 +1892,7 @@ export const executableAppActionDescriptors = [
             { argument: 'outputId', capability: 'output', promptRole: 'destination' },
             { argument: 'trackId', capability: 'routable-source', distinctFrom: 'outputId', promptRole: 'source' },
         ],
+        mutationIdentityRules: [{ argument: 'trackId' }],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -2001,6 +2009,7 @@ export const executableAppActionDescriptors = [
                 promptRole: 'members',
             },
         ],
+        mutationIdentityRules: [{ argument: 'trackIds', cardinality: 'many' }],
         valueRules: [],
         parameters: {
             properties: {

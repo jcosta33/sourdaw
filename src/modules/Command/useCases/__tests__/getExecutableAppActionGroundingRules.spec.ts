@@ -18,6 +18,28 @@ describe('getExecutableAppActionGroundingRules', () => {
         expect(result?.intentPhrases.length).toBeGreaterThan(0);
         expect(result?.intentPhrases).toContain('add track');
         expect(result?.targetRules).toEqual([]);
+        expect(result?.mutationIdentityRules).toEqual([]);
+    });
+
+    it('owns mutation identity independently from capability targets', () => {
+        expect(getExecutableAppActionGroundingRules('setTrackOutput')).toMatchObject({
+            targetRules: [
+                { argument: 'outputId', capability: 'output' },
+                { argument: 'trackId', capability: 'routable-source' },
+            ],
+            mutationIdentityRules: [{ argument: 'trackId' }],
+        });
+        expect(getExecutableAppActionGroundingRules('setDeviceParameter')?.mutationIdentityRules).toEqual([
+            { argument: 'deviceId' },
+            { argument: 'paramId' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('automateTrackGainRange')?.mutationIdentityRules).toEqual([
+            { argument: 'trackIds', cardinality: 'many' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('addSend')?.mutationIdentityRules).toEqual([
+            { argument: 'busId' },
+            { argument: 'trackId' },
+        ]);
     });
 
     it('includes valueRules when the descriptor defines them', () => {

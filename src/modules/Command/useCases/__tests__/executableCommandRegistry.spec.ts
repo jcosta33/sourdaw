@@ -2368,7 +2368,18 @@ describe('executable command registry', () => {
     it('pins the complete intent, target, and value grounding map', () => {
         const actual = EXPECTED_COMMANDS.map((command) => getExecutableAppActionGroundingRules(command[0]));
 
-        expect(actual).toEqual(EXPECTED_GROUNDING);
+        expect(actual).toEqual(
+            EXPECTED_GROUNDING.map((grounding) => ({
+                ...grounding,
+                mutationIdentityRules:
+                    grounding.actionType === 'setTrackOutput'
+                        ? [{ argument: 'trackId' }]
+                        : grounding.targetRules.map((rule) => ({
+                              argument: rule.argument,
+                              ...('cardinality' in rule && rule.cardinality === 'many' ? { cardinality: 'many' } : {}),
+                          })),
+            }))
+        );
     });
 
     it('maps every provider-executable action to exactly one production handler with executable metadata', () => {

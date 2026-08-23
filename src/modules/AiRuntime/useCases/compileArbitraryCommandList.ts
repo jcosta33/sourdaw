@@ -232,17 +232,77 @@ function getCanonicalCommandIdentity(command: ToolCallResult): string {
     return canonicalJson(command);
 }
 
-function getTargetWriteIdentity(
+function getMutationWriteIdentities(
     name: string,
-    targetRules: readonly { argument: string }[],
+    mutationIdentityRules: readonly { argument: string; cardinality?: 'many' }[],
+    arguments_: Readonly<Record<string, unknown>>
+): string[] | null {
+    if (mutationIdentityRules.length === 0) {
+        return [];
+    }
+    let expandedIdentities: Record<string, unknown>[] = [{}];
+    for (const rule of mutationIdentityRules) {
+        const value = arguments_[rule.argument];
+        if (rule.cardinality === 'many' && (!Array.isArray(value) || value.length === 0)) {
+            return null;
+        }
+        const values = rule.cardinality === 'many' ? (value as unknown[]) : [value];
+        expandedIdentities = expandedIdentities.flatMap((identity) =>
+            values.map((entry) => ({ ...identity, [rule.argument]: entry }))
+        );
+    }
+    return expandedIdentities.map((mutationIdentity) => canonicalJson({ name, mutationIdentity }));
+}
+
+function getMutationIdentityLabel(
+    mutationIdentityRules: readonly { argument: string }[],
     arguments_: Readonly<Record<string, unknown>>
 ): string {
-    return canonicalJson({
-        name,
-        targetArguments: Object.fromEntries(
-            targetRules.map((targetRule) => [targetRule.argument, arguments_[targetRule.argument]])
-        ),
-    });
+    const values: unknown[] = [];
+    for (const rule of mutationIdentityRules) {
+        const value = arguments_[rule.argument];
+        if (Array.isArray(value)) {
+            values.push(...(value as unknown[]));
+        } else {
+            values.push(value);
+        }
+    }
+    return values.join(',');
+}
+
+function checkCommandWriteConflict(input: {
+    command: ToolCallResult;
+    mutationIdentityRules: readonly { argument: string; cardinality?: 'many' }[];
+    targetCommandArguments: Map<string, string>;
+    targetLabel: string;
+}): { status: 'accepted'; commandKey: string } | RejectedCompilation {
+    const commandKey = getCanonicalCommandIdentity(input.command);
+    const mutationWriteIdentities = getMutationWriteIdentities(
+        input.command.name,
+        input.mutationIdentityRules,
+        input.command.arguments
+    );
+    if (mutationWriteIdentities === null) {
+        return {
+            status: 'rejected',
+            reason: `Structured command mutation identity does not match the registered contract: ${input.command.name}`,
+        };
+    }
+    if (
+        mutationWriteIdentities.some((identity) => {
+            const priorArguments = input.targetCommandArguments.get(identity);
+            return priorArguments !== undefined && priorArguments !== commandKey;
+        })
+    ) {
+        return {
+            status: 'rejected',
+            reason: `Structured command writes for ${input.command.name} on ${input.targetLabel} are not safely composable.`,
+        };
+    }
+    for (const identity of mutationWriteIdentities) {
+        input.targetCommandArguments.set(identity, commandKey);
+    }
+    return { status: 'accepted', commandKey };
 }
 
 function detectDependencyCycle(items: readonly SemanticCommandListItem[]): string | null {
@@ -472,7 +532,16 @@ export function compileArbitraryCommandList(input: {
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = { name: item.name, arguments: { ...item.arguments } };
-                const commandKey = getCanonicalCommandIdentity(command);
+                const writeCheck = checkCommandWriteConflict({
+                    command,
+                    mutationIdentityRules: rules.mutationIdentityRules,
+                    targetCommandArguments,
+                    targetLabel: getMutationIdentityLabel(rules.mutationIdentityRules, command.arguments),
+                });
+                if (writeCheck.status === 'rejected') {
+                    return writeCheck;
+                }
+                const { commandKey } = writeCheck;
                 if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
                     omittedCommandCount += 1;
                     continue;
@@ -574,16 +643,16 @@ export function compileArbitraryCommandList(input: {
                     name: item.name,
                     arguments: { ...item.arguments, [selector.targetArgument]: selectedTarget },
                 };
-                const commandKey = getCanonicalCommandIdentity(command);
-                const targetCommandKey = getTargetWriteIdentity(item.name, rules.targetRules, command.arguments);
-                const priorArguments = targetCommandArguments.get(targetCommandKey);
-                if (priorArguments !== undefined && priorArguments !== commandKey) {
-                    return {
-                        status: 'rejected',
-                        reason: `Structured command writes for ${item.name} on ${resolved.stableIds.join(',')} are not safely composable.`,
-                    };
+                const writeCheck = checkCommandWriteConflict({
+                    command,
+                    mutationIdentityRules: rules.mutationIdentityRules,
+                    targetCommandArguments,
+                    targetLabel: resolved.stableIds.join(','),
+                });
+                if (writeCheck.status === 'rejected') {
+                    return writeCheck;
                 }
-                targetCommandArguments.set(targetCommandKey, commandKey);
+                const { commandKey } = writeCheck;
                 if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
                     omittedCommandCount += 1;
                     continue;
