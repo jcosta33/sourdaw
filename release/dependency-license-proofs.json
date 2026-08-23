@@ -41,7 +41,7 @@
             }
         },
         "npm:@breezystack/lamejs@1.2.7": {
-            "source": "npm:@breezystack/lamejs@1.2.7",
+            "source": "https://registry.npmjs.org/@breezystack/lamejs/-/lamejs-1.2.7.tgz",
             "revision": "sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==",
             "assembled": {
                 "metadata": [
@@ -54,7 +54,7 @@
             }
         },
         "npm:@grame/faustwasm@0.16.7": {
-            "source": "npm:@grame/faustwasm@0.16.7",
+            "source": "https://registry.npmjs.org/@grame/faustwasm/-/faustwasm-0.16.7.tgz",
             "revision": "sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
             "assembled": {
                 "metadata": [
@@ -383,7 +383,7 @@
             }
         },
         "npm:@tensorflow/tfjs@3.21.0": {
-            "source": "npm:@tensorflow/tfjs@3.21.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs/-/tfjs-3.21.0.tgz",
             "revision": "sha512-khcARd3/872llL/oF4ouR40qlT71mylU66PGT8kHP/GJ5YKj44sv8lDRjU7lOVlJK7jsJFWEsNVHI3eMc/GWNQ==",
             "assembled": {
                 "metadata": [
@@ -396,7 +396,7 @@
             }
         },
         "npm:@tensorflow/tfjs-backend-cpu@3.21.0": {
-            "source": "npm:@tensorflow/tfjs-backend-cpu@3.21.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-backend-cpu/-/tfjs-backend-cpu-3.21.0.tgz",
             "revision": "sha512-88S21UAdzyK0CsLUrH17GPTD+26E85OP9CqmLZslaWjWUmBkeTQ5Zqyp6iK+gELnLxPx6q7JsNEeFuPv4254lQ==",
             "assembled": {
                 "metadata": [
@@ -409,7 +409,7 @@
             }
         },
         "npm:@tensorflow/tfjs-backend-webgl@3.21.0": {
-            "source": "npm:@tensorflow/tfjs-backend-webgl@3.21.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-backend-webgl/-/tfjs-backend-webgl-3.21.0.tgz",
             "revision": "sha512-N4zitIAT9IX8B8oe489qM3f3VcESxGZIZvHmVP8varOQakTvTX859aaPo1s8hK1qCy4BjSGbweooZe4U8D4kTQ==",
             "assembled": {
                 "metadata": [
@@ -422,7 +422,7 @@
             }
         },
         "npm:@tensorflow/tfjs-converter@3.21.0": {
-            "source": "npm:@tensorflow/tfjs-converter@3.21.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-converter/-/tfjs-converter-3.21.0.tgz",
             "revision": "sha512-12Y4zVDq3yW+wSjSDpSv4HnpL2sDZrNiGSg8XNiDE4HQBdjdA+a+Q3sZF/8NV9y2yoBhL5L7V4mMLDdbZBd9/Q==",
             "assembled": {
                 "metadata": [
@@ -435,7 +435,7 @@
             }
         },
         "npm:@tensorflow/tfjs-core@3.21.0": {
-            "source": "npm:@tensorflow/tfjs-core@3.21.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-core/-/tfjs-core-3.21.0.tgz",
             "revision": "sha512-YSfsswOqWfd+M4bXIhT3hwtAb+IV8+ODwIxwdFR/7jTAPZP1wMVnSlpKnXHAN64HFOiP+Tm3HmKusEZ0+09A0w==",
             "assembled": {
                 "metadata": [
@@ -448,7 +448,7 @@
             }
         },
         "npm:@tensorflow/tfjs-data@3.21.0": {
-            "source": "npm:@tensorflow/tfjs-data@3.21.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-data/-/tfjs-data-3.21.0.tgz",
             "revision": "sha512-eFLfw2wIcFNxnP2Iv/SnVlihehzKMumk1b5Prcx1ixk/SbkCo5u0Lt7OVOWaEOKVqvB2sT+dJcTjAh6lrCC/QA==",
             "assembled": {
                 "metadata": [
@@ -461,7 +461,7 @@
             }
         },
         "npm:@tensorflow/tfjs-layers@3.21.0": {
-            "source": "npm:@tensorflow/tfjs-layers@3.21.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-layers/-/tfjs-layers-3.21.0.tgz",
             "revision": "sha512-CMVXsraakXgnXEnqD9QbtResA7nvV7Jz20pGmjFIodcQkClgmFFhdCG5N+zlVRHEz7VKG2OyfhltZ0dBq/OAhA==",
             "assembled": {
                 "metadata": [
@@ -474,7 +474,7 @@
             }
         },
         "npm:@tensorflow/tfjs-backend-cpu@4.22.0": {
-            "source": "npm:@tensorflow/tfjs-backend-cpu@4.22.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-backend-cpu/-/tfjs-backend-cpu-4.22.0.tgz",
             "revision": "sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==",
             "assembled": {
                 "metadata": [
@@ -487,7 +487,7 @@
             }
         },
         "npm:@tensorflow/tfjs-backend-webgpu@4.22.0": {
-            "source": "npm:@tensorflow/tfjs-backend-webgpu@4.22.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-backend-webgpu/-/tfjs-backend-webgpu-4.22.0.tgz",
             "revision": "sha512-lvIc7Af4Tl2BCdYp43iQmSCRq3asaKT0q2xaErphXiUZ+jqeB0bQa0ZvQys1Xatvto0U4/c90DVsHPfvkn5ftg==",
             "assembled": {
                 "metadata": [
@@ -500,7 +500,7 @@
             }
         },
         "npm:@tensorflow/tfjs-converter@4.22.0": {
-            "source": "npm:@tensorflow/tfjs-converter@4.22.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-converter/-/tfjs-converter-4.22.0.tgz",
             "revision": "sha512-PT43MGlnzIo+YfbsjM79Lxk9lOq6uUwZuCc8rrp0hfpLjF6Jv8jS84u2jFb+WpUeuF4K33ZDNx8CjiYrGQ2trQ==",
             "assembled": {
                 "metadata": [
@@ -513,7 +513,7 @@
             }
         },
         "npm:@tensorflow/tfjs-core@4.22.0": {
-            "source": "npm:@tensorflow/tfjs-core@4.22.0",
+            "source": "https://registry.npmjs.org/@tensorflow/tfjs-core/-/tfjs-core-4.22.0.tgz",
             "revision": "sha512-LEkOyzbknKFoWUwfkr59vSB68DMJ4cjwwHgicXN0DUi3a0Vh1Er3JQqCI1Hl86GGZQvY8ezVrtDIvqR1ZFW55A==",
             "assembled": {
                 "metadata": [
@@ -526,7 +526,7 @@
             }
         },
         "npm:babel-plugin-add-module-exports@0.2.1": {
-            "source": "npm:babel-plugin-add-module-exports@0.2.1",
+            "source": "https://registry.npmjs.org/babel-plugin-add-module-exports/-/babel-plugin-add-module-exports-0.2.1.tgz",
             "revision": "sha512-3AN/9V/rKuv90NG65m4tTHsI04XrCKsWbztIcW7a8H5iIN7WlvWucRtVV0V/rT4QvtA11n5Vmp20fLwfMWqp6g==",
             "assembled": {
                 "metadata": [
@@ -539,7 +539,7 @@
             }
         },
         "npm:buffer-alloc@1.2.0": {
-            "source": "npm:buffer-alloc@1.2.0",
+            "source": "https://registry.npmjs.org/buffer-alloc/-/buffer-alloc-1.2.0.tgz",
             "revision": "sha512-CFsHQgjtW1UChdXgbyJGtnm+O/uLQeZdtbDo8mfUgYXCHSM1wgrVxXm6bSyrUuErEb+4sYVGCzASBRot7zyrow==",
             "assembled": {
                 "metadata": [
@@ -552,7 +552,7 @@
             }
         },
         "npm:buffer-alloc-unsafe@1.1.0": {
-            "source": "npm:buffer-alloc-unsafe@1.1.0",
+            "source": "https://registry.npmjs.org/buffer-alloc-unsafe/-/buffer-alloc-unsafe-1.1.0.tgz",
             "revision": "sha512-TEM2iMIEQdJ2yjPJoSIsldnleVaAk1oW3DBVUykyOLsEsFmEc9kn+SFFPz+gl54KQNxlDnAwCXosOS9Okx2xAg==",
             "assembled": {
                 "metadata": [
@@ -565,7 +565,7 @@
             }
         },
         "npm:buffer-fill@1.0.0": {
-            "source": "npm:buffer-fill@1.0.0",
+            "source": "https://registry.npmjs.org/buffer-fill/-/buffer-fill-1.0.0.tgz",
             "revision": "sha512-T7zexNBwiiaCOGDg9xNX9PBmjrubblRkENuptryuI64URkXDFum9il/JGL8Lm8wYfAXpredVXXZz7eMHilimiQ==",
             "assembled": {
                 "metadata": [
@@ -578,7 +578,7 @@
             }
         },
         "npm:dijkstrajs@1.0.3": {
-            "source": "npm:dijkstrajs@1.0.3",
+            "source": "https://registry.npmjs.org/dijkstrajs/-/dijkstrajs-1.0.3.tgz",
             "revision": "sha512-qiSlmBq9+BCdCA/L46dw8Uy93mloxsPSbwnm5yrKn2vMPiy8KyAskTF6zuV/j5BMsmOGZDPs7KjU+mjb670kfA==",
             "assembled": {
                 "metadata": [
@@ -591,7 +591,7 @@
             }
         },
         "npm:guid-typescript@1.0.9": {
-            "source": "npm:guid-typescript@1.0.9",
+            "source": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz",
             "revision": "sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==",
             "assembled": {
                 "metadata": [
@@ -604,7 +604,7 @@
             }
         },
         "npm:onnxruntime-common@1.27.0": {
-            "source": "npm:onnxruntime-common@1.27.0",
+            "source": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.27.0.tgz",
             "revision": "sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==",
             "assembled": {
                 "metadata": [
@@ -617,7 +617,7 @@
             }
         },
         "npm:onnxruntime-web@1.27.0": {
-            "source": "npm:onnxruntime-web@1.27.0",
+            "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.27.0.tgz",
             "revision": "sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==",
             "assembled": {
                 "metadata": [
@@ -630,7 +630,7 @@
             }
         },
         "npm:react-remove-scroll-bar@2.3.8": {
-            "source": "npm:react-remove-scroll-bar@2.3.8",
+            "source": "https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz",
             "revision": "sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==",
             "assembled": {
                 "metadata": [
@@ -643,7 +643,7 @@
             }
         },
         "npm:tr46@0.0.3": {
-            "source": "npm:tr46@0.0.3",
+            "source": "https://registry.npmjs.org/tr46/-/tr46-0.0.3.tgz",
             "revision": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==",
             "assembled": {
                 "metadata": [

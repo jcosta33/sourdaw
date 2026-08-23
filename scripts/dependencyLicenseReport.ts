@@ -522,7 +522,15 @@ function pnpmIntegrity(root: string, name: string, version: string): string | un
     return typeof integrity === 'string' ? integrity : undefined;
 }
 
-function expectedProofIdentity(root: string, record: DependencyLicenseRecord): { source: string; revision: string } {
+function npmRegistryArchiveSource(name: string, version: string): string {
+    const archiveName = name.slice(name.lastIndexOf('/') + 1);
+    return `https://registry.npmjs.org/${name}/-/${archiveName}-${version}.tgz`;
+}
+
+function expectedProofIdentities(
+    root: string,
+    record: DependencyLicenseRecord
+): Array<{ source: string; revision: string }> {
     if (record.ecosystem === 'cargo') {
         const source = record.cargoSource;
         if (
@@ -535,11 +543,14 @@ function expectedProofIdentity(root: string, record: DependencyLicenseRecord): {
         if (checksum === undefined) {
             throw new Error(`cargo:${record.name}@${record.version}: Cargo.lock checksum is missing`);
         }
-        return {
-            source: `https://crates.io/api/v1/crates/${record.name}/${record.version}/download`,
-            revision: `sha256:${checksum}`,
-        };
+        return [
+            {
+                source: `https://crates.io/api/v1/crates/${record.name}/${record.version}/download`,
+                revision: `sha256:${checksum}`,
+            },
+        ];
     }
+    const identities: Array<{ source: string; revision: string }> = [];
     if (record.graphs?.includes('server/package-lock.json')) {
         const lock = readJsonFile<PackageLock>(resolve(root, 'server/package-lock.json'));
         const lockPath = record.serverLockPath ?? `node_modules/${record.name}`;
@@ -550,13 +561,16 @@ function expectedProofIdentity(root: string, record: DependencyLicenseRecord): {
         if (entry.version !== record.version) {
             throw new Error(`npm:${record.name}@${record.version}: server/package-lock.json version drifted`);
         }
-        return { source: entry.resolved, revision: entry.integrity };
+        identities.push({ source: entry.resolved, revision: entry.integrity });
     }
-    const integrity = pnpmIntegrity(root, record.name, record.version);
-    if (integrity === undefined) {
-        throw new Error(`npm:${record.name}@${record.version}: pnpm-lock.yaml integrity is missing`);
+    if (record.graphs?.includes('pnpm-lock.yaml') || identities.length === 0) {
+        const integrity = pnpmIntegrity(root, record.name, record.version);
+        if (integrity === undefined) {
+            throw new Error(`npm:${record.name}@${record.version}: pnpm-lock.yaml integrity is missing`);
+        }
+        identities.push({ source: npmRegistryArchiveSource(record.name, record.version), revision: integrity });
     }
-    return { source: `npm:${record.name}@${record.version}`, revision: integrity };
+    return identities;
 }
 
 function assertProofFile(
@@ -819,8 +833,8 @@ export function validateDependencyLicenseProof(
     proof: DependencyLicenseProof
 ): LegalFile[] {
     const packageId = `${record.ecosystem}:${record.name}@${record.version}`;
-    const expected = expectedProofIdentity(root, record);
-    if (proof.source !== expected.source || proof.revision !== expected.revision) {
+    const expected = expectedProofIdentities(root, record);
+    if (expected.some((identity) => proof.source !== identity.source || proof.revision !== identity.revision)) {
         throw new Error(`${packageId}: proof source identity does not match the locked package`);
     }
     const files = proof.files ?? [];

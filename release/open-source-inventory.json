@@ -124,8 +124,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:4abbc3892059f1e1f271d2233f7fde5c1ab1407f8d4fcb94822c958170113471:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:34a22e363a1f0032e2bea75066e8fc94285cb469dd11bf4fbe172b2a5a686257:release/dependency-license-proofs.json"
+                "sha256:2679b5cd7f103bd34d46d2adfb1612587cdfe0af4813c931d60e065224ae4134:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:362b8480e9be35c45a075a17d01b1b957e1ba92a423fa6fef7fda72cf1fb7614:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
@@ -1188,6 +1188,12 @@
             "surface": "project-license-distribution",
             "file": "scripts/dependencyLicenseReport.ts",
             "value": "https://index.crates.io/"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://registry.npmjs.org/${slot}/-/${slot}-${slot}.tgz",
+            "templateSha256": "7e8d6289056275cf7b0f11ed3e5143bbf19fa89cbbe4de4ab4dea3624bc4dd30"
         },
         {
             "surface": "desktop-shell",

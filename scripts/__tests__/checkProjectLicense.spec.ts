@@ -838,11 +838,27 @@ describe('project license', () => {
                 },
             ],
             metadataFiles: [metadata],
+            serverLockPath: 'node_modules/example',
+            graphs: ['pnpm-lock.yaml', 'server/package-lock.json'],
         };
         write(
             root,
             'pnpm-lock.yaml',
             'lockfileVersion: 9.0\npackages:\n  example@1.0.0:\n    resolution:\n      integrity: sha512-example\n'
+        );
+        const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
+        write(
+            root,
+            'server/package-lock.json',
+            JSON.stringify({
+                packages: {
+                    'node_modules/example': {
+                        version: '1.0.0',
+                        resolved: source,
+                        integrity: 'sha512-example',
+                    },
+                },
+            })
         );
         write(
             root,
@@ -850,7 +866,7 @@ describe('project license', () => {
             readFileSync(join(process.cwd(), 'release/spdx-license-texts/MIT.txt'), 'utf8')
         );
         const proof: DependencyLicenseProof = {
-            source: 'npm:example@1.0.0',
+            source,
             revision: 'sha512-example',
             assembled: {
                 metadata: [{ sourcePath: metadata.label, sha256: metadata.sha256 }],
@@ -866,6 +882,24 @@ describe('project license', () => {
 
         proof.assembled!.metadata[0]!.sha256 = '0'.repeat(64);
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('assembled proof metadata drifted');
+
+        proof.assembled!.metadata[0]!.sha256 = metadata.sha256;
+        write(
+            root,
+            'server/package-lock.json',
+            JSON.stringify({
+                packages: {
+                    'node_modules/example': {
+                        version: '1.0.0',
+                        resolved: 'https://registry.npmjs.org/example/-/other.tgz',
+                        integrity: 'sha512-example',
+                    },
+                },
+            })
+        );
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'proof source identity does not match the locked package'
+        );
     });
 
     it('rejects duplicate keys in the dependency proof manifest', () => {
