@@ -51,11 +51,14 @@ describe('command registry completeness', () => {
                 risk: descriptor?.risk,
             });
             expect(Array.isArray(registration.mutationIdentityRules)).toBe(true);
-            expect(new Set(registration.mutationIdentityRules.map((rule) => rule.argument)).size).toBe(
-                registration.mutationIdentityRules.length
-            );
             for (const identityRule of registration.mutationIdentityRules) {
-                expect(descriptor?.parameters.properties).toHaveProperty(identityRule.argument);
+                expect(identityRule.arguments.length).toBeGreaterThan(0);
+                expect(new Set(identityRule.arguments.map((rule) => rule.argument)).size).toBe(
+                    identityRule.arguments.length
+                );
+                for (const identityArgument of identityRule.arguments) {
+                    expect(descriptor?.parameters.properties).toHaveProperty(identityArgument.argument);
+                }
             }
             expect(registration.providerSchema).toBe(descriptor?.parameters);
             expect(registration.handler.execute).toBeTypeOf('function');

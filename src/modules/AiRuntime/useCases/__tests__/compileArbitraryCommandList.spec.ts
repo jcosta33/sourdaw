@@ -622,6 +622,372 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
+    it('rejects moving the same clip to different destination tracks', () => {
+        const clipContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-kick'
+                    ? {
+                          ...track,
+                          clipCount: 1,
+                          clips: [
+                              {
+                                  id: 'clip-kick',
+                                  name: 'Kick Clip',
+                                  type: 'audio' as const,
+                                  startBeat: 0,
+                                  endBeat: 4,
+                                  noteCount: 0,
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const selector = {
+            targetArgument: 'clipId',
+            entity: 'clip',
+            where: { name: 'Kick Clip' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: clipContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['clip-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'move-kick-to-kick',
+                                    name: 'moveClip',
+                                    arguments: { trackId: 'track-kick', startBeat: 4 },
+                                    selector,
+                                },
+                                {
+                                    id: 'move-kick-to-hat',
+                                    name: 'moveClip',
+                                    arguments: { trackId: 'track-hat', startBeat: 8 },
+                                    selector,
+                                    dependsOn: ['move-kick-to-kick'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for moveClip on clip-kick are not safely composable.',
+        });
+    });
+
+    it('composes moves of different clips to the same destination track', () => {
+        const clipContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clipCount: 1,
+                clips: [
+                    {
+                        id: `clip-${track.id}`,
+                        name: `${track.name} Clip`,
+                        type: 'audio' as const,
+                        startBeat: 0,
+                        endBeat: 4,
+                        noteCount: 0,
+                    },
+                ],
+            })),
+        };
+        const result = compileArbitraryCommandList({
+            context: clipContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['clip-track-kick', 'clip-track-hat']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'move-kick',
+                                    name: 'moveClip',
+                                    arguments: { trackId: 'track-hat', startBeat: 4 },
+                                    selector: {
+                                        targetArgument: 'clipId',
+                                        entity: 'clip',
+                                        where: { name: 'Kick Clip' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'move-hat',
+                                    name: 'moveClip',
+                                    arguments: { trackId: 'track-hat', startBeat: 8 },
+                                    selector: {
+                                        targetArgument: 'clipId',
+                                        entity: 'clip',
+                                        where: { name: 'Hat Clip' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['move-kick'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'moveClip', arguments: { trackId: 'track-hat', startBeat: 4, clipId: 'clip-track-kick' } },
+            { name: 'moveClip', arguments: { trackId: 'track-hat', startBeat: 8, clipId: 'clip-track-hat' } },
+        ]);
+    });
+
+    it('rejects overlapping crossfade subjects even when a clip changes argument role', () => {
+        const clipContext = {
+            ...context,
+            tracks: [
+                {
+                    ...context.tracks[0]!,
+                    clipCount: 3,
+                    clips: [
+                        { id: 'clip-a', name: 'A', type: 'audio' as const, startBeat: 0, endBeat: 4, noteCount: 0 },
+                        { id: 'clip-b', name: 'B', type: 'audio' as const, startBeat: 4, endBeat: 8, noteCount: 0 },
+                        { id: 'clip-c', name: 'C', type: 'audio' as const, startBeat: 8, endBeat: 12, noteCount: 0 },
+                    ],
+                },
+            ],
+        };
+        const result = compileArbitraryCommandList({
+            context: clipContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['clip-a', 'clip-c']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'crossfade-a-b',
+                                    name: 'crossfadeClips',
+                                    arguments: { clipBId: 'clip-b', durationBeats: 0.5 },
+                                    selector: {
+                                        targetArgument: 'clipAId',
+                                        entity: 'clip',
+                                        where: { name: 'A' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'crossfade-c-a',
+                                    name: 'crossfadeClips',
+                                    arguments: { clipBId: 'clip-a', durationBeats: 0.5 },
+                                    selector: {
+                                        targetArgument: 'clipAId',
+                                        entity: 'clip',
+                                        where: { name: 'C' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['crossfade-a-b'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for crossfadeClips on clip-c are not safely composable.',
+        });
+    });
+
+    it('rejects copying different articulation sources onto the same target clip', () => {
+        const midiContext = {
+            ...context,
+            tracks: [
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-midi',
+                    name: 'MIDI',
+                    kind: 'midi',
+                    clipCount: 3,
+                    clips: [
+                        {
+                            id: 'clip-source-a',
+                            name: 'Source A',
+                            type: 'midi' as const,
+                            startBeat: 0,
+                            endBeat: 4,
+                            noteCount: 1,
+                        },
+                        {
+                            id: 'clip-source-b',
+                            name: 'Source B',
+                            type: 'midi' as const,
+                            startBeat: 4,
+                            endBeat: 8,
+                            noteCount: 1,
+                        },
+                        {
+                            id: 'clip-target',
+                            name: 'Target',
+                            type: 'midi' as const,
+                            startBeat: 8,
+                            endBeat: 12,
+                            noteCount: 1,
+                        },
+                    ],
+                },
+            ],
+        };
+        const selector = {
+            targetArgument: 'targetClipId',
+            entity: 'clip',
+            where: { name: 'Target' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: midiContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['clip-target']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'copy-source-a',
+                                    name: 'copyMidiArticulations',
+                                    arguments: { sourceClipId: 'clip-source-a' },
+                                    selector,
+                                },
+                                {
+                                    id: 'copy-source-b',
+                                    name: 'copyMidiArticulations',
+                                    arguments: { sourceClipId: 'clip-source-b' },
+                                    selector,
+                                    dependsOn: ['copy-source-a'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for copyMidiArticulations on clip-target are not safely composable.',
+        });
+    });
+
+    it('rejects assigning the same track to different VCA destinations', () => {
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'assign-kick-to-a',
+                                    name: 'assignToVca',
+                                    arguments: { vcaGroupId: 'vca-a' },
+                                    selector,
+                                },
+                                {
+                                    id: 'assign-kick-to-b',
+                                    name: 'assignToVca',
+                                    arguments: { vcaGroupId: 'vca-b' },
+                                    selector,
+                                    dependsOn: ['assign-kick-to-a'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for assignToVca on track-kick are not safely composable.',
+        });
+    });
+
+    it('rejects contradictory insertions into the same device chain regardless of anchor', () => {
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'insert-after-eq',
+                                    name: 'addDevice',
+                                    arguments: { deviceType: 'builtin-compressor', afterDeviceId: 'device-eq' },
+                                    selector,
+                                },
+                                {
+                                    id: 'insert-after-filter',
+                                    name: 'addDevice',
+                                    arguments: { deviceType: 'builtin-compressor', afterDeviceId: 'device-filter' },
+                                    selector,
+                                    dependsOn: ['insert-after-eq'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for addDevice on track-kick are not safely composable.',
+        });
+    });
+
     it('rejects contradictory writes to the same parameter on the same selected device', () => {
         const deviceContext = {
             ...context,

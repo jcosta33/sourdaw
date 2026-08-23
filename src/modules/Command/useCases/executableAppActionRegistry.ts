@@ -36,9 +36,13 @@ export type ExecutableAppActionTargetRule = {
     optional?: boolean;
 };
 
-export type ExecutableAppActionMutationIdentityRule = {
+export type ExecutableAppActionMutationIdentityArgument = {
     argument: string;
     cardinality?: 'many';
+};
+
+export type ExecutableAppActionMutationIdentityRule = {
+    arguments: readonly ExecutableAppActionMutationIdentityArgument[];
 };
 
 export type ExecutableAppActionValueRule =
@@ -108,7 +112,6 @@ type ExecutableAppActionDescriptor = {
     selectionPhrases?: readonly string[];
     directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
-    mutationIdentityRules?: readonly ExecutableAppActionMutationIdentityRule[];
     valueRules?: readonly ExecutableAppActionValueRule[];
     parameters: {
         properties: Record<string, unknown>;
@@ -1789,7 +1792,6 @@ export const executableAppActionDescriptors = [
                 dependsOn: 'deviceId',
             },
         ],
-        mutationIdentityRules: [{ argument: 'deviceId' }, { argument: 'paramId' }],
         valueRules: [{ argument: 'value', kind: 'number-if-present', qualitativeDirection: 'device-parameter' }],
         parameters: {
             properties: {
@@ -1892,7 +1894,6 @@ export const executableAppActionDescriptors = [
             { argument: 'outputId', capability: 'output', promptRole: 'destination' },
             { argument: 'trackId', capability: 'routable-source', distinctFrom: 'outputId', promptRole: 'source' },
         ],
-        mutationIdentityRules: [{ argument: 'trackId' }],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -2009,7 +2010,6 @@ export const executableAppActionDescriptors = [
                 promptRole: 'members',
             },
         ],
-        mutationIdentityRules: [{ argument: 'trackIds', cardinality: 'many' }],
         valueRules: [],
         parameters: {
             properties: {
@@ -2335,6 +2335,123 @@ type DescriptorAction<Descriptor> = Descriptor extends {
 export type ExecutableAppActionType = (typeof executableAppActionDescriptors)[number]['actionType'];
 export type ExecutableProviderAction = DescriptorAction<(typeof executableAppActionDescriptors)[number]>;
 export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppActionType }>;
+
+const NO_MUTATION_IDENTITY = [] as const;
+const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }] }] as const;
+const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }] }] as const;
+const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
+const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }] }] as const;
+const DEVICE_PARAMETER_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
+] as const;
+const SEND_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }, { argument: 'busId' }] }] as const;
+const AUTOMATED_SEND_MUTATION_IDENTITY = [
+    {
+        arguments: [{ argument: 'trackIds', cardinality: 'many' }, { argument: 'busId' }],
+    },
+] as const;
+const AUTOMATED_TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }] as const;
+const AUTOMATION_LANE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'laneId' }] }] as const;
+
+export const executableAppActionMutationIdentityRulesByType = {
+    importStemSet: NO_MUTATION_IDENTITY,
+    addTrack: NO_MUTATION_IDENTITY,
+    createBus: NO_MUTATION_IDENTITY,
+    removeTrack: TRACK_MUTATION_IDENTITY,
+    addClip: TRACK_MUTATION_IDENTITY,
+    duplicateClip: CLIP_MUTATION_IDENTITY,
+    duplicateClipToNextBar: CLIP_MUTATION_IDENTITY,
+    removeClip: CLIP_MUTATION_IDENTITY,
+    moveClip: CLIP_MUTATION_IDENTITY,
+    splitClip: CLIP_MUTATION_IDENTITY,
+    renameClip: CLIP_MUTATION_IDENTITY,
+    trimClipStart: CLIP_MUTATION_IDENTITY,
+    trimClipEnd: CLIP_MUTATION_IDENTITY,
+    nudgeClip: CLIP_MUTATION_IDENTITY,
+    setClipGain: CLIP_MUTATION_IDENTITY,
+    muteClip: CLIP_MUTATION_IDENTITY,
+    setClipColor: CLIP_MUTATION_IDENTITY,
+    setClipFade: CLIP_MUTATION_IDENTITY,
+    glueClips: MANY_CLIPS_MUTATION_IDENTITY,
+    crossfadeClips: [{ arguments: [{ argument: 'clipAId' }] }, { arguments: [{ argument: 'clipBId' }] }],
+    lockClip: CLIP_MUTATION_IDENTITY,
+    setClipLoop: CLIP_MUTATION_IDENTITY,
+    setClipLoopLength: CLIP_MUTATION_IDENTITY,
+    normalizeClip: CLIP_MUTATION_IDENTITY,
+    setClipStretchMode: CLIP_MUTATION_IDENTITY,
+    setClipStretchRatio: CLIP_MUTATION_IDENTITY,
+    fitClipToBeats: CLIP_MUTATION_IDENTITY,
+    quantizeNotes: CLIP_MUTATION_IDENTITY,
+    removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
+    arpeggiate: CLIP_MUTATION_IDENTITY,
+    createDrumPreviewBranches: NO_MUTATION_IDENTITY,
+    copyMidiArticulations: [{ arguments: [{ argument: 'targetClipId' }] }],
+    transposeNotes: CLIP_MUTATION_IDENTITY,
+    invertNotes: CLIP_MUTATION_IDENTITY,
+    retrogradeNotes: CLIP_MUTATION_IDENTITY,
+    quantizeNoteLengths: CLIP_MUTATION_IDENTITY,
+    scaleAllVelocities: CLIP_MUTATION_IDENTITY,
+    setAllVelocities: CLIP_MUTATION_IDENTITY,
+    renameTrack: TRACK_MUTATION_IDENTITY,
+    muteTrack: TRACK_MUTATION_IDENTITY,
+    soloTrack: TRACK_MUTATION_IDENTITY,
+    setSoloSafe: TRACK_MUTATION_IDENTITY,
+    clearSolos: NO_MUTATION_IDENTITY,
+    armTrack: TRACK_MUTATION_IDENTITY,
+    duplicateTrack: TRACK_MUTATION_IDENTITY,
+    setTrackGain: TRACK_MUTATION_IDENTITY,
+    setTrackPan: TRACK_MUTATION_IDENTITY,
+    setTrackColor: TRACK_MUTATION_IDENTITY,
+    reorderTrack: TRACK_MUTATION_IDENTITY,
+    setTempo: NO_MUTATION_IDENTITY,
+    setTimeSignature: NO_MUTATION_IDENTITY,
+    setPlayback: NO_MUTATION_IDENTITY,
+    stopPlayback: NO_MUTATION_IDENTITY,
+    seekPlayhead: NO_MUTATION_IDENTITY,
+    addMarker: NO_MUTATION_IDENTITY,
+    removeMarker: NO_MUTATION_IDENTITY,
+    setMarkerColor: NO_MUTATION_IDENTITY,
+    addSection: NO_MUTATION_IDENTITY,
+    removeSection: NO_MUTATION_IDENTITY,
+    renameSection: NO_MUTATION_IDENTITY,
+    setLoopEnabled: NO_MUTATION_IDENTITY,
+    setLoopRegion: NO_MUTATION_IDENTITY,
+    setPunchIn: NO_MUTATION_IDENTITY,
+    setPunchOut: NO_MUTATION_IDENTITY,
+    setPunchEnabled: NO_MUTATION_IDENTITY,
+    setMetronomeEnabled: NO_MUTATION_IDENTITY,
+    setMetronomeVolume: NO_MUTATION_IDENTITY,
+    setMasterGain: NO_MUTATION_IDENTITY,
+    setVcaGain: [{ arguments: [{ argument: 'vcaGroupId' }] }],
+    createVcaGroup: [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }],
+    assignToVca: TRACK_MUTATION_IDENTITY,
+    removeFromVca: TRACK_MUTATION_IDENTITY,
+    addDevice: TRACK_MUTATION_IDENTITY,
+    removeDevice: DEVICE_MUTATION_IDENTITY,
+    setDeviceParameter: DEVICE_PARAMETER_MUTATION_IDENTITY,
+    bypassDevice: DEVICE_MUTATION_IDENTITY,
+    addSend: SEND_MUTATION_IDENTITY,
+    setSend: SEND_MUTATION_IDENTITY,
+    removeSend: SEND_MUTATION_IDENTITY,
+    setTrackOutput: TRACK_MUTATION_IDENTITY,
+    addSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
+    removeSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
+    addAdjustmentRegion: [{ arguments: [{ argument: 'layerId' }] }],
+    automateSendRange: AUTOMATED_SEND_MUTATION_IDENTITY,
+    automateTrackGainRange: AUTOMATED_TRACK_MUTATION_IDENTITY,
+    automateSendRanges: AUTOMATED_SEND_MUTATION_IDENTITY,
+    renderProjectSections: NO_MUTATION_IDENTITY,
+    addAutomationLane: TRACK_MUTATION_IDENTITY,
+    addAutomationPoint: AUTOMATION_LANE_MUTATION_IDENTITY,
+    setAutomationLaneEnabled: AUTOMATION_LANE_MUTATION_IDENTITY,
+    setAutomationMode: TRACK_MUTATION_IDENTITY,
+    scaleAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    stretchAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    invertAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    reverseAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    thinAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    quantizeAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+} as const satisfies Record<ExecutableAppActionType, readonly ExecutableAppActionMutationIdentityRule[]>;
 
 export const executableAppActionDescriptorByType: ReadonlyMap<string, (typeof executableAppActionDescriptors)[number]> =
     new Map(executableAppActionDescriptors.map((descriptor) => [descriptor.actionType, descriptor]));

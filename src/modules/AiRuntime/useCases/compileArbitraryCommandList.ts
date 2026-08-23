@@ -232,39 +232,51 @@ function getCanonicalCommandIdentity(command: ToolCallResult): string {
     return canonicalJson(command);
 }
 
+type MutationIdentityRule = {
+    arguments: readonly { argument: string; cardinality?: 'many' }[];
+};
+
 function getMutationWriteIdentities(
     name: string,
-    mutationIdentityRules: readonly { argument: string; cardinality?: 'many' }[],
+    mutationIdentityRules: readonly MutationIdentityRule[],
     arguments_: Readonly<Record<string, unknown>>
 ): string[] | null {
     if (mutationIdentityRules.length === 0) {
         return [];
     }
-    let expandedIdentities: Record<string, unknown>[] = [{}];
+    const mutationWriteIdentities: string[] = [];
     for (const rule of mutationIdentityRules) {
-        const value = arguments_[rule.argument];
-        if (rule.cardinality === 'many' && (!Array.isArray(value) || value.length === 0)) {
-            return null;
+        let expandedIdentityValues: unknown[][] = [[]];
+        for (const argumentRule of rule.arguments) {
+            const value = arguments_[argumentRule.argument];
+            if (argumentRule.cardinality === 'many' && (!Array.isArray(value) || value.length === 0)) {
+                return null;
+            }
+            const values = argumentRule.cardinality === 'many' ? (value as unknown[]) : [value];
+            expandedIdentityValues = expandedIdentityValues.flatMap((identityValues) =>
+                values.map((entry) => [...identityValues, entry])
+            );
         }
-        const values = rule.cardinality === 'many' ? (value as unknown[]) : [value];
-        expandedIdentities = expandedIdentities.flatMap((identity) =>
-            values.map((entry) => ({ ...identity, [rule.argument]: entry }))
+        mutationWriteIdentities.push(
+            ...expandedIdentityValues.map((mutationIdentity) => canonicalJson({ name, mutationIdentity }))
         );
     }
-    return expandedIdentities.map((mutationIdentity) => canonicalJson({ name, mutationIdentity }));
+    return mutationWriteIdentities;
 }
 
 function getMutationIdentityLabel(
-    mutationIdentityRules: readonly { argument: string }[],
+    mutationIdentityRules: readonly MutationIdentityRule[],
     arguments_: Readonly<Record<string, unknown>>
 ): string {
     const values: unknown[] = [];
     for (const rule of mutationIdentityRules) {
-        const value = arguments_[rule.argument];
-        if (Array.isArray(value)) {
-            values.push(...(value as unknown[]));
-        } else {
-            values.push(value);
+        for (const argumentRule of rule.arguments) {
+            const value = arguments_[argumentRule.argument];
+            if (Array.isArray(value)) {
+                values.push(...(value as unknown[]));
+            } else {
+                values.push(value);
+            }
         }
     }
     return values.join(',');
@@ -272,7 +284,7 @@ function getMutationIdentityLabel(
 
 function checkCommandWriteConflict(input: {
     command: ToolCallResult;
-    mutationIdentityRules: readonly { argument: string; cardinality?: 'many' }[];
+    mutationIdentityRules: readonly MutationIdentityRule[];
     targetCommandArguments: Map<string, string>;
     targetLabel: string;
 }): { status: 'accepted'; commandKey: string } | RejectedCompilation {

@@ -2,7 +2,7 @@ import { getHandlerByType } from '../stores/handlerRegistry';
 
 import {
     executableAppActionDescriptorByType,
-    type ExecutableAppActionMutationIdentityRule,
+    executableAppActionMutationIdentityRulesByType,
     type ExecutableAppActionType,
 } from './executableAppActionRegistry';
 import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
@@ -15,13 +15,6 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         throw new Error(`Executable command is not completely registered: ${actionType}`);
     }
     const confirmation = getExecutableCommandConfirmation(descriptor.risk);
-    const mutationIdentityRules: readonly ExecutableAppActionMutationIdentityRule[] =
-        'mutationIdentityRules' in descriptor
-            ? descriptor.mutationIdentityRules
-            : descriptor.targetRules.map((rule) => ({
-                  argument: rule.argument,
-                  ...('cardinality' in rule && rule.cardinality === 'many' ? { cardinality: 'many' as const } : {}),
-              }));
     function getRegisteredHandler() {
         const handler = getHandlerByType(actionType);
         if (!handler) {
@@ -42,7 +35,7 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         selectionPhrases: 'selectionPhrases' in descriptor ? descriptor.selectionPhrases : [],
         directionalIntent: 'directionalIntent' in descriptor ? descriptor.directionalIntent : undefined,
         targetChecks: descriptor.targetRules,
-        mutationIdentityRules,
+        mutationIdentityRules: executableAppActionMutationIdentityRulesByType[actionType],
         capabilityChecks: descriptor.targetRules.map(({ argument, capability }) => ({ argument, capability })),
         valueRules: 'valueRules' in descriptor ? descriptor.valueRules : [],
         risk: descriptor.risk,

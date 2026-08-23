@@ -27,18 +27,28 @@ describe('getExecutableAppActionGroundingRules', () => {
                 { argument: 'outputId', capability: 'output' },
                 { argument: 'trackId', capability: 'routable-source' },
             ],
-            mutationIdentityRules: [{ argument: 'trackId' }],
+            mutationIdentityRules: [{ arguments: [{ argument: 'trackId' }] }],
         });
         expect(getExecutableAppActionGroundingRules('setDeviceParameter')?.mutationIdentityRules).toEqual([
-            { argument: 'deviceId' },
-            { argument: 'paramId' },
+            { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
         ]);
         expect(getExecutableAppActionGroundingRules('automateTrackGainRange')?.mutationIdentityRules).toEqual([
-            { argument: 'trackIds', cardinality: 'many' },
+            { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
         ]);
         expect(getExecutableAppActionGroundingRules('addSend')?.mutationIdentityRules).toEqual([
-            { argument: 'busId' },
-            { argument: 'trackId' },
+            { arguments: [{ argument: 'trackId' }, { argument: 'busId' }] },
+        ]);
+        expect(getExecutableAppActionGroundingRules('moveClip')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'clipId' }] },
+        ]);
+        expect(getExecutableAppActionGroundingRules('copyMidiArticulations')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'targetClipId' }] },
+        ]);
+        expect(getExecutableAppActionGroundingRules('assignToVca')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackId' }] },
+        ]);
+        expect(getExecutableAppActionGroundingRules('addDevice')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackId' }] },
         ]);
     });
 
@@ -85,6 +95,9 @@ describe('getExecutableAppActionGroundingRules', () => {
 
         // The intentPhrases array must not be the same reference as the descriptor's.
         expect(result?.intentPhrases).not.toBe(descriptor.intentPhrases);
+        expect(result?.mutationIdentityRules).not.toBe(
+            getExecutableAppActionGroundingRules('addTrack')?.mutationIdentityRules
+        );
         // But the contents must match.
         expect(result?.intentPhrases).toEqual(descriptor.intentPhrases);
     });
