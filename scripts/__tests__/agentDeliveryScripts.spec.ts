@@ -88,7 +88,8 @@ const AUTHORIZED_APPROVAL_CONDITION =
 const REVIEW_ISOLATED_CONCURRENCY_GROUP =
     "health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}";
 const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
-const AUTHORIZED_GATE_NAME =
+const HEALTH_SUMMARY_NAME = 'Health summary';
+const LEGACY_REQUIRED_GATE_NAME =
     "${{ github.event_name == 'workflow_dispatch' && 'Manual health audit' || github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}";
 const AUTHORIZED_GATE_CONDITION =
     "always() && (github.event_name != 'pull_request_review' || github.event.review.user.login == 'jcosta33-reviewer[bot]')";
@@ -142,6 +143,26 @@ function healthGateWorkflow(): { document: ReturnType<typeof parseDocument>; wor
         );
     }
     return { document, workflow: asWorkflowRecord(document.toJS(), 'workflow') };
+}
+
+function informationalWorkflowSummary(workflow: WorkflowRecord): WorkflowRecord {
+    for (const [jobId, value] of Object.entries(workflowRecordAt(workflow, 'jobs'))) {
+        const name = asWorkflowRecord(value, jobId).name;
+        if (typeof name !== 'string') {
+            throw new TypeError(`${jobId} name must be a string`);
+        }
+        if (/\$\{\{\s*github\.(?:event|ref)/.test(name)) {
+            throw new Error('workflow job check names must be event-independent');
+        }
+        if (name === 'Gate' || /['"]Gate['"]/.test(name)) {
+            throw new Error('workflow-controlled jobs must never emit the required Gate check name');
+        }
+    }
+    const summary = workflowJob(workflow, 'gate');
+    if (summary.name !== HEALTH_SUMMARY_NAME) {
+        throw new Error('workflow-controlled jobs must never emit the required Gate check name');
+    }
+    return summary;
 }
 
 function workflowGateResults(workflow: WorkflowRecord): string {
@@ -202,7 +223,7 @@ describe('package scripts and gitignore', () => {
         expect(gitignore).toContain('.agents/review-bundles/');
     });
 
-    it('authenticates the only review author allowed to affect the required Gate', () => {
+    it('keeps the workflow summary informational while authenticating review-gated work', () => {
         const { document, workflow } = healthGateWorkflow();
         expect(document.errors).toEqual([]);
         const events = workflowRecordAt(workflow, 'on');
@@ -213,8 +234,16 @@ describe('package scripts and gitignore', () => {
         expect(concurrency['cancel-in-progress']).toBe(AUTHORIZED_CANCELLATION_CONDITION);
         expect(workflowJob(workflow, 'decide').if).toBe(AUTHORIZED_APPROVAL_CONDITION);
 
-        const gate = workflowJob(workflow, 'gate');
-        expect(gate.name).toBe(AUTHORIZED_GATE_NAME);
+        const gate = informationalWorkflowSummary(workflow);
+        const legacyRequiredGate = structuredClone(workflow);
+        workflowJob(legacyRequiredGate, 'gate').name = LEGACY_REQUIRED_GATE_NAME;
+        expect(() => informationalWorkflowSummary(legacyRequiredGate)).toThrow(
+            'workflow job check names must be event-independent'
+        );
+        workflowJob(legacyRequiredGate, 'gate').name = 'Gate';
+        expect(() => informationalWorkflowSummary(legacyRequiredGate)).toThrow(
+            'workflow-controlled jobs must never emit the required Gate check name'
+        );
         expect(gate.if).toBe(AUTHORIZED_GATE_CONDITION);
         const gateStep = workflowStep(gate, 'Require every job to have succeeded or been skipped');
         expect(workflowRecordAt(gateStep, 'env').REVIEW_AUTHOR).toBe('${{ github.event.review.user.login }}');

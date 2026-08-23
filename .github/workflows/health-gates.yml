@@ -19,12 +19,11 @@ name: Health gates
 # deliberate — it costs nothing here, and the alternative is a merge decided by
 # results from an older head.
 #
-# `gate` is the only job the branch ruleset requires by name. It fails on each
-# pull-request push, then passes only when a current-head approval completes the
-# heavy security jobs. Scheduled runs still accept legitimately skipped jobs. A
-# required check naming a filtered job directly would sit pending forever on
-# any pull request that skips it, so nothing else may be required and `gate`
-# must not be renamed.
+# The terminal summary is informational, never merge authority. A pull request
+# controls this workflow file, so no job on any event or ref may publish the
+# protected check name `Gate`. The summary still fails on each pull-request
+# push, then passes only when a current-head approval completes the heavy
+# security jobs. Scheduled runs still accept legitimately skipped jobs.
 #
 # Runners are standard GitHub-hosted labels only. Public repositories bill
 # nothing for those; larger and GPU runners bill even here.
@@ -62,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Only the reviewer bot's submitted approval starts review-gated work. Its
-    # dismissals and other submitted states proceed to the fail-closed Gate.
+    # dismissals and other submitted states proceed to the fail-closed summary.
     # Reviews from every other author are inert.
     if: github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')
     outputs:
@@ -494,8 +493,9 @@ jobs:
     name: Dependency review
     needs: decide
     # Run on every pull-request update for fast feedback, then repeat against
-    # the exact commit approved by the trusted reviewer. Gate requires that
-    # second result, so a failed or skipped push-time review cannot be reused.
+    # the exact commit approved by the trusted reviewer. The terminal summary
+    # requires that second result, so a failed or skipped push-time review
+    # cannot be reused.
     if: github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && needs.decide.outputs.heavy == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -659,18 +659,13 @@ jobs:
           fi
 
   gate:
-    # Named distinctly from the workflow so the required check is unambiguous in
-    # the ruleset and in the checks list. Renaming it silently breaks the
-    # requirement: the ruleset matches by name, and a required check that no job
-    # reports leaves every pull request pending forever.
-    # A skipped job can satisfy a required check. Untrusted review events are
-    # therefore renamed as well as skipped, so they cannot emit `Gate` at all.
-    # Manual audits are allowed to pass without a reviewer-bot approval, so
-    # they also use a distinct name and can never satisfy the required check.
-    name: ${{ github.event_name == 'workflow_dispatch' && 'Manual health audit' || github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}
-    # The single required status check. It always reports after its dependencies
-    # settle. Pull-request pushes and non-approved reviews fail closed; a
-    # current-head approval must complete both security jobs successfully.
+    # This static name is deliberately non-authoritative. A pull request can
+    # change this workflow, so neither its push nor a later review event may be
+    # allowed to publish a ruleset-required check name. It always reports after
+    # its dependencies settle. Pull-request pushes and non-approved reviews fail
+    # closed; a current-head approval must complete both security jobs
+    # successfully.
+    name: Health summary
     #
     # `unit` and `e2e` are deliberately absent. They run, and their results are
     # visible on the pull request, but they do not decide the merge yet — a gate
@@ -725,7 +720,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" = "pull_request" ]; then
-            printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\n'
+            printf 'pull-request health remains incomplete without a current-head approval run\n'
             exit 1
           fi
           if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_AUTHOR" != "jcosta33-reviewer[bot]" ]; then

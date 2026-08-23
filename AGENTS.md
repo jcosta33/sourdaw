@@ -279,11 +279,11 @@ loader/preload settings and Git, GitHub CLI, GitHub Actions, and App overrides, 
 resolved `git` and `gh` executables.
 
 Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
-a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
-`gate` is required by the ruleset, and only `gate` may be — it depends on every other job and passes
-when each either succeeded or was skipped, so a pull request that skips a path-filtered leg still
-reports a conclusion. Requiring a filtered job by name would leave it pending forever. Do not rename
-`gate`.
+a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Its
+terminal health summary depends on every other job and passes when each either succeeded or was
+skipped, so a pull request that skips a path-filtered leg still reports a conclusion. The workflow
+file is pull-request controlled, so neither that summary nor any other job it defines may publish a
+ruleset-required check name. In particular, no workflow job may emit the exact check name `Gate`.
 
 Hosted checks exist so that nobody runs those checks on this machine. Lanes share one machine, and
 several agents each running a repository-wide typecheck, lint, or suite exhaust it and stall each
@@ -296,8 +296,9 @@ the pipeline runs all of them on every push, and a second copy on this machine b
 contention.
 
 `main` is covered by a ruleset. Read what it actually does: it blocks deletion and non-fast-forward,
-forces a squashed pull request, and demands resolved threads. Whether it also requires `gate` is
-repository configuration, not something this file can promise.
+forces a squashed pull request, and demands resolved threads. A ruleset must never require a status
+context emitted by a pull-request-controlled workflow. Its exact live enforcement remains repository
+configuration, not something this file can promise.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it carries each package's build script because that name is not derivable from the
@@ -376,9 +377,9 @@ current head actually addresses it. A new head needs a new review.
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
 there, and read the pipeline's result for that head. The checks are the pipeline's job, not a second
-local run of the same commands — that is what `Gate` reports, and a green `Gate` on this head is the
-evidence. Formatting is the exception worth doing locally, because it rewrites rather than reports:
-run it on the changed files and stage what it rewrote.
+local run of the same commands — a green terminal health summary on this head is the aggregate
+evidence, though it is not merge authority. Formatting is the exception worth doing locally, because
+it rewrites rather than reports: run it on the changed files and stage what it rewrote.
 
 What the orchestrator still owns is the judgement no check makes. A green pipeline says the gates
 passed, not that the change does what it was specified to do, that a test observes what its name

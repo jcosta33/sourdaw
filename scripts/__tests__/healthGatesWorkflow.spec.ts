@@ -10,10 +10,9 @@ type UnknownRecord = Record<string, unknown>;
 
 const APPROVED_REVIEW_CONDITION =
     "github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')";
-const GATE_NAME =
+const HEALTH_SUMMARY_NAME = 'Health summary';
+const LEGACY_REQUIRED_GATE_NAME =
     "${{ github.event_name == 'workflow_dispatch' && 'Manual health audit' || github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}";
-const MANUAL_DISPATCH_ADMITTING_GATE_NAME =
-    "${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}";
 const GATE_CONDITION =
     "always() && (github.event_name != 'pull_request_review' || github.event.review.user.login == 'jcosta33-reviewer[bot]')";
 const GATE_EVENT_REFERENCE = '${{ github.event_name }}';
@@ -23,7 +22,7 @@ const GATE_REVIEW_STATE_REFERENCE = '${{ github.event.review.state }}';
 const GATE_REVIEW_COMMIT_REFERENCE = '${{ github.event.review.commit_id }}';
 const GATE_HEAD_SHA_REFERENCE = '${{ github.event.pull_request.head.sha }}';
 const FAIL_CLOSED_PULL_REQUEST_GUARD = `if [ "$EVENT" = "pull_request" ]; then
-  printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\\n'
+  printf 'pull-request health remains incomplete without a current-head approval run\\n'
   exit 1
 fi`;
 const FAIL_CLOSED_REVIEW_AUTHOR_GUARD = `if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_AUTHOR" != "jcosta33-reviewer[bot]" ]; then
@@ -112,6 +111,18 @@ function stringAt(record: UnknownRecord, key: string): string {
         throw new TypeError(`${key} must be a string`);
     }
     return value;
+}
+
+function assertStaticNonAuthoritativeJobNames(candidate: UnknownRecord): void {
+    for (const [jobId, value] of Object.entries(recordAt(candidate, 'jobs'))) {
+        const name = stringAt(asRecord(value, jobId), 'name');
+        if (/\$\{\{\s*github\.(?:event|ref)/.test(name)) {
+            throw new Error('workflow job check names must be event-independent');
+        }
+        if (name === 'Gate' || /['"]Gate['"]/.test(name)) {
+            throw new Error('workflow jobs must never emit the required Gate check name');
+        }
+    }
 }
 
 function assertConcurrencyContract(candidate: UnknownRecord): void {
@@ -209,9 +220,10 @@ function decideAdmits(eventName: string, reviewAction: string, reviewState: stri
 }
 
 function assertGateContract(candidate: UnknownRecord): string {
+    assertStaticNonAuthoritativeJobNames(candidate);
     const gate = jobAt(candidate, 'gate');
-    if (gate.name !== GATE_NAME) {
-        throw new Error('manual dispatch must not emit the required Gate check name');
+    if (gate.name !== HEALTH_SUMMARY_NAME) {
+        throw new Error('terminal summary must never emit the required Gate check name');
     }
     if (gate.if !== GATE_CONDITION) {
         throw new Error('gate must use always() to report after terminal dependencies');
@@ -258,23 +270,13 @@ function assertGateContract(candidate: UnknownRecord): string {
     return script;
 }
 
-function reportedGateName(
-    candidate: UnknownRecord,
-    eventName: string,
-    reviewAuthor: string,
-    ref: string
-): 'Gate' | 'Ignored review' | 'Manual health audit' {
+function reportedGateName(candidate: UnknownRecord, ref: string): 'Health summary' {
+    assertStaticNonAuthoritativeJobNames(candidate);
     const configuredName = jobAt(candidate, 'gate').name;
-    if (configuredName !== GATE_NAME) {
-        throw new Error(`manual dispatch must not emit the required Gate check name for ${ref}`);
+    if (configuredName !== HEALTH_SUMMARY_NAME) {
+        throw new Error(`terminal summary must never emit the required Gate check name for ${ref}`);
     }
-    if (eventName === 'workflow_dispatch') {
-        return 'Manual health audit';
-    }
-    if (eventName === 'pull_request_review' && reviewAuthor !== 'jcosta33-reviewer[bot]') {
-        return 'Ignored review';
-    }
-    return 'Gate';
+    return HEALTH_SUMMARY_NAME;
 }
 
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -817,18 +819,23 @@ describe('health gates workflow contract', () => {
         expect(() => assertGateContract(legacyGate)).toThrow('gate shell must fail closed for pull-request pushes');
     });
 
-    it('should reject a manual dispatch that can emit the required Gate check name', () => {
+    it('should reject any terminal summary that can emit the required Gate check name', () => {
         const internalPullRequestRef = 'refs/heads/agent/internal-pull-request';
         expect(
             runGateScript(assertGateContract(workflow), 'workflow_dispatch', '', gateResults(workflow, 'success'))
         ).toBe(0);
-        expect(reportedGateName(workflow, 'workflow_dispatch', '', internalPullRequestRef)).toBe('Manual health audit');
+        expect(reportedGateName(workflow, internalPullRequestRef)).toBe('Health summary');
 
-        const dispatchAdmittingGate = asRecord(structuredClone(workflow), 'dispatch-admitting gate workflow');
-        jobAt(dispatchAdmittingGate, 'gate').name = MANUAL_DISPATCH_ADMITTING_GATE_NAME;
+        const requiredGate = asRecord(structuredClone(workflow), 'required gate workflow');
+        jobAt(requiredGate, 'gate').name = LEGACY_REQUIRED_GATE_NAME;
 
-        expect(() => reportedGateName(dispatchAdmittingGate, 'workflow_dispatch', '', internalPullRequestRef)).toThrow(
-            'manual dispatch must not emit the required Gate check name'
+        expect(() => reportedGateName(requiredGate, internalPullRequestRef)).toThrow(
+            'workflow job check names must be event-independent'
+        );
+
+        jobAt(requiredGate, 'gate').name = 'Gate';
+        expect(() => reportedGateName(requiredGate, internalPullRequestRef)).toThrow(
+            'workflow jobs must never emit the required Gate check name'
         );
     });
 
