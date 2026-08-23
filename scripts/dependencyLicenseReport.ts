@@ -83,17 +83,47 @@ type CargoMetadata = {
 const LEGAL_FILE = /^(?:licen[cs]e|notice|copying|copyright)(?:[._-].*)?$/iu;
 const COMPLETE_MIT_NOTICE = /copyright[\s\S]+permission is hereby granted[\s\S]+the above copyright notice/iu;
 const PROOF_DIRECTORY = 'release/dependency-license-proofs/';
-const BUILD_ONLY_PLATFORM_NPM_PACKAGES = new Set(['@rollup/rollup-darwin-arm64@4.60.1', 'fsevents@2.3.3']);
+const BUILD_ONLY_PLATFORM_NPM_PACKAGES = new Set([
+    '@rollup/rollup-android-arm-eabi@4.60.1',
+    '@rollup/rollup-android-arm64@4.60.1',
+    '@rollup/rollup-darwin-arm64@4.60.1',
+    '@rollup/rollup-darwin-x64@4.60.1',
+    '@rollup/rollup-freebsd-arm64@4.60.1',
+    '@rollup/rollup-freebsd-x64@4.60.1',
+    '@rollup/rollup-linux-arm-gnueabihf@4.60.1',
+    '@rollup/rollup-linux-arm-musleabihf@4.60.1',
+    '@rollup/rollup-linux-arm64-gnu@4.60.1',
+    '@rollup/rollup-linux-arm64-musl@4.60.1',
+    '@rollup/rollup-linux-loong64-gnu@4.60.1',
+    '@rollup/rollup-linux-loong64-musl@4.60.1',
+    '@rollup/rollup-linux-ppc64-gnu@4.60.1',
+    '@rollup/rollup-linux-ppc64-musl@4.60.1',
+    '@rollup/rollup-linux-riscv64-gnu@4.60.1',
+    '@rollup/rollup-linux-riscv64-musl@4.60.1',
+    '@rollup/rollup-linux-s390x-gnu@4.60.1',
+    '@rollup/rollup-linux-x64-gnu@4.60.1',
+    '@rollup/rollup-linux-x64-musl@4.60.1',
+    '@rollup/rollup-openbsd-x64@4.60.1',
+    '@rollup/rollup-openharmony-arm64@4.60.1',
+    '@rollup/rollup-win32-arm64-msvc@4.60.1',
+    '@rollup/rollup-win32-ia32-msvc@4.60.1',
+    '@rollup/rollup-win32-x64-gnu@4.60.1',
+    '@rollup/rollup-win32-x64-msvc@4.60.1',
+    'fsevents@2.3.3',
+]);
 
 function sha256(contents: Buffer): string {
     return createHash('sha256').update(contents).digest('hex');
 }
 
-function readLegalFile(path: string, label: string): LegalFile {
+export function readLegalFile(path: string, label: string): LegalFile {
     const bytes = readFileSync(path);
     const contents = bytes.toString('utf8');
     if (!Buffer.from(contents, 'utf8').equals(bytes)) {
         throw new Error(`${label}: legal file is not UTF-8`);
+    }
+    if (contents.trim().length === 0) {
+        throw new Error(`${label}: legal file is empty`);
     }
     return { label, sha256: sha256(bytes), contents };
 }

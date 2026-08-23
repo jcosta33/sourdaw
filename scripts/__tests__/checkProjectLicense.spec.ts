@@ -1,7 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -20,6 +22,7 @@ import {
     DEPENDENCY_LICENSE_REPORT_PATH,
     assertPlatformRestrictedNpmPackage,
     isPlatformRestrictedPackage,
+    readLegalFile,
     renderDependencyLicenseReport,
     renderServerThirdPartyNotices,
     SERVER_THIRD_PARTY_NOTICES_PATH,
@@ -240,6 +243,40 @@ describe('project license', () => {
         expect(() => assertPlatformRestrictedNpmPackage('unknown-native@1.0.0')).toThrow(
             'platform-restricted production package has no audited shipped-closure classification'
         );
+        expect(() => assertPlatformRestrictedNpmPackage('@rollup/rollup-linux-x64-gnu@4.60.1')).not.toThrow();
+        expect(() => assertPlatformRestrictedNpmPackage('@rollup/rollup-win32-x64-msvc@4.60.1')).not.toThrow();
+        expect(() => assertPlatformRestrictedNpmPackage('fsevents@2.3.3')).not.toThrow();
+        expect(() => assertPlatformRestrictedNpmPackage('@rollup/rollup-linux-x64-gnu@4.60.2')).toThrow(
+            'platform-restricted production package has no audited shipped-closure classification'
+        );
+    });
+
+    it('rejects an empty installed legal file directly', () => {
+        const path = join(root, 'empty-LICENSE');
+        write(root, 'empty-LICENSE', '');
+        expect(() => readLegalFile(path, 'empty-LICENSE')).toThrow('empty-LICENSE: legal file is empty');
+    });
+
+    it('marks the intended WASM package when run from a crate directory', () => {
+        const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-mark-wasm-package-'));
+        try {
+            const sourceHelper = join(dirname(fileURLToPath(import.meta.url)), '..', 'markWasmPackageInternal.ts');
+            const helper = join(helperRoot, 'scripts/markWasmPackageInternal.ts');
+            const packagePath = join(helperRoot, 'public/wasm/daw-dsp/package.json');
+            const crateDirectory = join(helperRoot, 'crates/daw-dsp');
+            mkdirSync(dirname(helper), { recursive: true });
+            mkdirSync(dirname(packagePath), { recursive: true });
+            mkdirSync(crateDirectory, { recursive: true });
+            writeFileSync(helper, readFileSync(sourceHelper));
+            writeFileSync(packagePath, '{"name":"daw-dsp","private":false}\n');
+
+            execFileSync(process.execPath, [helper, 'daw-dsp'], { cwd: crateDirectory, encoding: 'utf8' });
+
+            expect(JSON.parse(readFileSync(packagePath, 'utf8'))).toMatchObject({ private: true });
+            expect(existsSync(join(crateDirectory, 'public/wasm/daw-dsp/package.json'))).toBe(false);
+        } finally {
+            rmSync(helperRoot, { recursive: true, force: true });
+        }
     });
 
     it('rejects empty, unrelated, stale, generic, and unbound fallback proof evidence', () => {
@@ -267,7 +304,7 @@ describe('project license', () => {
         expect(validateDependencyLicenseProof(root, record, proof)).toHaveLength(1);
 
         write(root, path, '');
-        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('lacks legal or copyright content');
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('legal file is empty');
 
         write(root, path, 'Apache License, Version 2.0\nCopyright Example\n');
         proof.files[0]!.sha256 = digest('Apache License, Version 2.0\nCopyright Example\n');

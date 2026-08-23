@@ -1298,10 +1298,12 @@ describe('release inventory', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-duplicate-inventory-'));
         try {
             mkdirSync(join(root, 'release'), { recursive: true });
-            writeFileSync(join(root, 'release/open-source-inventory.json'), '{"schemaVersion":1,"schemaVersion":1}');
-            expect(() => readReleaseInventory(root)).toThrow('duplicate key $.schemaVersion');
+            writeFileSync(join(root, 'release/open-source-inventory.json'), '{"surface":{"id":"one","id":"two"}}');
+            expect(() => readReleaseInventory(root)).toThrow('duplicate key');
             writeFileSync(join(root, 'release/open-source-inventory.json'), '');
-            expect(() => readReleaseInventory(root)).toThrow('expected value at byte 0');
+            expect(() => readReleaseInventory(root)).toThrow('invalid JSON');
+            writeFileSync(join(root, 'release/open-source-inventory.json'), '{"surface":]');
+            expect(() => readReleaseInventory(root)).toThrow('invalid JSON');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
