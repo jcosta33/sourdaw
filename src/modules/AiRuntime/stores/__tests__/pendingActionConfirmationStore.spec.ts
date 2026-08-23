@@ -4,6 +4,7 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
+    settlePendingActionResourceLease,
 } from '../pendingActionConfirmationStore';
 
 describe('pendingActionConfirmationStore', () => {
@@ -223,5 +224,35 @@ describe('pendingActionConfirmationStore', () => {
         expect(proposePendingActionConfirmation(createInput('second', rejectedRelease))).toBeNull();
         expect(firstRelease).not.toHaveBeenCalled();
         expect(rejectedRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains a failed async release so cleanup can be retried', async () => {
+        const release = vi
+            .fn<() => Promise<void>>()
+            .mockRejectedValueOnce(new Error('durable release interrupted'))
+            .mockResolvedValueOnce(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-retryable-release',
+            prompt: 'retry cleanup',
+            assistantMessageId: 'message-retryable-release',
+            actions: [{ type: 'createBus', payload: { name: 'Retry', busId: 'bus-retry' } }],
+            actionLabels: ['Retry'],
+            projectRevision: 'revision-retryable-release',
+            resourceLease: { bytes: 1, release },
+        });
+
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-retryable-release',
+                disposition: 'discard',
+            })
+        ).rejects.toThrow('durable release interrupted');
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-retryable-release',
+                disposition: 'discard',
+            })
+        ).resolves.toBeUndefined();
+        expect(release).toHaveBeenCalledTimes(2);
     });
 });

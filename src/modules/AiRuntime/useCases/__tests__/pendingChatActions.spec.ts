@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
@@ -12,6 +13,7 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     proposePendingActionConfirmation as storePendingActionConfirmation,
+    settlePendingActionResourceLease,
 } from '../../stores/pendingActionConfirmationStore';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
@@ -115,7 +117,10 @@ function proposePendingActionConfirmation(
     });
 }
 
-function proposePendingAppAction(id: string): void {
+function proposePendingAppAction(
+    id: string,
+    resourceLease?: Parameters<typeof storePendingActionConfirmation>[0]['resourceLease']
+): void {
     proposePendingActionConfirmation({
         id,
         prompt: 'delete drums',
@@ -124,6 +129,7 @@ function proposePendingAppAction(id: string): void {
         actionLabels: ['Remove track'],
         executionMode: 'atomic',
         projectRevision: 'revision-1',
+        resourceLease,
     });
 }
 
@@ -185,6 +191,7 @@ describe('pending chat action confirmation', () => {
     afterEach(() => {
         commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
+        vi.restoreAllMocks();
     });
 
     it('should execute a proposed action group only after explicit confirmation', async () => {
@@ -280,6 +287,13 @@ describe('pending chat action confirmation', () => {
     });
 
     it('lets Stop cancel an accepted app-action confirmation before commit', async () => {
+        const releaseError = new Error('durable release interrupted');
+        let failRelease: (() => void) | undefined;
+        const releasePending = new Promise<void>((_resolve, reject) => {
+            failRelease = () => reject(releaseError);
+        });
+        const release = vi.fn(() => releasePending);
+        const logError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
         mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
             const activeAborter = mocks.setActiveAborter.mock.calls.find(
                 (call) => call[0] instanceof AbortController
@@ -295,9 +309,17 @@ describe('pending chat action confirmation', () => {
                 actions: [],
             });
         });
-        proposePendingAppAction('confirm-stop');
+        proposePendingAppAction('confirm-stop', { bytes: 1, release });
 
-        const result = await confirmPendingChatActions({ confirmationId: 'confirm-stop' });
+        let confirmationSettled = false;
+        const confirmation = confirmPendingChatActions({ confirmationId: 'confirm-stop' }).then((result) => {
+            confirmationSettled = true;
+            return result;
+        });
+        await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+        expect(confirmationSettled).toBe(false);
+        failRelease?.();
+        const result = await confirmation;
 
         expect(result).toEqual({ status: 'cancelled' });
         expect(getPendingActionConfirmation('confirm-stop')?.status).toBe('cancelled');
@@ -306,6 +328,15 @@ describe('pending chat action confirmation', () => {
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+        expect(logError).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: 'Confirmed AI action resource cleanup failed; the durable lease remains retryable',
+                cause: releaseError,
+            })
+        );
+        release.mockResolvedValueOnce(undefined);
+        await settlePendingActionResourceLease({ confirmationId: 'confirm-stop', disposition: 'discard' });
+        expect(release).toHaveBeenCalledTimes(2);
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
             'assistant-1',
             expect.objectContaining({

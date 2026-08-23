@@ -151,7 +151,11 @@ type PendingActionResourceLease = {
 const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>();
 
 function reportResourceReleaseFailure(error: unknown): void {
-    logger.error('[PendingActionConfirmation] Prepared resource release failed; the lease remains retryable', error);
+    logger.error(
+        new Error('[PendingActionConfirmation] Prepared resource release failed', {
+            cause: error,
+        })
+    );
 }
 
 async function releasePendingActionResourceLease(confirmationId: string): Promise<void> {
