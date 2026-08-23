@@ -360,7 +360,7 @@ describe('verse Hall send automation workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: track-lead-vocal, track-backing-vocal, bus-hall, section-verse-two'
+            'Affected IDs: section-verse-two, track-lead-vocal, track-backing-vocal, bus-hall'
         );
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toHaveLength(1);
         expect(undoStore.value?.past).toHaveLength(1);
@@ -445,7 +445,7 @@ describe('verse Hall send automation workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects stale confirmation when a collaborator changes one guarded Hall send', async () => {
+    it('fails stale confirmation when a collaborator changes one guarded Hall send', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -464,13 +464,13 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('invalidated');
+        expect(result.status).toBe('failed');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
     });
 
-    it('rejects stale confirmation when a collaborator turns automation off for one vocal', async () => {
+    it('fails stale confirmation when a collaborator turns automation off for one vocal', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -482,7 +482,7 @@ describe('verse Hall send automation workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('invalidated');
+        expect(result.status).toBe('failed');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         const proposal = chatStore.value?.messages.find(

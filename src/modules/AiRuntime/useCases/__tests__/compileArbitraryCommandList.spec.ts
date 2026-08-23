@@ -118,7 +118,7 @@ function compileSidechainDeviceSelector(input: {
             {
                 name: 'command.batch.propose',
                 arguments: {
-                    plan: plan([selectedDevice.id], input.protectedTargetIds),
+                    plan: plan(['track-kick', 'track-bass', selectedDevice.id], input.protectedTargetIds),
                     list: {
                         schemaVersion: 1,
                         items: [
@@ -664,14 +664,41 @@ describe('compileArbitraryCommandList', () => {
     });
 
     it('keys sidechain creation by source and materialized target device', () => {
+        const routeContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-hat'
+                    ? {
+                          ...track,
+                          deviceCount: 2,
+                          devices: [
+                              {
+                                  id: 'compressor-a',
+                                  name: 'Compressor A',
+                                  type: 'builtin-sidechain-compressor',
+                                  bypassed: false,
+                                  parameters: [],
+                              },
+                              {
+                                  id: 'compressor-b',
+                                  name: 'Compressor B',
+                                  type: 'builtin-sidechain-compressor',
+                                  bypassed: false,
+                                  parameters: [],
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
         const result = compileArbitraryCommandList({
-            context,
+            context: routeContext,
             revision: 'revision-1',
             calls: [
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick', 'track-hat']),
+                        plan: plan(['track-kick', 'track-hat', 'compressor-a', 'compressor-b']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -784,14 +811,34 @@ describe('compileArbitraryCommandList', () => {
     });
 
     it('rejects duplicate sidechain creation for one source and materialized target device', () => {
+        const routeContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-hat'
+                    ? {
+                          ...track,
+                          deviceCount: 1,
+                          devices: [
+                              {
+                                  id: 'compressor-a',
+                                  name: 'Compressor A',
+                                  type: 'builtin-sidechain-compressor',
+                                  bypassed: false,
+                                  parameters: [],
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
         const result = compileArbitraryCommandList({
-            context,
+            context: routeContext,
             revision: 'revision-1',
             calls: [
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick', 'track-hat']),
+                        plan: plan(['track-kick', 'track-hat', 'compressor-a']),
                         list: {
                             schemaVersion: 1,
                             items: [

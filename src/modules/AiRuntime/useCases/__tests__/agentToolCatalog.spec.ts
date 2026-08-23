@@ -126,6 +126,8 @@ describe('agent tool catalog', () => {
                 requestTurn,
             })
         ).resolves.toMatchObject({ status: 'complete' });
+    });
+
     it('publishes the complete semantic-list grammar from the public versioned contract', () => {
         const proposalSchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
             (schema: ToolSchema) => schema.function.name === 'command.batch.propose'

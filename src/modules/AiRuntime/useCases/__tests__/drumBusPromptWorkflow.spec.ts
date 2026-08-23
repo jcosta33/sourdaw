@@ -12,6 +12,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandTrackDefaultsPort,
+    getExecutableAppActionGroundingRules,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -251,6 +252,31 @@ function getProviderPlanScope(
         ),
     ];
     return { targetIds, targetRanges, protectedTargetIds, protectedRanges: [] };
+}
+
+function getSemanticProviderPlanScope(
+    plan: readonly ProviderPlanCall[],
+    protectedTargetIds: string[] = []
+): ProviderScope {
+    const targetIds = [
+        ...new Set(
+            plan.flatMap((call) =>
+                (getExecutableAppActionGroundingRules(call.name)?.targetRules ?? []).flatMap((targetRule) => {
+                    const value = call.arguments[targetRule.argument];
+                    if (typeof value === 'string' && !value.startsWith('$')) {
+                        return [value];
+                    }
+                    return Array.isArray(value)
+                        ? value.filter(
+                              (candidate): candidate is string =>
+                                  typeof candidate === 'string' && !candidate.startsWith('$')
+                          )
+                        : [];
+                })
+            )
+        ),
+    ];
+    return { targetIds, targetRanges: [], protectedTargetIds, protectedRanges: [] };
 }
 
 function createSemanticProviderItems(plan: readonly ProviderPlanCall[]): SemanticCommandListItem[] {
@@ -530,7 +556,7 @@ function getMf01ProviderScope(userMessage: string, plan: readonly ProviderPlanCa
     ) {
         throw new TypeError('Expected exact MF-01 protected return');
     }
-    return getProviderPlanScope(plan, [capability.protectedReturn.id]);
+    return getSemanticProviderPlanScope(plan, [capability.protectedReturn.id]);
 }
 
 function useMf01WebLlmFixture(): void {
@@ -649,6 +675,7 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
     }
 
     const targetsByDeviceId = new Map<string, { trackId: string; deviceName: string; deviceType: string }>();
+    const targetTrackIds = new Set<string>();
     for (const target of targets) {
         if (
             !isRecord(target) ||
@@ -665,9 +692,10 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
             deviceName: target.deviceName,
             deviceType: target.deviceType,
         });
+        targetTrackIds.add(target.trackId);
     }
 
-    const targetIds: string[] = [];
+    const targetIds: string[] = [source.trackId];
     const items = allowedAction.exactRoutes.map((route, index): SemanticCommandListItem => {
         if (
             !isRecord(route) ||
@@ -685,6 +713,9 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
         ) {
             throw new TypeError('Expected MF-06 routes to match capability-filtered target devices');
         }
+        if (!targetIds.includes(target.trackId)) {
+            targetIds.push(target.trackId);
+        }
         targetIds.push(route.targetDeviceId);
         return {
             id: `sidechain-route-${String(index + 1)}`,
@@ -698,7 +729,7 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
             },
         };
     });
-    if (targetIds.length !== targetsByDeviceId.size) {
+    if (targetIds.length !== targetsByDeviceId.size + targetTrackIds.size + 1) {
         throw new TypeError('Expected complete MF-06 capability target ordering');
     }
 
@@ -819,6 +850,11 @@ describe('drum bus prompt workflow', () => {
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
         );
+        if (!confirmation) {
+            throw new Error(
+                `Expected EX-11 confirmation: ${JSON.stringify(chatStore.value?.messages.at(-1) ?? 'missing')}`
+            );
+        }
         expect(confirmation?.actions.map((action) => action.type)).toEqual([
             'createBus',
             'setTrackOutput',
@@ -1152,7 +1188,7 @@ describe('drum bus prompt workflow', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
-    it('aborts the whole EX-11 batch when a routed target changes after confirmation', async () => {
+    it('fails the whole EX-11 batch when a routed target changes after confirmation', async () => {
         setEx11Project();
         useEx11WebLlmFixture();
         await sendChatMessage(EX11_PROMPT);
@@ -1174,7 +1210,7 @@ describe('drum bus prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result.status).toBe('invalidated');
+        expect(result.status).toBe('failed');
         expect(trackStore.value?.tracks).toEqual(collaboratorState);
         expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
@@ -1559,7 +1595,7 @@ describe('drum bus prompt workflow', () => {
         setMf01Project({ 'track-room': (track) => ({ ...track, name: 'Audio 1' }) });
         useWebLlmPlanFixture(
             mf01ProviderPlan.slice(0, 3),
-            getProviderPlanScope(mf01ProviderPlan.slice(0, 3), ['track-parallel']),
+            getSemanticProviderPlanScope(mf01ProviderPlan.slice(0, 3), ['track-parallel']),
             'drum-routing'
         );
 
@@ -1629,7 +1665,7 @@ describe('drum bus prompt workflow', () => {
         }
     );
 
-    it('normalizes a reordered hosted MF-01 plan to the same exact action order and receipt', async () => {
+    it('rejects a reordered hosted MF-01 compiler graph without a confirmation', async () => {
         setMf01Project();
         runtimeMocks.backend.value = 'cloud';
         useMf01HostedFixture({ reverse: true });
@@ -1637,31 +1673,14 @@ describe('drum bus prompt workflow', () => {
         await sendChatMessage(MF01_PROMPT);
 
         expect(getHostedRequestBody()).toContain(MF01_PROMPT);
-        const confirmation = getPendingActionConfirmation(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
-                ?.pendingActionConfirmationId ?? ''
-        );
-        expect(
-            confirmation?.actions.map((action) => action.type === 'setTrackOutput' && action.payload.trackId)
-        ).toEqual(['track-kick', 'track-snare', 'track-hats', 'track-room']);
-        expect(confirmation?.protectedUnchanged).toEqual([
-            { id: 'track-parallel', name: 'Parallel Compression Return' },
-        ]);
-
-        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
-            status: 'executed',
-        });
+        expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
         expect(['track-kick', 'track-snare', 'track-hats', 'track-room'].map((id) => getTrack(id).outputId)).toEqual([
-            'bus-drums',
-            'bus-drums',
-            'bus-drums',
-            'bus-drums',
+            'master',
+            'master',
+            'master',
+            'master',
         ]);
-        const receipt = chatStore.value?.messages.find(
-            (message) => message.pendingActionConfirmationId === confirmation?.id
-        );
-        expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain('Protected unchanged: "Parallel Compression Return" (track-parallel)');
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each([
@@ -2044,12 +2063,12 @@ describe('drum bus prompt workflow', () => {
         expect(confirmation?.affectedIds).not.toContain('device-guitar-comp');
         expect(confirmation?.affectedIds).not.toContain('device-bass-eq');
         expect(confirmation?.affectedIds).toEqual([
+            'device-bass-comp-a',
             'track-bass-synth',
             'track-kick',
-            'device-bass-comp-a',
             'device-bass-comp-b',
-            'track-bass-di',
             'device-bass-di-comp',
+            'track-bass-di',
         ]);
         expect(confirmation?.protectedUnchanged).toEqual([
             { id: 'device-bass-eq', name: 'Bass Synth Bass EQ' },
@@ -2100,7 +2119,7 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
+        expect(receipt?.content).toContain('Affected IDs: device-bass-comp-a, sidechain-command-');
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
         for (const [index, routeId] of routeIds.entries()) {
             expect(executedActions?.[index]?.affectedIds).toContain(routeId);
@@ -2188,7 +2207,7 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
+        expect(receipt?.content).toContain('Affected IDs: device-bass-comp-a, sidechain-command-');
         const routeIds = sidechainStore.value?.routes.map((route) => route.id) ?? [];
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
         expect(routeIds).toHaveLength(3);
@@ -2208,7 +2227,7 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(3);
     });
 
-    it('normalizes the exact hosted EX-06 masking plan to the WebLLM action order', async () => {
+    it('rejects a reordered hosted EX-06 compiler graph without a confirmation', async () => {
         setMf06Project();
         runtimeMocks.backend.value = 'cloud';
         useMf06HostedFixture({ reverse: true });
@@ -2218,36 +2237,9 @@ describe('drum bus prompt workflow', () => {
         const userMessage = getHostedUserMessage(runtimeMocks.fetch.mock.calls.at(-1)?.[1]);
         expect(userMessage).toContain(EX06_PROMPT);
         expectSidechainRoutingCapability(userMessage);
-        const confirmation = getPendingActionConfirmation(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
-                ?.pendingActionConfirmationId ?? ''
-        );
-        expect(confirmation?.actions).toEqual([
-            {
-                type: 'addSidechainRoute',
-                payload: {
-                    sourceTrackId: 'track-kick',
-                    targetTrackId: 'track-bass-synth',
-                    targetDeviceId: 'device-bass-comp-a',
-                },
-            },
-            {
-                type: 'addSidechainRoute',
-                payload: {
-                    sourceTrackId: 'track-kick',
-                    targetTrackId: 'track-bass-synth',
-                    targetDeviceId: 'device-bass-comp-b',
-                },
-            },
-            {
-                type: 'addSidechainRoute',
-                payload: {
-                    sourceTrackId: 'track-kick',
-                    targetTrackId: 'track-bass-di',
-                    targetDeviceId: 'device-bass-di-comp',
-                },
-            },
-        ]);
+        expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
+        expect(sidechainStore.value?.routes).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each(['omission', 'enlargement'] as const)(
@@ -2319,23 +2311,17 @@ describe('drum bus prompt workflow', () => {
         expect(terminalMessage?.content).not.toContain('Outcome: committed');
     });
 
-    it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
+    it('rejects a reversed hosted MF-06 compiler graph without a confirmation', async () => {
         setMf06Project();
         runtimeMocks.backend.value = 'cloud';
         useMf06HostedFixture({ reverse: true });
 
         await sendChatMessage(MF06_PROMPT);
 
-        const confirmation = getPendingActionConfirmation(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
-                ?.pendingActionConfirmationId ?? ''
-        );
         expectSidechainRoutingCapability(getHostedUserMessage(getHostedRequestBody()));
-        expect(
-            confirmation?.actions.flatMap((action) =>
-                action.type === 'addSidechainRoute' ? [action.payload.targetDeviceId] : []
-            )
-        ).toEqual(['device-bass-comp-a', 'device-bass-comp-b', 'device-bass-di-comp']);
+        expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
+        expect(sidechainStore.value?.routes).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each(['omission', 'duplicate', 'enlargement'] as const)(

@@ -461,7 +461,7 @@ function stableTopologicalSort(
 const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
 function capabilityRequiresConcreteDependency(capability: string): boolean {
-    return capability === 'device' || capability === 'device-parameter';
+    return capability === 'device' || capability === 'sidechain-capable-device' || capability === 'device-parameter';
 }
 
 type BatchLocalBindingProducer = {

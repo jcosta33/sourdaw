@@ -126,7 +126,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:f6c78ac5891e95105794a3d463af3e5ba7c98f657c6f2101cb859d13277abc52:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:b7703b946c1bc967300f25e4a456dc8260979df0ae74bbe42fb1bb95b0b6dbad:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:362b8480e9be35c45a075a17d01b1b957e1ba92a423fa6fef7fda72cf1fb7614:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
@@ -215,7 +215,7 @@
             "sources": ["package.json", "server/package.json", "server/package-lock.json", "pnpm-lock.yaml"],
             "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
             "digests": [
-                "sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f",
+                "sha256:a29896ddb106bd05a2e92d1babdb26b6365229f05846be63430ef325c4f35811",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
@@ -926,7 +926,7 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:12603973c6ecc95707d1c304117fdf640c569e1e789bf4e13b9e43a86c3f5e43",
+                "daw-dsp sha256:75c58d9f77c25b66ea3dcca3016b91a30802bf501d3e13ead1bd93857ec7e915",
                 "daw-wasm-decoder sha256:3cfe877aa4697636958db39a2cb8e05e9a16d64bf66296799980d6fc7d3689c1",
                 "proof-chamber sha256:a4436f7348cc10aa164109274b475ea95ebf7fc5bdd14f588aa3a400c2032f94",
                 "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
@@ -1157,11 +1157,11 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "66563bdb8109f2155a7494f45f6f854e73a7596f5feca5e4b47ab30febd9b655"
+            "sha256": "95e12d174d258bc953d5f926973cb732ca1b362d3c15c9f9178ccdf9821d4c94"
         },
         {
             "path": "server/package.json",
-            "sha256": "e52537024fa9b3cff993a31fc552f600584b0d0d77f67607744a8135ec674ed0"
+            "sha256": "4a2996822f0839eb158de820c17af4eae08a6d46fb593c806b8ff8b4179cf238"
         },
         {
             "path": "server/package-lock.json",
@@ -1169,7 +1169,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f"
+            "sha256": "a29896ddb106bd05a2e92d1babdb26b6365229f05846be63430ef325c4f35811"
         },
         {
             "path": "Cargo.toml",
@@ -1185,7 +1185,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e"
+            "sha256": "02b4c66352a3976a7d77737e7ecc3cef320f43c40a1796db43ad4256d65ea8bf"
         }
     ],
     "externalReferences": [

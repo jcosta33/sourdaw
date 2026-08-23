@@ -509,10 +509,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // `compileCommandArgumentMetadata` references, not device compilation,
         // hydration, or engine writes.
         'src/modules/Command/useCases/commandArgumentMetadata.ts': 1,
-        // Count provenance: the pure static-authority projection imports and calls
-        // compileCommandArgumentMetadata; it only derives immutable target/time
-        // metadata and contains no device write or hydration sink.
-        'src/modules/Command/useCases/getAppActionStaticAuthority.ts': 2,
         // Count provenance: partial acceptance calls the canonical batch compiler;
         // all four compile* references are import, declaration, and call metadata.
         // It neither hydrates devices nor writes project or engine state.

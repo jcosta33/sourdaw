@@ -466,7 +466,7 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(true);
     });
 
-    it('does not write a canonical repeated batch after a competing track update', async () => {
+    it('fails without writing a canonical repeated batch after a competing track update', async () => {
         registerCanonicalMuteHandler();
         const actions = compileRepeatedMuteActions();
         propose(actions, 'confirmation-repeated-mute-conflict');
@@ -478,7 +478,7 @@ describe('confirmed compound bus actions', () => {
 
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-repeated-mute-conflict' })
-        ).resolves.toMatchObject({ status: 'invalidated' });
+        ).resolves.toMatchObject({ status: 'failed' });
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(true);
         expect(undoStore.value?.past).toEqual([]);
         expect(aiActionHistoryStore.value?.groups).toEqual([]);

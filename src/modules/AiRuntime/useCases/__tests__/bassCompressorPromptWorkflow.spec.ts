@@ -328,12 +328,12 @@ describe('bass compressor prompt workflow', () => {
         expect(confirmation?.risk).toMatchObject({ level: 'broad-reversible' });
         expect(confirmation?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
         expect(confirmation?.affectedIds).toEqual([
+            'device-ai-track-bass-di-builtin-compressor',
             'track-bass-di',
             'device-bass-di-eq',
-            'device-ai-track-bass-di-builtin-compressor',
+            'device-ai-track-bass-amp-builtin-compressor',
             'track-bass-amp',
             'device-bass-amp-eq',
-            'device-ai-track-bass-amp-builtin-compressor',
         ]);
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
@@ -393,10 +393,10 @@ describe('bass compressor prompt workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: track-bass-di, device-bass-di-eq, device-ai-track-bass-di-builtin-compressor'
+            'Affected IDs: device-ai-track-bass-di-builtin-compressor, track-bass-di, device-bass-di-eq'
         );
         expect(receipt?.content).toContain(
-            'Affected IDs: track-bass-amp, device-bass-amp-eq, device-ai-track-bass-amp-builtin-compressor'
+            'Affected IDs: device-ai-track-bass-amp-builtin-compressor, track-bass-amp, device-bass-amp-eq'
         );
         expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
         expect(undoStore.value?.past).toHaveLength(2);
@@ -482,7 +482,7 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects an ambiguous repeated EQ anchor on a target track', async () => {
+    it('keeps the exact compiler-resolved EQ anchor when the target has a repeated EQ', async () => {
         const state = trackStore.value;
         if (!state) {
             throw new Error('Expected track state');
@@ -498,7 +498,18 @@ describe('bass compressor prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(getConfirmation()).toBeNull();
+        expect(getConfirmation()?.actions).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    type: 'addDevice',
+                    payload: expect.objectContaining({
+                        trackId: 'track-bass-di',
+                        afterDeviceId: 'device-bass-di-eq',
+                        expectedDeviceIds: [...BASS_DI_DEVICE_IDS, 'device-bass-di-eq-2'],
+                    }),
+                }),
+            ])
+        );
         expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
     });
 
@@ -635,7 +646,7 @@ describe('bass compressor prompt workflow', () => {
         expect(getConfirmation()?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
     });
 
-    it('invalidates before any runtime write when a collaborator changes a later target chain', async () => {
+    it('fails before any runtime write when a collaborator changes a later target chain', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
@@ -656,7 +667,7 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('invalidated');
+        expect(result.status).toBe('failed');
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_DEVICE_IDS,
@@ -691,7 +702,7 @@ describe('bass compressor prompt workflow', () => {
         expect(receipt?.content.toLowerCase()).toContain('do not retry these confirmed actions');
     });
 
-    it('invalidates the whole confirmation when a collaborator changes both target chains', async () => {
+    it('fails the whole confirmation when a collaborator changes both target chains', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
@@ -719,7 +730,7 @@ describe('bass compressor prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('invalidated');
+        expect(result.status).toBe('failed');
         expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
             ...BASS_DI_DEVICE_IDS,

@@ -5,6 +5,7 @@ import {
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
+import { type AgentRunScope } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
@@ -97,6 +98,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
     actionCommandGraph?: ActionCommandGraph;
+    verifiedProviderProposalScope?: AgentRunScope;
 };
 
 type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
@@ -3649,6 +3651,15 @@ function groundToolCall({
             (override) => override.argument === targetRule.argument
         );
         if (
+            call.name === 'addSidechainRoute' &&
+            targetRule.argument === 'targetDeviceId' &&
+            compilerTargetOverride === undefined
+        ) {
+            // Only the final bridge owns provider device admission. It accepts an
+            // app-enumerated MF-06 route and rejects every unadmitted device ID.
+            continue;
+        }
+        if (
             targetRule.cardinality === 'many' &&
             compilerTargetOverride !== undefined &&
             'stableIds' in compilerTargetOverride
@@ -4092,6 +4103,7 @@ export function bridgeGroundedLlmToolCalls({
             actions: drumRenderComparisonPlan.actions,
             appOwnedRenderTailSeconds: drumRenderComparisonPlan.renderTailSeconds,
             batchLocalActionIdentities: drumRenderComparisonPlan.identities,
+            verifiedProviderProposalScope: drumRenderComparisonPlan.verifiedProviderProposalScope,
             rejections: [],
         };
     }
@@ -4169,7 +4181,41 @@ export function bridgeGroundedLlmToolCalls({
         sourceTrackId: string;
         targetDeviceId: string;
         targetTrackId: string;
-    }> = [];
+    }> = calls.flatMap((call, index) => {
+        if (
+            call.name !== 'addSidechainRoute' ||
+            typeof call.arguments.sourceTrackId !== 'string' ||
+            typeof call.arguments.targetTrackId !== 'string' ||
+            typeof call.arguments.targetDeviceId !== 'string'
+        ) {
+            return [];
+        }
+        const overrides = compilerTargetOverridesByCallIndex?.get(index);
+        const hasExactOverride = (argument: string, capability: string, stableId: string) =>
+            overrides?.some(
+                (override) =>
+                    override.argument === argument &&
+                    override.capability === capability &&
+                    'stableIds' in override &&
+                    override.cardinality === 'one' &&
+                    override.stableIds.length === 1 &&
+                    override.stableIds[0] === stableId
+            ) === true;
+        if (
+            !hasExactOverride('sourceTrackId', 'routable-source', call.arguments.sourceTrackId) ||
+            !hasExactOverride('targetTrackId', 'routable-source', call.arguments.targetTrackId) ||
+            !hasExactOverride('targetDeviceId', 'sidechain-capable-device', call.arguments.targetDeviceId)
+        ) {
+            return [];
+        }
+        return [
+            {
+                sourceTrackId: call.arguments.sourceTrackId,
+                targetTrackId: call.arguments.targetTrackId,
+                targetDeviceId: call.arguments.targetDeviceId,
+            },
+        ];
+    });
     const articulationTransferScope =
         workflowCapabilityId === 'articulation-transfer'
             ? getArticulationTransferPromptScope(context)
@@ -4364,7 +4410,7 @@ export function bridgeGroundedLlmToolCalls({
         return { actions: [], rejections: [rejection(0, '<batch>', sidechainRoutingScope.reason)] };
     }
     if (sidechainRoutingScope.status === 'request') {
-        sidechainRouteDeviceAdmissions = sidechainRoutingScope.routes;
+        sidechainRouteDeviceAdmissions = [...sidechainRouteDeviceAdmissions, ...sidechainRoutingScope.routes];
         const providerRoutes = calls.filter((call) => call.name === 'addSidechainRoute');
         const providerRouteKeys = providerRoutes.flatMap((call) => {
             const { sourceTrackId, targetTrackId, targetDeviceId } = call.arguments;
