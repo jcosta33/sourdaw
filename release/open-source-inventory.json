@@ -95,7 +95,9 @@
                 "crates/**",
                 "release/dependency-license-proofs.json",
                 "release/dependency-license-proofs/**",
-                "release/upstream-proofs/**"
+                "release/spdx-license-texts/**",
+                "release/upstream-proofs/**",
+                "scripts/dependencyLicenseReport.ts"
             ],
             "sources": [
                 ".gitattributes",
@@ -114,14 +116,16 @@
                 "crates/**",
                 "release/dependency-license-proofs.json",
                 "release/dependency-license-proofs/**",
-                "release/upstream-proofs/**"
+                "release/spdx-license-texts/**",
+                "release/upstream-proofs/**",
+                "scripts/dependencyLicenseReport.ts"
             ],
             "revisions": ["current tracked project license and pinned dependency evidence"],
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:46bf9487c49e702604a09d6a7f0aa1d64f4f2991f55ce239c1032487c0369688:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:ec635b491386d58cdb191ae480c565c89388ff589a684bb970647f1b5c2086d8:release/dependency-license-proofs.json"
+                "sha256:030d28a1fd39c99e9ff0215e5f407f98e41fedc31cecedacf23f6525a710f2ce:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:34a22e363a1f0032e2bea75066e8fc94285cb469dd11bf4fbe172b2a5a686257:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": [
@@ -205,7 +209,7 @@
             "sources": ["package.json", "server/package.json", "server/package-lock.json", "pnpm-lock.yaml"],
             "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
             "digests": [
-                "sha256:fcb5d3d1ccc3093c4f934df7fd5a3dade0c867a63f0d9d97b5b09c0ca01e6f5a",
+                "sha256:16c075ab3a0663541806c4560b7c52656a533ccf13ca5fddb9bca3c2e1a260fb",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": ["per-package declared terms and exact archive or pinned-upstream legal files"],
@@ -822,7 +826,7 @@
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:47f48cbdf958c0c6a5ba3a849fdba182084844b7290e922d4a4e7b252e5ec569:grand-boule-release-proof"
+                "tracked-set-sha256:feff6e1fd4d9cb9936b08295fec16cea90617736e465ad32cc656e079e1b5f40:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
@@ -1143,7 +1147,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "7a71a48e51c61d5c513203fc87525a9367d0c373c511ae358d13a9b637ba2f81"
+            "sha256": "3946a3719e9625b30024d06509d8a2ddd8a9e0412fa1096008c037a5a2f55054"
         },
         {
             "path": "server/package.json",
@@ -1155,7 +1159,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "fcb5d3d1ccc3093c4f934df7fd5a3dade0c867a63f0d9d97b5b09c0ca01e6f5a"
+            "sha256": "16c075ab3a0663541806c4560b7c52656a533ccf13ca5fddb9bca3c2e1a260fb"
         },
         {
             "path": "Cargo.toml",
@@ -1612,6 +1616,31 @@
             "surface": "project-wasm",
             "file": "public/wasm/scoring/package.json",
             "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/Apache-2.0.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/ISC.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/LGPL-3.0-only.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/Unlicense.txt"
         },
         {
             "surface": "project-source",

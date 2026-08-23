@@ -660,7 +660,7 @@
             "revision": "sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==",
             "files": [
                 {
-                    "path": "release/dependency-license-proofs/ws-8.21.1-LICENSE",
+                    "archivePath": "release/dependency-license-proofs/ws-8.21.1.tgz",
                     "sourcePath": "LICENSE",
                     "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
                 }

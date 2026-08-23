@@ -931,7 +931,9 @@ export function projectLicenseDistributionReleaseInventoryContract(root: string)
         'crates/**',
         'release/dependency-license-proofs.json',
         'release/dependency-license-proofs/**',
+        'release/spdx-license-texts/**',
         'release/upstream-proofs/**',
+        'scripts/dependencyLicenseReport.ts',
     ];
     return {
         kind: 'distribution',

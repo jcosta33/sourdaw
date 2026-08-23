@@ -245,15 +245,69 @@ describe('project license', () => {
             })
         );
         expect(collectNpmLockDependencyLicenses(root)).toEqual([
-            expect.objectContaining({ name: 'optional', version: '2.0.0' }),
+            expect.objectContaining({ name: 'optional', version: '2.0.0', serverLockPath: 'node_modules/optional' }),
             expect.objectContaining({
                 ecosystem: 'npm',
                 name: 'ws',
                 version: '8.21.1',
+                serverLockPath: 'node_modules/ws',
                 graphs: ['server/package-lock.json'],
                 legalFiles: [],
             }),
         ]);
+    });
+
+    it('rejects incomplete server closures and preserves nested lock identity', () => {
+        const lock = (packages: Record<string, unknown>): void =>
+            write(root, 'server/package-lock.json', JSON.stringify({ packages }));
+
+        lock({ '': { dependencies: { missing: '1.0.0' } } });
+        expect(() => collectNpmLockDependencyLicenses(root)).toThrow('server production dependency is missing');
+
+        lock({ '': { dependencies: { dev: '1.0.0' } }, 'node_modules/dev': { version: '1.0.0', dev: true } });
+        expect(() => collectNpmLockDependencyLicenses(root)).toThrow('server production dependency is marked dev-only');
+
+        lock({
+            '': { dependencies: { native: '1.0.0' } },
+            'node_modules/native': { version: '1.0.0', license: 'MIT', os: ['darwin'] },
+        });
+        expect(() => collectNpmLockDependencyLicenses(root)).toThrow('platform-restricted server dependency may ship');
+
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.21.1.tgz';
+        const revision =
+            'sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==';
+        lock({
+            '': { dependencies: { parent: '1.0.0' } },
+            'node_modules/parent': {
+                version: '1.0.0',
+                license: 'MIT',
+                dependencies: { ws: '8.21.1' },
+            },
+            'node_modules/parent/node_modules/ws': {
+                version: '8.21.1',
+                license: 'MIT',
+                resolved: source,
+                integrity: revision,
+            },
+        });
+        const nested = collectNpmLockDependencyLicenses(root).find(({ name }) => name === 'ws')!;
+        expect(nested.serverLockPath).toBe('node_modules/parent/node_modules/ws');
+        const archivePath = 'release/dependency-license-proofs/ws-8.21.1.tgz';
+        mkdirSync(dirname(join(root, archivePath)), { recursive: true });
+        writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
+        expect(
+            validateDependencyLicenseProof(root, nested, {
+                source,
+                revision,
+                files: [
+                    {
+                        archivePath,
+                        sourcePath: 'LICENSE',
+                        sha256: '2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef',
+                    },
+                ],
+            })
+        ).toHaveLength(1);
     });
 
     it('excludes host-selected package archives from the cross-platform dependency report', () => {
@@ -321,7 +375,10 @@ describe('project license', () => {
             mkdirSync(join(helperRoot, 'node_modules'), { recursive: true });
             symlinkSync(join(process.cwd(), 'node_modules/yaml'), join(helperRoot, 'node_modules/yaml'), 'dir');
             writeFileSync(helper, readFileSync(join(scriptsDirectory, 'markWasmPackageInternal.ts')));
-            writeFileSync(join(helperRoot, 'scripts/strictJson.ts'), readFileSync(join(scriptsDirectory, 'strictJson.ts')));
+            writeFileSync(
+                join(helperRoot, 'scripts/strictJson.ts'),
+                readFileSync(join(scriptsDirectory, 'strictJson.ts'))
+            );
             writeFileSync(packagePath, '{"name":"daw-dsp","private":false,"private":true}\n');
 
             expect(() =>
@@ -332,88 +389,111 @@ describe('project license', () => {
         }
     });
 
-    it('rejects empty, unrelated, stale, and unbound fallback proof evidence', () => {
+    it('binds fallback proof evidence to the locked package archive', () => {
         const record: DependencyLicenseRecord = {
             ecosystem: 'npm',
-            name: 'example',
-            version: '1.0.0',
+            name: 'ws',
+            version: '8.21.1',
             license: 'MIT',
             legalFiles: [],
+            serverLockPath: 'node_modules/ws',
+            graphs: ['server/package-lock.json'],
         };
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.21.1.tgz';
+        const revision =
+            'sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==';
         write(
             root,
-            'pnpm-lock.yaml',
-            'lockfileVersion: 9.0\npackages:\n  example@1.0.0:\n    resolution:\n      integrity: sha512-example\n'
+            'server/package-lock.json',
+            JSON.stringify({
+                packages: { 'node_modules/ws': { version: '8.21.1', resolved: source, integrity: revision } },
+            })
         );
-        const path = 'release/dependency-license-proofs/example-1.0.0-LICENSE';
-        const mitTerms = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
-        write(root, path, mitTerms);
-        const digest = (contents: string): string => createHash('sha256').update(contents).digest('hex');
+        const archivePath = 'release/dependency-license-proofs/ws-8.21.1.tgz';
+        mkdirSync(dirname(join(root, archivePath)), { recursive: true });
+        writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
         const proof: DependencyLicenseProof = {
-            source: 'npm:example@1.0.0',
-            revision: 'sha512-example',
-            files: [{ path, sourcePath: 'LICENSE', sha256: digest(mitTerms) }],
+            source,
+            revision,
+            files: [
+                {
+                    archivePath,
+                    sourcePath: 'LICENSE',
+                    sha256: '2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef',
+                },
+            ],
         };
 
         expect(validateDependencyLicenseProof(root, record, proof)).toHaveLength(1);
 
-        write(root, path, '');
-        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('legal file is empty');
-
-        write(root, path, 'Apache License, Version 2.0\nCopyright Example\n');
-        proof.files![0]!.sha256 = digest('Apache License, Version 2.0\nCopyright Example\n');
-        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
-            'does not substantiate declared license MIT'
-        );
-
-        write(root, path, mitTerms);
+        proof.files![0]!.sha256 = '0'.repeat(64);
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('dependency proof drifted');
 
-        proof.files![0]!.sha256 = digest(mitTerms);
+        proof.files![0]!.sha256 = '2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef';
+        const archive = readFileSync(join(root, archivePath));
+        archive[archive.length - 1] = archive[archive.length - 1]! ^ 1;
+        writeFileSync(join(root, archivePath), archive);
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
+            'proof archive does not match the locked package'
+        );
+
+        writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
         proof.revision = 'sha512-stale';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof source identity does not match'
         );
 
-        proof.revision = 'sha512-example';
-        proof.files![0]!.path = 'LICENSE';
+        proof.revision = revision;
+        proof.files![0]!.archivePath = 'ws-8.21.1.tgz';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('proof path escapes');
     });
 
-    it('confines checked-in proof files to the exact proof root', () => {
+    it('confines checked-in proof archives to the exact proof root', () => {
         const record: DependencyLicenseRecord = {
             ecosystem: 'npm',
-            name: 'example',
-            version: '1.0.0',
+            name: 'ws',
+            version: '8.21.1',
             license: 'MIT',
             legalFiles: [],
+            serverLockPath: 'node_modules/ws',
+            graphs: ['server/package-lock.json'],
         };
+        const source = 'https://registry.npmjs.org/ws/-/ws-8.21.1.tgz';
+        const revision =
+            'sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==';
         write(
             root,
-            'pnpm-lock.yaml',
-            'lockfileVersion: 9.0\npackages:\n  example@1.0.0:\n    resolution:\n      integrity: sha512-example\n'
+            'server/package-lock.json',
+            JSON.stringify({
+                packages: { 'node_modules/ws': { version: '8.21.1', resolved: source, integrity: revision } },
+            })
         );
-        const contents = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'), 'utf8');
-        const digest = createHash('sha256').update(contents).digest('hex');
         const proof: DependencyLicenseProof = {
-            source: 'npm:example@1.0.0',
-            revision: 'sha512-example',
+            source,
+            revision,
             files: [
                 {
-                    path: 'release/dependency-license-proofs/../outside-LICENSE',
+                    archivePath: 'release/dependency-license-proofs/../ws-8.21.1.tgz',
                     sourcePath: 'LICENSE',
-                    sha256: digest,
+                    sha256: '2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef',
                 },
             ],
         };
         write(root, 'release/dependency-license-proofs/placeholder', 'x');
-        write(root, 'release/outside-LICENSE', contents);
+        writeFileSync(
+            join(root, 'release/ws-8.21.1.tgz'),
+            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.21.1.tgz'))
+        );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof path escapes release/dependency-license-proofs/'
         );
 
-        proof.files![0]!.path = 'release/dependency-license-proofs-confused/example-LICENSE';
-        write(root, proof.files![0]!.path, contents);
+        proof.files![0]!.archivePath = 'release/dependency-license-proofs-confused/ws-8.21.1.tgz';
+        mkdirSync(dirname(join(root, proof.files![0]!.archivePath)), { recursive: true });
+        writeFileSync(
+            join(root, proof.files![0]!.archivePath),
+            readFileSync(join(process.cwd(), 'release/dependency-license-proofs/ws-8.21.1.tgz'))
+        );
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof path escapes release/dependency-license-proofs/'
         );
@@ -468,7 +548,13 @@ describe('project license', () => {
             name: 'example',
             version: '1.0.0',
             license: 'MIT',
-            legalFiles: [],
+            legalFiles: [
+                {
+                    label: 'NOTICE',
+                    sha256: createHash('sha256').update('Copyright Example\n').digest('hex'),
+                    contents: 'Copyright Example\n',
+                },
+            ],
             metadataFiles: [metadata],
         };
         write(
@@ -490,7 +576,8 @@ describe('project license', () => {
             },
         };
 
-        const [notice] = validateDependencyLicenseProof(root, record, proof);
+        const [upstreamNotice, notice] = validateDependencyLicenseProof(root, record, proof);
+        expect(upstreamNotice?.label).toBe('NOTICE');
         expect(notice?.contents).toContain('assembled evidence, not an upstream file');
         expect(notice?.contents).toContain(metadataContents.trim());
         expect(notice?.contents).toContain('canonical SPDX MIT');

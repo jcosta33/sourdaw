@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 
 import parseSpdxExpression from 'spdx-expression-parse';
 import { parseDocument } from 'yaml';
@@ -27,13 +28,14 @@ export type DependencyLicenseRecord = {
     license: string;
     legalFiles: LegalFile[];
     metadataFiles?: LegalFile[];
+    serverLockPath?: string;
     graphs?: string[];
 };
 
 export type DependencyLicenseProof = {
     source: string;
     revision: string;
-    files?: Array<{ path: string; sourcePath: string; sha256: string }>;
+    files?: Array<{ archivePath: string; sourcePath: string; sha256: string }>;
     assembled?: {
         metadata: Array<{ sourcePath: string; sha256: string }>;
         licenses: string[];
@@ -229,6 +231,10 @@ function readJsonFile<T>(path: string): T {
 
 export function readLegalFile(path: string, label: string): LegalFile {
     const bytes = readFileSync(path);
+    return readLegalBytes(bytes, label);
+}
+
+function readLegalBytes(bytes: Buffer, label: string): LegalFile {
     const contents = bytes.toString('utf8');
     if (!Buffer.from(contents, 'utf8').equals(bytes)) {
         throw new Error(`${label}: legal file is not UTF-8`);
@@ -390,8 +396,11 @@ export function collectNpmLockDependencyLicenses(root: string): DependencyLicens
             continue;
         }
         const metadata = lock.packages[path];
-        if (metadata === undefined || metadata.dev === true || isPlatformRestrictedPackage(metadata)) {
-            continue;
+        if (metadata === undefined) {
+            throw new Error(`${path}: server production dependency is missing from package-lock.json`);
+        }
+        if (metadata.dev === true) {
+            throw new Error(`${path}: server production dependency is marked dev-only`);
         }
         included.add(path);
         const dependencies = { ...metadata.dependencies, ...metadata.optionalDependencies };
@@ -419,6 +428,7 @@ export function collectNpmLockDependencyLicenses(root: string): DependencyLicens
                 version: metadata.version,
                 license: licenseExpression(metadata.license, `${lockPath}:${path}`),
                 legalFiles: [],
+                serverLockPath: path,
                 graphs: ['server/package-lock.json'],
             },
         ];
@@ -521,9 +531,10 @@ function expectedProofIdentity(root: string, record: DependencyLicenseRecord): {
     }
     if (record.graphs?.includes('server/package-lock.json')) {
         const lock = readJsonFile<PackageLock>(resolve(root, 'server/package-lock.json'));
-        const entry = lock.packages[`node_modules/${record.name}`];
+        const lockPath = record.serverLockPath ?? `node_modules/${record.name}`;
+        const entry = lock.packages[lockPath];
         if (entry === undefined || typeof entry.resolved !== 'string' || typeof entry.integrity !== 'string') {
-            throw new Error(`npm:${record.name}@${record.version}: server/package-lock.json identity is incomplete`);
+            throw new Error(`npm:${record.name}@${record.version}: ${lockPath} identity is incomplete`);
         }
         if (entry.version !== record.version) {
             throw new Error(`npm:${record.name}@${record.version}: server/package-lock.json version drifted`);
@@ -541,11 +552,11 @@ function assertProofFile(
     packageId: string,
     proof: DependencyLicenseProof,
     root: string,
-    file: { path: string; sourcePath: string; sha256: string }
+    file: { archivePath: string; sourcePath: string; sha256: string }
 ): LegalFile {
     const proofRootPath = resolve(root, PROOF_DIRECTORY);
     const proofRoot = realpathSync(proofRootPath);
-    const candidatePath = resolve(root, file.path);
+    const candidatePath = resolve(root, file.archivePath);
     const candidateRelative = relative(proofRootPath, candidatePath);
     if (
         candidateRelative === '' ||
@@ -565,15 +576,50 @@ function assertProofFile(
     ) {
         throw new Error(`${packageId}: proof path escapes ${PROOF_DIRECTORY}`);
     }
-    if (/(?:^|\/)(?:SPDX-|LICENSE$)/u.test(file.path)) {
-        throw new Error(`${packageId}: proof must be package-specific checked-in source evidence`);
+    if (!file.archivePath.endsWith('.tgz')) {
+        throw new Error(`${packageId}: proof must use a locked package archive`);
     }
-    if (file.sourcePath.trim().length === 0) {
+    if (
+        file.sourcePath.trim().length === 0 ||
+        isAbsolute(file.sourcePath) ||
+        file.sourcePath.split('/').includes('..')
+    ) {
         throw new Error(`${packageId}: proof source path is missing`);
     }
-    const legal = readLegalFile(realPath, file.path);
+    const archive = readFileSync(realPath);
+    const archiveIntegrity = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
+    if (archiveIntegrity !== proof.revision) {
+        throw new Error(`${packageId}: proof archive does not match the locked package`);
+    }
+    const tar = gunzipSync(archive);
+    const wanted = `package/${file.sourcePath}`;
+    let legal: LegalFile | undefined;
+    for (let offset = 0; offset + 512 <= tar.length;) {
+        const header = tar.subarray(offset, offset + 512);
+        if (header.every((byte) => byte === 0)) {
+            break;
+        }
+        const field = (start: number, end: number): string =>
+            header.subarray(start, end).toString('utf8').replace(/\0.*$/u, '').trim();
+        const name = field(0, 100);
+        const prefix = field(345, 500);
+        const archivePath = prefix.length === 0 ? name : `${prefix}/${name}`;
+        const size = Number.parseInt(field(124, 136), 8);
+        if (!Number.isSafeInteger(size) || size < 0 || offset + 512 + size > tar.length) {
+            throw new Error(`${packageId}: proof archive is malformed`);
+        }
+        const contents = tar.subarray(offset + 512, offset + 512 + size);
+        if (archivePath === wanted) {
+            legal = readLegalBytes(contents, `${file.sourcePath} from ${file.archivePath}`);
+            break;
+        }
+        offset += 512 + Math.ceil(size / 512) * 512;
+    }
+    if (legal === undefined) {
+        throw new Error(`${packageId}: proof archive lacks ${file.sourcePath}`);
+    }
     if (legal.sha256 !== file.sha256) {
-        throw new Error(`${packageId}: dependency proof drifted at ${file.path}`);
+        throw new Error(`${packageId}: dependency proof drifted at ${file.sourcePath}`);
     }
     return { ...legal, label: `${file.sourcePath} from ${proof.source}@${proof.revision}` };
 }
@@ -712,6 +758,7 @@ function validateAssembledProof(
     ].join('\n');
     const bytes = Buffer.from(contents, 'utf8');
     return [
+        ...record.legalFiles,
         {
             label: `assembled notice from locked archive metadata and SPDX ${SPDX_LICENSE_LIST_VERSION}`,
             sha256: sha256(bytes),
@@ -803,6 +850,7 @@ function mergeDependencyLicenseRecords(records: DependencyLicenseRecord[]): Depe
             continue;
         }
         assertEquivalent(previous, record);
+        previous.serverLockPath ??= record.serverLockPath;
         previous.graphs = [...new Set([...(previous.graphs ?? []), ...(record.graphs ?? [])])].sort();
     }
     return [...merged.values()];
