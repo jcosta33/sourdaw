@@ -38,7 +38,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),
     importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
-    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
+    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ cancel: () => undefined, publish: () => 0 }),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
@@ -109,7 +109,7 @@ describe('loadRecentProject', () => {
             .mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 });
         vi.mocked(prepareCachedAudioBuffersFromIdb)
             .mockReset()
-            .mockResolvedValue({ publish: () => 0 });
+            .mockResolvedValue({ cancel: () => undefined, publish: () => 0 });
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -286,8 +286,8 @@ describe('loadRecentProject', () => {
         let completeRestore: (() => void) | undefined;
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<{ publish: () => number }>((resolve) => {
-                    completeRestore = () => resolve({ publish: () => 0 });
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );
 
@@ -351,8 +351,8 @@ describe('loadRecentProject', () => {
         vi.mocked(prepareCachedAudioBuffersFromIdb)
             .mockImplementationOnce(
                 () =>
-                    new Promise<{ publish: () => number }>((resolve) => {
-                        completeFirstRestore = () => resolve({ publish: () => 0 });
+                    new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                        completeFirstRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                     })
             )
             .mockResolvedValueOnce({ publish: () => 0 });
@@ -405,8 +405,8 @@ describe('loadRecentProject', () => {
         let completeRestore: (() => void) | undefined;
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<{ publish: () => number }>((resolve) => {
-                    completeRestore = () => resolve({ publish: () => 0 });
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );
 
@@ -434,8 +434,8 @@ describe('loadRecentProject', () => {
         let completeRestore: (() => void) | undefined;
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<{ publish: () => number }>((resolve) => {
-                    completeRestore = () => resolve({ publish: () => 0 });
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );
 

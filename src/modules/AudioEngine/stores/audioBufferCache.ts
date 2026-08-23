@@ -855,6 +855,10 @@ type PreparedAudioBuffers = {
     publish: () => number;
 };
 
+type PreparedStoredAudioBuffers = PreparedAudioBuffers & {
+    cancel: () => void;
+};
+
 type PreparedImportedAudioBuffers = PreparedAudioBuffers & {
     persist: () => Promise<boolean>;
 };
@@ -869,13 +873,15 @@ async function prepareBuffersFromIdb({
     context,
     ids,
     shouldContinue,
-}: PrepareBuffersFromIdbInput): Promise<PreparedAudioBuffers | null> {
+}: PrepareBuffersFromIdbInput): Promise<PreparedStoredAudioBuffers | null> {
     if (shouldContinue?.() === false) {
         return null;
     }
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const provisionalReservations = ids ? preparedAudioBufferLifecycle.beginProjectReservations(ids) : undefined;
+    let candidateSettled = false;
+    let reservationsSettled = false;
     const excludedTemporaryIds = new Set(temporaryCaptures.keys());
     const settleExcludedTemporaryBuffers = (): Set<string> => {
         const temporaryAtPublication = new Set<string>();
@@ -890,15 +896,33 @@ async function prepareBuffersFromIdb({
         settleExcludedTemporaryBuffers();
         if (ids) {
             if (provisionalReservations) {
-                writePinnedBufferIds(ids);
-                provisionalReservations.promote();
+                try {
+                    writePinnedBufferIds(ids);
+                } finally {
+                    reservationsSettled = true;
+                    provisionalReservations.promote();
+                }
             } else {
                 replacePinnedBufferIds(ids);
             }
         }
     };
-    const cancel = (): null => {
+    const releaseReservations = (): void => {
+        if (reservationsSettled) {
+            return;
+        }
+        reservationsSettled = true;
         provisionalReservations?.release();
+    };
+    const cancel = (): void => {
+        if (candidateSettled) {
+            return;
+        }
+        candidateSettled = true;
+        releaseReservations();
+    };
+    const cancelAsNull = (): null => {
+        cancel();
         return null;
     };
     try {
@@ -906,11 +930,11 @@ async function prepareBuffersFromIdb({
             await preparedAudioBufferLifecycle.recoverProjectReservations(ids);
         }
         if (shouldContinue?.() === false) {
-            return cancel();
+            return cancelAsNull();
         }
         const db = await openDb();
         if (shouldContinue?.() === false) {
-            return cancel();
+            return cancelAsNull();
         }
         const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
         const store = tx.objectStore(STORE_NAME);
@@ -926,7 +950,7 @@ async function prepareBuffersFromIdb({
 
         for (const key of keys) {
             if (shouldContinue?.() === false) {
-                return cancel();
+                return cancelAsNull();
             }
             if (typeof key !== 'string') {
                 continue;
@@ -943,7 +967,7 @@ async function prepareBuffersFromIdb({
                 awaitRequest(metaStore.get(key) as IDBRequest<BufferMeta | undefined>),
             ]);
             if (shouldContinue?.() === false) {
-                return cancel();
+                return cancelAsNull();
             }
             if (
                 preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(
@@ -970,9 +994,15 @@ async function prepareBuffersFromIdb({
             staged.push({ id, buffer });
         }
     } catch {
-        provisionalReservations?.release();
+        releaseReservations();
         return {
+            cancel,
             publish: () => {
+                if (candidateSettled || shouldContinue?.() === false) {
+                    cancel();
+                    return 0;
+                }
+                candidateSettled = true;
                 settleExcludedTemporaryBuffers();
                 if (ids) {
                     replacePinnedBufferIds(ids);
@@ -984,11 +1014,14 @@ async function prepareBuffersFromIdb({
 
     let published = false;
     return {
+        cancel,
         publish: () => {
-            if (published) {
+            if (published || candidateSettled || shouldContinue?.() === false) {
+                cancel();
                 return 0;
             }
             published = true;
+            candidateSettled = true;
             publishProjectReservations();
             for (const { id, buffer } of staged) {
                 audioCacheSet(id, buffer);
@@ -1225,6 +1258,7 @@ export const audioBufferCache = {
     }): Promise<number> {
         const prepared = await prepareBuffersFromIdb({ context, ids, shouldContinue });
         if (!prepared || shouldContinue?.() === false) {
+            prepared?.cancel();
             return 0;
         }
         return prepared.publish();
@@ -1616,9 +1650,14 @@ export const audioBufferCache = {
                 awaitRequest(metaStore.getAllKeys()),
             ]);
             const collectedKeys = new Set<string>();
+            const protectedKeys = new Set<string>();
             for (let index = 0; index < metadataKeys.length; index++) {
                 const key = metadataKeys[index];
                 const metadata = metadataRows[index];
+                if (typeof key === 'string' && metadata && isProtectedFromCollection(metadata)) {
+                    protectedKeys.add(key);
+                    continue;
+                }
                 let freezeProjectId = metadata?.freezeProjectId;
                 if (typeof key === 'string' && residentFreezeProjectIdById.has(key)) {
                     freezeProjectId = residentFreezeProjectIdById.get(key);
@@ -1627,7 +1666,6 @@ export const audioBufferCache = {
                     typeof key !== 'string' ||
                     !key.startsWith('freeze-') ||
                     activeIds.has(key) ||
-                    metadata?.preparedOwner?.status === 'temporary' ||
                     freezeProjectId !== projectId
                 ) {
                     continue;
@@ -1635,7 +1673,12 @@ export const audioBufferCache = {
                 collectedKeys.add(key);
             }
             for (const [key, freezeProjectId] of residentFreezeProjectIdById) {
-                if (key.startsWith('freeze-') && !activeIds.has(key) && freezeProjectId === projectId) {
+                if (
+                    key.startsWith('freeze-') &&
+                    !activeIds.has(key) &&
+                    !protectedKeys.has(key) &&
+                    freezeProjectId === projectId
+                ) {
                     collectedKeys.add(key);
                 }
             }

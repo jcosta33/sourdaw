@@ -33,7 +33,7 @@ type ImportCachedAudioBuffersInput = {
     shouldContinue?: () => boolean;
 };
 
-type PreparedAudioBuffers = { publish: () => number };
+type PreparedAudioBuffers = { cancel: () => void; publish: () => number };
 type PreparedImportedAudioBuffers = PreparedAudioBuffers & { persist: () => Promise<boolean> };
 
 const {
@@ -56,7 +56,7 @@ const {
     stopRecording,
 } = vi.hoisted(() => {
     function prepared(): PreparedImportedAudioBuffers {
-        return { persist: () => Promise.resolve(true), publish: () => 0 };
+        return { cancel: () => undefined, persist: () => Promise.resolve(true), publish: () => 0 };
     }
     const engineGraph = { value: 'old-project' };
     const crdtAuthority = { value: 'Old Project' };
@@ -557,7 +557,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
             () =>
                 new Promise<PreparedAudioBuffers>((resolve) => {
-                    finishPreparation = () => resolve({ publish: () => 0 });
+                    finishPreparation = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );
         const project = makeProject();

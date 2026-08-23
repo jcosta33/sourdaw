@@ -563,6 +563,37 @@ describe('audioBufferCache metadata store', () => {
             expect([...controls.committedMeta.keys()]).toEqual(['freeze-live']);
         });
 
+        it('protects every prepared owner classification across durable and resident freeze scans', async () => {
+            const audioBufferCache = await importCache();
+            const invalidOwnerId = 'freeze-invalid-prepared-owner';
+            const reconcilingOwnerId = 'freeze-reconciling-prepared-owner';
+            const ordinaryId = 'freeze-ordinary-stale';
+            for (const id of [invalidOwnerId, reconcilingOwnerId, ordinaryId]) {
+                audioBufferCache.set(id, makeAudioBuffer([new Float32Array([0.5])]), { freezeProjectId: 200 });
+            }
+            await flushIndexedDbTasks();
+            controls.committedMeta.get(invalidOwnerId)!.preparedOwner = {
+                schemaVersion: 1,
+                leaseId: '',
+                status: 'project-owned',
+            };
+            controls.committedMeta.get(reconcilingOwnerId)!.preparedOwner = {
+                schemaVersion: 1,
+                leaseId: 'reconciling-lease',
+                promotionRevision: 'promotion-revision',
+                status: 'project-owned',
+            };
+
+            await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 200 });
+
+            expect(controls.committed.has(invalidOwnerId)).toBe(true);
+            expect(controls.committed.has(reconcilingOwnerId)).toBe(true);
+            expect(audioBufferCache.has(invalidOwnerId)).toBe(true);
+            expect(audioBufferCache.has(reconcilingOwnerId)).toBe(true);
+            expect(controls.committed.has(ordinaryId)).toBe(false);
+            expect(audioBufferCache.has(ordinaryId)).toBe(false);
+        });
+
         // Mutation: dropping the metadata clear from `clear()` reds
         // `committedMeta.size` — every row of the previous project would keep
         // counting against the 2 GiB cap.

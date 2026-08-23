@@ -640,6 +640,36 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(controls.committed.has('legacy-temporary-pcm')).toBe(true);
     });
 
+    it('cancels provisional project reservations idempotently before publication', async () => {
+        installFakeAudioIndexedDb();
+        const id = 'cancel-provisional-project-reservation';
+        const leaseId = `${id}-lease`;
+        await audioBufferCache.persistPreparedBuffer({
+            id,
+            buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            leaseId,
+        });
+        const prepared = await audioBufferCache.prepareFromIdb({
+            context: createTestContext(vi.fn()),
+            ids: [id],
+        });
+        if (!prepared) {
+            throw new TypeError('Expected a prepared project buffer candidate');
+        }
+
+        await expect(audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is reserved by the project.',
+        });
+        prepared.cancel();
+        prepared.cancel();
+
+        await expect(audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' })).resolves.toEqual({
+            status: 'released',
+            disposition: 'discarded',
+        });
+    });
+
     it('rejects empty prepared identities and suppresses invalid durable owners from non-lease reads', async () => {
         const controls = installFakeAudioIndexedDb();
         await expect(
@@ -915,6 +945,93 @@ describe('prepared audio-buffer settlement and recovery', () => {
             expect(audioBufferCache.has(id)).toBe(false);
         }
     );
+
+    it('restores discard recovery when a project reservation starts after cleanup commits', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'discard-post-cleanup-project-reservation';
+        const leaseId = `${id}-lease`;
+        const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        source.getChannelData(0)[0] = 0.725;
+        await audioBufferCache.persistPreparedBuffer({ id, buffer: source, leaseId });
+        controls.pauseWriteSettlements();
+
+        const discard = audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        // The cleanup transaction has committed, but its awaiting continuation
+        // has not run yet. Project admission in this stack frame must still win.
+        controls.releaseNextWriteSettlement();
+        const project = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: [id],
+            context: createTestContext(vi.fn()),
+        });
+        expect(project?.publish()).toBe(0);
+        for (let turn = 0; turn < 80; turn++) {
+            if (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+            }
+            await flushIndexedDbTasks(1);
+        }
+
+        await expect(discard).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is reserved by the project.',
+        });
+        expect(controls.committed.get(id)?.channelData[0]?.[0]).toBeCloseTo(0.725);
+        expect(controls.committedMeta.get(id)?.preparedOwner?.status).toBe('project-owned');
+        expect(controls.committedRecovery.has(id)).toBe(false);
+    });
+
+    it('restores reclaimed PCM when a project reservation starts after cleanup commits', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'reclaim-post-cleanup-project-reservation';
+        const leaseId = `${id}-lease`;
+        const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        source.getChannelData(0)[0] = 0.825;
+        await audioBufferCache.persistPreparedBuffer({ id, buffer: source, leaseId });
+        vi.resetModules();
+        ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
+            await import('../audioBufferCache'));
+        controls.pauseWriteSettlements();
+
+        const reclamation = reclaimPreparedBufferOrphans({
+            createdBeforeMs: Number.MAX_SAFE_INTEGER,
+            liveLeaseIds: [],
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.releaseNextWriteSettlement();
+        const project = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: [id],
+            context: createTestContext(vi.fn()),
+        });
+        expect(project?.publish()).toBe(0);
+        for (let turn = 0; turn < 80; turn++) {
+            if (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+            }
+            await flushIndexedDbTasks(1);
+        }
+
+        await expect(reclamation).resolves.toEqual({ status: 'reclaimed', count: 0 });
+        expect(controls.committed.get(id)?.channelData[0]?.[0]).toBeCloseTo(0.825);
+        expect(controls.committedMeta.get(id)?.preparedOwner?.status).toBe('project-owned');
+        expect(controls.committedRecovery.has(id)).toBe(false);
+    });
 
     it('keeps an exact durable recovery copy when late project admission outlives failed discard restoration', async () => {
         const controls = installFakeAudioIndexedDb();

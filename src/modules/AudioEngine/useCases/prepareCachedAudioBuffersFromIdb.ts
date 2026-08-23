@@ -6,7 +6,10 @@ type PrepareCachedAudioBuffersFromIdbInput = {
     shouldContinue?: () => boolean;
 };
 
-type PrepareCachedAudioBuffersFromIdbOutput = ReturnType<typeof audioBufferCache.prepareFromIdb>;
+type PrepareCachedAudioBuffersFromIdbOutput = Promise<{
+    cancel: () => void;
+    publish: () => number;
+} | null>;
 
 export function prepareCachedAudioBuffersFromIdb({
     audioContext,

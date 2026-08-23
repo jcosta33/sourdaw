@@ -606,6 +606,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         revision: string,
         persistenceRevision: string
     ): Promise<'deleted' | 'failed' | 'superseded'> {
+        const admittedReservationEpoch = projectReservationEpochById.get(id);
         const database = await host.openDatabase();
         if (hasProjectReservation(id)) {
             return 'failed';
@@ -625,10 +626,12 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 awaitPreparedRequest(metadataStore.get(id) as IDBRequest<PreparedAudioBufferMetadata | undefined>),
             ]);
             const recovery = readPreparedAudioRecoveryRecord(recoveryValue);
+            let deletedFinalRecovery: PreparedAudioBufferRecoveryRecord | undefined;
             let result: 'deleted' | 'failed' | 'superseded' = 'failed';
             if (recovery?.id === id && recovery.revision === revision) {
                 if (currentData === undefined && currentMetadata === undefined) {
                     recoveryStore.delete(id);
+                    deletedFinalRecovery = recovery;
                     result = 'deleted';
                 } else if (
                     currentData !== undefined &&
@@ -648,6 +651,20 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 }
             }
             await awaitPreparedTransaction(transaction);
+            if (
+                result === 'deleted' &&
+                deletedFinalRecovery !== undefined &&
+                (hasProjectReservation(id) || projectReservationEpochById.get(id) !== admittedReservationEpoch)
+            ) {
+                const reconciliation = database.transaction(host.recoveryStoreName, 'readwrite');
+                const reconciliationStore = reconciliation.objectStore(host.recoveryStoreName);
+                const currentRecovery = await awaitPreparedRequest(reconciliationStore.get(id) as IDBRequest<unknown>);
+                if (currentRecovery === undefined) {
+                    reconciliationStore.put(deletedFinalRecovery, id);
+                }
+                await awaitPreparedTransaction(reconciliation);
+                return 'failed';
+            }
             return result;
         } finally {
             transactions.untrack(id, tracked);
