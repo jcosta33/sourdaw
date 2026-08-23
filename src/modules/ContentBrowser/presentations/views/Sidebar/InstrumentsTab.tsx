@@ -61,7 +61,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 ];
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
-const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-sampler', 'grand-boule']);
+const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-crumbs', 'grand-boule']);
 const GRAND_BOULE_RELEASED = isDeviceReleaseAdmitted('grand-boule');
 
 // Categories that belong in the Effects tab, not here

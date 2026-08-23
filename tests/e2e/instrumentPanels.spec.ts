@@ -9,7 +9,7 @@ const BROWSER_INSTRUMENT_CATALOG = [
     { deviceType: 'fermenter', label: 'Fermenter' },
     { deviceType: 'toaster', label: 'Toaster' },
     { deviceType: 'levain', label: 'Levain' },
-    { deviceType: 'builtin-sampler', label: 'Crumbs' },
+    { deviceType: 'builtin-crumbs', label: 'Crumbs' },
     { deviceType: 'grand-boule', label: 'Grand Boule' },
 ] as const;
 
