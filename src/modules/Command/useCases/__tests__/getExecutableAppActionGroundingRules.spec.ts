@@ -28,7 +28,7 @@ describe('getExecutableAppActionGroundingRules', () => {
                 { argument: 'outputId', capability: 'output' },
                 { argument: 'trackId', capability: 'routable-source' },
             ],
-            mutationIdentityRules: [{ arguments: [{ argument: 'trackId' }] }],
+            mutationIdentityRules: [{ arguments: [{ argument: 'trackId' }], resourceFamily: 'track' }],
         });
         expect(getExecutableAppActionGroundingRules('setDeviceParameter')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
@@ -46,7 +46,7 @@ describe('getExecutableAppActionGroundingRules', () => {
             { arguments: [{ argument: 'targetClipId' }] },
         ]);
         expect(getExecutableAppActionGroundingRules('assignToVca')?.mutationIdentityRules).toEqual([
-            { arguments: [{ argument: 'trackId' }] },
+            { arguments: [{ argument: 'trackId' }], resourceFamily: 'track' },
         ]);
         expect(getExecutableAppActionGroundingRules('addDevice')).toMatchObject({
             mutationIdempotent: false,
@@ -60,6 +60,9 @@ describe('getExecutableAppActionGroundingRules', () => {
         ]);
         expect(getExecutableAppActionGroundingRules('setTrackGain')?.mutationIdempotent).toBe(true);
         expect(getExecutableAppActionGroundingRules('splitClip')?.mutationIdempotent).toBe(false);
+        expect(getExecutableAppActionGroundingRules('removeMarker')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },
+        ]);
     });
 
     it('includes valueRules when the descriptor defines them', () => {

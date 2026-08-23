@@ -130,6 +130,30 @@ function hasExactTargetIdSet(assertedIds: unknown, expectedIds: readonly string[
     return assertedIdSet.size === expectedIds.length && expectedIds.every((targetId) => assertedIdSet.has(targetId));
 }
 
+function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson).join(',')}]`;
+    }
+    if (typeof value === 'object' && value !== null) {
+        const record = value as Readonly<Record<string, unknown>>;
+        return `{${Object.keys(record)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+            .join(',')}}`;
+    }
+    return JSON.stringify(value) ?? 'undefined';
+}
+
+function hasExactCanonicalToolCallOrder(
+    expected: readonly ToolCallResult[],
+    actual: readonly ToolCallResult[]
+): boolean {
+    return (
+        expected.length === actual.length &&
+        expected.every((expectedCall, index) => canonicalJson(expectedCall) === canonicalJson(actual[index]))
+    );
+}
+
 type ActionPromptScope = PromptClause & {
     directional: boolean;
     matchedIntentPhrase: string;
@@ -4534,6 +4558,23 @@ export function bridgeGroundedLlmToolCalls({
                 ],
             };
         }
+    }
+    if (
+        compilerActionCommandGraph !== undefined &&
+        (compilerEvidence === undefined ||
+            compilerTargetOverridesByCallIndex === undefined ||
+            !hasExactCanonicalToolCallOrder(compilerEvidence.commands, effectiveCalls))
+    ) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(
+                    0,
+                    '<batch>',
+                    'Compiler evidence indexes no longer match the specialized workflow command order'
+                ),
+            ],
+        };
     }
     const collectedBindings = collectBatchLocalBusBindings(effectiveCalls, context);
     if (collectedBindings.status === 'rejected') {

@@ -44,6 +44,7 @@ export type ExecutableAppActionMutationIdentityArgument = {
 export type ExecutableAppActionMutationIdentityRule = {
     arguments: readonly ExecutableAppActionMutationIdentityArgument[];
     fallbackArguments?: readonly ExecutableAppActionMutationIdentityArgument[];
+    resourceFamily?: string;
 };
 
 export type ExecutableAppActionValueRule =
@@ -2339,7 +2340,7 @@ export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppAction
 
 const NO_MUTATION_IDENTITY = [] as const;
 const SINGLETON_MUTATION_IDENTITY = [{ arguments: [] }] as const;
-const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }] }] as const;
+const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }], resourceFamily: 'track' }] as const;
 const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }] }] as const;
 const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
 const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }] }] as const;
@@ -2357,7 +2358,9 @@ const AUTOMATION_LANE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'laneId' }]
 const AUTOMATION_LANE_CREATION_IDENTITY = [
     { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
 ] as const;
-const MARKER_REFERENCE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'beat' }, { argument: 'name' }] }] as const;
+const MARKER_REFERENCE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },
+] as const;
 const SECTION_REFERENCE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }] },
 ] as const;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { compileArbitraryCommandList } from '../../compileArbitraryCommandList';
 import { bridgeGroundedLlmToolCalls } from '../bridgeGroundedLlmToolCalls';
 
 type ProjectTrack = ProjectContext['tracks'][number];
@@ -88,6 +89,186 @@ function bridge(
 ) {
     return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures, sectionSignatures });
 }
+
+describe('compiler graph alignment', () => {
+    it('rejects a same-type EX-03 canonical reorder instead of reassigning compiler dependency indexes', () => {
+        const bass = createTrack({
+            id: 'track-bass',
+            name: 'Bass',
+            devices: [{ id: 'device-bass-distortion', name: 'Bass Distortion', type: 'distortion', bypassed: false }],
+        });
+        const context: ProjectContext = {
+            ...projectContext,
+            sections: [
+                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 16, endBeat: 32 },
+                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 48, endBeat: 64 },
+            ],
+            adjustmentLayers: [
+                {
+                    id: 'layer-bass-eq',
+                    name: 'Bass EQ',
+                    effectType: 'eq',
+                    parameters: [],
+                    affectedTrackIds: [bass.id],
+                    insertionIndex: 0,
+                    regions: [
+                        {
+                            id: 'region-bass-eq-source',
+                            startBeat: 16,
+                            endBeat: 32,
+                            blend: 0.75,
+                            fadeInBeats: 0.5,
+                            fadeOutBeats: 0.25,
+                        },
+                    ],
+                    enabled: true,
+                    mix: 0.8,
+                    color: '#ffffff',
+                },
+                {
+                    id: 'layer-bass-compressor',
+                    name: 'Bass Compressor',
+                    effectType: 'compressor',
+                    parameters: [],
+                    affectedTrackIds: [bass.id],
+                    insertionIndex: 1,
+                    regions: [
+                        {
+                            id: 'region-bass-compressor-source',
+                            startBeat: 16,
+                            endBeat: 32,
+                            blend: 1,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                    enabled: true,
+                    mix: 1,
+                    color: '#ffffff',
+                },
+            ],
+            automationLanes: [
+                {
+                    id: 'lane-bass-distortion',
+                    trackId: bass.id,
+                    parameterId: 'device-bass-distortion:drive',
+                    name: 'Bass Distortion Drive',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [{ beat: 56, value: 0.8, curve: 'linear' }],
+                },
+            ],
+            tracks: [bass, master],
+        };
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision: 'revision-ex03-graph',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: 'Copy the bass processing from chorus one to chorus two.',
+                            constraints: [],
+                            scope: {
+                                targetIds: ['layer-bass-compressor', 'layer-bass-eq'],
+                                targetRanges: [],
+                                protectedTargetIds: [],
+                                protectedRanges: [],
+                            },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'copy-compressor',
+                                    name: 'addAdjustmentRegion',
+                                    arguments: {
+                                        startBeat: 48,
+                                        endBeat: 64,
+                                        blend: 1,
+                                        fadeInBeats: 0,
+                                        fadeOutBeats: 0,
+                                    },
+                                    selector: {
+                                        targetArgument: 'layerId',
+                                        entity: 'adjustment-layer',
+                                        where: { name: 'Bass Compressor' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'copy-eq',
+                                    name: 'addAdjustmentRegion',
+                                    arguments: {
+                                        startBeat: 48,
+                                        endBeat: 64,
+                                        blend: 0.75,
+                                        fadeInBeats: 0.5,
+                                        fadeOutBeats: 0.25,
+                                    },
+                                    selector: {
+                                        targetArgument: 'layerId',
+                                        entity: 'adjustment-layer',
+                                        where: { name: 'Bass EQ' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['copy-compressor'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted') {
+            throw new Error(compiled.reason);
+        }
+        if (compiled.compilerEvidence === undefined) {
+            throw new Error('Expected compiler evidence');
+        }
+
+        expect(
+            bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context,
+                projectRevision: 'revision-ex03-graph',
+                prompt: 'Copy the bass processing from chorus one to chorus two.',
+                workflowCapabilityId: 'bass-processing-copy',
+            })
+        ).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: '<batch>',
+                    reason: 'Compiler evidence indexes no longer match the specialized workflow command order',
+                },
+            ],
+        });
+
+        const withoutCompilerEvidence = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            context,
+            prompt: 'Copy the bass processing from chorus one to chorus two.',
+            workflowCapabilityId: 'bass-processing-copy',
+        });
+        expect(withoutCompilerEvidence.rejections).toEqual([]);
+        expect(
+            withoutCompilerEvidence.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+    });
+});
 
 describe('automateTrackGainRange capability grounding', () => {
     function groundExactVibeMix(trackIds: string[]) {

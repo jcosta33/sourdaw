@@ -945,6 +945,108 @@ describe('compileArbitraryCommandList', () => {
         expect(distinct).toMatchObject({ status: 'accepted' });
     });
 
+    it('rejects a destructive marker mutation after a compatible cross-action write to the same marker', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'color-verse',
+                                    name: 'setMarkerColor',
+                                    arguments: { beat: 4, name: 'Verse', color: 'blue' },
+                                },
+                                {
+                                    id: 'remove-verse',
+                                    name: 'removeMarker',
+                                    arguments: { beat: 4, name: 'Verse' },
+                                    dependsOn: ['color-verse'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list contains contradictory mutation resources.',
+        });
+
+        const distinct = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'color-verse',
+                                    name: 'setMarkerColor',
+                                    arguments: { beat: 4, name: 'Verse', color: 'blue' },
+                                },
+                                {
+                                    id: 'remove-chorus',
+                                    name: 'removeMarker',
+                                    arguments: { beat: 16, name: 'Chorus' },
+                                    dependsOn: ['color-verse'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        expect(distinct).toMatchObject({ status: 'accepted' });
+    });
+
+    it('composes compatible property writes in one registry-owned target resource family', () => {
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                { id: 'rename-kick', name: 'renameTrack', arguments: { name: 'Kick In' }, selector },
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector,
+                                    dependsOn: ['rename-kick'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+    });
+
     it('canonicalizes idempotent selector repetition into one guarded write per stable target', () => {
         const result = compileArbitraryCommandList({
             context,

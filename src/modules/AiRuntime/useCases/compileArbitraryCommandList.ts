@@ -242,6 +242,7 @@ function getCanonicalCommandIdentity(command: ToolCallResult): string {
 type MutationIdentityRule = {
     arguments: readonly { argument: string; cardinality?: 'many' }[];
     fallbackArguments?: readonly { argument: string; cardinality?: 'many' }[];
+    resourceFamily?: string;
 };
 
 function expandMutationIdentityValues(
@@ -297,6 +298,28 @@ function getMutationWriteIdentities(
     return mutationWriteIdentities;
 }
 
+function getMutationResourceWriteIdentities(
+    mutationIdentityRules: readonly MutationIdentityRule[],
+    arguments_: Readonly<Record<string, unknown>>
+): string[] | null {
+    const resourceWriteIdentities: string[] = [];
+    for (const rule of mutationIdentityRules) {
+        if (rule.resourceFamily === undefined) {
+            continue;
+        }
+        const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
+        if (expandedIdentityValues === null) {
+            return null;
+        }
+        resourceWriteIdentities.push(
+            ...expandedIdentityValues.map((mutationIdentity) =>
+                canonicalJson({ resourceFamily: rule.resourceFamily, mutationIdentity })
+            )
+        );
+    }
+    return resourceWriteIdentities;
+}
+
 function materializeMutationIdentityArguments(
     command: ToolCallResult,
     context: ProjectContext
@@ -338,16 +361,22 @@ function checkCommandWriteConflict(input: {
     context: ProjectContext;
     mutationIdempotent: boolean;
     mutationIdentityRules: readonly MutationIdentityRule[];
+    mutationResourceWrites: Map<string, { destructive: boolean }>;
     targetCommandArguments: Map<string, string>;
     targetLabel: string;
 }): { status: 'accepted'; commandKey: string } | RejectedCompilation {
     const commandKey = getCanonicalCommandIdentity(input.command);
+    const materializedArguments = materializeMutationIdentityArguments(input.command, input.context);
     const mutationWriteIdentities = getMutationWriteIdentities(
         input.command.name,
         input.mutationIdentityRules,
-        materializeMutationIdentityArguments(input.command, input.context)
+        materializedArguments
     );
-    if (mutationWriteIdentities === null) {
+    const mutationResourceWriteIdentities = getMutationResourceWriteIdentities(
+        input.mutationIdentityRules,
+        materializedArguments
+    );
+    if (mutationWriteIdentities === null || mutationResourceWriteIdentities === null) {
         return {
             status: 'rejected',
             reason: `Structured command mutation identity does not match the registered contract: ${input.command.name}`,
@@ -364,8 +393,23 @@ function checkCommandWriteConflict(input: {
             reason: `Structured command writes for ${input.command.name} on ${input.targetLabel} are not safely composable.`,
         };
     }
+    const destructive = /^remove|^delete/u.test(input.command.name);
+    if (
+        mutationResourceWriteIdentities.some((identity) => {
+            const priorWrite = input.mutationResourceWrites.get(identity);
+            return priorWrite !== undefined && (destructive || priorWrite.destructive);
+        })
+    ) {
+        return {
+            status: 'rejected',
+            reason: 'Structured command list contains contradictory mutation resources.',
+        };
+    }
     for (const identity of mutationWriteIdentities) {
         input.targetCommandArguments.set(identity, commandKey);
+    }
+    for (const identity of mutationResourceWriteIdentities) {
+        input.mutationResourceWrites.set(identity, { destructive });
     }
     return { status: 'accepted', commandKey };
 }
@@ -641,6 +685,7 @@ export function compileArbitraryCommandList(input: {
     const orderedTargetIds: string[] = [];
     const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
     const targetCommandArguments = new Map<string, string>();
+    const mutationResourceWrites = new Map<string, { destructive: boolean }>();
     const canonicalCommandIndexByKey = new Map<string, number>();
     const itemsById = new Map(items.map((item) => [item.id, item]));
     const producersByBinding = new Map<string, BatchLocalBindingProducer>();
@@ -695,6 +740,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    mutationResourceWrites,
                     targetCommandArguments,
                     targetLabel: getMutationIdentityLabel(rules.mutationIdentityRules, command.arguments),
                 });
@@ -845,6 +891,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    mutationResourceWrites,
                     targetCommandArguments,
                     targetLabel: resolved.stableIds.join(','),
                 });
