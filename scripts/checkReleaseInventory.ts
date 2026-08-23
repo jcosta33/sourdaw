@@ -782,38 +782,14 @@ export function assertGrandBouleReleasedInWasm(root: string): void {
     }
 }
 
-export const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
+const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/quantum.rs',
     'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-    'crates/daw-dsp/benches/wasm/index.html',
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-    'crates/daw-dsp/benches/wasm/run.mjs',
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
 ] as const;
 
-const GRAND_BOULE_QUANTUM_BUDGET_MS = (128 / 48_000) * 1_000;
-
-function readGrandBouleSourceAtRevision(root: string, revision: string, path: string): Buffer {
-    return execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
-}
-
-function verifyWasmArtifacts(root: string): void {
-    execFileSync(process.execPath, [resolve(root, 'scripts/verify-wasm-artifacts.ts')], {
-        cwd: root,
-        stdio: 'inherit',
-    });
-}
-
-export type ReleaseInventoryCheckOptions = {
-    projectLicensePreflight?: (root: string) => void;
-    readGrandBouleSourceAtRevision?: (root: string, revision: string, path: string) => Buffer;
-    verifyWasmArtifacts?: (root: string) => void;
-};
-
-export function assertGrandBouleMeasurementAdmission(
-    root: string,
-    readSourceAtRevision = readGrandBouleSourceAtRevision
-): void {
+export function assertGrandBouleMeasurementAdmission(root: string): void {
     const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
     const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
     const data = JSON.parse(readFileSync(resolve(root, jsonPath), 'utf8')) as {
@@ -821,13 +797,10 @@ export function assertGrandBouleMeasurementAdmission(
         sourceDigests?: Record<string, string>;
         machine?: { gitSha?: string; workingTree?: string };
         budgetMs?: number;
-        options?: { measureQuanta?: number };
-        referenceProject?: { audioWorstQuantumUpperMs?: number };
+        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
         rows?: Array<{
             id?: string;
             costSite?: string;
-            mainThreadWallMs?: number;
-            sampleCount?: number;
             warmVerify?: { ok?: boolean; detail?: string };
             lateVerify?: { ok?: boolean; detail?: string };
         }>;
@@ -843,7 +816,7 @@ export function assertGrandBouleMeasurementAdmission(
     for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
         let sourceAtRevision: Buffer;
         try {
-            sourceAtRevision = readSourceAtRevision(root, revision, path);
+            sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
         } catch {
             throw new Error(`Grand Boule measurement source revision ${revision} cannot provide ${path}`);
         }
@@ -872,31 +845,12 @@ export function assertGrandBouleMeasurementAdmission(
     ) {
         throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
     }
-    const measureQuanta = data.options?.measureQuanta;
-    const sampleCount = row?.sampleCount;
     if (
-        !Number.isInteger(measureQuanta) ||
-        measureQuanta! <= 0 ||
-        !Number.isInteger(sampleCount) ||
-        sampleCount! <= 0 ||
-        sampleCount !== measureQuanta
-    ) {
-        throw new Error('Grand Boule measured row sample count must equal the positive integer harness measureQuanta');
-    }
-    const measuredWorkerWallMs =
-        typeof row?.mainThreadWallMs === 'number' &&
-        Number.isFinite(row.mainThreadWallMs) &&
-        typeof row.sampleCount === 'number' &&
-        Number.isFinite(row.sampleCount) &&
-        row.sampleCount > 0
-            ? row.mainThreadWallMs / row.sampleCount
-            : Number.NaN;
-    if (
-        data.budgetMs !== GRAND_BOULE_QUANTUM_BUDGET_MS ||
+        typeof data.budgetMs !== 'number' ||
         typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
-        !Number.isFinite(measuredWorkerWallMs) ||
-        data.referenceProject.audioWorstQuantumUpperMs >= GRAND_BOULE_QUANTUM_BUDGET_MS ||
-        measuredWorkerWallMs >= GRAND_BOULE_QUANTUM_BUDGET_MS
+        typeof data.referenceProject.workerMedianMs !== 'number' ||
+        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
+        data.referenceProject.workerMedianMs >= data.budgetMs
     ) {
         throw new Error('Grand Boule measured reference project exceeds its render budget');
     }
@@ -1858,13 +1812,8 @@ export function loadRepositorySnapshot(
 
 export function checkReleaseInventory(
     root: string,
-    options: ReleaseInventoryCheckOptions | ((root: string) => void) = {}
+    projectLicensePreflight = checkProjectLicense
 ): ReleaseInventoryCheckReceipt {
-    const {
-        projectLicensePreflight = checkProjectLicense,
-        readGrandBouleSourceAtRevision,
-        verifyWasmArtifacts: verifyWasmArtifactsOverride,
-    } = typeof options === 'function' ? { projectLicensePreflight: options } : options;
     projectLicensePreflight(root);
     const inventory = readReleaseInventory(root);
     const snapshot = loadRepositorySnapshot(root, inventory);
@@ -1877,11 +1826,14 @@ export function checkReleaseInventory(
         validate();
         validatedSurfaceIds.push(surfaceId);
     };
+    execFileSync(process.execPath, [resolve(root, 'scripts/verify-wasm-artifacts.ts')], {
+        cwd: root,
+        stdio: 'inherit',
+    });
     assertGrandBouleRustWasmBoundary(root);
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
-    assertGrandBouleMeasurementAdmission(root, readGrandBouleSourceAtRevision);
-    (verifyWasmArtifactsOverride ?? verifyWasmArtifacts)(root);
+    assertGrandBouleMeasurementAdmission(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')

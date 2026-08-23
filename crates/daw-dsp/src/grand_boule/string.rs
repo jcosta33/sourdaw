@@ -90,9 +90,6 @@ pub struct ModalString {
     /// Number of partials processed in f64 (those below 200 Hz).
     f64_partials: usize,
     active_partials: usize,
-    /// Debug-only proof that F17 skips the zeroed f32 prefix.
-    #[cfg(debug_assertions)]
-    debug_f32_iterations: usize,
     /// Damping mode: if true, bandwidth is scaled up by the damper state,
     /// which produces a faster decay (applied via re-configure).
     pub damped: bool,
@@ -117,8 +114,6 @@ impl ModalString {
             y2_64: [0.0; MAX_F64_PARTIALS],
             f64_partials: 0,
             active_partials: 0,
-            #[cfg(debug_assertions)]
-            debug_f32_iterations: 0,
             damped: false,
         }
     }
@@ -137,22 +132,6 @@ impl ModalString {
 
     pub fn active_partials(&self) -> usize {
         self.active_partials
-    }
-
-    /// Number of low-frequency partials whose f32 coefficient slots are
-    /// zeroed. Exposed only in debug builds so the F17 golden can prove it
-    /// exercises a non-empty prefix.
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub fn f64_partials(&self) -> usize {
-        self.f64_partials
-    }
-
-    /// Cumulative f32 modal-loop iterations since construction.
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub fn debug_f32_iterations(&self) -> usize {
-        self.debug_f32_iterations
     }
 
     /// Configure the bank for a given key.
@@ -403,20 +382,6 @@ impl ModalString {
     /// SoA loop.
     #[inline]
     pub fn tick(&mut self, input: f32) -> f32 {
-        self.tick_inner::<false>(input)
-    }
-
-    /// Debug-only pre-F17 reference: process the zeroed f32 prefix instead of
-    /// skipping it. The extra iterations must remain bit-identical to
-    /// [`Self::tick`] while both renders share the same platform libm.
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub fn tick_including_zeroed_prefix(&mut self, input: f32) -> f32 {
-        self.tick_inner::<true>(input)
-    }
-
-    #[inline]
-    fn tick_inner<const INCLUDE_ZEROED_PREFIX: bool>(&mut self, input: f32) -> f32 {
         let mut output = 0.0_f32;
 
         // f64-precision partials (below 200 Hz).
@@ -439,18 +404,7 @@ impl ModalString {
         // `configure`, so starting there skips slots that can only ever add
         // zero — up to 8 wasted iterations per unison per polarization.
         let n = self.active_partials;
-        let f32_start = if INCLUDE_ZEROED_PREFIX {
-            0
-        } else {
-            self.f64_partials
-        };
-        #[cfg(debug_assertions)]
-        {
-            self.debug_f32_iterations = self
-                .debug_f32_iterations
-                .saturating_add(n.saturating_sub(f32_start));
-        }
-        for index in f32_start..n {
+        for index in self.f64_partials..n {
             let y = self.c0[index] * (input - self.x2[index])
                 + self.c1[index] * self.y1[index]
                 + self.c2[index] * self.y2[index];

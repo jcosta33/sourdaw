@@ -4,12 +4,12 @@
 //! projections instead correlate four tail windows with deterministic signed
 //! sequences and normalize each result by the window energy. The expectations
 //! were captured from the retained render at f2dbf9dd, whose DSP source is
-//! unchanged from the accepted 93fb72b2 baseline. An absolute tolerance of
-//! 5e-5 is deliberately generous relative to last-bit accumulation while the
-//! independent windows and signs remain sensitive to polarity, phase, and a
-//! one-sample timing change.
+//! unchanged from the accepted 93fb72b2 baseline. Linux and macOS differed by
+//! at most 1.798e-9 across these projections. The 1.2e-7 tolerance rounds a 64x
+//! safety margin upward while the independent windows and signs remain
+//! sensitive to polarity, phase, and a one-sample timing change.
 
-const FINE_STRUCTURE_TOLERANCE: f64 = 5e-5;
+const FINE_STRUCTURE_TOLERANCE: f64 = 1.2e-7;
 
 #[derive(Clone, Copy)]
 struct Projection {

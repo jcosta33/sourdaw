@@ -438,6 +438,21 @@ describe('package scripts and gitignore', () => {
         expect(existsSync(snapshotDirectory)).toBe(false);
     });
 
+    it('passes the exact publisher argv tuple into the trusted snapshot runner', async () => {
+        const expectedArgs = ['12', '--test', 'Run the focused publisher specs and confirm they pass.'];
+        await expect(
+            executeTrustedSnapshot('lane:publish', expectedArgs, {
+                commit: 'pinned-sha',
+                sources: new Map([
+                    [
+                        'scripts/publishLane.ts',
+                        `export async function runPublishLaneCli(args) { return JSON.stringify(args) === ${JSON.stringify(JSON.stringify(expectedArgs))} ? 0 : 1; }`,
+                    ],
+                ]),
+            })
+        ).resolves.toBe(0);
+    });
+
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({

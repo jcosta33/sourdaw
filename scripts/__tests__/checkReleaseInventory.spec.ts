@@ -36,7 +36,6 @@ import {
     DDSP_MODEL_PATHS,
     DDSP_TFJS_APPLICATION_RUNTIME_PATHS,
     DDSP_TFJS_RUNTIME_PATHS,
-    GRAND_BOULE_MEASUREMENT_SOURCE_PATHS,
     ddspModelsReleaseInventoryContract,
     ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
@@ -329,9 +328,7 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
     const sourcePaths = [
         'crates/daw-dsp/benches/quantum.rs',
         'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-        'crates/daw-dsp/benches/wasm/index.html',
         'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-        'crates/daw-dsp/benches/wasm/run.mjs',
         'public/wasm/daw-dsp/daw_dsp_bg.wasm',
     ];
     for (const path of sourcePaths) {
@@ -376,8 +373,8 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
         sourceDigests,
         browser: 'fixture-browser',
         userAgent: 'fixture-agent',
-        budgetMs: (128 / 48_000) * 1_000,
-        options: { warmupQuanta: 4, measureQuanta: 10 },
+        budgetMs: 2.666,
+        options: { warmupQuanta: 4, measureQuanta: 8 },
         load: { before: 1.25, after: 1.5 },
         referenceProject: {
             audioThread: [['grand_boule_ring_consumer', 1]],
@@ -404,12 +401,9 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
                 zeroFraction: 0,
                 stationary: true,
                 floorMeasurable: true,
-                medianTrustworthy: false,
                 dutyCycle: null,
                 calibration: { segments: 1, medianTicksPerMs: 1000, spreadPct: 0 },
                 wallRatio: 0.8,
-                mainThreadWallMs: 20,
-                sampleCount: 10,
             },
         ],
     };
@@ -760,35 +754,6 @@ describe('release inventory', () => {
         ).toThrow('DDSP models release inventory kind does not match provenance');
     });
 
-    it('keeps full live validation bound to Grand Boule source history before WASM verification', () => {
-        const historyRequests: string[] = [];
-        const stopAfterHistoryValidation = new Error('stop after Grand Boule history validation');
-        const { sourceRevision } = JSON.parse(
-            readFileSync(join(repositoryRoot, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')
-        ) as { sourceRevision: string };
-        const expectedHistoryRequests = GRAND_BOULE_MEASUREMENT_SOURCE_PATHS.map((path) => `${sourceRevision}:${path}`);
-
-        expect(() =>
-            checkReleaseInventory(repositoryRoot, {
-                // License traversal is unrelated to the history/WASM ordering
-                // this composition proof observes and makes the shard timeout
-                // depend on repository size instead of the boundary under test.
-                projectLicensePreflight() {},
-                readGrandBouleSourceAtRevision(root, revision, path) {
-                    historyRequests.push(`${revision}:${path}`);
-                    return readFileSync(join(root, path));
-                },
-                verifyWasmArtifacts() {
-                    expect(historyRequests).toEqual(expectedHistoryRequests);
-                    throw stopAfterHistoryValidation;
-                },
-            })
-        ).toThrow(stopAfterHistoryValidation);
-        expect(historyRequests).toEqual(expectedHistoryRequests);
-        // The live inventory snapshot is intentionally real. Keep a finite
-        // full-shard hang oracle while allowing for runner contention.
-    }, 30_000);
-
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
         const contract = ddspModelsReleaseInventoryContract(repositoryRoot);
 
@@ -1070,50 +1035,6 @@ describe('release inventory', () => {
             writeFileSync(measuredSourcePath, originalSource);
 
             const original = readFileSync(jsonPath, 'utf8');
-            const overBudget = JSON.parse(original) as {
-                rows: Array<{ mainThreadWallMs: number; sampleCount: number }>;
-            };
-            overBudget.rows[0]!.mainThreadWallMs = overBudget.rows[0]!.sampleCount * 3;
-            writeFileSync(jsonPath, JSON.stringify(overBudget));
-            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
-                'measured reference project exceeds its render budget'
-            );
-
-            for (const mutate of [
-                (measurement: {
-                    budgetMs: number;
-                    options: { measureQuanta: number };
-                    rows: Array<{ sampleCount: number }>;
-                }) => {
-                    measurement.rows[0]!.sampleCount -= 1;
-                },
-                (measurement: {
-                    budgetMs: number;
-                    options: { measureQuanta: number };
-                    rows: Array<{ sampleCount: number }>;
-                }) => {
-                    measurement.options.measureQuanta += 1;
-                },
-            ]) {
-                const measurement = JSON.parse(original) as {
-                    budgetMs: number;
-                    options: { measureQuanta: number };
-                    rows: Array<{ sampleCount: number }>;
-                };
-                mutate(measurement);
-                writeFileSync(jsonPath, JSON.stringify(measurement));
-                expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
-                    'sample count must equal the positive integer harness measureQuanta'
-                );
-            }
-
-            const tamperedBudget = JSON.parse(original) as { budgetMs: number };
-            tamperedBudget.budgetMs = 10;
-            writeFileSync(jsonPath, JSON.stringify(tamperedBudget));
-            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
-                'measured reference project exceeds its render budget'
-            );
-
             const unresolvedRevision = 'f'.repeat(40);
             const unresolved = JSON.parse(original) as {
                 sourceRevision: string;

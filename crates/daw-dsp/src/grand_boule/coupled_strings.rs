@@ -195,45 +195,16 @@ impl CoupledStringAssembly {
     /// cross-unison feedback.
     #[inline]
     pub fn tick(&mut self, hammer_force: f32) -> f32 {
-        self.tick_inner::<false>(hammer_force)
-    }
-
-    /// Debug-only reference render for F17. Both polarizations process the
-    /// zeroed f32 prefix exactly as they did before the cost reduction.
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub fn tick_including_zeroed_prefix(&mut self, hammer_force: f32) -> f32 {
-        self.tick_inner::<true>(hammer_force)
-    }
-
-    #[inline]
-    fn tick_inner<const INCLUDE_ZEROED_PREFIX: bool>(&mut self, hammer_force: f32) -> f32 {
         let mut prompt = 0.0_f32;
         let mut aftersound = 0.0_f32;
         let n = self.active_unisons;
         for unison_index in 0..n {
             let unison = &mut self.unisons[unison_index];
-            #[cfg(debug_assertions)]
-            let immediate = if INCLUDE_ZEROED_PREFIX {
-                unison.prompt.tick_including_zeroed_prefix(hammer_force)
-            } else {
-                unison.prompt.tick(hammer_force)
-            };
-            #[cfg(not(debug_assertions))]
             let immediate = unison.prompt.tick(hammer_force);
             prompt += immediate;
-            let aftersound_input = immediate * POLARIZATION_TRANSFER_GAIN;
-            #[cfg(debug_assertions)]
-            let aftersound_output = if INCLUDE_ZEROED_PREFIX {
-                unison
-                    .aftersound
-                    .tick_including_zeroed_prefix(aftersound_input)
-            } else {
-                unison.aftersound.tick(aftersound_input)
-            };
-            #[cfg(not(debug_assertions))]
-            let aftersound_output = unison.aftersound.tick(aftersound_input);
-            aftersound += aftersound_output;
+            aftersound += unison
+                .aftersound
+                .tick(immediate * POLARIZATION_TRANSFER_GAIN);
         }
         prompt + AFTERSOUND_MIX * aftersound
     }
