@@ -1,0 +1,58 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_aeec9f577e5308 4630-4631
+  s_a40848e8f8cca9::t_543c04b3ddd71f 4662-4664,4678
+  s_a40848e8f8cca9::t_82752842ea72c6 3627-3631,3708-3721,3742
+  s_a40848e8f8cca9::t_74a259d60da4a7 7,99,4001,4013
+  s_a40848e8f8cca9::t_075da6eaeec6c5 4627-4629,4632-4637
+src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts
+  s_a40848e8f8cca9::t_1064fcba18adcb 7-8,10,18-45
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_d4888fcd261c69 1,16-17
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_562b3f2404c5e6 7-8,11,119,145,2483-2538,2540-2542,2544-2568
+  s_a40848e8f8cca9::t_ca32c3c4c1bf93 2195-2329,2598
+  s_a40848e8f8cca9::t_3c571399053980 2543
+  s_a40848e8f8cca9::t_f5cb9a112220b6 5,95
+  s_a40848e8f8cca9::t_0d2698d3d02e41 2539
+  s_a40848e8f8cca9::t_57efb4e5fab4d8 1025-1030,1044,1055,1057-1070
+  s_a40848e8f8cca9::t_0f7fac0c222d71 2176-2179
+  s_a40848e8f8cca9::t_42193483ff2c03 2577-2587,2592
+  s_a40848e8f8cca9::t_a7599c1dbce0c0 2569-2576,2588-2591,2593-2597
+  s_a40848e8f8cca9::t_d2aebbfc5b502e 2599
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_bf5423d4340e6f 3,29-41,112-134,142-146,193,196,441-491,501-540
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_6ad13383e477c2 624-641,644-646,652
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_d4888fcd261c69 371-373,378-381,386,390-397,399-405,629-631,633,646,808-809
+  s_a40848e8f8cca9::t_0bfd2bde76e4d8 810-812
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_a40848e8f8cca9::t_a69943c217e913 41-53
+src/modules/AiRuntime/models/ActionCommandGraph.ts
+  s_a40848e8f8cca9::t_d4888fcd261c69 1-8
+src/modules/Command/useCases/migrateLegacyAppActionToVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_1064fcba18adcb 11,29
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_a40848e8f8cca9::t_1489bdb72dc214 339-348
+  s_a40848e8f8cca9::t_1064fcba18adcb 8,15,334,349-363,372
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_6ad13383e477c2 477,579
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_7557d65299ce47 393-468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e969b5855f1e4c7cd4b6d8ed1e808bfbb75eae45",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
