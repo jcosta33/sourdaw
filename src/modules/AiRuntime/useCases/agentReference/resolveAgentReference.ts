@@ -186,8 +186,9 @@ function getTrackCandidates(
             'vca-member-track',
         ].includes(capability)
     ) {
+        const referenceCapability = capability === 'removable-track' ? 'track' : capability;
         return context.tracks.filter((track) =>
-            isAgentReferenceCapabilityCandidate({ capability, context, id: track.id })
+            isAgentReferenceCapabilityCandidate({ capability: referenceCapability, context, id: track.id })
         );
     }
     return null;

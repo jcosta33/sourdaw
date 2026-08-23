@@ -3561,12 +3561,13 @@ function groundToolCall({
         ) {
             continue;
         }
+        if (call.name === 'addSidechainRoute' && targetRule.argument === 'targetDeviceId') {
+            continue;
+        }
         if (
             sidechainRoutingScope?.status === 'request' &&
             call.name === 'addSidechainRoute' &&
-            (targetRule.argument === 'sourceTrackId' ||
-                targetRule.argument === 'targetTrackId' ||
-                targetRule.argument === 'targetDeviceId') &&
+            (targetRule.argument === 'sourceTrackId' || targetRule.argument === 'targetTrackId') &&
             sidechainRoutingScope.routes.some(
                 (route) =>
                     route.sourceTrackId === groundedArguments.sourceTrackId &&
