@@ -1,41 +1,21 @@
-release/desktop-runtime-material.json
-  s_0a3429e31e555d::t_929c13ebb4838a 1-16
-scripts/releaseProof.ts
-  s_0a3429e31e555d::t_688a695b9caf5b 561-564,572-586
-  s_0a3429e31e555d::t_844e7685bed5c9 17,97,171,174
-  s_0a3429e31e555d::t_7e1905d1e1aa4d 56,275-281,312-313,369-370,377-383,453,475-483,486-488,490-494,507-509,530,532-533,537-541,557,589,676-683,686-689
-  s_0a3429e31e555d::t_e2aadc6c997874 189-191
-  s_0a3429e31e555d::t_46d1c13e9d0653 34-36,43-47,328-330,358
-  s_0a3429e31e555d::t_e96e2bf259f641 1-16,18-33,37-42,48-55,57-96,98-170,172-173,175-188,192-235,237-240,245,247-261,263-274,282,284-311,314-327,331,346,361-368,371-373,384-446,448-452,454-462,466-474,484-485,489,495,512-516,523-529,531,534-536,542-556,558-560,565-571,587-588,590-659,662-675,684-685,690-757,759-800
-  s_0a3429e31e555d::t_56a51234e56228 262,447
-  s_0a3429e31e555d::t_0b2bd1f9349f81 339-345,374-376
-  s_0a3429e31e555d::t_8a293ceb0f9f69 347-357,359-360,496-506,510-511,517-522
-  s_0a3429e31e555d::t_834ec3f89b797f 332-338,463-465
-  s_0a3429e31e555d::t_69bf725425b35b 660-661,758
-  s_0a3429e31e555d::t_93d71ac36f1baa 236,241-244,246,283
-README.md
-  s_0a3429e31e555d::t_b6970f702caf06 59
-release/web-artifact-manifest.json
-  s_0a3429e31e555d::t_929c13ebb4838a 1-10,12
-  s_0a3429e31e555d::t_0f36afb63497dd 11
-scripts/checkElectronRuntimeProvenance.ts
-  s_0a3429e31e555d::t_c713e6ce44f58d 58,66,72
-docs/release.md
-  s_0a3429e31e555d::t_b6970f702caf06 1-46
-release/open-source-inventory.json
-  s_0a3429e31e555d::t_c713e6ce44f58d 19,21,70-71,154-155,169-170,177-178,184
-  s_0a3429e31e555d::t_d7ea4e04290fd8 1160
-package.json
-  s_0a3429e31e555d::t_c2a2236da5aca5 30-31
 scripts/__tests__/releaseProof.spec.ts
-  s_0a3429e31e555d::t_09870857cfe71a 10,78-81,152-155,157-160,231-237,284-290,292-297,301,305-333,335,344-345
-  s_0a3429e31e555d::t_8b8ec315abe61f 250,253,258,263,268,271,276,279,291
-  s_0a3429e31e555d::t_ac5dec0d261d0d 1-8,11,13-19,24-44,46-53,56,58,60,107-131,135-146,161-166,170-180,182-188,190,193-230,239-241,246-249,251,255-257,259-261,265-267,269,273-275,277,281-283,346-347
-  s_0a3429e31e555d::t_a0e033c4514de1 244
-  s_0a3429e31e555d::t_e06ef3129f12e1 242-243,245,336-343
-  s_0a3429e31e555d::t_af5785e20b94ea 45
-  s_0a3429e31e555d::t_64de71db3048cf 75-77,92,132-134,147-149,167-169,298-300,302-304
-  s_0a3429e31e555d::t_ed2517168aff2b 9,12,20-23,54-55,57,59,61-74,82-91,93-106,150-151,156,181,189,191-192,238,252,254,262,264,270,272,278,280,334
+  s_a40848e8f8cca9::t_435d34b29caf2c 1-347
+README.md
+  s_a40848e8f8cca9::t_9e2ef69464db8e 59
+docs/release.md
+  s_0a3429e31e555d::t_53e791efb871dc 1-46
+package.json
+  s_0a3429e31e555d::t_8953f49b406cff 30-31
+release/desktop-runtime-material.json
+  s_9f423257236551::t_313e965ab92640 1-16
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_250aa5ed36f560 19,21,70-71,154-155,169-170,177-178,184,1160
+release/web-artifact-manifest.json
+  s_542bd2777cab38::t_6fb2c29e46ef12 1-12
+scripts/checkElectronRuntimeProvenance.ts
+  s_6f85f3050a72e9::t_9bd2993b271cf3 58,66,72
+scripts/releaseProof.ts
+  s_0a3429e31e555d::t_66f828beb68133 1-800
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -47,7 +27,39 @@ scripts/__tests__/releaseProof.spec.ts
       "agent_id": {
         "tool": "codex",
         "id": "019f1568-8dda-7540-97a5-9da760eadac4",
-        "model": "gpt-5.6-luna"
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_542bd2777cab38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a02d2c-c133-7692-9e66-28d543512ff8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_6f85f3050a72e9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a02d1e-9f25-7621-bc28-28a25ac83422",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9f423257236551": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a02d44-3e3f-75d0-a75e-08b78fdd86b6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
       },
       "human_author": "José Costa <j.costa.3394@gmail.com>"
     }
