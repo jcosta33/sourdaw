@@ -1,0 +1,25 @@
+tests/e2e/panelDeepCoverage.spec.ts
+  s_a40848e8f8cca9::t_d14828eeb80dd3 66-67
+tests/e2e/statusBarMetricsTestId.spec.ts
+  s_a40848e8f8cca9::t_d14828eeb80dd3 19,27,31
+  s_a40848e8f8cca9::t_59e9612bd9361f 37
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  s_a40848e8f8cca9::t_d14828eeb80dd3 30
+  s_a40848e8f8cca9::t_fad4e39cf79984 54-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fef99b6f70d36dc0103b86429091b66065476273",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
