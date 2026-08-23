@@ -108,7 +108,6 @@ const MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/wasm/deviceRecipes.js',
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-    'public/wasm/manifest.json',
 ];
 
 function measurementSourceDigests() {

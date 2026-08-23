@@ -785,7 +785,6 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/wasm/deviceRecipes.js',
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-    'public/wasm/manifest.json',
 ] as const;
 
 export function assertGrandBouleMeasurementAdmission(root: string): void {
@@ -817,11 +816,18 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         try {
             sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
         } catch {
-            throw new Error(`Grand Boule measurement source revision cannot provide ${path}`);
+            throw new Error(`Grand Boule measurement source revision ${revision} cannot provide ${path}`);
         }
-        const expected = createHash('sha256').update(sourceAtRevision).digest('hex');
-        if (data.sourceDigests?.[path] !== expected) {
-            throw new Error(`Grand Boule measurement source digest drifted for ${path}`);
+        const recordedDigest = data.sourceDigests![path]!;
+        const revisionDigest = createHash('sha256').update(sourceAtRevision).digest('hex');
+        if (recordedDigest !== revisionDigest) {
+            throw new Error(`Grand Boule measurement recorded digest does not match source revision for ${path}`);
+        }
+        const currentDigest = createHash('sha256')
+            .update(readFileSync(resolve(root, path)))
+            .digest('hex');
+        if (recordedDigest !== currentDigest) {
+            throw new Error(`Grand Boule measurement current source digest drifted for ${path}`);
         }
     }
     const rows = data.rows?.filter((row) => row.id === 'grand_boule') ?? [];

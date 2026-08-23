@@ -328,7 +328,6 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
         'crates/daw-dsp/benches/wasm/deviceRecipes.js',
         'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
         'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-        'public/wasm/manifest.json',
     ];
     for (const path of sourcePaths) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -1015,7 +1014,25 @@ describe('release inventory', () => {
             const { jsonPath } = writeGrandBouleMeasurementFixture(root);
             expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
 
+            const measuredSourcePath = join(root, 'crates/daw-dsp/benches/quantum.rs');
+            const originalSource = readFileSync(measuredSourcePath, 'utf8');
+            writeFileSync(measuredSourcePath, `${originalSource}\ncurrent source mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('source digest drifted');
+            writeFileSync(measuredSourcePath, originalSource);
+
             const original = readFileSync(jsonPath, 'utf8');
+            const unresolvedRevision = 'f'.repeat(40);
+            const unresolved = JSON.parse(original) as {
+                sourceRevision: string;
+                machine: { gitSha: string };
+            };
+            unresolved.sourceRevision = unresolvedRevision;
+            unresolved.machine.gitSha = unresolvedRevision;
+            writeFileSync(jsonPath, JSON.stringify(unresolved));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                `source revision ${unresolvedRevision} cannot provide crates/daw-dsp/benches/quantum.rs`
+            );
+
             const data = JSON.parse(original) as {
                 sourceDigests: Record<string, string>;
                 rows: Array<{ warmVerify: { detail: string } }>;
@@ -1029,7 +1046,9 @@ describe('release inventory', () => {
             };
             changed.sourceDigests['crates/daw-dsp/benches/quantum.rs'] = '0'.repeat(64);
             writeFileSync(jsonPath, JSON.stringify(changed));
-            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('source digest drifted');
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'recorded digest does not match source revision'
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
