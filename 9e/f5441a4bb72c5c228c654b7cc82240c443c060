@@ -1,0 +1,34 @@
+src/modules/AudioEngine/engine/__tests__/panelReachesTheEngine.spec.tsx
+  s_a40848e8f8cca9::t_5852e7553dcce3 195-196
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_a40848e8f8cca9::t_5852e7553dcce3 4,361-365,376-379,981-987,989-993,1000-1001
+  s_a40848e8f8cca9::t_92e715701a5154 14,52-53,1071-1087
+  s_a40848e8f8cca9::t_660bdfcccef107 715-718,806-808,840-842,849-851
+  s_a40848e8f8cca9::t_5caa734025e112 988
+  s_a40848e8f8cca9::t_698042184241fd 540-544,583-586
+  s_0a3429e31e555d::t_9bb3952b0a2702 1088-1089
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9ef5441a4bb72c5c228c654b7cc82240c443c060",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
