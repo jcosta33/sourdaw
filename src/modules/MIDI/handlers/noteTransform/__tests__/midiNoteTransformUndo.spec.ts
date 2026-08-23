@@ -4,6 +4,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { type MidiNote } from '../../../models/MidiNote';
 import { midiStore } from '../../../stores/midiStore';
@@ -259,6 +260,7 @@ describe('MIDI note transform handlers', () => {
 
 describe('MIDI note transforms through AppAction execution', () => {
     beforeEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         registerHandlerMap(getMidiNoteTransformHandlers());
