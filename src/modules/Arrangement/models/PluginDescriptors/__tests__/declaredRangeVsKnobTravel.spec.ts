@@ -1827,7 +1827,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // other 77 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
         // separately, by identity, in `threeWayPerDevice`.
-        expect(CENSUS.threeWay.length).toBe(117);
+        expect(CENSUS.threeWay.length).toBe(116);
 
         // The findings themselves, **by identity**. This was a bare count, which
         // is the wrong shape for a list of named defects: one row leaving while
@@ -1930,9 +1930,9 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             toaster: 3,
             crust: 2,
             levain: 1,
-            proof: 1,
+            proof: 0,
 
-            // ── Leg 3 is blind for these five, each for a stated reason. ──────
+            // ── Leg 3 is blind for these four, each for a stated reason. ─────
             //
             // Crumbs' arms are enum variants behind `parse_crumbs_param`, so the
             // string-arm scanner reads nothing — see `ENGINE_CLAMP_COVERAGE`.
