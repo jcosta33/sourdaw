@@ -1,0 +1,44 @@
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_85391bf2c7f6ff 200,292,690
+  s_0a3429e31e555d::t_76e017b35252da 731
+  s_0a3429e31e555d::t_b209835d83df69 814
+  s_0a3429e31e555d::t_acc959629a2192 1133,1137,1149
+  s_0a3429e31e555d::t_1c8d39636da4f8 904-907
+  s_0a3429e31e555d::t_aacc9b3202a25d 910,1161
+  s_0a3429e31e555d::t_90e51c219c31d0 199,1141
+  s_0a3429e31e555d::t_d5482d5e61f9de 82,95-97,111-113
+  s_0a3429e31e555d::t_08f0c14c4a9210 263
+  s_0a3429e31e555d::t_279dc5b23cdbf6 734
+  s_0a3429e31e555d::t_29f4b498579666 1582-1601
+  s_0a3429e31e555d::t_3febcfd512cd32 502
+public/wasm/manifest.json
+  s_0a3429e31e555d::t_7c90684e35b92c 12,17-19,21,26,31-33,35,40,45-47,49,54,59
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0a3429e31e555d::t_707bccd56a73c3 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0a3429e31e555d::t_06ac6163423395 1
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_0a3429e31e555d::t_a718b8503a0cbf 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_0a3429e31e555d::t_a54c8dca26dc77 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0a3429e31e555d::t_df9f203b9e0776 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_0a3429e31e555d::t_932d6fb48f8095 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e8d62ca4d3e7cd1c1fe3039f610c0da0a47506ce",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
