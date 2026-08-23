@@ -1,0 +1,67 @@
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_34d0872374ff99 129-130
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_8ebd7e73d1c8c7 121,667-693,695,701,814-833,835,841
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_3bba105e0226bc 92,155-157
+  s_a40848e8f8cca9::t_d1ec36cd838fe4 160-169
+  s_a40848e8f8cca9::t_f461e8f0ae8a2c 93
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_a40848e8f8cca9::t_27a5bffcfd910b 469,481
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_b0aff61b0f7afb 129,218,1160,1164,1172
+  s_a40848e8f8cca9::t_c223e40fb3cbba 929,1188
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_8ebd7e73d1c8c7 69-74
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_d1ec36cd838fe4 1191,1213
+  s_a40848e8f8cca9::t_9489310ed0db69 678,695,732
+  s_a40848e8f8cca9::t_f461e8f0ae8a2c 718,853,857,2210
+  s_a40848e8f8cca9::t_3f5d1be2b59694 854-856
+  s_a40848e8f8cca9::t_fcb19eb1afc96f 1598
+  s_a40848e8f8cca9::t_3767ec8aec4752 257-262,279-281,559,1668,1676,1678-1681,1683,2066,2071,2122,2230,2240-2242,2314,2322-2324
+  s_a40848e8f8cca9::t_27a5bffcfd910b 15,263-276,698,716-717
+  s_a40848e8f8cca9::t_d65f6fd8ac6fe4 277-278
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_d7defe5593cb7f 653-655
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_8ebd7e73d1c8c7 464
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_8ebd7e73d1c8c7 244
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_a40848e8f8cca9::t_27a5bffcfd910b 363,448,467,473,485
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_27a5bffcfd910b 331,334,485,501-512,649,670,705,733
+  s_a40848e8f8cca9::t_f461e8f0ae8a2c 399
+  s_a40848e8f8cca9::t_3767ec8aec4752 396
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_8ebd7e73d1c8c7 3653,4184-4218,4413
+  s_a40848e8f8cca9::t_a52902a6d54c65 3654-3661
+  s_a40848e8f8cca9::t_d7defe5593cb7f 8,101,4106
+public/legal/DEPENDENCY-LICENSES.txt
+  s_a40848e8f8cca9::t_e355d6f7747597 10
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_cb50ebc1416a0a 1,1034-1052
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_a40848e8f8cca9::t_2f9e4f0b9c6e1e 1,191-209
+public/wasm/manifest.json
+  s_a40848e8f8cca9::t_3aec413b9a709a 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_568f6ebfd52eea 1,1034-1052
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a01b05f4f40f658a9e1049f80512fef5e2b15e5a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
