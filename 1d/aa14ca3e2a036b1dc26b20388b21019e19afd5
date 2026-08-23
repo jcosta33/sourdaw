@@ -1,0 +1,26 @@
+tests/e2e/desktopRuntime.spec.ts
+  s_a40848e8f8cca9::t_72631d9512a553 76-80,167-171,173
+tests/e2e/deepCoverage.spec.ts
+  s_a40848e8f8cca9::t_bc81eb91a54f47 227-228,231,237-238
+  s_a40848e8f8cca9::t_72631d9512a553 181,187-188,190-195,217-218,241-247
+  s_a40848e8f8cca9::t_6168b9cb861ae2 248,253
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Track.spec.ts
+  s_a40848e8f8cca9::t_6be24fe0ec8c0b 158,165-166,168-177
+  s_a40848e8f8cca9::t_25e321ca980008 167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1daa14ca3e2a036b1dc26b20388b21019e19afd5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
