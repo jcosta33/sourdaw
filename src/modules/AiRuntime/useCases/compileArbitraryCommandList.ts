@@ -2,20 +2,22 @@ import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases
 
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
+import {
+    parseSemanticCommandList,
+    SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+    SEMANTIC_COMMAND_LIST_MAX_REPEAT,
+    type SemanticCommandListEntity,
+    type SemanticCommandListItem,
+    type SemanticCommandListSelector,
+} from '../models/SemanticCommandList';
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 
-const MAX_ITEMS = 16;
-const MAX_COMMANDS = 32;
-const MAX_REPEAT = 8;
-
-type Entity = 'track' | 'clip' | 'device' | 'automation-lane';
-
 type Candidate = {
     id: string;
-    entity: Entity;
+    entity: SemanticCommandListEntity;
     name?: string;
     kind?: string;
     type?: string;
@@ -46,6 +48,7 @@ type CompiledItemEvidence = {
     commandCount: number;
     targetArgument?: string;
     targetCapability?: string;
+    targetCardinality?: 'many';
 };
 
 export type ArbitraryCommandListEvidence = {
@@ -117,7 +120,14 @@ function collectCandidates(context: ProjectContext): Candidate[] {
         trackId: lane.trackId,
         enabled: lane.enabled,
     }));
-    return [...tracks, ...clips, ...devices, ...lanes];
+    const adjustmentLayers = (context.adjustmentLayers ?? []).map((layer) => ({
+        id: layer.id,
+        entity: 'adjustment-layer' as const,
+        name: layer.name,
+        type: layer.effectType,
+        enabled: layer.enabled,
+    }));
+    return [...tracks, ...clips, ...devices, ...lanes, ...adjustmentLayers];
 }
 
 function containsForbiddenProviderAuthority(value: unknown): boolean {
@@ -131,7 +141,7 @@ function containsForbiddenProviderAuthority(value: unknown): boolean {
 }
 
 function parseIdList(value: unknown, label: string): string[] | RejectedCompilation {
-    if (!Array.isArray(value) || value.length > MAX_COMMANDS) {
+    if (!Array.isArray(value) || value.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
         return { status: 'rejected', reason: `${label} must contain bounded stable IDs.` };
     }
     const ids: string[] = [];
@@ -147,84 +157,18 @@ function parseIdList(value: unknown, label: string): string[] | RejectedCompilat
     return ids;
 }
 
-function parseSelector(value: unknown):
-    | {
-          targetArgument: string;
-          entity: Entity;
-          where: Record<string, string>;
-          excludedIds: string[];
-          condition: { field: 'muted' | 'locked' | 'bypassed' | 'enabled'; equals: boolean } | undefined;
-          exactly: number;
-      }
-    | RejectedCompilation {
-    if (
-        !isRecord(value) ||
-        !hasOnlyKeys(value, ['targetArgument', 'entity', 'where', 'excludeIds', 'condition', 'quantity'])
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector does not match the versioned application contract.' };
-    }
-    if (
-        !isSafeId(value.targetArgument) ||
-        !['track', 'clip', 'device', 'automation-lane'].includes(String(value.entity))
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector has an invalid target argument or entity.' };
-    }
-    if (
-        !isRecord(value.quantity) ||
-        !hasOnlyKeys(value.quantity, ['unit', 'exactly']) ||
-        value.quantity.unit !== 'targets'
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector requires an exact target quantity with unit targets.' };
-    }
-    const exactly = value.quantity.exactly;
-    if (typeof exactly !== 'number' || !Number.isInteger(exactly) || exactly < 1 || exactly > MAX_COMMANDS) {
-        return { status: 'rejected', reason: 'Bulk selector target quantity is outside the application bound.' };
-    }
-    const where = value.where === undefined ? {} : value.where;
-    if (
-        !isRecord(where) ||
-        !hasOnlyKeys(where, ['name', 'kind', 'type', 'trackId']) ||
-        Object.values(where).some((entry) => !isSafeId(entry))
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector has an invalid semantic match clause.' };
-    }
-    const excluded = value.excludeIds === undefined ? [] : parseIdList(value.excludeIds, 'Bulk selector exclusion');
-    if ('status' in excluded) {
-        return excluded;
-    }
-    let condition: { field: 'muted' | 'locked' | 'bypassed' | 'enabled'; equals: boolean } | undefined;
-    if (value.condition !== undefined) {
-        if (
-            !isRecord(value.condition) ||
-            !hasOnlyKeys(value.condition, ['field', 'equals']) ||
-            !['muted', 'locked', 'bypassed', 'enabled'].includes(String(value.condition.field)) ||
-            typeof value.condition.equals !== 'boolean'
-        ) {
-            return { status: 'rejected', reason: 'Bulk selector has an invalid conditional clause.' };
-        }
-        condition = value.condition as typeof condition;
-    }
-    return {
-        targetArgument: value.targetArgument,
-        entity: value.entity as Entity,
-        where: where as Record<string, string>,
-        excludedIds: excluded,
-        condition,
-        exactly,
-    };
-}
-
 function resolveSelector(input: {
     candidates: readonly Candidate[];
-    selector: ReturnType<typeof parseSelector> & { status?: never };
+    selector: SemanticCommandListSelector;
     protectedTargetIds: ReadonlySet<string>;
     itemId: string;
 }): { stableIds: string[]; evidence: ArbitraryCommandListSelectorEvidence } | RejectedCompilation {
+    const where = input.selector.where ?? {};
     const candidates = input.candidates.filter((candidate) => {
         if (candidate.entity !== input.selector.entity) {
             return false;
         }
-        if (Object.entries(input.selector.where).some(([key, value]) => candidate[key as keyof Candidate] !== value)) {
+        if (Object.entries(where).some(([key, value]) => candidate[key as keyof Candidate] !== value)) {
             return false;
         }
         return (
@@ -232,12 +176,13 @@ function resolveSelector(input: {
             candidate[input.selector.condition.field] === input.selector.condition.equals
         );
     });
-    const excludedIds = new Set([...input.selector.excludedIds, ...input.protectedTargetIds]);
+    const explicitlyExcludedIds = input.selector.excludeIds ?? [];
+    const excludedIds = new Set([...explicitlyExcludedIds, ...input.protectedTargetIds]);
     const protectedExclusions = candidates
         .filter((candidate) => input.protectedTargetIds.has(candidate.id))
         .map((candidate) => candidate.id);
     const stableIds = candidates.filter((candidate) => !excludedIds.has(candidate.id)).map((candidate) => candidate.id);
-    if (stableIds.length !== input.selector.exactly) {
+    if (stableIds.length !== input.selector.quantity.exactly) {
         return {
             status: 'rejected',
             reason: `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, not its exact quantity.`,
@@ -248,7 +193,7 @@ function resolveSelector(input: {
         evidence: {
             itemId: input.itemId,
             stableIds,
-            excludedIds: [...input.selector.excludedIds],
+            excludedIds: [...explicitlyExcludedIds],
             protectedExclusions,
             preconditions: stableIds.map((stableId) => {
                 const candidate = candidates.find((entry) => entry.id === stableId);
@@ -300,7 +245,7 @@ function getTargetWriteIdentity(
     });
 }
 
-function detectDependencyCycle(items: readonly Record<string, unknown>[]): string | null {
+function detectDependencyCycle(items: readonly SemanticCommandListItem[]): string | null {
     const dependencies = new Map<string, string[]>();
     for (const item of items) {
         const id = item.id;
@@ -334,6 +279,99 @@ function detectDependencyCycle(items: readonly Record<string, unknown>[]): strin
     return [...dependencies.keys()].some(visit) ? 'Structured command list has an unknown or cyclic dependency.' : null;
 }
 
+const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+
+type BatchLocalBindingProducer = {
+    itemId: string;
+};
+
+function dependsTransitivelyOn(
+    item: SemanticCommandListItem,
+    dependencyId: string,
+    itemsById: ReadonlyMap<string, SemanticCommandListItem>
+): boolean {
+    const visited = new Set<string>();
+    const pending = [...(item.dependsOn ?? [])];
+    while (pending.length > 0) {
+        const candidateId = pending.pop();
+        if (candidateId === undefined || visited.has(candidateId)) {
+            continue;
+        }
+        if (candidateId === dependencyId) {
+            return true;
+        }
+        visited.add(candidateId);
+        pending.push(...(itemsById.get(candidateId)?.dependsOn ?? []));
+    }
+    return false;
+}
+
+function validateTargetArgumentsWithoutSelectors(input: {
+    item: SemanticCommandListItem;
+    itemsById: ReadonlyMap<string, SemanticCommandListItem>;
+    producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
+    selectorArgument?: string;
+    targetRules: readonly {
+        argument: string;
+        allowBatchLocal?: boolean;
+        cardinality?: 'many';
+        optional?: boolean;
+    }[];
+}): RejectedCompilation | null {
+    for (const targetRule of input.targetRules) {
+        if (targetRule.argument === input.selectorArgument) {
+            continue;
+        }
+        const value = input.item.arguments[targetRule.argument];
+        if (value === undefined && targetRule.optional) {
+            continue;
+        }
+        if (input.selectorArgument !== undefined && (typeof value !== 'string' || !value.startsWith('$'))) {
+            continue;
+        }
+        if (
+            typeof value !== 'string' ||
+            !value.startsWith('$') ||
+            targetRule.cardinality === 'many' ||
+            targetRule.allowBatchLocal === false
+        ) {
+            return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
+        }
+        const binding = value.slice(1);
+        if (!BATCH_LOCAL_BINDING_PATTERN.test(binding)) {
+            return { status: 'rejected', reason: `Malformed batch-local target reference: ${value}` };
+        }
+        const producer = input.producersByBinding.get(binding);
+        if (producer === undefined || !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)) {
+            return {
+                status: 'rejected',
+                reason: `Batch-local target ${value} requires an earlier bounded producer dependency.`,
+            };
+        }
+    }
+    return null;
+}
+
+function getDeclaredBatchLocalBinding(
+    item: SemanticCommandListItem,
+    repeat: number
+): string | RejectedCompilation | null {
+    const binding = item.arguments.binding;
+    if (binding === undefined) {
+        return null;
+    }
+    if (
+        item.name !== 'createBus' ||
+        typeof binding !== 'string' ||
+        !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+        item.selector !== undefined ||
+        repeat !== 1
+    ) {
+        return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded createBus item.' };
+    }
+    return binding;
+}
+
 /**
  * Turns the provider's bounded semantic list into ordinary registered commands.
  * The provider never receives generated IDs, state guards, approval authority, or
@@ -365,19 +403,11 @@ export function compileArbitraryCommandList(input: {
         };
     }
     const plan = normalizeAgentPlanProposal(proposal.arguments.plan);
-    const list = proposal.arguments.list;
-    if (
-        list.schemaVersion !== 1 ||
-        !Array.isArray(list.items) ||
-        list.items.length === 0 ||
-        list.items.length > MAX_ITEMS
-    ) {
-        return { status: 'rejected', reason: 'Structured command list has an unsupported version or item budget.' };
+    const parsedList = parseSemanticCommandList(proposal.arguments.list);
+    if (parsedList.status === 'rejected') {
+        return parsedList;
     }
-    if (list.items.some((item) => !isRecord(item))) {
-        return { status: 'rejected', reason: 'Structured command list contains an invalid item.' };
-    }
-    const items = list.items as Record<string, unknown>[];
+    const items = parsedList.value.items;
     const dependencyRejection = detectDependencyCycle(items);
     if (dependencyRejection !== null) {
         return { status: 'rejected', reason: dependencyRejection };
@@ -391,15 +421,11 @@ export function compileArbitraryCommandList(input: {
     const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
     const targetCommandArguments = new Map<string, string>();
     const canonicalCommandKeys = new Set<string>();
+    const itemsById = new Map(items.map((item) => [item.id, item]));
+    const producersByBinding = new Map<string, BatchLocalBindingProducer>();
 
     for (const [index, item] of items.entries()) {
         const commandStart = commands.length;
-        if (!hasOnlyKeys(item, ['id', 'name', 'arguments', 'selector', 'repeat', 'dependsOn'])) {
-            return { status: 'rejected', reason: 'Structured command item contains unsupported authority fields.' };
-        }
-        if (!isSafeId(item.id) || !isSafeId(item.name) || !isRecord(item.arguments)) {
-            return { status: 'rejected', reason: 'Structured command item has an invalid command shape.' };
-        }
         if (containsForbiddenProviderAuthority(item.arguments)) {
             return { status: 'rejected', reason: 'Provider supplied application-owned authority or expected state.' };
         }
@@ -422,27 +448,27 @@ export function compileArbitraryCommandList(input: {
                 reason: 'Structured command dependencies must refer to earlier ordered items.',
             };
         }
-        let repeat = 1;
-        if (item.repeat !== undefined) {
-            if (
-                !isRecord(item.repeat) ||
-                !hasOnlyKeys(item.repeat, ['count']) ||
-                !Number.isInteger(item.repeat.count)
-            ) {
-                return {
-                    status: 'rejected',
-                    reason: 'Structured command repetition does not match the application contract.',
-                };
-            }
-            repeat = item.repeat.count as number;
-            if (repeat < 1 || repeat > MAX_REPEAT) {
-                return { status: 'rejected', reason: 'Structured command repetition exceeds the application bound.' };
-            }
+        const repeat = item.repeat?.count ?? 1;
+        if (repeat < 1 || repeat > SEMANTIC_COMMAND_LIST_MAX_REPEAT) {
+            return { status: 'rejected', reason: 'Structured command repetition exceeds the application bound.' };
+        }
+        const declaredBinding = getDeclaredBatchLocalBinding(item, repeat);
+        if (isRecord(declaredBinding) && 'status' in declaredBinding) {
+            return declaredBinding;
+        }
+        if (typeof declaredBinding === 'string' && producersByBinding.has(declaredBinding)) {
+            return { status: 'rejected', reason: `Duplicate batch-local binding: ${declaredBinding}` };
         }
         if (item.selector === undefined) {
             let omittedCommandCount = 0;
-            if (rules.targetRules.length > 0) {
-                return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
+            const targetRejection = validateTargetArgumentsWithoutSelectors({
+                item,
+                itemsById,
+                producersByBinding,
+                targetRules: rules.targetRules,
+            });
+            if (targetRejection !== null) {
+                return targetRejection;
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = { name: item.name, arguments: { ...item.arguments } };
@@ -454,7 +480,7 @@ export function compileArbitraryCommandList(input: {
                 canonicalCommandKeys.add(commandKey);
                 commands.push(command);
             }
-            if (commands.length > MAX_COMMANDS) {
+            if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
                 return {
                     status: 'rejected',
                     reason: 'Structured command list exceeds the application command budget.',
@@ -471,14 +497,14 @@ export function compileArbitraryCommandList(input: {
                 commandStart,
                 commandCount: commands.length - commandStart,
             });
+            if (typeof declaredBinding === 'string') {
+                producersByBinding.set(declaredBinding, { itemId: item.id });
+            }
             continue;
         }
-        const selector = parseSelector(item.selector);
-        if ('status' in selector) {
-            return selector;
-        }
+        const selector = item.selector;
         const targetRule = rules.targetRules.find((rule) => rule.argument === selector.targetArgument);
-        if (targetRule === undefined || targetRule.cardinality === 'many') {
+        if (targetRule === undefined) {
             return {
                 status: 'rejected',
                 reason: 'Bulk selector is incompatible with the discovered command target contract.',
@@ -486,6 +512,16 @@ export function compileArbitraryCommandList(input: {
         }
         if (selector.targetArgument in item.arguments) {
             return { status: 'rejected', reason: 'Provider may not supply target IDs for a semantic bulk selector.' };
+        }
+        const targetRejection = validateTargetArgumentsWithoutSelectors({
+            item,
+            itemsById,
+            producersByBinding,
+            selectorArgument: selector.targetArgument,
+            targetRules: rules.targetRules,
+        });
+        if (targetRejection !== null) {
+            return targetRejection;
         }
         const resolved = resolveSelector({ candidates, selector, protectedTargetIds, itemId: item.id });
         if ('status' in resolved) {
@@ -519,8 +555,8 @@ export function compileArbitraryCommandList(input: {
         }
         const canonicalStableIds: string[] = [];
         let omittedCommandCount = 0;
+        const isDestructive = /^remove|^delete/u.test(item.name);
         for (const stableId of resolved.stableIds) {
-            const isDestructive = /^remove|^delete/u.test(item.name);
             const previousWrite = targetWrites.get(stableId);
             if (previousWrite && (isDestructive || previousWrite.destructive) && previousWrite.itemId !== item.id) {
                 return {
@@ -529,10 +565,14 @@ export function compileArbitraryCommandList(input: {
                 };
             }
             targetWrites.set(stableId, { destructive: isDestructive, itemId: item.id });
+        }
+        const selectedArgumentValues: Array<string | string[]> =
+            targetRule.cardinality === 'many' ? [[...resolved.stableIds]] : [...resolved.stableIds];
+        for (const selectedTarget of selectedArgumentValues) {
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = {
                     name: item.name,
-                    arguments: { ...item.arguments, [selector.targetArgument]: stableId },
+                    arguments: { ...item.arguments, [selector.targetArgument]: selectedTarget },
                 };
                 const commandKey = getCanonicalCommandIdentity(command);
                 const targetCommandKey = getTargetWriteIdentity(item.name, rules.targetRules, command.arguments);
@@ -540,7 +580,7 @@ export function compileArbitraryCommandList(input: {
                 if (priorArguments !== undefined && priorArguments !== commandKey) {
                     return {
                         status: 'rejected',
-                        reason: `Structured command writes for ${item.name} on ${stableId} are not safely composable.`,
+                        reason: `Structured command writes for ${item.name} on ${resolved.stableIds.join(',')} are not safely composable.`,
                     };
                 }
                 targetCommandArguments.set(targetCommandKey, commandKey);
@@ -549,11 +589,15 @@ export function compileArbitraryCommandList(input: {
                     continue;
                 }
                 canonicalCommandKeys.add(commandKey);
-                canonicalStableIds.push(stableId);
+                if (targetRule.cardinality === 'many') {
+                    canonicalStableIds.push(...resolved.stableIds);
+                } else {
+                    canonicalStableIds.push(selectedTarget as string);
+                }
                 commands.push(command);
             }
         }
-        if (commands.length > MAX_COMMANDS) {
+        if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
             return { status: 'rejected', reason: 'Structured command list exceeds the application command budget.' };
         }
         compiledItems.push({
@@ -561,13 +605,14 @@ export function compileArbitraryCommandList(input: {
             itemId: item.id,
             commandName: item.name,
             dependsOn,
-            declaredCommandCount: resolved.stableIds.length * repeat,
+            declaredCommandCount: (targetRule.cardinality === 'many' ? 1 : resolved.stableIds.length) * repeat,
             omittedCommandCount,
             stableIds: [...resolved.stableIds],
             commandStart,
             commandCount: commands.length - commandStart,
             targetArgument: selector.targetArgument,
             targetCapability: targetRule.capability,
+            ...(targetRule.cardinality === 'many' ? { targetCardinality: 'many' as const } : {}),
         });
     }
     if (!hasExactScope(plan, orderedTargetIds)) {

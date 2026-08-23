@@ -3601,6 +3601,24 @@ function groundToolCall({
         ) {
             continue;
         }
+        const compilerTargetOverride = resolvedTargetOverrides?.find(
+            (override) => override.argument === targetRule.argument
+        );
+        if (targetRule.cardinality === 'many' && compilerTargetOverride !== undefined) {
+            if (
+                compilerTargetOverride.cardinality !== 'many' ||
+                targetRule.capability !== compilerTargetOverride.capability ||
+                JSON.stringify(assertedValue) !== JSON.stringify(compilerTargetOverride.stableIds)
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
+                );
+            }
+            groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
+            continue;
+        }
         if (targetRule.cardinality === 'many') {
             const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
             const result = resolveAgentReferenceArray({
@@ -3683,13 +3701,12 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
-        const compilerTargetOverride = resolvedTargetOverrides?.find(
-            (override) => override.argument === targetRule.argument
-        );
         if (compilerTargetOverride !== undefined) {
             if (
+                compilerTargetOverride.cardinality !== 'one' ||
+                compilerTargetOverride.stableIds.length !== 1 ||
                 targetRule.capability !== compilerTargetOverride.capability ||
-                assertedValue !== compilerTargetOverride.stableId
+                assertedValue !== compilerTargetOverride.stableIds[0]
             ) {
                 return rejection(
                     index,
@@ -3697,7 +3714,7 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
-            groundedArguments[targetRule.argument] = compilerTargetOverride.stableId;
+            groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
             continue;
         }
         const bulkSiblingTargetIds =

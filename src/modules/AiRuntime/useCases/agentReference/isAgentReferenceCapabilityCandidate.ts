@@ -11,6 +11,7 @@ export type AgentReferenceCapability =
     | 'device-host-track'
     | 'device'
     | 'device-parameter'
+    | 'adjustment-layer'
     | 'vca-group'
     | 'vca-member-track'
     | 'automation-lane'
@@ -60,6 +61,9 @@ export function isAgentReferenceCapabilityCandidate(input: {
         return input.context.tracks.some((candidate) =>
             candidate.devices.some((device) => (device.parameters ?? []).some((parameter) => parameter.id === input.id))
         );
+    }
+    if (input.capability === 'adjustment-layer') {
+        return (input.context.adjustmentLayers ?? []).some((layer) => layer.id === input.id);
     }
     if (input.capability === 'automation-lane') {
         return (input.context.automationLanes ?? []).some((lane) => lane.id === input.id);

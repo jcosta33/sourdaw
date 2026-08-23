@@ -1,4 +1,7 @@
+import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+
 import { type ProjectContext } from '../models/ProjectContext';
+import { type SemanticCommandListEntity } from '../models/SemanticCommandList';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
@@ -11,7 +14,7 @@ const MAX_COMMANDS = 32;
 
 type Candidate = {
     id: string;
-    entity: 'track' | 'clip' | 'device' | 'automation-lane';
+    entity: SemanticCommandListEntity;
     name?: string;
     kind?: string;
     type?: string;
@@ -25,7 +28,8 @@ type Candidate = {
 export type CompilerResolvedTargetOverride = {
     argument: string;
     capability: string;
-    stableId: string;
+    cardinality: 'one' | 'many';
+    stableIds: string[];
 };
 
 function collectCandidates(context: ProjectContext): Candidate[] {
@@ -64,7 +68,14 @@ function collectCandidates(context: ProjectContext): Candidate[] {
         trackId: lane.trackId,
         enabled: lane.enabled,
     }));
-    return [...tracks, ...clips, ...devices, ...lanes];
+    const adjustmentLayers = (context.adjustmentLayers ?? []).map((layer) => ({
+        id: layer.id,
+        entity: 'adjustment-layer' as const,
+        name: layer.name,
+        type: layer.effectType,
+        enabled: layer.enabled,
+    }));
+    return [...tracks, ...clips, ...devices, ...lanes, ...adjustmentLayers];
 }
 
 function sameToolCalls(left: readonly ToolCallResult[], right: readonly ToolCallResult[]): boolean {
@@ -146,6 +157,7 @@ export function validateArbitraryCommandListEvidence(input: {
             !Number.isInteger(item.omittedCommandCount) ||
             item.omittedCommandCount < 0 ||
             item.declaredCommandCount !== item.commandCount + item.omittedCommandCount ||
+            (item.targetCardinality !== undefined && item.targetCardinality !== 'many') ||
             item.dependsOn.some((dependency) => !itemIds.has(dependency))
         ) {
             return {
@@ -177,7 +189,8 @@ export function validateArbitraryCommandListEvidence(input: {
             if (
                 item.canonicalStableIds.length > 0 ||
                 item.targetArgument !== undefined ||
-                item.targetCapability !== undefined
+                item.targetCapability !== undefined ||
+                item.targetCardinality !== undefined
             ) {
                 return {
                     status: 'rejected',
@@ -185,10 +198,19 @@ export function validateArbitraryCommandListEvidence(input: {
                 };
             }
         } else {
+            const groundingRules = getExecutableAppActionGroundingRules(item.commandName);
+            const targetRule = groundingRules?.targetRules.find((rule) => rule.argument === item.targetArgument);
             if (
                 item.targetArgument === undefined ||
                 item.targetCapability === undefined ||
-                item.commandCount !== item.canonicalStableIds.length ||
+                targetRule === undefined ||
+                targetRule.capability !== item.targetCapability ||
+                (targetRule.cardinality === 'many') !== (item.targetCardinality === 'many') ||
+                (item.targetCardinality === 'many'
+                    ? item.commandCount !== (item.canonicalStableIds.length === 0 ? 0 : 1) ||
+                      (item.commandCount === 1 &&
+                          JSON.stringify(item.canonicalStableIds) !== JSON.stringify(item.stableIds))
+                    : item.commandCount !== item.canonicalStableIds.length) ||
                 !item.stableIds.every((stableId) =>
                     isAgentReferenceCapabilityCandidate({
                         capability: item.targetCapability!,
@@ -203,17 +225,33 @@ export function validateArbitraryCommandListEvidence(input: {
                 };
             }
             for (let offset = 0; offset < item.commandCount; offset += 1) {
-                const stableId = item.canonicalStableIds[offset];
                 const commandIndex = item.commandStart + offset;
                 const command = evidence.commands[commandIndex];
-                if (stableId === undefined || command?.arguments[item.targetArgument] !== stableId) {
+                let stableIds: string[];
+                if (item.targetCardinality === 'many') {
+                    stableIds = [...item.canonicalStableIds];
+                } else {
+                    const stableId = item.canonicalStableIds[offset];
+                    stableIds = stableId === undefined ? [] : [stableId];
+                }
+                const commandTarget = command?.arguments[item.targetArgument];
+                const targetMatches =
+                    item.targetCardinality === 'many'
+                        ? JSON.stringify(commandTarget) === JSON.stringify(stableIds)
+                        : commandTarget === stableIds[0];
+                if (stableIds.length === 0 || !targetMatches) {
                     return {
                         status: 'rejected',
                         reason: 'Structured command compiler evidence target order is invalid.',
                     };
                 }
                 targetOverridesByCallIndex.set(commandIndex, [
-                    { argument: item.targetArgument, capability: item.targetCapability, stableId },
+                    {
+                        argument: item.targetArgument,
+                        capability: item.targetCapability,
+                        cardinality: item.targetCardinality === 'many' ? 'many' : 'one',
+                        stableIds,
+                    },
                 ]);
             }
         }

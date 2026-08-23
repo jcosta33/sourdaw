@@ -16,6 +16,7 @@ export type ExecutableAppActionTargetCapability =
     | 'device-host-track'
     | 'device'
     | 'device-parameter'
+    | 'adjustment-layer'
     | 'vca-group'
     | 'vca-member-track'
     | 'automation-lane'
@@ -1928,7 +1929,7 @@ export const executableAppActionDescriptors = [
         description:
             'Add one app-grounded section region to an existing adjustment layer without changing its processing settings.',
         intentPhrases: ['copy the bass processing', 'copy bass processing'],
-        targetRules: [],
+        targetRules: [{ argument: 'layerId', capability: 'adjustment-layer' }],
         valueRules: [],
         parameters: {
             properties: {
@@ -1992,7 +1993,14 @@ export const executableAppActionDescriptors = [
         description:
             'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
         intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                promptRole: 'members',
+            },
+        ],
         valueRules: [],
         parameters: {
             properties: {
@@ -2020,7 +2028,16 @@ export const executableAppActionDescriptors = [
         description:
             'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
         intentPhrases: ['automate them to', 'final four bars of every chorus'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                dependsOn: 'busId',
+                promptRole: 'source',
+            },
+            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
+        ],
         valueRules: [],
         parameters: {
             properties: {

@@ -861,4 +861,435 @@ describe('compileArbitraryCommandList', () => {
         });
         expect(compile(entry.eligibleKind)).toMatchObject({ status: 'accepted' });
     });
+
+    it('admits an earlier dependency-complete batch-local target without inventing a stable project ID', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'create-drum-bus',
+                                    name: 'createBus',
+                                    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                                },
+                                {
+                                    id: 'gain-drum-bus',
+                                    name: 'setTrackGain',
+                                    arguments: { trackId: '$drum-bus', gain: 0.8 },
+                                    dependsOn: ['create-drum-bus'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } },
+            { name: 'setTrackGain', arguments: { trackId: '$drum-bus', gain: 0.8 } },
+        ]);
+    });
+
+    it('combines one exact many-target selector with an earlier batch-local destination', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'track-hat']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'create-plate-bus',
+                                    name: 'createBus',
+                                    arguments: { name: 'Plate Bus', binding: 'plate-bus' },
+                                },
+                                {
+                                    id: 'automate-plate-sends',
+                                    name: 'automateSendRanges',
+                                    arguments: {
+                                        busId: '$plate-bus',
+                                        sectionIds: ['section-chorus'],
+                                        tailBars: 4,
+                                        targetLevelDb: -12,
+                                    },
+                                    selector: {
+                                        targetArgument: 'trackIds',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                    dependsOn: ['create-plate-bus'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'createBus', arguments: { name: 'Plate Bus', binding: 'plate-bus' } },
+            {
+                name: 'automateSendRanges',
+                arguments: {
+                    busId: '$plate-bus',
+                    sectionIds: ['section-chorus'],
+                    tailBars: 4,
+                    targetLevelDb: -12,
+                    trackIds: ['track-kick', 'track-hat'],
+                },
+            },
+        ]);
+    });
+
+    it.each([
+        {
+            label: 'a direct stable target without a selector',
+            items: [{ id: 'gain-kick', name: 'setTrackGain', arguments: { trackId: 'track-kick', gain: 0.8 } }],
+        },
+        {
+            label: 'a batch-local target without its producer dependency',
+            items: [
+                {
+                    id: 'create-drum-bus',
+                    name: 'createBus',
+                    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                },
+                {
+                    id: 'gain-drum-bus',
+                    name: 'setTrackGain',
+                    arguments: { trackId: '$drum-bus', gain: 0.8 },
+                },
+            ],
+        },
+        {
+            label: 'an unknown batch-local target',
+            items: [
+                {
+                    id: 'gain-drum-bus',
+                    name: 'setTrackGain',
+                    arguments: { trackId: '$missing-bus', gain: 0.8 },
+                },
+            ],
+        },
+        {
+            label: 'a batch-local target forbidden by command metadata',
+            items: [
+                {
+                    id: 'create-drum-bus',
+                    name: 'createBus',
+                    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                },
+                {
+                    id: 'solo-safe-drum-bus',
+                    name: 'setSoloSafe',
+                    arguments: { trackId: '$drum-bus', soloSafe: true },
+                    dependsOn: ['create-drum-bus'],
+                },
+            ],
+        },
+    ])('rejects $label', ({ items }) => {
+        expect(
+            compileArbitraryCommandList({
+                context,
+                revision: 'revision-1',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: { plan: plan([]), list: { schemaVersion: 1, items } },
+                    },
+                ],
+            })
+        ).toMatchObject({ status: 'rejected' });
+    });
+
+    it('compiles an exact ordered many-target selector into one bounded array argument', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick', 'track-hat']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'lift-drums',
+                                    name: 'automateTrackGainRange',
+                                    arguments: { sectionName: 'Chorus', gainDb: 1.5 },
+                                    selector: {
+                                        targetArgument: 'trackIds',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            {
+                name: 'automateTrackGainRange',
+                arguments: { sectionName: 'Chorus', gainDb: 1.5, trackIds: ['track-kick', 'track-hat'] },
+            },
+        ]);
+        const validation = validateArbitraryCommandListEvidence({
+            evidence: result.compilerEvidence,
+            calls: result.compilerEvidence.commands,
+            context,
+            revision: 'revision-1',
+        });
+        expect(validation).toMatchObject({ status: 'accepted' });
+        if (validation.status === 'accepted') {
+            expect(validation.targetOverridesByCallIndex.get(0)).toEqual([
+                {
+                    argument: 'trackIds',
+                    capability: 'routable-source',
+                    cardinality: 'many',
+                    stableIds: ['track-kick', 'track-hat'],
+                },
+            ]);
+        }
+    });
+
+    it('excludes protected targets from a many-target array and revalidates the exact evidence', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-hat'], ['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'lift-unprotected-drums',
+                                    name: 'automateTrackGainRange',
+                                    arguments: { sectionName: 'Chorus', gainDb: 1.5 },
+                                    selector: {
+                                        targetArgument: 'trackIds',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.commands[0]?.arguments.trackIds).toEqual(['track-hat']);
+        expect(result.compilerEvidence.selectors[0]?.protectedExclusions).toEqual(['track-kick']);
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context: {
+                    ...context,
+                    tracks: context.tracks.map((track) =>
+                        track.id === 'track-hat' ? { ...track, name: 'Changed after planning' } : track
+                    ),
+                },
+                revision: 'revision-1',
+            })
+        ).toMatchObject({ status: 'rejected' });
+    });
+
+    it('rejects many-target direct IDs and selector enlargement', () => {
+        const direct = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'direct-lift',
+                                    name: 'automateTrackGainRange',
+                                    arguments: {
+                                        trackIds: ['track-kick', 'track-hat'],
+                                        sectionName: 'Chorus',
+                                        gainDb: 1.5,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        const enlarged = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'enlarged-lift',
+                                    name: 'automateTrackGainRange',
+                                    arguments: { sectionName: 'Chorus', gainDb: 1.5 },
+                                    selector: {
+                                        targetArgument: 'trackIds',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(direct).toMatchObject({ status: 'rejected' });
+        expect(enlarged).toMatchObject({ status: 'rejected' });
+    });
+
+    it('resolves adjustment-layer selectors only from the supplied project context', () => {
+        const adjustmentLayer = {
+            id: 'layer-bass-air',
+            name: 'Bass Air',
+            effectType: 'eq' as const,
+            parameters: [],
+            affectedTrackIds: ['track-kick'],
+            insertionIndex: 0,
+            regions: [],
+            enabled: true,
+            mix: 1,
+            color: '#ffffff',
+        };
+        const result = compileArbitraryCommandList({
+            context: { ...context, adjustmentLayers: [adjustmentLayer] },
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['layer-bass-air']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'add-bass-air-region',
+                                    name: 'addAdjustmentRegion',
+                                    arguments: {
+                                        startBeat: 16,
+                                        endBeat: 32,
+                                        blend: 1,
+                                        fadeInBeats: 0,
+                                        fadeOutBeats: 0,
+                                    },
+                                    selector: {
+                                        targetArgument: 'layerId',
+                                        entity: 'adjustment-layer',
+                                        where: { name: 'Bass Air' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            {
+                name: 'addAdjustmentRegion',
+                arguments: {
+                    startBeat: 16,
+                    endBeat: 32,
+                    blend: 1,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    layerId: 'layer-bass-air',
+                },
+            },
+        ]);
+    });
+
+    it('rejects unsupported nested semantic-list fields', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick', providerAuthority: 'all-tracks' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'rejected' });
+    });
 });

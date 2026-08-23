@@ -2162,7 +2162,7 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'addAdjustmentRegion',
         intentPhrases: ['copy the bass processing', 'copy bass processing'],
-        targetRules: [],
+        targetRules: [{ argument: 'layerId', capability: 'adjustment-layer' }],
         valueRules: [],
     },
     {
@@ -2186,13 +2186,29 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'automateTrackGainRange',
         intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                promptRole: 'members',
+            },
+        ],
         valueRules: [],
     },
     {
         actionType: 'automateSendRanges',
         intentPhrases: ['automate them to', 'final four bars of every chorus'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                dependsOn: 'busId',
+                promptRole: 'source',
+            },
+            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
+        ],
         valueRules: [],
     },
     {
