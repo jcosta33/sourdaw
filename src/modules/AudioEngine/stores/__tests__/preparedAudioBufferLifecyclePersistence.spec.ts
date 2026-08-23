@@ -17,6 +17,30 @@ afterEach(() => {
 });
 
 describe('prepared audio-buffer persistence and admission', () => {
+    it('rejects user prepared IDs in the durable recovery namespace before opening storage', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = '\u0000sourdaw-prepared-recovery:user-buffer';
+        const leaseId = 'reserved-recovery-namespace-lease';
+        const context = createTestContext(vi.fn());
+
+        await expect(
+            audioBufferCache.persistPreparedBuffer({
+                id,
+                leaseId,
+                buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is invalid.' });
+        await expect(audioBufferCache.reopenPreparedBuffer({ id, leaseId, context })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is invalid.',
+        });
+        await expect(audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is invalid.',
+        });
+        expect(controls.openRequestCount()).toBe(0);
+    });
+
     it('rejects occupied legacy and project-owned ids without changing runtime PCM or either durable row', async () => {
         const controls = installFakeAudioIndexedDb();
         const legacy = createAudioBuffer({ length: 1, sampleRate: 48_000 });
@@ -161,7 +185,6 @@ describe('prepared audio-buffer persistence and admission', () => {
         }
 
         await expect(audioBufferCache.exportBuffers(['temporary-isolation'])).resolves.toEqual({});
-        clearRuntimeAudioBufferCache();
         const context = createTestContext(
             vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
                 createAudioBuffer({ length, sampleRate })
@@ -170,27 +193,27 @@ describe('prepared audio-buffer persistence and admission', () => {
         const prepared = await audioBufferCache.prepareFromIdb({ context, ids: ['temporary-isolation'] });
         expect(prepared?.publish()).toBe(0);
         expect(audioBufferCache.has('temporary-isolation')).toBe(false);
-        await expect(audioBufferCache.restoreFromIdb({ context, ids: ['temporary-isolation'] })).resolves.toBe(0);
         await expect(
             audioBufferCache.reopenPreparedBuffer({
                 id: 'temporary-isolation',
                 leaseId: persisted.leaseId,
                 context,
             })
-        ).resolves.toEqual({ status: 'reopened', bufferId: 'temporary-isolation', ownership: 'temporary' });
-
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is reserved by the project.',
+        });
         await expect(
-            audioBufferCache.releasePreparedBuffer({
+            audioBufferCache.persistPreparedBuffer({
                 id: 'temporary-isolation',
                 leaseId: persisted.leaseId,
-                disposition: 'project-owned',
+                buffer: temporary,
             })
-        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
-        await expect(audioBufferCache.exportBuffers(['temporary-isolation'])).resolves.toHaveProperty(
-            'temporary-isolation'
-        );
-        clearRuntimeAudioBufferCache();
-        await expect(audioBufferCache.restoreFromIdb({ context, ids: ['temporary-isolation'] })).resolves.toBe(1);
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is reserved by the project.',
+        });
+        await expect(audioBufferCache.exportBuffers(['temporary-isolation'])).resolves.toEqual({});
     });
 
     it('keeps resident temporary PCM out of export when ownership metadata cannot be read', async () => {

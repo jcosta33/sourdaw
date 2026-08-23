@@ -245,4 +245,49 @@ describe('prepared audio-buffer recovery and project admission', () => {
         expect(controls.committed.has('reclaim-project-race')).toBe(true);
         expect(controls.committedMeta.has('reclaim-project-race')).toBe(true);
     });
+
+    it('reconciles a committed orphan deletion when project admission lands after commit', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'reclaim-after-commit-project-race';
+        const leaseId = `${id}-lease`;
+        controls.committed.set(id, {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.375])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        });
+        controls.committedMeta.set(id, {
+            lastAccessed: 1,
+            preparedOwner: { schemaVersion: 1, createdAtMs: 1, leaseId, status: 'temporary' },
+            sizeInBytes: 4,
+        });
+        controls.pauseWriteSettlements();
+        let reclaimSettled = false;
+        const reclaim = reclaimPreparedBufferOrphans({ createdBeforeMs: 2, liveLeaseIds: [] }).then((result) => {
+            reclaimSettled = true;
+            return result;
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.releaseNextWriteSettlement();
+        const project = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: [id],
+            context: createTestContext(vi.fn()),
+        });
+        expect(project?.publish()).toBe(0);
+        for (let turn = 0; turn < 40 && !reclaimSettled; turn++) {
+            if (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+            }
+            await flushIndexedDbTasks(1);
+        }
+
+        await expect(reclaim).resolves.toEqual({ status: 'reclaimed', count: 0 });
+        expect(controls.committed.get(id)?.channelData[0]?.[0]).toBe(0.375);
+        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'temporary' });
+    });
 });

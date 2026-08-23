@@ -22,6 +22,16 @@ export type PreparedSerializedAudioBuffer = {
     sizeInBytes: number;
 };
 
+export const PREPARED_AUDIO_RECOVERY_KEY_PREFIX = '\u0000sourdaw-prepared-recovery:';
+
+export function preparedAudioRecoveryKey(id: string): string {
+    return `${PREPARED_AUDIO_RECOVERY_KEY_PREFIX}${id}`;
+}
+
+export function isPreparedAudioRecoveryKey(id: string): boolean {
+    return id.startsWith(PREPARED_AUDIO_RECOVERY_KEY_PREFIX);
+}
+
 function isFloat32Array(value: unknown): value is Float32Array {
     return Object.prototype.toString.call(value) === '[object Float32Array]';
 }
@@ -54,7 +64,7 @@ export function isValidPreparedSerializedAudioBuffer(data: unknown): data is Pre
 }
 
 export function preparedIdentityFailure(id: string, leaseId: string): string | undefined {
-    if (id.trim().length === 0) {
+    if (id.trim().length === 0 || isPreparedAudioRecoveryKey(id)) {
         return 'Prepared audio buffer ID is invalid.';
     }
     if (leaseId.trim().length === 0) {

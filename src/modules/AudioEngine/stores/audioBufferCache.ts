@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
 import {
     isValidPreparedSerializedAudioBuffer,
+    isPreparedAudioRecoveryKey,
     readPreparedOwner,
     requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
@@ -732,6 +733,9 @@ async function prepareBuffersFromIdb({
     ids,
     shouldContinue,
 }: PrepareBuffersFromIdbInput): Promise<PreparedAudioBuffers | null> {
+    if (ids) {
+        await preparedAudioBufferLifecycle.recoverProjectReservations(ids);
+    }
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const excludedTemporaryIds = new Set(temporaryCaptures.keys());
@@ -745,9 +749,9 @@ async function prepareBuffersFromIdb({
         return temporaryAtPublication;
     };
     const publishProjectReservations = (): void => {
-        const temporaryAtPublication = settleExcludedTemporaryBuffers();
+        settleExcludedTemporaryBuffers();
         if (ids) {
-            replacePinnedBufferIds(ids.filter((id) => !temporaryAtPublication.has(id)));
+            replacePinnedBufferIds(ids);
         }
     };
     try {
@@ -778,6 +782,9 @@ async function prepareBuffersFromIdb({
                 continue;
             }
             const id = key;
+            if (isPreparedAudioRecoveryKey(id)) {
+                continue;
+            }
             if (excludedTemporaryIds.has(id)) {
                 continue;
             }
@@ -1131,7 +1138,10 @@ export const audioBufferCache = {
         const result: Record<string, ExportedAudioBuffer> = {};
         const metadataById = new Map<string, BufferMeta>();
         const temporaryIds = new Set(
-            ids.filter((id) => preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, null))
+            ids.filter(
+                (id) =>
+                    isPreparedAudioRecoveryKey(id) || preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, null)
+            )
         );
         try {
             const db = await openDb();
@@ -1466,6 +1476,7 @@ export const audioBufferCache = {
                 }
                 if (
                     typeof key !== 'string' ||
+                    isPreparedAudioRecoveryKey(key) ||
                     !key.startsWith('freeze-') ||
                     activeIds.has(key) ||
                     metadata?.preparedOwner?.status === 'temporary' ||
@@ -1523,7 +1534,7 @@ export const audioBufferCache = {
             for (let index = 0; index < metas.length; index++) {
                 const meta = metas[index]!;
                 const key = keys[index]! as string;
-                if (pinnedBufferIds.has(key) || isProtectedFromCollection(meta)) {
+                if (isPreparedAudioRecoveryKey(key) || pinnedBufferIds.has(key) || isProtectedFromCollection(meta)) {
                     continue;
                 }
                 if (typeof meta.lastAccessed !== 'number') {
@@ -1565,7 +1576,7 @@ export const audioBufferCache = {
                 if (migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET) {
                     break;
                 }
-                if (typeof key !== 'string' || migratedIds.has(key)) {
+                if (typeof key !== 'string' || isPreparedAudioRecoveryKey(key) || migratedIds.has(key)) {
                     continue;
                 }
                 const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
@@ -1653,7 +1664,12 @@ export const audioBufferCache = {
                     protected: isProtectedFromCollection(meta),
                     size: meta.sizeInBytes,
                 }))
-                .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
+                .filter(
+                    (entry) =>
+                        !isPreparedAudioRecoveryKey(entry.id) &&
+                        typeof entry.lastAccessed === 'number' &&
+                        typeof entry.size === 'number'
+                )
                 .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
 
             let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
