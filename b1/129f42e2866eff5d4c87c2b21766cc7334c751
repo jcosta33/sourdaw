@@ -1,0 +1,33 @@
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_1fa020a9f50bdc 48,2345,2347,2351-2361,2376-2379,2468
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_1fa020a9f50bdc 246,291-293,355-357
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_935e8e58e7b988 3057,3064
+  s_a40848e8f8cca9::t_1fa020a9f50bdc 2808
+  s_a40848e8f8cca9::t_28c49bbeb6bb41 1014-1058,1063-1125,2966,2989-2994,3011,3014,3031-3055,3058-3063,3065-3070,3073,3078-3079,3089-3091,3093-3094,3103-3121,3125,3128
+  s_a40848e8f8cca9::t_f7ce40d20a0ed8 1059-1062,3143
+  s_a40848e8f8cca9::t_017f4b4bcdf538 3028-3030
+src/modules/Command/useCases/__tests__/getExecutableAppActionGroundingRules.spec.ts
+  s_a40848e8f8cca9::t_1fa020a9f50bdc 31-38
+  s_a40848e8f8cca9::t_28c49bbeb6bb41 73-87
+  s_a40848e8f8cca9::t_935e8e58e7b988 47,50
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_1fa020a9f50bdc 574,579-590
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "b1129f42e2866eff5d4c87c2b21766cc7334c751",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
