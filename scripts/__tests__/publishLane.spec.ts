@@ -86,6 +86,7 @@ type FakeInput = {
     /** `null` stands for a lane with no non-merge commit of its own above `origin/main`. */
     subject?: string | null;
     headSha?: string;
+    baseSha?: string;
     remoteSha?: string;
     ancestor?: boolean;
     existing?: number;
@@ -103,7 +104,7 @@ function fakePort(input: FakeInput = {}) {
     const subject = input.subject === undefined ? DEFAULT_SUBJECT : (input.subject ?? undefined);
     let pullRequestQueries = 0;
     const port: PublishLanePort = {
-        fetchMain: () => calls.push('fetch'),
+        baseSha: () => input.baseSha ?? 'base',
         worktrees: () => input.trees ?? [worktree()],
         cwd: () => input.cwd ?? PRIMARY_ROOT,
         issueExists: (issue) => {
@@ -186,7 +187,7 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
 ];
 
 describe('lane publish', () => {
-    it('publishes the exact classified lane despite hostile inherited Git routing', () => {
+    it('publishes the exact classified lane through the protected primary launcher', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-routing-'));
         const primary = join(fixtureRoot, 'primary');
         const authorizedLane = join(fixtureRoot, 'authorized-lane');
@@ -195,6 +196,7 @@ describe('lane publish', () => {
         const bin = join(fixtureRoot, 'bin');
         const pushLog = join(fixtureRoot, 'push.json');
         const mintLog = join(fixtureRoot, 'mint.json');
+        const eventLog = join(fixtureRoot, 'events.log');
         try {
             initializeRepository(primary);
             mkdirSync(join(primary, 'scripts'), { recursive: true });
@@ -204,10 +206,16 @@ describe('lane publish', () => {
                 'githubAppIdentity.ts',
                 'prContract.ts',
             ]) {
-                writeFileSync(
-                    join(primary, 'scripts', file),
-                    readFileSync(join(import.meta.dirname, '..', file), 'utf8')
-                );
+                const fixtureSource = readFileSync(join(import.meta.dirname, '..', file), 'utf8');
+                const fetchFixture =
+                    file === 'githubAppIdentity.ts'
+                        ? '\nglobalThis.fetch = async (url, init = {}) => {\n' +
+                          "  if (String(url).endsWith('/access_tokens')) { const { appendFileSync } = await import('node:fs'); const body = JSON.parse(String(init.body)); appendFileSync(process.env.TEST_EVENT_LOG, 'mint\\n'); appendFileSync(process.env.TEST_MINT_LOG, JSON.stringify(body) + '\\n'); return new Response(JSON.stringify({ token: 'ghs_minted', permissions: body.permissions }), { status: 201 }); }\n" +
+                          "  if (String(url).endsWith('/app')) return new Response(JSON.stringify({ slug: 'jcosta33-author' }), { status: 200 });\n" +
+                          "  return new Response('{}', { status: 404 });\n" +
+                          '};\n'
+                        : '';
+                writeFileSync(join(primary, 'scripts', file), fixtureSource + fetchFixture);
             }
             writeFileSync(
                 join(primary, 'package.json'),
@@ -255,8 +263,9 @@ describe('lane publish', () => {
                     "import { appendFileSync } from 'node:fs';\n" +
                     "import { spawnSync } from 'node:child_process';\n" +
                     'const args = process.argv.slice(2);\n' +
-                    "if (args.includes('fetch') || args.includes('ls-remote')) process.exit(0);\n" +
-                    "if (args.includes('push')) { appendFileSync(process.env.TEST_PUSH_LOG, JSON.stringify({ cwd: process.cwd(), args }) + '\\n'); process.exit(0); }\n" +
+                    "if (args.includes('fetch')) { appendFileSync(process.env.TEST_EVENT_LOG, 'fetch\\n'); process.exit(0); }\n" +
+                    "if (args.includes('ls-remote')) process.exit(0);\n" +
+                    "if (args.includes('push')) { appendFileSync(process.env.TEST_EVENT_LOG, 'push\\n'); appendFileSync(process.env.TEST_PUSH_LOG, JSON.stringify({ cwd: process.cwd(), args }) + '\\n'); process.exit(0); }\n" +
                     `const result = spawnSync(${JSON.stringify(systemGit)}, args, { stdio: 'inherit', env: process.env });\n` +
                     'if (result.error) throw result.error; process.exit(result.status ?? 1);\n'
             );
@@ -265,36 +274,27 @@ describe('lane publish', () => {
             writeFileSync(
                 ghWrapper,
                 '#!/usr/bin/env node\n' +
+                    "import { appendFileSync } from 'node:fs';\n" +
                     'const args = process.argv.slice(2);\n' +
                     "if (args[0] === 'repo') console.log('jcosta33/sourdaw');\n" +
                     "else if (args[0] === 'api') console.log(JSON.stringify({ number: 12, isPullRequest: false }));\n" +
                     "else if (args[0] === 'pr' && args[1] === 'list') console.log('[]');\n" +
-                    "else if (args[0] === 'pr' && args[1] === 'create') console.log('https://github.com/jcosta33/sourdaw/pull/88');\n" +
+                    "else if (args[0] === 'pr' && args[1] === 'create') { appendFileSync(process.env.TEST_EVENT_LOG, 'pr-write\\n'); console.log('https://github.com/jcosta33/sourdaw/pull/88'); }\n" +
                     "else { console.error('unexpected gh ' + args.join(' ')); process.exit(1); }\n"
             );
             chmodSync(ghWrapper, 0o700);
-            const fetchMock = join(fixtureRoot, 'fetch-mock.mjs');
-            writeFileSync(
-                fetchMock,
-                "import { appendFileSync } from 'node:fs';\n" +
-                    'globalThis.fetch = async (url, init = {}) => {\n' +
-                    "  if (String(url).endsWith('/access_tokens')) { const body = JSON.parse(init.body); appendFileSync(process.env.TEST_MINT_LOG, JSON.stringify(body) + '\\n'); return new Response(JSON.stringify({ token: 'ghs_minted', permissions: body.permissions }), { status: 201 }); }\n" +
-                    "  if (String(url).endsWith('/app')) return new Response(JSON.stringify({ slug: 'jcosta33-author' }), { status: 200 });\n" +
-                    "  return new Response('{}', { status: 404 });\n" +
-                    '};\n'
-            );
-
+            const launcherEnv = {
+                ...process.env,
+                PATH: `${bin}:${process.env.PATH ?? ''}`,
+                GIT_DIR: join(hostilePrimary, '.git'),
+                GIT_WORK_TREE: hostileLane,
+                TEST_PUSH_LOG: pushLog,
+                TEST_MINT_LOG: mintLog,
+                TEST_EVENT_LOG: eventLog,
+            };
             execFileSync('pnpm', ['lane:publish', '12', '--test', TEST_INSTRUCTIONS], {
-                cwd: authorizedLane,
-                env: {
-                    ...process.env,
-                    PATH: `${bin}:${process.env.PATH ?? ''}`,
-                    GIT_DIR: join(hostilePrimary, '.git'),
-                    GIT_WORK_TREE: hostileLane,
-                    NODE_OPTIONS: `--import=${fetchMock}`,
-                    TEST_PUSH_LOG: pushLog,
-                    TEST_MINT_LOG: mintLog,
-                },
+                cwd: primary,
+                env: launcherEnv,
                 encoding: 'utf8',
             });
 
@@ -305,6 +305,35 @@ describe('lane publish', () => {
             expect(realpathSync(push.cwd)).toBe(realpathSync(authorizedLane));
             expect(push.args).toContain(`${authorizedHead}:refs/heads/agent/12/authorized`);
             expect(push.args).not.toContain('HEAD:refs/heads/agent/12/hostile');
+            const events = readFileSync(eventLog, 'utf8').trim().split('\n');
+            const mintEvent = events.indexOf('mint');
+            const pushEvent = events.indexOf('push');
+            const pullRequestWriteEvent = events.indexOf('pr-write');
+            expect(events.indexOf('fetch')).toBeLessThan(mintEvent);
+            expect(
+                events.filter((event, index) => event === 'fetch' && index > mintEvent && index < pushEvent)
+            ).toHaveLength(2);
+            expect(events[pushEvent - 1]).toBe('fetch');
+            expect(
+                events.findIndex(
+                    (event, index) => event === 'fetch' && index > pushEvent && index < pullRequestWriteEvent
+                )
+            ).toBeGreaterThan(pushEvent);
+            expect(events[pullRequestWriteEvent - 1]).toBe('fetch');
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', '--lane', authorizedLane], {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                })
+            ).toThrow(/issue lanes must publish by issue number/);
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', '--lane', join(authorizedLane, '.github')], {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                })
+            ).toThrow(/--lane must name the exact author worktree root/);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
@@ -356,7 +385,7 @@ describe('lane publish', () => {
         expect(() => publishLane(12, port)).toThrow(
             /agent\/12\/work has uncommitted changes: commit them yourself with a conventional subject/
         );
-        expect(calls).toContain('fetch');
+        expect(calls).not.toContain('fetch');
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
@@ -376,6 +405,7 @@ describe('lane publish', () => {
             branch: 'agent/12/work',
             legacy: false,
             headSha: classifiedHead,
+            baseSha: 'base',
             permissionClass: 'ordinary' as const,
         };
         const accepted = fakePort({ headSha: classifiedHead });
@@ -388,6 +418,24 @@ describe('lane publish', () => {
             /HEAD changed after its permission-scoped token was minted/
         );
         expect(changed.calls.some((call) => call.startsWith('push:'))).toBe(false);
+    });
+
+    it('refuses when origin/main changes after permission classification', () => {
+        const authorization = {
+            lanePath: ISSUE_LANE,
+            branch: 'agent/12/work',
+            legacy: false,
+            headSha: 'a'.repeat(40),
+            baseSha: 'b'.repeat(40),
+            permissionClass: 'ordinary' as const,
+        };
+        const { port, calls } = fakePort({ headSha: authorization.headSha, baseSha: 'c'.repeat(40) });
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, authorization)).toThrow(
+            /origin\/main changed after its permission-scoped token was minted/
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:') || call.startsWith('edit:'))).toBe(false);
     });
 
     it('publishes a lane that is behind origin/main when it still has lane commits to publish', () => {
@@ -657,7 +705,7 @@ describe('lane publish', () => {
         const { port, calls } = fakePort({ trees, cwd });
 
         expect(() => publishLane(undefined, port)).toThrow(
-            /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+            /not inside a locked author lane: pass its issue number or --lane with its absolute worktree root/
         );
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
@@ -682,7 +730,7 @@ describe('lane publish', () => {
 
         const message = refusalMessage(() => publishLane(undefined, port));
         expect(message).toMatch(
-            /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+            /not inside a locked author lane: pass its issue number or --lane with its absolute worktree root/
         );
         expect(message).not.toContain('git worktree unlock');
         expect(message).not.toContain('git worktree lock');
@@ -811,6 +859,11 @@ describe('lane publish', () => {
         });
         expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, help: false });
         expect(parsePublishLaneArgs(['12', '--relates'])).toEqual({ issue: 12, relationship: 'relates', help: false });
+        expect(parsePublishLaneArgs(['--lane', CLEANUP_LANE, '--relates'])).toEqual({
+            lanePath: CLEANUP_LANE,
+            relationship: 'relates',
+            help: false,
+        });
         expect(parsePublishLaneArgs(['--test', TEST_INSTRUCTIONS, '12', '--relates'])).toEqual({
             issue: 12,
             relationship: 'relates',
@@ -824,10 +877,12 @@ describe('lane publish', () => {
         expect(() => parsePublishLaneArgs(['--relates', '--relates'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--test'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--test', TEST_INSTRUCTIONS, '--test', TEST_INSTRUCTIONS])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--lane', 'relative/lane'])).toThrow(/absolute path/);
+        expect(() => parsePublishLaneArgs(['12', '--lane', CLEANUP_LANE])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
     });
 
-    it('carries the process cwd into the port, which is the whole issueless resolution path', () => {
+    it('carries the selected lane path into the port for explicit path resolution', () => {
         const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
         const here = dirname(fileURLToPath(import.meta.url));
 
@@ -873,14 +928,16 @@ describe('lane publish', () => {
             git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:10:00');
 
             expect(git(['log', '-1', '--format=%s'])).toBe(mergeSubject);
-            expect(shellPort(session, repository).laneSubject(repository, 'HEAD')).toBe(
-                'feat(issue): add milestone and project support'
-            );
+            expect(
+                shellPort(session, repository).laneSubject(repository, git(['rev-parse', 'origin/main']), 'HEAD')
+            ).toBe('feat(issue): add milestone and project support');
 
             git(['checkout', '-b', 'agent/13/merge-only', base]);
             git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:11:00');
             expect(git(['rev-list', '--count', 'origin/main..HEAD'])).toBe('1');
-            expect(shellPort(session, repository).laneSubject(repository, 'HEAD')).toBeUndefined();
+            expect(
+                shellPort(session, repository).laneSubject(repository, git(['rev-parse', 'origin/main']), 'HEAD')
+            ).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
@@ -978,7 +1035,7 @@ describe('lane publish', () => {
             const { port, calls } = fakePort({ trees, cwd: PRIMARY_ROOT, existing: 2275 });
 
             expect(() => publishLane(undefined, port)).toThrow(
-                /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+                /not inside a locked author lane: pass its issue number or --lane with its absolute worktree root/
             );
             expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         });
@@ -994,12 +1051,12 @@ describe('lane publish', () => {
             const { port, calls } = fakePort({ trees, cwd: PRIMARY_ROOT, existing: 2275 });
 
             expect(() => publishLane(undefined, port)).toThrow(
-                /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+                /not inside a locked author lane: pass its issue number or --lane with its absolute worktree root/
             );
             expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         });
 
-        it('resolves an off-convention branch with an open pull request, from inside the lane', () => {
+        it('resolves an explicitly selected off-convention branch with an open pull request', () => {
             const trees = [...otherAuthorLanes(), legacyWorktree()];
 
             expect(resolveAuthorLane(undefined, trees, `${LEGACY_LANE}/src`, undefined, () => true)).toEqual({
@@ -1062,7 +1119,7 @@ describe('lane publish', () => {
             ];
 
             expect(() => resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => false)).toThrow(
-                /not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number/
+                /not inside a locked author lane: pass its issue number or --lane with its absolute worktree root/
             );
         });
 

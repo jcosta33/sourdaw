@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -40,6 +40,7 @@ import {
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 const PUBLISHING_HEAD = 'a'.repeat(40);
+const PUBLISHING_BASE = 'b'.repeat(40);
 
 const authorFile = `SOURDAW_GITHUB_APP_ID=4650613
 SOURDAW_GITHUB_APP_INSTALLATION_ID=154969409
@@ -198,7 +199,7 @@ describe('installation mint', () => {
         const calls: Array<{ command: string; args: string[]; cwd?: string }> = [];
 
         expect(
-            authorWorkflowWriteRequired('/lane', (command, args, cwd) => {
+            authorWorkflowWriteRequired('/lane', PUBLISHING_BASE, 'HEAD', (command, args, cwd) => {
                 calls.push({ command, args, cwd });
                 return diff;
             })
@@ -213,7 +214,7 @@ describe('installation mint', () => {
                     '--name-only',
                     '--no-renames',
                     '-z',
-                    'origin/main...HEAD',
+                    `${PUBLISHING_BASE}...HEAD`,
                     '--',
                 ],
                 cwd: '/lane',
@@ -222,16 +223,16 @@ describe('installation mint', () => {
     });
 
     it('rejects a non-NUL-terminated committed-path result', () => {
-        expect(() => authorWorkflowWriteRequired('/lane', () => '.github/workflows/health-gates.yml')).toThrow(
-            /NUL-terminated/
-        );
+        expect(() =>
+            authorWorkflowWriteRequired('/lane', PUBLISHING_BASE, 'HEAD', () => '.github/workflows/health-gates.yml')
+        ).toThrow(/NUL-terminated/);
     });
 
     it('keeps an ordinary lane on the ordinary mint despite hostile inherited Git routing', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-workflow-auth-'));
         const ordinary = join(root, 'ordinary');
         const hostile = join(root, 'hostile');
-        const git = (repository: string, args: string[]) => {
+        const git = (repository: string, args: string[]): string => {
             const env = { ...process.env };
             delete env.GIT_DIR;
             delete env.GIT_WORK_TREE;
@@ -240,8 +241,9 @@ describe('installation mint', () => {
                 throw result.error;
             }
             expect(result.status, result.stderr).toBe(0);
+            return result.stdout.trim();
         };
-        const repository = (path: string, changedPath: string) => {
+        const repository = (path: string, changedPath: string): string => {
             mkdirSync(path, { recursive: true });
             git(path, ['init', '-b', 'main']);
             git(path, ['config', 'user.name', 'Fixture']);
@@ -249,16 +251,18 @@ describe('installation mint', () => {
             writeFileSync(join(path, 'base.txt'), 'base\n');
             git(path, ['add', 'base.txt']);
             git(path, ['commit', '--no-gpg-sign', '-m', 'chore: base']);
+            const baseSha = git(path, ['rev-parse', 'HEAD']);
             git(path, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
             const target = join(path, changedPath);
             mkdirSync(dirname(target), { recursive: true });
             writeFileSync(target, 'change\n');
             git(path, ['add', '--', changedPath]);
             git(path, ['commit', '--no-gpg-sign', '-m', 'test: lane change']);
+            return baseSha;
         };
 
         try {
-            repository(ordinary, 'scripts/publishLane.ts');
+            const ordinaryBase = repository(ordinary, 'scripts/publishLane.ts');
             repository(hostile, '.github/workflows/hostile.yml');
             const { requests, request } = mintClient({
                 login: AUTHOR_BOT_LOGIN,
@@ -267,6 +271,7 @@ describe('installation mint', () => {
             const auth = await authenticatePublishingAuthor({
                 primaryRoot: '/repo',
                 lane: { path: ordinary, branch: 'agent/12/ordinary' },
+                baseSha: ordinaryBase,
                 readFile: files(),
                 request,
                 env: {
@@ -287,6 +292,35 @@ describe('installation mint', () => {
         }
     });
 
+    it('classifies against the fetched base instead of stale workflow history', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-workflow-base-'));
+        const git = (args: string[]): string =>
+            spawnCapture('git', args, { cwd: repository, env: githubAuthorizationGitEnv(), trim: false }).trim();
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            git(['add', 'base.txt']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore: base']);
+            const staleBase = git(['rev-parse', 'HEAD']);
+            mkdirSync(join(repository, '.github/workflows'), { recursive: true });
+            writeFileSync(join(repository, '.github/workflows/gate.yml'), 'name: gate\n');
+            git(['add', '.github/workflows/gate.yml']);
+            git(['commit', '--no-gpg-sign', '-m', 'ci: add gate']);
+            const fetchedBase = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(repository, 'lane.txt'), 'ordinary\n');
+            git(['add', 'lane.txt']);
+            git(['commit', '--no-gpg-sign', '-m', 'fix: ordinary lane']);
+            const headSha = git(['rev-parse', 'HEAD']);
+
+            expect(authorWorkflowWriteRequired(repository, staleBase, headSha)).toBe(true);
+            expect(authorWorkflowWriteRequired(repository, fetchedBase, headSha)).toBe(false);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('sterilizes inherited Git and GitHub authority for authorization-only reads', () => {
         const env = githubAuthorizationGitEnv({
             PATH: '/usr/bin',
@@ -298,6 +332,8 @@ describe('installation mint', () => {
             GITHUB_TOKEN: 'actions',
             SOURDAW_GITHUB_APP_PRIVATE_KEY: 'secret',
             SSH_AUTH_SOCK: '/tmp/agent.sock',
+            NODE_OPTIONS: '--import=/hostile/preload.mjs',
+            NODE_PATH: '/hostile/modules',
         });
 
         expect(env).toMatchObject({
@@ -317,6 +353,39 @@ describe('installation mint', () => {
         expect(env.GITHUB_TOKEN).toBeUndefined();
         expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
         expect(env.SSH_AUTH_SOCK).toBeUndefined();
+        expect(env.NODE_OPTIONS).toBeUndefined();
+        expect(env.NODE_PATH).toBeUndefined();
+    });
+
+    it('uses the launcher-resolved Git path instead of a child PATH command', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-git-path-'));
+        const hostileBin = join(root, 'hostile');
+        const hostileMarker = join(root, 'hostile-entered');
+        const trustedGit = join(root, 'trusted-git');
+        try {
+            mkdirSync(hostileBin);
+            writeFileSync(
+                join(hostileBin, 'git'),
+                `#!/bin/sh\nprintf entered > ${JSON.stringify(hostileMarker)}\nexit 91\n`
+            );
+            chmodSync(join(hostileBin, 'git'), 0o700);
+            writeFileSync(trustedGit, '#!/bin/sh\nprintf trusted\n');
+            chmodSync(trustedGit, 0o700);
+
+            expect(
+                spawnCapture('git', [], {
+                    env: { PATH: hostileBin, SOURDAW_TRUSTED_GIT_PATH: trustedGit },
+                })
+            ).toBe('trusted');
+            expect(existsSync(hostileMarker)).toBe(false);
+            expect(() =>
+                spawnCapture('git', [], {
+                    env: { PATH: hostileBin, SOURDAW_TRUSTED_GIT_PATH: 'relative/git' },
+                })
+            ).toThrow(/trusted git executable path is not absolute/);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('requests workflows write only when the publishing lane changes a workflow', async () => {
@@ -328,6 +397,7 @@ describe('installation mint', () => {
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
             lane: { path: '/lane', branch: 'agent/12/workflow' },
+            baseSha: PUBLISHING_BASE,
             readFile: files(),
             request: async (url, init) => {
                 order.push(url.includes('/access_tokens') ? 'mint' : 'identity');
@@ -354,6 +424,7 @@ describe('installation mint', () => {
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
             lane: { path: '/lane', branch: 'agent/12/ordinary' },
+            baseSha: PUBLISHING_BASE,
             readFile: files(),
             request,
             env: {},
@@ -377,6 +448,7 @@ describe('installation mint', () => {
             authenticatePublishingAuthor({
                 primaryRoot: '/repo',
                 lane: { path: '/lane', branch: 'agent/12/ordinary' },
+                baseSha: PUBLISHING_BASE,
                 readFile: files(),
                 request,
                 env: {},
@@ -396,6 +468,7 @@ describe('installation mint', () => {
             authenticatePublishingAuthor({
                 primaryRoot: '/repo',
                 lane: { path: '/lane', branch: 'agent/12/workflow' },
+                baseSha: PUBLISHING_BASE,
                 readFile: files(),
                 request,
                 env: {},
