@@ -409,6 +409,36 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(audioBufferCache.get('delayed-prepare-promotion')?.getChannelData(0)[0]).toBeCloseTo(0);
     });
 
+    it('reconstructs durable PCM promoted while its project candidate is provisional', async () => {
+        installFakeAudioIndexedDb();
+        const id = 'durable-promotion-during-project-preparation';
+        const leaseId = `${id}-lease`;
+        const temporary = createAudioBuffer({ length: 2, sampleRate: 48_000 });
+        temporary.getChannelData(0).set([0.375, -0.625]);
+        await audioBufferCache.persistPreparedBuffer({ id, buffer: temporary, leaseId });
+        clearRuntimeAudioBufferCache();
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            )
+        );
+        const project = await audioBufferCache.prepareFromIdb({ context, ids: [id] });
+
+        await expect(
+            audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'project-owned' })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+        expect(project?.publish()).toBe(0);
+
+        expect([...audioBufferCache.get(id)!.getChannelData(0)]).toEqual([0.375, -0.625]);
+        await expect(audioBufferCache.exportBuffers([id])).resolves.toEqual({
+            [id]: {
+                channelData: [encodeFloat32([0.375, -0.625])],
+                numberOfChannels: 1,
+                sampleRate: 48_000,
+            },
+        });
+    });
+
     it('blocks temporary reopens after project preparation without disturbing durable runtime owners', async () => {
         installFakeAudioIndexedDb();
         const completedId = 'delayed-project-completed-reopen';

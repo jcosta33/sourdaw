@@ -1225,6 +1225,11 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 if (!isRuntimeSlotAvailable(id, leaseId)) {
                     await abortPreparedTransaction(transaction);
                 }
+                const admittedRuntimeOwner = runtimeOwnerById.get(id);
+                const reconstructedBuffer =
+                    admittedRuntimeOwner === undefined && !host.hasRuntime(id)
+                        ? host.createRuntimeBuffer(data)
+                        : undefined;
                 metadataStore.put(
                     {
                         ...metadata,
@@ -1252,6 +1257,19 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                             status: 'project-owned',
                             token: nextToken(),
                         });
+                    } else if (
+                        runtimeOwner === undefined &&
+                        reconstructedBuffer !== undefined &&
+                        !host.hasRuntime(id)
+                    ) {
+                        publishPreparedRuntime(
+                            id,
+                            leaseId,
+                            'project-owned',
+                            reconstructedBuffer,
+                            metadata.lastAccessed,
+                            owner.persistenceRevision
+                        );
                     }
                 }
                 return { status: 'released' as const, disposition: 'project-owned' as const };
