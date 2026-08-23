@@ -35,9 +35,9 @@
 //! * **A parameter the intermediate engine drops.** The case that decides
 //!   whether caching *every* forwarded name was right, rather than only the
 //!   ones the current engine reads.
-//! * **First construction.** An instance told nothing must still render what
-//!   it always rendered, pinned by a digest rather than by comparison against
-//!   another run of the same mapping.
+//! * **First construction.** An instance told nothing must match the first
+//!   explicit plate selection bit for bit and retain its platform-independent
+//!   shape.
 //! * **The documented exception.** One sequence genuinely does not round-trip
 //!   — the plate latches `shimmer` off inside its `freeze` arm, and a value
 //!   cache cannot re-fire a latch whose trigger has since been overwritten. It
@@ -159,15 +159,11 @@ fn render_instance(instance: &mut ProofChamberInstance) -> Vec<f32> {
     output
 }
 
-/// Three cheap scalars of a render, pinned beside the digest and asserted
-/// before it.
+/// Three platform-independent scalars of a render.
 ///
 /// Same instrument as `plate_parameter_surface.rs`'s, duplicated because Rust
 /// integration tests are separate crates and this is four lines of arithmetic;
-/// the reasoning for why a digest needs company at all is written out there and
-/// not repeated. The short version: `digest 0x…` is three opaque integers,
-/// identical whether the render moved one sample of fine structure or went
-/// silent, and it is the only thing that fires for a whole class of change.
+/// the reasoning for their tolerances is written out there and not repeated.
 ///
 /// `onset` is the weakest of the three and is documented as such rather than
 /// quietly relied on. Even at `mix = 1` the 30 ms smoothing ramp leaves the dry
@@ -237,15 +233,33 @@ fn max_delta(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0_f32, |acc, (x, y)| acc.max((x - y).abs()))
 }
 
-/// FNV-1a over every sample's bit pattern, so any change anywhere in the
-/// buffer moves it.
-fn digest(output: &[f32]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for sample in output {
-        hash ^= u64::from(sample.to_bits());
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+/// Same-process sample identity, including `-0.0`/`+0.0`, without asking two
+/// platform `libm` implementations to produce the same whole-buffer digest.
+fn assert_bit_identical(a: &[f32], b: &[f32], label: &str) {
+    assert_eq!(a.len(), b.len(), "renders must be the same length");
+
+    if let Some((index, (left, right))) = a
+        .iter()
+        .zip(b.iter())
+        .enumerate()
+        .find(|(_, (left, right))| left.to_bits() != right.to_bits())
+    {
+        let differing = a
+            .iter()
+            .zip(b.iter())
+            .filter(|(left, right)| left.to_bits() != right.to_bits())
+            .count();
+        let delta = max_delta(a, b);
+        panic!(
+            "{label}: {differing} samples differ bit-for-bit; first difference \
+             at sample {index}: {:#010x} ({:e}) vs {:#010x} ({:e}); \
+             max_delta {delta:e}",
+            left.to_bits(),
+            left,
+            right.to_bits(),
+            right
+        );
     }
-    hash
 }
 
 /// Build a script: select `algorithm`, apply `writes`.
@@ -471,22 +485,20 @@ fn the_replay_preserves_most_recent_write_order() {
 
 /// What an instance that has been told nothing but `mix` renders.
 ///
-/// Pinned rather than compared against another run of the same mapping: a
-/// cache that quietly replayed something into a first construction — or a
-/// default that drifted — would move this and leave a comparison row green,
-/// which is the hole #1519's gravity digest was added to close.
+/// The readable shape is pinned, while the constructor/cache relationship is
+/// compared bit for bit within the same process so platform `libm` drift does
+/// not become an unbound allowlist.
 /// Taken on `main` at d36441d4f, before the parameter cache existed, and
 /// unchanged by it.
 ///
 /// Moved once, by #1546, when the plate constructor's `damping` went from
 /// 0.0005 to 0.3. That is a deliberate voicing change and this row is the
-/// place it is supposed to show up: 0xdd93_83f3_187e_b942 → the value below,
-/// re-measured on this stimulus in the same commit as the constructor edit.
+/// place it is supposed to show up, re-measured on this stimulus in the same
+/// commit as the constructor edit.
 /// What it means in the render is 9.66 dB of 6-12 kHz shed across the tail
 /// against 4.88 dB before, and a late window that sits 8.45 dB *below* the
 /// midrange instead of 0.21 dB above it — measured in
-/// `tests/plate_default_damping.rs`, which pins the behaviour this digest only
-/// fingerprints.
+/// `tests/plate_default_damping.rs`, which pins the audible behaviour.
 ///
 /// It does **not** mean existing projects sound different. `addDevice` writes
 /// the descriptor's `damping` into `Device.parameterValues` at add time and
@@ -502,17 +514,19 @@ fn the_replay_preserves_most_recent_write_order() {
 /// zero delay rather than a whole buffer. That is what stops Pre-Delay 0 ms
 /// rendering 503 ms of silence, and it lengthens every delay in the engine by
 /// one sample on the way, which is why a stimulus that never writes `predelay`
-/// moves at all. 0xaf24_03b1_9139_eb46 → the value below.
+/// moves at all.
 ///
 /// The measured content of the move is written out beside the other constant
 /// and not repeated here: identical peak, RMS within 0.0015 dB, identical T60,
 /// every octave band within 0.03 dB, and a waveform that decorrelates past the
-/// first 250 ms. This row is a fingerprint and it moved; the sound did not.
-const UNTOLD_INSTANCE_DIGEST: u64 = 0x331fcaf1_a4fc7535;
+/// first 250 ms. The fine structure moved; the sound did not.
+///
+/// The retained render crosses platform `libm` implementations, so the stable
+/// contract is its readable shape plus an exact same-process comparison with
+/// the first explicit selection below. Both paths use the same platform math;
+/// any constructor/cache disagreement still moves a sample bit.
 
-/// The same render in three readable numbers. Regenerate with the digest, never
-/// separately — a shape that disagrees with its digest means one of the two came
-/// from a different run.
+/// The render in three readable numbers.
 ///
 /// `onset: 0` is measured, not a placeholder — see `RenderShape` for why it is
 /// 0 even at `mix = 1`, and for what it can and cannot see.
@@ -535,25 +549,15 @@ fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
         "an untold instance",
     );
 
-    let digest_now = digest(&constructed);
-    assert_eq!(
-        digest_now, UNTOLD_INSTANCE_DIGEST,
-        "an untouched Dutch Oven changed what it renders: an existing project \
-         that never moved a control now sounds different. digest {digest_now:#x}. \
-         The three scalars above held, so the level, the total energy and the \
-         moment the reverb starts are all where they were — what moved is fine \
-         structure. If that was intended, re-measure and move this constant with \
-         the reasoning beside it."
-    );
-
     // The first `algorithm` write happens against an empty cache, so it must
-    // hand back the constructor's defaults and not a partial replay.
+    // hand back the constructor's defaults, bit for bit, and not a partial
+    // replay.
     let first_selection = render(&[("algorithm", PLATE), ("mix", 1.0)]);
-    let delta = max_delta(&first_selection, &constructed);
-    assert_eq!(
-        delta, 0.0,
+    assert_bit_identical(
+        &first_selection,
+        &constructed,
         "selecting the plate on a fresh instance does not render what the \
-         constructor's plate renders: max_delta {delta:e}"
+         constructor's plate renders",
     );
 }
 
@@ -781,7 +785,7 @@ fn selecting_each_engine_on_a_fresh_instance_matches_its_constructor_defaults() 
     // directly and once after a detour that wrote nothing, so a replay that
     // invented state at either construction shows up as a difference.
     //
-    // The digest that stops both sides drifting together lives in
+    // The platform-independent shape contract lives in
     // `an_instance_told_nothing_renders_exactly_what_it_always_has`; this row
     // is the per-engine spread around it.
     for (name, algorithm) in EXPOSED {
