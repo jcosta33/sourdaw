@@ -46,7 +46,9 @@ export type StoredBufferMeta = {
     lastAccessed: number;
     preparedOwner?: {
         schemaVersion: 1;
+        createdAtMs?: number;
         leaseId: string;
+        promotionRevision?: string;
         status: 'project-owned' | 'temporary';
     };
     sizeInBytes: number;

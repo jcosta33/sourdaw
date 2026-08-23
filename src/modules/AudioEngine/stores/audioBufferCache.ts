@@ -1,10 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import {
-    createPreparedAudioBufferLifecycle,
-    type PreparedAudioBufferMetadata,
-    type PreparedSerializedAudioBuffer,
-} from './preparedAudioBufferLifecycle';
+import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
+import { type PreparedAudioBufferMetadata, type PreparedSerializedAudioBuffer } from './preparedAudioBufferOwnership';
 
 /** Serialized form of an AudioBuffer embedded inside a .sourdaw project file.
  * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips.
@@ -727,10 +724,19 @@ async function prepareBuffersFromIdb({
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const excludedTemporaryIds = new Set(temporaryCaptures.keys());
-    const publishPinIds = (): string[] | undefined => ids?.filter((id) => !excludedTemporaryIds.has(id));
-    const evictExcludedTemporaryBuffers = (): void => {
+    const settleExcludedTemporaryBuffers = (): Set<string> => {
+        const temporaryAtPublication = new Set<string>();
         for (const [id, capture] of temporaryCaptures) {
-            preparedAudioBufferLifecycle.evictCapturedTemporaryPublication(id, capture);
+            if (preparedAudioBufferLifecycle.evictCapturedTemporaryPublication(id, capture)) {
+                temporaryAtPublication.add(id);
+            }
+        }
+        return temporaryAtPublication;
+    };
+    const publishProjectReservations = (): void => {
+        const temporaryAtPublication = settleExcludedTemporaryBuffers();
+        if (ids) {
+            replacePinnedBufferIds(ids.filter((id) => !temporaryAtPublication.has(id)));
         }
     };
     try {
@@ -801,11 +807,7 @@ async function prepareBuffersFromIdb({
     } catch {
         return {
             publish: () => {
-                evictExcludedTemporaryBuffers();
-                const pinIds = publishPinIds();
-                if (pinIds) {
-                    replacePinnedBufferIds(pinIds);
-                }
+                publishProjectReservations();
                 return 0;
             },
         };
@@ -818,11 +820,7 @@ async function prepareBuffersFromIdb({
                 return 0;
             }
             published = true;
-            evictExcludedTemporaryBuffers();
-            const pinIds = publishPinIds();
-            if (pinIds) {
-                replacePinnedBufferIds(pinIds);
-            }
+            publishProjectReservations();
             for (const { id, buffer } of staged) {
                 audioCacheSet(id, buffer);
             }
