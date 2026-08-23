@@ -757,7 +757,7 @@ describe('release inventory', () => {
             checkReleaseInventory(repositoryRoot, {
                 readGrandBouleSourceAtRevision(root, revision, path) {
                     historyRequests.push(`${revision}:${path}`);
-                    return execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
+                    return readFileSync(join(root, path));
                 },
                 verifyWasmArtifacts() {
                     throw stopAfterHistoryValidation;

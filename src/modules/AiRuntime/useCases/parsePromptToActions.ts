@@ -519,6 +519,13 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
+                        ...(providerProposal === null ? {} : { providerProposal }),
+                        verifiedProviderProposalScope: {
+                            targetIds: [],
+                            targetRanges: [],
+                            protectedTargetIds: context.tracks.map((track) => track.id),
+                            protectedRanges: [],
+                        },
                     };
                 }
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
@@ -622,7 +629,8 @@ export const parsePromptToActions = inject({ logger })(
                     }
 
                     const effectiveProviderProposal =
-                        providerProposal === null || bridged.actionCommandGraph === undefined
+                        providerProposal === null ||
+                        (bridged.actionCommandGraph === undefined && bridged.batchLocalActionIdentities === undefined)
                             ? providerProposal
                             : {
                                   ...providerProposal,
@@ -631,13 +639,53 @@ export const parsePromptToActions = inject({ logger })(
                                       targetIds: [
                                           ...new Set([
                                               ...providerProposal.scope.targetIds,
-                                              ...(bridged.batchLocalActionIdentities ?? []).flatMap((identity) =>
-                                                  identity.actionType === 'createBus' ? [identity.busId] : []
+                                              ...(bridged.batchLocalActionIdentities ?? []).map((identity) =>
+                                                  identity.actionType === 'createBus'
+                                                      ? identity.busId
+                                                      : identity.deviceId
                                               ),
                                           ]),
                                       ],
                                   },
                               };
+                    let verifiedProviderProposalScope = bridged.verifiedProviderProposalScope;
+                    if (verifiedProviderProposalScope === undefined && bridged.bassProcessingCopyScope !== undefined) {
+                        verifiedProviderProposalScope = {
+                            targetIds: [
+                                ...new Set([
+                                    ...bridged.bassProcessingCopyScope.entries.flatMap((entry) => [
+                                        entry.layer.id,
+                                        ...entry.layer.affectedTrackIds,
+                                    ]),
+                                    bridged.bassProcessingCopyScope.targetSection.id,
+                                ]),
+                            ],
+                            targetRanges: bridged.bassProcessingCopyScope.entries.map((entry) => ({
+                                startBeat: entry.targetRegion.startBeat,
+                                endBeat: entry.targetRegion.endBeat,
+                            })),
+                            protectedTargetIds: bridged.bassProcessingCopyScope.protectedObjects.map(
+                                (object) => object.id
+                            ),
+                            protectedRanges: [],
+                        };
+                    }
+                    if (verifiedProviderProposalScope === undefined && bridged.syncopatedArpeggioScope !== undefined) {
+                        verifiedProviderProposalScope = {
+                            targetIds: [
+                                bridged.syncopatedArpeggioScope.trackId,
+                                bridged.syncopatedArpeggioScope.clipId,
+                            ],
+                            targetRanges: [],
+                            protectedTargetIds: bridged.syncopatedArpeggioScope.protectedObjects.map(
+                                (object) => object.id
+                            ),
+                            protectedRanges: [],
+                        };
+                    }
+                    if (verifiedProviderProposalScope === undefined && bridged.actionCommandGraph !== undefined) {
+                        verifiedProviderProposalScope = compiledList.compilerEvidence?.proposalScope;
+                    }
 
                     return {
                         actions: guarded.actions,
@@ -650,9 +698,7 @@ export const parsePromptToActions = inject({ logger })(
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
-                        ...(bridged.verifiedProviderProposalScope === undefined
-                            ? {}
-                            : { verifiedProviderProposalScope: bridged.verifiedProviderProposalScope }),
+                        ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
                     };
                 }
 

@@ -27,6 +27,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -45,6 +46,12 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import {
+    createHostedSemanticListPlanningResponder,
+    createProviderSemanticListPlanningResponder,
+    decodeHostedProviderUserMessage,
+    type SemanticCommandListItem,
+} from './providerToolPlanningFixture';
 
 const PROMPT =
     'Set the Bass DI compressor threshold to -18 dB and ratio to 4:1, leaving attack, release, and makeup gain unchanged.';
@@ -71,6 +78,44 @@ const providerPlan = [
     },
 ] as const;
 
+const providerScope = {
+    targetIds: [COMPRESSOR_ID, 'comp-threshold', 'comp-ratio'],
+    targetRanges: [],
+    protectedTargetIds: [
+        `${COMPRESSOR_ID}:comp-attack`,
+        `${COMPRESSOR_ID}:comp-release`,
+        `${COMPRESSOR_ID}:comp-makeup`,
+    ],
+    protectedRanges: [],
+};
+
+type ProviderCall = { name: string; arguments: Record<string, unknown> };
+
+function createProviderList(plan: readonly ProviderCall[]): SemanticCommandListItem[] {
+    return plan.map((call, index) => {
+        const { deviceId: _deviceId, ...argumentsWithoutDeviceId } = call.arguments;
+        return {
+            id: `set-compressor-parameter-${String(index + 1)}`,
+            name: call.name,
+            arguments: argumentsWithoutDeviceId,
+            selector: {
+                targetArgument: 'deviceId',
+                entity: 'device',
+                where: { name: 'Compressor', trackId: 'track-bass-di' },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+            ...(index === 0 ? {} : { dependsOn: [`set-compressor-parameter-${String(index)}`] }),
+        };
+    });
+}
+
+function useWebProviderPlan(plan: readonly ProviderCall[]): void {
+    const responder = createProviderSemanticListPlanningResponder(createProviderList(plan), providerScope);
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
+        Promise.resolve(responder(userMessage))
+    );
+}
+
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     const failedRuntimeWrites = new Set<string>();
@@ -80,6 +125,7 @@ const runtimeMocks = vi.hoisted(() => {
         failedRuntimeWrites,
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted' as const, application: 'applied' as const })),
         resolveToasterPadBinding: vi.fn(() => null),
         runtimeParameterValues,
         updateDeviceParam: vi.fn((_trackId: string, _deviceId: string, paramId: string, value: number) => {
@@ -110,6 +156,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
     updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
@@ -242,23 +289,14 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         for (const [paramId, value] of Object.entries(INITIAL_PARAMETERS)) {
             runtimeMocks.runtimeParameterValues.set(paramId, value);
         }
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+        runtimeMocks.applyRuntimeGraphDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
+        useWebProviderPlan(providerPlan);
+        const hostedResponder = createHostedSemanticListPlanningResponder(
+            createProviderList(providerPlan),
+            providerScope
+        );
+        runtimeMocks.fetch.mockImplementation(async (_input, init) =>
+            hostedResponder(decodeHostedProviderUserMessage(init))
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
@@ -279,6 +317,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
@@ -302,6 +341,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -332,13 +372,10 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         });
         await sendChatMessage(PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
+        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls.at(-1)?.[1];
         expect(providerRequest).toContain(PROMPT);
-        expect(providerRequest).toContain(COMPRESSOR_ID);
-        expect(providerRequest).toContain('comp-threshold');
-        expect(providerRequest).toContain('"unit":"dB"');
-        expect(providerRequest).toContain('"value":-24');
-        expect(providerRequest).toContain('"value":2');
+        expect(providerRequest).toContain('agent.catalog.discover');
+        expect(vi.mocked(generateWebLlmCompletion)).toHaveBeenCalledTimes(2);
 
         const confirmation = getConfirmation();
         expect(confirmation?.actions).toEqual([
@@ -486,9 +523,10 @@ describe('Bass DI compressor parameter prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
+        const body = runtimeMocks.fetch.mock.calls.at(-1)?.[1]?.body;
         expect(typeof body).toBe('string');
-        expect(body).toContain('device-bass-di-compressor');
+        expect(body).toContain('agent.catalog.discover');
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
         expect(getConfirmation()?.actions).toEqual(createGuardedActions());
 
         const confirmation = getConfirmation();
@@ -531,7 +569,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             '[{"name":"setDeviceParameter","arguments":{"deviceId":"device-bass-di-compressor","paramId":"comp-threshold","value":null}},{"name":"setDeviceParameter","arguments":{"deviceId":"device-bass-di-compressor","paramId":"comp-ratio","value":4}}]',
         ],
     ])('rejects provider %s before confirmation or mutation', async (_label, response) => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(response);
+        useWebProviderPlan(JSON.parse(response) as ProviderCall[]);
         const before = structuredClone(trackStore.value);
 
         await sendChatMessage(PROMPT);

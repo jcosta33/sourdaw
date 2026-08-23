@@ -4120,6 +4120,7 @@ export function bridgeGroundedLlmToolCalls({
             actions: backingVocalPlatePlan.actions,
             appOwnedRenderTailSeconds: backingVocalPlatePlan.renderTailSeconds,
             batchLocalActionIdentities: backingVocalPlatePlan.identities,
+            verifiedProviderProposalScope: backingVocalPlatePlan.verifiedProviderProposalScope,
             rejections: [],
         };
     }

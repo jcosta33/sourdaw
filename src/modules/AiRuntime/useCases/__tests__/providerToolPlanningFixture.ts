@@ -22,6 +22,9 @@ export type ProviderPlanningFixtureContext = {
     revision: string | null;
 };
 
+type ProviderWorkflowScope =
+    ProviderScope | ((userMessage: string, plan: readonly ProviderPlanCall[]) => ProviderScope);
+
 function createPlanProposal(scope: ProviderScope, capabilityIds: string[]) {
     return {
         semantic: { classification: 'simple', uncertainty: [] },
@@ -198,6 +201,34 @@ export function createProviderToolPlanningFixture(
     };
 }
 
+export function createProviderToolPlanningResponder(
+    plan: readonly ProviderPlanCall[],
+    scope: ProviderScope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] }
+): (userMessage: string) => string {
+    const commandCalls = plan.filter((call) => call.name !== 'selectWorkflowCapability');
+    const commandNames = [...new Set(commandCalls.map((call) => call.name))];
+    if (commandNames.length !== commandCalls.length) {
+        throw new Error('Repeated commands require an explicit workflow fixture with bounded semantic selectors.');
+    }
+    return (userMessage) => {
+        if (!decodeProviderPlanningFixtureContext(userMessage).hasCommandCatalogReceipt) {
+            return JSON.stringify([
+                { name: 'agent.catalog.discover', arguments: { category: 'command', names: commandNames } },
+            ]);
+        }
+        return JSON.stringify([
+            ...plan.filter((call) => call.name === 'selectWorkflowCapability'),
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    commands: commandCalls,
+                    plan: createPlanProposal(scope, commandNames),
+                },
+            },
+        ]);
+    };
+}
+
 export function createProviderSemanticListPlanningFixture(
     items: readonly SemanticCommandListItem[],
     scope: ProviderScope,
@@ -241,6 +272,32 @@ export function createProviderSemanticListPlanningResponder(
     };
 }
 
+export function createProviderWorkflowPlanningResponder(
+    plan: readonly ProviderPlanCall[],
+    workflowCapabilityId: string,
+    scope: ProviderWorkflowScope
+): (userMessage: string) => string {
+    const commandNames = [...new Set(plan.map((call) => call.name))];
+    return (userMessage) => {
+        if (!decodeProviderPlanningFixtureContext(userMessage).hasCommandCatalogReceipt) {
+            return JSON.stringify([
+                { name: 'agent.catalog.discover', arguments: { category: 'command', names: commandNames } },
+            ]);
+        }
+        const providerScope = typeof scope === 'function' ? scope(userMessage, plan) : scope;
+        return JSON.stringify([
+            { name: 'selectWorkflowCapability', arguments: { capabilityId: workflowCapabilityId } },
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    commands: plan,
+                    plan: createPlanProposal(providerScope, commandNames),
+                },
+            },
+        ]);
+    };
+}
+
 export function createHostedToolPlanningFixture(
     plan: readonly ProviderPlanCall[],
     scope?: ProviderScope
@@ -266,6 +323,14 @@ export function createHostedToolPlanningFixture(
     };
 }
 
+export function createHostedToolPlanningResponder(
+    plan: readonly ProviderPlanCall[],
+    scope?: ProviderScope
+): (userMessage: string) => Response {
+    const respond = createProviderToolPlanningResponder(plan, scope);
+    return (userMessage) => createHostedFixture(() => respond(userMessage))();
+}
+
 export function createHostedSemanticListPlanningFixture(
     items: readonly SemanticCommandListItem[],
     scope: ProviderScope,
@@ -281,6 +346,15 @@ export function createHostedSemanticListPlanningResponder(
     workflowCapabilityId?: string
 ): (userMessage: string) => Response {
     const respond = createProviderSemanticListPlanningResponder(items, scope, workflowCapabilityId);
+    return (userMessage) => createHostedFixture(() => respond(userMessage))();
+}
+
+export function createHostedWorkflowPlanningResponder(
+    plan: readonly ProviderPlanCall[],
+    workflowCapabilityId: string,
+    scope: ProviderWorkflowScope
+): (userMessage: string) => Response {
+    const respond = createProviderWorkflowPlanningResponder(plan, workflowCapabilityId, scope);
     return (userMessage) => createHostedFixture(() => respond(userMessage))();
 }
 

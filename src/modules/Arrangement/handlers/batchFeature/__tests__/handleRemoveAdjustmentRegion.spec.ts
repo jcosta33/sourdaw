@@ -22,4 +22,30 @@ describe('handleRemoveAdjustmentRegion', () => {
         });
         expect(mocks.removeAdjustmentRegion).toHaveBeenCalledWith('L', 'R');
     });
+
+    it('admits divergent compensation only when the generated region is guarded', () => {
+        expect(
+            handleRemoveAdjustmentRegion.canReapplyAfterDivergence?.({
+                type: 'removeAdjustmentRegion',
+                payload: { layerId: 'L', regionId: 'R' },
+            })
+        ).toBe(false);
+        expect(
+            handleRemoveAdjustmentRegion.canReapplyAfterDivergence?.({
+                type: 'removeAdjustmentRegion',
+                payload: {
+                    layerId: 'L',
+                    regionId: 'R',
+                    expectedRegion: {
+                        id: 'R',
+                        startBeat: 16,
+                        endBeat: 32,
+                        blend: 1,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                    },
+                },
+            })
+        ).toBe(true);
+    });
 });

@@ -111,7 +111,7 @@ function readRanges(value: unknown): Array<{ startBeat: number; endBeat: number 
             !Number.isFinite(candidate.startBeat) ||
             typeof candidate.endBeat !== 'number' ||
             !Number.isFinite(candidate.endBeat) ||
-            candidate.endBeat <= candidate.startBeat
+            candidate.endBeat < candidate.startBeat
         ) {
             return null;
         }

@@ -1,4 +1,5 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
 import { captureCommandTargetFingerprints, commandBatchPreflightPort } from '#/modules/Command/useCases';
 import { captureProjectRevision, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
@@ -9,7 +10,12 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
             targetIds,
         });
         const liveFingerprints = captureCommandTargetFingerprints({
-            document: { trackStore: trackStore.value },
+            document: {
+                adjustmentLayerStore: adjustmentLayerStore.value,
+                automationStore: automationStore.value,
+                markerStore: markerStore.value,
+                trackStore: trackStore.value,
+            },
             targetIds,
         });
         const targetFingerprints = {

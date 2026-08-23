@@ -21,6 +21,8 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -37,6 +39,13 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import {
+    createHostedToolPlanningResponder,
+    createProviderToolPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderPlanCall,
+} from './providerToolPlanningFixture';
 
 const PROMPT =
     'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.';
@@ -51,6 +60,13 @@ const providerPlan = [
         },
     },
 ] as const;
+
+const providerScope = {
+    targetIds: ['bus-drums', 'bus-bass'],
+    targetRanges: [{ startBeat: 56, endBeat: 72 }],
+    protectedTargetIds: ['track-lead-vocal', 'clip-locked-lead-vocal', 'track-master', 'project:tempo-map'],
+    protectedRanges: [],
+};
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -88,16 +104,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function createProviderPlanFromUserMessage(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context)) {
-        throw new TypeError('Expected object-shaped project context');
-    }
-    const capability = context.wholeProjectVibeMixCapability;
+    const context = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = context.capabilityData.wholeProjectVibeMixCapability;
     if (!isRecord(capability) || capability.actionType !== 'automateTrackGainRange') {
         throw new TypeError('Expected app-owned whole-project vibe-mix capability');
     }
@@ -125,19 +133,6 @@ function createProviderPlanFromUserMessage(userMessage: string) {
             },
         },
     ];
-}
-
-function getHostedUserMessage(requestBody: string): string {
-    const request: unknown = JSON.parse(requestBody);
-    if (!isRecord(request) || !Array.isArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
-    }
-    for (const message of request.messages) {
-        if (isRecord(message) && message.role === 'user' && typeof message.content === 'string') {
-            return message.content;
-        }
-    }
-    throw new TypeError('Expected one hosted provider user message');
 }
 
 function createTrack(id: string, name: string, kind: Track['kind']): Track {
@@ -208,6 +203,25 @@ function getWebLlmSystemPrompt(): string {
     return systemPrompt;
 }
 
+function configureWebProviderPlan(
+    transform: (plan: readonly ProviderPlanCall[]) => readonly ProviderPlanCall[] = (plan) => plan
+): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) => {
+        const context = decodeProviderPlanningFixtureContext(userMessage);
+        const plan = context.hasCommandCatalogReceipt
+            ? transform(createProviderPlanFromUserMessage(userMessage))
+            : transform(providerPlan);
+        return Promise.resolve(createProviderToolPlanningResponder(plan, providerScope)(userMessage));
+    });
+}
+
+function planPromptWithProviderBudget(input: { prompt: string; signal?: AbortSignal }) {
+    return planPromptActions({
+        ...input,
+        onProviderAttempt: () => ({ status: 'admitted' }),
+    });
+}
+
 function getGainLanes() {
     return automationStore.value?.lanes.filter((lane) => lane.parameterId === 'gain') ?? [];
 }
@@ -243,31 +257,14 @@ describe('whole-project vibe-mix planning', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(JSON.stringify(createProviderPlanFromUserMessage(userMessage)))
-        );
+        configureWebProviderPlan();
         runtimeMocks.fetch.mockImplementation((_input, init) => {
-            if (typeof init?.body !== 'string') {
-                throw new TypeError('Expected hosted provider request body');
-            }
-            const derivedPlan = createProviderPlanFromUserMessage(getHostedUserMessage(init.body));
-            return Promise.resolve(
-                new Response(
-                    JSON.stringify({
-                        choices: [
-                            {
-                                finish_reason: 'tool_calls',
-                                message: {
-                                    tool_calls: derivedPlan.map((call) => ({
-                                        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                    })),
-                                },
-                            },
-                        ],
-                    }),
-                    { status: 200, headers: { 'Content-Type': 'application/json' } }
-                )
-            );
+            const userMessage = decodeHostedProviderUserMessage(init);
+            const context = decodeProviderPlanningFixtureContext(userMessage);
+            const plan = context.hasCommandCatalogReceipt
+                ? createProviderPlanFromUserMessage(userMessage)
+                : providerPlan;
+            return Promise.resolve(createHostedToolPlanningResponder(plan, providerScope)(userMessage));
         });
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
@@ -290,6 +287,7 @@ describe('whole-project vibe-mix planning', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
@@ -364,6 +362,7 @@ describe('whole-project vibe-mix planning', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
         automationStore.set({ lanes: [] });
@@ -375,7 +374,7 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     it('decomposes EX-02 into a revision-bearing bounded plan with neighbors, roles, strategy, and accepted decisions', async () => {
-        const { result, projectRevision } = await planPromptActions({ prompt: PROMPT });
+        const { result, projectRevision } = await planPromptWithProviderBudget({ prompt: PROMPT });
         const plan = result.wholeProjectVibeMixPlan;
         if (!plan) {
             throw new Error('Expected one structured whole-project vibe-mix plan');
@@ -417,7 +416,7 @@ describe('whole-project vibe-mix planning', () => {
         expect(plan.acceptedDecisions).toContain('Preserve the tempo map.');
         expect(plan.acceptedDecisions).toContain('Preserve the master chain.');
         expect(plan.commandBatch).toEqual(result.actions);
-        expect(runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]).toContain('projectRevision');
+        expect(runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]).toContain('revision_and_selection');
         expect(runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]).toContain('documentIdentityEpoch');
     });
 
@@ -430,7 +429,7 @@ describe('whole-project vibe-mix planning', () => {
             ],
         });
 
-        const { result } = await planPromptActions({ prompt: PROMPT });
+        const { result } = await planPromptWithProviderBudget({ prompt: PROMPT });
 
         expect(result.wholeProjectVibeMixPlan?.sectionMap).toEqual({
             target: { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
@@ -440,27 +439,22 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     it('sends the provider the revision-bound app-owned candidate scope and bounded relative-gain capability', async () => {
-        const { projectRevision } = await planPromptActions({ prompt: PROMPT });
+        const { projectRevision } = await planPromptWithProviderBudget({ prompt: PROMPT });
         const userMessage = getWebLlmUserMessage();
         const systemPrompt = getWebLlmSystemPrompt();
+        const planningContext = decodeProviderPlanningFixtureContext(userMessage);
 
         expect(systemPrompt).toContain(
             'Each target ID must correspond to a target the user actually referenced by literal ID, unique exact name, or explicit selection.'
         );
-        expect(userMessage).toContain('"projectRevision"');
-        expect(userMessage).toContain(projectRevision.replaceAll('"', '\\"'));
-        expect(userMessage).toContain('"wholeProjectVibeMixCapability"');
-        expect(userMessage).toContain(
-            '"targetSection":{"id":"section-chorus-two","name":"Chorus Two","startBeat":56,"endBeat":72}'
-        );
-        expect(userMessage).toContain('"exactTargetIds":["bus-drums","bus-bass"]');
-        expect(userMessage).toContain('"allowedRelativeGainDbValues":[1.5]');
-        expect(userMessage).toContain(
-            '"protectedObjectIds":["track-lead-vocal","clip-locked-lead-vocal","track-master","project:tempo-map"]'
-        );
-        expect(userMessage).toContain(
-            '"constraints":{"preserveRouting":true,"preserveDevices":true,"requireFreshConfirmation":true}'
-        );
+        expect(planningContext.revision).toBe(projectRevision);
+        expect(planningContext.capabilityData.wholeProjectVibeMixCapability).toMatchObject({
+            targetSection: { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
+            exactTargetIds: ['bus-drums', 'bus-bass'],
+            allowedRelativeGainDbValues: [1.5],
+            protectedObjectIds: ['track-lead-vocal', 'clip-locked-lead-vocal', 'track-master', 'project:tempo-map'],
+            constraints: { preserveRouting: true, preserveDevices: true, requireFreshConfirmation: true },
+        });
     });
 
     it('confirms, atomically commits, receipts, and whole-group undoes and redoes only the section gain trajectory', async () => {
@@ -566,7 +560,7 @@ describe('whole-project vibe-mix planning', () => {
         expect(providerRequest).toContain(PROMPT);
         expect(providerRequest).toContain('bus-drums');
         expect(providerRequest).toContain('section-chorus-two');
-        expect(providerRequest).toContain('projectRevision');
+        expect(providerRequest).toContain('revision_and_selection');
         expect(providerRequest).toContain('wholeProjectVibeMixCapability');
         expect(providerRequest).toContain('allowedRelativeGainDbValues');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -605,7 +599,7 @@ describe('whole-project vibe-mix planning', () => {
             [{ ...providerPlan[0], arguments: { ...providerPlan[0].arguments, gainDb: 3 } }],
         ];
         for (const invalidPlan of invalidPlans) {
-            runtimeMocks.generateWebLlmCompletion.mockResolvedValueOnce(JSON.stringify(invalidPlan));
+            configureWebProviderPlan(() => invalidPlan);
             await sendChatMessage(PROMPT);
             expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
             expect(getGainLanes()).toEqual([]);
@@ -632,7 +626,7 @@ describe('whole-project vibe-mix planning', () => {
         trackStore.set({
             ...trackStore.value!,
             tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'bus-drums' ? { ...track, gain: 0.95 } : track
+                track.id === 'bus-drums' ? { ...track, gain: FADER_MAX_GAIN } : track
             ),
         });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });

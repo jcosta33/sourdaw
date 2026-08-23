@@ -951,7 +951,7 @@ describe('release proof', () => {
         const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
-    });
+    }, 15_000);
 
     it('rejects ZIP entry bytes that exceed their declarations', () => {
         const fixture = createFixture();

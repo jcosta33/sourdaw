@@ -31,6 +31,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -48,7 +49,13 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import {
+    createHostedWorkflowPlanningResponder,
+    createProviderWorkflowPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderScope,
+} from './providerToolPlanningFixture';
 
 const PROMPT =
     'For one eight-bar section, create three drum-arrangement candidates on separate preview branches while preserving the kick pattern and varying only snare and hi-hat programming.';
@@ -152,46 +159,32 @@ function createTrack(id: string, name: string, clipId: string): Track {
     };
 }
 
-function getProviderUserMessage(body: string): string {
-    const request: unknown = JSON.parse(body);
-    if (!isRecord(request) || !isUnknownArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
-    }
-    const userMessage = request.messages.find(
-        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
-    );
-    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
-    }
-    return userMessage.content;
-}
-
-function createProviderPlan(userMessage: string): ProviderCall[] {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
-    const capability = context.drumPreviewBranchesCapability;
-    if (!isRecord(capability) || capability.baseRevision !== context.projectRevision) {
+function getProviderCapability(userMessage: string) {
+    const planningContext = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = planningContext.capabilityData.drumPreviewBranchesCapability;
+    if (!isRecord(capability) || capability.baseRevision !== planningContext.revision) {
         throw new TypeError('Expected revision-bound EX-05 capability');
     }
     const action = capability.allowedAction;
+    if (!isRecord(action)) {
+        throw new TypeError('Expected exact app-owned EX-05 planning scope');
+    }
+    const { candidateCount, sectionId, varyingRoles } = action;
     if (
-        !isRecord(action) ||
         action.type !== 'createDrumPreviewBranches' ||
-        typeof action.sectionId !== 'string' ||
-        action.candidateCount !== 3 ||
-        !isUnknownArray(action.varyingRoles) ||
-        action.varyingRoles[0] !== 'snare' ||
-        action.varyingRoles[1] !== 'hi-hat'
+        typeof sectionId !== 'string' ||
+        candidateCount !== 3 ||
+        !isUnknownArray(varyingRoles) ||
+        varyingRoles[0] !== 'snare' ||
+        varyingRoles[1] !== 'hi-hat'
     ) {
         throw new TypeError('Expected exact app-owned EX-05 planning scope');
     }
+    return { action: { candidateCount, sectionId, varyingRoles }, capability };
+}
+
+function createProviderPlan(userMessage: string): ProviderCall[] {
+    const { action } = getProviderCapability(userMessage);
     return [
         {
             name: 'createDrumPreviewBranches',
@@ -204,32 +197,48 @@ function createProviderPlan(userMessage: string): ProviderCall[] {
     ];
 }
 
+function getProviderScope(userMessage: string): ProviderScope {
+    const { capability } = getProviderCapability(userMessage);
+    const roles = capability.roles;
+    const section = capability.section;
+    if (
+        !isRecord(roles) ||
+        !isRecord(roles.snare) ||
+        typeof roles.snare.trackId !== 'string' ||
+        typeof roles.snare.clipId !== 'string' ||
+        !isRecord(roles.hiHat) ||
+        typeof roles.hiHat.trackId !== 'string' ||
+        typeof roles.hiHat.clipId !== 'string' ||
+        !isRecord(section) ||
+        typeof section.startBeat !== 'number' ||
+        typeof section.endBeat !== 'number' ||
+        !Array.isArray(capability.protectedObjectIds)
+    ) {
+        throw new TypeError('Expected complete EX-05 provider scope');
+    }
+    return {
+        targetIds: [roles.snare.trackId, roles.hiHat.trackId, roles.snare.clipId, roles.hiHat.clipId],
+        targetRanges: [{ startBeat: section.startBeat, endBeat: section.endBeat }],
+        protectedTargetIds: capability.protectedObjectIds.filter(
+            (targetId): targetId is string => typeof targetId === 'string'
+        ),
+        protectedRanges: [],
+    };
+}
+
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = withWorkflowCapabilitySelection(
-            'drum-preview-branches',
-            runtimeMocks.transformPlan.value(createProviderPlan(getProviderUserMessage(init.body)))
-        );
+        const userMessage = decodeHostedProviderUserMessage(init);
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+            createHostedWorkflowPlanningResponder(
+                runtimeMocks.transformPlan.value(createProviderPlan(userMessage)),
+                'drum-preview-branches',
+                getProviderScope
+            )(userMessage)
         );
     });
 }
@@ -323,12 +332,11 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         runtimeMocks.transformPlan.value = (plan) => plan;
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
             Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'drum-preview-branches',
-                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
+                createProviderWorkflowPlanningResponder(
+                    runtimeMocks.transformPlan.value(createProviderPlan(userMessage)),
+                    'drum-preview-branches',
+                    getProviderScope
+                )(userMessage)
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
@@ -349,6 +357,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setCollaborationAuthority({ isEnabled: false, isHost: false });
         clearAiHistory();
         clearPendingActionConfirmations();
@@ -413,6 +422,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();

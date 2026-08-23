@@ -508,7 +508,13 @@ fn the_replay_preserves_most_recent_write_order() {
 /// and not repeated here: identical peak, RMS within 0.0015 dB, identical T60,
 /// every octave band within 0.03 dB, and a waveform that decorrelates past the
 /// first 250 ms. This row is a fingerprint and it moved; the sound did not.
-const UNTOLD_INSTANCE_DIGEST: u64 = 0x331fcaf1_a4fc7535;
+///
+/// The retained render crosses platform `libm` implementations. macOS and the
+/// hosted Linux runner agree on the readable shape below but differ in the
+/// last bits that feed this whole-buffer hash. Both exact fingerprints remain
+/// tripwires; accepting an arbitrary third digest would still be a voicing
+/// change requiring measurement and explanation.
+const UNTOLD_INSTANCE_DIGESTS: [u64; 2] = [0x331fcaf1_a4fc7535, 0x54338e7e_540daba4];
 
 /// The same render in three readable numbers. Regenerate with the digest, never
 /// separately — a shape that disagrees with its digest means one of the two came
@@ -536,8 +542,8 @@ fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
     );
 
     let digest_now = digest(&constructed);
-    assert_eq!(
-        digest_now, UNTOLD_INSTANCE_DIGEST,
+    assert!(
+        UNTOLD_INSTANCE_DIGESTS.contains(&digest_now),
         "an untouched Dutch Oven changed what it renders: an existing project \
          that never moved a control now sounds different. digest {digest_now:#x}. \
          The three scalars above held, so the level, the total energy and the \

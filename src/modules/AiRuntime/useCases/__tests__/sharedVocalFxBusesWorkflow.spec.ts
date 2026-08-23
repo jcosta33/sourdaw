@@ -22,6 +22,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -37,6 +38,13 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import {
+    createHostedWorkflowPlanningResponder,
+    createProviderWorkflowPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderScope,
+} from './providerToolPlanningFixture';
 
 const SHARED_VOCAL_FX_PROMPT = 'Move vocal delays and reverbs to shared buses while preserving balance.';
 const SHARED_VOCAL_FX_PARAPHRASE =
@@ -101,6 +109,7 @@ const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         addDeviceToStrip: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted' as const, application: 'applied' as const })),
         backend,
         clearReportedLatency: vi.fn(),
         ensureTrackStrip: vi.fn(),
@@ -142,6 +151,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
@@ -179,19 +189,11 @@ function isUnknownArray(value: unknown): value is unknown[] {
 }
 
 function createSharedVocalFxProviderPlanFromUserMessage(userMessage: string): ProviderPlanCall[] {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
-    const capability = context.sharedVocalFxBusesCapability;
+    const planningContext = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = planningContext.capabilityData.sharedVocalFxBusesCapability;
     if (
         !isRecord(capability) ||
-        capability.baseRevision !== context.projectRevision ||
+        capability.baseRevision !== planningContext.revision ||
         !isUnknownArray(capability.orderedToolPlan)
     ) {
         throw new TypeError('Expected revision-bound EX-08 capability');
@@ -204,6 +206,40 @@ function createSharedVocalFxProviderPlanFromUserMessage(userMessage: string): Pr
     });
 }
 
+function getSharedVocalFxProviderScope(userMessage: string): ProviderScope {
+    const capability = decodeProviderPlanningFixtureContext(userMessage).capabilityData.sharedVocalFxBusesCapability;
+    if (
+        !isRecord(capability) ||
+        !isUnknownArray(capability.effectGroups) ||
+        !isUnknownArray(capability.protectedObjects)
+    ) {
+        throw new TypeError('Expected complete EX-08 provider scope');
+    }
+    const targetIds = capability.effectGroups.flatMap((group) => {
+        if (!isRecord(group) || !isUnknownArray(group.sources)) {
+            throw new TypeError('Expected complete EX-08 effect group');
+        }
+        return group.sources.flatMap((source) => {
+            if (!isRecord(source) || typeof source.deviceId !== 'string' || typeof source.trackId !== 'string') {
+                throw new TypeError('Expected complete EX-08 source scope');
+            }
+            return [source.deviceId, source.trackId];
+        });
+    });
+    const protectedTargetIds = capability.protectedObjects.map((target) => {
+        if (!isRecord(target) || typeof target.id !== 'string') {
+            throw new TypeError('Expected complete EX-08 protected scope');
+        }
+        return target.id;
+    });
+    return {
+        targetIds: [...new Set(targetIds)],
+        targetRanges: [],
+        protectedTargetIds,
+        protectedRanges: [],
+    };
+}
+
 function getWebLlmUserMessage(): string {
     const userMessage: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1];
     if (typeof userMessage !== 'string') {
@@ -212,43 +248,16 @@ function getWebLlmUserMessage(): string {
     return userMessage;
 }
 
-function getHostedUserMessage(requestBody: string): string {
-    const request: unknown = JSON.parse(requestBody);
-    if (!isRecord(request) || !isUnknownArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
-    }
-    const userMessage = request.messages.find(
-        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
-    );
-    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
-    }
-    return userMessage.content;
-}
-
-function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderPlanCall[]): void {
+function useHostedSharedVocalFxFixture(): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = createPlan(getHostedUserMessage(init.body));
+        const userMessage = decodeHostedProviderUserMessage(init);
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+            createHostedWorkflowPlanningResponder(
+                createSharedVocalFxProviderPlanFromUserMessage(userMessage),
+                'shared-vocal-fx-buses',
+                getSharedVocalFxProviderScope
+            )(userMessage)
         );
     });
 }
@@ -258,22 +267,16 @@ const sharedVocalFxWorkflowSelection = {
     arguments: { capabilityId: 'shared-vocal-fx-buses' },
 };
 
-function useHostedSharedVocalFxFixture(): void {
-    useHostedProviderFixture((userMessage) => [
-        sharedVocalFxWorkflowSelection,
-        ...createSharedVocalFxProviderPlanFromUserMessage(userMessage),
-    ]);
-}
-
 function useWebSharedVocalFxFixture(
     transform: (plan: ProviderPlanCall[]) => ProviderPlanCall[] = (plan) => plan
 ): void {
     runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
         Promise.resolve(
-            JSON.stringify([
-                sharedVocalFxWorkflowSelection,
-                ...transform(createSharedVocalFxProviderPlanFromUserMessage(userMessage)),
-            ])
+            createProviderWorkflowPlanningResponder(
+                transform(createSharedVocalFxProviderPlanFromUserMessage(userMessage)),
+                'shared-vocal-fx-buses',
+                getSharedVocalFxProviderScope
+            )(userMessage)
         )
     );
 }
@@ -447,6 +450,7 @@ describe('shared vocal FX buses workflow', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
+        runtimeMocks.applyRuntimeGraphDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
             Promise.resolve(
                 JSON.stringify([
@@ -476,6 +480,7 @@ describe('shared vocal FX buses workflow', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
@@ -493,6 +498,7 @@ describe('shared vocal FX buses workflow', () => {
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -645,7 +651,7 @@ describe('shared vocal FX buses workflow', () => {
         if (typeof requestBody !== 'string') {
             throw new TypeError('Expected one hosted provider request body');
         }
-        expect(createSharedVocalFxProviderPlanFromUserMessage(getHostedUserMessage(requestBody))).toEqual(
+        expect(createSharedVocalFxProviderPlanFromUserMessage(decodeHostedProviderUserMessage(requestBody))).toEqual(
             sharedVocalFxProviderPlan
         );
         expect(getPendingActionConfirmation(getConfirmationId())?.actions).toHaveLength(27);

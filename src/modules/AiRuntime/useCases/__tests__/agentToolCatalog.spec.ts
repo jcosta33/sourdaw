@@ -381,11 +381,57 @@ describe('agent tool catalog', () => {
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 
-    it('admits repeated primitive commands only with an application-validated workflow selection', async () => {
+    it.each([
+        ['drum-routing', 'setTrackOutput'],
+        ['drum-render-comparison', 'createBus'],
+        ['backing-vocal-plate', 'addDevice'],
+        ['articulation-transfer', 'copyMidiArticulations'],
+        ['bass-processing-copy', 'addAdjustmentRegion'],
+        ['midi-overlap-shortening', 'removeShortMidiOverlaps'],
+        ['shared-vocal-fx-buses', 'removeDevice'],
+    ] as const)('admits the %s repeated primitive contract for %s', async (capabilityId, commandName) => {
         const repeatedCommands = [
-            { name: 'setTrackOutput', arguments: { trackId: 'track-kick', outputId: '$drum-bus' } },
-            { name: 'setTrackOutput', arguments: { trackId: 'track-snare', outputId: '$drum-bus' } },
+            { name: commandName, arguments: { fixtureOrdinal: 1 } },
+            { name: commandName, arguments: { fixtureOrdinal: 2 } },
         ];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: [commandName] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'selectWorkflowCapability',
+                        arguments: { capabilityId },
+                    },
+                    { name: 'command.batch.propose', arguments: { commands: repeatedCommands } },
+                ],
+            });
+
+        await expect(
+            runApplicationOwnedToolLoop({
+                loopId: `repeated-${capabilityId}-plan`,
+                terminalToolNames: new Set(['selectWorkflowCapability', 'command.batch.propose']),
+                requestTurn,
+            })
+        ).resolves.toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                { name: 'selectWorkflowCapability', arguments: { capabilityId } },
+                { name: 'command.batch.propose', arguments: { commands: repeatedCommands } },
+            ],
+        });
+    });
+
+    it('does not let an unrelated workflow capability unlock repeated primitive commands', async () => {
         const requestTurn = vi
             .fn()
             .mockResolvedValueOnce({
@@ -402,24 +448,54 @@ describe('agent tool catalog', () => {
                 toolCalls: [
                     {
                         name: 'selectWorkflowCapability',
-                        arguments: { capabilityId: 'drum-render-comparison' },
+                        arguments: { capabilityId: 'shared-vocal-fx-buses' },
                     },
-                    { name: 'command.batch.propose', arguments: { commands: repeatedCommands } },
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [
+                                { name: 'setTrackOutput', arguments: { trackId: 'track-a', outputId: 'master' } },
+                                { name: 'setTrackOutput', arguments: { trackId: 'track-b', outputId: 'master' } },
+                            ],
+                        },
+                    },
                 ],
             });
 
         await expect(
             runApplicationOwnedToolLoop({
-                loopId: 'repeated-workflow-plan',
+                loopId: 'unrelated-repeated-workflow-plan',
                 terminalToolNames: new Set(['selectWorkflowCapability', 'command.batch.propose']),
                 requestTurn,
             })
         ).resolves.toMatchObject({
-            status: 'complete',
-            toolCalls: [
-                { name: 'selectWorkflowCapability' },
-                { name: 'command.batch.propose', arguments: { commands: repeatedCommands } },
+            status: 'rejected',
+            reason: 'Provider command proposal does not match the strict catalog contract.',
+        });
+    });
+
+    it.each([
+        [
+            'an unavailable capability',
+            [{ name: 'selectWorkflowCapability', arguments: { capabilityId: 'not-a-capability' } }],
+        ],
+        [
+            'more than one capability',
+            [
+                { name: 'selectWorkflowCapability', arguments: { capabilityId: 'drum-routing' } },
+                { name: 'selectWorkflowCapability', arguments: { capabilityId: 'shared-vocal-fx-buses' } },
             ],
+        ],
+    ])('rejects terminal selection of %s', async (_label, selections) => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'invalid-workflow-selection',
+            terminalToolNames: new Set(['selectWorkflowCapability']),
+            requestTurn: () => Promise.resolve({ status: 'complete', toolCalls: selections }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Provider workflow selection does not match the strict capability contract.',
         });
     });
 
