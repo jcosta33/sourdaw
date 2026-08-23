@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, posix, relative, resolve, sep } from 'node:path';
 
 import parseSpdxExpression from 'spdx-expression-parse';
 import { list as listTarArchive } from 'tar';
@@ -591,7 +591,7 @@ function assertProofFile(
     if (archiveIntegrity !== proof.revision) {
         throw new Error(`${packageId}: proof archive does not match the locked package`);
     }
-    const wanted = `package/${file.sourcePath}`;
+    const wanted = normalizeProofArchiveMemberPath(`package/${file.sourcePath}`);
     let legal: LegalFile | undefined;
     let policyError: string | undefined;
     try {
@@ -599,7 +599,7 @@ function assertProofFile(
             sync: true,
             file: realPath,
             onentry(entry) {
-                const archivePath = entry.path.replaceAll('\\', '/').replace(/^\.\/+|\/+$/gu, '');
+                const archivePath = normalizeProofArchiveMemberPath(entry.path);
                 if (archivePath !== wanted) {
                     entry.resume();
                     return;
@@ -635,6 +635,10 @@ function assertProofFile(
         throw new Error(`${packageId}: dependency proof drifted at ${file.sourcePath}`);
     }
     return { ...legal, label: `${file.sourcePath} from ${proof.source}@${proof.revision}` };
+}
+
+export function normalizeProofArchiveMemberPath(path: string): string {
+    return posix.normalize(path.replaceAll('\\', '/')).replace(/^\.\/+|\/+$/gu, '');
 }
 
 type SpdxNode = ReturnType<typeof parseSpdxExpression>;
@@ -936,7 +940,7 @@ export function renderDependencyLicenseReport(
         'Sourdaw third-party dependency licenses',
         '',
         'Generated from pnpm-lock.yaml, server/package-lock.json, and the normal-dependency Cargo.lock graph.',
-        'Each package keeps its declared license expression and exact archive terms or an explicit assembled notice.',
+        'Each package keeps its declared license expression and retained legal files or an explicit assembled notice.',
         `Assembled notices use hash-pinned metadata from the lock-resolved install plus canonical SPDX License List ${SPDX_LICENSE_LIST_VERSION} text; only checked proof archives are byte-authenticated against package integrity.`,
         'Generation fails when complete legal evidence is unavailable.',
         '',

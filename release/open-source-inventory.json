@@ -124,10 +124,10 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:a7cb8d0c8186a4586b74c347f54cc5990ddea30715435cf75a28e27a62a601b6:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:f63a5d7e4b48cb454d3fe255a8bd96de40eec8f52dc4366ccfc87edb038cbcd0:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:34a22e363a1f0032e2bea75066e8fc94285cb469dd11bf4fbe172b2a5a686257:release/dependency-license-proofs.json"
             ],
-            "licenses": ["Apache-2.0"],
+            "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
             "productSurfaces": [
                 "source distribution",
                 "web distribution",
@@ -826,7 +826,7 @@
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:feff6e1fd4d9cb9936b08295fec16cea90617736e465ad32cc656e079e1b5f40:grand-boule-release-proof"
+                "tracked-set-sha256:5cf2bed9ddb3d77dd6e548808a993fabd9c409f667dfce3cc24d8bbe7ab4d2f5:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],

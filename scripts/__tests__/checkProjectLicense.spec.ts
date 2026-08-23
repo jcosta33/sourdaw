@@ -26,6 +26,7 @@ import {
     isPlatformRestrictedPackage,
     readLegalFile,
     readDependencyLicenseProofManifest,
+    normalizeProofArchiveMemberPath,
     renderDependencyLicenseReport,
     renderServerThirdPartyNotices,
     SERVER_THIRD_PARTY_NOTICES_PATH,
@@ -56,6 +57,15 @@ describe('project license', () => {
     const cargo = {
         packages: [{ name: 'crate-one', license: PROJECT_LICENSE_ID, authors: [PROJECT_AUTHOR] }],
     };
+
+    it.each([
+        ['./package/LICENSE', 'package/LICENSE'],
+        ['package//LICENSE', 'package/LICENSE'],
+        ['package/legal/../LICENSE', 'package/LICENSE'],
+        ['package\\LICENSE', 'package/LICENSE'],
+    ])('normalizes proof archive member alias %s', (path, expected) => {
+        expect(normalizeProofArchiveMemberPath(path)).toBe(expected);
+    });
 
     beforeEach(() => {
         root = mkdtempSync(join(tmpdir(), 'sourdaw-project-license-'));

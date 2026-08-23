@@ -946,7 +946,7 @@ export function projectLicenseDistributionReleaseInventoryContract(root: string)
             `sha256:${fileSha256(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH))}:${DEPENDENCY_LICENSE_REPORT_PATH}`,
             `sha256:${fileSha256(resolve(root, 'release/dependency-license-proofs.json'))}:release/dependency-license-proofs.json`,
         ],
-        licenses: ['Apache-2.0'],
+        licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
     };
 }
 
