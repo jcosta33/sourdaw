@@ -1,0 +1,32 @@
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_a40848e8f8cca9::t_fe318ef4f64219 61-65
+  s_a40848e8f8cca9::t_9f846eddbf8006 36,39,46-47,51-54
+  s_a40848e8f8cca9::t_30d47db0c29113 3,20-27,35,37-38,40-45,48-50,55-60,66-84,105-106,135-139
+tests/e2e/aiFeatures.spec.ts
+  s_a40848e8f8cca9::t_30d47db0c29113 38-39,42-44
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_a40848e8f8cca9::t_30d47db0c29113 30-33
+tests/e2e/aiAndCollabFinal.spec.ts
+  s_a40848e8f8cca9::t_30d47db0c29113 53-54,58-59,63-64,68
+tests/e2e/browserAiPanelsTestId.spec.ts
+  s_a40848e8f8cca9::t_30d47db0c29113 90
+tests/e2e/aiBackendPreference.spec.ts
+  s_a40848e8f8cca9::t_30d47db0c29113 20,26-31
+  s_a40848e8f8cca9::t_71b173915310e3 32-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1994edde638113125f08ad48d7c0e722e8cb5fd1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
