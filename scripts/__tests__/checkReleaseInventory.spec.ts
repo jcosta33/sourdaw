@@ -23,7 +23,6 @@ import {
     ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH,
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
-    assertDdspReleaseInventory,
     assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
@@ -734,24 +733,60 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes both DDSP contracts directly from the release inventory registry', () => {
+    it('composes both DDSP contracts in production before later release validation', () => {
         const liveInventory = JSON.parse(
             readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
         ) as ReleaseInventory;
+        const laterValidationSentinel = new Error('later release validation sentinel');
+        let laterValidationCalls = 0;
+        const validate = (inventory: ReleaseInventory) =>
+            checkReleaseInventory(repositoryRoot, {
+                projectLicensePreflight() {},
+                readInventory() {
+                    return inventory;
+                },
+                afterDdspValidation() {
+                    laterValidationCalls += 1;
+                    throw laterValidationSentinel;
+                },
+            });
 
-        expect(() => assertDdspReleaseInventory(repositoryRoot, liveInventory)).not.toThrow();
-        expect(() =>
-            assertDdspReleaseInventory(repositoryRoot, {
-                ...liveInventory,
-                surfaces: liveInventory.surfaces.filter(({ id }) => id !== 'ddsp-tfjs-runtime'),
-            })
-        ).toThrow('DDSP TF.js runtime release inventory kind does not match provenance');
-        expect(() =>
-            assertDdspReleaseInventory(repositoryRoot, {
-                ...liveInventory,
-                surfaces: liveInventory.surfaces.filter(({ id }) => id !== 'ddsp-models'),
-            })
-        ).toThrow('DDSP models release inventory kind does not match provenance');
+        expect(() => validate(liveInventory)).toThrow(laterValidationSentinel);
+        for (const { id, label, mutate } of [
+            {
+                id: 'ddsp-tfjs-runtime',
+                label: 'DDSP TF.js runtime',
+                mutate: (inventory: ReleaseInventory) => {
+                    inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-tfjs-runtime');
+                },
+            },
+            {
+                id: 'ddsp-tfjs-runtime',
+                label: 'DDSP TF.js runtime',
+                mutate: (inventory: ReleaseInventory) => {
+                    inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime')!.kind = 'hostile';
+                },
+            },
+            {
+                id: 'ddsp-models',
+                label: 'DDSP models',
+                mutate: (inventory: ReleaseInventory) => {
+                    inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-models');
+                },
+            },
+            {
+                id: 'ddsp-models',
+                label: 'DDSP models',
+                mutate: (inventory: ReleaseInventory) => {
+                    inventory.surfaces.find((surface) => surface.id === 'ddsp-models')!.kind = 'hostile';
+                },
+            },
+        ]) {
+            const mutated = structuredClone(liveInventory);
+            mutate(mutated);
+            expect(() => validate(mutated), id).toThrow(`${label} release inventory kind does not match provenance`);
+        }
+        expect(laterValidationCalls).toBe(1);
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {

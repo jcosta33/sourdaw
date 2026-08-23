@@ -213,6 +213,12 @@ export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
 
+export type ReleaseInventoryCheckOptions = {
+    projectLicensePreflight?: (root: string) => void;
+    readInventory?: (root: string) => ReleaseInventory;
+    afterDdspValidation?: () => void;
+};
+
 export function readReleaseInventory(root: string): ReleaseInventory {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     return parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
@@ -1812,16 +1818,23 @@ export function loadRepositorySnapshot(
 
 export function checkReleaseInventory(
     root: string,
-    projectLicensePreflight = checkProjectLicense
+    options: ReleaseInventoryCheckOptions | ((root: string) => void) = {}
 ): ReleaseInventoryCheckReceipt {
+    const {
+        projectLicensePreflight = checkProjectLicense,
+        readInventory = readReleaseInventory,
+        afterDdspValidation,
+    } = typeof options === 'function' ? { projectLicensePreflight: options } : options;
     projectLicensePreflight(root);
-    const inventory = readReleaseInventory(root);
+    const inventory = readInventory(root);
+    assertDdspReleaseInventory(root, inventory);
+    afterDdspValidation?.();
     const snapshot = loadRepositorySnapshot(root, inventory);
     const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
-    const validatedSurfaceIds: string[] = [];
+    const validatedSurfaceIds = ['ddsp-tfjs-runtime', 'ddsp-models'];
     const validateSurface = (surfaceId: string, validate: () => void): void => {
         validate();
         validatedSurfaceIds.push(surfaceId);
@@ -1868,8 +1881,6 @@ export function checkReleaseInventory(
             'owner visual asset'
         )
     );
-    assertDdspReleaseInventory(root, inventory);
-    validatedSurfaceIds.push('ddsp-tfjs-runtime', 'ddsp-models');
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

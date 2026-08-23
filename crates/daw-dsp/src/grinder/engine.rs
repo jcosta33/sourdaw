@@ -124,13 +124,6 @@ pub struct GrinderEngine {
     routing_mode: RoutingMode,
     cab_ir_slot: u32,
 
-    // Debug-only work counters let the F9 golden prove the optimized render
-    // really skipped the discarded stages. They do not exist in release DSP.
-    #[cfg(debug_assertions)]
-    debug_circuit_stage_samples: usize,
-    #[cfg(debug_assertions)]
-    debug_dual_amp_samples: usize,
-
     // Metering
     meter_decay_coeff: f32,
     input_peak: f32,
@@ -186,10 +179,6 @@ impl GrinderEngine {
             cabinet_mode: CabinetMode::Both,
             routing_mode: RoutingMode::Serial,
             cab_ir_slot: 0,
-            #[cfg(debug_assertions)]
-            debug_circuit_stage_samples: 0,
-            #[cfg(debug_assertions)]
-            debug_dual_amp_samples: 0,
             meter_decay_coeff,
             input_peak: 0.0,
             preamp_peak: 0.0,
@@ -423,16 +412,7 @@ impl GrinderEngine {
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
-        self.process_block_inner::<false>(left, right, &[], 0);
-    }
-
-    /// Debug-only reference render for the cost-reduction golden. This runs
-    /// the stages that F9 removed from modes which discard their output, so a
-    /// same-process comparison can prove the optimized gate moves no sample.
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub fn process_block_reference(&mut self, left: &mut [f32], right: &mut [f32]) {
-        self.process_block_inner::<true>(left, right, &[], 0);
+        self.process_block_inner(left, right, &[], 0);
     }
 
     pub fn process_block_automated(
@@ -442,10 +422,10 @@ impl GrinderEngine {
         automation: &[f32],
         stride: usize,
     ) {
-        self.process_block_inner::<false>(left, right, automation, stride);
+        self.process_block_inner(left, right, automation, stride);
     }
 
-    fn process_block_inner<const REFERENCE_RENDER: bool>(
+    fn process_block_inner(
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
@@ -502,14 +482,9 @@ impl GrinderEngine {
             // Circuit and Hybrid modes. Capture mode replaces them outright,
             // so running them there is pure audio-thread cost for a value the
             // selector below discards.
-            let circuit_amp = if neural_mode == EngineMode::Capture && !REFERENCE_RENDER {
+            let circuit_amp = if neural_mode == EngineMode::Capture {
                 0.0
             } else {
-                #[cfg(debug_assertions)]
-                {
-                    self.debug_circuit_stage_samples =
-                        self.debug_circuit_stage_samples.saturating_add(1);
-                }
                 let circuit_preamp = self.preamp.process_sample(amp_input);
                 self.tone_stack.process_sample(circuit_preamp)
             };
@@ -553,13 +528,7 @@ impl GrinderEngine {
                 // Only DualAmp routing reads the second amp chain. Every other
                 // routing mode used to run a whole extra power amp and output
                 // transformer per sample and throw the result away.
-                let dual_transformer = if self.routing_mode == RoutingMode::DualAmp
-                    || REFERENCE_RENDER
-                {
-                    #[cfg(debug_assertions)]
-                    {
-                        self.debug_dual_amp_samples = self.debug_dual_amp_samples.saturating_add(1);
-                    }
+                let dual_transformer = if self.routing_mode == RoutingMode::DualAmp {
                     let dual_back_emf = self.dual_speaker.back_emf();
                     let dual_power = self
                         .dual_power_amp
@@ -628,20 +597,6 @@ impl GrinderEngine {
                 self.output_peak *= self.meter_decay_coeff;
             }
         }
-    }
-
-    /// Number of samples for which the circuit preamp and tone stack ran.
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub fn debug_circuit_stage_samples(&self) -> usize {
-        self.debug_circuit_stage_samples
-    }
-
-    /// Number of samples for which the dual amp and transformer ran.
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub fn debug_dual_amp_samples(&self) -> usize {
-        self.debug_dual_amp_samples
     }
 
     /// Clear every stage's runtime state. Parameters and routing survive;
