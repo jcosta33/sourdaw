@@ -431,7 +431,8 @@ function useEx11HostedFixture(
     transformPlan: (plan: Array<{ name: string; arguments: Record<string, unknown> }>) => Array<{
         name: string;
         arguments: Record<string, unknown>;
-    }> = (plan) => plan
+    }> = (plan) => plan,
+    transformScope: (scope: ProviderScope) => ProviderScope = (scope) => scope
 ): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
@@ -442,7 +443,7 @@ function useEx11HostedFixture(
                 createCapabilityPlanResponse(
                     userMessage,
                     plan,
-                    getEx11ProviderScope(userMessage, plan),
+                    transformScope(getEx11ProviderScope(userMessage, plan)),
                     'drum-render-comparison'
                 )
             )
@@ -989,6 +990,25 @@ describe('drum bus prompt workflow', () => {
             'section-chorus-one',
         ]);
         expect(getTrack('track-room')).toEqual(roomBefore);
+    });
+
+    it('rejects exact EX-11 calls when the provider enlarges and omits the application-owned scope', async () => {
+        setEx11Project();
+        useEx11HostedFixture(
+            (plan) => plan,
+            (scope) => ({
+                ...scope,
+                targetIds: ['track-kick', 'track-hats', 'track-bass'],
+            })
+        );
+
+        await sendChatMessage(EX11_PROMPT);
+
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
+        expect(chatStore.value?.messages.at(-1)).toMatchObject({
+            role: 'assistant',
+            error: 'Provider attempted to enlarge or omit the application-owned scope.',
+        });
     });
 
     it('normalizes the hosted provider to the same semantic EX-11 batch', async () => {

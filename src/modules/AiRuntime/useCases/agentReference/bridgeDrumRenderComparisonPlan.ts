@@ -1,3 +1,4 @@
+import { type AgentRunScope } from '../../models/AgentRun';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
@@ -18,6 +19,7 @@ type BridgeDrumRenderComparisonPlanResult =
           actions: RuntimeAction[];
           identities: BatchLocalActionIdentity[];
           renderTailSeconds: number;
+          verifiedProviderProposalScope: AgentRunScope;
       };
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -111,5 +113,14 @@ export function bridgeDrumRenderComparisonPlan({
             { actionType: 'addDevice', actionOrdinal: 0, deviceId: compressorDeviceId },
         ],
         renderTailSeconds: fixed.renderTailSeconds,
+        verifiedProviderProposalScope: {
+            targetIds: scope.capability.closeDrums.map((track) => track.trackId),
+            targetRanges: scope.capability.renderSections.map((section) => ({
+                startBeat: section.startBeat,
+                endBeat: section.endBeat,
+            })),
+            protectedTargetIds: scope.capability.protectedObjects.map((target) => target.id),
+            protectedRanges: [],
+        },
     };
 }

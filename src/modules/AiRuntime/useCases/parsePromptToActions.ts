@@ -622,10 +622,7 @@ export const parsePromptToActions = inject({ logger })(
                     }
 
                     const verifiedProviderProposalScope =
-                        compiledList.compilerEvidence?.proposalScope ??
-                        (workflowCapabilityId !== undefined && providerProposal !== null
-                            ? providerProposal.scope
-                            : undefined);
+                        compiledList.compilerEvidence?.proposalScope ?? bridged.verifiedProviderProposalScope;
 
                     return {
                         actions: guarded.actions,
