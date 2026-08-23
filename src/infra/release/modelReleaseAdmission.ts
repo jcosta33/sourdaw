@@ -1,9 +1,17 @@
+const E2E_WEBLLM_ADMISSION_FLAG = '__SOURDAW_E2E_WEBLLM_ADMITTED__';
+
+function getBuildMode(): string | undefined {
+    const env = Reflect.get(import.meta, 'env');
+    if (typeof env !== 'object' || env === null) {
+        return undefined;
+    }
+
+    const mode = Reflect.get(env, 'MODE');
+    return typeof mode === 'string' ? mode : undefined;
+}
+
 function isE2eWebLlmAdmitted(): boolean {
-    return (
-        import.meta.env.MODE === 'e2e' &&
-        typeof window !== 'undefined' &&
-        Reflect.get(window, '__SOURDAW_E2E_WEBLLM_ADMITTED__') === true
-    );
+    return getBuildMode() === 'e2e' && Reflect.get(globalThis, E2E_WEBLLM_ADMISSION_FLAG) === true;
 }
 
 export const MODEL_RELEASE_ADMISSION = Object.freeze({
