@@ -195,7 +195,8 @@ describe('AutomergeSync', () => {
                 live = doc;
             });
             const onSyncApplied = vi.fn();
-            const sync = new AutomergeSync(makePeerManager(), { onSyncApplied });
+            const onSyncConverged = vi.fn();
+            const sync = new AutomergeSync(makePeerManager(), { onSyncApplied, onSyncConverged });
 
             const remote = change(remoteSeed, (draft) => {
                 draft.peerProbe = 'host-authoritative';
@@ -207,11 +208,13 @@ describe('AutomergeSync', () => {
             sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: messages[0]! });
 
             expect(onSyncApplied).not.toHaveBeenCalled();
+            expect(onSyncConverged).not.toHaveBeenCalled();
             for (const syncMessageBase64 of messages.slice(1)) {
                 sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
             }
 
             expect(onSyncApplied).toHaveBeenCalledExactlyOnceWith({ peerId: 'host-peer', docId: 'root' });
+            expect(onSyncConverged).toHaveBeenCalledExactlyOnceWith({ peerId: 'host-peer', docId: 'root' });
         }
     );
 

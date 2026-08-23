@@ -240,6 +240,28 @@ describe('durable asset ownership lifecycle', () => {
         await expect(transfer.reopenLocalAsset(staged.hash)).resolves.toMatchObject({ status: 'opened' });
     });
 
+    it('makes concurrent promotion from two repository owners transactionally idempotent', async () => {
+        const first = createDurableAssetRepository(TEST_OWNER);
+        const second = createDurableAssetRepository(TEST_OWNER);
+        const staged = await first.stageAsset(
+            'asset-stage-concurrent-promotion',
+            new Blob(['concurrent-promotion']),
+            'concurrent.wav'
+        );
+
+        const results = await Promise.all([
+            first.promoteStagedAsset(staged.leaseId, staged.hash),
+            second.promoteStagedAsset(staged.leaseId, staged.hash),
+        ]);
+
+        expect(results.map((result) => result.status).sort()).toEqual(['already-promoted', 'promoted']);
+        await expect(first.reopenDurableAsset(staged.hash)).resolves.toMatchObject({ status: 'opened' });
+        await expect(second.reopenStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            leaseState: 'promoted',
+        });
+    });
+
     it('releases and rebinds through targeted ownership indexes regardless of unrelated rows', async () => {
         for (let index = 0; index < 24; index += 1) {
             await createDurableAssetRepository(`project:unrelated-${String(index)}`).stageAsset(
@@ -299,5 +321,42 @@ describe('durable asset ownership lifecycle', () => {
             reason: 'unknown-lease',
         });
         await expect(repository.reopenDurableAsset(old.hash)).resolves.toMatchObject({ status: 'opened' });
+    });
+
+    it('caps fresh terminal receipts without deleting promoted blobs or recent retry evidence', async () => {
+        const repository = createDurableAssetRepository('project:receipt-count-cap');
+        const oldest = await repository.stageAsset(
+            'lease:receipt-oldest',
+            new Blob(['oldest-owned-original']),
+            'oldest.wav'
+        );
+        await repository.promoteStagedAsset(oldest.leaseId, oldest.hash);
+        const now = Date.now();
+        durableAssetIndexedDb.overwriteLeaseTerminalAt(oldest.leaseId, now - 1_000);
+        for (let index = 0; index < 4_095; index += 1) {
+            durableAssetIndexedDb.seedPromotedLease({
+                leaseId: `lease:receipt-recent-${String(index)}`,
+                ownerId: 'project:receipt-count-cap',
+                hash: oldest.hash,
+                terminalAt: now,
+            });
+        }
+        const trigger = await repository.stageAsset(
+            'lease:receipt-trigger',
+            new Blob(['trigger-owned-original']),
+            'trigger.wav'
+        );
+
+        await repository.promoteStagedAsset(trigger.leaseId, trigger.hash);
+
+        await expect(repository.reopenStagedAsset(oldest.leaseId, oldest.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'unknown-lease',
+        });
+        await expect(repository.promoteStagedAsset('lease:receipt-recent-4094', oldest.hash)).resolves.toMatchObject({
+            status: 'already-promoted',
+        });
+        await expect(repository.reopenDurableAsset(oldest.hash)).resolves.toMatchObject({ status: 'opened' });
+        await expect(repository.reopenDurableAsset(trigger.hash)).resolves.toMatchObject({ status: 'opened' });
     });
 });

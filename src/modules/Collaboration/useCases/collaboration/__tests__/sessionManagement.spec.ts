@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
 import {
     PEER_COLORS,
@@ -47,6 +47,7 @@ const automergeSyncMock = vi.hoisted(() => ({
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
+            onSyncConverged?: (input: { peerId: PeerId; docId: string }) => void;
             onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
             onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
         };
@@ -65,7 +66,7 @@ const assetTransferMock = vi.hoisted(() => ({
         getAsset: ReturnType<typeof vi.fn>;
         dispose: ReturnType<typeof vi.fn>;
         releaseStagedAsset: ReturnType<typeof vi.fn>;
-        rebindOwner: ReturnType<typeof vi.fn>;
+        rebindOwner: Mock<(ownerId: string) => Promise<{ status: 'rebound' }>>;
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
@@ -142,6 +143,7 @@ vi.mock('../../automergeSync', () => ({
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
             onPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
+            onSyncConverged?: (input: { peerId: PeerId; docId: string }) => void;
             onSyncQuarantine?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
             onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
         }
@@ -174,7 +176,9 @@ vi.mock('../../assetTransfer', () => ({
             getAsset: vi.fn(),
             dispose: vi.fn(),
             releaseStagedAsset: vi.fn(),
-            rebindOwner: vi.fn().mockResolvedValue({ status: 'rebound' }),
+            rebindOwner: vi
+                .fn<(ownerId: string) => Promise<{ status: 'rebound' }>>()
+                .mockResolvedValue({ status: 'rebound' }),
             options,
         };
         assetTransferMock.instances.push(instance);
@@ -405,10 +409,54 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const assetTransfer = latestAssetTransfer();
 
             currentOwnerId = 'project:host-authoritative';
-            latestAutomergeSync().hooks.onSyncApplied?.({ peerId: 'host-peer', docId: 'root' });
+            latestAutomergeSync().hooks.onSyncConverged?.({ peerId: 'host-peer', docId: 'root' });
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(assetTransfer.rebindOwner).toHaveBeenCalledExactlyOnceWith('project:host-authoritative');
+        });
+
+        it('continues owner convergence when a later host root replaces an intermediate projection', async () => {
+            sessionRuntimePrimitives.initialize('collaboration-join:attempt-multi-round', {
+                rebindToSynchronizedOwner: true,
+            });
+            collaborationStore.set(
+                makeState({
+                    isEnabled: true,
+                    isHost: false,
+                    peers: [
+                        {
+                            id: 'host-peer',
+                            name: 'Host',
+                            color: '#000',
+                            isHost: true,
+                            isConnected: true,
+                            lastSeen: 1,
+                            latencyMs: null,
+                        },
+                    ],
+                })
+            );
+            const assetTransfer = latestAssetTransfer();
+            const intermediateRebindStarted = Promise.withResolvers<void>();
+            const finishIntermediateRebind = Promise.withResolvers<void>();
+            assetTransfer.rebindOwner.mockImplementationOnce(async () => {
+                intermediateRebindStarted.resolve();
+                await finishIntermediateRebind.promise;
+                return { status: 'rebound' };
+            });
+
+            currentOwnerId = 'project:intermediate-projection';
+            latestAutomergeSync().hooks.onSyncConverged?.({ peerId: 'host-peer', docId: 'root' });
+            await intermediateRebindStarted.promise;
+            currentOwnerId = 'project:host-authoritative';
+            latestAutomergeSync().hooks.onSyncConverged?.({ peerId: 'host-peer', docId: 'root' });
+            finishIntermediateRebind.resolve();
+            await sessionRuntimePrimitives.flushAssetOwnership();
+
+            expect(assetTransfer.rebindOwner.mock.calls).toEqual([
+                ['project:intermediate-projection'],
+                ['project:host-authoritative'],
+            ]);
         });
 
         it('rebinds on an explicit host root sync when the synchronized project id equals the local id', async () => {
@@ -437,7 +485,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 rebindToSynchronizedOwner: true,
             });
 
-            latestAutomergeSync().hooks.onSyncApplied?.({ peerId: 'host-peer', docId: 'root' });
+            latestAutomergeSync().hooks.onSyncConverged?.({ peerId: 'host-peer', docId: 'root' });
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(latestAssetTransfer().rebindOwner).toHaveBeenCalledExactlyOnceWith('project:same-local-and-host-id');
@@ -465,7 +513,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 rebindToSynchronizedOwner: true,
             });
 
-            latestAutomergeSync().hooks.onSyncApplied?.({ peerId: 'collaborator-peer', docId: 'root' });
+            latestAutomergeSync().hooks.onSyncConverged?.({ peerId: 'collaborator-peer', docId: 'root' });
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(latestAssetTransfer().rebindOwner).not.toHaveBeenCalled();

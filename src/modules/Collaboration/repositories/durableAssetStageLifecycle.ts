@@ -103,7 +103,7 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
             if ('status' in asset) {
                 return asset;
             }
-            if (!records.ownerRetained(asset, ownerId)) {
+            if (!asset.ownerIds.includes(ownerId)) {
                 return { status: 'failed' as const, reason: 'asset-not-owned' as const };
             }
             return { status: 'opened' as const, ...records.asDurableAsset(asset) };
@@ -161,6 +161,23 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                 transaction.abort();
                 await completion.catch(() => undefined);
                 return { status: 'failed' as const, reason: 'lease-hash-mismatch' as const };
+            }
+            if (currentLease.state === 'promoted') {
+                if (
+                    !currentAsset.ownerIds.includes(ownerId) ||
+                    currentAsset.activeLeases.some((entry) => entry.leaseId === leaseId)
+                ) {
+                    transaction.abort();
+                    await completion.catch(() => undefined);
+                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
+                }
+                await completion;
+                await receipts.compactTerminalLeaseReceipts(ownerId);
+                return {
+                    status: 'already-promoted' as const,
+                    leaseId,
+                    ...records.asDurableAsset(currentAsset),
+                };
             }
             if (
                 currentLease.state !== 'staged' ||

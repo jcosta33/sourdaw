@@ -382,7 +382,7 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
         },
-        onSyncApplied: ({ peerId, docId }) => {
+        onSyncConverged: ({ peerId, docId }) => {
             const senderIsHost =
                 collaborationStore.value?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
             if (senderIsHost && docId === DOC_PREFIX_ROOT) {
@@ -495,8 +495,10 @@ function initializeSessionRuntime(
     );
 
     const assetTransfer = sessionState.assetTransfer;
-    let ownerSynchronized = options.rebindToSynchronizedOwner !== true;
+    let requestedOwnerSynchronizationGeneration = 0;
+    let settledOwnerSynchronizationGeneration = 0;
     let ownerSynchronizationQueued = false;
+    let synchronizedOwnerId: string | null = options.rebindToSynchronizedOwner ? null : assetOwnerId;
     const queueAssetOwnershipTask = (task: () => Promise<void>): void => {
         sessionState.assetOwnershipTask = sessionState.assetOwnershipTask
             .then(async () => {
@@ -512,19 +514,25 @@ function initializeSessionRuntime(
     };
     if (options.rebindToSynchronizedOwner) {
         sessionState.synchronizeAssetOwner = () => {
-            if (ownerSynchronized || ownerSynchronizationQueued) {
+            requestedOwnerSynchronizationGeneration += 1;
+            if (ownerSynchronizationQueued) {
                 return;
             }
             ownerSynchronizationQueued = true;
             queueAssetOwnershipTask(async () => {
                 try {
-                    const nextOwnerId = collaborationAssetOwnership.getOwnerId();
-                    const result = await assetTransfer.rebindOwner(nextOwnerId);
-                    if (result.status === 'failed') {
-                        throw new Error(`Durable asset owner rebind failed: ${result.reason}`);
+                    while (settledOwnerSynchronizationGeneration < requestedOwnerSynchronizationGeneration) {
+                        const targetGeneration = requestedOwnerSynchronizationGeneration;
+                        const nextOwnerId = collaborationAssetOwnership.getOwnerId();
+                        if (nextOwnerId !== synchronizedOwnerId) {
+                            const result = await assetTransfer.rebindOwner(nextOwnerId);
+                            if (result.status === 'failed') {
+                                throw new Error(`Durable asset owner rebind failed: ${result.reason}`);
+                            }
+                            synchronizedOwnerId = nextOwnerId;
+                        }
+                        settledOwnerSynchronizationGeneration = targetGeneration;
                     }
-                    ownerSynchronized = true;
-                    sessionState.synchronizeAssetOwner = null;
                 } finally {
                     ownerSynchronizationQueued = false;
                 }

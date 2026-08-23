@@ -163,6 +163,8 @@ export type AutomergeSyncHooks = {
     canApplySync?: (peerId: PeerId, docId: string) => boolean;
     /** Called after a received sync has replaced the authoritative document. */
     onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
+    /** Called once the installed document heads equal the heads advertised by this peer. */
+    onSyncConverged?: (input: { peerId: PeerId; docId: string }) => void;
     /** Called when an async persist after a received sync fails. */
     onPersistError?: (error: unknown) => void;
     /**
@@ -463,6 +465,9 @@ export class AutomergeSync {
         }
         if (!haveSameHeads(before_heads, getHeads(sanitized_doc))) {
             this.hooks.onSyncApplied?.({ peerId, docId });
+        }
+        if (newSyncState.theirHeads && haveSameHeads(getHeads(sanitized_doc), newSyncState.theirHeads)) {
+            this.hooks.onSyncConverged?.({ peerId, docId });
         }
 
         // Entry-level invalidation, run against the projected post-sync

@@ -123,6 +123,26 @@ describe('AssetTransfer durable ownership', () => {
         otherTransfer.dispose();
     });
 
+    it('does not serve a staged original to a peer before project ownership is promoted', async () => {
+        const staged = await transfer.stageLocalAsset(
+            new Blob(['private-staged-original']),
+            'private-staged.wav',
+            'asset-stage-private-peer'
+        );
+
+        await expect(transfer.reopenStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            leaseState: 'staged',
+        });
+        await transfer.handleMessage('requester', {
+            type: 'crdt-sync',
+            docId: DOC_ID_ASSET,
+            data: JSON.stringify({ type: 'asset.request', hash: staged.hash, missingChunks: [] }),
+        });
+
+        expect(peer.sendCrdtSync).not.toHaveBeenCalled();
+    });
+
     it('does not evict a newly restaged cache entry when an old release is retried', async () => {
         const first = await transfer.stageLocalAsset(
             new Blob(['restaged-content']),

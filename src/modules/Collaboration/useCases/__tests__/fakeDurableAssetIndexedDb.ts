@@ -167,6 +167,7 @@ export type FakeDurableAssetIndexedDb = {
     overwriteAssetBlob: (hash: string, blob: Blob) => void;
     overwriteLeaseHash: (leaseId: string, hash: string) => void;
     overwriteLeaseTerminalAt: (leaseId: string, terminalAt: number) => void;
+    seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
     countRecords: (store: 'assets' | 'leases') => number;
     getFullScanCount: () => number;
@@ -245,6 +246,16 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
             if (lease) {
                 leaseStore?.set(leaseId, { ...lease, terminalAt });
             }
+        },
+        seedPromotedLease: ({ leaseId, ownerId, hash, terminalAt }) => {
+            stores.get('leases')?.set(leaseId, {
+                schemaVersion: 2,
+                leaseId,
+                ownerId,
+                hash,
+                state: 'promoted',
+                terminalAt,
+            });
         },
         unlinkLeaseFromAsset: (leaseId, hash) => {
             const assetStore = stores.get('assets');
