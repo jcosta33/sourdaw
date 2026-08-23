@@ -236,6 +236,87 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('fences already-started pre-join staging ahead of its host-owner handoff', async () => {
+        const settledOwner = 'project:late-pre-join-stage';
+        const provisionalOwner = 'collaboration-join:late-prepared-assets';
+        const hostOwner = 'project:late-stage-host';
+        let releaseHashing!: () => void;
+        let signalHashingStarted!: () => void;
+        const hashingStarted = new Promise<void>((resolve) => {
+            signalHashingStarted = resolve;
+        });
+        const hashingMayFinish = new Promise<void>((resolve) => {
+            releaseHashing = resolve;
+        });
+        class DeferredBlob extends Blob {
+            override async arrayBuffer(): Promise<ArrayBuffer> {
+                signalHashingStarted();
+                await hashingMayFinish;
+                return new TextEncoder().encode('late-pre-join-original').buffer;
+            }
+        }
+        const lateBlob = new DeferredBlob(['late-pre-join-original'], { type: 'audio/wav' });
+        const settled = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, settledOwner);
+        const promotedPromise = settled.stageDurableAsset(
+            lateBlob,
+            'late-promote.wav',
+            'asset-stage-late-pre-join-promote'
+        );
+        await hashingStarted;
+        const releasedPromise = settled.stageDurableAsset(
+            new Blob(['late-pre-join-release'], { type: 'audio/wav' }),
+            'late-release.wav',
+            'asset-stage-late-pre-join-release'
+        );
+
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            undefined,
+            { durableStagingReady: false, handoffSourceOwnerIds: [settledOwner] }
+        );
+        const handoff = (async () => {
+            await joining.prepareDurableOwnerRebind(hostOwner);
+            await joining.commitDurableOwnerRebind(hostOwner);
+        })();
+        const handoffBeforeStage = await Promise.race([
+            handoff.then(() => true),
+            new Promise<false>((resolve) => setTimeout(() => resolve(false), 10)),
+        ]);
+        releaseHashing();
+        const promotedLease = await promotedPromise.catch((error: unknown) => {
+            throw new Error('Late promoted staging failed', { cause: error });
+        });
+        const releasedLease = await releasedPromise.catch((error: unknown) => {
+            throw new Error('Late released staging failed', { cause: error });
+        });
+        await handoff.catch((error: unknown) => {
+            throw new Error('Late staging handoff failed', { cause: error });
+        });
+        settled.dispose();
+        joining.dispose();
+
+        expect(handoffBeforeStage).toBe(false);
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, hostOwner);
+        await expect(
+            recreated.reopenDurableStagedAsset(promotedLease.leaseId, promotedLease.hash)
+        ).resolves.toMatchObject({ status: 'opened', hash: promotedLease.hash });
+        await expect(
+            recreated.promoteDurableStagedAsset(promotedLease.leaseId, promotedLease.hash)
+        ).resolves.toMatchObject({ status: 'promoted', hash: promotedLease.hash });
+        await expect(
+            recreated.releaseDurableStagedAsset(releasedLease.leaseId, releasedLease.hash)
+        ).resolves.toMatchObject({ status: 'released', hash: releasedLease.hash });
+        const staleOwner = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, settledOwner);
+        await expect(staleOwner.reopenDurableAsset(promotedLease.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'asset-not-owned',
+        });
+        staleOwner.dispose();
+        recreated.dispose();
+    });
+
     it('resumes a prepared owner handoff after restart before reopening its exact lease', async () => {
         const provisionalOwner = 'collaboration-join:crash-before-handoff-commit';
         const projectOwner = 'project:restart-authoritative';
@@ -408,6 +489,65 @@ describe('durable asset ownership lifecycle', () => {
         ).resolves.toMatchObject({ status: 'missing' });
         expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
         recreated.dispose();
+    });
+
+    it('recovers failed staged cleanup after transfer recreation without replaying its caller', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['discard-recovery'], { type: 'audio/wav' }),
+            'discard-recovery.wav',
+            'asset-stage-discard-recovery'
+        );
+        await expect(
+            transfer.prepareDurableCleanupRecovery('stem-cleanup:discard-recovery', [
+                { leaseId: staged.leaseId, expectedHash: staged.hash },
+            ])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        durableAssetIndexedDb.failNextReadwriteTransactions(1);
+        await expect(transfer.completeDurableCleanupRecovery('stem-cleanup:discard-recovery')).rejects.toThrow(
+            'aborted'
+        );
+        await expect(
+            transfer.prepareDurableCleanupRecovery('stem-cleanup:discard-recovery', [
+                { leaseId: staged.leaseId, expectedHash: staged.hash },
+            ])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(1);
+        transfer.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'missing-asset',
+        });
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        recreated.dispose();
+    });
+
+    it('fences cleanup from ordinary release and atomically transfers its exact claim to promotion', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['cleanup-to-promotion'], { type: 'audio/wav' }),
+            'cleanup-to-promotion.wav',
+            'asset-stage-cleanup-to-promotion'
+        );
+        const binding = { leaseId: staged.leaseId, expectedHash: staged.hash };
+        await expect(
+            transfer.prepareDurableCleanupRecovery('stem-cleanup:cleanup-to-promotion', [binding])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(
+            createDurableAssetRepository(TEST_OWNER).releaseStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toEqual({ status: 'failed', reason: 'lease-terminal-conflict' });
+
+        await expect(
+            transfer.prepareDurablePromotionRecovery('stem-promotion:cleanup-to-promotion', [binding])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(
+            transfer.completeDurableCleanupRecovery('stem-cleanup:cleanup-to-promotion')
+        ).resolves.toMatchObject({ status: 'missing' });
+        await expect(
+            transfer.completeDurablePromotionRecovery('stem-promotion:cleanup-to-promotion')
+        ).resolves.toMatchObject({ status: 'completed', promotedHashes: [staged.hash] });
+        await expect(transfer.reopenDurableAsset(staged.hash)).resolves.toMatchObject({ status: 'opened' });
     });
 
     it('makes concurrent promotion from two repository owners transactionally idempotent', async () => {

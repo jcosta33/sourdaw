@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    completeDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
+    prepareDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
     releaseDurableStagedAsset: vi.fn().mockResolvedValue({ status: 'released' }),
     releasePreviewAudioBuffer: vi.fn(),
     releaseStagedAsset: vi.fn(),
@@ -11,6 +13,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
+        completeDurableCleanupRecovery: mocks.completeDurableCleanupRecovery,
+        prepareDurableCleanupRecovery: mocks.prepareDurableCleanupRecovery,
         releaseDurableStagedAsset: mocks.releaseDurableStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,
     }),
@@ -36,7 +40,7 @@ describe('prepared stem import resource cleanup', () => {
         vi.clearAllMocks();
     });
 
-    it('deletes decoded audio and staged assets through the registered production owner before metadata removal', async () => {
+    it('deletes decoded audio and journals staged cleanup through the registered production owner', async () => {
         agentRunLifecycle.create({
             runId: 'stem-delete',
             request: 'Import stems.',
@@ -51,10 +55,11 @@ describe('prepared stem import resource cleanup', () => {
             failedAssetIds: [],
         });
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
-        expect(mocks.releaseDurableStagedAsset).toHaveBeenCalledExactlyOnceWith(
-            'staged-asset-1',
-            'hash-staged-asset-1'
-        );
+        expect(mocks.prepareDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith('stem-cleanup:["staged-asset-1"]', [
+            { leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' },
+        ]);
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith('stem-cleanup:["staged-asset-1"]');
+        expect(mocks.releaseDurableStagedAsset).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('stem-delete')?.temporaryAssets).toEqual([]);
     });
@@ -82,17 +87,33 @@ describe('prepared stem import resource cleanup', () => {
     });
 
     it('keeps failed confirmation cleanup executable until the durable lease releases', async () => {
-        mocks.releaseDurableStagedAsset
+        mocks.completeDurableCleanupRecovery
             .mockResolvedValueOnce({ status: 'failed', reason: 'transaction-aborted' })
-            .mockResolvedValueOnce({ status: 'released' });
+            .mockResolvedValueOnce({ status: 'completed' });
         const lease = createStemImportConfirmationResourceLease([
             { type: 'importStemSet', payload: { stems } },
         ] as never);
 
         await expect(lease?.release()).rejects.toThrow('cleanup remains pending');
-        await expect(preparedStemImportCleanup.retryPending()).resolves.toBeUndefined();
+        await expect(lease?.release()).resolves.toBeUndefined();
 
-        expect(mocks.releaseDurableStagedAsset).toHaveBeenCalledTimes(2);
+        expect(mocks.prepareDurableCleanupRecovery).toHaveBeenCalledTimes(2);
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledTimes(2);
+        expect(mocks.releaseDurableStagedAsset).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('persists exact cleanup ownership before a best-effort terminal path may swallow release failure', async () => {
+        mocks.completeDurableCleanupRecovery.mockResolvedValueOnce({
+            status: 'failed',
+            reason: 'transaction-aborted',
+        });
+
+        await expect(preparedStemImportCleanup.discardBestEffort(stems)).resolves.toBeUndefined();
+
+        expect(mocks.prepareDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith('stem-cleanup:["staged-asset-1"]', [
+            { leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' },
+        ]);
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith('stem-cleanup:["staged-asset-1"]');
     });
 });

@@ -9,6 +9,7 @@ import {
     PROMOTION_RECOVERY_STORE,
     type AssetRecord,
     type LeaseRecord,
+    type PromotionRecoveryRecord,
 } from './durableAssetIndexedDb';
 import { createDurableAssetReceiptRetention } from './durableAssetReceiptRetention';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
@@ -24,7 +25,8 @@ const receipts = createDurableAssetReceiptRetention();
 
 async function releaseStagedAssetSet(
     ownerId: string,
-    bindings: readonly StagedAssetBinding[]
+    bindings: readonly StagedAssetBinding[],
+    cleanupRecoveryId?: string
 ): Promise<ReleaseStagedAssetsResult> {
     const uniqueBindings = new Map<string, StagedAssetBinding>();
     for (const binding of bindings) {
@@ -93,6 +95,7 @@ async function releaseStagedAssetSet(
         value: leases.get(binding.leaseId),
     }));
 
+    const cleanupRecoveries = new Map<string, PromotionRecoveryRecord>();
     for (const [index, valuesForLease] of promotionValues.entries()) {
         if (!Array.isArray(valuesForLease)) {
             return fail('corrupt-record');
@@ -112,9 +115,24 @@ async function releaseStagedAssetSet(
             ) {
                 return fail('corrupt-record');
             }
+            if (recovery.recoveryId === cleanupRecoveryId && (recovery.disposition ?? 'promote') === 'release') {
+                cleanupRecoveries.set(recovery.recoveryId, recovery);
+            } else {
+                return fail('lease-terminal-conflict');
+            }
         }
-        if (valuesForLease.length > 0) {
-            return fail('lease-terminal-conflict');
+    }
+
+    if (cleanupRecoveryId !== undefined) {
+        const cleanup = cleanupRecoveries.get(cleanupRecoveryId);
+        if (
+            !cleanup ||
+            cleanup.bindings.length !== uniqueBindings.size ||
+            cleanup.bindings.some(
+                (binding) => uniqueBindings.get(binding.leaseId)?.expectedHash !== binding.expectedHash
+            )
+        ) {
+            return fail('corrupt-record');
         }
     }
 
@@ -193,6 +211,9 @@ async function releaseStagedAssetSet(
     for (const lease of nextLeases.values()) {
         leaseStore.put(lease);
     }
+    if (cleanupRecoveryId !== undefined) {
+        promotionStore.delete(cleanupRecoveryId);
+    }
     await completion;
     await receipts.compactTerminalLeaseReceipts(ownerId);
     for (const release of releases) {
@@ -215,8 +236,8 @@ export function createDurableAssetOwnershipLifecycle(ownerId: string) {
             return release ?? { status: 'failed' as const, reason: 'corrupt-record' as const };
         },
 
-        releaseStagedAssets(bindings: readonly StagedAssetBinding[]) {
-            return releaseStagedAssetSet(ownerId, bindings);
+        releaseStagedAssets(bindings: readonly StagedAssetBinding[], cleanupRecoveryId?: string) {
+            return releaseStagedAssetSet(ownerId, bindings, cleanupRecoveryId);
         },
 
         async releaseOwnedAsset(hash: string) {

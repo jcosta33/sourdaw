@@ -11,6 +11,7 @@ export type {
     DurableAssetRepository,
     CancelDurableAssetPromotionRecoveryResult,
     CompleteDurableAssetPromotionRecoveryResult,
+    CompleteDurableAssetCleanupRecoveryResult,
     PromoteStagedAssetResult,
     PrepareDurableAssetOwnerHandoffResult,
     PrepareDurableAssetPromotionRecoveryResult,
@@ -22,7 +23,7 @@ export type {
     ReopenDurableAssetResult,
     ReopenStagedAssetResult,
     ResumeDurableAssetOwnerHandoffsResult,
-    ResumeDurableAssetPromotionRecoveriesResult,
+    ResumeDurableAssetRecoveriesResult,
     StagedAssetBinding,
 } from './durableAssetRepositoryContract';
 
@@ -34,11 +35,17 @@ export function createDurableAssetRepository(ownerId: string): DurableAssetRepos
         throw new Error('Collaboration asset owner identity is required');
     }
     const stage = createDurableAssetStageLifecycle(ownerId);
+    const ownership = createDurableAssetOwnershipLifecycle(ownerId);
     return {
         ...stage,
-        ...createDurableAssetOwnershipLifecycle(ownerId),
+        ...ownership,
         ...createDurableAssetOwnerHandoffLifecycle(ownerId),
-        ...createDurableAssetPromotionRecoveryLifecycle(ownerId, stage.promoteStagedAsset, stage.reopenDurableAsset),
+        ...createDurableAssetPromotionRecoveryLifecycle(
+            ownerId,
+            stage.promoteStagedAsset,
+            stage.reopenDurableAsset,
+            ownership.releaseStagedAssets
+        ),
         subscribeInvalidation: records.subscribeInvalidation,
     };
 }

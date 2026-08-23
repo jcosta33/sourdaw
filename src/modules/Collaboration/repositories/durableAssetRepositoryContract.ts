@@ -36,8 +36,10 @@ export type CompleteDurableAssetPromotionRecoveryResult =
     { status: 'completed' | 'missing'; recoveryId: string; promotedHashes: string[] } | DurableAssetFailure;
 export type CancelDurableAssetPromotionRecoveryResult =
     { status: 'cancelled' | 'missing'; recoveryId: string } | DurableAssetFailure;
-export type ResumeDurableAssetPromotionRecoveriesResult =
+export type ResumeDurableAssetRecoveriesResult =
     { status: 'resumed'; ownerId: string; recoveryCount: number; promotedHashes: string[] } | DurableAssetFailure;
+export type CompleteDurableAssetCleanupRecoveryResult =
+    { status: 'completed' | 'missing'; recoveryId: string; releasedHashes: string[] } | DurableAssetFailure;
 export type ReleasedStagedAsset = Exclude<ReleaseStagedAssetResult, DurableAssetFailure>;
 export type ReleaseStagedAssetsResult = { status: 'released'; releases: ReleasedStagedAsset[] } | DurableAssetFailure;
 export type ReleaseOwnedAssetResult = { status: 'released'; hash: string; assetRemoved: boolean } | DurableAssetFailure;
@@ -75,6 +77,11 @@ export type DurableAssetRepository = {
     ) => Promise<PrepareDurableAssetPromotionRecoveryResult>;
     completePromotionRecovery: (recoveryId: string) => Promise<CompleteDurableAssetPromotionRecoveryResult>;
     cancelPromotionRecovery: (recoveryId: string) => Promise<CancelDurableAssetPromotionRecoveryResult>;
-    resumePromotionRecoveries: () => Promise<ResumeDurableAssetPromotionRecoveriesResult>;
+    prepareCleanupRecovery: (
+        recoveryId: string,
+        bindings: readonly StagedAssetBinding[]
+    ) => Promise<PrepareDurableAssetPromotionRecoveryResult>;
+    completeCleanupRecovery: (recoveryId: string) => Promise<CompleteDurableAssetCleanupRecoveryResult>;
+    resumeRecoveries: () => Promise<ResumeDurableAssetRecoveriesResult>;
     subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };

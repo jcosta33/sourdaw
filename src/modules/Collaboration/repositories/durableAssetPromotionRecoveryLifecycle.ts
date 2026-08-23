@@ -1,6 +1,7 @@
 import {
     ASSET_STORE,
     LEASE_STORE,
+    PROMOTION_RECOVERY_LEASE_INDEX,
     PROMOTION_RECOVERY_OWNER_INDEX,
     PROMOTION_RECOVERY_SCHEMA_VERSION,
     PROMOTION_RECOVERY_STORE,
@@ -10,11 +11,17 @@ import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
 import {
     type DurableAssetFailure,
     type PromoteStagedAssetResult,
+    type ReleaseStagedAssetsResult,
     type ReopenDurableAssetResult,
     type StagedAssetBinding,
 } from './durableAssetRepositoryContract';
 
 const records = createDurableAssetRecordAccess();
+type RecoveryDisposition = 'promote' | 'release';
+
+function getRecoveryDisposition(record: PromotionRecoveryRecord): RecoveryDisposition {
+    return record.disposition ?? 'promote';
+}
 
 function normalizeBindings(bindings: readonly StagedAssetBinding[]): StagedAssetBinding[] | DurableAssetFailure {
     if (bindings.length === 0) {
@@ -49,11 +56,15 @@ function haveSameBindings(left: readonly StagedAssetBinding[], right: readonly S
     );
 }
 
-/** Own crash-restart promotion of committed project asset leases without replaying their project action. */
+/** Own crash-restart promotion or cleanup of exact durable leases without replaying their caller. */
 export function createDurableAssetPromotionRecoveryLifecycle(
     ownerId: string,
     promoteStagedAsset: (leaseId: string, expectedHash: string) => Promise<PromoteStagedAssetResult>,
-    reopenDurableAsset: (hash: string) => Promise<ReopenDurableAssetResult>
+    reopenDurableAsset: (hash: string) => Promise<ReopenDurableAssetResult>,
+    releaseStagedAssets: (
+        bindings: readonly StagedAssetBinding[],
+        cleanupRecoveryId?: string
+    ) => Promise<ReleaseStagedAssetsResult>
 ) {
     async function readRecovery(recoveryId: string): Promise<PromotionRecoveryRecord | DurableAssetFailure | null> {
         const database = await records.openDurableAssetDatabase();
@@ -90,6 +101,18 @@ export function createDurableAssetPromotionRecoveryLifecycle(
     }
 
     async function completeRecord(record: PromotionRecoveryRecord) {
+        if (getRecoveryDisposition(record) === 'release') {
+            const released = await releaseStagedAssets(record.bindings, record.recoveryId);
+            if (released.status === 'failed') {
+                return released;
+            }
+            return {
+                status: 'completed' as const,
+                disposition: 'release' as const,
+                recoveryId: record.recoveryId,
+                releasedHashes: [...new Set(released.releases.map((release) => release.hash))],
+            };
+        }
         const promotedHashes = new Set<string>();
         for (const binding of record.bindings) {
             const promoted = await promoteStagedAsset(binding.leaseId, binding.expectedHash);
@@ -110,97 +133,142 @@ export function createDurableAssetPromotionRecoveryLifecycle(
         }
         return {
             status: 'completed' as const,
+            disposition: 'promote' as const,
             recoveryId: record.recoveryId,
             promotedHashes: [...promotedHashes],
         };
     }
 
+    async function prepareRecovery(
+        recoveryId: string,
+        bindings: readonly StagedAssetBinding[],
+        disposition: RecoveryDisposition
+    ) {
+        if (recoveryId.length === 0) {
+            throw new Error('Durable asset recovery identity is required');
+        }
+        const normalized = normalizeBindings(bindings);
+        if ('status' in normalized) {
+            return normalized;
+        }
+        const database = await records.openDurableAssetDatabase();
+        const transaction = database.transaction([ASSET_STORE, LEASE_STORE, PROMOTION_RECOVERY_STORE], 'readwrite');
+        const completion = records.awaitTransaction(transaction);
+        const assetStore = transaction.objectStore(ASSET_STORE);
+        const leaseStore = transaction.objectStore(LEASE_STORE);
+        const recoveryStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
+        const values = await Promise.all([
+            records.readStoredValue(recoveryStore, recoveryId),
+            ...normalized.map((binding) => records.readStoredValue(leaseStore, binding.leaseId)),
+            ...normalized.map((binding) => records.readStoredValue(assetStore, binding.expectedHash)),
+            ...normalized.map((binding) =>
+                records.readIndexedValues(recoveryStore, PROMOTION_RECOVERY_LEASE_INDEX, binding.leaseId)
+            ),
+        ]);
+        const existing = values[0];
+        const leaseValues = values.slice(1, normalized.length + 1);
+        const assetValues = values.slice(normalized.length + 1, normalized.length * 2 + 1);
+        const indexedRecoveryValues = values.slice(normalized.length * 2 + 1);
+        const indexedRecoveries = new Map<string, PromotionRecoveryRecord>();
+        for (const [index, binding] of normalized.entries()) {
+            const leaseValue = leaseValues[index];
+            const assetValue = assetValues[index];
+            if (!records.isLeaseRecord(leaseValue) || !records.isAssetRecord(assetValue)) {
+                return fail('corrupt-record');
+            }
+            const lease = leaseValue;
+            const asset = assetValue;
+            if (lease.leaseId !== binding.leaseId || asset.hash !== binding.expectedHash) {
+                return fail('corrupt-record');
+            }
+            if (lease.ownerId !== ownerId) {
+                return fail('lease-owner-mismatch');
+            }
+            if (lease.hash !== binding.expectedHash) {
+                return fail('lease-hash-mismatch');
+            }
+            if (lease.state === 'released') {
+                return fail('lease-terminal-conflict');
+            }
+            const exactBacklink =
+                lease.state === 'staged'
+                    ? asset.activeLeases.some(
+                          (candidate) => candidate.leaseId === binding.leaseId && candidate.ownerId === ownerId
+                      )
+                    : asset.ownerIds.includes(ownerId) &&
+                      !asset.activeLeases.some((candidate) => candidate.leaseId === binding.leaseId);
+            if (!exactBacklink) {
+                return fail('corrupt-record');
+            }
+            const recoveriesForLease = indexedRecoveryValues[index];
+            if (!Array.isArray(recoveriesForLease)) {
+                return fail('corrupt-record');
+            }
+            for (const recovery of recoveriesForLease) {
+                if (
+                    !records.isPromotionRecoveryRecord(recovery) ||
+                    recovery.ownerId !== ownerId ||
+                    !recovery.bindings.some(
+                        (candidate) =>
+                            candidate.leaseId === binding.leaseId && candidate.expectedHash === binding.expectedHash
+                    )
+                ) {
+                    return fail('corrupt-record');
+                }
+                indexedRecoveries.set(recovery.recoveryId, recovery);
+            }
+        }
+        if (existing !== undefined && !records.isPromotionRecoveryRecord(existing)) {
+            return fail('corrupt-record');
+        }
+        if (records.isPromotionRecoveryRecord(existing)) {
+            indexedRecoveries.set(existing.recoveryId, existing);
+        }
+        for (const recovery of indexedRecoveries.values()) {
+            const sameClaim =
+                recovery.recoveryId === recoveryId &&
+                recovery.ownerId === ownerId &&
+                getRecoveryDisposition(recovery) === disposition &&
+                haveSameBindings(recovery.bindings, normalized);
+            if (sameClaim) {
+                continue;
+            }
+            const replaceCleanupWithPromotion =
+                disposition === 'promote' &&
+                getRecoveryDisposition(recovery) === 'release' &&
+                recovery.ownerId === ownerId &&
+                haveSameBindings(recovery.bindings, normalized);
+            if (!replaceCleanupWithPromotion) {
+                return fail('owner-handoff-conflict');
+            }
+            recoveryStore.delete(recovery.recoveryId);
+        }
+        recoveryStore.put({
+            schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+            recoveryId,
+            ownerId,
+            leaseIds: normalized.map((binding) => binding.leaseId),
+            bindings: normalized,
+            disposition,
+            preparedAt: records.isPromotionRecoveryRecord(existing) ? existing.preparedAt : Date.now(),
+        } satisfies PromotionRecoveryRecord);
+        await completion;
+        return { status: 'prepared' as const, recoveryId, ownerId };
+
+        async function fail(reason: DurableAssetFailure['reason']): Promise<DurableAssetFailure> {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'failed', reason };
+        }
+    }
+
     return {
         async preparePromotionRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
-            if (recoveryId.length === 0) {
-                throw new Error('Durable asset promotion recovery identity is required');
-            }
-            const normalized = normalizeBindings(bindings);
-            if ('status' in normalized) {
-                return normalized;
-            }
-            const database = await records.openDurableAssetDatabase();
-            const transaction = database.transaction([ASSET_STORE, LEASE_STORE, PROMOTION_RECOVERY_STORE], 'readwrite');
-            const completion = records.awaitTransaction(transaction);
-            const assetStore = transaction.objectStore(ASSET_STORE);
-            const leaseStore = transaction.objectStore(LEASE_STORE);
-            const recoveryStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
-            const values = await Promise.all([
-                records.readStoredValue(recoveryStore, recoveryId),
-                ...normalized.map((binding) => records.readStoredValue(leaseStore, binding.leaseId)),
-                ...normalized.map((binding) => records.readStoredValue(assetStore, binding.expectedHash)),
-            ]);
-            const existing = values[0];
-            const leaseValues = values.slice(1, normalized.length + 1);
-            const assetValues = values.slice(normalized.length + 1);
-            for (const [index, binding] of normalized.entries()) {
-                const leaseValue = leaseValues[index];
-                const assetValue = assetValues[index];
-                if (!records.isLeaseRecord(leaseValue) || !records.isAssetRecord(assetValue)) {
-                    transaction.abort();
-                    await completion.catch(() => undefined);
-                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
-                }
-                const lease = leaseValue;
-                const asset = assetValue;
-                if (lease.leaseId !== binding.leaseId || asset.hash !== binding.expectedHash) {
-                    transaction.abort();
-                    await completion.catch(() => undefined);
-                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
-                }
-                if (lease.ownerId !== ownerId) {
-                    transaction.abort();
-                    await completion.catch(() => undefined);
-                    return { status: 'failed' as const, reason: 'lease-owner-mismatch' as const };
-                }
-                if (lease.hash !== binding.expectedHash) {
-                    transaction.abort();
-                    await completion.catch(() => undefined);
-                    return { status: 'failed' as const, reason: 'lease-hash-mismatch' as const };
-                }
-                if (lease.state === 'released') {
-                    transaction.abort();
-                    await completion.catch(() => undefined);
-                    return { status: 'failed' as const, reason: 'lease-terminal-conflict' as const };
-                }
-                const exactBacklink =
-                    lease.state === 'staged'
-                        ? asset.activeLeases.some(
-                              (candidate) => candidate.leaseId === binding.leaseId && candidate.ownerId === ownerId
-                          )
-                        : asset.ownerIds.includes(ownerId) &&
-                          !asset.activeLeases.some((candidate) => candidate.leaseId === binding.leaseId);
-                if (!exactBacklink) {
-                    transaction.abort();
-                    await completion.catch(() => undefined);
-                    return { status: 'failed' as const, reason: 'corrupt-record' as const };
-                }
-            }
-            if (
-                existing !== undefined &&
-                (!records.isPromotionRecoveryRecord(existing) ||
-                    existing.ownerId !== ownerId ||
-                    !haveSameBindings(existing.bindings, normalized))
-            ) {
-                transaction.abort();
-                await completion.catch(() => undefined);
-                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
-            }
-            recoveryStore.put({
-                schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
-                recoveryId,
-                ownerId,
-                leaseIds: normalized.map((binding) => binding.leaseId),
-                bindings: normalized,
-                preparedAt: records.isPromotionRecoveryRecord(existing) ? existing.preparedAt : Date.now(),
-            } satisfies PromotionRecoveryRecord);
-            await completion;
-            return { status: 'prepared' as const, recoveryId, ownerId };
+            return prepareRecovery(recoveryId, bindings, 'promote');
+        },
+
+        async prepareCleanupRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
+            return prepareRecovery(recoveryId, bindings, 'release');
         },
 
         async completePromotionRecovery(recoveryId: string) {
@@ -211,7 +279,38 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             if ('status' in recovery) {
                 return recovery;
             }
-            return completeRecord(recovery);
+            if (getRecoveryDisposition(recovery) !== 'promote') {
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+            }
+            const completed = await completeRecord(recovery);
+            if (completed.status === 'failed') {
+                return completed;
+            }
+            if (completed.disposition !== 'promote') {
+                return { status: 'failed' as const, reason: 'corrupt-record' as const };
+            }
+            return { status: 'completed' as const, recoveryId, promotedHashes: completed.promotedHashes };
+        },
+
+        async completeCleanupRecovery(recoveryId: string) {
+            const recovery = await readRecovery(recoveryId);
+            if (recovery === null) {
+                return { status: 'missing' as const, recoveryId, releasedHashes: [] };
+            }
+            if ('status' in recovery) {
+                return recovery;
+            }
+            if (getRecoveryDisposition(recovery) !== 'release') {
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+            }
+            const completed = await completeRecord(recovery);
+            if (completed.status === 'failed') {
+                return completed;
+            }
+            if (completed.disposition !== 'release') {
+                return { status: 'failed' as const, reason: 'corrupt-record' as const };
+            }
+            return { status: 'completed' as const, recoveryId, releasedHashes: completed.releasedHashes };
         },
 
         async cancelPromotionRecovery(recoveryId: string) {
@@ -222,11 +321,14 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             if ('status' in recovery) {
                 return recovery;
             }
+            if (getRecoveryDisposition(recovery) !== 'promote') {
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+            }
             const deletionFailure = await deleteRecovery(recoveryId);
             return deletionFailure ?? { status: 'cancelled' as const, recoveryId };
         },
 
-        async resumePromotionRecoveries() {
+        async resumeRecoveries() {
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readonly');
             const completion = records.awaitTransaction(transaction);
@@ -245,8 +347,10 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                 if (completed.status === 'failed') {
                     return completed;
                 }
-                for (const hash of completed.promotedHashes) {
-                    promotedHashes.add(hash);
+                if (completed.disposition === 'promote') {
+                    for (const hash of completed.promotedHashes) {
+                        promotedHashes.add(hash);
+                    }
                 }
             }
             return {

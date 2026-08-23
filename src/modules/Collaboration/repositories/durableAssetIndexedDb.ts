@@ -45,6 +45,7 @@ export type PromotionRecoveryRecord = {
     ownerId: string;
     leaseIds: string[];
     bindings: Array<{ leaseId: string; expectedHash: string }>;
+    disposition?: 'promote' | 'release';
     preparedAt: number;
 };
 
@@ -282,6 +283,7 @@ function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRe
         recoveryLeaseIds.length !== record.leaseIds.length ||
         !Array.isArray(record.bindings) ||
         record.bindings.length === 0 ||
+        (record.disposition !== undefined && record.disposition !== 'promote' && record.disposition !== 'release') ||
         typeof record.preparedAt !== 'number' ||
         !Number.isSafeInteger(record.preparedAt)
     ) {

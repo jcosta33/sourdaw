@@ -76,6 +76,10 @@ type LocalAssetEntry = {
 
 type DurableAssetCacheEntry = Pick<LocalAssetEntry, 'blob' | 'name'>;
 
+// Reserve durable operations when called, not when a per-instance predecessor
+// settles, so a handoff cannot overtake staging already accepted by any transfer.
+let durableOwnerOperationTail: Promise<void> = Promise.resolve();
+
 type AssetTransferDurabilityOptions = {
     durableStagingReady?: boolean;
     handoffSourceOwnerIds?: readonly string[];
@@ -363,20 +367,36 @@ export class AssetTransfer {
 
     /** Persist exact committed-asset promotion ownership before the project transaction starts. */
     async prepareDurablePromotionRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
-        return this.runOwnerOperation((durableAssets) => durableAssets.preparePromotionRecovery(recoveryId, bindings));
+        return this.runOwnerOperation((durableAssets) => durableAssets.preparePromotionRecovery(recoveryId, bindings), {
+            resumeRecoveries: false,
+        });
     }
 
     /** Prove every committed lease promoted before retiring its durable recovery journal. */
     async completeDurablePromotionRecovery(recoveryId: string) {
         return this.runOwnerOperation((durableAssets) => durableAssets.completePromotionRecovery(recoveryId), {
-            resumePromotionRecoveries: false,
+            resumeRecoveries: false,
         });
     }
 
     /** Retire a pre-commit recovery claim before releasing its staged leases. */
     async cancelDurablePromotionRecovery(recoveryId: string) {
         return this.runOwnerOperation((durableAssets) => durableAssets.cancelPromotionRecovery(recoveryId), {
-            resumePromotionRecoveries: false,
+            resumeRecoveries: false,
+        });
+    }
+
+    /** Persist exact staged-asset cleanup ownership before a terminal caller may disappear. */
+    async prepareDurableCleanupRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
+        return this.runOwnerOperation((durableAssets) => durableAssets.prepareCleanupRecovery(recoveryId, bindings), {
+            resumeRecoveries: false,
+        });
+    }
+
+    /** Release every cleanup-owned lease and retire its journal atomically. */
+    async completeDurableCleanupRecovery(recoveryId: string) {
+        return this.runOwnerOperation((durableAssets) => durableAssets.completeCleanupRecovery(recoveryId), {
+            resumeRecoveries: false,
         });
     }
 
@@ -441,9 +461,11 @@ export class AssetTransfer {
 
     private runOwnerOperation<Result>(
         operation: (durableAssets: DurableAssetRepository) => Promise<Result>,
-        options: { resumePromotionRecoveries?: boolean } = {}
+        options: { resumeRecoveries?: boolean } = {}
     ): Promise<Result> {
-        const task = this.ownerOperationTail.then(() => {
+        const transferPredecessor = this.ownerOperationTail;
+        const task = durableOwnerOperationTail.then(async () => {
+            await transferPredecessor;
             if (this.disposed) {
                 throw new Error('AssetTransfer is disposed');
             }
@@ -455,8 +477,8 @@ export class AssetTransfer {
                     }
                     this.ownerRecoveryPending = false;
                 }
-                if (options.resumePromotionRecoveries !== false) {
-                    const recovery = await this.durableAssets.resumePromotionRecoveries();
+                if (options.resumeRecoveries !== false) {
+                    const recovery = await this.durableAssets.resumeRecoveries();
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset promotion recovery failed: ${recovery.reason}`);
                     }
@@ -464,6 +486,10 @@ export class AssetTransfer {
                 return operation(this.durableAssets);
             })();
         });
+        durableOwnerOperationTail = task.then(
+            () => undefined,
+            () => undefined
+        );
         this.ownerOperationTail = task.then(
             () => undefined,
             () => undefined

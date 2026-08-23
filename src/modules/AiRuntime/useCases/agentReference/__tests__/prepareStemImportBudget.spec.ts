@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
     assetTransfer: null as null | {
         stageDurableAsset: (file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>;
         stageLocalAsset: (file: File, name: string) => Promise<{ hash: string; leaseId: string }>;
+        prepareDurableCleanupRecovery: (recoveryId: string, bindings: unknown[]) => Promise<{ status: string }>;
+        completeDurableCleanupRecovery: (recoveryId: string) => Promise<{ status: string; reason?: string }>;
         releaseDurableStagedAsset: (leaseId: string, hash: string) => Promise<{ status: string; reason?: string }>;
     },
     decodeAudioFile: vi.fn(),
@@ -11,6 +13,8 @@ const mocks = vi.hoisted(() => ({
     pickFiles: vi.fn<() => Promise<File[] | null>>(),
     stageDurableAsset: vi.fn(),
     stageLocalAsset: vi.fn(),
+    prepareDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
+    completeDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
     releaseDurableStagedAsset: vi.fn().mockResolvedValue({ status: 'released' }),
 }));
 
@@ -41,6 +45,8 @@ describe('prepareStemImport budget admission', () => {
         mocks.assetTransfer = {
             stageDurableAsset: mocks.stageDurableAsset,
             stageLocalAsset: mocks.stageLocalAsset,
+            prepareDurableCleanupRecovery: mocks.prepareDurableCleanupRecovery,
+            completeDurableCleanupRecovery: mocks.completeDurableCleanupRecovery,
             releaseDurableStagedAsset: mocks.releaseDurableStagedAsset,
         };
     });
@@ -147,13 +153,16 @@ describe('prepareStemImport budget admission', () => {
             })
             .mockRejectedValueOnce(new Error('decode primary failure'));
         mocks.stageDurableAsset.mockResolvedValue({ hash: 'hash-kick.wav', leaseId: 'asset-stage-kick' });
-        mocks.releaseDurableStagedAsset.mockResolvedValueOnce({
+        mocks.completeDurableCleanupRecovery.mockResolvedValueOnce({
             status: 'failed',
             reason: 'transaction-aborted',
         });
 
         await expect(prepareStemImport(undefined, () => true)).rejects.toThrow('decode primary failure');
-        expect(mocks.releaseDurableStagedAsset).toHaveBeenCalledWith('asset-stage-kick', 'hash-kick.wav');
+        expect(mocks.prepareDurableCleanupRecovery).toHaveBeenCalledWith('stem-cleanup:["asset-stage-kick"]', [
+            { leaseId: 'asset-stage-kick', expectedHash: 'hash-kick.wav' },
+        ]);
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledWith('stem-cleanup:["asset-stage-kick"]');
     });
 
     it('reopens every prepared lease and hash after the settled-owner transfer is recreated', async () => {
@@ -185,6 +194,8 @@ describe('prepareStemImport budget admission', () => {
                           }
                         : { status: 'failed' as const, reason: 'unknown-lease' as const };
                 },
+                prepareDurableCleanupRecovery: async () => ({ status: 'prepared' as const }),
+                completeDurableCleanupRecovery: async () => ({ status: 'completed' as const }),
                 releaseDurableStagedAsset: async () => ({ status: 'released' as const }),
             };
         }
