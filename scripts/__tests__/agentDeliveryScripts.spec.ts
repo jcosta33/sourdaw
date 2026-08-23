@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -8,6 +10,7 @@ import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
     BOOTSTRAP_PATH,
     executeTrustedSnapshot,
+    HOISTED_BOOTSTRAP_ARGUMENT,
     hoistToOriginBootstrap,
     REPOSITORY_ROOT_ENV,
     runTrustedGithubWriteCommand,
@@ -18,6 +21,43 @@ import {
 
 import type { DeliveryAuthentication, DeliveryCoordinatorDependencies, DeliveryPort } from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
+
+function runGit(repository: string, args: string[]): string {
+    const env = { ...process.env };
+    delete env.GIT_DIR;
+    delete env.GIT_WORK_TREE;
+    return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
+}
+
+function trustedPublishFixture(root: string, policy: string): void {
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({
+            type: 'module',
+            private: true,
+            scripts: { 'lane:publish': 'node scripts/trustedGithubWriteBootstrap.ts lane:publish' },
+        })
+    );
+    writeFileSync(
+        join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
+        readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8')
+    );
+    writeFileSync(
+        join(root, 'scripts/publishLane.ts'),
+        "import { appendFileSync } from 'node:fs';\n" +
+            "import { publishingPermission } from './githubAppIdentity.ts';\n" +
+            `export async function runPublishLaneCli(args) { appendFileSync(args[0], ${JSON.stringify(policy)} + ':' + publishingPermission + '\\n'); return 0; }\n`
+    );
+    writeFileSync(join(root, 'scripts/githubAppIdentity.ts'), 'export const publishingPermission = "ordinary";\n');
+    writeFileSync(join(root, 'scripts/prContract.ts'), 'export {};\n');
+    runGit(root, ['init', '-b', 'main']);
+    runGit(root, ['config', 'user.name', 'Fixture']);
+    runGit(root, ['config', 'user.email', 'fixture@example.com']);
+    runGit(root, ['add', '.']);
+    runGit(root, ['commit', '--no-gpg-sign', '-m', 'test: trusted publishing fixture']);
+    runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+}
 
 describe('package scripts and gitignore', () => {
     it('defines the trusted pnpm commands as direct node invocations', () => {
@@ -129,36 +169,65 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
-    it('pins lane publishing and its authentication policy to one origin/main source closure', async () => {
+    it('runs the package route from the checkout origin despite a poisoned root and modified lane helper', () => {
         expect(trustedDependencyPaths('lane:publish')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/publishLane.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-package-'));
+        const checkout = join(fixtureRoot, 'checkout');
+        const poison = join(fixtureRoot, 'poison');
+        const policyLog = join(fixtureRoot, 'policy.log');
+        mkdirSync(checkout);
+        mkdirSync(poison);
+        try {
+            trustedPublishFixture(checkout, 'checkout');
+            trustedPublishFixture(poison, 'poison');
+            writeFileSync(
+                join(checkout, 'scripts/githubAppIdentity.ts'),
+                'export const publishingPermission = "workflow-write";\n'
+            );
 
-        const laneLocalHelper = 'export const AUTHOR_MINT_PERMISSIONS = { workflows: "write" };';
-        const trustedSources = new Map([
-            ['scripts/trustedGithubWriteBootstrap.ts', 'trusted bootstrap'],
-            [
-                'scripts/publishLane.ts',
-                "import { publishingPermission } from './githubAppIdentity.ts';\n" +
-                    'export async function runPublishLaneCli() { return publishingPermission === "ordinary" ? 0 : 1; }',
-            ],
-            ['scripts/githubAppIdentity.ts', 'export const publishingPermission = "ordinary";'],
-            ['scripts/prContract.ts', 'export {};'],
-        ]);
-        const result = await runTrustedGithubWriteCommand('lane:publish', ['2745'], {
-            resolveOriginMain: () => 'trusted-head',
-            readOriginSource: (commit, path) => {
-                expect(commit).toBe('trusted-head');
-                return trustedSources.get(path) ?? '';
-            },
-            executeSnapshot: executeTrustedSnapshot,
-        });
+            execFileSync('pnpm', ['lane:publish', policyLog], {
+                cwd: checkout,
+                env: { ...process.env, [REPOSITORY_ROOT_ENV]: poison },
+                encoding: 'utf8',
+            });
 
-        expect(result).toBe(0);
-        expect(trustedSources.get('scripts/githubAppIdentity.ts')).not.toBe(laneLocalHelper);
+            expect(readFileSync(policyLog, 'utf8')).toBe('checkout:ordinary\n');
+
+            writeFileSync(
+                join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'),
+                `${readFileSync(join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')}\n// lane-local drift\n`
+            );
+            writeFileSync(policyLog, '');
+            execFileSync('pnpm', ['lane:publish', policyLog], {
+                cwd: checkout,
+                env: { ...process.env, [REPOSITORY_ROOT_ENV]: poison },
+                encoding: 'utf8',
+            });
+            expect(readFileSync(policyLog, 'utf8')).toBe('checkout:ordinary\n');
+
+            const checkoutHead = runGit(checkout, ['rev-parse', 'refs/remotes/origin/main']);
+            expect(() =>
+                execFileSync(
+                    process.execPath,
+                    [
+                        join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'),
+                        HOISTED_BOOTSTRAP_ARGUMENT,
+                        checkout,
+                        join(poison, '.git'),
+                        checkoutHead,
+                        'lane:publish',
+                    ],
+                    { cwd: checkout, encoding: 'utf8' }
+                )
+            ).toThrow();
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
     });
 
     it('resolves the trusted snapshot with no inherited Git or GitHub routing', () => {
@@ -177,7 +246,7 @@ describe('package scripts and gitignore', () => {
         expect(env.GH_TOKEN).toBeUndefined();
         expect(env.GITHUB_TOKEN).toBeUndefined();
         expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
-        expect(env.SOURDAW_TRUSTED_REPOSITORY_ROOT).toBe('/repo');
+        expect(env.SOURDAW_TRUSTED_REPOSITORY_ROOT).toBeUndefined();
         expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
         expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
     });
@@ -216,31 +285,34 @@ describe('package scripts and gitignore', () => {
     });
 
     it('hands the invocation to origin/main when the executing loader differs', async () => {
-        const origin = `loader ${REPOSITORY_ROOT_ENV}`;
+        const origin = `loader ${HOISTED_BOOTSTRAP_ARGUMENT}`;
 
         expect(shouldHoistToOrigin(origin, origin)).toBe(false);
         expect(shouldHoistToOrigin('lane loader', origin)).toBe(true);
-        // An origin copy that predates the root-from-caller contract derives the
-        // repository root from its own module URL, so hoisting to it out of a
-        // temporary directory would run git against that directory.
-        expect(shouldHoistToOrigin('lane loader', 'loader without the contract')).toBe(false);
+        expect(() => shouldHoistToOrigin('lane loader', 'loader without the contract')).toThrow(
+            /cannot accept a verified repository binding/
+        );
     });
 
     it('runs the hoisted loader from origin bytes and tells it the repository root', async () => {
         const seen: Array<{ source: string; argv: string[]; repositoryRoot: string }> = [];
         const exitCode = await hoistToOriginBootstrap(
-            `origin loader ${REPOSITORY_ROOT_ENV}`,
-            '/repo/root',
+            `origin loader ${HOISTED_BOOTSTRAP_ARGUMENT}`,
+            { checkoutRoot: '/repo/root', commonDir: '/repo/.git', commit: 'trusted-head' },
             ['deliver', '2633'],
-            (entryPath, argv, repositoryRoot) => {
-                seen.push({ source: readFileSync(entryPath, 'utf8'), argv, repositoryRoot });
+            (entryPath, argv, binding) => {
+                seen.push({ source: readFileSync(entryPath, 'utf8'), argv, repositoryRoot: binding.checkoutRoot });
                 return 7;
             }
         );
 
         expect(exitCode).toBe(7);
         expect(seen).toEqual([
-            { source: `origin loader ${REPOSITORY_ROOT_ENV}`, argv: ['deliver', '2633'], repositoryRoot: '/repo/root' },
+            {
+                source: `origin loader ${HOISTED_BOOTSTRAP_ARGUMENT}`,
+                argv: ['deliver', '2633'],
+                repositoryRoot: '/repo/root',
+            },
         ]);
     });
 

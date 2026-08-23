@@ -263,16 +263,18 @@ export async function authenticateRole(input: {
 }
 
 const AUTHOR_WORKFLOW_PATH_PREFIX = '.github/workflows/';
-const COMMITTED_DIFF_PATH_ARGS = [
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--name-only',
-    '--no-renames',
-    '-z',
-    'origin/main...HEAD',
-    '--',
-];
+function committedDiffPathArgs(headSha: string): string[] {
+    return [
+        'diff',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--name-only',
+        '--no-renames',
+        '-z',
+        `origin/main...${headSha}`,
+        '--',
+    ];
+}
 
 /**
  * Authorization reads use only the repository named by `cwd`. Inherited Git routing can redirect
@@ -309,13 +311,14 @@ export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.en
 export function authorWorkflowWriteRequired(
     lane: string,
     capture?: CommandCapture,
-    parentEnv: NodeJS.ProcessEnv = process.env
+    parentEnv: NodeJS.ProcessEnv = process.env,
+    headSha: string = 'HEAD'
 ): boolean {
     const read =
         capture ??
         ((command: string, args: string[], cwd?: string) =>
             spawnCapture(command, args, { cwd, env: githubAuthorizationGitEnv(parentEnv), trim: false }));
-    const output = read('git', COMMITTED_DIFF_PATH_ARGS, lane);
+    const output = read('git', committedDiffPathArgs(headSha), lane);
     if (output === '') {
         return false;
     }
@@ -334,6 +337,32 @@ export function authorWorkflowWriteRequired(
         });
 }
 
+export type PublishingPermissionClass = 'ordinary' | 'workflow';
+
+export type PublishingAuthorAuthorization = {
+    lanePath: string;
+    branch: string;
+    headSha: string;
+    permissionClass: PublishingPermissionClass;
+};
+
+export function resolvePublishingAuthorAuthorization(
+    lane: { path: string; branch: string },
+    capture?: CommandCapture,
+    parentEnv: NodeJS.ProcessEnv = process.env
+): PublishingAuthorAuthorization {
+    const read =
+        capture ??
+        ((command: string, args: string[], cwd?: string) =>
+            spawnCapture(command, args, { cwd, env: githubAuthorizationGitEnv(parentEnv), trim: false }));
+    const headSha = read('git', ['rev-parse', '--verify', 'HEAD^{commit}'], lane.path).trim();
+    if (!/^[0-9a-f]{40,64}$/.test(headSha)) {
+        fail('publishing lane HEAD did not resolve to a commit');
+    }
+    const permissionClass = authorWorkflowWriteRequired(lane.path, read, parentEnv, headSha) ? 'workflow' : 'ordinary';
+    return { lanePath: lane.path, branch: lane.branch, headSha, permissionClass };
+}
+
 /**
  * Publishing is the only author operation allowed to acquire workflow authority. The caller can
  * identify the locked lane, but cannot supply permissions: this function derives the fixed scope
@@ -341,17 +370,23 @@ export function authorWorkflowWriteRequired(
  */
 export async function authenticatePublishingAuthor(input: {
     primaryRoot: string;
-    lane: string;
+    lane: { path: string; branch: string };
     readFile?: FileReader;
     request?: GitHubJsonClient;
     env?: NodeJS.ProcessEnv;
     capture?: CommandCapture;
-}): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
-    const permissions = authorWorkflowWriteRequired(input.lane, input.capture, input.env);
-    return authenticateWithPermissions(
+}): Promise<{
+    credentials: RoleCredentials;
+    minted: MintedInstallation;
+    session: GhSession;
+    authorization: PublishingAuthorAuthorization;
+}> {
+    const authorization = resolvePublishingAuthorAuthorization(input.lane, input.capture, input.env);
+    const authentication = await authenticateWithPermissions(
         { ...input, role: 'author' },
-        permissions ? AUTHOR_WORKFLOW_MINT_PERMISSIONS : AUTHOR_MINT_PERMISSIONS
+        authorization.permissionClass === 'workflow' ? AUTHOR_WORKFLOW_MINT_PERMISSIONS : AUTHOR_MINT_PERMISSIONS
     );
+    return { ...authentication, authorization };
 }
 
 async function authenticateWithPermissions(

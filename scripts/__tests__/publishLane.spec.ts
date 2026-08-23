@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { generateKeyPairSync } from 'node:crypto';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +32,31 @@ const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
 const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
+
+function fixtureGit(repository: string, args: string[]): string {
+    const env = { ...process.env };
+    delete env.GIT_DIR;
+    delete env.GIT_WORK_TREE;
+    return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
+}
+
+function initializeRepository(path: string): void {
+    mkdirSync(path, { recursive: true });
+    fixtureGit(path, ['init', '-b', 'main']);
+    fixtureGit(path, ['config', 'user.name', 'Fixture']);
+    fixtureGit(path, ['config', 'user.email', 'fixture@example.com']);
+}
+
+function addLockedLane(primary: string, lane: string, branch: string, changedPath: string): string {
+    fixtureGit(primary, ['worktree', 'add', '-b', branch, lane]);
+    const target = join(lane, changedPath);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, 'change\n');
+    fixtureGit(lane, ['add', '--', changedPath]);
+    fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'fix(delivery): fixture lane']);
+    fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, lane]);
+    return fixtureGit(lane, ['rev-parse', 'HEAD']);
+}
 
 function worktree(overrides: Partial<PublishWorktree> = {}): PublishWorktree {
     return {
@@ -90,7 +116,10 @@ function fakePort(input: FakeInput = {}) {
         headSha: () => input.headSha ?? 'abc',
         remoteBranchSha: () => input.remoteSha,
         isAncestor: () => input.ancestor ?? true,
-        push: (_lane, branch) => calls.push(`push:${branch}`),
+        push: (_lane, branch, headSha) => {
+            calls.push(`push:${branch}`);
+            calls.push(`pushHead:${headSha}`);
+        },
         // The queried branch is the entire authorization decision on the legacy path, so it goes
         // into the ledger: a fake that discarded it would stay green if resolution asked about a
         // sibling lane's branch, or a constant.
@@ -157,12 +186,136 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
 ];
 
 describe('lane publish', () => {
+    it('publishes the exact classified lane despite hostile inherited Git routing', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-routing-'));
+        const primary = join(fixtureRoot, 'primary');
+        const authorizedLane = join(fixtureRoot, 'authorized-lane');
+        const hostilePrimary = join(fixtureRoot, 'hostile-primary');
+        const hostileLane = join(fixtureRoot, 'hostile-lane');
+        const bin = join(fixtureRoot, 'bin');
+        const pushLog = join(fixtureRoot, 'push.json');
+        const mintLog = join(fixtureRoot, 'mint.json');
+        try {
+            initializeRepository(primary);
+            mkdirSync(join(primary, 'scripts'), { recursive: true });
+            for (const file of [
+                'trustedGithubWriteBootstrap.ts',
+                'publishLane.ts',
+                'githubAppIdentity.ts',
+                'prContract.ts',
+            ]) {
+                writeFileSync(
+                    join(primary, 'scripts', file),
+                    readFileSync(join(import.meta.dirname, '..', file), 'utf8')
+                );
+            }
+            writeFileSync(
+                join(primary, 'package.json'),
+                JSON.stringify({
+                    type: 'module',
+                    private: true,
+                    scripts: { 'lane:publish': 'node scripts/trustedGithubWriteBootstrap.ts lane:publish' },
+                })
+            );
+            fixtureGit(primary, ['add', '.']);
+            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: trusted publisher']);
+            fixtureGit(primary, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+            const authorizedHead = addLockedLane(
+                primary,
+                authorizedLane,
+                'agent/12/authorized',
+                '.github/workflows/fixture.yml'
+            );
+
+            initializeRepository(hostilePrimary);
+            writeFileSync(join(hostilePrimary, 'base.txt'), 'base\n');
+            fixtureGit(hostilePrimary, ['add', 'base.txt']);
+            fixtureGit(hostilePrimary, ['commit', '--no-gpg-sign', '-m', 'test: hostile base']);
+            fixtureGit(hostilePrimary, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+            addLockedLane(hostilePrimary, hostileLane, 'agent/12/hostile', 'ordinary.txt');
+
+            const { privateKey } = generateKeyPairSync('rsa', {
+                modulusLength: 2048,
+                privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+                publicKeyEncoding: { type: 'spki', format: 'pem' },
+            });
+            writeFileSync(
+                join(primary, '.env.sourdaw-author'),
+                'SOURDAW_GITHUB_APP_ID=1\n' +
+                    'SOURDAW_GITHUB_APP_INSTALLATION_ID=1\n' +
+                    `SOURDAW_GITHUB_APP_PRIVATE_KEY="${privateKey.replaceAll('\n', '\\n')}"\n`
+            );
+
+            mkdirSync(bin);
+            const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+            const gitWrapper = join(bin, 'git');
+            writeFileSync(
+                gitWrapper,
+                '#!/usr/bin/env node\n' +
+                    "import { appendFileSync } from 'node:fs';\n" +
+                    "import { spawnSync } from 'node:child_process';\n" +
+                    'const args = process.argv.slice(2);\n' +
+                    "if (args.includes('fetch') || args.includes('ls-remote')) process.exit(0);\n" +
+                    "if (args.includes('push')) { appendFileSync(process.env.TEST_PUSH_LOG, JSON.stringify({ cwd: process.cwd(), args }) + '\\n'); process.exit(0); }\n" +
+                    `const result = spawnSync(${JSON.stringify(systemGit)}, args, { stdio: 'inherit', env: process.env });\n` +
+                    'if (result.error) throw result.error; process.exit(result.status ?? 1);\n'
+            );
+            chmodSync(gitWrapper, 0o700);
+            const ghWrapper = join(bin, 'gh');
+            writeFileSync(
+                ghWrapper,
+                '#!/usr/bin/env node\n' +
+                    'const args = process.argv.slice(2);\n' +
+                    "if (args[0] === 'repo') console.log('jcosta33/sourdaw');\n" +
+                    "else if (args[0] === 'api') console.log(JSON.stringify({ number: 12, isPullRequest: false }));\n" +
+                    "else if (args[0] === 'pr' && args[1] === 'list') console.log('[]');\n" +
+                    "else if (args[0] === 'pr' && args[1] === 'create') console.log('https://github.com/jcosta33/sourdaw/pull/88');\n" +
+                    "else { console.error('unexpected gh ' + args.join(' ')); process.exit(1); }\n"
+            );
+            chmodSync(ghWrapper, 0o700);
+            const fetchMock = join(fixtureRoot, 'fetch-mock.mjs');
+            writeFileSync(
+                fetchMock,
+                "import { appendFileSync } from 'node:fs';\n" +
+                    'globalThis.fetch = async (url, init = {}) => {\n' +
+                    "  if (String(url).endsWith('/access_tokens')) { const body = JSON.parse(init.body); appendFileSync(process.env.TEST_MINT_LOG, JSON.stringify(body) + '\\n'); return new Response(JSON.stringify({ token: 'ghs_minted', permissions: body.permissions }), { status: 201 }); }\n" +
+                    "  if (String(url).endsWith('/app')) return new Response(JSON.stringify({ slug: 'jcosta33-author' }), { status: 200 });\n" +
+                    "  return new Response('{}', { status: 404 });\n" +
+                    '};\n'
+            );
+
+            execFileSync('pnpm', ['lane:publish', '12', '--test', TEST_INSTRUCTIONS], {
+                cwd: authorizedLane,
+                env: {
+                    ...process.env,
+                    PATH: `${bin}:${process.env.PATH ?? ''}`,
+                    GIT_DIR: join(hostilePrimary, '.git'),
+                    GIT_WORK_TREE: hostileLane,
+                    NODE_OPTIONS: `--import=${fetchMock}`,
+                    TEST_PUSH_LOG: pushLog,
+                    TEST_MINT_LOG: mintLog,
+                },
+                encoding: 'utf8',
+            });
+
+            expect(JSON.parse(readFileSync(mintLog, 'utf8').trim())).toEqual({
+                permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+            });
+            const push = JSON.parse(readFileSync(pushLog, 'utf8').trim()) as { cwd: string; args: string[] };
+            expect(realpathSync(push.cwd)).toBe(realpathSync(authorizedLane));
+            expect(push.args).toContain(`${authorizedHead}:refs/heads/agent/12/authorized`);
+            expect(push.args).not.toContain('HEAD:refs/heads/agent/12/hostile');
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
     it('resolves the locked lane before requesting its diff-scoped publishing token', () => {
         const source = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');
         const cli = source.slice(source.indexOf('export async function runPublishLaneCli'));
         const resolveLane = cli.indexOf('resolveAuthorLane(parsed.issue, localWorktrees');
         const authenticate = cli.indexOf(
-            'authenticatePublishingAuthor({ primaryRoot, lane: authenticationLane.path })'
+            'authenticatePublishingAuthor({\n        primaryRoot,\n        lane: { path: authenticationLane.path, branch: authenticationLane.branch },'
         );
 
         expect(resolveLane).toBeGreaterThanOrEqual(0);
@@ -214,6 +367,27 @@ describe('lane publish', () => {
         publishLane(12, port, undefined, TEST_INSTRUCTIONS);
 
         expect(calls).toContain('push:agent/12/work');
+    });
+
+    it('pushes the exact permission-classified head and refuses a changed HEAD', () => {
+        const classifiedHead = 'a'.repeat(40);
+        const authorization = {
+            lanePath: ISSUE_LANE,
+            branch: 'agent/12/work',
+            legacy: false,
+            headSha: classifiedHead,
+            permissionClass: 'ordinary' as const,
+        };
+        const accepted = fakePort({ headSha: classifiedHead });
+
+        publishLane(12, accepted.port, undefined, TEST_INSTRUCTIONS, authorization);
+        expect(accepted.calls).toContain(`pushHead:${classifiedHead}`);
+
+        const changed = fakePort({ headSha: 'b'.repeat(40) });
+        expect(() => publishLane(12, changed.port, undefined, TEST_INSTRUCTIONS, authorization)).toThrow(
+            /HEAD changed after its permission-scoped token was minted/
+        );
+        expect(changed.calls.some((call) => call.startsWith('push:'))).toBe(false);
     });
 
     it('publishes a lane that is behind origin/main when it still has lane commits to publish', () => {
@@ -699,16 +873,16 @@ describe('lane publish', () => {
             git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:10:00');
 
             expect(git(['log', '-1', '--format=%s'])).toBe(mergeSubject);
-            expect(shellPort(session, repository).laneSubject(repository)).toBe(
+            expect(shellPort(session, repository).laneSubject(repository, 'HEAD')).toBe(
                 'feat(issue): add milestone and project support'
             );
 
             git(['checkout', '-b', 'agent/13/merge-only', base]);
             git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:11:00');
             expect(git(['rev-list', '--count', 'origin/main..HEAD'])).toBe('1');
-            expect(shellPort(session, repository).laneSubject(repository)).toBeUndefined();
+            expect(shellPort(session, repository).laneSubject(repository, 'HEAD')).toBeUndefined();
         } finally {
-            rmSync(repository, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 

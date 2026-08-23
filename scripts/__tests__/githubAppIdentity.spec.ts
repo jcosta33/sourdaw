@@ -39,6 +39,7 @@ import {
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+const PUBLISHING_HEAD = 'a'.repeat(40);
 
 const authorFile = `SOURDAW_GITHUB_APP_ID=4650613
 SOURDAW_GITHUB_APP_INSTALLATION_ID=154969409
@@ -91,6 +92,16 @@ function mintClient(input: {
             }
             return { status: input.appStatus ?? 200, body: { slug: input.login.replace('[bot]', '') } };
         },
+    };
+}
+
+function publishingCapture(diff: string, onDiff?: () => void) {
+    return (_command: string, args: string[]) => {
+        if (args[0] === 'rev-parse') {
+            return `${PUBLISHING_HEAD}\n`;
+        }
+        onDiff?.();
+        return diff;
     };
 }
 
@@ -255,7 +266,7 @@ describe('installation mint', () => {
             });
             const auth = await authenticatePublishingAuthor({
                 primaryRoot: '/repo',
-                lane: ordinary,
+                lane: { path: ordinary, branch: 'agent/12/ordinary' },
                 readFile: files(),
                 request,
                 env: {
@@ -316,17 +327,14 @@ describe('installation mint', () => {
         });
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
-            lane: '/lane',
+            lane: { path: '/lane', branch: 'agent/12/workflow' },
             readFile: files(),
             request: async (url, init) => {
                 order.push(url.includes('/access_tokens') ? 'mint' : 'identity');
                 return request(url, init);
             },
             env: {},
-            capture: () => {
-                order.push('diff');
-                return '.github/workflows/health-gates.yml\0';
-            },
+            capture: publishingCapture('.github/workflows/health-gates.yml\0', () => order.push('diff')),
         });
         try {
             expect(order[0]).toBe('diff');
@@ -345,11 +353,11 @@ describe('installation mint', () => {
         });
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
-            lane: '/lane',
+            lane: { path: '/lane', branch: 'agent/12/ordinary' },
             readFile: files(),
             request,
             env: {},
-            capture: () => 'scripts/publishLane.ts\0',
+            capture: publishingCapture('scripts/publishLane.ts\0'),
         });
         try {
             expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
@@ -368,11 +376,11 @@ describe('installation mint', () => {
         await expect(
             authenticatePublishingAuthor({
                 primaryRoot: '/repo',
-                lane: '/lane',
+                lane: { path: '/lane', branch: 'agent/12/ordinary' },
                 readFile: files(),
                 request,
                 env: {},
-                capture: () => 'scripts/publishLane.ts\0',
+                capture: publishingCapture('scripts/publishLane.ts\0'),
             })
         ).rejects.toThrow(/workflows: write/);
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
@@ -387,11 +395,11 @@ describe('installation mint', () => {
         await expect(
             authenticatePublishingAuthor({
                 primaryRoot: '/repo',
-                lane: '/lane',
+                lane: { path: '/lane', branch: 'agent/12/workflow' },
                 readFile: files(),
                 request,
                 env: {},
-                capture: () => '.github/workflows/health-gates.yml\0',
+                capture: publishingCapture('.github/workflows/health-gates.yml\0'),
             })
         ).rejects.toThrow(/workflows is <missing>/);
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
