@@ -3,6 +3,7 @@ import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHos
 import { createHandler } from '#/utils/createHandler';
 
 import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+import { type Device } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
 import { addExternalDevice } from '../../useCases/device/addExternalDevice';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
@@ -12,6 +13,24 @@ import {
 } from '../../useCases/device/runtimeDeviceDeltaPostCommit';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+function isCommittedExternalDeviceStillAuthoritative(trackId: string, committedDevice: Device): boolean {
+    const currentOwners = getTrackStoreState()?.tracks.filter((track) => track.id === trackId) ?? [];
+    if (currentOwners.length !== 1) {
+        return false;
+    }
+    const currentTrack = currentOwners[0];
+    if (!currentTrack) {
+        return false;
+    }
+    return currentTrack.devices.some(
+        (candidate) =>
+            candidate.id === committedDevice.id &&
+            candidate.type === 'external-plugin' &&
+            candidate.externalPluginId === committedDevice.externalPluginId &&
+            candidate.externalInstanceId === committedDevice.externalInstanceId
+    );
+}
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
     execute: (alpha, context) => {
@@ -54,7 +73,7 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
         const externalInstanceId = committedDevice.externalInstanceId;
         let postCommitFailure: RuntimeDeviceDeltaPostCommitError | undefined;
         let runtimeDeltaApplied = false;
-        let pluginActivated = false;
+        let pluginActivationSettled = false;
         function applyRuntimeEffect(): void {
             if (postCommitFailure) {
                 throw postCommitFailure;
@@ -82,7 +101,7 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                 }
                 runtimeDeltaApplied = true;
             }
-            if (pluginActivated) {
+            if (pluginActivationSettled) {
                 return;
             }
             if (!externalPluginId || !externalInstanceId) {
@@ -90,12 +109,16 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                     `External device ${committedDevice.id} is missing its plugin host identity after project commit`
                 );
             }
+            if (!isCommittedExternalDeviceStillAuthoritative(trackId, committedDevice)) {
+                pluginActivationSettled = true;
+                return;
+            }
             activateExternalPlugin({
                 pluginId: externalPluginId,
                 instanceId: externalInstanceId,
                 onLatencyMs: (latencyMs) => reportLatency(committedDevice.id, latencyMs),
             });
-            pluginActivated = true;
+            pluginActivationSettled = true;
         }
 
         return {

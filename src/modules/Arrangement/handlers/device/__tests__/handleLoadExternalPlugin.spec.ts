@@ -74,10 +74,16 @@ describe('handleLoadExternalPlugin', () => {
         const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
         const device = {
             id: 'device-1',
+            name: 'Compressor',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
             externalPluginId: 'plugin-1',
             externalInstanceId: 'instance-1',
         };
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [before] });
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [before] })
+            .mockReturnValue({ tracks: [{ ...before, devices: [device] }] });
         mocks.addExternalDevice.mockReturnValue(device);
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
 
@@ -96,6 +102,115 @@ describe('handleLoadExternalPlugin', () => {
         expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
             expect.objectContaining({ pluginId: 'plugin-1', instanceId: 'instance-1' })
         );
+    });
+
+    it.each([
+        ['removed', []],
+        [
+            'replaced',
+            [
+                {
+                    id: 'device-1',
+                    name: 'Replacement',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'plugin-2',
+                    externalInstanceId: 'instance-2',
+                },
+            ],
+        ],
+    ])(
+        'skips host activation when a later same-track mutation %s the committed discharged device',
+        async (_label, finalDevices) => {
+            const action = {
+                type: 'loadExternalPlugin',
+                payload: { pluginId: 'plugin-1', trackId: 'audio-1' },
+            } as const;
+            const batchContext = {
+                actionIndex: 0,
+                actions: [
+                    action,
+                    {
+                        type: 'removeDevice',
+                        payload: { deviceId: 'device-1', expectedTrackId: 'audio-1' },
+                    },
+                ],
+            } satisfies HandlerValidationContext;
+            const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
+            const device = {
+                id: 'device-1',
+                name: 'Compressor',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'plugin-1',
+                externalInstanceId: 'instance-1',
+            };
+            mocks.getTrackStoreState
+                .mockReturnValueOnce({ tracks: [before] })
+                .mockReturnValue({ tracks: [{ ...before, devices: finalDevices }] });
+            mocks.addExternalDevice.mockReturnValue(device);
+            mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+                acceptance: 'superseded',
+                application: 'discharged',
+                reason: 'Live runtime already matches final project truth',
+            });
+
+            const result = await handleLoadExternalPlugin.execute(action, batchContext);
+            if (!result || result.status !== 'written' || !result.afterCommit) {
+                throw new Error('Expected a deferred external-plugin runtime effect');
+            }
+            result.afterCommit();
+            result.afterAmbiguousCommit?.();
+
+            expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+            expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
+            expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+            expect(mocks.reportLatency).not.toHaveBeenCalled();
+        }
+    );
+
+    it('activates a still-authoritative discharged external device once', async () => {
+        const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
+        const device = {
+            id: 'device-1',
+            name: 'Compressor',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
+            externalPluginId: 'plugin-1',
+            externalInstanceId: 'instance-1',
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [before] })
+            .mockReturnValue({ tracks: [{ ...before, devices: [device] }] });
+        mocks.addExternalDevice.mockReturnValue(device);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'superseded',
+            application: 'discharged',
+            reason: 'Live runtime already matches final project truth',
+        });
+
+        const result = await handleLoadExternalPlugin.execute({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'plugin-1', trackId: 'audio-1' },
+        });
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Expected a deferred external-plugin runtime effect');
+        }
+        result.afterCommit();
+        result.afterAmbiguousCommit?.();
+
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledOnce();
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({ pluginId: 'plugin-1', instanceId: 'instance-1' })
+        );
+        const activation = mocks.activateExternalPlugin.mock.calls[0]?.[0];
+        expect(activation?.onLatencyMs).toEqual(expect.any(Function));
+        activation?.onLatencyMs?.(9);
+        expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 9);
     });
 
     it('reports no-write when a provided dormant VCA rejects the device', async () => {
