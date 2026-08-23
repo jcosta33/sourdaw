@@ -1,0 +1,43 @@
+src/modules/Collaboration/useCases/__tests__/assetTransferDurability.spec.ts
+  s_a40848e8f8cca9::t_56895d3b2cfef2 126-145
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_a40848e8f8cca9::t_68cf4699210440 440-446,450,453
+  s_a40848e8f8cca9::t_2945d4af60b8ac 1,69,179-181
+  s_a40848e8f8cca9::t_62716159fd1907 50,146,412,449,452,488,516
+  s_a40848e8f8cca9::t_56895d3b2cfef2 418-439,447-448,451,454-461
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_5da4546ed7a935 198-199,211,217
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_a40848e8f8cca9::t_62716159fd1907 166-167,469-470
+  s_a40848e8f8cca9::t_f6a2a797a61bdd 471
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_56895d3b2cfef2 170,250-258
+  s_a40848e8f8cca9::t_1f32c43f7a879c 259
+src/modules/Collaboration/repositories/durableAssetStageLifecycle.ts
+  s_a40848e8f8cca9::t_62716159fd1907 106,165-180
+  s_a40848e8f8cca9::t_8445ae6d993165 181
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_a40848e8f8cca9::t_62716159fd1907 385,498-499,501,517-518,524-534
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_56895d3b2cfef2 243-264,325-361
+src/modules/Collaboration/useCases/__tests__/automergeSyncReplay.integration.spec.ts
+  s_a40848e8f8cca9::t_5da4546ed7a935 19,25,51,172-193,206-236,238-240
+  s_a40848e8f8cca9::t_bc800488715235 194-205,237
+  s_a40848e8f8cca9::t_0054ee06747470 241-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "da5d1c979a38bce7cbc10f192d08fdc2d6abe5ec",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
