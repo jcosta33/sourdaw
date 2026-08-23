@@ -1,0 +1,29 @@
+README.md
+  s_0a3429e31e555d::t_9c2704793e8c1f 1-2,7,9-10,22-25,31-33,39,46,54,61,64
+  s_0a3429e31e555d::t_554332b103109d 6,8,11-14
+  s_a40848e8f8cca9::t_55168b9d379691 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fd6433006d0cf429264b5828a8b795e524e88aa7",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
