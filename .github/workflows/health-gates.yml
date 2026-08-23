@@ -13,11 +13,11 @@ name: Health gates
 #
 # Only what cannot fit that budget waits for an approving review: the end-to-end
 # suite across twelve shards and the full-history secret scan. CodeQL uploads on
-# pull-request pushes, then analyses the exact reviewed head without uploading
-# when the reviewer bot approves it. The heavy lane also runs nightly. An
-# approval re-runs what the last push already ran, which is deliberate — it
-# costs nothing here, and the alternative is a merge decided by results from an
-# older head.
+# pull-request pushes. A reviewer-bot approval waits for that run to finish, then
+# analyses the exact reviewed head without uploading. The heavy lane also runs
+# nightly. An approval re-runs what the last push already ran, which is
+# deliberate — it costs nothing here, and the alternative is a merge decided by
+# results from an older head.
 #
 # `gate` is the only job the branch ruleset requires by name. It fails on each
 # pull-request push, then passes only when a current-head approval completes the
@@ -46,9 +46,11 @@ concurrency:
   # An untrusted review gets a run-scoped group. Besides protecting a running
   # approval, this keeps it from replacing an authorized run that is pending in
   # the shared group (GitHub replaces pending runs even when cancellation is
-  # disabled). A newer push or reviewer-bot event may supersede that group.
+  # disabled). A reviewer-bot approval waits behind a running pull-request scan
+  # so it cannot interrupt the CodeQL SARIF upload. Only a newer push cancels
+  # trusted in-progress work, preserving current-head semantics.
   group: health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.user.login == 'jcosta33-reviewer[bot]') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   NODE_VERSION: 24.19.0

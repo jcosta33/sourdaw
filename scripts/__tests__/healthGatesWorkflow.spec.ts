@@ -55,7 +55,8 @@ const TRUSTED_GITLEAKS_CONFIG = '$RUNNER_TEMP/gitleaks.toml';
 const TRUSTED_GITLEAKS_IGNORE = '$RUNNER_TEMP/gitleaksignore';
 const REVIEW_ISOLATED_CONCURRENCY_GROUP =
     "health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}";
-const PULL_REQUEST_CONCURRENCY_CANCELLATION =
+const PULL_REQUEST_CONCURRENCY_CANCELLATION = "${{ github.event_name == 'pull_request' }}";
+const LEGACY_TRUSTED_REVIEW_CANCELLATION =
     "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.user.login == 'jcosta33-reviewer[bot]') }}";
 const UNTRUSTED_EVENT_INTERPOLATION = /\$\{\{\s*github\.(?:event_name|event\.)/;
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
@@ -107,6 +108,16 @@ function stringAt(record: UnknownRecord, key: string): string {
         throw new TypeError(`${key} must be a string`);
     }
     return value;
+}
+
+function assertConcurrencyContract(candidate: UnknownRecord): void {
+    const concurrency = recordAt(candidate, 'concurrency');
+    if (concurrency.group !== REVIEW_ISOLATED_CONCURRENCY_GROUP) {
+        throw new Error('untrusted pull-request reviews must use run-isolated concurrency groups');
+    }
+    if (concurrency['cancel-in-progress'] !== PULL_REQUEST_CONCURRENCY_CANCELLATION) {
+        throw new Error('only a newer pull-request run may cancel trusted in-progress work');
+    }
 }
 
 function assertDependencyReviewChain(candidate: UnknownRecord): void {
@@ -531,9 +542,16 @@ describe('health gates workflow contract', () => {
         expect(Object.hasOwn(events, 'schedule')).toBe(true);
         expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(false);
         expect(recordAt(workflow, 'permissions')).toEqual({ contents: 'read' });
-        const concurrency = recordAt(workflow, 'concurrency');
-        expect(concurrency.group).toBe(REVIEW_ISOLATED_CONCURRENCY_GROUP);
-        expect(concurrency['cancel-in-progress']).toBe(PULL_REQUEST_CONCURRENCY_CANCELLATION);
+        expect(() => assertConcurrencyContract(workflow)).not.toThrow();
+    });
+
+    it('should reject trusted-review cancellation of the pull-request CodeQL upload', () => {
+        const cancellingReview = asRecord(structuredClone(workflow), 'trusted-review cancelling workflow');
+        recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] = LEGACY_TRUSTED_REVIEW_CANCELLATION;
+
+        expect(() => assertConcurrencyContract(cancellingReview)).toThrow(
+            'only a newer pull-request run may cancel trusted in-progress work'
+        );
     });
 
     it('should fail closed until a current-head approval completes every security job', () => {
