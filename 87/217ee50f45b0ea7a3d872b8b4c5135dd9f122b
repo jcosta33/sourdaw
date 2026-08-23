@@ -1,0 +1,62 @@
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_16b873f3500b60 266-267
+  s_a40848e8f8cca9::t_610a950747b934 1386-1387,1389
+  s_a40848e8f8cca9::t_149c81d0b59e13 19-20,127,215-241,246,258-260,265,273,275
+  s_a40848e8f8cca9::t_62d6c66b272403 1437,1511
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_480187eafb82ed 72
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_17e3ec5868e623 25-26,36,54,65,93
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_279e7063a5a6e9 51,825-830
+  s_a40848e8f8cca9::t_976ed89b99fb28 494-498
+  s_a40848e8f8cca9::t_b4243cb7e490cd 499-500,822,831-832,873,876,888
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_d36e59e7b07a2d 357-367
+  s_a40848e8f8cca9::t_8f5ab63aab6779 369,371,429
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_fada96c8ab56d2 15,203,593,595,601-602,610,618,624,632,650-651,653,1007-1009
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_825345100ff39e 366-377
+  s_a40848e8f8cca9::t_eab56164d578b4 21,260-261,305-306,314,336-347,381-397
+  s_a40848e8f8cca9::t_5c534f754e5d4b 348-359,365
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_825345100ff39e 244-253,264-273,284-293,304-313,315
+  s_a40848e8f8cca9::t_3d9b5209f074dc 348-353
+  s_a40848e8f8cca9::t_e0a758baaf415a 40-41,106,233,241,254,261,274,279-283,294-303,314,316-318,333-334,338,342-347
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_a255bdb428c86d 68,70-72,77-80,88,357-369,372-392,411-427,432,434,443-446,455,457,474,476,485,493,495-498,507-513,524-525,532,534,538,540,557,561,577-578,582-583,589
+  s_a40848e8f8cca9::t_25a98096770bbd 333
+  s_a40848e8f8cca9::t_17840b8445f942 73-76,395-407,514-519,526,543-551,553,564,566-573,586-588
+  s_a40848e8f8cca9::t_9560f09d333d77 8
+  s_a40848e8f8cca9::t_976ed89b99fb28 523,527,575,590
+  s_a40848e8f8cca9::t_20321551d294ea 393-394
+src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_992693e17169bc 26-29,31,36-37,154,158,176-177,183,185-187,193,196,198
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_44f31bc591ce15 61-62,66,70,79,95,98,103,107-109
+  s_a40848e8f8cca9::t_a3c833e57274d1 673,675,852-853,867,876,878,946,1139,1149,1151,1173,1183,1185
+  s_a40848e8f8cca9::t_886cd8b0d641b3 972-974,1037-1038,1044-1045,1066-1070,1079,1090,1098,1100-1101,1112-1113
+  s_a40848e8f8cca9::t_797a8343cd25b3 242,258,260
+src/modules/AiRuntime/useCases/__tests__/recordAgentRunReceiptSaga.spec.ts
+  s_a40848e8f8cca9::t_976ed89b99fb28 156,162,203,206
+  s_a40848e8f8cca9::t_9560f09d333d77 1-155,157-161,163-202,204-205,207-210
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_a40848e8f8cca9::t_480187eafb82ed 1-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "87217ee50f45b0ea7a3d872b8b4c5135dd9f122b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
