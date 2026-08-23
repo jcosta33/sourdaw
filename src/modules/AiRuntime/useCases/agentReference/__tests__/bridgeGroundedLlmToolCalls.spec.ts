@@ -89,6 +89,75 @@ function bridge(
     return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures, sectionSignatures });
 }
 
+describe('automateTrackGainRange capability grounding', () => {
+    function groundExactVibeMix(trackIds: string[]) {
+        const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
+        const bassBus = createTrack({ id: 'bus-bass', name: 'Bass Bus', kind: 'bus' });
+        const leadVocal = createTrack({ id: 'track-lead-vocal', name: 'Lead Vocal' });
+        const exactContext: ProjectContext = {
+            ...projectContext,
+            automationLanes: [],
+            sections: [
+                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48 },
+                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
+            ],
+            tracks: [drumBus, bassBus, leadVocal, master],
+        };
+        return bridge(
+            [
+                {
+                    name: 'automateTrackGainRange',
+                    arguments: {
+                        trackIds,
+                        sectionName: 'Chorus Two',
+                        gainDb: 1.5,
+                    },
+                },
+            ],
+            'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.',
+            exactContext,
+            [],
+            [{ sectionId: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 }]
+        );
+    }
+
+    it('grounds the exact app-owned EX-02 bus set through the direct provider path without compiler evidence', () => {
+        const result = groundExactVibeMix(['bus-drums', 'bus-bass']);
+
+        expect(result).toEqual({
+            actions: [
+                {
+                    type: 'automateTrackGainRange',
+                    payload: {
+                        trackIds: ['bus-drums', 'bus-bass'],
+                        sectionName: 'Chorus Two',
+                        gainDb: 1.5,
+                    },
+                },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('grounds the same exact app-owned EX-02 bus set when the provider reverses its order', () => {
+        const result = groundExactVibeMix(['bus-bass', 'bus-drums']);
+
+        expect(result).toEqual({
+            actions: [
+                {
+                    type: 'automateTrackGainRange',
+                    payload: {
+                        trackIds: ['bus-drums', 'bus-bass'],
+                        sectionName: 'Chorus Two',
+                        gainDb: 1.5,
+                    },
+                },
+            ],
+            rejections: [],
+        });
+    });
+});
+
 describe('setPlayback grounding', () => {
     it('grounds explicit play, resume, and pause polarity', () => {
         const play = bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'play');

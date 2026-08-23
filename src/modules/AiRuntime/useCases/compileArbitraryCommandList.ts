@@ -1,4 +1,5 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
@@ -286,6 +287,28 @@ function getMutationWriteIdentities(
     return mutationWriteIdentities;
 }
 
+function materializeMutationIdentityArguments(
+    command: ToolCallResult,
+    context: ProjectContext
+): Readonly<Record<string, unknown>> {
+    if (command.name !== 'addSidechainRoute' || command.arguments.targetDeviceId !== undefined) {
+        return command.arguments;
+    }
+    const targetTrackId = command.arguments.targetTrackId;
+    if (typeof targetTrackId !== 'string') {
+        return command.arguments;
+    }
+    const supportedTargetDeviceIds =
+        context.tracks
+            .find((track) => track.id === targetTrackId)
+            ?.devices.filter((device) => getSidechainTargetCapability(device.type) !== null)
+            .map((device) => device.id) ?? [];
+    if (supportedTargetDeviceIds.length !== 1) {
+        return command.arguments;
+    }
+    return { ...command.arguments, targetDeviceId: supportedTargetDeviceIds[0] };
+}
+
 function getMutationIdentityLabel(
     mutationIdentityRules: readonly MutationIdentityRule[],
     arguments_: Readonly<Record<string, unknown>>
@@ -302,6 +325,7 @@ function getMutationIdentityLabel(
 
 function checkCommandWriteConflict(input: {
     command: ToolCallResult;
+    context: ProjectContext;
     mutationIdempotent: boolean;
     mutationIdentityRules: readonly MutationIdentityRule[];
     targetCommandArguments: Map<string, string>;
@@ -311,7 +335,7 @@ function checkCommandWriteConflict(input: {
     const mutationWriteIdentities = getMutationWriteIdentities(
         input.command.name,
         input.mutationIdentityRules,
-        input.command.arguments
+        materializeMutationIdentityArguments(input.command, input.context)
     );
     if (mutationWriteIdentities === null) {
         return {
@@ -565,6 +589,7 @@ export function compileArbitraryCommandList(input: {
                 const command = { name: item.name, arguments: { ...item.arguments } };
                 const writeCheck = checkCommandWriteConflict({
                     command,
+                    context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
                     targetCommandArguments,
@@ -677,6 +702,7 @@ export function compileArbitraryCommandList(input: {
                 };
                 const writeCheck = checkCommandWriteConflict({
                     command,
+                    context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
                     targetCommandArguments,

@@ -120,6 +120,14 @@ type CollectBatchLocalBusBindingsResult =
 type ResolveBatchLocalBusReferenceResult =
     { status: 'none' } | { status: 'resolved'; binding: BatchLocalBusBinding } | { status: 'rejected'; reason: string };
 
+function hasExactTargetIdSet(assertedIds: unknown, expectedIds: readonly string[]): boolean {
+    if (!Array.isArray(assertedIds)) {
+        return false;
+    }
+    const assertedIdSet = new Set(assertedIds);
+    return assertedIdSet.size === expectedIds.length && expectedIds.every((targetId) => assertedIdSet.has(targetId));
+}
+
 type ActionPromptScope = PromptClause & {
     directional: boolean;
     matchedIntentPhrase: string;
@@ -3543,6 +3551,8 @@ function groundToolCall({
             : null;
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
+    const wholeProjectVibeMixScope =
+        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
@@ -3571,6 +3581,14 @@ function groundToolCall({
                     route.targetTrackId === groundedArguments.targetTrackId &&
                     route.targetDeviceId === groundedArguments.targetDeviceId
             )
+        ) {
+            continue;
+        }
+        if (
+            wholeProjectVibeMixScope &&
+            call.name === 'automateTrackGainRange' &&
+            targetRule.argument === 'trackIds' &&
+            hasExactTargetIdSet(assertedValue, wholeProjectVibeMixScope.targetIds)
         ) {
             continue;
         }
@@ -4324,8 +4342,6 @@ export function bridgeGroundedLlmToolCalls({
     if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
         const providerCall = providerVibeMixCalls[0];
         const assertedTrackIds = providerCall?.arguments.trackIds;
-        const providerTargetSet = Array.isArray(assertedTrackIds) ? new Set(assertedTrackIds) : new Set<unknown>();
-        const scopeTargetSet = new Set(wholeProjectVibeMixScope?.targetIds ?? []);
         if (!wholeProjectVibeMixScope || !providerCall) {
             return {
                 actions: [],
@@ -4337,8 +4353,7 @@ export function bridgeGroundedLlmToolCalls({
         const matchesScope =
             calls.length === 1 &&
             providerVibeMixCalls.length === 1 &&
-            providerTargetSet.size === scopeTargetSet.size &&
-            [...scopeTargetSet].every((trackId) => providerTargetSet.has(trackId)) &&
+            hasExactTargetIdSet(assertedTrackIds, wholeProjectVibeMixScope.targetIds) &&
             providerCall.arguments.sectionName === wholeProjectVibeMixScope.section.name &&
             providerCall.arguments.gainDb === wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb;
         if (!matchesScope) {

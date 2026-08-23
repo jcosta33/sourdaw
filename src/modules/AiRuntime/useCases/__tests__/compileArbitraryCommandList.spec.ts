@@ -486,6 +486,73 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
+    it('rejects mixed explicit and implicit sidechain routes to the same uniquely materialized device', () => {
+        const routeContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-hat'
+                    ? {
+                          ...track,
+                          deviceCount: 1,
+                          devices: [
+                              {
+                                  id: 'compressor-hat',
+                                  name: 'Hat Compressor',
+                                  type: 'builtin-sidechain-compressor',
+                                  bypassed: false,
+                                  parameters: [],
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const selector = {
+            targetArgument: 'sourceTrackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: routeContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-by-device',
+                                    name: 'addSidechainRoute',
+                                    arguments: {
+                                        targetTrackId: 'track-hat',
+                                        targetDeviceId: 'compressor-hat',
+                                    },
+                                    selector,
+                                },
+                                {
+                                    id: 'route-by-track',
+                                    name: 'addSidechainRoute',
+                                    arguments: { targetTrackId: 'track-hat' },
+                                    selector,
+                                    dependsOn: ['route-by-device'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for addSidechainRoute on track-kick are not safely composable.',
+        });
+    });
+
     it('rejects duplicate sidechain creation for one source and unmaterialized target track', () => {
         const selector = {
             targetArgument: 'sourceTrackId',
@@ -701,6 +768,83 @@ describe('compileArbitraryCommandList', () => {
                 itemId: 'mute-kick-again',
                 commandStart: 1,
                 commandCount: 0,
+                declaredCommandCount: 1,
+                omittedCommandCount: 1,
+            }),
+        ]);
+    });
+
+    it.each([
+        { name: 'muteClip', valueArgument: 'muted', value: true },
+        { name: 'lockClip', valueArgument: 'locked', value: true },
+    ] as const)('canonicalizes duplicate and repeated $name set-to-value writes', ({ name, valueArgument, value }) => {
+        const clipContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-kick'
+                    ? {
+                          ...track,
+                          clipCount: 1,
+                          clips: [
+                              {
+                                  id: 'clip-kick',
+                                  name: 'Kick Clip',
+                                  type: 'audio' as const,
+                                  startBeat: 0,
+                                  endBeat: 8,
+                                  noteCount: 0,
+                                  muted: false,
+                                  locked: false,
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const selector = {
+            targetArgument: 'clipId',
+            entity: 'clip',
+            where: { name: 'Kick Clip' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const arguments_ = { [valueArgument]: value };
+        const result = compileArbitraryCommandList({
+            context: clipContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['clip-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                { id: 'set-clip-state', name, arguments: arguments_, selector, repeat: { count: 2 } },
+                                {
+                                    id: 'set-clip-state-again',
+                                    name,
+                                    arguments: arguments_,
+                                    selector,
+                                    dependsOn: ['set-clip-state'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.compilerEvidence?.commands).toEqual([
+            { name, arguments: { ...arguments_, clipId: 'clip-kick' } },
+        ]);
+        expect(result.compilerEvidence?.items).toEqual([
+            expect.objectContaining({ itemId: 'set-clip-state', declaredCommandCount: 2, omittedCommandCount: 1 }),
+            expect.objectContaining({
+                itemId: 'set-clip-state-again',
                 declaredCommandCount: 1,
                 omittedCommandCount: 1,
             }),
