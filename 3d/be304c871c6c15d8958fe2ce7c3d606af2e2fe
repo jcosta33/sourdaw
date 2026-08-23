@@ -1,0 +1,22 @@
+README.md
+  s_0a3429e31e555d::t_c1d17ed311a5f1 6,11-14,16-31,35,37-40,42,46-54,92-97,101
+  s_0a3429e31e555d::t_b5869258760a1f 32-34,44,55-57
+  s_0a3429e31e555d::t_4141237b767125 36
+  s_0a3429e31e555d::t_d146fcba735e68 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "3dbe304c871c6c15d8958fe2ce7c3d606af2e2fe",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
