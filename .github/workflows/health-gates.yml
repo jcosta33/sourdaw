@@ -630,7 +630,7 @@ jobs:
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
     # passed, so both gate.
-    if: always() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved')
+    if: always()
     needs:
       - decide
       - static
@@ -648,9 +648,15 @@ jobs:
     steps:
       - name: Require every job to have succeeded or been skipped
         env:
+          EVENT: ${{ github.event_name }}
+          REVIEW_STATE: ${{ github.event.review.state }}
           RESULTS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
+          if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_STATE" != "approved" ]; then
+            printf 'non-approved pull-request review cannot satisfy Gate\n'
+            exit 1
+          fi
           printf '%s\n' "$RESULTS"
           failed=$(printf '%s' "$RESULTS" | jq -r '
             to_entries[]
