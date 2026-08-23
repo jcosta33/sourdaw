@@ -13,6 +13,7 @@ import {
     commandBatchPreviewPort,
     configureCommandBatchIdempotency,
     commandProjectDivergencePort,
+    executeAppAction,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
     commandProjectRevisionPort,
@@ -23,6 +24,7 @@ import {
     createCommandRecoveryWorkspace,
     createCommandPreviewWorkspace,
     createCrdtDoc,
+    getCrdtDocIds,
     mutateCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -792,6 +794,102 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getPendingActionConfirmation('confirmation-foreign-flush')).toMatchObject({ status: 'invalidated' });
     });
 
+    it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        let releaseFirstAction!: () => void;
+        let markFirstActionStarted!: () => void;
+        const firstActionStarted = new Promise<void>((resolve) => {
+            markFirstActionStarted = resolve;
+        });
+        const firstActionRelease = new Promise<void>((resolve) => {
+            releaseFirstAction = resolve;
+        });
+        const executedBpms: number[] = [];
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>(async (action) => {
+            executedBpms.push(action.payload.bpm);
+            if (action.payload.bpm === 144) {
+                mutateCrdtDoc({
+                    id: 'independent',
+                    changeFn: (doc) => {
+                        doc.foreignActionCommitted = true;
+                    },
+                });
+                return;
+            }
+            ownedStorage.set({ bpm: action.payload.bpm });
+            if (action.payload.bpm === 128) {
+                markFirstActionStarted();
+                await firstActionRelease;
+            }
+        });
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: () => true,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const firstAction = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
+        const secondAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const commands = [firstAction, secondAction].map((action) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect: `Tempo changes to ${String(action.payload.bpm)} BPM.`,
+                    normalizedProjectRevision: projectRevision,
+                    options: { groupId: 'group-foreign-action', groupLabel: 'Set tempo twice', source: 'prompt' },
+                })
+            )
+        );
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-foreign-action',
+            batchId: 'group-foreign-action',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 128 then 132',
+            commands,
+        });
+        proposePendingActionConfirmation({
+            id: 'confirmation-foreign-action',
+            prompt: 'set tempo to 128 then 132',
+            assistantMessageId: 'assistant-1',
+            actions: [firstAction, secondAction],
+            actionLabels: ['Set tempo to 128 BPM', 'Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-foreign-action',
+            groupLabel: 'Set tempo twice',
+            projectRevision,
+        });
+
+        const confirmation = confirmPendingChatActions({ confirmationId: 'confirmation-foreign-action' });
+        await firstActionStarted;
+        await executeAppAction({ type: 'setTempo', payload: { bpm: 144 } });
+        releaseFirstAction();
+
+        await expect(confirmation).resolves.toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(executedBpms).not.toContain(132);
+        expect(executedBpms).toContain(144);
+        expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ foreignActionCommitted: true });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+        expect(getPendingActionConfirmation('confirmation-foreign-action')).toMatchObject({ status: 'invalidated' });
+    });
+
     it('authorizes a confirmed action that creates a project document while it executes', async () => {
         // The shape the createDrumPreviewBranches carve-out used to cover:
         // the action's own execution adds documents, so the document identity
@@ -824,6 +922,8 @@ describe('confirmPendingChatActions transaction admission', () => {
         const action = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
         const projectRevision = captureProjectRevision();
         const unownedMutationBaseline = captureUnownedProjectMutations();
+        expect(getCrdtDocIds()).not.toContain('candidate-1');
+        expect(getCrdtDocIds()).not.toContain('candidate-2');
         const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
             action,
             expectedEffect: 'Tempo changes to 128 BPM.',
@@ -857,6 +957,10 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(execute).toHaveBeenCalledOnce();
         expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline);
+        expect(captureProjectRevision()).not.toBe(projectRevision);
+        expect(getCrdtDocIds()).toEqual(expect.arrayContaining(['candidate-1', 'candidate-2']));
+        expect(getCrdtDoc<Record<string, unknown>>('candidate-1')).toBeDefined();
+        expect(getCrdtDoc<Record<string, unknown>>('candidate-2')).toBeDefined();
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 128 } });
     });
 

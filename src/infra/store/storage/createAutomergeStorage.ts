@@ -231,37 +231,42 @@ let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
-type AutomergeStorageMutationOrigin = 'owned' | 'unowned';
-let activeAutomergeStorageMutationOrigin: AutomergeStorageMutationOrigin | undefined;
+type AutomergeStorageMutationProvenance = {
+    readonly owner: object | undefined;
+};
+let activeAutomergeStorageMutationProvenance: AutomergeStorageMutationProvenance | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
 const inboundSanitizersBySlot = new Map<string, (value: unknown) => unknown>();
 
 /**
- * Whether the mutation currently reaching the repository belongs to an action.
+ * Exact storage transaction owner of the mutation currently reaching the
+ * repository, or `undefined` for an unscoped mutation.
  *
  * A storage flush carries the scope captured when its pending write was
  * created, overriding whichever transaction happens to call the flush. With no
  * pending-write provenance, direct repository mutations fall back to the
  * ambient action transaction. This keeps delayed owned commits owned, foreign
- * buffered writes foreign, and direct in-action document mutations owned.
+ * buffered writes foreign, and direct in-action document mutations attributed
+ * to the same exact owner as the action's adapter writes.
  */
-export function isAutomergeStorageMutationOwned(): boolean {
-    if (activeAutomergeStorageMutationOrigin) {
-        return activeAutomergeStorageMutationOrigin === 'owned';
+export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
+    if (activeAutomergeStorageMutationProvenance) {
+        return activeAutomergeStorageMutationProvenance.owner;
     }
-    return activeAutomergeStorageTransaction !== undefined;
+    return activeAutomergeStorageTransaction?.commitOwner;
 }
 
-function runWithAutomergeStorageMutationOrigin<Result>(
-    origin: AutomergeStorageMutationOrigin,
-    callback: () => Result
-): Result {
-    const previousOrigin = activeAutomergeStorageMutationOrigin;
-    activeAutomergeStorageMutationOrigin = origin;
+export function isAutomergeStorageMutationOwned(): boolean {
+    return getCurrentAutomergeStorageMutationOwner() !== undefined;
+}
+
+function runWithAutomergeStorageMutationOwner<Result>(owner: object | undefined, callback: () => Result): Result {
+    const previousProvenance = activeAutomergeStorageMutationProvenance;
+    activeAutomergeStorageMutationProvenance = { owner };
     try {
         return callback();
     } finally {
-        activeAutomergeStorageMutationOrigin = previousOrigin;
+        activeAutomergeStorageMutationProvenance = previousProvenance;
     }
 }
 
@@ -377,7 +382,7 @@ type AutomergeStorageCommitOutcome =
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
 function commitAutomergeStorageMutations(
     mutations: readonly AutomergeStorageMutationInput[],
-    origin: AutomergeStorageMutationOrigin,
+    owner: object | undefined,
     validateDocument?: AutomergeStorageDocumentValidator
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
@@ -397,7 +402,7 @@ function commitAutomergeStorageMutations(
     // control-flow analysis does not model the write through the callback and
     // narrows a local to `false` for the whole catch below.
     const application = { appliedChangeFn: false };
-    return runWithAutomergeStorageMutationOrigin(origin, () => {
+    return runWithAutomergeStorageMutationOwner(owner, () => {
         try {
             port.mutateDoc({
                 docId: firstMutation.docId,
@@ -698,7 +703,7 @@ function flushMatchingAutomergeStorageWrites(
 
             const outcome = commitAutomergeStorageMutations(
                 mutations,
-                firstWrite.scoped ? 'owned' : 'unowned',
+                firstWrite.scoped ? firstWrite.commitOwner : undefined,
                 documentValidators.get(docId)
             );
             if (documentValidators.has(docId)) {

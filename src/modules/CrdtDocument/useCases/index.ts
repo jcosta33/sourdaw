@@ -2,6 +2,7 @@ export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
 export { captureProjectRevision } from './captureProjectRevision';
+export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
 export { captureUnownedProjectMutations } from './captureUnownedProjectMutations';
 export { agentProjectInspectionPort } from './agentProjectInspectionPort';
 export { inspectAgentProjectDivergence } from './inspectAgentProjectDivergence';

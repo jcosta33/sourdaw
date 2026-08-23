@@ -18,7 +18,7 @@ import {
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
-import { isAutomergeStorageMutationOwned } from '#/infra/store/storage/createAutomergeStorage';
+import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
@@ -243,6 +243,7 @@ class AutomergeRepository {
     private mutationEpoch = 0;
     private documentIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
+    private mutationEpochByOwner = new WeakMap<object, number>();
     private changeListeners = new Set<ChangeListener>();
     /** Used only to validate explicit transaction-handle identity. */
     private activeTransaction: SnapshotTransaction | null = null;
@@ -304,8 +305,7 @@ class AutomergeRepository {
 
     /**
      * Monotonic epoch for the project mutations no in-flight action authored:
-     * collaborator patches, direct document writes, project replacement, and
-     * another action transaction publishing at its own commit.
+     * collaborator patches, direct document writes, and project replacement.
      *
      * `getMutationEpoch` counts these too, so it cannot answer "did anything
      * other than my own batch move the project" — every action a batch runs
@@ -314,6 +314,11 @@ class AutomergeRepository {
      */
     getUnownedMutationEpoch(): number {
         return this.unownedMutationEpoch;
+    }
+
+    /** Count project mutations attributed to one exact storage transaction owner. */
+    getMutationEpochForOwner(owner: object): number {
+        return this.mutationEpochByOwner.get(owner) ?? 0;
     }
 
     /** Subscribe to document changes (for the projection bridge). */
@@ -997,7 +1002,10 @@ class AutomergeRepository {
 
     private markMutation(): void {
         this.mutationEpoch += 1;
-        if (!isAutomergeStorageMutationOwned()) {
+        const owner = getCurrentAutomergeStorageMutationOwner();
+        if (owner) {
+            this.mutationEpochByOwner.set(owner, this.getMutationEpochForOwner(owner) + 1);
+        } else {
             this.unownedMutationEpoch += 1;
         }
     }
