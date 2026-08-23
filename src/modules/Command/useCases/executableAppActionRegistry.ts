@@ -17,6 +17,7 @@ export type ExecutableAppActionTargetCapability =
     | 'device'
     | 'sidechain-capable-device'
     | 'device-parameter'
+    | 'adjustment-layer'
     | 'vca-group'
     | 'vca-member-track'
     | 'automation-lane'
@@ -34,6 +35,18 @@ export type ExecutableAppActionTargetRule = {
     distinctFrom?: string;
     promptRole?: 'source' | 'destination' | 'container' | 'members';
     optional?: boolean;
+};
+
+export type ExecutableAppActionMutationIdentityArgument = {
+    argument: string;
+    cardinality?: 'many';
+};
+
+export type ExecutableAppActionMutationIdentityRule = {
+    arguments: readonly ExecutableAppActionMutationIdentityArgument[];
+    fallbackArguments?: readonly ExecutableAppActionMutationIdentityArgument[];
+    resourceFamily?: string;
+    resourceReferenceOnly?: true;
 };
 
 export type ExecutableAppActionValueRule =
@@ -1939,7 +1952,7 @@ export const executableAppActionDescriptors = [
         description:
             'Add one app-grounded section region to an existing adjustment layer without changing its processing settings.',
         intentPhrases: ['copy the bass processing', 'copy bass processing'],
-        targetRules: [],
+        targetRules: [{ argument: 'layerId', capability: 'adjustment-layer' }],
         valueRules: [],
         parameters: {
             properties: {
@@ -2003,7 +2016,14 @@ export const executableAppActionDescriptors = [
         description:
             'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
         intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                promptRole: 'members',
+            },
+        ],
         valueRules: [],
         parameters: {
             properties: {
@@ -2031,7 +2051,16 @@ export const executableAppActionDescriptors = [
         description:
             'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
         intentPhrases: ['automate them to', 'final four bars of every chorus'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                dependsOn: 'busId',
+                promptRole: 'source',
+            },
+            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
+        ],
         valueRules: [],
         parameters: {
             properties: {
@@ -2320,6 +2349,252 @@ type DescriptorAction<Descriptor> = Descriptor extends {
 export type ExecutableAppActionType = (typeof executableAppActionDescriptors)[number]['actionType'];
 export type ExecutableProviderAction = DescriptorAction<(typeof executableAppActionDescriptors)[number]>;
 export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppActionType }>;
+
+const NO_MUTATION_IDENTITY = [] as const;
+const SINGLETON_MUTATION_IDENTITY = [{ arguments: [] }] as const;
+const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }], resourceFamily: 'track' }] as const;
+const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' }] as const;
+const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
+const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' }] as const;
+const DEVICE_PARAMETER_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
+] as const;
+const SEND_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+] as const;
+const TRACK_OUTPUT_MUTATION_IDENTITY = [
+    ...TRACK_MUTATION_IDENTITY,
+    {
+        arguments: [{ argument: 'outputId' }],
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
+const AUTOMATED_SEND_MUTATION_IDENTITY = [
+    {
+        arguments: [{ argument: 'trackIds', cardinality: 'many' }, { argument: 'busId' }],
+    },
+] as const;
+const AUTOMATED_TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }] as const;
+const AUTOMATION_LANE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'laneId' }] }] as const;
+const AUTOMATION_LANE_CREATION_IDENTITY = [
+    { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
+] as const;
+const MARKER_REFERENCE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },
+] as const;
+const SECTION_REFERENCE_MUTATION_IDENTITY = [
+    {
+        arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }],
+        resourceFamily: 'section',
+    },
+] as const;
+const ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY = [
+    {
+        arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetDeviceId' }],
+        fallbackArguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }],
+    },
+] as const;
+
+export const executableAppActionMutationIdentityRulesByType = {
+    importStemSet: NO_MUTATION_IDENTITY,
+    addTrack: NO_MUTATION_IDENTITY,
+    createBus: NO_MUTATION_IDENTITY,
+    removeTrack: TRACK_MUTATION_IDENTITY,
+    addClip: NO_MUTATION_IDENTITY,
+    duplicateClip: CLIP_MUTATION_IDENTITY,
+    duplicateClipToNextBar: CLIP_MUTATION_IDENTITY,
+    removeClip: CLIP_MUTATION_IDENTITY,
+    moveClip: CLIP_MUTATION_IDENTITY,
+    splitClip: CLIP_MUTATION_IDENTITY,
+    renameClip: CLIP_MUTATION_IDENTITY,
+    trimClipStart: CLIP_MUTATION_IDENTITY,
+    trimClipEnd: CLIP_MUTATION_IDENTITY,
+    nudgeClip: CLIP_MUTATION_IDENTITY,
+    setClipGain: CLIP_MUTATION_IDENTITY,
+    muteClip: CLIP_MUTATION_IDENTITY,
+    setClipColor: CLIP_MUTATION_IDENTITY,
+    setClipFade: CLIP_MUTATION_IDENTITY,
+    glueClips: MANY_CLIPS_MUTATION_IDENTITY,
+    crossfadeClips: [{ arguments: [{ argument: 'clipAId' }] }, { arguments: [{ argument: 'clipBId' }] }],
+    lockClip: CLIP_MUTATION_IDENTITY,
+    setClipLoop: CLIP_MUTATION_IDENTITY,
+    setClipLoopLength: CLIP_MUTATION_IDENTITY,
+    normalizeClip: CLIP_MUTATION_IDENTITY,
+    setClipStretchMode: CLIP_MUTATION_IDENTITY,
+    setClipStretchRatio: CLIP_MUTATION_IDENTITY,
+    fitClipToBeats: CLIP_MUTATION_IDENTITY,
+    quantizeNotes: CLIP_MUTATION_IDENTITY,
+    removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
+    arpeggiate: CLIP_MUTATION_IDENTITY,
+    createDrumPreviewBranches: NO_MUTATION_IDENTITY,
+    copyMidiArticulations: [{ arguments: [{ argument: 'targetClipId' }] }],
+    transposeNotes: CLIP_MUTATION_IDENTITY,
+    invertNotes: CLIP_MUTATION_IDENTITY,
+    retrogradeNotes: CLIP_MUTATION_IDENTITY,
+    quantizeNoteLengths: CLIP_MUTATION_IDENTITY,
+    scaleAllVelocities: CLIP_MUTATION_IDENTITY,
+    setAllVelocities: CLIP_MUTATION_IDENTITY,
+    renameTrack: TRACK_MUTATION_IDENTITY,
+    muteTrack: TRACK_MUTATION_IDENTITY,
+    soloTrack: TRACK_MUTATION_IDENTITY,
+    setSoloSafe: TRACK_MUTATION_IDENTITY,
+    clearSolos: SINGLETON_MUTATION_IDENTITY,
+    armTrack: TRACK_MUTATION_IDENTITY,
+    duplicateTrack: TRACK_MUTATION_IDENTITY,
+    setTrackGain: TRACK_MUTATION_IDENTITY,
+    setTrackPan: TRACK_MUTATION_IDENTITY,
+    setTrackColor: TRACK_MUTATION_IDENTITY,
+    reorderTrack: TRACK_MUTATION_IDENTITY,
+    setTempo: SINGLETON_MUTATION_IDENTITY,
+    setTimeSignature: SINGLETON_MUTATION_IDENTITY,
+    setPlayback: SINGLETON_MUTATION_IDENTITY,
+    stopPlayback: SINGLETON_MUTATION_IDENTITY,
+    seekPlayhead: SINGLETON_MUTATION_IDENTITY,
+    addMarker: NO_MUTATION_IDENTITY,
+    removeMarker: MARKER_REFERENCE_MUTATION_IDENTITY,
+    setMarkerColor: MARKER_REFERENCE_MUTATION_IDENTITY,
+    addSection: NO_MUTATION_IDENTITY,
+    removeSection: SECTION_REFERENCE_MUTATION_IDENTITY,
+    renameSection: SECTION_REFERENCE_MUTATION_IDENTITY,
+    setLoopEnabled: SINGLETON_MUTATION_IDENTITY,
+    setLoopRegion: SINGLETON_MUTATION_IDENTITY,
+    setPunchIn: SINGLETON_MUTATION_IDENTITY,
+    setPunchOut: SINGLETON_MUTATION_IDENTITY,
+    setPunchEnabled: SINGLETON_MUTATION_IDENTITY,
+    setMetronomeEnabled: SINGLETON_MUTATION_IDENTITY,
+    setMetronomeVolume: SINGLETON_MUTATION_IDENTITY,
+    setMasterGain: SINGLETON_MUTATION_IDENTITY,
+    setVcaGain: [{ arguments: [{ argument: 'vcaGroupId' }] }],
+    createVcaGroup: [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }],
+    assignToVca: TRACK_MUTATION_IDENTITY,
+    removeFromVca: TRACK_MUTATION_IDENTITY,
+    addDevice: NO_MUTATION_IDENTITY,
+    removeDevice: DEVICE_MUTATION_IDENTITY,
+    setDeviceParameter: DEVICE_PARAMETER_MUTATION_IDENTITY,
+    bypassDevice: DEVICE_MUTATION_IDENTITY,
+    addSend: SEND_MUTATION_IDENTITY,
+    setSend: SEND_MUTATION_IDENTITY,
+    removeSend: SEND_MUTATION_IDENTITY,
+    setTrackOutput: TRACK_OUTPUT_MUTATION_IDENTITY,
+    addSidechainRoute: ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY,
+    removeSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
+    addAdjustmentRegion: NO_MUTATION_IDENTITY,
+    automateSendRange: AUTOMATED_SEND_MUTATION_IDENTITY,
+    automateTrackGainRange: AUTOMATED_TRACK_MUTATION_IDENTITY,
+    automateSendRanges: AUTOMATED_SEND_MUTATION_IDENTITY,
+    renderProjectSections: NO_MUTATION_IDENTITY,
+    addAutomationLane: AUTOMATION_LANE_CREATION_IDENTITY,
+    addAutomationPoint: NO_MUTATION_IDENTITY,
+    setAutomationLaneEnabled: AUTOMATION_LANE_MUTATION_IDENTITY,
+    setAutomationMode: TRACK_MUTATION_IDENTITY,
+    scaleAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    stretchAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    invertAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    reverseAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    thinAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    quantizeAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+} as const satisfies Record<ExecutableAppActionType, readonly ExecutableAppActionMutationIdentityRule[]>;
+
+export const executableAppActionMutationIdempotenceByType = {
+    importStemSet: false,
+    addTrack: false,
+    createBus: false,
+    removeTrack: false,
+    addClip: false,
+    duplicateClip: false,
+    duplicateClipToNextBar: false,
+    removeClip: false,
+    moveClip: false,
+    splitClip: false,
+    renameClip: false,
+    trimClipStart: false,
+    trimClipEnd: false,
+    nudgeClip: false,
+    setClipGain: true,
+    muteClip: true,
+    setClipColor: true,
+    setClipFade: true,
+    glueClips: false,
+    crossfadeClips: false,
+    lockClip: true,
+    setClipLoop: true,
+    setClipLoopLength: true,
+    normalizeClip: false,
+    setClipStretchMode: true,
+    setClipStretchRatio: true,
+    fitClipToBeats: false,
+    quantizeNotes: false,
+    removeShortMidiOverlaps: false,
+    arpeggiate: false,
+    createDrumPreviewBranches: false,
+    copyMidiArticulations: false,
+    transposeNotes: false,
+    invertNotes: false,
+    retrogradeNotes: false,
+    quantizeNoteLengths: false,
+    scaleAllVelocities: false,
+    setAllVelocities: true,
+    renameTrack: false,
+    muteTrack: true,
+    soloTrack: true,
+    setSoloSafe: true,
+    clearSolos: false,
+    armTrack: true,
+    duplicateTrack: false,
+    setTrackGain: true,
+    setTrackPan: true,
+    setTrackColor: true,
+    reorderTrack: false,
+    setTempo: true,
+    setTimeSignature: true,
+    setPlayback: true,
+    stopPlayback: false,
+    seekPlayhead: false,
+    addMarker: false,
+    removeMarker: false,
+    setMarkerColor: true,
+    addSection: false,
+    removeSection: false,
+    renameSection: false,
+    setLoopEnabled: true,
+    setLoopRegion: true,
+    setPunchIn: true,
+    setPunchOut: true,
+    setPunchEnabled: true,
+    setMetronomeEnabled: true,
+    setMetronomeVolume: true,
+    setMasterGain: true,
+    setVcaGain: true,
+    createVcaGroup: false,
+    assignToVca: false,
+    removeFromVca: false,
+    addDevice: false,
+    removeDevice: false,
+    setDeviceParameter: true,
+    bypassDevice: true,
+    addSend: false,
+    setSend: true,
+    removeSend: false,
+    setTrackOutput: true,
+    addSidechainRoute: false,
+    removeSidechainRoute: false,
+    addAdjustmentRegion: false,
+    automateSendRange: false,
+    automateTrackGainRange: false,
+    automateSendRanges: false,
+    renderProjectSections: false,
+    addAutomationLane: false,
+    addAutomationPoint: false,
+    setAutomationLaneEnabled: true,
+    setAutomationMode: true,
+    scaleAutomation: false,
+    stretchAutomation: false,
+    invertAutomation: false,
+    reverseAutomation: false,
+    thinAutomation: false,
+    quantizeAutomation: false,
+} as const satisfies Record<ExecutableAppActionType, boolean>;
 
 export const executableAppActionDescriptorByType: ReadonlyMap<string, (typeof executableAppActionDescriptors)[number]> =
     new Map(executableAppActionDescriptors.map((descriptor) => [descriptor.actionType, descriptor]));

@@ -5,12 +5,14 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type ActionCommandGraph } from '../models/ActionCommandGraph';
 import { type ProjectContext } from '../models/ProjectContext';
 
 import { compilePendingActionCommandEnvelopes } from './compilePendingActionCommandEnvelopes';
 
 type CompilePlannedActionCommandBatchInput = {
     actions: readonly AppAction[];
+    actionCommandGraph?: ActionCommandGraph;
     actionLabels: readonly string[];
     autoCommit: boolean;
     autoCommitApproval?: Parameters<typeof compileVersionedCommandBatchEnvelope>[0]['autoCommitApproval'];
@@ -329,9 +331,35 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
 export function compilePlannedActionCommandBatch(input: CompilePlannedActionCommandBatchInput) {
     const commandEnvelopes = compilePendingActionCommandEnvelopes({
         actions: input.actions,
+        actionCommandGraph: input.actionCommandGraph,
         actionLabels: input.actionLabels,
         group: input.group,
         projectRevision: input.projectRevision,
+    });
+    const parsedCommands =
+        (input.actionCommandGraph?.batchLocalBindings.length ?? 0) === 0
+            ? []
+            : commandEnvelopes.map((serialized) => {
+                  const parsed = parseVersionedCommandEnvelope(serialized);
+                  if (parsed.status !== 'valid') {
+                      throw new Error(parsed.reason);
+                  }
+                  return parsed.envelope;
+              });
+    const batchLocalBindings = (input.actionCommandGraph?.batchLocalBindings ?? []).map((binding) => {
+        const producer = parsedCommands[binding.producerActionIndex];
+        if (
+            producer === undefined ||
+            !Number.isSafeInteger(binding.producerActionIndex) ||
+            binding.producerActionIndex < 0
+        ) {
+            throw new Error('Action command graph contains an invalid batch-local producer');
+        }
+        return {
+            bindingId: binding.bindingId,
+            producerArgument: binding.producerArgument,
+            producerCommandId: producer.commandId,
+        };
     });
     return {
         commandEnvelopes,
@@ -341,6 +369,7 @@ export function compilePlannedActionCommandBatch(input: CompilePlannedActionComm
             batchId: input.group.groupId,
             projectId: input.projectRevision,
             baseRevision: input.projectRevision,
+            batchLocalBindings,
             intent: input.intent,
             mode: input.mode,
             commands: commandEnvelopes,

@@ -465,4 +465,41 @@ describe('resolveAgentReference', () => {
             reason: 'ungrounded-target',
         });
     });
+
+    it('resolves adjustment layers only from immutable project-context candidates', () => {
+        const project = {
+            ...createProjectState(),
+            adjustmentLayers: [
+                {
+                    id: 'layer-bass-air',
+                    name: 'Bass Air',
+                    effectType: 'eq' as const,
+                    parameters: [],
+                    affectedTrackIds: ['track-bass'],
+                    insertionIndex: 0,
+                    regions: [],
+                    enabled: true,
+                    mix: 1,
+                    color: '#ffffff',
+                },
+            ],
+        };
+
+        expect(
+            resolveAgentReference({
+                prompt: 'add a region to Bass Air',
+                assertedId: 'layer-bass-air',
+                capability: 'adjustment-layer',
+                context: project,
+            })
+        ).toEqual({ status: 'resolved', id: 'layer-bass-air', evidence: 'exact-name' });
+        expect(
+            resolveAgentReference({
+                prompt: 'add a region to Bass Air',
+                assertedId: 'layer-from-store-only',
+                capability: 'adjustment-layer',
+                context: project,
+            })
+        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+    });
 });

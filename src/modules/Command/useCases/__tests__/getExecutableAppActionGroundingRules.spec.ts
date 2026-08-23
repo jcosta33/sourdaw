@@ -18,6 +18,73 @@ describe('getExecutableAppActionGroundingRules', () => {
         expect(result?.intentPhrases.length).toBeGreaterThan(0);
         expect(result?.intentPhrases).toContain('add track');
         expect(result?.targetRules).toEqual([]);
+        expect(result?.mutationIdempotent).toBe(false);
+        expect(result?.mutationIdentityRules).toEqual([]);
+    });
+
+    it('owns mutation identity independently from capability targets', () => {
+        expect(getExecutableAppActionGroundingRules('setTrackOutput')).toMatchObject({
+            targetRules: [
+                { argument: 'outputId', capability: 'output' },
+                { argument: 'trackId', capability: 'routable-source' },
+            ],
+            mutationIdentityRules: [
+                { arguments: [{ argument: 'trackId' }], resourceFamily: 'track' },
+                {
+                    arguments: [{ argument: 'outputId' }],
+                    resourceFamily: 'track',
+                    resourceReferenceOnly: true,
+                },
+            ],
+        });
+        expect(getExecutableAppActionGroundingRules('setDeviceParameter')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
+        ]);
+        expect(getExecutableAppActionGroundingRules('automateTrackGainRange')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
+        ]);
+        expect(getExecutableAppActionGroundingRules('addSend')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('moveClip')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('copyMidiArticulations')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'targetClipId' }] },
+        ]);
+        expect(getExecutableAppActionGroundingRules('assignToVca')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackId' }], resourceFamily: 'track' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('addDevice')).toMatchObject({
+            mutationIdempotent: false,
+            mutationIdentityRules: [],
+        });
+        expect(getExecutableAppActionGroundingRules('addSidechainRoute')?.mutationIdentityRules).toEqual([
+            {
+                arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetDeviceId' }],
+                fallbackArguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }],
+            },
+        ]);
+        expect(getExecutableAppActionGroundingRules('setTrackGain')?.mutationIdempotent).toBe(true);
+        expect(getExecutableAppActionGroundingRules('splitClip')?.mutationIdempotent).toBe(false);
+        expect(getExecutableAppActionGroundingRules('removeMarker')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeClip')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeDevice')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeSend')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+        ]);
+        expect(getExecutableAppActionGroundingRules('removeSection')?.mutationIdentityRules).toEqual([
+            {
+                arguments: [{ argument: 'startBeat' }, { argument: 'endBeat' }, { argument: 'name' }],
+                resourceFamily: 'section',
+            },
+        ]);
     });
 
     it('includes valueRules when the descriptor defines them', () => {
@@ -63,6 +130,9 @@ describe('getExecutableAppActionGroundingRules', () => {
 
         // The intentPhrases array must not be the same reference as the descriptor's.
         expect(result?.intentPhrases).not.toBe(descriptor.intentPhrases);
+        expect(result?.mutationIdentityRules).not.toBe(
+            getExecutableAppActionGroundingRules('addTrack')?.mutationIdentityRules
+        );
         // But the contents must match.
         expect(result?.intentPhrases).toEqual(descriptor.intentPhrases);
     });

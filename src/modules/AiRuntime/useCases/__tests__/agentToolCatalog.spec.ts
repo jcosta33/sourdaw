@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/stores';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../../models/SemanticCommandList';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
@@ -125,6 +126,39 @@ describe('agent tool catalog', () => {
                 requestTurn,
             })
         ).resolves.toMatchObject({ status: 'complete' });
+    it('publishes the complete semantic-list grammar from the public versioned contract', () => {
+        const proposalSchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
+            (schema: ToolSchema) => schema.function.name === 'command.batch.propose'
+        );
+
+        expect(proposalSchema?.function.parameters.properties.list).toEqual(SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA);
+        expect(SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA).toMatchObject({
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+                schemaVersion: { type: 'integer', enum: [1] },
+                items: {
+                    items: {
+                        additionalProperties: false,
+                        properties: {
+                            selector: {
+                                additionalProperties: false,
+                                properties: {
+                                    entity: {
+                                        enum: ['track', 'clip', 'device', 'automation-lane', 'adjustment-layer'],
+                                    },
+                                    where: { additionalProperties: false },
+                                    condition: { additionalProperties: false },
+                                    quantity: { additionalProperties: false },
+                                },
+                            },
+                            repeat: { additionalProperties: false },
+                            dependsOn: { type: 'array', uniqueItems: true },
+                        },
+                    },
+                },
+            },
+        });
     });
 
     it('keeps provider planning on a compact catalog, discovers command schemas dynamically, and returns only a proposal', async () => {

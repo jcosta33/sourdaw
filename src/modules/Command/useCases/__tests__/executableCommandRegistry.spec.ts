@@ -2172,7 +2172,7 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'addAdjustmentRegion',
         intentPhrases: ['copy the bass processing', 'copy bass processing'],
-        targetRules: [],
+        targetRules: [{ argument: 'layerId', capability: 'adjustment-layer' }],
         valueRules: [],
     },
     {
@@ -2196,13 +2196,29 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'automateTrackGainRange',
         intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                promptRole: 'members',
+            },
+        ],
         valueRules: [],
     },
     {
         actionType: 'automateSendRanges',
         intentPhrases: ['automate them to', 'final four bars of every chorus'],
-        targetRules: [],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                dependsOn: 'busId',
+                promptRole: 'source',
+            },
+            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
+        ],
         valueRules: [],
     },
     {
@@ -2316,7 +2332,7 @@ const EXPECTED_GROUNDING = [
         targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
         valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true }],
     },
-];
+] as const;
 
 describe('executable command registry', () => {
     it('derives the exact duplicate-free provider tool schema and execution policy', () => {
@@ -2362,7 +2378,27 @@ describe('executable command registry', () => {
     it('pins the complete intent, target, and value grounding map', () => {
         const actual = EXPECTED_COMMANDS.map((command) => getExecutableAppActionGroundingRules(command[0]));
 
-        expect(actual).toEqual(EXPECTED_GROUNDING);
+        expect(
+            actual.map((grounding) => {
+                if (grounding === null) {
+                    throw new Error('Expected executable grounding rules.');
+                }
+                const {
+                    mutationIdempotent: _mutationIdempotent,
+                    mutationIdentityRules: _mutationIdentityRules,
+                    ...rest
+                } = grounding;
+                return rest;
+            })
+        ).toEqual(EXPECTED_GROUNDING);
+        expect(
+            actual.every(
+                (grounding) =>
+                    grounding !== null &&
+                    typeof grounding.mutationIdempotent === 'boolean' &&
+                    Array.isArray(grounding.mutationIdentityRules)
+            )
+        ).toBe(true);
     });
 
     it('maps every provider-executable action to exactly one production handler with executable metadata', () => {

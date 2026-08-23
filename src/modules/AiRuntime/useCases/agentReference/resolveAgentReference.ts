@@ -280,6 +280,10 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
         return lanes.map((lane) => ({ id: lane.id, name: lane.name }));
     }
 
+    if (input.capability === 'adjustment-layer') {
+        return (input.context.adjustmentLayers ?? []).map((layer) => ({ id: layer.id, name: layer.name }));
+    }
+
     if (input.capability === 'vca-group') {
         return (input.context.vcaGroups ?? []).map((group) => ({ id: group.id, name: group.name }));
     }

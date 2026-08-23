@@ -1,5 +1,6 @@
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
 
+import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
 export const PROJECT_QUERY_TOOL_NAME = 'project.query';
@@ -136,38 +137,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                         additionalProperties: false,
                     },
                 },
-                list: {
-                    type: 'object',
-                    description:
-                        'Version 1 bounded semantic command list. Each item names a discovered command and may use one bounded selector, exclusion, condition, quantity, dependency, and local repetition descriptor. The application resolves IDs and guards from one snapshot.',
-                    properties: {
-                        schemaVersion: { type: 'integer', enum: [1] },
-                        items: {
-                            type: 'array',
-                            minItems: 1,
-                            maxItems: 16,
-                            items: {
-                                type: 'object',
-                                properties: {
-                                    id: { type: 'string', minLength: 1, maxLength: 128 },
-                                    name: { type: 'string', minLength: 1, maxLength: 128 },
-                                    arguments: { type: 'object' },
-                                    selector: { type: 'object' },
-                                    repeat: { type: 'object' },
-                                    dependsOn: {
-                                        type: 'array',
-                                        maxItems: 16,
-                                        items: { type: 'string', maxLength: 128 },
-                                    },
-                                },
-                                required: ['id', 'name', 'arguments'],
-                                additionalProperties: false,
-                            },
-                        },
-                    },
-                    required: ['schemaVersion', 'items'],
-                    additionalProperties: false,
-                },
+                list: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
                 plan: {
                     type: 'object',
                     properties: {
