@@ -38,6 +38,7 @@ on:
     # Nine repository-wide gates went red under exactly that blind spot while
     # nothing ran automatically at all.
     - cron: '0 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -115,9 +116,9 @@ jobs:
           WEB: ${{ steps.filter.outputs.web }}
         run: |
           set -euo pipefail
-          # A scheduled run answers "is main healthy", which no pull request's
-          # changed paths can narrow — every leg runs.
-          if [ "$EVENT" = "schedule" ]; then
+          # Scheduled and manually dispatched runs answer "is main healthy",
+          # which no pull request's changed paths can narrow — every leg runs.
+          if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then
             printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
