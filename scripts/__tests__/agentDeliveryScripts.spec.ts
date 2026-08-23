@@ -446,7 +446,15 @@ describe('package scripts and gitignore', () => {
                 sources: new Map([
                     [
                         'scripts/publishLane.ts',
-                        `export async function runPublishLaneCli(args) { return JSON.stringify(args) === ${JSON.stringify(JSON.stringify(expectedArgs))} ? 0 : 1; }`,
+                        `export async function runPublishLaneCli(args) {
+    return args.length === 3
+        && args[0] === '12'
+        && args[1] === '--test'
+        && args[2] === 'Run the focused publisher specs and confirm they pass.'
+        ? 0
+        : 1;
+}
+`,
                     ],
                 ]),
             })
