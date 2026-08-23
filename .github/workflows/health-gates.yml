@@ -13,16 +13,16 @@ name: Health gates
 #
 # Only what cannot fit that budget waits for an approving review: the end-to-end
 # suite across twelve shards, CodeQL, and the full-history secret scan. Those
-# also run nightly and on dispatch. An approval re-runs what the last push
-# already ran, which is deliberate — it costs nothing here, and the alternative
-# is a merge decided by results from an older head.
+# also run nightly. An approval re-runs what the last push already ran, which is
+# deliberate — it costs nothing here, and the alternative is a merge decided by
+# results from an older head.
 #
 # `gate` is the only job the branch ruleset requires by name. It fails on each
 # pull-request push, then passes only when a current-head approval completes the
-# heavy security jobs. Scheduled and dispatched runs still accept legitimately
-# skipped jobs. A required check naming a filtered job directly would sit
-# pending forever on any pull request that skips it, so nothing else may be
-# required and `gate` must not be renamed.
+# heavy security jobs. Scheduled runs still accept legitimately skipped jobs. A
+# required check naming a filtered job directly would sit pending forever on
+# any pull request that skips it, so nothing else may be required and `gate`
+# must not be renamed.
 #
 # Runners are standard GitHub-hosted labels only. Public repositories bill
 # nothing for those; larger and GPU runners bill even here.
@@ -36,7 +36,6 @@ on:
     # Nine repository-wide gates went red under exactly that blind spot while
     # nothing ran automatically at all.
     - cron: '0 3 * * *'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -44,7 +43,7 @@ permissions:
 concurrency:
   group: health-gates-${{ github.event.pull_request.number || github.ref }}
   # A newer push or review supersedes any in-flight result for that pull
-  # request. Scheduled and dispatched runs against main remain independent.
+  # request. Scheduled runs against main remain independent.
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
 
 env:
@@ -109,9 +108,9 @@ jobs:
           WEB: ${{ steps.filter.outputs.web }}
         run: |
           set -euo pipefail
-          # A scheduled or dispatched run answers "is main healthy", which no
-          # pull request's changed paths can narrow — every leg runs.
-          if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then
+          # A scheduled run answers "is main healthy", which no pull request's
+          # changed paths can narrow — every leg runs.
+          if [ "$EVENT" = "schedule" ]; then
             printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi

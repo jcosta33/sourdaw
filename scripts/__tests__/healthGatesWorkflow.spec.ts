@@ -301,7 +301,7 @@ describe('health gates workflow contract', () => {
         expect(recordAt(events, 'pull_request_review').types).toEqual(['submitted', 'dismissed']);
         expect(Object.hasOwn(events, 'pull_request')).toBe(true);
         expect(Object.hasOwn(events, 'schedule')).toBe(true);
-        expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(true);
+        expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(false);
         expect(recordAt(workflow, 'permissions')).toEqual({ contents: 'read' });
         expect(recordAt(workflow, 'concurrency')['cancel-in-progress']).toBe(PULL_REQUEST_CONCURRENCY_CANCELLATION);
     });
@@ -337,7 +337,6 @@ describe('health gates workflow contract', () => {
             pullRequest: false,
         });
         expect(runGateScript(gateScript, 'schedule', '', skippedResults)).toBe(0);
-        expect(runGateScript(gateScript, 'workflow_dispatch', '', skippedResults)).toBe(0);
         expect(runGateScript(gateScript, 'pull_request_review', 'approved', approvedResults)).toBe(0);
         expect(
             runGateScript(gateScript, 'pull_request_review', 'approved', approvedResults, 'reviewed-sha', 'head-sha')
@@ -384,13 +383,6 @@ describe('health gates workflow contract', () => {
             web: 'false',
         });
         expect(runScopeScript(scopeScript, 'schedule')).toEqual({
-            heavy: 'true',
-            rust: 'true',
-            server: 'true',
-            e2e: 'true',
-            web: 'true',
-        });
-        expect(runScopeScript(scopeScript, 'workflow_dispatch')).toEqual({
             heavy: 'true',
             rust: 'true',
             server: 'true',
