@@ -24,7 +24,7 @@ const {
     clipSelectionStoreMock,
     preferencesStoreMock,
 } = vi.hoisted(() => ({
-    trackStoreMock: { value: null as TrackStoreState | null, set: vi.fn() },
+    trackStoreMock: { value: null as TrackStoreState | null, set: vi.fn(), subscribe: vi.fn(() => () => undefined) },
     transportStoreMock: { value: null as Partial<TransportState> | null, set: vi.fn() },
     timelineViewStoreMock: { value: null as Partial<TimelineViewState> | null, set: vi.fn() },
     midiStoreMock: { value: null as MidiStoreState | null, set: vi.fn() },

@@ -42,6 +42,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         return track.devices.some((device) => device.type === 'toaster');
     },
     trackStore: {
+        subscribe: vi.fn(() => () => undefined),
         get value() {
             return mocks.trackStoreValue.value;
         },

@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'rev-1'),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => mocks.captureProjectRevision()),
     getProjectContext: vi.fn(() => ({ tracks: [] })),
     parsePromptToActions: vi.fn(),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
 }));
 
 vi.mock('../getProjectContext', () => ({

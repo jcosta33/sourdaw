@@ -40,6 +40,7 @@ type TestTrackStoreState = {
 
 type TestStore<TData> = {
     value: TData;
+    subscribe?: () => () => undefined;
 };
 
 type TestTransportState = {
@@ -88,6 +89,7 @@ type ExportDialogMocks = {
 const mocks = vi.hoisted((): ExportDialogMocks => {
     const trackStore: TestStore<TestTrackStoreState> = {
         value: { tracks: [], selectedTrackId: null, ghostClips: [] },
+        subscribe: vi.fn(() => () => undefined),
     };
     const transportStore: TestStore<TestTransportState> = {
         value: { loopStart: 0, loopEnd: 0 },

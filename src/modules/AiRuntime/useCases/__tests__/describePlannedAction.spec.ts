@@ -22,7 +22,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     // this spec's tests never call.
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
-    trackStore: { value: null },
+    trackStore: { value: null, subscribe: vi.fn(() => () => undefined) },
     getTrackEligibility: vi.fn(),
     shouldCreateLiveTrackStrip: vi.fn(),
     deriveEffectiveAudibility: vi.fn(),
