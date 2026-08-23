@@ -4,7 +4,7 @@ import {
     generateGroupId,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -308,7 +308,7 @@ export async function sendChatMessage(
         runId,
         request: userText,
         mode: interactionMode,
-        createdRevision: captureProjectRevision(),
+        createdRevision: settlePendingProjectWritesAndCaptureRevision(),
         requestedRoute,
         selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
         scope: options?.scope,

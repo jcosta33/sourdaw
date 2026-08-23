@@ -1,4 +1,4 @@
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
@@ -27,7 +27,7 @@ type PlanPromptActionsInput = {
 };
 
 export async function planPromptActions(input: PlanPromptActionsInput) {
-    const projectRevision = captureProjectRevision();
+    const projectRevision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
     const streamIdentity = (() => {
         if (input.streamIdentity !== undefined) {
