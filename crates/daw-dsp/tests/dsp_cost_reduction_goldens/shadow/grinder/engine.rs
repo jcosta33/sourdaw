@@ -230,17 +230,7 @@ impl GrinderEngine {
             // Cabinet
             "cabType" => self.cabinet_mode = CabinetMode::from_index(value.round().max(0.0) as u32),
             "routingMode" => {
-                let next = RoutingMode::from_index(value.round().max(0.0) as u32);
-                // The dual chain only runs under DualAmp, so its state froze
-                // at whatever the last DualAmp sample left behind. Clear it on
-                // entry or that stale energy replays as a pop.
-                if next == RoutingMode::DualAmp && self.routing_mode != RoutingMode::DualAmp {
-                    self.dual_power_amp.reset();
-                    self.dual_transformer.reset();
-                    self.dual_speaker.reset();
-                    self.dual_cabinet.reset();
-                }
-                self.routing_mode = next;
+                self.routing_mode = RoutingMode::from_index(value.round().max(0.0) as u32)
             }
             "cabIrSlot" => {
                 self.cab_ir_slot = value.round().max(0.0) as u32;

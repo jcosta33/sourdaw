@@ -41,13 +41,28 @@ fn hash_samples(samples: &[f32]) -> u64 {
     hash
 }
 
-/// A silent render would make hash equality vacuous. `abs() > 0.0` also
-/// rejects an all-NaN render, unlike `!= 0.0`.
-fn assert_non_silent(render: &[f32]) {
+/// A silent or poisoned render would make hash comparison vacuous.
+fn assert_finite_and_non_silent(label: &str, render: &[f32]) {
+    assert!(
+        render.iter().all(|sample| sample.is_finite()),
+        "{label} golden render must contain only finite samples"
+    );
     assert!(
         render.iter().any(|sample| sample.abs() > 0.0),
-        "golden render must produce audio or the equivalence pin is vacuous"
+        "{label} golden render must produce audio or the comparison is vacuous"
     );
+}
+
+fn assert_equivalent_renders(optimized: &[f32], reference: &[f32]) {
+    assert_finite_and_non_silent("optimized", optimized);
+    assert_finite_and_non_silent("reference", reference);
+    assert_eq!(hash_samples(optimized), hash_samples(reference));
+}
+
+fn assert_distinct_renders(optimized: &[f32], reference: &[f32]) {
+    assert_finite_and_non_silent("optimized", optimized);
+    assert_finite_and_non_silent("reference", reference);
+    assert_ne!(hash_samples(optimized), hash_samples(reference));
 }
 
 fn stimulus(total: usize) -> Vec<f32> {
@@ -114,33 +129,32 @@ fn serial_routing_output_is_unchanged_by_gating_the_dual_amp_chain() {
     let params = [("routingMode", 0.0), ("cabType", 2.0)];
     let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
     let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
-    assert_non_silent(&optimized);
-    assert_eq!(hash_samples(&optimized), hash_samples(&reference));
+    assert_equivalent_renders(&optimized, &reference);
 }
 
-/// F9: entering DualAmp after a Serial block must also agree with the
-/// pre-optimization shadow, including the transition-state reset.
+/// F9: the optimized engine freezes the dual chain during Serial routing and
+/// clears it before entering DualAmp. The pre-F9 shadow continuously processes
+/// that chain and preserves its state across the transition, so the second
+/// block must differ. Equality means the shadow copied the optimized reset.
 #[test]
-fn dual_amp_routing_output_is_unchanged() {
-    fn render(mut engine: impl GrinderHarness) -> Vec<f32> {
+fn dual_amp_entry_resets_state_that_pre_f9_kept_processing() {
+    fn render(mut engine: impl GrinderHarness) -> (Vec<f32>, Vec<f32>) {
         configure_grinder(&mut engine, &[("routingMode", 0.0), ("cabType", 2.0)]);
-        let mut render = Vec::with_capacity(8192);
-        for block in 0..2 {
-            if block == 1 {
-                engine.set_param("routingMode", 3.0);
-            }
-            let mut left = stimulus(4096);
-            let mut right = left.clone();
-            engine.process_block(&mut left, &mut right);
-            render.extend_from_slice(&left);
-        }
-        render
+        let mut serial = stimulus(4096);
+        let mut right = serial.clone();
+        engine.process_block(&mut serial, &mut right);
+
+        engine.set_param("routingMode", 3.0);
+        let mut dual_amp = stimulus(4096);
+        right.copy_from_slice(&dual_amp);
+        engine.process_block(&mut dual_amp, &mut right);
+        (serial, dual_amp)
     }
 
-    let optimized = render(GrinderEngine::new(48_000.0));
-    let reference = render(ReferenceGrinderEngine::new(48_000.0));
-    assert_non_silent(&optimized);
-    assert_eq!(hash_samples(&optimized), hash_samples(&reference));
+    let (optimized_serial, optimized_dual_amp) = render(GrinderEngine::new(48_000.0));
+    let (reference_serial, reference_dual_amp) = render(ReferenceGrinderEngine::new(48_000.0));
+    assert_equivalent_renders(&optimized_serial, &reference_serial);
+    assert_distinct_renders(&optimized_dual_amp, &reference_dual_amp);
 }
 
 /// F9: Capture replaces the circuit preamp and tone stack. The shadow still
@@ -154,8 +168,7 @@ fn capture_mode_output_is_unchanged_by_gating_the_circuit_preamp() {
     ];
     let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
     let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
-    assert_non_silent(&optimized);
-    assert_eq!(hash_samples(&optimized), hash_samples(&reference));
+    assert_equivalent_renders(&optimized, &reference);
 }
 
 /// F14: burst coefficients moved out of the per-sample loop. This arithmetic
@@ -178,6 +191,7 @@ fn mechanical_noise_bursts_render_identically_with_precomputed_coefficients() {
         }
         render.push(noise.tick());
     }
+    assert_finite_and_non_silent("mechanical-noise", &render);
     assert_eq!(hash_samples(&render), 7_134_174_258_747_095_649);
 }
 
@@ -278,9 +292,8 @@ fn grand_boule_held_voice_renders_identically_across_the_demotion_boundary() {
     let (reference, reference_high, reference_standard, reference_age) =
         held_voice_render(ReferencePianoVoice::new(48_000.0));
 
-    assert_non_silent(&optimized);
     assert!(optimized_age > 48_000 && reference_age > 48_000);
-    assert_eq!(hash_samples(&optimized), hash_samples(&reference));
+    assert_equivalent_renders(&optimized, &reference);
     assert!(!optimized_high && optimized_standard);
     assert!(reference_high && !reference_standard);
 }
@@ -308,9 +321,5 @@ fn modal_string_renders_identically_when_the_zeroed_prefix_is_skipped() {
         reference_render.push(reference.tick(0.0));
     }
 
-    assert_non_silent(&optimized_render);
-    assert_eq!(
-        hash_samples(&optimized_render),
-        hash_samples(&reference_render)
-    );
+    assert_equivalent_renders(&optimized_render, &reference_render);
 }
