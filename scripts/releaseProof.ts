@@ -117,6 +117,15 @@ function readJson(path: string): unknown {
     return parseJsonWithUniqueKeys(readFileSync(path, 'utf8'), path);
 }
 
+function expectedDesktopArtifactName(root: string): string {
+    const value = readJson(resolve(root, 'package.json'));
+    const version = isRecord(value) ? value.version : undefined;
+    if (typeof version !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.+-]*$/u.test(version)) {
+        throw new Error('project package version cannot identify the desktop artifact');
+    }
+    return `Sourdaw-${version}-arm64-mac.zip`;
+}
+
 function requiredRecord(record: JsonRecord, key: string, label: string, errors: string[]): JsonRecord | undefined {
     const value = record[key];
     if (!isRecord(value)) {
@@ -837,12 +846,14 @@ function validateDesktop(
         'desktop artifact',
         errors
     );
-    if (
-        artifactPath !== undefined &&
-        (extname(artifactPath).toLowerCase() !== '.zip' ||
-            !/^Sourdaw(?:-.+)?-mac-arm64\.zip$/u.test(basename(artifactPath)))
-    ) {
-        errors.push('desktop artifact must preserve its Sourdaw macOS arm64 ZIP filename');
+    let expectedArtifactName: string | undefined;
+    try {
+        expectedArtifactName = expectedDesktopArtifactName(root);
+    } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+    }
+    if (artifactPath !== undefined && basename(artifactPath) !== expectedArtifactName) {
+        errors.push('desktop artifact must preserve the exact Sourdaw version-arm64-mac ZIP filename');
     }
     const contentsManifestPath = verifyFileHash(
         candidate,
@@ -1188,12 +1199,12 @@ function assertBuildState(root: string, revision: string): void {
     if (gitRevision(root) !== revision) {
         throw new Error('release build changed the candidate Git revision');
     }
-    const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+    const status = execFileSync('git', ['status', '--porcelain'], {
         cwd: root,
         encoding: 'utf8',
     });
     if (status.trim() !== '') {
-        throw new Error('release build changed tracked source files');
+        throw new Error('release build changed source files');
     }
 }
 
@@ -1245,7 +1256,7 @@ function selectDesktopArtifact(root: string): string {
     if (artifactName === undefined) {
         throw new Error('desktop build must produce exactly one new ZIP artifact');
     }
-    if (!/^Sourdaw(?:-.+)?-mac-arm64\.zip$/u.test(artifactName)) {
+    if (artifactName !== expectedDesktopArtifactName(root)) {
         throw new Error('desktop build produced a ZIP with the wrong macOS arm64 identity');
     }
     return join(directory, artifactName);

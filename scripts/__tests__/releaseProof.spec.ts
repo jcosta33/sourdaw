@@ -157,7 +157,7 @@ function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: D
         write(join(resources, `legal/${path}`), readFileSync(join(fixture.root, 'public/legal', path)));
     }
     mkdirSync(archiveDirectory, { recursive: true });
-    const archive = join(archiveDirectory, options.artifactName ?? 'Sourdaw-1.0.0-mac-arm64.zip');
+    const archive = join(archiveDirectory, options.artifactName ?? 'Sourdaw-1.0.0-arm64-mac.zip');
     execFileSync('zip', ['-X', '-q', '-r', archive, appName], { cwd: packageRoot });
     return archive;
 }
@@ -198,7 +198,7 @@ function createFixture(options: DesktopOptions = {}): Fixture {
     write(join(root, 'public/legal/Apache-2.0.txt'), 'fixture Apache license');
     write(join(root, 'public/legal/DEPENDENCY-LICENSES.txt'), 'fixture dependency licenses');
     write(join(root, 'public/legal/SOURDAW-NOTICE.txt'), 'fixture Sourdaw notice');
-    write(join(root, 'package.json'), '{}\n');
+    write(join(root, 'package.json'), '{"version":"1.0.0"}\n');
     write(
         join(root, '.gitignore'),
         'dist/\nelectron/out/\nrelease/desktop/\n/crates/sourdaw-native/*.node\n/crates/sourdaw-native/*.dylib\n'
@@ -318,7 +318,7 @@ describe('release proof', () => {
                 writeWebBuild(fixture);
                 return;
             }
-            write(join(fixture.root, 'release/desktop/Sourdaw-1.0.0-mac-arm64.zip'), 'not a ZIP');
+            write(join(fixture.root, 'release/desktop/Sourdaw-1.0.0-arm64-mac.zip'), 'not a ZIP');
         };
         expect(() => assemble(fixture, runner)).toThrow(/zip archive is unreadable|desktop archive/u);
     });
@@ -384,7 +384,7 @@ describe('release proof', () => {
     it('clears foreign ignored outputs and snapshots only the sequential builds', () => {
         const fixture = createFixture();
         write(join(fixture.root, 'dist/index.html'), 'foreign web output');
-        write(join(fixture.root, 'release/desktop/Sourdaw-foreign-mac-arm64.zip'), 'foreign desktop output');
+        write(join(fixture.root, 'release/desktop/Sourdaw-foreign-arm64-mac.zip'), 'foreign desktop output');
         const phases: string[] = [];
         const runner: ReleaseBuildRunner = (phase) => {
             phases.push(phase);
@@ -406,7 +406,7 @@ describe('release proof', () => {
     it.each([
         ['zero ZIPs', 'zero', /no release directory|exactly one new ZIP/u],
         ['multiple ZIPs', 'multiple', /exactly one new ZIP/u],
-        ['a wrongly named ZIP', 'wrong', /wrong macOS arm64 identity/u],
+        ['a reversed mac-arm64 ZIP', 'wrong', /wrong macOS arm64 identity/u],
     ])('rejects a desktop build producing %s', (_label, result, message) => {
         const fixture = createFixture();
         const runner: ReleaseBuildRunner = (phase) => {
@@ -417,11 +417,11 @@ describe('release proof', () => {
             if (result === 'multiple') {
                 createDesktopZip(fixture, join(fixture.root, 'release/desktop'));
                 createDesktopZip(fixture, join(fixture.root, 'release/desktop'), {
-                    artifactName: 'Sourdaw-2.0.0-mac-arm64.zip',
+                    artifactName: 'Sourdaw-2.0.0-arm64-mac.zip',
                 });
             } else if (result === 'wrong') {
                 createDesktopZip(fixture, join(fixture.root, 'release/desktop'), {
-                    artifactName: 'Foreign-1.0.0-mac-arm64.zip',
+                    artifactName: 'Sourdaw-1.0.0-mac-arm64.zip',
                 });
             }
         };
@@ -437,9 +437,21 @@ describe('release proof', () => {
                 write(join(fixture.root, 'package.json'), '{"changed":true}\n');
             }
         };
-        expect(() => assemble(fixture, runner)).toThrow('release build changed tracked source files');
+        expect(() => assemble(fixture, runner)).toThrow('release build changed source files');
         expect(existsSync(fixture.candidate)).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.tmp-'))).toBe(false);
+    });
+
+    it('rejects untracked non-ignored source files created by a build', () => {
+        const fixture = createFixture();
+        const runner: ReleaseBuildRunner = (phase) => {
+            if (phase === 'web') {
+                writeWebBuild(fixture);
+                write(join(fixture.root, 'build-created-source.ts'), 'export const foreign = true;\n');
+            }
+        };
+        expect(() => assemble(fixture, runner)).toThrow('release build changed source files');
+        expect(existsSync(fixture.candidate)).toBe(false);
     });
 
     it('rejects unreferenced files outside the closed candidate census', () => {
@@ -481,7 +493,7 @@ describe('release proof', () => {
         assemble(fixture);
         expect(validate(fixture)).toBe('');
         const value = proof(fixture);
-        expect(desktopProof(value).artifactPath).toBe('desktop/Sourdaw-1.0.0-mac-arm64.zip');
+        expect(desktopProof(value).artifactPath).toBe('desktop/Sourdaw-1.0.0-arm64-mac.zip');
         expect(() => readFileSync(join(fixture.candidate, 'desktop/contents'))).toThrow();
         expect(readFileSync(join(fixture.candidate, 'release-proof.json'), 'utf8')).toContain(fixture.revision);
     });

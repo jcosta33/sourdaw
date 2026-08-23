@@ -6,20 +6,22 @@ clean Sourdaw checkout and local Electron and FFmpeg Git checkouts at the revisi
 `public/legal/ELECTRON-SOURCES.json`:
 
 ```sh
-pnpm release:proof:assemble -- \
-  --output <candidate-directory> \
-  --electron-source <electron-git-checkout> \
-  --ffmpeg-source <ffmpeg-git-checkout>
+pnpm guard --profile extended --max-rss-mib 6144 --require-target -- \
+  pnpm release:proof:assemble -- \
+    --output <candidate-directory> \
+    --electron-source <electron-git-checkout> \
+    --ffmpeg-source <ffmpeg-git-checkout>
 ```
 
 The assembler clears the ignored web output, runs `pnpm build`, and snapshots
 that result before clearing the ignored desktop outputs and running
-`pnpm desktop:build`. It accepts exactly one newly produced macOS arm64 ZIP and
-derives its resource census, legal-file hashes, application layout, and arm64
-executable identity by extracting the ZIP itself. It rechecks the Git revision
-and tracked cleanliness after each build, validates the candidate in a
-temporary sibling directory, and publishes the requested output directory only
-after every check passes.
+`pnpm desktop:build`. It accepts exactly one newly produced
+`Sourdaw-<version>-arm64-mac.zip` and derives its resource census,
+legal-file hashes, application layout, and arm64 executable identity by
+extracting the ZIP itself. It rechecks the Git revision and complete source
+cleanliness after each build, validates the candidate in a temporary sibling
+directory, and publishes the requested output directory only after every check
+passes.
 
 The candidate includes revision-rooted Sourdaw, Electron, and FFmpeg source
 archives from verified Git commits. Its adjacent FFmpeg build manifest and
