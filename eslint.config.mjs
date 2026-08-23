@@ -2403,6 +2403,25 @@ export default defineConfig(
         },
     },
 
+    // ─── Playwright E2E ─────────────────────────────────────────────────────
+    // Playwright specs execute in Node but pass browser callbacks to the page.
+    // Their runner API is imported from `@playwright/test`, while both runtime
+    // global sets are available to the spec source. Keep type-aware linting on
+    // the E2E project instead of excluding the tests from focused lint runs.
+    {
+        files: ['tests/e2e/**/*.ts'],
+        languageOptions: {
+            globals: {
+                ...globals.node,
+                ...globals.browser,
+            },
+            parserOptions: {
+                project: './tsconfig.e2e.json',
+                tsconfigRootDir: import.meta.dirname,
+            },
+        },
+    },
+
     // ─── All JS/TS files ─────────────────────────────────────────────────────
     {
         files: ['**/*.{js,jsx,ts,tsx,mts,cts}'],
