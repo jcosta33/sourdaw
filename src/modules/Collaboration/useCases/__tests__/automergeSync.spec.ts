@@ -3,7 +3,10 @@ import {
     initSyncState,
     change,
     clone,
+    decodeSyncMessage,
+    encodeSyncMessage,
     generateSyncMessage,
+    getChanges,
     getHeads,
     load,
     receiveSyncMessage,
@@ -83,6 +86,7 @@ function createAmDoc(): Doc<unknown> {
 type SeededDoc = {
     actionHistory?: { entries: { id: string }[] };
     projectId?: string;
+    projectMeta?: { projectId: string; name?: string };
     /** A slot with no store projection — stands in for ordinary project truth. */
     peerProbe?: string;
 };
@@ -287,6 +291,130 @@ describe('AutomergeSync', () => {
         expect(handoffPrepared).toBe(true);
         expect(onPersistError).toHaveBeenCalledExactlyOnceWith(expect.any(Error));
         expect(commitHandoff).not.toHaveBeenCalled();
+    });
+
+    it('prepares an identity-bearing root delivery even before the peer converges', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const prepareSyncPersistence = vi.fn().mockResolvedValue(undefined);
+        const sync = new AutomergeSync(makePeerManager(), { prepareSyncPersistence });
+        const identityRevision = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+        });
+        const laterRevision = change(identityRevision, (draft) => {
+            draft.peerProbe = 'later-root-revision';
+        });
+        const messages = createPeerSyncMessages({ remote: laterRevision, local: live });
+        const identityBearing = decodeSyncMessage(base64ToBytes(messages.at(-1)!));
+        const changesThroughIdentity = getChanges(remoteSeed, identityRevision);
+        const partialMessage = encodeSyncMessage({
+            ...identityBearing,
+            changes: changesThroughIdentity,
+        });
+
+        for (const message of messages.slice(0, -1)) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: bytesToBase64(partialMessage) });
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).projectMeta?.projectId).toBe('aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa');
+        expect(prepareSyncPersistence).toHaveBeenCalledWith(
+            expect.objectContaining({
+                docId: 'root',
+                projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+                rootHeads: expect.any(Array),
+            })
+        );
+    });
+
+    it('holds a newer root delivery behind the exact prepare-persist-commit barrier', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        let releasePrepare: (() => void) | undefined;
+        const prepareBlocked = new Promise<void>((resolve) => {
+            releasePrepare = resolve;
+        });
+        const persistInputs: unknown[][] = [];
+        vi.mocked(persistCrdtProject).mockImplementation((...input: unknown[]) => {
+            persistInputs.push(input);
+            return Promise.resolve();
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async ({ projectId }) => {
+                if (!projectId) {
+                    return undefined;
+                }
+                await prepareBlocked;
+                return async () => undefined;
+            },
+        });
+        const firstRemote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'first';
+        });
+        for (const message of createPeerSyncMessages({ remote: firstRemote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        for (let attempt = 0; attempt < 8 && (live as Doc<SeededDoc>).peerProbe !== 'first'; attempt += 1) {
+            await Promise.resolve();
+        }
+        const firstHeads = [...getHeads(live)].map(String).toSorted();
+
+        const secondRemote = change(clone(live, 'cccccccccccccccc'), (draft) => {
+            (draft as SeededDoc).peerProbe = 'second';
+        });
+        for (const message of createPeerSyncMessages({ remote: secondRemote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+
+        expect((live as Doc<SeededDoc>).peerProbe).toBe('first');
+        releasePrepare?.();
+        await sync.flushPersistence();
+        await Promise.resolve();
+        await sync.flushPersistence();
+
+        expect(persistInputs[0]).toEqual([firstHeads]);
+        expect((live as Doc<SeededDoc>).peerProbe).toBe('second');
+    });
+
+    it('preserves the host project identity while applying other guest root changes', async () => {
+        const canonical = change(seedAmDoc(), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa', name: 'Host project' };
+        });
+        let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+        const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            getProtectedProjectId: () => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+        });
+        const guest = change(remoteSeed, (draft) => {
+            draft.projectMeta = {
+                projectId: 'bbbbbbbb-bbbb-8bbb-8bbb-bbbbbbbbbbbb',
+                name: 'Guest edit accepted',
+            };
+        });
+
+        for (const message of createPeerSyncMessages({ remote: guest, local: live })) {
+            sync.receiveSync({ peerId: 'guest-peer', docId: 'root', syncMessageBase64: message });
+        }
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).projectMeta).toEqual({
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            name: 'Guest edit accepted',
+        });
     });
 
     it('defers an incoming branch-document sync until its owning transition releases the document', async () => {

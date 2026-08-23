@@ -9,14 +9,21 @@ export function createStemImportConfirmationResourceLease(actions: readonly Exec
     }
 
     let released = false;
+    let releaseInFlight: Promise<void> | null = null;
     return {
         bytes: stems.reduce((total, stem) => total + stem.sourceBytes + stem.decodedBytes, 0),
-        release: () => {
+        release: async () => {
             if (released) {
                 return;
             }
-            released = true;
-            discardPreparedStemImportResources(stems);
+            releaseInFlight ??= discardPreparedStemImportResources(stems)
+                .then(() => {
+                    released = true;
+                })
+                .finally(() => {
+                    releaseInFlight = null;
+                });
+            await releaseInFlight;
         },
     };
 }

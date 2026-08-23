@@ -3,6 +3,7 @@ import {
     type Heads,
     type Patch,
     type SyncState,
+    change,
     clone,
     diff,
     getHeads,
@@ -29,6 +30,7 @@ import {
     DOC_PREFIX_ROOT,
     DOC_BRANCHES,
 } from '#/modules/CrdtDocument/useCases';
+import { readSettledProjectId } from '#/modules/Project/stores';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
@@ -165,10 +167,14 @@ export type AutomergeSyncHooks = {
     onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
     /** Called once the installed document heads equal the heads advertised by this peer. */
     onSyncConverged?: (input: { peerId: PeerId; docId: string }) => void;
-    /** Prepare durable side effects before this converged document is persisted. */
+    /** Return the host-owned project identity a non-host root delivery may not replace. */
+    getProtectedProjectId?: (input: { peerId: PeerId; docId: string }) => string | undefined;
+    /** Prepare durable side effects against the exact root revision before it is persisted. */
     prepareSyncPersistence?: (input: {
         peerId: PeerId;
         docId: string;
+        projectId?: string;
+        rootHeads: readonly string[];
     }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
     /** Called when a prepared side effect fails after document persistence. */
     onPostPersistError?: (error: unknown) => void;
@@ -196,6 +202,24 @@ export type AutomergeSyncHooks = {
      */
     onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
 };
+
+function protectProjectIdentity(document: Doc<unknown>, projectId: string | undefined): Doc<unknown> {
+    if (!projectId) {
+        return document;
+    }
+    const projectMeta = (document as Doc<Record<string, unknown>>).projectMeta;
+    if (readSettledProjectId(projectMeta) === projectId) {
+        return document;
+    }
+    return change(document as Doc<Record<string, unknown>>, 'Preserve host project identity', (draft) => {
+        const current = draft.projectMeta;
+        if (typeof current === 'object' && current !== null && !Array.isArray(current)) {
+            (current as Record<string, unknown>).projectId = projectId;
+        } else {
+            draft.projectMeta = { projectId };
+        }
+    });
+}
 
 /**
  * Whether `docId` names a document this node is willing to host. We only
@@ -248,6 +272,7 @@ export class AutomergeSync {
      */
     private sanitationFailures = new Map<string, number>();
     private persistenceTail = Promise.resolve();
+    private persistenceBarrierCount = 0;
 
     constructor(peerManager: PeerSyncTransport, hooks: AutomergeSyncHooks = {}) {
         this.peerManager = peerManager;
@@ -294,8 +319,15 @@ export class AutomergeSync {
     }
 
     /** Wait for every received document persistence and prepared post-persist handoff. */
-    flushPersistence(): Promise<void> {
-        return this.persistenceTail;
+    async flushPersistence(): Promise<void> {
+        for (;;) {
+            const tail = this.persistenceTail;
+            await tail;
+            await Promise.resolve();
+            if (tail === this.persistenceTail && this.persistenceBarrierCount === 0) {
+                return;
+            }
+        }
     }
 
     private static channelKey(peerId: PeerId, docId: string): string {
@@ -367,6 +399,13 @@ export class AutomergeSync {
         docId: string;
         syncMessageBase64: string;
     }): void {
+        if (this.persistenceBarrierCount > 0) {
+            const barrier = this.persistenceTail;
+            void barrier.then(() => {
+                this.receiveSync({ peerId, docId, syncMessageBase64 });
+            });
+            return;
+        }
         // Only accept syncs for documents this node is willing to host. A
         // remote peer must not be able to mint arbitrary docs in our
         // repository (which the next persist would write to IDB).
@@ -450,6 +489,10 @@ export class AutomergeSync {
             });
             return;
         }
+        sanitized_doc = protectProjectIdentity(
+            sanitized_doc,
+            docId === DOC_PREFIX_ROOT ? this.hooks.getProtectedProjectId?.({ peerId, docId }) : undefined
+        );
 
         // A delivery that sanitizes ends the streak. The bound exists for
         // isolated allocation faults, so faults separated by working traffic
@@ -476,7 +519,8 @@ export class AutomergeSync {
         } finally {
             this.isApplyingRemoteSync = false;
         }
-        if (!haveSameHeads(before_heads, getHeads(sanitized_doc))) {
+        const documentChanged = !haveSameHeads(before_heads, getHeads(sanitized_doc));
+        if (documentChanged) {
             this.hooks.onSyncApplied?.({ peerId, docId });
         }
         const converged = Boolean(
@@ -495,14 +539,32 @@ export class AutomergeSync {
             syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
         }
 
-        // Persist asynchronously and in receive order. A converged root may
-        // prepare a cross-store handoff before save and complete it only after
-        // the exact persisted document is durable.
-        this.persistenceTail = this.persistenceTail.then(async () => {
+        if (!documentChanged && this.hooks.prepareSyncPersistence !== undefined) {
+            return;
+        }
+
+        const rootHeads =
+            docId === DOC_PREFIX_ROOT ? [...getHeads(sanitized_doc)].map(String).toSorted() : ([] as string[]);
+        const projectId =
+            docId === DOC_PREFIX_ROOT
+                ? readSettledProjectId((sanitized_doc as Doc<Record<string, unknown>>).projectMeta)
+                : undefined;
+
+        // Production root syncs provide the preparation hook. While one of
+        // those exact revisions is being prepared, persisted, and committed,
+        // a later delivery must not replace the repository document it is
+        // bound to. Tests and isolated callers without that cross-store hook
+        // retain the ordinary Automerge synchronous receive contract.
+        const holdsRootPersistenceBarrier =
+            docId === DOC_PREFIX_ROOT && this.hooks.prepareSyncPersistence !== undefined;
+        if (holdsRootPersistenceBarrier) {
+            this.persistenceBarrierCount += 1;
+        }
+        const persistence = this.persistenceTail.then(async () => {
             let afterPersist: (() => Promise<void>) | undefined;
             try {
-                afterPersist = converged ? await this.hooks.prepareSyncPersistence?.({ peerId, docId }) : undefined;
-                await persistCrdtProject();
+                afterPersist = await this.hooks.prepareSyncPersistence?.({ peerId, docId, projectId, rootHeads });
+                await persistCrdtProject(docId === DOC_PREFIX_ROOT ? rootHeads : undefined);
             } catch (error) {
                 logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
                 this.hooks.onPersistError?.(error);
@@ -516,6 +578,11 @@ export class AutomergeSync {
             } catch (error) {
                 logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
                 this.hooks.onPostPersistError?.(error);
+            }
+        });
+        this.persistenceTail = persistence.finally(() => {
+            if (holdsRootPersistenceBarrier) {
+                this.persistenceBarrierCount -= 1;
             }
         });
     }

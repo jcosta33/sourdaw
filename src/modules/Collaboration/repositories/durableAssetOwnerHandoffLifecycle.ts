@@ -16,6 +16,12 @@ import { type RebindDurableAssetOwnerResult } from './durableAssetRepositoryCont
 
 const records = createDurableAssetRecordAccess();
 
+function haveSameStringSet(left: readonly string[], right: readonly string[]): boolean {
+    const leftSet = new Set(left);
+    const rightSet = new Set(right);
+    return leftSet.size === rightSet.size && [...leftSet].every((value) => rightSet.has(value));
+}
+
 async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
     if (nextOwnerId === previousOwnerId) {
         return { status: 'rebound', previousOwnerId, ownerId: nextOwnerId, reboundHashes: [] };
@@ -56,7 +62,80 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         return { status: 'failed', reason: 'owner-handoff-conflict' };
     }
 
-    const assets = [...new Map((indexedAssetValues as AssetRecord[]).map((value) => [value.hash, value])).values()];
+    const leases = leaseValues as LeaseRecord[];
+    const ownerIndexedHashes = new Set((ownedAssetValues as AssetRecord[]).map((asset) => asset.hash));
+    const leaseOwnerIndexedHashes = new Set((leasedAssetValues as AssetRecord[]).map((asset) => asset.hash));
+    const directlyReadAssetValues = await Promise.all(
+        leases.map((lease) => records.readStoredValue(assetStore, lease.hash))
+    );
+    const directlyReadAssets = new Map<string, AssetRecord>();
+    let backlinksAreValid = true;
+    for (const [index, lease] of leases.entries()) {
+        const assetValue = directlyReadAssetValues[index];
+        if (lease.ownerId !== previousOwnerId) {
+            backlinksAreValid = false;
+            break;
+        }
+        if (assetValue === undefined) {
+            if (lease.state !== 'released') {
+                backlinksAreValid = false;
+                break;
+            }
+            continue;
+        }
+        if (!records.isAssetRecord(assetValue) || assetValue.hash !== lease.hash) {
+            backlinksAreValid = false;
+            break;
+        }
+        directlyReadAssets.set(assetValue.hash, assetValue);
+        const matchingBacklinks = assetValue.activeLeases.filter((entry) => entry.leaseId === lease.leaseId);
+        if (
+            (lease.state === 'staged' &&
+                (matchingBacklinks.length !== 1 || matchingBacklinks[0]?.ownerId !== previousOwnerId)) ||
+            (lease.state !== 'staged' && matchingBacklinks.length > 0) ||
+            (lease.state === 'promoted' && !assetValue.ownerIds.includes(previousOwnerId))
+        ) {
+            backlinksAreValid = false;
+            break;
+        }
+    }
+    const indexedAssets = [
+        ...new Map((indexedAssetValues as AssetRecord[]).map((asset) => [asset.hash, asset])).values(),
+    ];
+    const validatedAssets = [
+        ...new Map([...indexedAssets, ...directlyReadAssets.values()].map((asset) => [asset.hash, asset])).values(),
+    ];
+    for (const asset of validatedAssets) {
+        const derivedLeaseOwnerIds = asset.activeLeases.map((lease) => lease.ownerId);
+        const selectedByOwnerIndex = ownerIndexedHashes.has(asset.hash);
+        const selectedByLeaseOwnerIndex = leaseOwnerIndexedHashes.has(asset.hash);
+        if (
+            asset.hash.length === 0 ||
+            !haveSameStringSet(asset.leaseOwnerIds, derivedLeaseOwnerIds) ||
+            (selectedByOwnerIndex && !asset.ownerIds.includes(previousOwnerId)) ||
+            (selectedByLeaseOwnerIndex && !asset.leaseOwnerIds.includes(previousOwnerId))
+        ) {
+            backlinksAreValid = false;
+            break;
+        }
+        for (const backlink of asset.activeLeases) {
+            if (backlink.ownerId !== previousOwnerId) {
+                continue;
+            }
+            const lease = leases.find((candidate) => candidate.leaseId === backlink.leaseId);
+            if (!lease || lease.hash !== asset.hash || lease.ownerId !== previousOwnerId || lease.state !== 'staged') {
+                backlinksAreValid = false;
+                break;
+            }
+        }
+    }
+    if (!backlinksAreValid) {
+        transaction.abort();
+        await completion.catch(() => undefined);
+        return { status: 'failed', reason: 'corrupt-record' };
+    }
+
+    const assets = validatedAssets;
     const reboundHashes: string[] = [];
     for (const asset of assets) {
         const ownsAsset = asset.ownerIds.includes(previousOwnerId);

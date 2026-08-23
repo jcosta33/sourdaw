@@ -369,9 +369,22 @@ export const projectStore = createStore<ProjectStoreState>({
 
 /** Return the durable project identity only after canonical migration has settled. */
 export function getSettledProjectId(): string | undefined {
-    const project = projectStore.value;
-    if (!project || project.identityMigrationPending || !isCanonicalProjectId(project.projectId)) {
+    return readSettledProjectId(projectStore.value);
+}
+
+/** Read the same settled identity contract from an exact persisted project-meta snapshot. */
+export function readSettledProjectId(value: unknown): string | undefined {
+    if (!is_plain_object(value)) {
         return undefined;
     }
-    return project.projectId;
+    const projectId = get_own_value({ value, key: 'projectId' });
+    const migrationPending = get_own_value({ value, key: 'identityMigrationPending' });
+    if (
+        !projectId.found ||
+        !isCanonicalProjectId(projectId.value) ||
+        (migrationPending.found && migrationPending.value !== false)
+    ) {
+        return undefined;
+    }
+    return projectId.value;
 }

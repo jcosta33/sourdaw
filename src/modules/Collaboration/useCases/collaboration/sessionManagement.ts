@@ -18,6 +18,7 @@ import {
     waitForCrdtDocumentTransition,
     DOC_PREFIX_ROOT,
 } from '#/modules/CrdtDocument/useCases';
+import { getSettledProjectId } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -40,7 +41,6 @@ import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { type CollaborationPeer } from '../collaborationQueries';
 
 import { clearCollaborationFailure } from './clearCollaborationFailure';
-import { collaborationAssetOwnership } from './getCollaborationAssetOwnerId';
 
 /**
  * §14.1 — Coalesce all collaboration-session mutables into one holder so the
@@ -82,7 +82,7 @@ const sessionState: {
      * the store's error text.
      */
     sessionEndedByHostDeparture: boolean;
-    synchronizeAssetOwner: (() => Promise<(() => Promise<void>) | undefined>) | null;
+    synchronizeAssetOwner: ((nextOwnerId: string) => Promise<(() => Promise<void>) | undefined>) | null;
     assetOwnershipTask: Promise<void>;
 } = {
     peerManager: null,
@@ -379,14 +379,22 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             }
             return true;
         },
+        getProtectedProjectId: ({ peerId, docId }) => {
+            const state = collaborationStore.value;
+            if (!state || docId !== DOC_PREFIX_ROOT) {
+                return undefined;
+            }
+            const senderIsHost = state.peers.some((peer) => peer.id === peerId && peer.isHost);
+            return senderIsHost ? undefined : getSettledProjectId();
+        },
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
         },
-        prepareSyncPersistence: ({ peerId, docId }) => {
+        prepareSyncPersistence: ({ peerId, docId, projectId }) => {
             const senderIsHost =
                 collaborationStore.value?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
-            if (senderIsHost && docId === DOC_PREFIX_ROOT) {
-                return sessionState.synchronizeAssetOwner?.();
+            if (senderIsHost && docId === DOC_PREFIX_ROOT && projectId) {
+                return sessionState.synchronizeAssetOwner?.(projectId);
             }
             return undefined;
         },
@@ -515,9 +523,8 @@ function initializeSessionRuntime(
         return result;
     };
     if (options.rebindToSynchronizedOwner) {
-        sessionState.synchronizeAssetOwner = () =>
+        sessionState.synchronizeAssetOwner = (nextOwnerId) =>
             queueAssetOwnershipTask(async () => {
-                const nextOwnerId = collaborationAssetOwnership.getOwnerId();
                 const prepared = await assetTransfer.prepareDurableOwnerRebind(nextOwnerId);
                 if (prepared.status === 'failed') {
                     throw new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`);

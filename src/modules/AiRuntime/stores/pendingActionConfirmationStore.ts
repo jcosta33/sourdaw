@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
@@ -144,18 +145,24 @@ const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 
 type PendingActionResourceLease = {
     bytes: number;
-    release: () => void;
+    release: () => void | Promise<void>;
 };
 
 const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>();
 
-function releasePendingActionResourceLease(confirmationId: string): void {
+function reportResourceReleaseFailure(error: unknown): void {
+    logger.error('[PendingActionConfirmation] Prepared resource release failed; the lease remains retryable', error);
+}
+
+async function releasePendingActionResourceLease(confirmationId: string): Promise<void> {
     const lease = pendingActionResourceLeases.get(confirmationId);
     if (!lease) {
         return;
     }
-    pendingActionResourceLeases.delete(confirmationId);
-    lease.release();
+    await lease.release();
+    if (pendingActionResourceLeases.get(confirmationId) === lease) {
+        pendingActionResourceLeases.delete(confirmationId);
+    }
 }
 
 function clonePendingActionConfirmation(confirmation: PendingAppActionConfirmation): PendingAppActionConfirmation {
@@ -187,7 +194,7 @@ export function proposePendingActionConfirmation(
 ): PendingAppActionConfirmation | null {
     const state = pendingActionConfirmationStore.value;
     if (!state) {
-        input.resourceLease?.release();
+        void Promise.resolve(input.resourceLease?.release()).catch(reportResourceReleaseFailure);
         return null;
     }
 
@@ -201,7 +208,7 @@ export function proposePendingActionConfirmation(
             input.resourceLease.bytes < 0 ||
             preparedResourceBytes + input.resourceLease.bytes > MAX_PREPARED_RESOURCE_BYTES)
     ) {
-        input.resourceLease.release();
+        void Promise.resolve(input.resourceLease.release()).catch(reportResourceReleaseFailure);
         return null;
     }
 
@@ -246,7 +253,7 @@ export function proposePendingActionConfirmation(
     const retainedIds = new Set(confirmations.map((entry) => entry.id));
     for (const evicted of confirmationsWithNewEntry) {
         if (!retainedIds.has(evicted.id)) {
-            releasePendingActionResourceLease(evicted.id);
+            void releasePendingActionResourceLease(evicted.id).catch(reportResourceReleaseFailure);
         }
     }
     pendingActionConfirmationStore.set({ confirmations });
@@ -438,7 +445,7 @@ export function updatePendingActionFollowUp(
 
 export function clearPendingActionConfirmations(): void {
     for (const confirmationId of pendingActionResourceLeases.keys()) {
-        releasePendingActionResourceLease(confirmationId);
+        void releasePendingActionResourceLease(confirmationId).catch(reportResourceReleaseFailure);
     }
     pendingActionConfirmationStore.set({ confirmations: [] });
 }
@@ -448,9 +455,9 @@ type SettlePendingActionResourceLeaseInput = {
     disposition: 'discard' | 'retain';
 };
 
-export function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): void {
+export async function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): Promise<void> {
     if (input.disposition === 'discard') {
-        releasePendingActionResourceLease(input.confirmationId);
+        await releasePendingActionResourceLease(input.confirmationId);
         return;
     }
     pendingActionResourceLeases.delete(input.confirmationId);

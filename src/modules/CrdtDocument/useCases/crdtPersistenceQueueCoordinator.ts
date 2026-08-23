@@ -137,7 +137,10 @@ export type LoadCrdtPersistenceOperation = (input: {
 }) => Promise<LoadCrdtPersistenceOperationResult>;
 
 /** Serialize persistence operations and reset private lifecycle state. */
-function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation): Promise<void> {
+function runCrdtPersistenceOperation(
+    operation: CrdtPersistenceOperation,
+    expectedRootHeads?: readonly string[]
+): Promise<void> {
     if (typeof operation === 'object') {
         beginRootLineageTransition(operation);
         return Promise.resolve();
@@ -148,20 +151,35 @@ function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation): Promi
     }
 
     const generation = persistenceState.persistenceGeneration;
-    const run = persistenceState.operationTail.then(() => {
+    const run = persistenceState.operationTail.then(async () => {
         if (generation !== persistenceState.persistenceGeneration) {
-            return noOpPersistenceOperation();
+            await noOpPersistenceOperation();
+            return;
         }
+        assertExpectedRootHeads(expectedRootHeads);
         if (operation === 'compact') {
-            return compactCrdtProject(generation);
+            await compactCrdtProject(generation);
+        } else {
+            await persistIncrementalCrdtProject(generation);
         }
-        return persistIncrementalCrdtProject(generation);
+        assertExpectedRootHeads(expectedRootHeads);
     });
     persistenceState.operationTail = run.then(
         () => undefined,
         () => undefined
     );
     return run;
+}
+
+function assertExpectedRootHeads(expectedRootHeads?: readonly string[]): void {
+    if (!expectedRootHeads) {
+        return;
+    }
+    const current = [...(automergeRepository.getHeads(DOC_PREFIX_ROOT) ?? [])].map(String).toSorted();
+    const expected = [...expectedRootHeads].map(String).toSorted();
+    if (current.length !== expected.length || current.some((head, index) => head !== expected[index])) {
+        throw new Error('[CrdtPersistence] Root revision changed before exact collaboration persistence completed');
+    }
 }
 
 /** Revoke old writes, then load and adopt one persistence snapshot behind their settled tail. */

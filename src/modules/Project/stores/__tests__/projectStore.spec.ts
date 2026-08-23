@@ -6,7 +6,13 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { isCanonicalProjectId } from '../../models/ProjectData';
-import { defaultProjectStoreState, getSettledProjectId, projectStore, type ProjectStoreState } from '../projectStore';
+import {
+    defaultProjectStoreState,
+    getSettledProjectId,
+    projectStore,
+    readSettledProjectId,
+    type ProjectStoreState,
+} from '../projectStore';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -167,6 +173,15 @@ describe('projectStore', () => {
 
         projectStore.set({ ...create_default_state(), projectId: undefined, identityMigrationPending: false });
         expect(getSettledProjectId()).toBeUndefined();
+
+        expect(readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: false })).toBe(
+            settledProjectId
+        );
+        expect(readSettledProjectId({ projectId: 'not-a-uuid', identityMigrationPending: false })).toBeUndefined();
+        expect(readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: true })).toBeUndefined();
+        expect(
+            readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: 'unknown' })
+        ).toBeUndefined();
     });
 
     it('should ignore legacy persisted transient flags on cold-start hydration', () => {

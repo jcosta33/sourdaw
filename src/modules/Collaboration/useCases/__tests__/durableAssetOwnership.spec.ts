@@ -243,6 +243,29 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('retains the handoff journal when an indexed lease has no matching asset backlink', async () => {
+        const provisionalOwner = 'collaboration-join:malformed-index';
+        const projectOwner = 'project:malformed-index-authoritative';
+        const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
+        const staged = await joining.stageDurableAsset(
+            new Blob(['malformed-index-original']),
+            'malformed-index.wav',
+            'asset-stage-malformed-index'
+        );
+        await joining.prepareDurableOwnerRebind(projectOwner);
+        durableAssetIndexedDb.unlinkLeaseFromAsset(staged.leaseId, staged.hash);
+
+        await expect(joining.commitDurableOwnerRebind(projectOwner)).resolves.toEqual({
+            status: 'failed',
+            reason: 'corrupt-record',
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+        await expect(
+            createDurableAssetRepository(projectOwner).reopenStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toEqual({ status: 'failed', reason: 'lease-owner-mismatch' });
+        joining.dispose();
+    });
+
     it('releases exactly once and deletes only uncommitted unshared bytes', async () => {
         const first = await transfer.stageDurableAsset(
             new Blob(['shared-staging']),

@@ -32,7 +32,7 @@ type ReconcileImportedStemEffectsInput = {
     importedTracks: readonly Track[];
     projectedTrackIds: Set<string>;
     publishedTrackIds: Set<string>;
-    assetLeaseIds: readonly string[];
+    assetBindings: readonly { leaseId: string; hash: string }[];
     promotedAssetLeaseIds: Set<string>;
     committedTrackIds?: ReadonlySet<string>;
 };
@@ -42,21 +42,24 @@ async function reconcileImportedStemEffects({
     importedTracks,
     projectedTrackIds,
     publishedTrackIds,
-    assetLeaseIds,
+    assetBindings,
     promotedAssetLeaseIds,
     committedTrackIds,
 }: ReconcileImportedStemEffectsInput): Promise<void> {
     const isCommitted = (trackId: string) => !committedTrackIds || committedTrackIds.has(trackId);
     try {
         await runAllAsyncEffects([
-            ...assetLeaseIds
-                .filter((leaseId) => !promotedAssetLeaseIds.has(leaseId))
-                .map((leaseId) => () => {
+            ...assetBindings
+                .filter(({ leaseId }) => !promotedAssetLeaseIds.has(leaseId))
+                .map(({ leaseId, hash }) => async () => {
                     const transfer = getAssetTransfer();
                     if (!transfer) {
                         throw new Error(`Asset transfer is unavailable for staged lease: ${leaseId}`);
                     }
-                    transfer.promoteStagedAsset(leaseId);
+                    const promoted = await transfer.promoteDurableStagedAsset(leaseId, hash);
+                    if (promoted.status === 'failed') {
+                        throw new Error(`Could not promote staged asset ${leaseId}: ${promoted.reason}`);
+                    }
                     promotedAssetLeaseIds.add(leaseId);
                 }),
             ...importedTracks
@@ -105,7 +108,12 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         pendingGuards.delete(action);
 
         const addedTracks = [folder, ...importedTracks];
-        const assetLeaseIds = action.payload.stems.flatMap((stem) => (stem.assetLeaseId ? [stem.assetLeaseId] : []));
+        const assetBindings = action.payload.stems.flatMap((stem) =>
+            stem.assetLeaseId && stem.assetHash ? [{ leaseId: stem.assetLeaseId, hash: stem.assetHash }] : []
+        );
+        if (action.payload.stems.some((stem) => Boolean(stem.assetLeaseId) !== Boolean(stem.assetHash))) {
+            return { status: 'conflict' };
+        }
         const projectedTrackIds = new Set<string>();
         const publishedTrackIds = new Set<string>();
         const promotedAssetLeaseIds = new Set<string>();
@@ -115,7 +123,7 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
                 importedTracks,
                 projectedTrackIds,
                 publishedTrackIds,
-                assetLeaseIds,
+                assetBindings,
                 promotedAssetLeaseIds,
                 committedTrackIds,
             });

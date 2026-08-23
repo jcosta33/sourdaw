@@ -45,10 +45,13 @@ const automergeSyncMock = vi.hoisted(() => ({
     instances: [] as {
         hooks: {
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
+            getProtectedProjectId?: (input: { peerId: PeerId; docId: string }) => string | undefined;
             onPersistError?: (error: unknown) => void;
             prepareSyncPersistence?: (input: {
                 peerId: PeerId;
                 docId: string;
+                projectId?: string;
+                rootHeads: readonly string[];
             }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
             onPostPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
@@ -126,6 +129,7 @@ const audioEngineMock = vi.hoisted(() => ({
 }));
 
 const loggerMock = vi.hoisted(() => ({ warn: vi.fn() }));
+const projectMock = vi.hoisted(() => ({ settledId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' }));
 
 vi.mock('../../../repositories/peerConnection', () => ({
     PeerConnectionManager: vi.fn().mockImplementation(function (callbacks: CapturedCallbacks) {
@@ -149,10 +153,13 @@ vi.mock('../../automergeSync', () => ({
         _peerManager: unknown,
         hooks: {
             canApplySync?: (peerId: PeerId, docId: string) => boolean;
+            getProtectedProjectId?: (input: { peerId: PeerId; docId: string }) => string | undefined;
             onPersistError?: (error: unknown) => void;
             prepareSyncPersistence?: (input: {
                 peerId: PeerId;
                 docId: string;
+                projectId?: string;
+                rootHeads: readonly string[];
             }) => Promise<(() => Promise<void>) | undefined> | (() => Promise<void>) | undefined;
             onPostPersistError?: (error: unknown) => void;
             onSyncApplied?: (input: { peerId: PeerId; docId: string }) => void;
@@ -231,6 +238,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: trackStoreMock }));
 
 vi.mock('#/modules/Transport/stores', () => ({ transportStore: transportStoreMock }));
+vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: () => projectMock.settledId }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: audioEngineMock.getAudioContext,
@@ -380,6 +388,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         branchStoreMock.value = null;
         trackStoreMock.value = null;
         transportStoreMock.value = null;
+        projectMock.settledId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
         crdtMock.hasCrdtDoc.mockReturnValue(false);
         crdtMock.waitForCrdtDocumentTransition.mockReturnValue(null);
         currentOwnerId = 'project:local-before-sync';
@@ -432,6 +441,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
+                projectId: 'project:host-authoritative',
+                rootHeads: ['host-head'],
             });
             await afterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
@@ -470,12 +481,16 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const firstAfterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
+                projectId: 'project:intermediate-projection',
+                rootHeads: ['intermediate-head'],
             });
             await firstAfterPersist?.();
             currentOwnerId = 'project:host-authoritative';
             const secondAfterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
+                projectId: 'project:host-authoritative',
+                rootHeads: ['host-head'],
             });
             await secondAfterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
@@ -519,6 +534,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
+                projectId: 'project:same-local-and-host-id',
+                rootHeads: ['same-head'],
             });
             await afterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
@@ -556,12 +573,58 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'collaborator-peer',
                 docId: 'root',
+                projectId: 'project:non-host',
+                rootHeads: ['non-host-head'],
             });
             await afterPersist?.();
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(latestAssetTransfer().prepareDurableOwnerRebind).not.toHaveBeenCalled();
             expect(latestAssetTransfer().commitDurableOwnerRebind).not.toHaveBeenCalled();
+        });
+
+        it('allows only the recognized host to replace root project identity on every runtime', () => {
+            projectMock.settledId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+            collaborationStore.set(
+                makeState({
+                    isEnabled: true,
+                    isHost: false,
+                    peers: [
+                        {
+                            id: 'host-peer',
+                            name: 'Host',
+                            color: '#111',
+                            isHost: true,
+                            isConnected: true,
+                            lastSeen: 1,
+                            latencyMs: null,
+                        },
+                        {
+                            id: 'guest-peer',
+                            name: 'Guest',
+                            color: '#000',
+                            isHost: false,
+                            isConnected: true,
+                            lastSeen: 1,
+                            latencyMs: null,
+                        },
+                    ],
+                })
+            );
+            sessionRuntimePrimitives.initialize(projectMock.settledId);
+
+            expect(latestAutomergeSync().hooks.getProtectedProjectId?.({ peerId: 'guest-peer', docId: 'root' })).toBe(
+                projectMock.settledId
+            );
+            expect(
+                latestAutomergeSync().hooks.getProtectedProjectId?.({ peerId: 'host-peer', docId: 'root' })
+            ).toBeUndefined();
+            expect(
+                latestAutomergeSync().hooks.getProtectedProjectId?.({
+                    peerId: 'guest-peer',
+                    docId: 'branch_feature',
+                })
+            ).toBeUndefined();
         });
 
         it('retries a failed post-persist handoff without waiting for another sync event', async () => {
@@ -595,6 +658,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const afterPersist = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
                 peerId: 'host-peer',
                 docId: 'root',
+                projectId: 'project:retry-authoritative',
+                rootHeads: ['retry-head'],
             });
             await expect(afterPersist?.()).resolves.toBeUndefined();
             await sessionRuntimePrimitives.flushAssetOwnership();
