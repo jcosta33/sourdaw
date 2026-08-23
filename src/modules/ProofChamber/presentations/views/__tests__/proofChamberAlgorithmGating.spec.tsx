@@ -314,25 +314,24 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
             expect(wrong).toEqual([]);
         });
 
-        it(`refuses writes from the ${algorithm} engine's dead controls and accepts the rest`, () => {
-            const wrong: string[] = [];
-            for (const [paramId, control] of Object.entries(PANEL_CONTROLS)) {
-                // One panel per control: a chip toggles, and a second copy of
-                // the panel left mounted would make `getAllByRole` return the
-                // previous render's nodes alongside this one's.
+        for (const [paramId, control] of Object.entries(PANEL_CONTROLS)) {
+            it(`refuses writes from the ${algorithm} engine's dead ${paramId} control and accepts it when live`, () => {
+                // One panel per control keeps the write oracle independent: a
+                // chip toggles, and a second copy left mounted would make
+                // `getAllByRole` return the previous render's nodes too.
                 cleanup();
                 vi.mocked(executeAppAction).mockClear();
                 renderPanel(algorithm);
 
                 const writes = writesReachingEngine(paramId, control);
-                const shouldWrite = !isGapped(algorithm, paramId);
-                if (shouldWrite !== writes > 0) {
-                    wrong.push(`${paramId}: ${writes} writes, expected ${shouldWrite ? 'at least one' : 'none'}`);
+                if (isGapped(algorithm, paramId)) {
+                    expect(writes).toBe(0);
+                    return;
                 }
-            }
 
-            expect(wrong).toEqual([]);
-        });
+                expect(writes).toBeGreaterThan(0);
+            });
+        }
     }
 
     it('leaves every control on the plate live, which is what stops a fix that disables everything', () => {
