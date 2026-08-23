@@ -1,0 +1,54 @@
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_714398462d4f42 23
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_94a6f55dfa6069 425,432,439,441-447,449,477,535
+  s_a40848e8f8cca9::t_813286d02d504d 699
+  s_a40848e8f8cca9::t_9f513c199adf13 424,430-431,433-436,438,476,534
+  s_a40848e8f8cca9::t_5779ab4ba26c92 507
+  s_a40848e8f8cca9::t_114a3c5f1156de 519
+  s_a40848e8f8cca9::t_99bb4acd1d34df 539-624
+  s_a40848e8f8cca9::t_4a6200af8c491e 537,625-698,700-709
+  s_a40848e8f8cca9::t_4577d7bffa92e4 145-171,420-423,426-429,437,440,448,450-475,478-506,508-518,520-533,536
+  s_a40848e8f8cca9::t_bfbaf5a55a78cd 538
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_fa2716650a1e96 230,232
+src/modules/Command/useCases/getAppActionStaticAuthority.ts
+  s_a40848e8f8cca9::t_eda75df912833b 1-37
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_5da479f78b80a9 4,75-77
+  s_a40848e8f8cca9::t_eda75df912833b 89-92,95-96
+  s_a40848e8f8cca9::t_392ada60db82d8 109,111-123,689-690
+  s_a40848e8f8cca9::t_9d20a743ab19f5 678-688,691-700
+  s_a40848e8f8cca9::t_3590d358492a1a 83
+  s_a40848e8f8cca9::t_100619260fdf98 6,9,30,74,78-81,84-88,93-94,97-98,105-108
+  s_a40848e8f8cca9::t_b487ee4306d8d4 82,99-104
+  s_0a3429e31e555d::t_917c7c8c96170b 110
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_eda75df912833b 27
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_100619260fdf98 261-262,539,542
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "500e892efa7b54048d1332fbf9f61ec58a144ce1",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
