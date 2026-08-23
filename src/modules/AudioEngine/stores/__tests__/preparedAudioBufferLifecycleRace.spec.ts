@@ -121,6 +121,7 @@ describe('prepared audio-buffer lifecycle races', () => {
                 return openAudioDatabase();
             },
             publishRuntime: (bufferId, buffer) => runtimeA.set(bufferId, buffer),
+            recoveryStoreName: 'preparedBufferRecovery',
         });
         const context = createTestContext(
             vi.fn((_channels: number, length: number, sampleRate: number) => createAudioBuffer({ length, sampleRate }))
@@ -158,6 +159,7 @@ describe('prepared audio-buffer lifecycle races', () => {
             metadataStoreName: 'bufferMeta',
             openDatabase: openAudioDatabase,
             publishRuntime: (bufferId, buffer) => runtimeB.set(bufferId, buffer),
+            recoveryStoreName: 'preparedBufferRecovery',
         });
         let reopened = false;
         const recoveredReopen = lifecycleB.reopen({ id, leaseId, context }).then((result) => {

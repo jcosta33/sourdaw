@@ -14,6 +14,8 @@ import { vi } from 'vitest';
  * 3. A transaction can abort **bare** — firing transaction `abort` and no
  *    transaction `error` — while requests it had not delivered fail with
  *    `AbortError`, matching the platform's separate request/transaction events.
+ *    An unprevented request `error` instead bubbles through and aborts the whole
+ *    transaction, so earlier writes in the same multi-ID import roll back.
  * 4. Every `open()` yields a **distinct** connection over shared stored data, and
  *    a connection that has been closed refuses `transaction()` with
  *    `InvalidStateError` (IDB 3.0 §3.3.1). A caller that keeps using a handle it
@@ -55,10 +57,21 @@ export type StoredBufferMeta = {
     sizeInBytes: number;
 };
 
-export type StoredValue = StoredAudioBuffer | StoredBufferMeta;
+export type StoredRecoveryRecord = {
+    data?: StoredAudioBuffer;
+    id?: string;
+    metadata?: StoredBufferMeta;
+    operation?: 'discard' | 'reclamation';
+    revision?: string;
+    schemaVersion?: 1;
+    stagedAtMs?: number;
+};
+
+export type StoredValue = StoredAudioBuffer | StoredBufferMeta | StoredRecoveryRecord;
 
 export const BUFFER_STORE = 'buffers';
 export const META_STORE = 'bufferMeta';
+export const RECOVERY_STORE = 'preparedBufferRecovery';
 
 /** Structured-clone payload size of one value, in bytes.
  *
@@ -99,8 +112,8 @@ function measureBytes(value: unknown): number {
 type FakeRequest<T> = {
     result: T | undefined;
     error: unknown;
-    onsuccess: (() => void) | null;
-    onerror: (() => void) | null;
+    onsuccess: ((event: Event) => void) | null;
+    onerror: ((event: Event) => void) | null;
 };
 
 export type FakeAudioIndexedDbControls = {
@@ -108,6 +121,8 @@ export type FakeAudioIndexedDbControls = {
     committed: Map<string, StoredAudioBuffer>;
     /** Committed contents of the `bufferMeta` object store. */
     committedMeta: Map<string, StoredBufferMeta>;
+    /** Committed contents of the isolated prepared-recovery object store. */
+    committedRecovery: Map<string, StoredRecoveryRecord>;
     /** Object stores that exist on the database right now. */
     storeNames: () => string[];
     /** Abort every subsequent readwrite transaction, after its requests succeed. */
@@ -242,6 +257,11 @@ class FakeTransaction {
         this.settle(true);
     }
 
+    abortFromRequest(error: unknown): void {
+        this.error = error;
+        this.settle(true, true);
+    }
+
     private schedule(): void {
         if (!this.started || this.scheduled || this.settled) {
             return;
@@ -272,7 +292,7 @@ class FakeTransaction {
         this.settle(this.willAbort);
     }
 
-    private settle(abort: boolean): void {
+    private settle(abort: boolean, requestFailed = false): void {
         if (this.settled) {
             return;
         }
@@ -287,8 +307,14 @@ class FakeTransaction {
             for (const staged of this.staged.values()) {
                 staged.clear();
             }
-            this.error = null;
-            // A bare abort fires `abort` and nothing else.
+            if (!requestFailed) {
+                this.error = null;
+            } else {
+                this.onerror?.();
+            }
+            // A bare abort fires `abort` and nothing else. An unprevented
+            // request error first bubbles through the transaction, then aborts
+            // the transaction and rolls back every staged store mutation.
             this.onabort?.();
             this.onSettled?.();
             return;
@@ -398,15 +424,19 @@ class FakeObjectStore {
             () => {
                 if (this.shouldFailRequest?.(this.name)) {
                     request.error = new DOMException('The request failed.', 'UnknownError');
-                    request.onerror?.();
+                    const event = new Event('error', { bubbles: true, cancelable: true });
+                    request.onerror?.(event);
+                    if (!event.defaultPrevented) {
+                        this.transaction.abortFromRequest(request.error);
+                    }
                     return;
                 }
                 request.result = run();
-                request.onsuccess?.();
+                request.onsuccess?.(new Event('success'));
             },
             () => {
                 request.error = new DOMException('The transaction was aborted.', 'AbortError');
-                request.onerror?.();
+                request.onerror?.(new Event('error', { bubbles: true, cancelable: true }));
             }
         );
         return request;
@@ -449,11 +479,13 @@ export type InstallFakeAudioIndexedDbInput = {
 export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput = {}): FakeAudioIndexedDbControls {
     const committed = new Map<string, StoredAudioBuffer>();
     const committedMeta = new Map<string, StoredBufferMeta>();
+    const committedRecovery = new Map<string, StoredRecoveryRecord>();
     const tables: Tables = new Map<string, Map<string, StoredValue>>();
     // Both concrete maps are handed to specs by identity, so they are installed
     // as the backing tables rather than copied into them.
     tables.set(BUFFER_STORE, committed);
     tables.set(META_STORE, committedMeta);
+    tables.set(RECOVERY_STORE, committedRecovery);
 
     const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
     const meters: ByteMeters = { read: 0, written: 0 };
@@ -643,6 +675,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     return {
         committed,
         committedMeta,
+        committedRecovery,
         storeNames: () => [...existingStores],
         abortWrites: () => {
             abortWrites = true;

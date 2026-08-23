@@ -4,6 +4,8 @@ import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecyc
 import {
     isValidPreparedSerializedAudioBuffer,
     isPreparedAudioRecoveryKey,
+    readPreparedAudioRecoveryMetadata,
+    readPreparedAudioRecoveryRecord,
     readPreparedOwner,
     requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
@@ -169,7 +171,7 @@ function waveformCacheSet(key: string, peaks: Float32Array): void {
 }
 
 const DB_NAME = 'sourdaw-audio';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'buffers';
 
 /** Everything the age and size collectors read, split out of the record so that
@@ -194,8 +196,55 @@ const STORE_NAME = 'buffers';
  * persisted with — which is exactly what the lazy back-fill needs to seed a row
  * for a record written before this store existed. */
 const META_STORE_NAME = 'bufferMeta';
+const RECOVERY_STORE_NAME = 'preparedBufferRecovery';
 
 type BufferMeta = PreparedAudioBufferMetadata;
+
+async function migrateLegacyPreparedRecoveryRows(database: IDBDatabase): Promise<void> {
+    const readTransaction = database.transaction(META_STORE_NAME, 'readonly');
+    const metadataStore = readTransaction.objectStore(META_STORE_NAME);
+    const [metadataRows, keys] = await Promise.all([
+        awaitRequest(metadataStore.getAll() as IDBRequest<unknown[]>),
+        awaitRequest(metadataStore.getAllKeys()),
+    ]);
+    await awaitTransaction(readTransaction);
+    const legacyRows = keys.flatMap((key, index) => {
+        const metadata = readPreparedAudioRecoveryMetadata(metadataRows[index]);
+        return typeof key === 'string' && isPreparedAudioRecoveryKey(key) && metadata !== null
+            ? [{ key, metadata }]
+            : [];
+    });
+    if (legacyRows.length === 0) {
+        return;
+    }
+    const transaction = database.transaction([STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME], 'readwrite');
+    const bufferStore = transaction.objectStore(STORE_NAME);
+    const currentMetadataStore = transaction.objectStore(META_STORE_NAME);
+    const recoveryStore = transaction.objectStore(RECOVERY_STORE_NAME);
+    for (const { key, metadata } of legacyRows) {
+        const [data, existingRecovery] = await Promise.all([
+            awaitRequest(bufferStore.get(key) as IDBRequest<SerializedBuffer | undefined>),
+            awaitRequest(recoveryStore.get(metadata.id) as IDBRequest<unknown>),
+        ]);
+        const existing = readPreparedAudioRecoveryRecord(existingRecovery);
+        if (existing !== null && (existing.id !== metadata.id || existing.revision !== metadata.revision)) {
+            continue;
+        }
+        if (existing === null) {
+            recoveryStore.put(
+                {
+                    ...metadata,
+                    data,
+                    stagedAtMs: Date.now(),
+                },
+                metadata.id
+            );
+        }
+        bufferStore.delete(key);
+        currentMetadataStore.delete(key);
+    }
+    await awaitTransaction(transaction);
+}
 
 function isProtectedFromCollection(metadata: BufferMeta): boolean {
     const owner = readPreparedOwner(metadata);
@@ -304,6 +353,7 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             settled = true;
             reject(new Error(OPEN_BLOCKED_MESSAGE));
         };
+        let requiresLegacyRecoveryMigration = false;
         req.onupgradeneeded = () => {
             // Creates stores and nothing else. A v1 -> v2 back-fill that walked
             // the records here would hold the upgrade transaction — and every
@@ -323,6 +373,10 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             }
             if (!db.objectStoreNames.contains(META_STORE_NAME)) {
                 db.createObjectStore(META_STORE_NAME);
+            }
+            if (!db.objectStoreNames.contains(RECOVERY_STORE_NAME)) {
+                db.createObjectStore(RECOVERY_STORE_NAME);
+                requiresLegacyRecoveryMigration = true;
             }
         };
         req.onsuccess = () => {
@@ -345,7 +399,17 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
                 onConnectionLoss();
             };
             db.onclose = onConnectionLoss;
-            resolve(db);
+            if (!requiresLegacyRecoveryMigration) {
+                resolve(db);
+                return;
+            }
+            void migrateLegacyPreparedRecoveryRows(db).then(
+                () => resolve(db),
+                (error: unknown) => {
+                    db.close();
+                    reject(error);
+                }
+            );
         };
         req.onerror = () => {
             if (settled) {
@@ -712,6 +776,7 @@ const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
         clearWaveformCachesForId(id);
         accessRefreshStampById.set(id, lastAccessed);
     },
+    recoveryStoreName: RECOVERY_STORE_NAME,
 });
 
 type PreparedAudioBuffers = {
@@ -733,9 +798,6 @@ async function prepareBuffersFromIdb({
     ids,
     shouldContinue,
 }: PrepareBuffersFromIdbInput): Promise<PreparedAudioBuffers | null> {
-    if (ids) {
-        await preparedAudioBufferLifecycle.recoverProjectReservations(ids);
-    }
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const excludedTemporaryIds = new Set(temporaryCaptures.keys());
@@ -755,6 +817,12 @@ async function prepareBuffersFromIdb({
         }
     };
     try {
+        if (shouldContinue?.() === false) {
+            return null;
+        }
+        if (ids) {
+            await preparedAudioBufferLifecycle.recoverProjectReservations(ids);
+        }
         if (shouldContinue?.() === false) {
             return null;
         }
@@ -782,9 +850,6 @@ async function prepareBuffersFromIdb({
                 continue;
             }
             const id = key;
-            if (isPreparedAudioRecoveryKey(id)) {
-                continue;
-            }
             if (excludedTemporaryIds.has(id)) {
                 continue;
             }
@@ -1111,12 +1176,13 @@ export const audioBufferCache = {
         // right after it commit in that order even on two connections.
         openDb()
             .then(async (db) => {
-                const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+                const tx = db.transaction([STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME], 'readwrite');
                 tx.objectStore(STORE_NAME).clear();
                 // Metadata rows left behind here would keep every buffer of the
                 // previous project counting against the 2 GiB size cap, and the
                 // size collector would evict live audio to make room for them.
                 tx.objectStore(META_STORE_NAME).clear();
+                tx.objectStore(RECOVERY_STORE_NAME).clear();
                 await awaitTransaction(tx);
                 return null;
             })
@@ -1138,10 +1204,7 @@ export const audioBufferCache = {
         const result: Record<string, ExportedAudioBuffer> = {};
         const metadataById = new Map<string, BufferMeta>();
         const temporaryIds = new Set(
-            ids.filter(
-                (id) =>
-                    isPreparedAudioRecoveryKey(id) || preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, null)
-            )
+            ids.filter((id) => preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, null))
         );
         try {
             const db = await openDb();
@@ -1476,7 +1539,6 @@ export const audioBufferCache = {
                 }
                 if (
                     typeof key !== 'string' ||
-                    isPreparedAudioRecoveryKey(key) ||
                     !key.startsWith('freeze-') ||
                     activeIds.has(key) ||
                     metadata?.preparedOwner?.status === 'temporary' ||
@@ -1508,6 +1570,10 @@ export const audioBufferCache = {
         const threshold = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
         let deletedCount = 0;
         try {
+            const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({
+                staleBeforeMs: threshold,
+            });
+            deletedCount += recoveryCollection.count;
             const db = await openDb();
             const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
@@ -1531,10 +1597,11 @@ export const audioBufferCache = {
             ]);
 
             const migratedIds = new Set<IDBValidKey>(keys);
+            let pendingDeletedCount = 0;
             for (let index = 0; index < metas.length; index++) {
                 const meta = metas[index]!;
                 const key = keys[index]! as string;
-                if (isPreparedAudioRecoveryKey(key) || pinnedBufferIds.has(key) || isProtectedFromCollection(meta)) {
+                if (pinnedBufferIds.has(key) || isProtectedFromCollection(meta)) {
                     continue;
                 }
                 if (typeof meta.lastAccessed !== 'number') {
@@ -1544,7 +1611,7 @@ export const audioBufferCache = {
                     store.delete(key);
                     metaStore.delete(key);
                     evictCachedBuffer(key);
-                    deletedCount++;
+                    pendingDeletedCount++;
                 }
             }
 
@@ -1576,7 +1643,7 @@ export const audioBufferCache = {
                 if (migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET) {
                     break;
                 }
-                if (typeof key !== 'string' || isPreparedAudioRecoveryKey(key) || migratedIds.has(key)) {
+                if (typeof key !== 'string' || migratedIds.has(key)) {
                     continue;
                 }
                 const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
@@ -1612,7 +1679,7 @@ export const audioBufferCache = {
                 if (!pinnedBufferIds.has(key) && record.lastAccessed < threshold) {
                     store.delete(key);
                     evictCachedBuffer(key);
-                    deletedCount++;
+                    pendingDeletedCount++;
                     continue;
                 }
                 metaStore.put({ lastAccessed: record.lastAccessed, sizeInBytes } satisfies BufferMeta, key);
@@ -1620,9 +1687,10 @@ export const audioBufferCache = {
 
             // The count is reported only for deletes that committed.
             await awaitTransaction(tx);
+            deletedCount += pendingDeletedCount;
         } catch (error) {
             logger.warn('[audioBufferCache] Age-based collection failed', { error });
-            return 0;
+            return deletedCount;
         }
         return deletedCount;
     },
@@ -1630,6 +1698,9 @@ export const audioBufferCache = {
     async garbageCollectBySize(maxSizeBytes: number): Promise<number> {
         let deletedCount = 0;
         try {
+            const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
+            deletedCount += recoveryCollection.count;
+            const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
             const db = await openDb();
             const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
@@ -1664,18 +1735,14 @@ export const audioBufferCache = {
                     protected: isProtectedFromCollection(meta),
                     size: meta.sizeInBytes,
                 }))
-                .filter(
-                    (entry) =>
-                        !isPreparedAudioRecoveryKey(entry.id) &&
-                        typeof entry.lastAccessed === 'number' &&
-                        typeof entry.size === 'number'
-                )
+                .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
                 .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
 
             let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
+            let pendingDeletedCount = 0;
 
             for (const entry of entries) {
-                if (currentTotal <= maxSizeBytes) {
+                if (currentTotal <= ordinarySizeBudget) {
                     break;
                 }
                 if (pinnedBufferIds.has(entry.id) || entry.protected) {
@@ -1685,13 +1752,14 @@ export const audioBufferCache = {
                 metaStore.delete(entry.id);
                 evictCachedBuffer(entry.id);
                 currentTotal -= entry.size;
-                deletedCount++;
+                pendingDeletedCount++;
             }
             // The count is reported only for deletes that committed.
             await awaitTransaction(tx);
+            deletedCount += pendingDeletedCount;
         } catch (error) {
             logger.warn('[audioBufferCache] Size-based collection failed', { error });
-            return 0;
+            return deletedCount;
         }
         return deletedCount;
     },

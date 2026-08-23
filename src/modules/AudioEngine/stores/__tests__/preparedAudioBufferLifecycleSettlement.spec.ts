@@ -740,6 +740,47 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(controls.committedMeta.get('discard-race')?.preparedOwner).toBeUndefined();
     });
 
+    it('does not report or evict discard when newer same-lease persistence commits before cleanup', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'discard-same-lease-persistence-race';
+        const leaseId = `${id}-lease`;
+        const original = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        original.getChannelData(0)[0] = 0.25;
+        await audioBufferCache.persistPreparedBuffer({ id, leaseId, buffer: original });
+
+        controls.pauseWriteSettlements();
+        const discard = audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+
+        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        replacement.getChannelData(0)[0] = 0.75;
+        const replacementPersistence = audioBufferCache.persistPreparedBuffer({ id, leaseId, buffer: replacement });
+        while (controls.writeTransactionCount() < 3) {
+            await flushIndexedDbTasks(1);
+        }
+
+        controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+
+        await expect(replacementPersistence).resolves.toEqual({ status: 'persisted', bufferId: id, leaseId });
+        await expect(discard).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio discard was superseded.',
+        });
+        expect(audioBufferCache.get(id)).toBe(replacement);
+        expect(controls.committed.get(id)?.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'temporary' });
+    });
+
     it('rejects discard when the project already pins the prepared PCM', async () => {
         const controls = installFakeAudioIndexedDb();
         const id = 'discard-existing-project-pin';
@@ -833,7 +874,6 @@ describe('prepared audio-buffer settlement and recovery', () => {
         const controls = installFakeAudioIndexedDb();
         const id = 'discard-durable-recovery';
         const leaseId = `${id}-lease`;
-        const recoveryKey = `\u0000sourdaw-prepared-recovery:${id}`;
         const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         source.getChannelData(0)[0] = 0.625;
         await audioBufferCache.persistPreparedBuffer({ id, buffer: source, leaseId });
@@ -858,21 +898,31 @@ describe('prepared audio-buffer settlement and recovery', () => {
 
         await expect(discard).resolves.toMatchObject({ status: 'failed' });
         expect(controls.committed.has(id)).toBe(false);
-        expect(controls.committed.get(recoveryKey)?.channelData[0]?.[0]).toBe(0.625);
-        expect(controls.committedMeta.has(recoveryKey)).toBe(true);
+        expect(
+            [...controls.committedRecovery.values()].find((recovery) => recovery.id === id)?.data?.channelData[0]?.[0]
+        ).toBe(0.625);
 
         const context = createTestContext(
             vi.fn((_channels: number, length: number, sampleRate: number) => createAudioBuffer({ length, sampleRate }))
         );
         await expect(audioBufferCache.restoreFromIdb({ context })).resolves.toBe(0);
-        await expect(audioBufferCache.exportBuffers([recoveryKey])).resolves.toEqual({});
-        expect(audioBufferCache.has(recoveryKey)).toBe(false);
 
         const settlePausedWrite = async <Result>(operation: Promise<Result>): Promise<Result> => {
-            while (controls.pendingWriteSettlementCount() === 0) {
+            let settled = false;
+            void operation.then(
+                () => {
+                    settled = true;
+                },
+                () => {
+                    settled = true;
+                }
+            );
+            for (let turn = 0; turn < 80 && !settled; turn++) {
+                if (controls.pendingWriteSettlementCount() > 0) {
+                    controls.releaseNextWriteSettlement();
+                }
                 await flushIndexedDbTasks(1);
             }
-            controls.releaseNextWriteSettlement();
             return operation;
         };
         await expect(settlePausedWrite(audioBufferCache.garbageCollectByAge(-1))).resolves.toBe(0);
@@ -886,8 +936,9 @@ describe('prepared audio-buffer settlement and recovery', () => {
             settlePausedWrite(audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 1 }))
         ).resolves.toBeUndefined();
         expect(controls.committed.has(id)).toBe(false);
-        expect(controls.committed.get(recoveryKey)?.channelData[0]?.[0]).toBe(0.625);
-        expect(controls.committedMeta.has(recoveryKey)).toBe(true);
+        expect(
+            [...controls.committedRecovery.values()].find((recovery) => recovery.id === id)?.data?.channelData[0]?.[0]
+        ).toBe(0.625);
 
         controls.allowWrites();
         vi.resetModules();
@@ -904,7 +955,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
         const prepared = await recovery;
         expect(prepared?.publish()).toBe(0);
         expect(controls.committed.get(id)?.channelData[0]?.[0]).toBe(0.625);
-        expect(controls.committed.has(recoveryKey)).toBe(false);
+        expect([...controls.committedRecovery.values()].some((recovery) => recovery.id === id)).toBe(false);
         await expect(
             audioBufferCache.reopenPreparedBuffer({
                 id,

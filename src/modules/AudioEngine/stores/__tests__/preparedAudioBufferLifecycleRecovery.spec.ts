@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
-import { createAudioBuffer, createTestContext } from './preparedAudioBufferTestSupport';
+import {
+    BUFFER_STORE,
+    flushIndexedDbTasks,
+    installFakeAudioIndexedDb,
+    META_STORE,
+    RECOVERY_STORE,
+    type StoredAudioBuffer,
+    type StoredBufferMeta,
+} from './fakeAudioBufferIndexedDb';
+import { createAudioBuffer, createTestContext, encodeFloat32 } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
@@ -19,6 +27,192 @@ afterEach(() => {
 });
 
 describe('prepared audio-buffer recovery and project admission', () => {
+    it('does not open recovery storage after cancellation and degrades recovery read failure to zero publication', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const context = createTestContext(vi.fn());
+
+        await expect(
+            audioBufferCache.prepareFromIdb({ context, ids: ['cancelled-recovery'], shouldContinue: () => false })
+        ).resolves.toBeNull();
+        expect(controls.openRequestCount()).toBe(0);
+
+        controls.failRequestsFrom(META_STORE);
+        await expect(audioBufferCache.restoreFromIdb({ context, ids: ['storage-failure-recovery'] })).resolves.toBe(0);
+        expect(context.createBuffer).not.toHaveBeenCalled();
+    });
+
+    it('keeps historic prefixed ordinary IDs reachable while migrating only identified legacy recovery rows', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE],
+        });
+        const historicId = '\u0000sourdaw-prepared-recovery:historic-user-buffer';
+        const recoveredId = 'legacy-recovery-project-buffer';
+        const legacyRecoveryKey = `\u0000sourdaw-prepared-recovery:${recoveredId}`;
+        const stored = (sample: number): StoredAudioBuffer => ({
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([sample])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        });
+        const historicMeta: StoredBufferMeta = { lastAccessed: 1, sizeInBytes: 4 };
+        const recoveredMeta: StoredBufferMeta = {
+            lastAccessed: 1,
+            preparedOwner: {
+                schemaVersion: 1,
+                createdAtMs: 1,
+                leaseId: 'legacy-recovery-lease',
+                persistenceRevision: 'legacy-persistence-revision',
+                status: 'temporary',
+            },
+            sizeInBytes: 4,
+        };
+        controls.committed.set(historicId, stored(0.25));
+        controls.committedMeta.set(historicId, historicMeta);
+        controls.committed.set(legacyRecoveryKey, stored(0.75));
+        controls.committedMeta.set(legacyRecoveryKey, {
+            id: recoveredId,
+            metadata: recoveredMeta,
+            operation: 'discard',
+            revision: 'legacy-recovery-revision',
+            schemaVersion: 1,
+        } as unknown as StoredBufferMeta);
+        const context = createTestContext(
+            vi.fn((_channels: number, length: number, sampleRate: number) => createAudioBuffer({ length, sampleRate }))
+        );
+
+        await expect(audioBufferCache.restoreFromIdb({ context, ids: [historicId, recoveredId] })).resolves.toBe(1);
+        expect(audioBufferCache.get(historicId)?.getChannelData(0)[0]).toBeCloseTo(0.25);
+        expect(controls.committed.get(historicId)).toEqual(stored(0.25));
+        expect(controls.committedMeta.get(historicId)).toEqual(historicMeta);
+        expect(controls.committed.get(recoveredId)?.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(controls.committedMeta.get(recoveredId)).toEqual(recoveredMeta);
+        expect(controls.committed.has(legacyRecoveryKey)).toBe(false);
+        expect(controls.committedMeta.has(legacyRecoveryKey)).toBe(false);
+    });
+
+    it('accepts prefixed ordinary set, import, and project IDs without touching isolated recovery', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
+        const setId = '\u0000sourdaw-prepared-recovery:ordinary-set';
+        const importId = '\u0000sourdaw-prepared-recovery:ordinary-import';
+        controls.committedRecovery.set('reserved-project-buffer', {
+            data: {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.9])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            },
+            id: 'reserved-project-buffer',
+            metadata: {
+                lastAccessed: 1,
+                preparedOwner: {
+                    schemaVersion: 1,
+                    leaseId: 'reserved-project-lease',
+                    persistenceRevision: 'reserved-project-persistence',
+                    status: 'temporary',
+                },
+                sizeInBytes: 4,
+            },
+            operation: 'discard',
+            revision: 'unrelated-recovery',
+            schemaVersion: 1,
+            stagedAtMs: 1,
+        });
+        const setBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        setBuffer.getChannelData(0)[0] = 0.4;
+        audioBufferCache.set(setId, setBuffer);
+        await flushIndexedDbTasks();
+
+        const imported = audioBufferCache.importBuffers({
+            buffers: {
+                [importId]: {
+                    sampleRate: 48_000,
+                    numberOfChannels: 1,
+                    channelData: [encodeFloat32([0.6])],
+                },
+            },
+            cacheIds: [importId],
+            context: createTestContext(
+                vi.fn((_channels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+        });
+        expect(imported?.publish()).toBe(1);
+        await expect(imported?.persist()).resolves.toBe(true);
+
+        await expect(audioBufferCache.exportBuffers([setId, importId])).resolves.toMatchObject({
+            [setId]: { channelData: [encodeFloat32([0.4])] },
+            [importId]: { channelData: [encodeFloat32([0.6])] },
+        });
+        expect(controls.committedRecovery.get('reserved-project-buffer')?.id).toBe('reserved-project-buffer');
+    });
+
+    it('accounts recovery PCM against quota and collects stale malformed rows without deleting project reservations', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
+        const recovery = (id: string, revision: string, sample: number, stagedAtMs: number) => ({
+            data: {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([sample])],
+                lastAccessed: stagedAtMs,
+                sizeInBytes: 4,
+            },
+            id,
+            metadata: {
+                lastAccessed: stagedAtMs,
+                preparedOwner: {
+                    schemaVersion: 1 as const,
+                    leaseId: `${id}-lease`,
+                    persistenceRevision: `${id}-persistence`,
+                    status: 'temporary' as const,
+                },
+                sizeInBytes: 4,
+            },
+            operation: 'discard' as const,
+            revision,
+            schemaVersion: 1 as const,
+            stagedAtMs,
+        });
+        controls.committedRecovery.set('quota-buffer', recovery('quota-buffer', 'quota-recovery', 0.25, 1));
+        controls.committed.set('recent-ordinary', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.5])],
+            lastAccessed: 10_000,
+            sizeInBytes: 4,
+        });
+        controls.committedMeta.set('recent-ordinary', { lastAccessed: 10_000, sizeInBytes: 4 });
+
+        await expect(audioBufferCache.garbageCollectBySize(4)).resolves.toBe(1);
+        expect(controls.committedRecovery.has('quota-buffer')).toBe(false);
+        expect(controls.committed.has('recent-ordinary')).toBe(true);
+
+        controls.committedRecovery.set('partial-buffer', {
+            id: 'partial-buffer',
+            revision: 'partial-recovery',
+            schemaVersion: 1,
+            stagedAtMs: 1,
+        });
+        controls.committedRecovery.set('reserved-buffer', recovery('reserved-buffer', 'reserved-recovery', 0.75, 1));
+        const project = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: ['reserved-buffer'],
+            context: createTestContext(vi.fn()),
+        });
+        expect(project?.publish()).toBe(0);
+
+        vi.spyOn(Date, 'now').mockReturnValue(10_000);
+        await expect(audioBufferCache.garbageCollectByAge(0)).resolves.toBe(1);
+        expect(controls.committedRecovery.has('partial-buffer')).toBe(false);
+        expect(controls.committedRecovery.has('reserved-buffer')).toBe(true);
+    });
+
     it('rejects temporary reopen after the project reserves the exact buffer ID', async () => {
         const controls = installFakeAudioIndexedDb();
         const id = 'project-reserved-reopen';

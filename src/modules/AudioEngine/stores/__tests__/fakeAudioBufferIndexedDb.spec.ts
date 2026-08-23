@@ -59,4 +59,36 @@ describe('fakeAudioBufferIndexedDb', () => {
         await secondSettled;
         expect((secondRead.result as { channelData: Float32Array[] }).channelData[0]?.[0]).toBeCloseTo(0.25);
     });
+
+    it('aborts and rolls back the whole transaction after an unprevented request error', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
+        const database = await openDatabase();
+        controls.failRequestsFrom(META_STORE);
+        const transaction = database.transaction([BUFFER_STORE, META_STORE], 'readwrite');
+        transaction.objectStore(BUFFER_STORE).put(
+            {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.5])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            },
+            'first'
+        );
+        transaction.objectStore(META_STORE).put({ lastAccessed: 1, sizeInBytes: 4 }, 'first');
+        transaction.objectStore(BUFFER_STORE).put(
+            {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.75])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            },
+            'second'
+        );
+
+        await expect(transactionSettled(transaction)).rejects.toThrow('The request failed.');
+        expect(controls.committed.size).toBe(0);
+        expect(controls.committedMeta.size).toBe(0);
+    });
 });

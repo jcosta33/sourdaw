@@ -22,6 +22,20 @@ export type PreparedSerializedAudioBuffer = {
     sizeInBytes: number;
 };
 
+export type PreparedAudioBufferRecoveryMetadata = {
+    id: string;
+    metadata: PreparedAudioBufferMetadata;
+    operation: 'discard' | 'reclamation';
+    revision: string;
+    schemaVersion: 1;
+};
+
+export type PreparedAudioBufferRecoveryRecord = PreparedAudioBufferRecoveryMetadata & {
+    data: PreparedSerializedAudioBuffer;
+    stagedAtMs: number;
+};
+
+/** Legacy v2 key format, retained only to migrate recovery rows out of ordinary stores. */
 export const PREPARED_AUDIO_RECOVERY_KEY_PREFIX = '\u0000sourdaw-prepared-recovery:';
 
 export function preparedAudioRecoveryKey(id: string): string {
@@ -30,6 +44,42 @@ export function preparedAudioRecoveryKey(id: string): string {
 
 export function isPreparedAudioRecoveryKey(id: string): boolean {
     return id.startsWith(PREPARED_AUDIO_RECOVERY_KEY_PREFIX);
+}
+
+export function readPreparedAudioRecoveryMetadata(value: unknown): PreparedAudioBufferRecoveryMetadata | null {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const candidate = value as Record<string, unknown>;
+    if (
+        candidate.schemaVersion !== 1 ||
+        typeof candidate.id !== 'string' ||
+        candidate.id.trim().length === 0 ||
+        typeof candidate.revision !== 'string' ||
+        candidate.revision.trim().length === 0 ||
+        (candidate.operation !== 'discard' && candidate.operation !== 'reclamation') ||
+        candidate.metadata === null ||
+        typeof candidate.metadata !== 'object' ||
+        Array.isArray(candidate.metadata)
+    ) {
+        return null;
+    }
+    return candidate as PreparedAudioBufferRecoveryMetadata;
+}
+
+export function readPreparedAudioRecoveryRecord(value: unknown): PreparedAudioBufferRecoveryRecord | null {
+    const recovery = readPreparedAudioRecoveryMetadata(value);
+    if (
+        recovery === null ||
+        !('data' in recovery) ||
+        !('stagedAtMs' in recovery) ||
+        typeof recovery.stagedAtMs !== 'number' ||
+        !Number.isFinite(recovery.stagedAtMs) ||
+        !isValidPreparedAudioBufferPair(recovery.data, recovery.metadata)
+    ) {
+        return null;
+    }
+    return recovery as PreparedAudioBufferRecoveryRecord;
 }
 
 function isFloat32Array(value: unknown): value is Float32Array {
@@ -64,7 +114,7 @@ export function isValidPreparedSerializedAudioBuffer(data: unknown): data is Pre
 }
 
 export function preparedIdentityFailure(id: string, leaseId: string): string | undefined {
-    if (id.trim().length === 0 || isPreparedAudioRecoveryKey(id)) {
+    if (id.trim().length === 0) {
         return 'Prepared audio buffer ID is invalid.';
     }
     if (leaseId.trim().length === 0) {

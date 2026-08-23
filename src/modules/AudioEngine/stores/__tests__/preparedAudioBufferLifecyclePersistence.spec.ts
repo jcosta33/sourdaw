@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { flushIndexedDbTasks, installFakeAudioIndexedDb, META_STORE } from './fakeAudioBufferIndexedDb';
+import {
+    BUFFER_STORE,
+    flushIndexedDbTasks,
+    installFakeAudioIndexedDb,
+    META_STORE,
+    RECOVERY_STORE,
+} from './fakeAudioBufferIndexedDb';
 import { createAudioBuffer, createTestContext } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
@@ -17,28 +23,47 @@ afterEach(() => {
 });
 
 describe('prepared audio-buffer persistence and admission', () => {
-    it('rejects user prepared IDs in the durable recovery namespace before opening storage', async () => {
-        const controls = installFakeAudioIndexedDb();
+    it('persists user prepared IDs that share the retired recovery prefix', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
         const id = '\u0000sourdaw-prepared-recovery:user-buffer';
         const leaseId = 'reserved-recovery-namespace-lease';
-        const context = createTestContext(vi.fn());
+        const buffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        buffer.getChannelData(0)[0] = 0.5;
 
         await expect(
             audioBufferCache.persistPreparedBuffer({
                 id,
                 leaseId,
-                buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+                buffer,
             })
-        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is invalid.' });
-        await expect(audioBufferCache.reopenPreparedBuffer({ id, leaseId, context })).resolves.toEqual({
-            status: 'failed',
-            reason: 'Prepared audio buffer ID is invalid.',
+        ).resolves.toEqual({ status: 'persisted', bufferId: id, leaseId });
+        expect(audioBufferCache.get(id)).toBe(buffer);
+        expect(controls.committed.get(id)?.channelData[0]?.[0]).toBeCloseTo(0.5);
+        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({ leaseId, status: 'temporary' });
+    });
+
+    it('rolls back every imported ID when one unprevented metadata request fails', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
         });
-        await expect(audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' })).resolves.toEqual({
-            status: 'failed',
-            reason: 'Prepared audio buffer ID is invalid.',
+        const first = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        const second = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        const candidate = audioBufferCache.importBuffers({
+            buffers: {},
+            decodedBuffers: { first, second },
+            context: createTestContext(vi.fn()),
         });
-        expect(controls.openRequestCount()).toBe(0);
+        expect(candidate?.publish()).toBe(2);
+        controls.failRequestsFrom(META_STORE);
+
+        await expect(candidate?.persist()).resolves.toBe(false);
+        await flushIndexedDbTasks();
+        expect(controls.committed.has('first')).toBe(false);
+        expect(controls.committed.has('second')).toBe(false);
+        expect(controls.committedMeta.has('first')).toBe(false);
+        expect(controls.committedMeta.has('second')).toBe(false);
     });
 
     it('rejects occupied legacy and project-owned ids without changing runtime PCM or either durable row', async () => {

@@ -108,6 +108,7 @@ function installFakeIndexedDb(): FakeBacking {
     // key space. A double that handed the same map to both would let the
     // metadata row overwrite the record it describes.
     const metaBacking = new Map<string, StoredBufferMeta>();
+    const recoveryBacking = new Map<string, unknown>();
     backing.meta = metaBacking;
 
     function makeStore<Value>(table: Map<string, Value>) {
@@ -148,9 +149,13 @@ function installFakeIndexedDb(): FakeBacking {
 
     const bufferStore = makeStore(backing);
     const metaStore = makeStore(metaBacking);
+    const recoveryStore = makeStore(recoveryBacking);
     function storeFor(name: string) {
         if (name === 'bufferMeta') {
             return metaStore;
+        }
+        if (name === 'preparedBufferRecovery') {
+            return recoveryStore;
         }
         return bufferStore;
     }
