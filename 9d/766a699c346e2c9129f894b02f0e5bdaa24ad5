@@ -1,0 +1,33 @@
+scripts/markWasmPackageInternal.ts
+  s_0a3429e31e555d::t_8ed4b7120feb52 7-8,16
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_2e324963c4f1f1 1277,1280
+scripts/verify-wasm-artifacts.ts
+  s_0a3429e31e555d::t_8ed4b7120feb52 38-39,41,178-197,202-204,286-288
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_0a3429e31e555d::t_e493ea84d3c128 327-329
+  s_0a3429e31e555d::t_23679c1e7e62c5 2,311-321,323-326
+  s_0a3429e31e555d::t_761412ce1577bb 293-294,296-299,322
+  s_0a3429e31e555d::t_23feea1d437c70 330-332
+  s_0a3429e31e555d::t_0c3e955940bfee 333-334
+scripts/__tests__/wasmManifestProvenance.spec.ts
+  s_0a3429e31e555d::t_23679c1e7e62c5 1-2,7,147-148,152-163
+  s_0a3429e31e555d::t_e493ea84d3c128 149-151
+  s_0a3429e31e555d::t_e617696edeef23 164-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9d766a699c346e2c9129f894b02f0e5bdaa24ad5",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
