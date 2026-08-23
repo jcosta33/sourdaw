@@ -604,8 +604,8 @@ impl PianoVoice {
         output += transverse + longitudinal + duplex;
         output *= self.amplitude;
 
-        // Pre-F8 reference: the output follower did not run, so the
-        // demotion checks below continue to observe their reset state.
+        // Pre-F8 reference: quality demotion used the release amplitude.
+        // A held note keeps that amplitude at 1.0 and remains High.
 
         if self.stage == VoiceStage::Releasing || self.stage == VoiceStage::Stealing {
             self.amplitude *= self.release_coefficient;
@@ -615,20 +615,13 @@ impl PianoVoice {
             }
         }
 
-        // Progressive simplification: as the voice ages and quiets
-        // down, downgrade it through the quality tiers.
-        //
-        // The first step reads the follower, as a fraction of this note's own
-        // peak, so a long held note that has genuinely quietened gives up the
-        // Stulov hammer. That hammer only shapes the ~2 ms of felt contact at
-        // the strike, so swapping it out on a decayed note is inaudible.
-        //
-        // The second step stays on `amplitude`, the release ramp.
+        // Historical progressive simplification used `amplitude`, the release
+        // ramp, for both quality transitions.
         // `CoupledStringAssembly::tick_simplified` drops the aftersound
         // polarization and every unison but the first — an ~80 dB step, not a
         // transparent simplification. It is only safe once the voice is on its
         // way out, which is exactly what `amplitude` below 0.05 means.
-        if self.quality == VoiceQuality::High && self.decay_envelope < 0.3 * self.decay_peak {
+        if self.quality == VoiceQuality::High && self.amplitude < 0.3 {
             self.quality = VoiceQuality::Standard;
         }
         if self.quality == VoiceQuality::Standard && self.amplitude < 0.05 {

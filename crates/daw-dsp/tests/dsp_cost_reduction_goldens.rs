@@ -282,8 +282,9 @@ fn held_voice_render(mut voice: impl HeldVoiceHarness) -> (Vec<f32>, bool, bool,
 }
 
 /// F8: the shipping voice's output follower demotes a decayed held voice after
-/// one second; the pre-F8 shadow never updates that follower. The model change
-/// occurs after hammer contact, so both renders must remain bit-identical.
+/// one second; the pre-F8 shadow gates demotion on release amplitude, which stays
+/// at 1.0 while held. The model change occurs after hammer contact, so both
+/// renders must remain bit-identical.
 #[test]
 fn grand_boule_held_voice_renders_identically_across_the_demotion_boundary() {
     let (optimized, optimized_high, optimized_standard, optimized_age) =
