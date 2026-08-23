@@ -53,6 +53,86 @@ describe('prepared audio-buffer recovery and project admission', () => {
         }
     );
 
+    it.each(['age', 'size'] as const)(
+        'preserves crash-left promotion recovery through %s collection while collecting ordinary PCM',
+        async (collector) => {
+            const controls = installFakeAudioIndexedDb();
+            const id = `crash-left-promotion-${collector}`;
+            const leaseId = `${id}-lease`;
+            const ordinaryId = `ordinary-collection-${collector}`;
+            const invalidOwnerId = `invalid-owner-collection-${collector}`;
+            const storedBuffer = (sample: number) => ({
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([sample])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            });
+            controls.committed.set(id, storedBuffer(0.25));
+            controls.committedMeta.set(id, {
+                lastAccessed: 1,
+                preparedOwner: {
+                    schemaVersion: 1,
+                    createdAtMs: 1,
+                    leaseId,
+                    promotionRevision: `${id}-promotion`,
+                    status: 'project-owned',
+                },
+                sizeInBytes: 4,
+            });
+            controls.committed.set(ordinaryId, storedBuffer(0.5));
+            controls.committedMeta.set(ordinaryId, { lastAccessed: 1, sizeInBytes: 4 });
+            controls.committed.set(invalidOwnerId, storedBuffer(0.75));
+            controls.committedMeta.set(invalidOwnerId, {
+                lastAccessed: 1,
+                preparedOwner: {
+                    schemaVersion: 1,
+                    leaseId: `${invalidOwnerId}-lease`,
+                    promotionRevision: 42 as unknown as string,
+                    status: 'project-owned',
+                },
+                sizeInBytes: 4,
+            });
+
+            vi.spyOn(Date, 'now').mockReturnValue(10_000_000_000);
+            const deleted =
+                collector === 'age'
+                    ? await audioBufferCache.garbageCollectByAge(1)
+                    : await audioBufferCache.garbageCollectBySize(8);
+
+            expect(deleted).toBe(1);
+            expect(controls.committed.has(ordinaryId)).toBe(false);
+            expect(controls.committedMeta.has(ordinaryId)).toBe(false);
+            expect(controls.committed.has(id)).toBe(true);
+            expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({
+                leaseId,
+                promotionRevision: `${id}-promotion`,
+                status: 'project-owned',
+            });
+            expect(controls.committed.has(invalidOwnerId)).toBe(true);
+            expect(controls.committedMeta.has(invalidOwnerId)).toBe(true);
+
+            await expect(
+                audioBufferCache.reopenPreparedBuffer({
+                    id,
+                    leaseId,
+                    context: createTestContext(
+                        vi.fn((_channels: number, length: number, sampleRate: number) =>
+                            createAudioBuffer({ length, sampleRate })
+                        )
+                    ),
+                })
+            ).resolves.toEqual({ status: 'reopened', bufferId: id, ownership: 'temporary' });
+            expect(controls.committed.get(id)?.channelData[0]?.[0]).toBe(0.25);
+            expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({
+                leaseId,
+                status: 'temporary',
+            });
+            expect(controls.committedMeta.get(id)?.preparedOwner?.promotionRevision).toBeUndefined();
+            expect(audioBufferCache.has(id)).toBe(true);
+        }
+    );
+
     it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
         'rejects non-finite orphan cutoff %s before opening storage',
         async (createdBeforeMs) => {

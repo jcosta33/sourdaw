@@ -3,6 +3,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
 import {
     isValidPreparedSerializedAudioBuffer,
+    readPreparedOwner,
+    requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
     type PreparedSerializedAudioBuffer,
 } from './preparedAudioBufferOwnership';
@@ -193,6 +195,14 @@ const STORE_NAME = 'buffers';
 const META_STORE_NAME = 'bufferMeta';
 
 type BufferMeta = PreparedAudioBufferMetadata;
+
+function isProtectedFromCollection(metadata: BufferMeta): boolean {
+    const owner = readPreparedOwner(metadata);
+    return (
+        owner === 'invalid' ||
+        (owner !== null && (owner.status === 'temporary' || requiresPromotionReconciliation(owner)))
+    );
+}
 
 /** One connection for the life of the module (audit M-045). `get()` and
  * `getWaveformPeaks()` run per clip per timeline paint, and each one refreshes
@@ -1513,7 +1523,7 @@ export const audioBufferCache = {
             for (let index = 0; index < metas.length; index++) {
                 const meta = metas[index]!;
                 const key = keys[index]! as string;
-                if (pinnedBufferIds.has(key) || meta.preparedOwner?.status === 'temporary') {
+                if (pinnedBufferIds.has(key) || isProtectedFromCollection(meta)) {
                     continue;
                 }
                 if (typeof meta.lastAccessed !== 'number') {
@@ -1640,7 +1650,7 @@ export const audioBufferCache = {
                 .map((meta, index) => ({
                     id: keys[index]! as string,
                     lastAccessed: meta.lastAccessed,
-                    temporary: meta.preparedOwner?.status === 'temporary',
+                    protected: isProtectedFromCollection(meta),
                     size: meta.sizeInBytes,
                 }))
                 .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
@@ -1652,7 +1662,7 @@ export const audioBufferCache = {
                 if (currentTotal <= maxSizeBytes) {
                     break;
                 }
-                if (pinnedBufferIds.has(entry.id) || entry.temporary) {
+                if (pinnedBufferIds.has(entry.id) || entry.protected) {
                     continue;
                 }
                 store.delete(entry.id);
