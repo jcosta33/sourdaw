@@ -1,0 +1,59 @@
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_736ca6e8eb6eb2 11,15-16,18-19,21,26,28-29,31-38,40-42,46
+  s_a40848e8f8cca9::t_22341a4acdd586 12
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_6acf1a7ce7861c 39,85
+  s_a40848e8f8cca9::t_5d7634533a1504 41-42,80-84
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_a40848e8f8cca9::t_1bce1bbce1c241 197-198
+  s_a40848e8f8cca9::t_d6eba31d70e913 7-8,16-17,48-49,156,163-164
+  s_a40848e8f8cca9::t_22341a4acdd586 162,165
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_6acf1a7ce7861c 370-372,378,385,391-393,399,464,480-481
+  s_a40848e8f8cca9::t_55ed27eb197d72 79-80
+  s_a40848e8f8cca9::t_59aa7e3f380e36 81-82,466-468,489-492
+  s_a40848e8f8cca9::t_148c55bdef590d 386-390,394,396-398
+  s_a40848e8f8cca9::t_b0c20bc2ee50fb 395
+src/modules/Collaboration/repositories/durableAssetOwnershipLifecycle.ts
+  s_a40848e8f8cca9::t_5c0d36d3497afe 28-29,118-122,124-135,214-216,239-240
+  s_a40848e8f8cca9::t_0f20767a9ed36c 12,98
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_3a8f16d92242e1 509-513
+  s_a40848e8f8cca9::t_967070ea3babaf 525,527-536,540-552
+  s_a40848e8f8cca9::t_9cb63924269ed0 251-258
+  s_a40848e8f8cca9::t_a5c20dbed052cf 239-250,259-287,297-319,494-508,514-524
+  s_a40848e8f8cca9::t_81198974135ac1 288-296
+  s_a40848e8f8cca9::t_b53f382cb6b520 537-539
+  s_a40848e8f8cca9::t_d3bb89e2e23421 526
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_22341a4acdd586 58-62,115-118
+  s_a40848e8f8cca9::t_0e1730c3b91332 4-5,16-17,105-114
+  s_a40848e8f8cca9::t_68ee3fa567441a 43,101-102
+  s_a40848e8f8cca9::t_8ba34104d1adf4 90,92,98,100
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_cbb123d35d62f8 48,286
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_c82f85c4f0c8e8 59
+  s_a40848e8f8cca9::t_608828c3f4b6be 289-291,309-312,326
+  s_a40848e8f8cca9::t_c959ef91b1a693 4,14,20-24,63-67,104-115,136,142-177,179-182,184-216,218,220-234,236-271,282-288,292-308,313,324-325,350-353
+  s_a40848e8f8cca9::t_6acf1a7ce7861c 331
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_6acf1a7ce7861c 26
+  s_a40848e8f8cca9::t_f5dbc284a4b05a 14,38,41,43-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1374ae99234dbae1b68be0b83c573c75b96e9fd6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
