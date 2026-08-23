@@ -1,7 +1,6 @@
-/// <reference types="@webgpu/types" />
-
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
+import { probeBrowserWebGpuHardware, skipWithoutBrowserWebGpu } from './browserAiHardware';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
@@ -75,13 +74,6 @@ async function getBrowserAiCapabilityReport(page: Page, testInfo: TestInfo): Pro
     return observedReport;
 }
 
-function skipWithoutHardwareWebGpu(report: BrowserAiCapabilityReport): void {
-    test.skip(
-        report.webGpu.status === 'unavailable',
-        `requires hardware WebGPU (${report.webGpu.reason ?? 'adapter unavailable'})`
-    );
-}
-
 async function renderDdspAfterViteWorkerOptimization(
     page: Page
 ): Promise<Awaited<ReturnType<DdspRenderProbe['renderOffline']>>> {
@@ -102,8 +94,9 @@ test('admits the live Chromium runtime from required Browser AI capabilities', a
     await setupWorkspace(page);
     await launch_new_project(page);
 
+    const hardwareProbe = await probeBrowserWebGpuHardware(page);
+    skipWithoutBrowserWebGpu(hardwareProbe);
     const observedReport = await getBrowserAiCapabilityReport(page, testInfo);
-    skipWithoutHardwareWebGpu(observedReport);
     expect(observedReport).toEqual(
         expect.objectContaining({
             capability: 'supported',
@@ -134,8 +127,18 @@ test('renders an exact-duration DDSP preview from verified OPFS artifacts with h
     test.setTimeout(180_000);
     await setupWorkspace(page);
     await launch_new_project(page);
+    const hardwareProbe = await probeBrowserWebGpuHardware(page);
+    skipWithoutBrowserWebGpu(hardwareProbe);
     const observedReport = await getBrowserAiCapabilityReport(page, testInfo);
-    skipWithoutHardwareWebGpu(observedReport);
+    expect(observedReport).toEqual(
+        expect.objectContaining({
+            capability: 'supported',
+            webGpu: { status: 'supported' },
+            crossOriginIsolated: true,
+            workerAvailable: true,
+            opfsAvailable: true,
+        })
+    );
 
     await page.goto('/tests/e2e/ddspRenderProbe.html');
     await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)).toBe('object');
