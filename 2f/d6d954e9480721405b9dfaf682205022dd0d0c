@@ -1,0 +1,39 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_a879ffc51e8e98 2371-2382
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_17d2cccd6c001f 110-145
+  s_a40848e8f8cca9::t_ae7158273016bd 563-624,1003-1090,1271-1331
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_4170a5b6fd950a 257-258,261-272,539
+  s_a40848e8f8cca9::t_35e57df7ac4586 249
+  s_a40848e8f8cca9::t_4bfb1d566ac62a 235,237-239,243-248,250-256,273-305,535-538,540-544,646-647,649-653,655
+  s_a40848e8f8cca9::t_415f08b85a996a 240-242
+  s_a40848e8f8cca9::t_655482d99225d1 648
+src/modules/Command/useCases/__tests__/getExecutableAppActionGroundingRules.spec.ts
+  s_a40848e8f8cca9::t_a879ffc51e8e98 21-42
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_800e74238c45b0 39-43,111,1792,1895,2012
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_a40848e8f8cca9::t_a879ffc51e8e98 53-59
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_800e74238c45b0 3-7,18-24
+  s_a40848e8f8cca9::t_cb06af33e0ca10 45
+src/modules/Command/useCases/getExecutableAppActionGroundingRules.ts
+  s_a40848e8f8cca9::t_800e74238c45b0 4,15,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2fd6d954e9480721405b9dfaf682205022dd0d0c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
