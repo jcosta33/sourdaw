@@ -1,0 +1,19 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_1dfc62db69620a 90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1ee0552cffdd6c5f3dad2f0b16b448d351f65d9e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
