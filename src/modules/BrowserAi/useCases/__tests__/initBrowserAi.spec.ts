@@ -8,7 +8,7 @@ const subscribe_to_midi_store = vi.hoisted(() =>
     )
 );
 
-const release_gate = vi.hoisted(() => ({ ddsp: false, kokoro: true }));
+const release_gate = vi.hoisted(() => ({ ddsp: true, kokoro: true }));
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: release_gate }));
 
@@ -21,6 +21,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 import { type CapabilityReport } from '../../models/CapabilityReport';
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
+import { type StorageStatus } from '../../models/StorageStatus';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
@@ -36,6 +37,7 @@ type CheckVerifiedModel = (input: {
     sha256: string;
     sizeBytes: number;
 }) => Promise<boolean>;
+type GetStorageStatus = () => Promise<StorageStatus>;
 
 type LoggerMock = {
     info: (message: string) => void;
@@ -77,10 +79,17 @@ const fresh_capability_report: CapabilityReport = {
     detectedAt: 1_803_556_800_000,
 };
 
+const empty_storage_status: StorageStatus = {
+    usedBytes: 0,
+    limitBytes: 2 * 1024 * 1024 * 1024,
+    persisted: false,
+    availableBytes: null,
+};
+
 describe('initBrowserAi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        release_gate.ddsp = false;
+        release_gate.ddsp = true;
         release_gate.kokoro = true;
         capabilityStore.set({ phase: 'idle' });
         modelRegistryStore.set({
@@ -107,6 +116,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -120,22 +130,28 @@ describe('initBrowserAi', () => {
         expect(subscribe_to_midi_store).toHaveBeenCalledTimes(1);
     });
 
-    it('should keep withheld DDSP checkpoints out of the runtime registry', async () => {
+    it('should admit exactly four DDSP checkpoints as not-downloaded on a fresh profile', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
+        const check_ddsp_instrument_ready = vi.fn().mockResolvedValue(false);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
-            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
         await initBrowserAi();
 
-        expect(modelRegistryStore.value?.ddspInstruments).toEqual([]);
-        expect(DDSP_INSTRUMENT_CATALOG.every((instrument) => instrument.license === 'Unverified')).toBe(true);
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((instrument) =>
+                expect.objectContaining({ id: instrument.id, status: 'not-downloaded', downloadProgress: 0 })
+            )
+        );
+        expect(check_ddsp_instrument_ready).toHaveBeenCalledTimes(4);
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('not-downloaded');
         expect(check_verified_model).toHaveBeenCalledWith({
             family: 'kokoro',
@@ -144,6 +160,27 @@ describe('initBrowserAi', () => {
             sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
         });
         expect(modelRegistryStore.value?.vocoder).toBeNull();
+    });
+
+    it('keeps the DDSP registry empty without readiness probes when release admission is disabled', async () => {
+        release_gate.ddsp = false;
+        const check_ddsp_instrument_ready = vi.fn();
+        const with_ddsp_instrument_lock = vi.fn();
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: vi.fn().mockResolvedValue(false),
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
+            withDdspInstrumentLock: with_ddsp_instrument_lock,
+        });
+
+        await initBrowserAi();
+
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual([]);
+        expect(check_ddsp_instrument_ready).not.toHaveBeenCalled();
+        expect(with_ddsp_instrument_lock).not.toHaveBeenCalled();
     });
 
     it('should mark only shared-lock-verified DDSP generations ready at startup', async () => {
@@ -157,6 +194,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
             checkVerifiedModel: vi.fn().mockResolvedValue(false),
             checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: with_ddsp_instrument_lock,
         });
 
@@ -187,6 +225,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
             checkVerifiedModel: vi.fn().mockResolvedValue(false),
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(true),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: vi.fn().mockRejectedValue(new Error('lock failed')),
         });
 
@@ -209,6 +248,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -216,6 +256,69 @@ describe('initBrowserAi', () => {
 
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('ready');
         expect(modelRegistryStore.value?.kokoroModel?.downloadProgress).toBe(1);
+    });
+
+    it('restores verified cached models and actual storage usage on reload', async () => {
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(true);
+        const check_ddsp_instrument_ready = vi.fn().mockResolvedValue(true);
+        const get_storage_status = vi.fn<GetStorageStatus>().mockResolvedValue({
+            ...empty_storage_status,
+            usedBytes: 4_269_123,
+        });
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: check_ddsp_instrument_ready,
+            getStorageStatus: get_storage_status,
+            withDdspInstrumentLock: pass_through_ddsp_lock,
+        });
+
+        await initBrowserAi();
+
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((candidate) =>
+                expect.objectContaining({ id: candidate.id, status: 'ready', downloadProgress: 1 })
+            )
+        );
+        expect(modelRegistryStore.value?.kokoroModel).toMatchObject({ status: 'ready', downloadProgress: 1 });
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(4_269_123);
+        expect(get_storage_status).toHaveBeenCalledOnce();
+        expect(get_storage_status.mock.invocationCallOrder[0]).toBeGreaterThan(
+            Math.max(
+                ...check_ddsp_instrument_ready.mock.invocationCallOrder,
+                ...check_verified_model.mock.invocationCallOrder
+            )
+        );
+    });
+
+    it('keeps verified registry state when storage usage measurement fails', async () => {
+        const logger_mock = create_logger_mock();
+        const get_storage_status = vi
+            .fn<GetStorageStatus>()
+            .mockRejectedValue(new DOMException('OPFS estimate denied', 'NotAllowedError'));
+
+        injectDependencies(initBrowserAi, {
+            logger: logger_mock,
+            detectCapabilitiesRepo: vi.fn().mockResolvedValue(fresh_capability_report),
+            checkVerifiedModel: vi.fn().mockResolvedValue(true),
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(true),
+            getStorageStatus: get_storage_status,
+            withDdspInstrumentLock: pass_through_ddsp_lock,
+        });
+
+        await expect(initBrowserAi()).resolves.toBeUndefined();
+
+        expect(modelRegistryStore.value?.ddspInstruments).toEqual(
+            DDSP_INSTRUMENT_CATALOG.map((candidate) => expect.objectContaining({ id: candidate.id, status: 'ready' }))
+        );
+        expect(modelRegistryStore.value?.kokoroModel?.status).toBe('ready');
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(0);
+        expect(get_storage_status).toHaveBeenCalledOnce();
+        expect(logger_mock.warn).toHaveBeenCalledWith(
+            '[BrowserAi] Storage usage probe failed: NotAllowedError: OPFS estimate denied'
+        );
     });
 
     it('should preserve cache-probe failures as model error state', async () => {
@@ -229,6 +332,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -250,6 +354,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -275,6 +380,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -298,6 +404,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -322,6 +429,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -337,13 +445,17 @@ describe('initBrowserAi', () => {
         expect(renderQueueStore.value?.phraseStatusMap['clip-1']).toBe('preview');
     });
 
-    it('should mark only rendered phrases whose note array reference changed after the baseline', async () => {
+    it('should mark legacy and canonical DDSP rendered phrases stale when a clip note array changes after the baseline', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
         renderQueueStore.set({
             entries: [],
             cachedPhraseIds: [],
-            phraseStatusMap: { 'clip-rendered': 'final', 'clip-queued': 'queued' },
+            phraseStatusMap: {
+                'clip-rendered': 'final',
+                'clip-rendered-ddsp': 'preview',
+                'clip-queued': 'queued',
+            },
         });
 
         injectDependencies(initBrowserAi, {
@@ -351,6 +463,7 @@ describe('initBrowserAi', () => {
             detectCapabilitiesRepo: detect_capabilities_repo,
             checkVerifiedModel: check_verified_model,
             checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
             withDdspInstrumentLock: pass_through_ddsp_lock,
         });
 
@@ -367,8 +480,46 @@ describe('initBrowserAi', () => {
         onMidiChange({ notesByClipId: { 'clip-rendered': [], 'clip-queued': [] } });
 
         expect(renderQueueStore.value?.phraseStatusMap['clip-rendered']).toBe('stale');
+        expect(renderQueueStore.value?.phraseStatusMap['clip-rendered-ddsp']).toBe('stale');
         // A 'queued' phrase has not rendered anything yet — it must not be
         // demoted to stale just because its notes changed.
         expect(renderQueueStore.value?.phraseStatusMap['clip-queued']).toBe('queued');
+    });
+
+    it('keeps a source-tracked canonical DDSP preview while the legacy phrase follows the coarse MIDI stale subscription', async () => {
+        const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
+        const check_verified_model = vi.fn<CheckVerifiedModel>().mockResolvedValue(false);
+        renderQueueStore.set({
+            entries: [],
+            cachedPhraseIds: [],
+            phraseStatusMap: {
+                'clip-rendered': 'preview',
+                'clip-rendered-ddsp': 'preview',
+            },
+            phraseSourceFingerprints: { 'clip-rendered-ddsp': 'effective-ddsp-source' },
+        });
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: detect_capabilities_repo,
+            checkVerifiedModel: check_verified_model,
+            checkDdspInstrumentReady: vi.fn().mockResolvedValue(false),
+            getStorageStatus: vi.fn().mockResolvedValue(empty_storage_status),
+            withDdspInstrumentLock: pass_through_ddsp_lock,
+        });
+
+        await initBrowserAi();
+
+        const onMidiChange = subscribe_to_midi_store.mock.calls[0]?.[0];
+        if (!onMidiChange) {
+            throw new Error('expected initBrowserAi to subscribe to midiStore');
+        }
+
+        onMidiChange({ notesByClipId: { 'clip-rendered': [] } });
+        onMidiChange({ notesByClipId: { 'clip-rendered': [] } });
+
+        expect(renderQueueStore.value?.phraseStatusMap['clip-rendered']).toBe('stale');
+        expect(renderQueueStore.value?.phraseStatusMap['clip-rendered-ddsp']).toBe('preview');
+        expect(renderQueueStore.value?.phraseSourceFingerprints?.['clip-rendered-ddsp']).toBe('effective-ddsp-source');
     });
 });

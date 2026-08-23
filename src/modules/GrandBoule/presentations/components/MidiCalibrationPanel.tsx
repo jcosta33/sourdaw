@@ -1,5 +1,5 @@
 /**
- * MIDI Controller Calibration Panel for Grand Boule (spec SS3.1).
+ * MIDI Controller Calibration Panel for Grand Boule.
  *
  * Provides rotary knobs for all five calibration parameters, a real-time
  * velocity histogram rendered on a canvas, a "last velocity" metric tile,

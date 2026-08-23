@@ -3,6 +3,9 @@ name = "daw-wasm-decoder"
 version = "0.1.0"
 edition = "2021"
 description = "WASM-compiled audio file decoder (wraps daw-io symphonia decoder for browser use)."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

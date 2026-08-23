@@ -1,6 +1,6 @@
 /**
  * Load an attack-transient clip into the Grand Boule hybrid sampled-attack
- * pathway (§3.3).
+ * pathway.
  *
  * `samples` is a raw mono PCM Float32Array captured at `sourceSampleRate`. The
  * engine plays the clip back frame-for-frame at its own context sample rate, so

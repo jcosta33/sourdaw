@@ -6,9 +6,15 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
+import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
+import { checkProjectLicense } from './checkProjectLicense.ts';
+import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 export const RETENTION_CLASSES = [
@@ -65,6 +71,25 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+export const ADAPTED_MIT_SOURCE_PATH = 'crates/daw-dsp/src/toaster/engines/kick_808.rs';
+export const ADAPTED_MIT_LICENSE_PATH = 'public/legal/MI-PLAITS-DSP-RS-MIT.txt';
+export const ADAPTED_ORIGINAL_MIT_LICENSE_PATH = 'public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt';
+export const ADAPTED_MIT_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
+export const ADAPTED_MIT_COMMIT = '6d3f7a5b84b25ec45d66c9f6be7109474690d795';
+export const ADAPTED_ORIGINAL_COMMIT = '99432f2bf443219b3eb77e65e1a18583faad422e';
+export const ADAPTED_ORIGINAL_SOURCE_PATH = 'plaits/dsp/drums/analog_bass_drum.h';
+export const ADAPTED_ORIGINAL_SOURCE_SHA256 = '46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea';
+export const ADAPTED_MIT_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs';
+export const ADAPTED_MIT_LICENSE_PROOF_PATH = 'release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt';
+export const ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mutable-instruments-analog_bass_drum.h';
+export const ADAPTED_MIT_UPSTREAM_SOURCE_SHA256 = 'f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949';
+export const ADAPTED_MIT_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
+
+const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
+    'pnpm-lock.yaml': ['javascript-dependencies'],
+    'server/package-lock.json': ['javascript-dependencies', 'collaboration-server'],
+    'Cargo.lock': ['rust-dependencies'],
+};
 
 export const OWNER_VISUAL_ASSET_PATHS = [
     'public/favicon.ico',
@@ -76,14 +101,15 @@ export const OWNER_VISUAL_ASSET_PATHS = [
     'build/icons/**',
 ] as const;
 
-export const DDSP_TFJS_RUNTIME_PATHS = [
-    'package.json',
-    'pnpm-lock.yaml',
+const DDSP_TFJS_LEGAL_PATHS = [
     'public/legal/Apache-2.0.txt',
     'public/legal/Magenta.js-NOTICE.txt',
     'public/legal/TensorFlow.js-NOTICE.txt',
     'public/legal/seedrandom-MIT.txt',
     'public/legal/THIRD-PARTY-NOTICES.md',
+] as const;
+
+export const DDSP_TFJS_APPLICATION_RUNTIME_PATHS = [
     'src/modules/BrowserAi/models/InferenceRequest.ts',
     'src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts',
     'src/modules/BrowserAi/services/computeDdspSessionKey.ts',
@@ -91,12 +117,44 @@ export const DDSP_TFJS_RUNTIME_PATHS = [
     'src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts',
 ] as const;
 
-const DDSP_TFJS_LEGAL_PATHS = [
-    'public/legal/Apache-2.0.txt',
-    'public/legal/Magenta.js-NOTICE.txt',
-    'public/legal/TensorFlow.js-NOTICE.txt',
-    'public/legal/seedrandom-MIT.txt',
+export const DDSP_TFJS_RUNTIME_PATHS = [
+    'package.json',
+    'pnpm-lock.yaml',
+    ...DDSP_TFJS_LEGAL_PATHS,
+    ...DDSP_TFJS_APPLICATION_RUNTIME_PATHS,
+] as const;
+
+export const DDSP_ADMISSION_DECISION_PATH = '.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md';
+const DDSP_ARTIFACT_MANIFEST_PATH = 'src/modules/BrowserAi/models/DdspArtifactManifest.ts';
+const DDSP_MODEL_ENFORCEMENT_PATHS = [
+    'src/modules/BrowserAi/repositories/modelDownloadManager.ts',
+    'src/modules/BrowserAi/useCases/downloadDdspInstrument.ts',
+    'src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts',
+    'src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts',
+    'src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts',
+    'src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts',
+    'src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts',
+    'src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorker.ts',
+    'src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts',
+    'src/infra/release/modelReleaseAdmission.ts',
+    'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
+    'src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx',
+    'src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts',
+    'src/modules/BrowserAi/useCases/downloadModel.ts',
+    'src/modules/BrowserAi/useCases/initBrowserAi.ts',
+    'src/modules/BrowserAi/useCases/removeDdspInstrument.ts',
+    'src/modules/BrowserAi/useCases/removeModel.ts',
+    'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
+] as const;
+
+export const DDSP_MODEL_PATHS = [
+    DDSP_ADMISSION_DECISION_PATH,
+    'electron/protocol.ts',
     'public/legal/THIRD-PARTY-NOTICES.md',
+    'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+    ...DDSP_MODEL_ENFORCEMENT_PATHS,
 ] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
@@ -154,6 +212,11 @@ export type RepositorySnapshot = {
 export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
+
+export function readReleaseInventory(root: string): ReleaseInventory {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    return parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
+}
 
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
 const markExtensions = new Set([...scannedExtensions, '.css', '.html', '.md', '.toml', '.txt', '.yaml', '.yml']);
@@ -213,7 +276,7 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
     const hash = createHash('sha256');
     for (const file of files) {
         if (!existsSync(resolve(root, file))) {
-            throw new Error(`Grand Boule preserved source is missing: ${file}`);
+            throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
@@ -226,7 +289,7 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
 function trackedSetSha256(root: string, pathspecs: readonly string[]): string {
     const files = trackedFiles(root, pathspecs);
     if (files.length === 0) {
-        throw new Error(`Grand Boule preserved source boundary has no tracked files: ${pathspecs.join(', ')}`);
+        throw new Error(`Grand Boule release source boundary has no tracked files: ${pathspecs.join(', ')}`);
     }
     return trackedFilesSha256(root, files);
 }
@@ -253,11 +316,134 @@ export type DistributedWasmArtifactCensus = {
     wasmArtifacts: string[];
 };
 
-function namesGrandBoule(value: string): boolean {
-    return value
-        .replaceAll(/[^A-Za-z0-9]/g, '')
-        .toLowerCase()
-        .includes('grandboule');
+function executableSource(source: string): string {
+    const output = [...source];
+    let mode: 'code' | 'line-comment' | 'block-comment' | 'single' | 'double' | 'template' = 'code';
+    let escaped = false;
+    for (let index = 0; index < source.length; index += 1) {
+        const character = source[index]!;
+        const next = source[index + 1];
+        if (mode === 'line-comment') {
+            if (character === '\n') {
+                mode = 'code';
+            } else {
+                output[index] = ' ';
+            }
+            continue;
+        }
+        if (mode === 'block-comment') {
+            output[index] = character === '\n' ? '\n' : ' ';
+            if (character === '*' && next === '/') {
+                output[index + 1] = ' ';
+                index += 1;
+                mode = 'code';
+            }
+            continue;
+        }
+        if (mode !== 'code') {
+            output[index] = character === '\n' ? '\n' : ' ';
+            if (escaped) {
+                escaped = false;
+            } else if (character === '\\') {
+                escaped = true;
+            } else if (
+                (mode === 'single' && character === "'") ||
+                (mode === 'double' && character === '"') ||
+                (mode === 'template' && character === '`')
+            ) {
+                mode = 'code';
+            }
+            continue;
+        }
+        if (character === '/' && next === '/') {
+            output[index] = output[index + 1] = ' ';
+            index += 1;
+            mode = 'line-comment';
+        } else if (character === '/' && next === '*') {
+            output[index] = output[index + 1] = ' ';
+            index += 1;
+            mode = 'block-comment';
+        } else if (character === "'") {
+            output[index] = ' ';
+            mode = 'single';
+        } else if (character === '"') {
+            output[index] = ' ';
+            mode = 'double';
+        } else if (character === '`') {
+            output[index] = ' ';
+            mode = 'template';
+        }
+    }
+    return output.join('');
+}
+
+function balancedBody(source: string, openBrace: number): { body: string; start: number; end: number } | undefined {
+    if (openBrace < 0) {
+        return undefined;
+    }
+    let depth = 0;
+    for (let index = openBrace; index < source.length; index += 1) {
+        if (source[index] === '{') {
+            depth += 1;
+        } else if (source[index] === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return { body: source.slice(openBrace + 1, index), start: openBrace + 1, end: index };
+            }
+        }
+    }
+    return undefined;
+}
+
+function declaredBody(source: string, declaration: RegExp): string | undefined {
+    const executable = executableSource(source);
+    const match = declaration.exec(executable);
+    if (match === null) {
+        return undefined;
+    }
+    return balancedBody(executable, executable.indexOf('{', match.index + match[0].length - 1))?.body;
+}
+
+function topLevelExecutableCall(body: string, call: RegExp): boolean {
+    const match = call.exec(body);
+    if (match === null || /\breturn\b/u.test(body.slice(0, match.index))) {
+        return false;
+    }
+    let depth = 0;
+    for (const character of body.slice(0, match.index)) {
+        if (character === '{') {
+            depth += 1;
+        } else if (character === '}') {
+            depth -= 1;
+        }
+    }
+    return depth === 0;
+}
+
+function hasGrandBouleConstructorText(path: string, source: string): boolean {
+    if (path.endsWith('_bg.wasm.d.ts')) {
+        return /\bexport\s+const\s+grandbouleinstance_new\s*:\s*\(\s*a\s*:\s*number\s*,\s*b\s*:\s*number\s*\)\s*=>\s*number\s*;/u.test(
+            executableSource(source)
+        );
+    }
+    const classBody = declaredBody(source, /\bexport\s+class\s+GrandBouleInstance\s*\{/u);
+    if (classBody === undefined) {
+        return false;
+    }
+    if (path.endsWith('.d.ts')) {
+        return /\bconstructor\s*\(\s*sample_rate\s*:\s*number\s*,\s*voice_count\s*:\s*number\s*\)\s*;/u.test(classBody);
+    }
+    if (path.endsWith('.js')) {
+        const constructor = declaredBody(classBody, /\bconstructor\s*\(\s*sample_rate\s*,\s*voice_count\s*\)\s*\{/u);
+        return (
+            constructor !== undefined &&
+            topLevelExecutableCall(
+                constructor,
+                /\bwasm\s*\.\s*grandbouleinstance_new\s*\(\s*sample_rate\s*,\s*voice_count\s*\)/u
+            )
+        );
+    }
+    return false;
 }
 
 function filesRecursively(root: string, directory: string): string[] {
@@ -293,7 +479,10 @@ function assertExactArtifactCensus(label: string, actual: string[], expected: st
 }
 
 function readWasmManifest(root: string): WasmManifest {
-    return JSON.parse(readFileSync(resolve(root, WASM_MANIFEST_PATH), 'utf8')) as WasmManifest;
+    return parseJsonWithUniqueKeys<WasmManifest>(
+        readFileSync(resolve(root, WASM_MANIFEST_PATH), 'utf8'),
+        WASM_MANIFEST_PATH
+    );
 }
 
 function isMirrorSourceOnly(path: string): boolean {
@@ -363,29 +552,318 @@ export function distributedWasmArtifactCensus(root: string): DistributedWasmArti
 
 export function assertGrandBouleRustWasmBoundary(root: string): void {
     const source = readFileSync(resolve(root, 'crates/daw-dsp/src/lib.rs'), 'utf8');
+    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
     const gatedModule =
         /#\[cfg\s*\(\s*not\s*\(\s*target_arch\s*=\s*"wasm32"\s*\)\s*\)\s*\]\s*pub\s+mod\s+grand_boule\s*;/u;
-    const declarations = source.match(/pub\s+mod\s+grand_boule\s*;/gu) ?? [];
-    if (declarations.length !== 1 || !gatedModule.test(source)) {
-        throw new Error('Grand Boule must be gated out of the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
+    if (declarations.length !== 1 || gatedModule.test(source)) {
+        throw new Error('Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs');
     }
 }
 
-export function assertGrandBouleWithheldFromWasm(root: string): void {
-    const census = distributedWasmArtifactCensus(root);
-    for (const path of census.textArtifacts) {
-        if (namesGrandBoule(readFileSync(resolve(root, path), 'utf8'))) {
-            throw new Error(`Grand Boule must not be exposed by distributed daw-dsp WASM surface ${path}`);
+export const GRAND_BOULE_RUST_SOURCE_ADMISSION = {
+    'attack_sampler.rs': 'owner-admitted project implementation',
+    'coupled_strings.rs':
+        'owner-admitted aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
+    'duplex.rs': 'owner-admitted implementation using standard duplex-string acoustics',
+    'engine.rs': 'owner-admitted orchestration and product voicing',
+    'hammer.rs': 'owner-admitted implementation of the cited Stulov scientific relation',
+    'longitudinal.rs': 'owner-admitted implementation using standard longitudinal-mode physics',
+    'mechanical_noise.rs': 'owner-admitted implementation informed by cited mechanical-transient observations',
+    'midi2.rs': 'owner-admitted implementation of public MIDI protocol facts',
+    'mod.rs': 'owner-admitted host and WASM boundary',
+    'parameters.rs': 'owner-admitted curves retaining cited Russell and Rossing measurement anchors',
+    'pedals.rs': 'owner-admitted implementation using standard piano mechanics',
+    'radiation.rs': 'owner-admitted radiation and microphone model',
+    'soundboard.rs': 'owner-admitted finite body kernels and processing',
+    'string.rs': 'owner-admitted modal coefficient implementation from standard string equations',
+    'sympathetic.rs': 'owner-admitted sympathetic-resonance implementation',
+    'voice.rs': 'owner-admitted voice lifecycle and coefficient composition',
+} as const;
+
+export function assertGrandBouleRustSourceAdmission(root: string): void {
+    const rustRoot = 'crates/daw-dsp/src/grand_boule';
+    const actual = trackedFiles(root, [rustRoot]).map((path) => path.slice(`${rustRoot}/`.length));
+    const expected = Object.keys(GRAND_BOULE_RUST_SOURCE_ADMISSION).sort();
+    const unsupported = actual.find((path) => !expected.includes(path));
+    const missing = expected.find((path) => !actual.includes(path));
+    if (unsupported !== undefined) {
+        throw new Error(`Grand Boule Rust source has unsupported attribution gap: ${unsupported}`);
+    }
+    if (missing !== undefined) {
+        throw new Error(`Grand Boule Rust source admission boundary is missing: ${missing}`);
+    }
+}
+
+function rustGrandBouleConstructorTuple(source: string): number[] | null {
+    const implBody = declaredBody(source, /\bimpl\s+GrandBouleEngine\s*\{/u);
+    if (implBody === undefined) {
+        return null;
+    }
+    const constructorBody = declaredBody(
+        implBody,
+        /\bpub\s+fn\s+new\s*\(\s*sample_rate\s*:\s*f32\s*,\s*voice_count\s*:\s*usize\s*\)\s*->\s*Self\s*\{/u
+    );
+    if (constructorBody === undefined || /\breturn\b/u.test(constructorBody)) {
+        return null;
+    }
+    const initializer = declaredBody(constructorBody, /\bSelf\s*\{/u);
+    if (initializer === undefined) {
+        return null;
+    }
+    return [
+        'hammer_hardness_scale',
+        'hammer_mass_scale',
+        'soundboard_brightness',
+        'sympathetic_level',
+        'body_resonance',
+        'tone_color',
+    ].map((field) => {
+        const value = initializer.match(new RegExp(String.raw`\b${field}\s*:\s*(-?\d+(?:\.\d+)?)`, 'u'))?.[1];
+        return value === undefined ? Number.NaN : Number(value);
+    });
+}
+
+export function assertGrandBouleDesignAroundSource(root: string): void {
+    assertGrandBouleRustSourceAdmission(root);
+    const soundboardPath = 'crates/daw-dsp/src/grand_boule/soundboard.rs';
+    const soundboard = readFileSync(resolve(root, soundboardPath), 'utf8');
+    for (const required of [
+        'const FIR_STAGE_COUNT: usize = 12;',
+        'struct FeedForwardDelay',
+        'const WARM_LEFT: KernelSpec',
+        'const WARM_RIGHT: KernelSpec',
+        'const OPEN_LEFT: KernelSpec',
+        'const OPEN_RIGHT: KernelSpec',
+        'input + delayed * self.delayed_gain',
+    ]) {
+        if (!soundboard.includes(required)) {
+            throw new Error(`Grand Boule FIR body contract is missing ${required} in ${soundboardPath}`);
+        }
+    }
+    for (const forbidden of ['SOUNDBOARD_MODES', 'rebuild_modes', 'gain_left:', 'gain_right:', 'y1:', 'y2:']) {
+        if (soundboard.includes(forbidden)) {
+            throw new Error(
+                `Grand Boule FIR body contract rejects modal body source ${forbidden} in ${soundboardPath}`
+            );
         }
     }
 
-    for (const path of census.wasmArtifacts) {
-        const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
-        const forbiddenExport = WebAssembly.Module.exports(module).find(({ name }) => namesGrandBoule(name));
-        if (forbiddenExport !== undefined) {
+    const parametersPath = 'crates/daw-dsp/src/grand_boule/parameters.rs';
+    const parameters = readFileSync(resolve(root, parametersPath), 'utf8');
+    if (!parameters.includes('Project tuning curves and standard piano mappings')) {
+        throw new Error(`Grand Boule parameter provenance must label project tuning in ${parametersPath}`);
+    }
+    if (/(?:Jaatinen|Pätynen|Hinrichsen|Steinway D|HAL RT|patent)/iu.test(parameters)) {
+        throw new Error(`Grand Boule parameter provenance contains an unsupported source claim in ${parametersPath}`);
+    }
+    if (!parameters.includes('let exponent = 7.86_f32 + 1.88 * t.powf(1.32) + 0.14 * t * (1.0 - t);')) {
+        throw new Error(`Grand Boule project hammer-stiffness curve is missing in ${parametersPath}`);
+    }
+    if (/8\.0_f32\s*\+\s*0\.020\s*\*\s*\(key as f32 - 1\.0\)/u.test(parameters)) {
+        throw new Error(`Grand Boule rejects the legacy hammer-stiffness formula in ${parametersPath}`);
+    }
+
+    const enginePath = 'crates/daw-dsp/src/grand_boule/engine.rs';
+    const engine = readFileSync(resolve(root, enginePath), 'utf8');
+    const constructorTuple = rustGrandBouleConstructorTuple(engine);
+    const balancedTuple = [0.92, 1.08, 0.48, 0.58, 0.52, -0.08];
+    if (JSON.stringify(constructorTuple) !== JSON.stringify(balancedTuple)) {
+        throw new Error(`Grand Boule Rust constructor must use the balanced-grand tuple in ${enginePath}`);
+    }
+
+    const coupledStringsPath = 'crates/daw-dsp/src/grand_boule/coupled_strings.rs';
+    const coupledStrings = readFileSync(resolve(root, coupledStringsPath), 'utf8');
+    for (const required of [
+        'fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay',
+        'prompt_hz: 0.58 + 0.72 * register + 7.2 * register.powf(2.4)',
+        'aftersound_hz: 0.012 + 0.025 * register + 0.105 * register * register',
+        'const POLARIZATION_TRANSFER_GAIN: f32 = 30.0;',
+        'const AFTERSOUND_MIX: f32 = 0.7;',
+        'No body or soundboard property enters string coefficient',
+    ]) {
+        if (!coupledStrings.includes(required)) {
             throw new Error(
-                `Grand Boule must not be exposed by distributed daw-dsp WASM binary export ${path}:${forbiddenExport.name}`
+                `Grand Boule project polarization-decay source is missing ${required} in ${coupledStringsPath}`
             );
+        }
+    }
+    if (
+        /(?:sigma_bridge|bridge[- ]admittance|SIGMA_SLOW_SCALE|BRIDGE_COUPLING_GAIN|0\.8\s*\+\s*fundamental_hz\s*\*\s*0\.004)/iu.test(
+            coupledStrings
+        )
+    ) {
+        throw new Error(`Grand Boule rejects the legacy bridge-derived decay source in ${coupledStringsPath}`);
+    }
+
+    const voicingsPath = 'src/modules/GrandBoule/models/GrandBouleMorphState.ts';
+    const voicings = readFileSync(resolve(root, voicingsPath), 'utf8');
+    const productVoicings = {
+        'balanced-grand': [0.92, 1.08, 0.48, 0.58, 0.52, -0.08],
+        'mellow-grand': [0.72, 1.25, 0.32, 0.74, 0.82, -0.58],
+        'clear-grand': [1.34, 0.82, 0.78, 0.36, 0.42, 0.56],
+        'singing-grand': [1.12, 0.94, 0.68, 0.66, 0.57, 0.28],
+    } as const;
+    const legacyVoicingTuples = [
+        [1, 1, 0.55, 0.5, 0.6, 0],
+        [0.6, 1.4, 0.25, 0.8, 0.9, -0.7],
+        [1.5, 0.7, 0.85, 0.3, 0.35, 0.7],
+        [1.2, 0.85, 0.75, 0.6, 0.5, 0.4],
+    ] as const;
+    const tupleFields = [
+        'hammerHardnessScale',
+        'hammerMassScale',
+        'soundboardBrightness',
+        'sympatheticLevel',
+        'bodyResonance',
+        'toneColor',
+    ] as const;
+    for (const [id, expectedTuple] of Object.entries(productVoicings)) {
+        const block = voicings.match(new RegExp(String.raw`\{\s*id:\s*['"]${id}['"][\s\S]*?\n\s*\}`, 'u'))?.[0];
+        if (block === undefined) {
+            throw new Error(`Grand Boule product voicing contract is missing neutral id ${id} in ${voicingsPath}`);
+        }
+        const tuple = tupleFields.map((field) => {
+            const value = block.match(new RegExp(String.raw`${field}:\s*(-?\d+(?:\.\d+)?)`, 'u'))?.[1];
+            return value === undefined ? Number.NaN : Number(value);
+        });
+        if (legacyVoicingTuples.some((legacyTuple) => JSON.stringify(tuple) === JSON.stringify(legacyTuple))) {
+            throw new Error(
+                `Grand Boule product voicing contract rejects a legacy branded tuple for ${id} in ${voicingsPath}`
+            );
+        }
+        if (JSON.stringify(tuple) !== JSON.stringify(expectedTuple)) {
+            throw new Error(
+                `Grand Boule product voicing contract does not pin the project tuple for ${id} in ${voicingsPath}`
+            );
+        }
+    }
+    if (/name:\s*['"](?:Steinway|Bösendorfer|Bosendorfer|Yamaha|Fazioli)/u.test(voicings)) {
+        throw new Error(
+            `Grand Boule product voicing contract rejects brand-specific display labels in ${voicingsPath}`
+        );
+    }
+    for (const legacyId of ['steinway-d', 'bosendorfer-imperial', 'yamaha-cfx', 'fazioli-f308']) {
+        if (voicings.includes(legacyId)) {
+            throw new Error(
+                `Grand Boule product voicing contract rejects legacy branded id ${legacyId} in ${voicingsPath}`
+            );
+        }
+    }
+}
+
+export function assertGrandBouleReleasedInWasm(root: string): void {
+    const census = distributedWasmArtifactCensus(root);
+    const dawDspPackage = wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp');
+    if (dawDspPackage === undefined) {
+        throw new Error('distributed WASM contract is missing the daw-dsp package');
+    }
+    const dawDspArtifacts = new Set(dawDspPackage.artifacts);
+
+    for (const path of census.textArtifacts.filter(
+        (artifact) => dawDspArtifacts.has(artifact) && !artifact.endsWith('/package.json')
+    )) {
+        if (!hasGrandBouleConstructorText(path, readFileSync(resolve(root, path), 'utf8'))) {
+            throw new Error(
+                `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
+            );
+        }
+    }
+
+    for (const path of census.wasmArtifacts.filter((artifact) => dawDspArtifacts.has(artifact))) {
+        const module = new WebAssembly.Module(readFileSync(resolve(root, path)));
+        const constructorExport = WebAssembly.Module.exports(module).find(
+            ({ name, kind }) => name === 'grandbouleinstance_new' && kind === 'function'
+        );
+        if (constructorExport === undefined) {
+            throw new Error(
+                `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
+            );
+        }
+    }
+}
+
+const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
+    'crates/daw-dsp/benches/quantum.rs',
+    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+] as const;
+
+export function assertGrandBouleMeasurementAdmission(root: string): void {
+    const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
+    const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
+    const data = JSON.parse(readFileSync(resolve(root, jsonPath), 'utf8')) as {
+        sourceRevision?: string;
+        sourceDigests?: Record<string, string>;
+        machine?: { gitSha?: string; workingTree?: string };
+        budgetMs?: number;
+        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+        rows?: Array<{
+            id?: string;
+            costSite?: string;
+            warmVerify?: { ok?: boolean; detail?: string };
+            lateVerify?: { ok?: boolean; detail?: string };
+        }>;
+    };
+    const revision = data.sourceRevision;
+    if (!revision || revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
+        throw new Error('Grand Boule measurement must name one clean implementation source revision');
+    }
+    const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();
+    if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
+        throw new Error('Grand Boule measurement source-digest census is incomplete');
+    }
+    for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
+        let sourceAtRevision: Buffer;
+        try {
+            sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
+        } catch {
+            throw new Error(`Grand Boule measurement source revision ${revision} cannot provide ${path}`);
+        }
+        const recordedDigest = data.sourceDigests![path]!;
+        const revisionDigest = createHash('sha256').update(sourceAtRevision).digest('hex');
+        if (recordedDigest !== revisionDigest) {
+            throw new Error(`Grand Boule measurement recorded digest does not match source revision for ${path}`);
+        }
+        const currentDigest = createHash('sha256')
+            .update(readFileSync(resolve(root, path)))
+            .digest('hex');
+        if (recordedDigest !== currentDigest) {
+            throw new Error(`Grand Boule measurement current source digest drifted for ${path}`);
+        }
+    }
+    const rows = data.rows?.filter((row) => row.id === 'grand_boule') ?? [];
+    const row = rows[0];
+    const exactVoiceProof = /active_voices\(\)\s*=\s*64,\s*expected\s+64/u;
+    if (
+        rows.length !== 1 ||
+        row?.costSite !== 'worker' ||
+        row.warmVerify?.ok !== true ||
+        row.lateVerify?.ok !== true ||
+        !exactVoiceProof.test(row.warmVerify.detail ?? '') ||
+        !exactVoiceProof.test(row.lateVerify.detail ?? '')
+    ) {
+        throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
+    }
+    if (
+        typeof data.budgetMs !== 'number' ||
+        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
+        typeof data.referenceProject.workerMedianMs !== 'number' ||
+        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
+        data.referenceProject.workerMedianMs >= data.budgetMs
+    ) {
+        throw new Error('Grand Boule measured reference project exceeds its render budget');
+    }
+    const markdown = readFileSync(resolve(root, markdownPath), 'utf8');
+    assertGeneratedRegionMatches(markdown, data);
+    for (const required of [revision, row.warmVerify.detail!, row.lateVerify.detail!]) {
+        if (!markdown.includes(required)) {
+            throw new Error(`Grand Boule JSON and Markdown measurement tables disagree on ${required}`);
+        }
+    }
+    for (const [path, digest] of Object.entries(data.sourceDigests ?? {})) {
+        if (!markdown.includes(path) || !markdown.includes(`sha256:${digest}`)) {
+            throw new Error(`Grand Boule Markdown measurement provenance omits ${path}`);
         }
     }
 }
@@ -397,64 +875,246 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
         sources: [...AUDIO_WORKLET_SOURCES],
         revisions: ['not-applicable:direct-project-source'],
         digests: AUDIO_WORKLET_SOURCES.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
-        licenses: ['pending:OS-10-project-grant'],
+        licenses: ['Apache-2.0'],
     };
 }
 
-type GrandBoulePreservationBoundary = {
-    path: string;
-    gitPathspec: string;
+export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceContract {
+    assertAdaptedMitSourceProofs(root);
+    return {
+        kind: 'adapted-source',
+        paths: [
+            ADAPTED_MIT_SOURCE_PATH,
+            ADAPTED_MIT_UPSTREAM_PROOF_PATH,
+            ADAPTED_MIT_LICENSE_PROOF_PATH,
+            ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH,
+            ADAPTED_MIT_LICENSE_PATH,
+            ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
+            ADAPTED_MIT_NOTICE_PATH,
+        ],
+        sources: [
+            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:src/drums/analog_bass_drum.rs`,
+            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`,
+            `git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
+            ADAPTED_MIT_SOURCE_PATH,
+        ],
+        revisions: [ADAPTED_MIT_COMMIT, ADAPTED_ORIGINAL_COMMIT],
+        digests: [
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_SOURCE_PATH))}:${ADAPTED_MIT_SOURCE_PATH}`,
+            `sha256:${ADAPTED_MIT_UPSTREAM_SOURCE_SHA256}:${ADAPTED_MIT_UPSTREAM_PROOF_PATH}`,
+            `sha256:${ADAPTED_MIT_LICENSE_SHA256}:git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`,
+            `sha256:${ADAPTED_MIT_LICENSE_SHA256}:${ADAPTED_MIT_LICENSE_PROOF_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH))}:${ADAPTED_MIT_LICENSE_PATH}`,
+            `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
+            `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:${ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH))}:${ADAPTED_ORIGINAL_MIT_LICENSE_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_NOTICE_PATH))}:${ADAPTED_MIT_NOTICE_PATH}`,
+        ],
+        licenses: ['MIT'],
+    };
+}
+
+export function assertAdaptedMitSourceProofs(root: string): void {
+    for (const [path, expected] of [
+        [ADAPTED_MIT_UPSTREAM_PROOF_PATH, ADAPTED_MIT_UPSTREAM_SOURCE_SHA256],
+        [ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH, ADAPTED_ORIGINAL_SOURCE_SHA256],
+    ] as const) {
+        if (fileSha256(resolve(root, path)) !== expected) {
+            throw new Error(`${path}: pinned upstream source proof drifted`);
+        }
+    }
+    if (fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PROOF_PATH)) !== ADAPTED_MIT_LICENSE_SHA256) {
+        throw new Error(`${ADAPTED_MIT_LICENSE_PROOF_PATH}: pinned upstream license proof drifted`);
+    }
+    if (fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH)) !== ADAPTED_MIT_LICENSE_SHA256) {
+        throw new Error(`${ADAPTED_MIT_LICENSE_PATH}: distributed upstream license drifted`);
+    }
+}
+
+export function projectLicenseDistributionReleaseInventoryContract(root: string): SurfaceContract {
+    const paths = [
+        '.gitattributes',
+        'LICENSE',
+        'NOTICE',
+        'public/legal/Apache-2.0.txt',
+        DEPENDENCY_LICENSE_REPORT_PATH,
+        'public/legal/SOURDAW-NOTICE.txt',
+        'public/legal/THIRD-PARTY-NOTICES.md',
+        'package.json',
+        'server/LICENSE',
+        'server/NOTICE',
+        'server/THIRD-PARTY-NOTICES.md',
+        'server/package.json',
+        'Cargo.toml',
+        'crates/**',
+        'release/dependency-license-proofs.json',
+        'release/dependency-license-proofs/**',
+        'release/spdx-license-texts/**',
+        'release/upstream-proofs/**',
+        'scripts/dependencyLicenseReport.ts',
+    ];
+    return {
+        kind: 'distribution',
+        paths,
+        sources: paths,
+        revisions: ['current tracked project license and pinned dependency evidence'],
+        digests: [
+            `sha256:${fileSha256(resolve(root, 'LICENSE'))}:LICENSE`,
+            `sha256:${fileSha256(resolve(root, 'NOTICE'))}:NOTICE`,
+            `sha256:${fileSha256(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH))}:${DEPENDENCY_LICENSE_REPORT_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'release/dependency-license-proofs.json'))}:release/dependency-license-proofs.json`,
+        ],
+        licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
+    };
+}
+
+export function assertProjectLicenseDistributionReleaseInventory(
+    root: string,
+    surface: Partial<ReleaseSurface> | undefined
+): void {
+    assertSurfaceContract(
+        surface,
+        projectLicenseDistributionReleaseInventoryContract(root),
+        'project license distribution'
+    );
+}
+
+type GrandBouleReleaseBoundary = {
+    paths: readonly string[];
+    gitPathspecs: readonly string[];
     digestLabel: string;
 };
 
-export const GRAND_BOULE_PRESERVATION_REGISTRY = {
-    kind: 'patent-directed-component',
-    retention: 'defer-behind-admission',
-    owner: 'OS-05',
+export const GRAND_BOULE_RELEASE_REGISTRY = {
+    kind: 'project-source',
+    retention: 'keep',
+    owner: 'OS-10',
     releaseModes: ['source', 'web', 'desktop'],
-    productSurfaces: ['Preserved Grand Boule source and project schema'],
+    productSurfaces: ['Grand Boule source, browser WASM, and desktop runtime'],
     boundaries: [
         {
-            path: 'crates/daw-dsp/src/grand_boule/**',
-            gitPathspec: 'crates/daw-dsp/src/grand_boule',
+            paths: ['crates/daw-dsp/src/grand_boule/**'],
+            gitPathspecs: ['crates/daw-dsp/src/grand_boule'],
             digestLabel: 'grand-boule-native-rust',
         },
         {
-            path: 'src/modules/GrandBoule/**',
-            gitPathspec: 'src/modules/GrandBoule',
-            digestLabel: 'grand-boule-product-module',
+            paths: ['.agents/decisions/0036-readmit-grand-boule.md'],
+            gitPathspecs: ['.agents/decisions/0036-readmit-grand-boule.md'],
+            digestLabel: 'grand-boule-admission-decision',
         },
         {
-            path: 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
-            gitPathspec: 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
-            digestLabel: 'grand-boule-product-descriptor',
+            paths: [
+                'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+                'src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts',
+                'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx',
+            ],
+            gitPathspecs: [
+                'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+                'src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts',
+                'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx',
+            ],
+            digestLabel: 'grand-boule-discovery-catalog',
         },
         {
-            path: 'src/infra/release/deviceReleaseAdmission.ts',
-            gitPathspec: 'src/infra/release/deviceReleaseAdmission.ts',
-            digestLabel: 'grand-boule-release-admission',
+            paths: [
+                'src/infra/release/deviceReleaseAdmission.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/unrenderableCatalogDeviceTypes.ts',
+                'src/utils/nativeDspDeviceTypes.ts',
+            ],
+            gitPathspecs: [
+                'src/infra/release/deviceReleaseAdmission.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts',
+                'src/modules/AudioEngine/repositories/deviceStrategy/unrenderableCatalogDeviceTypes.ts',
+                'src/utils/nativeDspDeviceTypes.ts',
+            ],
+            digestLabel: 'grand-boule-factory-admission',
         },
         {
-            path: 'src/modules/AudioEngine/engine/GrandBouleNode.ts',
-            gitPathspec: 'src/modules/AudioEngine/engine/GrandBouleNode.ts',
-            digestLabel: 'grand-boule-node-host',
+            paths: [
+                'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+                'src/modules/AudioEngine/engine/wasmDeviceRegistry.ts',
+                'src/modules/AudioEngine/models/AudioEngineState.ts',
+                'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+                'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+                'src/modules/AudioEngine/worklets/grandBoule*.ts',
+                'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
+            ],
+            gitPathspecs: [
+                'src/modules/AudioEngine/engine/GrandBouleNode.ts',
+                'src/modules/AudioEngine/engine/wasmDeviceRegistry.ts',
+                'src/modules/AudioEngine/models/AudioEngineState.ts',
+                'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
+                'src/modules/AudioEngine/repositories/createWebAudioEngine.ts',
+                'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
+                ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
+                'src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts',
+            ],
+            digestLabel: 'grand-boule-live-runtime',
         },
         {
-            path: 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
-            gitPathspec: 'src/modules/AudioEngine/models/GrandBouleRingProtocol.ts',
-            digestLabel: 'grand-boule-ring-protocol',
+            paths: [
+                'src/modules/GrandBoule/**',
+                'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+                'src/modules/Arrangement/useCases/index.ts',
+                'src/modules/Arrangement/useCases/device/setDeviceState.ts',
+                'src/app/bootstrap.ts',
+                'src/app/getProductionCommandHandlerMaps.ts',
+                'src/utils/handlerContract.ts',
+            ],
+            gitPathspecs: [
+                'src/modules/GrandBoule',
+                'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+                'src/modules/Arrangement/useCases/index.ts',
+                'src/modules/Arrangement/useCases/device/setDeviceState.ts',
+                'src/app/bootstrap.ts',
+                'src/app/getProductionCommandHandlerMaps.ts',
+                'src/utils/handlerContract.ts',
+            ],
+            digestLabel: 'grand-boule-project-state',
         },
         {
-            path: 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
-            gitPathspec: 'src/modules/AudioEngine/workers/grandBouleEngineWorker.ts',
-            digestLabel: 'grand-boule-worker-host',
+            paths: [
+                'src/app/prepareOfflineDeviceSetup.ts',
+                'src/modules/AudioEngine/useCases/buildDeviceChain.ts',
+                'src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts',
+            ],
+            gitPathspecs: [
+                'src/app/prepareOfflineDeviceSetup.ts',
+                'src/modules/AudioEngine/useCases/buildDeviceChain.ts',
+                'src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts',
+            ],
+            digestLabel: 'grand-boule-offline-composition',
         },
         {
-            path: 'src/modules/AudioEngine/worklets/grandBoule*.ts',
-            gitPathspec: ':(glob)src/modules/AudioEngine/worklets/grandBoule*.ts',
-            digestLabel: 'grand-boule-worklet-hosts',
+            paths: [
+                'crates/daw-dsp/benches/quantum.rs',
+                'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+                'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.d.mts',
+                'crates/daw-dsp/benches/quantum-cost-table.json',
+                'crates/daw-dsp/benches/quantum-cost-table.md',
+                'crates/daw-dsp/tests/quantum_bench_census.rs',
+                'scripts/checkReleaseInventory.ts',
+            ],
+            gitPathspecs: [
+                'crates/daw-dsp/benches/quantum.rs',
+                'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+                'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.d.mts',
+                'crates/daw-dsp/benches/quantum-cost-table.json',
+                'crates/daw-dsp/benches/quantum-cost-table.md',
+                'crates/daw-dsp/tests/quantum_bench_census.rs',
+                'scripts/checkReleaseInventory.ts',
+            ],
+            digestLabel: 'grand-boule-release-proof',
         },
-    ] satisfies readonly GrandBoulePreservationBoundary[],
+    ] satisfies readonly GrandBouleReleaseBoundary[],
 } as const;
 
 export function grandBouleReleaseInventoryContract(
@@ -473,31 +1133,33 @@ export function grandBouleReleaseInventoryContract(
     | 'productSurfaces'
 > {
     return {
-        kind: GRAND_BOULE_PRESERVATION_REGISTRY.kind,
-        retention: GRAND_BOULE_PRESERVATION_REGISTRY.retention,
-        owner: GRAND_BOULE_PRESERVATION_REGISTRY.owner,
-        releaseModes: [...GRAND_BOULE_PRESERVATION_REGISTRY.releaseModes],
-        paths: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(({ path }) => path),
+        kind: GRAND_BOULE_RELEASE_REGISTRY.kind,
+        retention: GRAND_BOULE_RELEASE_REGISTRY.retention,
+        owner: GRAND_BOULE_RELEASE_REGISTRY.owner,
+        releaseModes: [...GRAND_BOULE_RELEASE_REGISTRY.releaseModes],
+        paths: GRAND_BOULE_RELEASE_REGISTRY.boundaries.flatMap(({ paths }) => [...paths]),
         sources: [
             'crates/daw-dsp/src/grand_boule/',
-            'src/modules/GrandBoule/',
-            'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
-            'src/infra/release/deviceReleaseAdmission.ts',
-            'retained Grand Boule AudioEngine host, worker, and worklet source',
-            'active patent sources recorded in the readiness audit',
+            '.agents/decisions/0036-readmit-grand-boule.md',
+            'Grand Boule discovery, catalog, factory, and release-admission source',
+            'Grand Boule AudioEngine live host, registry, scheduling, worker, and worklet source',
+            'Grand Boule project-state action, hydration, and offline-composition source',
+            'Grand Boule browser runner, gates, reference population, processor, recipe, renderer, native benchmark, census, retained JSON/Markdown evidence, and release-checker source',
+            'distributed daw-dsp WASM glue, declarations, mirrors, and binary',
         ],
         revisions: [
             'current tracked Rust source',
-            'current tracked Grand Boule product source',
-            'current tracked Grand Boule descriptor and release-admission boundary',
-            'current tracked AudioEngine host boundary',
+            'current tracked ADR 0036 source-admission record',
+            'current tracked discovery, factory, and release-admission boundaries',
+            'current tracked live host, scheduling, action, hydration, and offline boundaries',
+            'current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners',
         ],
-        digests: GRAND_BOULE_PRESERVATION_REGISTRY.boundaries.map(
-            ({ gitPathspec, digestLabel }) =>
-                `tracked-set-sha256:${trackedSetSha256(root, [gitPathspec])}:${digestLabel}`
+        digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
+            ({ gitPathspecs, digestLabel }) =>
+                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs)}:${digestLabel}`
         ),
-        licenses: ['pending:OS-10-project-grant', 'unverified:HAL-parameter-source-reuse-terms'],
-        productSurfaces: [...GRAND_BOULE_PRESERVATION_REGISTRY.productSurfaces],
+        licenses: ['Apache-2.0'],
+        productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
     };
 }
 
@@ -533,14 +1195,17 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
             `tree-sha256:${directorySha256(root, 'public/logo-parts')}:public/logo-parts`,
             `tree-sha256:${directorySha256(root, 'build/icons')}:build/icons`,
         ],
-        licenses: ['owner-created:pending-OS-10-project-license'],
+        licenses: ['Apache-2.0'],
     };
 }
 
-/** Exact distributed code and notice closure for the release-withheld DDSP worker runtime. */
-export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceContract {
+/** Exact distributed code and notice closure for the DDSP worker runtime. */
+export function ddspTfjsRuntimeReleaseInventoryContract(root: string): Partial<ReleaseSurface> {
     return {
         kind: 'runtime-library',
+        retention: 'keep-with-obligations',
+        owner: 'OS-04',
+        releaseModes: ['source', 'web', 'desktop'],
         paths: [...DDSP_TFJS_RUNTIME_PATHS],
         sources: [
             'git:github.com/tensorflow/tfjs@e5d5e9371ed1fd0a4df6d7cd0b947d2a820cefd7',
@@ -567,6 +1232,7 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceCo
             'npm-integrity:sha512-1u0FmuLGuRAi8D2c3cocHTASGXOmHc/4OvoVDENJayjYkS119fcTcQf4iHrtLthWyDIPy3JiPhRrZQC9EwnhLw==:@tensorflow/tfjs-backend-cpu@4.22.0',
             'npm-integrity:sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==:long@4.0.0',
             'npm-integrity:sha512-8OwmbklUNzwezjGInmZ+2clQmExQPvomqjL7LFqOYqtmuxRgQYqOD3mHaU+MvZn5FLUeVxVfQjwLZW/n/JFuqg==:seedrandom@3.0.5',
+            ...DDSP_TFJS_APPLICATION_RUNTIME_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
             ...DDSP_TFJS_LEGAL_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
         ],
         licenses: [
@@ -574,6 +1240,68 @@ export function ddspTfjsRuntimeReleaseInventoryContract(root: string): SurfaceCo
             'Apache-2.0:long',
             'Apache-2.0:Magenta.js-Roll-adaptation',
             'MIT:seedrandom-and-Alea',
+        ],
+        productSurfaces: ['browser and desktop DDSP hardware-WebGPU worker runtime'],
+        evidence: [
+            'Exact package versions and npm integrity digests are pinned in the install graph; package and lock file contents are not independently content-digested here.',
+            'The release validator content-digests the application runtime sources and legal files listed by this surface.',
+            'Together these records bind the dependency integrity, application runtime, and legal-file obligations represented here without claiming a self-referential complete closure.',
+            'The runtime accepts only locally verified checkpoint artifact transfers and registers no CPU or WebGL fallback.',
+        ],
+        obligations: [
+            'Keep the Apache-2.0 and MIT texts and exact component notices with every distribution.',
+            'Do not characterize separately downloaded DDSP checkpoint artifacts under these runtime licenses.',
+        ],
+    };
+}
+
+/** Exact admitted identity, delivery boundary, and legal status of the Magenta DDSP checkpoints. */
+export function ddspModelsReleaseInventoryContract(root: string): Partial<ReleaseSurface> {
+    const decision = readFileSync(resolve(root, DDSP_ADMISSION_DECISION_PATH), 'utf8');
+    const admittedManifest = /Admitted `DdspArtifactManifest` SHA-256:\s*`([a-f0-9]{64})`/u.exec(decision)?.[1];
+    const currentManifest = fileSha256(resolve(root, DDSP_ARTIFACT_MANIFEST_PATH));
+    if (admittedManifest === undefined || admittedManifest !== currentManifest) {
+        throw new Error('ADR 0035 does not admit the current DDSP artifact manifest');
+    }
+    const artifacts = Object.values(DDSP_ARTIFACTS).flat();
+
+    return {
+        kind: 'model-stack',
+        retention: 'keep-with-obligations',
+        owner: 'OS-04',
+        releaseModes: ['web', 'desktop'],
+        paths: [...DDSP_MODEL_PATHS],
+        sources: [
+            'https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md',
+            'https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp',
+            'src/modules/BrowserAi/models/DdspArtifactManifest.ts',
+            DDSP_ADMISSION_DECISION_PATH,
+        ],
+        revisions: [
+            DDSP_CHECKPOINT_VERSION,
+            'Magenta.js 0692eb2b79681f062c6b6dd53a0361967f298caa',
+            `${artifacts.length} exact artifacts`,
+        ],
+        digests: [
+            `sha256:${fileSha256(resolve(root, DDSP_ADMISSION_DECISION_PATH))}:${DDSP_ADMISSION_DECISION_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'electron/protocol.ts'))}:electron/protocol.ts`,
+            `sha256:${currentManifest}:${DDSP_ARTIFACT_MANIFEST_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'))}:public/legal/THIRD-PARTY-NOTICES.md`,
+            ...DDSP_MODEL_ENFORCEMENT_PATHS.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
+            ...artifacts.map(({ sha256, sizeBytes, url }) => `sha256:${sha256}:bytes:${sizeBytes}:${url}`),
+        ],
+        licenses: ['unverified:exact-GCS-checkpoint-artifacts'],
+        productSurfaces: ['explicit browser and desktop downloads of four pinned Magenta DDSP instruments'],
+        evidence: [
+            'DdspArtifactManifest pins the exact URL, byte size, and SHA-256 for all twelve admitted artifacts.',
+            'Each user-requested direct Magenta download is staged and verified before its local generation is published or used.',
+            'Sourdaw does not bundle or redistribute the checkpoint bytes.',
+        ],
+        obligations: [
+            'Keep the checkpoint license explicitly unverified; runtime licenses and notices do not cover the weights.',
+            'Keep all checkpoint bytes out of Sourdaw distributions and fetch only the admitted identities directly from Magenta until issue #2595 is resolved.',
+            'Rollback requires all of: set MODEL_RELEASE_ADMISSION.ddsp to false; remove the exact Magenta DDSP source from electron/protocol.ts connect-src; and remove its release inventory egress assignment from release/open-source-inventory.json.',
         ],
     };
 }
@@ -592,13 +1320,13 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
             ...packages.map(([id, entry]) => `${id} ${entry.crateSourceHash}`),
         ],
         digests: [`sha256:${fileSha256(resolve(root, 'public/wasm/manifest.json'))}:public/wasm/manifest.json`],
-        licenses: ['pending:OS-10-project-grant', 'pending:OS-10-Cargo-dependency-notices'],
+        licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
     };
 }
 
 function assertSurfaceContract(
     surface: Partial<ReleaseSurface> | undefined,
-    expected: Partial<SurfaceContract>,
+    expected: Partial<ReleaseSurface>,
     label: string
 ): void {
     for (const [field, value] of Object.entries(expected)) {
@@ -608,11 +1336,18 @@ function assertSurfaceContract(
     }
 }
 
+export function assertDdspModelsReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
+    assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
+}
+
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
 }
 
 function isScannedSource(path: string): boolean {
+    if (path === DEPENDENCY_LICENSE_REPORT_PATH) {
+        return false;
+    }
     if (!['crates/', 'electron/', 'public/', 'scripts/', 'server/', 'src/'].some((root) => path.startsWith(root))) {
         return false;
     }
@@ -626,6 +1361,9 @@ function isScannedSource(path: string): boolean {
 }
 
 function isMarkSource(path: string): boolean {
+    if (path === DEPENDENCY_LICENSE_REPORT_PATH) {
+        return false;
+    }
     if (
         !['README.md', 'index.html'].includes(path) &&
         !['docs/', 'public/', 'src/'].some((root) => path.startsWith(root))
@@ -826,6 +1564,9 @@ export function validateReleaseInventory(
         if (!RETENTION_CLASSES.includes(surface.retention)) {
             errors.push(`${surface.id}: invalid retention class ${String(surface.retention)}`);
         }
+        if (surface.retention === 'keep' && surface.licenses.some((license) => license.startsWith('unverified:'))) {
+            errors.push(`${surface.id}: keep surfaces cannot carry unverified rights`);
+        }
         for (const [field, values] of Object.entries({
             owner: [surface.owner],
             releaseModes: surface.releaseModes,
@@ -845,6 +1586,16 @@ export function validateReleaseInventory(
         for (const path of surface.paths) {
             if (!snapshot.releaseFiles.some((trackedPath) => pathMatches(path, trackedPath))) {
                 errors.push(`${surface.id}: path is not tracked: ${path}`);
+            }
+        }
+    }
+
+    for (const [path, surfaceIdsForSnapshot] of Object.entries(SNAPSHOT_DIGEST_SURFACES)) {
+        const expected = `sha256:${snapshot.fileDigests[path] ?? 'missing'}`;
+        for (const surfaceId of surfaceIdsForSnapshot) {
+            const surface = inventory.surfaces.find((candidate) => candidate.id === surfaceId);
+            if (surface !== undefined && !surface.digests.includes(expected)) {
+                errors.push(`${surfaceId}: digest must match ${path} snapshot (${expected})`);
             }
         }
     }
@@ -1051,9 +1802,12 @@ export function loadRepositorySnapshot(
     };
 }
 
-export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceipt {
-    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
+export function checkReleaseInventory(
+    root: string,
+    projectLicensePreflight = checkProjectLicense
+): ReleaseInventoryCheckReceipt {
+    projectLicensePreflight(root);
+    const inventory = readReleaseInventory(root);
     const snapshot = loadRepositorySnapshot(root, inventory);
     const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
@@ -1069,16 +1823,30 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
         stdio: 'inherit',
     });
     assertGrandBouleRustWasmBoundary(root);
-    assertGrandBouleWithheldFromWasm(root);
+    assertGrandBouleDesignAroundSource(root);
+    assertGrandBouleReleasedInWasm(root);
+    assertGrandBouleMeasurementAdmission(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
+    );
+    const projectLicenseSurface = inventory.surfaces.find((surface) => surface.id === 'project-license-distribution');
+    validateSurface('project-license-distribution', () =>
+        assertProjectLicenseDistributionReleaseInventory(root, projectLicenseSurface)
     );
     const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
     validateSurface('grand-boule', () => assertGrandBouleReleaseInventory(root, grandBouleSurface));
     const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
     validateSurface('audio-worklet-sources', () =>
         assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet')
+    );
+    const adaptedMitSurface = inventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
+    validateSurface('mi-plaits-dsp-rs-adaptation', () =>
+        assertSurfaceContract(
+            adaptedMitSurface,
+            adaptedMitSourceReleaseInventoryContract(root),
+            'mi-plaits-dsp-rs adaptation'
+        )
     );
     const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     validateSurface('third-party-marks', () =>
@@ -1100,6 +1868,8 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
             'DDSP TF.js runtime'
         )
     );
+    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
@@ -1115,7 +1885,7 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
         sources: [levain.source.repository],
         revisions: [levain.source.revision],
         digests: [`git-tree:${levain.source.tree}`, 'file-level:public/samples/levain/provenance.tsv'],
-        licenses: [levain.source.license, 'pending:OS-10-project-license'],
+        licenses: [levain.source.license, 'Apache-2.0'],
     };
     for (const [field, expected] of Object.entries(levainContract)) {
         if (JSON.stringify(levainSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {

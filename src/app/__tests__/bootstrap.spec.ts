@@ -285,7 +285,11 @@ vi.mock('#/modules/Gluten/stores', () => ({
     deleteGlutenMeters: noop,
 }));
 
-vi.mock('#/modules/GrandBoule/useCases', () => ({ setGrandBouleEventBus: noop }));
+vi.mock('#/modules/GrandBoule/useCases', () => ({
+    getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
+    initGrandBouleSubscribers: () => noop,
+    setGrandBouleEventBus: noop,
+}));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
 
@@ -475,6 +479,7 @@ describe('bootstrap', () => {
         'VersionControl',
         'DawProject',
         'FinalFeature',
+        'GrandBoule',
         'NodeView',
         'WebMidiInput',
         'Rave',

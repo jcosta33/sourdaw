@@ -15,6 +15,7 @@ import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
 import { defaultGrandBouleState, createGrandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
+import { applyGrandBouleMorphState } from '../../useCases/applyGrandBouleMorphState';
 import { resetMidiCalibration } from '../../useCases/calibrateGrandBouleMidi/resetMidiCalibration';
 import { setCcSmoothingMs } from '../../useCases/calibrateGrandBouleMidi/setCcSmoothingMs';
 import { setSustainThreshold } from '../../useCases/calibrateGrandBouleMidi/setSustainThreshold';
@@ -33,6 +34,9 @@ import { releaseGrandBouleNote } from '../../useCases/releaseGrandBouleNote';
 import { resolveGrandBouleEngine, type ResolvedGrandBouleEngine } from '../../useCases/resolveGrandBouleEngine';
 import { setGrandBouleAttackBite } from '../../useCases/setGrandBouleAttackBite';
 import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
+import { setGrandBouleMorphBalance } from '../../useCases/setGrandBouleMorphBalance';
+import { setGrandBouleMorphEnabled } from '../../useCases/setGrandBouleMorphEnabled';
+import { setGrandBouleMorphModel } from '../../useCases/setGrandBouleMorphModel';
 import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
 import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
 import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
@@ -55,7 +59,7 @@ import { StringVibrationView } from '../components/StringVibrationView';
 import { GRAND_BOULE_PER_NOTE_AVAILABLE } from '../helpers/perNoteAvailability';
 
 /**
- * Grand Boule piano plugin panel view (§8).
+ * Grand Boule piano plugin panel.
  *
  * Composes the interactive keyboard, the string-vibration visualiser, the
  * spectral waterfall, and the global/pedal controls. Subscribes to the
@@ -161,7 +165,7 @@ const MICROPHONE_POSITIONS = [
 ] as const;
 
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    // §52.1 — Derive the engine handle from a subscribed track list so the
+    // Derive the engine handle from a subscribed track list so the
     // React Compiler can memoize this across the many per-note re-renders
     // (setActiveNotes fires on every MIDI noteOn). Previously: full
     // getAllTracks().find() scan per render.
@@ -170,7 +174,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         .flatMap((track) => track.devices)
         .find((device) => device.id === deviceId)?.parameterValues;
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId, tracks: trackState.tracks });
-    // §209.1 — Typed default instead of non-null assertion on live value.
+    // Keep the live value typed without a non-null assertion.
     const store = createGrandBouleStore(deviceId);
     const state = useStore(store, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
@@ -265,7 +269,10 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         if (!engineReady) {
             return;
         }
-        setGrandBouleMorphPosition({ engine: engineRef.current, store: storeRef.current, morphPosition: 0 });
+        const currentMorph = storeRef.current.value?.morph;
+        if (currentMorph) {
+            applyGrandBouleMorphState(engineRef.current, currentMorph);
+        }
         // The two engine-consumed calibration values live on the store, which
         // outlives any one engine instance (`storesByDevice` is a module Map).
         // A device node rebuilt underneath a calibrated panel comes up on the
@@ -344,38 +351,30 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </Stack>
                     </SectionCard>
 
-                    <SectionCard title="Morph" detail="Piano model blending (§3.1).">
+                    <SectionCard title="Morph" detail="Piano model blending.">
                         <MorphPanel
                             morph={morph}
-                            onMorphPositionChange={(position) =>
-                                setGrandBouleMorphPosition({ engine, store, morphPosition: position })
+                            onMorphPositionChange={(position, isTransient) =>
+                                setGrandBouleMorphPosition({
+                                    deviceId,
+                                    engine,
+                                    store,
+                                    morphPosition: position,
+                                    isTransient,
+                                })
                             }
-                            onLayerBalanceChange={(balance) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, layerBalance: balance } });
-                                }
-                            }}
-                            onModelAChange={(modelId) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, modelA: modelId } });
-                                    setGrandBouleMorphPosition({ engine, store, morphPosition: s.morph.morphPosition });
-                                }
-                            }}
-                            onModelBChange={(modelId) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, modelB: modelId } });
-                                    setGrandBouleMorphPosition({ engine, store, morphPosition: s.morph.morphPosition });
-                                }
-                            }}
-                            onEnabledChange={(enabled) => {
-                                const s = store.value;
-                                if (s !== null) {
-                                    store.set({ ...s, morph: { ...s.morph, enabled } });
-                                }
-                            }}
+                            onLayerBalanceChange={(balance, isTransient) =>
+                                setGrandBouleMorphBalance({ deviceId, engine, store, balance, isTransient })
+                            }
+                            onModelAChange={(modelId) =>
+                                setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelA', modelId })
+                            }
+                            onModelBChange={(modelId) =>
+                                setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelB', modelId })
+                            }
+                            onEnabledChange={(enabled) =>
+                                setGrandBouleMorphEnabled({ deviceId, engine, store, enabled })
+                            }
                         />
                     </SectionCard>
 
@@ -388,9 +387,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 }
                                 label="Master"
                                 min={0}
-                                max={2}
+                                max={1}
                                 step={0.01}
-                                defaultValue={0.7}
+                                defaultValue={0.1}
                                 readout={`${Math.round(config.masterGain * 100)}%`}
                             />
                             <Knob
@@ -481,7 +480,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             </Stack>
                         </Grid>
                     </SectionCard>
-                    <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
+                    <SectionCard title="Realism" detail="Stretched tuning and attack bite.">
                         <Grid cols={2} gapX={2} gapY={3}>
                             <Knob
                                 value={config.stretchAmount}
@@ -505,7 +504,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                         </Grid>
                     </SectionCard>
-                    <SectionCard title="Per-Note" detail="Key-specific parameter editing (§3.1).">
+                    <SectionCard title="Per-Note" detail="Key-specific parameter editing.">
                         {GRAND_BOULE_PER_NOTE_AVAILABLE ? (
                             <PerNoteEditor
                                 perNoteOverrides={liveState.perNoteOverrides}
@@ -551,7 +550,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         )}
                     </SectionCard>
 
-                    <SectionCard title="MIDI Calibration" detail="Controller tuning (§3.1).">
+                    <SectionCard title="MIDI Calibration" detail="Controller tuning.">
                         <MidiCalibrationPanel
                             calibration={liveState.midiCalibration}
                             lastVelocity={lastVelocity}
@@ -655,7 +654,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </Stack>
                     </SectionCard>
 
-                    <SectionCard title="Tuning" detail="Historical temperament (§4).">
+                    <SectionCard title="Tuning" detail="Historical temperament.">
                         <Stack gap={1}>
                             {TEMPERAMENT_OPTIONS.map((option) => {
                                 const active = temperament === option.value;

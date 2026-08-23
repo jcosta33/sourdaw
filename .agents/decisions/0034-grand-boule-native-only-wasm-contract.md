@@ -2,7 +2,7 @@
 type: adr
 id: 0034
 title: Keep Grand Boule native-only at the daw-dsp WASM boundary
-status: accepted
+status: superseded by 0036
 date: 2026-08-21
 owner: The Sourdaw team
 sources:

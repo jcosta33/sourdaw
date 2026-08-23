@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => {
         },
     };
 });
+const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
 
 vi.mock('../../repositories/track/getTrackById', () => ({ getTrackById: mocks.getTrackById }));
 vi.mock('../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
@@ -54,6 +55,16 @@ vi.mock('#/modules/MIDI/useCases', () => ({ duplicateMidiClipData: mocks.duplica
 vi.mock('#/modules/Automation/useCases', () => ({
     duplicateClipAutomationBatch: mocks.duplicateClipAutomationBatch,
 }));
+vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/release/deviceReleaseAdmission')>();
+
+    return {
+        ...actual,
+        findWithheldDeviceType: (devices: ReadonlyArray<{ type: string }>) =>
+            devices.find(({ type }) => injectedWithheldDeviceTypes.has(type))?.type ??
+            actual.findWithheldDeviceType(devices),
+    };
+});
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 function createClip(input: Partial<Clip> & Pick<Clip, 'id' | 'type'>): Clip {
@@ -144,6 +155,7 @@ function returnCreatedTrack(): void {
 describe('duplicateTrack', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        injectedWithheldDeviceTypes.clear();
         injectDependencies(duplicateTrack, { eventBus: mocks.eventBus });
         mocks.callOrder.length = 0;
         mocks.getTrackById.mockReturnValue(undefined);
@@ -187,13 +199,14 @@ describe('duplicateTrack', () => {
     });
 
     it('rejects tracks containing a withheld device before mutation', () => {
+        injectedWithheldDeviceTypes.add('test-withheld-device');
         const source = createTrack({
             id: 'track-source',
             devices: [
                 {
-                    id: 'grand-boule-source',
-                    name: 'Grand Boule',
-                    type: 'grand-boule',
+                    id: 'withheld-source',
+                    name: 'Withheld test device',
+                    type: 'test-withheld-device',
                     bypassed: false,
                     parameterValues: {},
                 },
@@ -204,7 +217,7 @@ describe('duplicateTrack', () => {
         expect(duplicateTrack(source.id)).toBeNull();
 
         expect(notifyUser).toHaveBeenCalledWith(
-            'Track contains withheld device "grand-boule" and was not duplicated.',
+            'Track contains withheld device "test-withheld-device" and was not duplicated.',
             'warning'
         );
         expect(mocks.getTrackState).not.toHaveBeenCalled();
