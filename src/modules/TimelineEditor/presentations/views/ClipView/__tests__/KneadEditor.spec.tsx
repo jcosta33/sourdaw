@@ -138,7 +138,7 @@ describe('KneadEditor', () => {
         vi.clearAllMocks();
         actionMocks.compileAddDeviceAction.mockReturnValue({
             type: 'addDevice',
-            payload: { trackId: 'track-1', deviceType: 'Knead', deviceId: 'device-knead', expectedDeviceIds: [] },
+            payload: { trackId: 'track-1', deviceType: 'knead', deviceId: 'device-knead', expectedDeviceIds: [] },
         });
         actionMocks.executeAppAction.mockResolvedValue(undefined);
     });
@@ -153,10 +153,10 @@ describe('KneadEditor', () => {
         expect(screen.getByText('Enable Pitch Editor')).toBeInTheDocument();
 
         fireEvent.click(screen.getByText('Enable Pitch Editor'));
-        expect(compileAddDeviceAction).toHaveBeenCalledWith('track-1', 'Knead');
+        expect(compileAddDeviceAction).toHaveBeenCalledWith('track-1', 'knead');
         expect(executeAppAction).toHaveBeenCalledWith({
             type: 'addDevice',
-            payload: { trackId: 'track-1', deviceType: 'Knead', deviceId: 'device-knead', expectedDeviceIds: [] },
+            payload: { trackId: 'track-1', deviceType: 'knead', deviceId: 'device-knead', expectedDeviceIds: [] },
         });
     });
 

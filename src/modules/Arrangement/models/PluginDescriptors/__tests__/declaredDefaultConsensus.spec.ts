@@ -677,7 +677,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
         patchSources: [],
         noPatchReason:
             'Knead has no `models/` directory at all — the module is handlers, stores and use cases — and no ' +
-            'descriptor either, so there is nothing to compare.',
+            'device-owned parameters, so there are no descriptor defaults to compare.',
         noPanelReason: 'Knead has no `presentations/` directory; its controls live in the shared mixer strip.',
     },
 };

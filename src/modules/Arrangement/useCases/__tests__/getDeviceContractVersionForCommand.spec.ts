@@ -14,6 +14,20 @@ describe('getDeviceContractVersionForCommand', () => {
         expect(getDeviceContractVersionForCommand('missing-device')).toBeUndefined();
     });
 
+    it('versions the canonical Knead device without inventing device-owned parameters', () => {
+        const descriptor = getPluginById('knead');
+
+        expect(descriptor).toMatchObject({
+            id: 'knead',
+            name: 'Knead',
+            format: 'builtin',
+            category: 'effect',
+            platform: 'both',
+            parameters: [],
+        });
+        expect(getDeviceContractVersionForCommand('knead')).toMatch(/^descriptor-v1:[0-9a-f]{8}$/);
+    });
+
     it('includes Arrangement-owned guidance in the descriptor fingerprint', () => {
         const descriptor = getPluginById('builtin-compressor');
         if (!descriptor?.guidance) {

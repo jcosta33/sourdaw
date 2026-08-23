@@ -225,9 +225,7 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
  * A native type with no descriptor is invisible to this census, so it has to be
  * named rather than silently skipped.
  */
-const NATIVE_TYPES_WITHOUT_DESCRIPTOR: Readonly<Partial<Record<NativeDspDeviceType, string>>> = {
-    knead: 'Knead is a track-level pitch-correction insert with no host parameter surface — its engine exposes no string-addressed `set_param` at all, only typed setters such as `set_shift_semitones`.',
-};
+const NATIVE_TYPES_WITHOUT_DESCRIPTOR: Readonly<Partial<Record<NativeDspDeviceType, string>>> = {};
 
 type ParamExemption = {
     readonly deviceId: NativeDspDeviceType;
