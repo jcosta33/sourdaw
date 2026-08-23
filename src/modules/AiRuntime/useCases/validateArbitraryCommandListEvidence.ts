@@ -339,6 +339,27 @@ export function validateArbitraryCommandListEvidence(input: {
                     reason: 'Structured command compiler evidence target override is invalid.',
                 };
             }
+            const representativeCommands = item.representativeCommandIndexes.map(
+                (commandIndex) => evidence.commands[commandIndex]
+            );
+            const targetArgument = item.targetArgument;
+            const representativeTargets: unknown[] = [];
+            for (const command of representativeCommands) {
+                representativeTargets.push(command?.arguments[targetArgument]);
+            }
+            const hasCompleteRepresentativeCoverage =
+                representativeCommands.every((command) => command?.name === item.commandName) &&
+                (item.targetCardinality === 'many'
+                    ? representativeTargets.every((target) => JSON.stringify(target) === JSON.stringify(item.stableIds))
+                    : representativeTargets.every(
+                          (target) => typeof target === 'string' && item.stableIds.includes(target)
+                      ) && item.stableIds.every((stableId) => representativeTargets.includes(stableId)));
+            if (!hasCompleteRepresentativeCoverage) {
+                return {
+                    status: 'rejected',
+                    reason: 'Structured command compiler evidence representative coverage is invalid.',
+                };
+            }
             for (let offset = 0; offset < item.commandCount; offset += 1) {
                 const commandIndex = item.commandStart + offset;
                 const command = evidence.commands[commandIndex];

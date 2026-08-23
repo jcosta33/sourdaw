@@ -466,6 +466,84 @@ describe('parsePromptToActions', () => {
         expect(result.providerProposal?.scope.targetIds).toEqual([createdBusId]);
     });
 
+    it('rejects a selected application-expanded workflow before its compiler graph can reach partial acceptance', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setMetronomeEnabled'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'selectWorkflowCapability',
+                        arguments: { capabilityId: 'shared-vocal-fx-buses' },
+                    },
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Enable the metronome.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['setMetronomeEnabled'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate the command graph.'],
+                                stoppingConditions: ['Stop if graph preservation is unavailable.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'enable-metronome',
+                                        name: 'setMetronomeEnabled',
+                                        arguments: { enabled: true },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'Enable the metronome while preparing shared vocal FX buses.',
+            baseContext,
+            undefined,
+            'revision-specialized-graph'
+        );
+
+        expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith(
+            expect.objectContaining({
+                calls: [{ name: 'setMetronomeEnabled', arguments: { enabled: true } }],
+                compilerEvidence: expect.objectContaining({
+                    snapshotRevision: 'revision-specialized-graph',
+                }),
+                workflowCapabilityId: 'shared-vocal-fx-buses',
+            })
+        );
+        expect(result).toMatchObject({
+            actions: [],
+            requiresConfirmation: false,
+            rejectionReason:
+                'Provider action rejected: <batch>: Compiler command graphs cannot enter application-expanded specialized workflows',
+        });
+        expect(result.actionCommandGraph).toBeUndefined();
+    });
+
     it('rejects a fast-path plan before confirmation when it conflicts with locked production intent', async () => {
         vi.mocked(tryParameterizedPath).mockReturnValue([{ type: 'setTempo', payload: { bpm: 128 } }]);
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(false);

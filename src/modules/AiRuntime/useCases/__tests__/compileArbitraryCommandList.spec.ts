@@ -1268,7 +1268,76 @@ describe('compileArbitraryCommandList', () => {
             status: 'accepted',
             actionCommandGraph: { dependenciesByActionIndex: [[], [], [0, 1]] },
         });
+
+        const tamperedEvidence = structuredClone(result.compilerEvidence);
+        const partiallyDeduplicatedItem = tamperedEvidence.items[1]!;
+        partiallyDeduplicatedItem.declaredCommandCount = 1;
+        partiallyDeduplicatedItem.omittedCommandCount = 0;
+        partiallyDeduplicatedItem.declaredCommandIdentities = [partiallyDeduplicatedItem.declaredCommandIdentities[1]!];
+        partiallyDeduplicatedItem.representativeCommandIndexes = [
+            partiallyDeduplicatedItem.representativeCommandIndexes[1]!,
+        ];
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: tamperedEvidence,
+                calls: tamperedEvidence.commands,
+                context,
+                revision: 'revision-partial-dedup',
+            })
+        ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('representative coverage') });
     });
+
+    it.each(['shared-vocal-fx-buses', 'drum-render-comparison', 'backing-vocal-plate'] as const)(
+        'fails closed before a compiler graph can enter the application-expanded %s workflow',
+        (workflowCapabilityId) => {
+            const result = compileArbitraryCommandList({
+                context,
+                revision: 'revision-specialized-workflow',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan([]),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'enable-metronome',
+                                        name: 'setMetronomeEnabled',
+                                        arguments: { enabled: true },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+            expect(result).toMatchObject({ status: 'accepted' });
+            if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+                return;
+            }
+            expect(
+                bridgeGroundedLlmToolCalls({
+                    calls: result.compilerEvidence.commands,
+                    compilerEvidence: result.compilerEvidence,
+                    context,
+                    projectRevision: 'revision-specialized-workflow',
+                    prompt: 'Enable the metronome.',
+                    workflowCapabilityId,
+                })
+            ).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: '<batch>',
+                        reason: 'Compiler command graphs cannot enter application-expanded specialized workflows',
+                    },
+                ],
+            });
+        }
+    );
 
     it.each([
         { name: 'muteClip', valueArgument: 'muted', value: true },

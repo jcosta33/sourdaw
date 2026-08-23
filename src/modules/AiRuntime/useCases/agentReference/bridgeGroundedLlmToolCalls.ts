@@ -4012,6 +4012,25 @@ export function bridgeGroundedLlmToolCalls({
         compilerTargetOverridesByCallIndex = compilerValidation.targetOverridesByCallIndex;
         compilerActionCommandGraph = compilerValidation.actionCommandGraph;
     }
+    // These workflows expand provider calls into generated app-owned actions. Until they can rebuild an
+    // action-aligned graph, compiler evidence cannot safely cross the partial-acceptance boundary.
+    if (
+        compilerActionCommandGraph !== undefined &&
+        (workflowCapabilityId === 'shared-vocal-fx-buses' ||
+            workflowCapabilityId === 'drum-render-comparison' ||
+            workflowCapabilityId === 'backing-vocal-plate')
+    ) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(
+                    0,
+                    '<batch>',
+                    'Compiler command graphs cannot enter application-expanded specialized workflows'
+                ),
+            ],
+        };
+    }
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({
             calls,
