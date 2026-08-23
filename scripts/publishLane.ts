@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { mkdirSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -12,8 +12,9 @@ import {
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
-    authenticateRole,
+    authenticatePublishingAuthor,
     gitAuthenticatedArgs,
+    githubAuthorizationGitEnv,
     originMainBlob,
     parseJson,
     removalLockPid,
@@ -21,6 +22,7 @@ import {
     spawnCapture,
     spawnRun,
     type GhSession,
+    type PublishingAuthorAuthorization,
 } from './githubAppIdentity.ts';
 import {
     assertConventionalSubject,
@@ -41,20 +43,58 @@ export type PublishWorktree = {
 
 export type ExistingPullRequest = { number: number; body: unknown };
 
-export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number] [--relates] [--test <instructions>]';
+export const PUBLISH_LANE_USAGE =
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--test <instructions>]';
+
+const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
+const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
+const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+
+type TrustedPublishRuntime = {
+    primaryRoot: string;
+    commonDir: string;
+    gitPath: string;
+    ghPath: string;
+    originCommit: string;
+};
+
+function trustedPublishRuntime(env: NodeJS.ProcessEnv = process.env): TrustedPublishRuntime {
+    const primaryRoot = env[TRUSTED_PRIMARY_ROOT_ENV];
+    const commonDir = env[TRUSTED_COMMON_DIR_ENV];
+    const gitPath = env[TRUSTED_GIT_PATH_ENV];
+    const ghPath = env[TRUSTED_GH_PATH_ENV];
+    const originCommit = env[TRUSTED_ORIGIN_COMMIT_ENV];
+    if (
+        primaryRoot === undefined ||
+        commonDir === undefined ||
+        gitPath === undefined ||
+        ghPath === undefined ||
+        originCommit === undefined ||
+        !isAbsolute(primaryRoot) ||
+        !isAbsolute(commonDir) ||
+        !isAbsolute(gitPath) ||
+        !isAbsolute(ghPath) ||
+        !/^[0-9a-f]{40,64}$/.test(originCommit)
+    ) {
+        fail('lane:publish must run through the protected primary checkout launcher');
+    }
+    return { primaryRoot, commonDir, gitPath, ghPath, originCommit };
+}
 
 export type PublishLanePort = {
-    fetchMain: () => void;
+    baseSha: () => string;
     worktrees: () => PublishWorktree[];
     cwd: () => string;
     issueExists: (issue: number) => boolean;
-    aheadBehind: (lane: string) => { ahead: number; behind: number };
+    aheadBehind: (lane: string, baseSha: string, headSha: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
-    laneSubject: (lane: string) => string | undefined;
+    laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
     headSha: (lane: string) => string;
     remoteBranchSha: (branch: string) => string | undefined;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
-    push: (lane: string, branch: string) => void;
+    push: (lane: string, branch: string, headSha: string) => void;
     existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
     createPullRequest: (input: { branch: string; title: string; body: string }) => number;
     updatePullRequest: (number: number, input: { title: string; body: string }) => void;
@@ -63,6 +103,7 @@ export type PublishLanePort = {
 
 export function parsePublishLaneArgs(args: string[]): {
     issue?: number;
+    lanePath?: string;
     relationship?: IssueRelationship;
     testInstructions?: string;
     help: boolean;
@@ -74,6 +115,7 @@ export function parsePublishLaneArgs(args: string[]): {
         return { help: true };
     }
     let issue: number | undefined;
+    let lanePath: string | undefined;
     let relationship: IssueRelationship | undefined;
     let testInstructions: string | undefined;
     for (let index = 0; index < args.length; index += 1) {
@@ -94,13 +136,26 @@ export function parsePublishLaneArgs(args: string[]): {
             index += 1;
             continue;
         }
-        if (arg === undefined || issue !== undefined) {
+        if (arg === '--lane') {
+            const value = args[index + 1];
+            if (lanePath !== undefined || issue !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            if (!isAbsolute(value)) {
+                fail('--lane requires an absolute path');
+            }
+            lanePath = value;
+            index += 1;
+            continue;
+        }
+        if (arg === undefined || issue !== undefined || lanePath !== undefined) {
             fail(PUBLISH_LANE_USAGE);
         }
         issue = assertIssueNumber(arg, PUBLISH_LANE_USAGE);
     }
     return {
         ...(issue === undefined ? {} : { issue }),
+        ...(lanePath === undefined ? {} : { lanePath }),
         ...(relationship === undefined ? {} : { relationship }),
         ...(testInstructions === undefined ? {} : { testInstructions }),
         help: false,
@@ -114,8 +169,10 @@ export function parsePublishLaneArgs(args: string[]): {
  */
 type ResolvedLane = { path: string; branch: string; legacy: boolean };
 
+type AuthorizedResolvedLane = PublishingAuthorAuthorization & { legacy: boolean };
+
 export const NO_ISSUE_LANE_FAILURE =
-    'not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number';
+    'not inside a locked author lane: pass its issue number or --lane with its absolute worktree root';
 
 export function canonicalPath(path: string, resolveExisting: (path: string) => string): string {
     const absolute = resolve(path);
@@ -339,8 +396,8 @@ export function resolveAuthorLane(
     // (`laneIssueNumber` requires the `agent/` prefix), so nothing ties a passed issue number to a
     // *specific* legacy candidate. Resolving one anyway would let `pnpm lane:publish <any issue>`
     // pick up an unrelated stranded lane and stamp `Closes #<that issue>` on its pull request. A
-    // legacy lane resolves only from inside itself, with no issue argument — see the `issue ===
-    // undefined` branch above.
+    // legacy lane resolves only from an explicit lane-path selection with no issue argument — see
+    // the `issue === undefined` branch above.
     const prefix = `agent/${issue}/`;
     const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
     if (matches.length !== 1) {
@@ -359,9 +416,9 @@ export function publishLane(
     issue: number | undefined,
     port: PublishLanePort,
     relationship?: IssueRelationship,
-    testInstructions?: string
+    testInstructions?: string,
+    authorization?: AuthorizedResolvedLane
 ): number {
-    port.fetchMain();
     const lane = resolveAuthorLane(
         issue,
         port.worktrees(),
@@ -369,9 +426,26 @@ export function publishLane(
         realpathSync,
         (branch) => port.existingOpenPullRequest(branch) !== undefined
     );
-    // Without an argument the target is whatever the caller happened to be standing in, and the
-    // next steps push it. Name the selection before anything mutates, so a caller who was in the
-    // wrong lane sees which one it was.
+    if (
+        authorization !== undefined &&
+        (canonicalPath(lane.path, realpathSync) !== canonicalPath(authorization.lanePath, realpathSync) ||
+            lane.branch !== authorization.branch ||
+            lane.legacy !== authorization.legacy)
+    ) {
+        fail('publishing lane changed after its permission-scoped token was minted');
+    }
+    const currentHeadSha = port.headSha(lane.path);
+    const headSha = authorization?.headSha ?? currentHeadSha;
+    if (currentHeadSha !== headSha) {
+        fail(`${lane.branch} HEAD changed after its permission-scoped token was minted`);
+    }
+    const currentBaseSha = port.baseSha();
+    const baseSha = authorization?.baseSha ?? currentBaseSha;
+    if (currentBaseSha !== baseSha) {
+        fail('origin/main changed after its permission-scoped token was minted');
+    }
+    // Name the resolved selection before anything mutates, so an incorrect target remains visible
+    // even when a later gate refuses it.
     port.log(`publishing ${lane.path} on ${lane.branch}`);
     if (issue !== undefined && !port.issueExists(issue)) {
         fail(`issue #${issue} does not exist in ${REQUIRED_REPOSITORY}`);
@@ -382,17 +456,22 @@ export function publishLane(
     if (port.dirty(lane.path)) {
         fail(`${lane.branch} ${DIRTY_LANE_FAILURE}`);
     }
-    const { ahead } = port.aheadBehind(lane.path);
+    const { ahead } = port.aheadBehind(lane.path, baseSha, headSha);
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
     }
-    const write = pullRequestWrite(issue, lane, port, relationship, testInstructions);
-    const headSha = port.headSha(lane.path);
+    const write = pullRequestWrite(issue, lane, baseSha, headSha, port, relationship, testInstructions);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
     }
-    port.push(lane.path, lane.branch);
+    if (port.baseSha() !== baseSha) {
+        fail('origin/main changed after its permission-scoped token was minted');
+    }
+    port.push(lane.path, lane.branch, headSha);
+    if (port.baseSha() !== baseSha) {
+        fail('origin/main changed after its permission-scoped token was minted');
+    }
     const number = pullRequestNumber(lane, write, port);
     port.log(String(number));
     return number;
@@ -442,6 +521,8 @@ type PullRequestWrite = { title: string; body: string; existing: ExistingPullReq
 function pullRequestWrite(
     issue: number | undefined,
     lane: ResolvedLane,
+    baseSha: string,
+    headSha: string,
     port: PublishLanePort,
     relationship: IssueRelationship | undefined,
     testInstructions: string | undefined
@@ -449,7 +530,7 @@ function pullRequestWrite(
     if (lane.legacy) {
         return undefined;
     }
-    const title = port.laneSubject(lane.path);
+    const title = port.laneSubject(lane.path, baseSha, headSha);
     if (title === undefined) {
         fail(`${lane.branch} ${NO_LANE_SUBJECT_FAILURE}`);
     }
@@ -508,29 +589,38 @@ function legacyPullRequestNumber(lane: ResolvedLane, existing: ExistingPullReque
  * published lane current means merging `origin/main` into it — rebasing would force a
  * non-fast-forward push — which leaves HEAD a merge commit, so HEAD alone titles the pull request
  * after the merge that carried it. Both halves of this argument list are load-bearing:
- * `--no-merges` skips the merge commits, and `origin/main..HEAD` keeps the walk inside the lane's
+ * `--no-merges` skips the merge commits, and the pinned-base range keeps the walk inside the lane's
  * own commits. Without the range, a lane commit older than `origin/main`'s tip loses the date sort
  * and the title comes from a commit `main` already has.
  */
-export const LANE_SUBJECT_ARGS = ['log', '-1', '--format=%s', '--no-merges', 'origin/main..HEAD'];
+function laneSubjectArgs(baseSha: string, headSha: string): string[] {
+    return ['log', '-1', '--format=%s', '--no-merges', `${baseSha}..${headSha}`];
+}
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): PublishLanePort {
-    const primaryRoot = resolvePrimaryRoot(
-        (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
-        cwd
-    );
+export function shellPort(
+    session: GhSession,
+    cwd: string = process.cwd(),
+    resolvedPrimaryRoot?: string,
+    executables: { git: string; gh: string } = { git: 'git', gh: 'gh' }
+): PublishLanePort {
+    const primaryRoot =
+        resolvedPrimaryRoot ??
+        resolvePrimaryRoot(
+            (_command, args, directory) => spawnCapture(executables.git, args, { cwd: directory, env: session.env }),
+            cwd
+        );
     const token = session.env.GH_TOKEN ?? '';
     const git = (args: string[], directory: string) =>
-        spawnCapture('git', gitAuthenticatedArgs(token, session.configDir, args), {
+        spawnCapture(executables.git, gitAuthenticatedArgs(token, session.configDir, args), {
             cwd: directory,
             env: session.env,
         });
-    const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
-    const ghRun = (args: string[]) => spawnRun('gh', args, { cwd: primaryRoot, env: session.env });
+    const gh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
+    const ghRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: session.env });
     return {
-        fetchMain: () => {
+        baseSha: () => {
             spawnRun(
-                'git',
+                executables.git,
                 gitAuthenticatedArgs(token, session.configDir, [
                     'fetch',
                     GITHUB_HTTPS_REMOTE,
@@ -538,12 +628,21 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
                 ]),
                 { cwd: primaryRoot, env: session.env }
             );
+            return spawnCapture(executables.git, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
+                cwd: primaryRoot,
+                env: session.env,
+            });
         },
         worktrees: () =>
-            parsePublishWorktrees(spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })),
+            parsePublishWorktrees(
+                spawnCapture(executables.git, ['worktree', 'list', '--porcelain', '-z'], {
+                    cwd: primaryRoot,
+                    env: session.env,
+                })
+            ),
         cwd: () => cwd,
         issueExists: (issue) => {
-            const result = spawnSync('gh', issueLookupArgs(issue), {
+            const result = spawnSync(executables.gh, issueLookupArgs(issue), {
                 cwd: primaryRoot,
                 env: session.env,
                 encoding: 'utf8',
@@ -554,10 +653,15 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             }
             return issueExistsFromLookup(issue, result);
         },
-        aheadBehind: (lane) => {
-            const output = spawnCapture('git', ['rev-list', '--left-right', '--count', 'origin/main...HEAD'], {
-                cwd: lane,
-            });
+        aheadBehind: (lane, baseSha, headSha) => {
+            const output = spawnCapture(
+                executables.git,
+                ['rev-list', '--left-right', '--count', `${baseSha}...${headSha}`],
+                {
+                    cwd: lane,
+                    env: session.env,
+                }
+            );
             const [behindText, aheadText] = output.split(/\s+/);
             const behind = Number(behindText);
             const ahead = Number(aheadText);
@@ -567,9 +671,14 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             return { ahead, behind };
         },
         dirty: (lane) =>
-            spawnCapture('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: lane }) !== '',
-        laneSubject: (lane) => spawnCapture('git', LANE_SUBJECT_ARGS, { cwd: lane }) || undefined,
-        headSha: (lane) => spawnCapture('git', ['rev-parse', 'HEAD'], { cwd: lane }),
+            spawnCapture(executables.git, ['status', '--porcelain=v1', '--untracked-files=all'], {
+                cwd: lane,
+                env: session.env,
+            }) !== '',
+        laneSubject: (lane, baseSha, headSha) =>
+            spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
+            undefined,
+        headSha: (lane) => spawnCapture(executables.git, ['rev-parse', 'HEAD'], { cwd: lane, env: session.env }),
         remoteBranchSha: (branch) => {
             const output = git(['ls-remote', GITHUB_HTTPS_REMOTE, `refs/heads/${branch}`], primaryRoot);
             if (output === '') {
@@ -578,14 +687,20 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             const sha = output.split(/\s+/)[0];
             return sha === undefined || sha === '' ? undefined : sha;
         },
-        isAncestor: (ancestorSha, descendantSha, lane) => isAncestorCommit(lane, ancestorSha, descendantSha),
-        push: (lane, branch) => {
+        isAncestor: (ancestorSha, descendantSha, lane) =>
+            isAncestorCommit(lane, ancestorSha, descendantSha, session.env, executables.git),
+        push: (lane, branch, headSha) => {
+            const disabledHooksPath = join(session.configDir, 'disabled-hooks');
+            mkdirSync(disabledHooksPath, { recursive: true, mode: 0o700 });
             spawnRun(
-                'git',
+                executables.git,
                 gitAuthenticatedArgs(token, session.configDir, [
+                    '-c',
+                    `core.hooksPath=${disabledHooksPath}`,
                     'push',
+                    '--no-verify',
                     GITHUB_HTTPS_REMOTE,
-                    `HEAD:refs/heads/${branch}`,
+                    `${headSha}:refs/heads/${branch}`,
                 ]),
                 {
                     cwd: lane,
@@ -630,9 +745,16 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
     };
 }
 
-function isAncestorCommit(lane: string, ancestorSha: string, descendantSha: string): boolean {
-    const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestorSha, descendantSha], {
+function isAncestorCommit(
+    lane: string,
+    ancestorSha: string,
+    descendantSha: string,
+    env?: NodeJS.ProcessEnv,
+    gitCommand: string = 'git'
+): boolean {
+    const result = spawnSync(gitCommand, ['merge-base', '--is-ancestor', ancestorSha, descendantSha], {
         cwd: lane,
+        env,
         encoding: 'utf8',
         shell: false,
     });
@@ -740,27 +862,103 @@ export function parsePublishWorktrees(value: string): PublishWorktree[] {
         });
 }
 
-async function main(): Promise<number> {
-    const parsed = parsePublishLaneArgs(process.argv.slice(2));
+export async function runPublishLaneCli(args: string[]): Promise<number> {
+    const parsed = parsePublishLaneArgs(args);
     if (parsed.help) {
         console.log(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
         return 0;
     }
+    if (parsed.issue === undefined && parsed.lanePath === undefined) {
+        fail(PUBLISH_LANE_USAGE);
+    }
     const executingFile = fileURLToPath(import.meta.url);
     const cwd = process.cwd();
-    assertTrustedExecutingBlob('scripts/publishLane.ts', executingFile, originMainBlob('scripts/publishLane.ts', cwd));
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'author' });
-    try {
-        const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-            env: auth.session.env,
+    const runtime = trustedPublishRuntime();
+    const authorizationEnv = githubAuthorizationGitEnv();
+    if (realpathSync(cwd) !== realpathSync(runtime.primaryRoot)) {
+        fail('lane:publish must be launched from the protected primary checkout');
+    }
+    assertTrustedExecutingBlob(
+        'scripts/publishLane.ts',
+        executingFile,
+        originMainBlob('scripts/publishLane.ts', cwd, authorizationEnv, runtime.gitPath, runtime.originCommit)
+    );
+    const primaryRoot = resolvePrimaryRoot(
+        (_command, commandArgs, directory) =>
+            spawnCapture(runtime.gitPath, commandArgs, { cwd: directory, env: authorizationEnv }),
+        cwd
+    );
+    const resolvedCommonDir = spawnCapture(runtime.gitPath, ['rev-parse', '--git-common-dir'], {
+        cwd: primaryRoot,
+        env: authorizationEnv,
+    });
+    const absoluteCommonDir = realpathSync(
+        isAbsolute(resolvedCommonDir) ? resolvedCommonDir : resolve(primaryRoot, resolvedCommonDir)
+    );
+    if (
+        realpathSync(primaryRoot) !== realpathSync(runtime.primaryRoot) ||
+        absoluteCommonDir !== realpathSync(runtime.commonDir)
+    ) {
+        fail('lane:publish trusted repository binding does not match the protected primary checkout');
+    }
+    spawnRun(runtime.gitPath, ['fetch', GITHUB_HTTPS_REMOTE, '+refs/heads/main:refs/remotes/origin/main'], {
+        cwd: primaryRoot,
+        env: authorizationEnv,
+    });
+    const baseSha = spawnCapture(runtime.gitPath, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
+        cwd: primaryRoot,
+        env: authorizationEnv,
+    });
+    const localWorktrees = parsePublishWorktrees(
+        spawnCapture(runtime.gitPath, ['worktree', 'list', '--porcelain', '-z'], {
             cwd: primaryRoot,
-        });
+            env: authorizationEnv,
+        })
+    );
+    // Resolve the locally locked lane before mint so the token scope comes only from that lane's
+    // committed diff. Legacy eligibility is re-proven through GitHub after authentication below;
+    // `true` here grants no publish authority, it only lets the enclosing locked lane be inspected.
+    const selectionPath = parsed.lanePath ?? cwd;
+    const authenticationLane = resolveAuthorLane(parsed.issue, localWorktrees, selectionPath, realpathSync, () => true);
+    if (parsed.lanePath !== undefined) {
+        if (realpathSync(parsed.lanePath) !== realpathSync(authenticationLane.path)) {
+            fail('--lane must name the exact author worktree root');
+        }
+        if (laneIssueNumber(authenticationLane.branch) !== undefined) {
+            fail('issue lanes must publish by issue number, not --lane');
+        }
+    }
+    const auth = await authenticatePublishingAuthor({
+        primaryRoot,
+        lane: { path: authenticationLane.path, branch: authenticationLane.branch },
+        baseSha,
+        capture: (_command, commandArgs, directory) =>
+            spawnCapture(runtime.gitPath, commandArgs, {
+                cwd: directory,
+                env: authorizationEnv,
+                trim: false,
+            }),
+    });
+    try {
+        const repository = spawnCapture(
+            runtime.ghPath,
+            ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
+            {
+                env: auth.session.env,
+                cwd: primaryRoot,
+            }
+        );
         assertRequiredRepository(repository);
         if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
             fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
         }
-        publishLane(parsed.issue, shellPort(auth.session), parsed.relationship, parsed.testInstructions);
+        publishLane(
+            parsed.issue,
+            shellPort(auth.session, selectionPath, primaryRoot, { git: runtime.gitPath, gh: runtime.ghPath }),
+            parsed.relationship,
+            parsed.testInstructions,
+            { ...auth.authorization, legacy: authenticationLane.legacy }
+        );
         return 0;
     } finally {
         auth.session.dispose();
@@ -768,7 +966,7 @@ async function main(): Promise<number> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
+    void runPublishLaneCli(process.argv.slice(2)).then(
         (code) => process.exit(code),
         (error: unknown) => {
             console.error(error instanceof Error ? error.message : error);
