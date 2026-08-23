@@ -3564,7 +3564,9 @@ function groundToolCall({
         if (
             sidechainRoutingScope?.status === 'request' &&
             call.name === 'addSidechainRoute' &&
-            (targetRule.argument === 'sourceTrackId' || targetRule.argument === 'targetTrackId') &&
+            (targetRule.argument === 'sourceTrackId' ||
+                targetRule.argument === 'targetTrackId' ||
+                targetRule.argument === 'targetDeviceId') &&
             sidechainRoutingScope.routes.some(
                 (route) =>
                     route.sourceTrackId === groundedArguments.sourceTrackId &&

@@ -4297,6 +4297,48 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(reversed.rejections[0]?.reason).toContain('targetTrackId');
     });
 
+    it('admits the exact app-owned MF-06 sidechain device selection', () => {
+        const kick = createTrack({ id: 'track-kick', name: 'Kick' });
+        const bass = createTrack({
+            id: 'track-bass',
+            name: 'Bass',
+            devices: [
+                {
+                    id: 'device-sidechain',
+                    type: 'builtin-sidechain-compressor',
+                    bypassed: false,
+                    parameters: [],
+                },
+            ],
+        });
+        const result = bridge(
+            [
+                {
+                    name: 'addSidechainRoute',
+                    arguments: {
+                        sourceTrackId: kick.id,
+                        targetTrackId: bass.id,
+                        targetDeviceId: 'device-sidechain',
+                    },
+                },
+            ],
+            'create a sidechain from the kick to every bass compressor that supports sidechain input',
+            { ...projectContext, tracks: [kick, bass, master], sidechainRoutes: [] }
+        );
+
+        expect(result.actions).toEqual([
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: kick.id,
+                    targetTrackId: bass.id,
+                    targetDeviceId: 'device-sidechain',
+                },
+            },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
     it('rejects provider device selection outside the exact MF-06 capability', () => {
         const kick = createTrack({ id: 'track-kick', name: 'Kick' });
         const bass = createTrack({
