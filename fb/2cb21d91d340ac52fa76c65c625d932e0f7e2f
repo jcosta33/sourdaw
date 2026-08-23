@@ -1,0 +1,72 @@
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_b2ff7f1fcd06d0 35,45,52-54,59,108,118
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_fc68c871cbf9d4 677,853-858
+  s_a40848e8f8cca9::t_5a08b31b27dea2 79-80,94-95,171-172,178,285-287,360-366,368,375-376,396-405
+  s_a40848e8f8cca9::t_d1abc40e9f278b 74,77-78,99,101-103,184,212-213,220-230,233-283,290,297,301,308,312,319,323,330,336,345,349,356,382,416,421,441-446,576,588,591-592
+  s_a40848e8f8cca9::t_292fbbb41ed15a 605
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_ec32061bff9fae 193-208,212-215,220,225,256
+  s_a40848e8f8cca9::t_d4d4450e84e16f 47-52,59-60,66,68,72,76,82,87,93,98,104,109,115,122,128,141,149-150,174,180-181,185-186,249,312-316
+  s_a40848e8f8cca9::t_0e65bc0ce4d6a2 187-192,231,235,238,242,262,265,268,272,311
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_a40848e8f8cca9::t_1c5f22f3b95792 168-174,250,296-300,482-485,498-519
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_ad4915e2a46e9e 177
+  s_a40848e8f8cca9::t_aada393c5a22ee 136-141
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_861e7f8e0991f7 788-806
+  s_a40848e8f8cca9::t_803f814768c7e3 834,836,858
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_12266d203a82d3 626,643,762
+  s_a40848e8f8cca9::t_d85da66ad675c2 402,553,613
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_b2ff7f1fcd06d0 3,90-91,139-145
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_7209acaebad043 14-15,38-41,61-63
+src/modules/Collaboration/repositories/durableAssetOwnerHandoffLifecycle.ts
+  s_a40848e8f8cca9::t_23b1c392e06ee4 1-171
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_a40848e8f8cca9::t_c736daf1d55922 529-536
+  s_a40848e8f8cca9::t_4eeb41d79c8ff9 85,385,389,391-394,498-500,504-515,518,520-528,538,540-542
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_d85da66ad675c2 5,11-13,22,32,47,68
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_e8b0659224ed68 2,8-9,11,32-37,117-122,232-245,258
+src/modules/Collaboration/useCases/__tests__/assetTransferDurability.spec.ts
+  s_a40848e8f8cca9::t_ec32061bff9fae 69-92,377
+  s_a40848e8f8cca9::t_d4d4450e84e16f 62,96-97,100,108,111,117,124,134,137,151,157,171,176-177,183,186,192-197,203,207,214,219,226,231,234,239,268,282,289,306-307,316,322,325,328-332,339,349-352,356,364
+  s_a40848e8f8cca9::t_d598036843b838 362,369,391
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_a40848e8f8cca9::t_c736daf1d55922 49-52,76,153-156,199,591
+  s_a40848e8f8cca9::t_66757ec7fc163a 75,77,196-198,200,565-590,592-599,602-603
+  s_a40848e8f8cca9::t_88a01772f37afd 53,74,157,192-195,432-436,439-444,470-474,476-480,483-487,519-523,526-531,556-564
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_100c20fa2786d7 1,12,20,34
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_c341b5661861f6 346,1092
+  s_a40848e8f8cca9::t_3abdb77a557517 26,144,223-290
+  s_a40848e8f8cca9::t_4e944d6f3413dd 291
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_b2ff7f1fcd06d0 252
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_b2ff7f1fcd06d0 2,6,10,13-15
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_a40848e8f8cca9::t_d85da66ad675c2 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "fb2cb21d91d340ac52fa76c65c625d932e0f7e2f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
