@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupAdmittedWebLlmWorkspace } from './e2eUtils';
 
 function trackArmButtons(page: Page) {
     return page
@@ -20,20 +20,18 @@ async function openChatPanel(page: Page): Promise<void> {
 test.describe('AI prompt → Confirm → apply → undo/redo', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
-        await setupWorkspace(page);
+        await setupAdmittedWebLlmWorkspace(page);
         await launch_new_project(page);
         await openChatPanel(page);
     });
 
     test('confirming "create 3 audio tracks" adds the tracks, undo restores, redo re-applies', async ({ page }) => {
         const input = page.getByTestId('chat-composer-input');
-        test.skip(
-            await input.isDisabled(),
-            'requires an admitted local or configured hosted LLM backend to exercise the prompt flow'
-        );
         await expect(input).toBeEnabled();
 
-        await page.getByRole('button', { name: 'Command Mode' }).click();
+        const executionMode = page.getByRole('combobox', { name: 'Agent execution mode' });
+        await executionMode.selectOption('apply');
+        await expect(executionMode).toHaveValue('apply');
         const baseline = await trackArmButtons(page).count();
 
         // Multi-action fast path forces a confirmation proposal.

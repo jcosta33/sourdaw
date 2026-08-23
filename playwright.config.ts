@@ -31,7 +31,7 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: 'pnpm dev',
+        command: 'pnpm dev --mode e2e',
         url: 'http://localhost:5173',
         reuseExistingServer: !env.CI,
     },

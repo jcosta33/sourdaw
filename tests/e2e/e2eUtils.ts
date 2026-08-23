@@ -12,6 +12,7 @@ type LaunchFromTemplateInput = {
 };
 
 type SetupWorkspaceOptions = {
+    e2eWebLlmAdmission?: boolean;
     localStorage?: Array<{ name: string; value: string }>;
 };
 
@@ -30,7 +31,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     const alphaDismissed = superjsonStringify(true);
 
     await page.addInitScript(
-        ({ alphaDismissed, localStorage }) => {
+        ({ alphaDismissed, e2eWebLlmAdmission, localStorage }) => {
             window.localStorage.clear();
             window.localStorage.setItem('wd:onboarding-completed', '1');
             window.localStorage.setItem('sourdaw-alpha-notice-dismissed', alphaDismissed);
@@ -38,12 +39,30 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
             for (const entry of localStorage) {
                 window.localStorage.setItem(entry.name, entry.value);
             }
+            if (e2eWebLlmAdmission) {
+                Reflect.set(window, '__SOURDAW_E2E_WEBLLM_ADMITTED__', true);
+                if (!('gpu' in navigator)) {
+                    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {} });
+                }
+            }
         },
-        { alphaDismissed, localStorage: options.localStorage ?? [] }
+        {
+            alphaDismissed,
+            e2eWebLlmAdmission: options.e2eWebLlmAdmission ?? false,
+            localStorage: options.localStorage ?? [],
+        }
     );
 
     await page.goto('/');
     await page.waitForLoadState('domcontentloaded');
+}
+
+/**
+ * Starts the app with the E2E-only local provider fixture admitted. The test
+ * mode gate in modelReleaseAdmission keeps this unavailable in product builds.
+ */
+export async function setupAdmittedWebLlmWorkspace(page: Page): Promise<void> {
+    await setupWorkspace(page, { e2eWebLlmAdmission: true });
 }
 
 async function get_launch_overlay_state(page: Page): Promise<LaunchOverlayState> {
