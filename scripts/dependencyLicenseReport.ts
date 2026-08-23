@@ -225,8 +225,8 @@ function sha256(contents: Buffer): string {
     return createHash('sha256').update(contents).digest('hex');
 }
 
-function readJsonFile<T>(path: string): T {
-    return parseJsonWithUniqueKeys<T>(readFileSync(path, 'utf8'), path);
+function readJsonFile<Value>(path: string): Value {
+    return parseJsonWithUniqueKeys<Value>(readFileSync(path, 'utf8'), path);
 }
 
 export function readLegalFile(path: string, label: string): LegalFile {
@@ -597,6 +597,7 @@ function assertProofFile(
     try {
         listTarArchive({
             sync: true,
+            strict: true,
             file: realPath,
             onentry(entry) {
                 const archivePath = normalizeProofArchiveMemberPath(entry.path);
@@ -623,7 +624,7 @@ function assertProofFile(
         });
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${packageId}: proof archive is malformed (${message})`);
+        throw new Error(`${packageId}: proof archive is malformed (${message})`, { cause: error });
     }
     if (policyError !== undefined) {
         throw new Error(policyError);
@@ -638,7 +639,7 @@ function assertProofFile(
 }
 
 export function normalizeProofArchiveMemberPath(path: string): string {
-    return posix.normalize(path.replaceAll('\\', '/')).replace(/^\.\/+|\/+$/gu, '');
+    return posix.normalize(path.replaceAll('\\', '/')).replaceAll(/^\.\/+|\/+$/gu, '');
 }
 
 type SpdxNode = ReturnType<typeof parseSpdxExpression>;
@@ -691,7 +692,7 @@ export function assertLicenseExpressionEvidence(
         parsed = parseSpdxExpression(normalizeLicenseExpression(expression));
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${packageId}: invalid SPDX license expression ${expression}: ${message}`);
+        throw new Error(`${packageId}: invalid SPDX license expression ${expression}: ${message}`, { cause: error });
     }
     if (!satisfiesSpdxNode(parsed, legalFiles)) {
         throw new Error(`${packageId}: evidence does not substantiate declared license ${expression}`);
