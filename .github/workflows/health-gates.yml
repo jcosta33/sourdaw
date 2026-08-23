@@ -630,7 +630,7 @@ jobs:
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
     # passed, so both gate.
-    if: always()
+    if: always() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved')
     needs:
       - decide
       - static

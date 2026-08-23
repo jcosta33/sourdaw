@@ -10,6 +10,8 @@ type UnknownRecord = Record<string, unknown>;
 
 const APPROVED_REVIEW_CONDITION =
     "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
+const GATE_CONDITION = `always() && (${APPROVED_REVIEW_CONDITION})`;
+const LEGACY_GATE_CONDITION = 'always()';
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
 const SECRET_SCAN_CONDITION = "needs.decide.outputs.heavy == 'true'";
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
@@ -85,12 +87,26 @@ function assertHeavyScanChain(candidate: UnknownRecord): string {
     if (!gateNeeds.includes('secrets')) {
         throw new Error('gate must depend on the secret scan job');
     }
+    if (jobAt(candidate, 'gate').if !== GATE_CONDITION) {
+        throw new Error('gate must run after terminal dependencies without admitting non-approved reviews');
+    }
     return stringAt(scope, 'run');
 }
 
 function decideAdmits(eventName: string, reviewState: string): boolean {
     assertHeavyScanChain(workflow);
     return eventName !== 'pull_request_review' || reviewState === 'approved';
+}
+
+function gateAdmits(candidate: UnknownRecord, eventName: string, reviewState: string): boolean {
+    const condition = jobAt(candidate, 'gate').if;
+    if (condition === LEGACY_GATE_CONDITION) {
+        return true;
+    }
+    if (condition === GATE_CONDITION) {
+        return eventName !== 'pull_request_review' || reviewState === 'approved';
+    }
+    throw new Error(`unsupported gate condition: ${String(condition)}`);
 }
 
 function runScopeScript(script: string, eventName: string): UnknownRecord {
@@ -199,6 +215,11 @@ describe('health gates workflow contract', () => {
     });
 
     it('should execute the complete approved-review heavy-scan chain and preserve ordinary scope', () => {
+        expect(gateAdmits(workflow, 'pull_request', '')).toBe(true);
+        expect(gateAdmits(workflow, 'pull_request_review', 'approved')).toBe(true);
+        expect(gateAdmits(workflow, 'pull_request_review', 'commented')).toBe(false);
+        expect(gateAdmits(workflow, 'pull_request_review', 'changes_requested')).toBe(false);
+
         const scopeScript = assertHeavyScanChain(workflow);
 
         expect(decideAdmits('pull_request_review', 'approved')).toBe(true);
@@ -235,7 +256,7 @@ describe('health gates workflow contract', () => {
         });
 
         const gate = jobAt(workflow, 'gate');
-        expect(gate.if).toBe('always()');
+        expect(gate.if).toBe(GATE_CONDITION);
         expect(stringAt(stepNamed(gate, 'Require every job to have succeeded or been skipped'), 'run')).toContain(
             '.value.result != "success" and .value.result != "skipped"'
         );
@@ -292,5 +313,16 @@ describe('health gates workflow contract', () => {
         const retargetedGateNeedsList = arrayAt(jobAt(retargetedGateNeeds, 'gate'), 'needs');
         retargetedGateNeedsList[retargetedGateNeedsList.indexOf('secrets')] = 'build';
         expect(() => assertHeavyScanChain(retargetedGateNeeds)).toThrow('gate must depend on the secret scan job');
+    });
+
+    it('should reject the legacy gate that admits non-approved reviews', () => {
+        const legacyGate = asRecord(structuredClone(workflow), 'legacy gate workflow');
+        jobAt(legacyGate, 'gate').if = LEGACY_GATE_CONDITION;
+
+        expect(gateAdmits(legacyGate, 'pull_request_review', 'commented')).toBe(true);
+        expect(gateAdmits(legacyGate, 'pull_request_review', 'changes_requested')).toBe(true);
+        expect(() => assertHeavyScanChain(legacyGate)).toThrow(
+            'gate must run after terminal dependencies without admitting non-approved reviews'
+        );
     });
 });
