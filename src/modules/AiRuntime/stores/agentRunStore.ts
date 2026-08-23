@@ -219,23 +219,36 @@ function readPendingEffect(value: unknown): AgentRunPendingEffect | null {
     const commandId = readString(value.commandId);
     const operation = readString(value.operation);
     const reason = readString(value.reason);
-    if (
-        commandId === null ||
-        operation === null ||
-        reason === null ||
-        value.state !== 'pending' ||
-        !(
-            (value.kind === 'runtime-graph' && (value.remediation === 'retry' || value.remediation === 'repair')) ||
-            (value.kind === 'external-effect' &&
-                (value.remediation === 'reconcile' || value.remediation === 'manual-repair'))
-        )
-    ) {
+    if (commandId === null || operation === null || reason === null || value.state !== 'pending') {
         return null;
     }
     if (value.kind === 'runtime-graph') {
-        return { commandId, operation, reason, state: 'pending', kind: value.kind, remediation: value.remediation };
+        if (value.remediation !== 'retry' && value.remediation !== 'repair') {
+            return null;
+        }
+        return {
+            commandId,
+            operation,
+            reason,
+            state: 'pending',
+            kind: 'runtime-graph',
+            remediation: value.remediation,
+        };
     }
-    return { commandId, operation, reason, state: 'pending', kind: value.kind, remediation: value.remediation };
+    if (value.kind === 'external-effect') {
+        if (value.remediation !== 'reconcile' && value.remediation !== 'manual-repair') {
+            return null;
+        }
+        return {
+            commandId,
+            operation,
+            reason,
+            state: 'pending',
+            kind: 'external-effect',
+            remediation: value.remediation,
+        };
+    }
+    return null;
 }
 
 function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectContinuation | null {

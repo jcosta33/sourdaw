@@ -1,7 +1,7 @@
 import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readAgentRunState } from '../../stores/agentRunStore';
+import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -328,6 +328,66 @@ describe('agent run recovery', () => {
 
         expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: [] });
         expect(getAgentRun('run-complete')?.phase).toBe('completed');
+    });
+
+    it('rejects cross-kind pending-effect remediations during hydration', () => {
+        createAgentRun({
+            runId: 'run-invalid-effect-kind',
+            request: 'Reject a pending effect whose remediation belongs to another effect kind.',
+            mode: 'apply',
+            createdRevision: 'heads-invalid-effect-kind',
+            createdAt: 100,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-invalid-effect-kind',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-invalid-effect-kind',
+                effects: [
+                    {
+                        commandId: 'command-invalid-effect-kind',
+                        kind: 'runtime-graph',
+                        operation: 'setTrackGain',
+                        reason: 'runtime graph revision is stale',
+                        remediation: 'retry',
+                        state: 'pending',
+                    },
+                ],
+                lastError: null,
+                receiptIdentity: '1:run-invalid-effect-kind:batch-invalid-effect-kind:partially-committed',
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"invalid-effect-kind"}',
+            },
+            recordedAt: 101,
+        });
+
+        const persistedState = readAgentRunState();
+        const persistedRun = persistedState.runs[0];
+        const continuation = persistedRun?.pendingEffectContinuations[0];
+        const effect = continuation?.effects[0];
+        if (persistedRun === undefined || continuation === undefined || effect === undefined) {
+            throw new Error('Expected the persisted AgentRun fixture to contain its pending effect continuation');
+        }
+        const crossKindState: unknown = {
+            ...persistedState,
+            runs: [
+                {
+                    ...persistedRun,
+                    pendingEffectContinuations: [
+                        {
+                            ...continuation,
+                            effects: [{ ...effect, kind: 'runtime-graph', remediation: 'manual-repair' }],
+                            recovery: 'manual-repair',
+                        },
+                    ],
+                },
+            ],
+        };
+
+        expect(sanitizeAgentRunState(crossKindState)).toEqual({
+            schemaVersion: persistedState.schemaVersion,
+            runs: [],
+        });
     });
 
     it('hydrates generic-only, mixed, and manual pending-effect continuations after restart', async () => {
