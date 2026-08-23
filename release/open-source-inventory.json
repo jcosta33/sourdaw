@@ -1076,7 +1076,7 @@
             "sources": ["public/legal/TRADEMARKS.md", "current source text"],
             "revisions": ["current release text"],
             "digests": [
-                "sha256:e7a1cc9d47151f27d8992922228630de4db4c11269621562336154e5a56ea58c:public/legal/TRADEMARKS.md"
+                "sha256:edb8376058a291da86a78ea409a02b7c1b964ac8836fd6ffcea0dbcd0a335244:public/legal/TRADEMARKS.md"
             ],
             "licenses": ["not-applicable:trademark-rights-not-granted"],
             "productSurfaces": ["technical references", "compatibility identifiers", "presets", "model selectors"],
@@ -1115,7 +1115,7 @@
             "retention": "keep-with-obligations",
             "owner": "OS-09",
             "releaseModes": ["source"],
-            "paths": ["CONTRIBUTING.md", "docs/**", "README.md", "SECURITY.md"],
+            "paths": ["CONTRIBUTING.md", "docs/**", "PRIVACY.md", "README.md", "SECURITY.md"],
             "sources": ["git:github.com/jcosta33/sourdaw"],
             "revisions": ["current release text"],
             "digests": ["not-applicable:living-project-documentation"],
