@@ -1020,6 +1020,37 @@ describe('release inventory', () => {
         }
     });
 
+    it('admits digest-identical retained sources when the clean measurement revision is not fetchable', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-squash-provenance-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const original = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                machine: { gitSha: string };
+                sourceRevision: string;
+            };
+            const retainedRevision = '0123456789abcdef0123456789abcdef01234567';
+            const markdown = readFileSync(markdownPath, 'utf8');
+            original.machine.gitSha = retainedRevision;
+            original.sourceRevision = retainedRevision;
+            writeFileSync(jsonPath, JSON.stringify(original));
+            writeFileSync(
+                markdownPath,
+                markdown.replaceAll(
+                    execFileSync('git', ['rev-parse', 'HEAD'], {
+                        cwd: root,
+                        encoding: 'utf8',
+                    }).trim(),
+                    retainedRevision
+                )
+            );
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('rejects stale or decoy rounded measurement numbers in the generated Markdown region', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-render-'));
         try {

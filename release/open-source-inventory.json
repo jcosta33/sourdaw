@@ -708,7 +708,7 @@
                 "tracked-set-sha256:6ff030caa7d94e2de3839c40b463bf6363f3daeaab8ff1296dd743c4d8a194ed:grand-boule-live-runtime",
                 "tracked-set-sha256:6545b793c21661a30c4ee8f33fb8b4cc43e0ed2bebef3566c942b77a084c4a6a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:2a911b54d17f832becc35fecfad22b0d14239a9778c7a104a83904b97ef912e7:grand-boule-release-proof"
+                "tracked-set-sha256:1de7b34db03aa2839bed0a0e536e5a27571a0bd0c4b6bc419eed14b6d0e6b2f4:grand-boule-release-proof"
             ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
@@ -1027,7 +1027,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "e5d65b2903c66c64813567216f3b042e407ac5ca46c61bab732eb14f6cb48a2e"
+            "sha256": "60b2e1c7b6fb2827aa8a7142355142df235cc276f1d1d56981676a9d17eeb6a5"
         },
         {
             "path": "server/package.json",
@@ -1039,7 +1039,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "fcb5d3d1ccc3093c4f934df7fd5a3dade0c867a63f0d9d97b5b09c0ca01e6f5a"
+            "sha256": "8ee35b15a3dbff5003eeda6e8d46a54a3b5089c935e16cc4672bc912d4a9256d"
         },
         {
             "path": "Cargo.toml",
