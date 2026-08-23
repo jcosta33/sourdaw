@@ -9,15 +9,21 @@ import { parseDocument } from 'yaml';
 type UnknownRecord = Record<string, unknown>;
 
 const APPROVED_REVIEW_CONDITION =
-    "github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'approved')";
-const GATE_CONDITION = 'always()';
+    "github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')";
+const GATE_CONDITION =
+    "always() && (github.event_name != 'pull_request_review' || github.event.review.user.login == 'jcosta33-reviewer[bot]')";
 const GATE_EVENT_REFERENCE = '${{ github.event_name }}';
 const GATE_REVIEW_ACTION_REFERENCE = '${{ github.event.action }}';
+const GATE_REVIEW_AUTHOR_REFERENCE = '${{ github.event.review.user.login }}';
 const GATE_REVIEW_STATE_REFERENCE = '${{ github.event.review.state }}';
 const GATE_REVIEW_COMMIT_REFERENCE = '${{ github.event.review.commit_id }}';
 const GATE_HEAD_SHA_REFERENCE = '${{ github.event.pull_request.head.sha }}';
 const FAIL_CLOSED_PULL_REQUEST_GUARD = `if [ "$EVENT" = "pull_request" ]; then
   printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\\n'
+  exit 1
+fi`;
+const FAIL_CLOSED_REVIEW_AUTHOR_GUARD = `if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_AUTHOR" != "jcosta33-reviewer[bot]" ]; then
+  printf 'pull-request review is not from the required reviewer\\n'
   exit 1
 fi`;
 const FAIL_CLOSED_REVIEW_GUARD = `if [ "$EVENT" = "pull_request_review" ] && { [ "$REVIEW_ACTION" != "submitted" ] || [ "$REVIEW_STATE" != "approved" ]; }; then
@@ -33,8 +39,10 @@ const HEAVY_SUCCESS_FILTER = `["codeql", "secrets"][] as $job
     | "\\($job): \\(.[$job].result // "missing")"`;
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
 const SECRET_SCAN_CONDITION = "needs.decide.outputs.heavy == 'true'";
+const REVIEW_ISOLATED_CONCURRENCY_GROUP =
+    "health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}";
 const PULL_REQUEST_CONCURRENCY_CANCELLATION =
-    "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
+    "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.user.login == 'jcosta33-reviewer[bot]') }}";
 const UNTRUSTED_EVENT_INTERPOLATION = /\$\{\{\s*github\.(?:event_name|event\.)/;
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
 
@@ -113,9 +121,12 @@ function assertHeavyScanChain(candidate: UnknownRecord): string {
     return stringAt(scope, 'run');
 }
 
-function decideAdmits(eventName: string, reviewAction: string, reviewState: string): boolean {
+function decideAdmits(eventName: string, reviewAction: string, reviewState: string, reviewAuthor: string): boolean {
     assertHeavyScanChain(workflow);
-    return eventName !== 'pull_request_review' || (reviewAction === 'submitted' && reviewState === 'approved');
+    return (
+        eventName !== 'pull_request_review' ||
+        (reviewAuthor === 'jcosta33-reviewer[bot]' && reviewAction === 'submitted' && reviewState === 'approved')
+    );
 }
 
 function assertGateContract(candidate: UnknownRecord): string {
@@ -130,6 +141,9 @@ function assertGateContract(candidate: UnknownRecord): string {
     }
     if (environment.REVIEW_ACTION !== GATE_REVIEW_ACTION_REFERENCE) {
         throw new Error('gate must receive the exact pull-request review action');
+    }
+    if (environment.REVIEW_AUTHOR !== GATE_REVIEW_AUTHOR_REFERENCE) {
+        throw new Error('gate must receive the exact pull-request review author');
     }
     if (environment.REVIEW_STATE !== GATE_REVIEW_STATE_REFERENCE) {
         throw new Error('gate must receive the exact pull-request review state');
@@ -146,6 +160,9 @@ function assertGateContract(candidate: UnknownRecord): string {
     }
     if (!script.includes(FAIL_CLOSED_PULL_REQUEST_GUARD)) {
         throw new Error('gate shell must fail closed for pull-request pushes');
+    }
+    if (!script.includes(FAIL_CLOSED_REVIEW_AUTHOR_GUARD)) {
+        throw new Error('gate shell must fail closed for reviews from other authors');
     }
     if (!script.includes(FAIL_CLOSED_REVIEW_GUARD)) {
         throw new Error('gate shell must fail closed for non-approved pull-request reviews');
@@ -183,7 +200,8 @@ function runGateScript(
     results: string,
     reviewCommit = 'head-sha',
     pullRequestHead = 'head-sha',
-    reviewAction = 'submitted'
+    reviewAction = 'submitted',
+    reviewAuthor = 'jcosta33-reviewer[bot]'
 ): number | null {
     return spawnSync('bash', ['-c', script], {
         encoding: 'utf8',
@@ -191,6 +209,7 @@ function runGateScript(
             ...process.env,
             EVENT: eventName,
             REVIEW_ACTION: reviewAction,
+            REVIEW_AUTHOR: reviewAuthor,
             REVIEW_STATE: reviewState,
             REVIEW_COMMIT: reviewCommit,
             PULL_REQUEST_HEAD: pullRequestHead,
@@ -303,7 +322,9 @@ describe('health gates workflow contract', () => {
         expect(Object.hasOwn(events, 'schedule')).toBe(true);
         expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(false);
         expect(recordAt(workflow, 'permissions')).toEqual({ contents: 'read' });
-        expect(recordAt(workflow, 'concurrency')['cancel-in-progress']).toBe(PULL_REQUEST_CONCURRENCY_CANCELLATION);
+        const concurrency = recordAt(workflow, 'concurrency');
+        expect(concurrency.group).toBe(REVIEW_ISOLATED_CONCURRENCY_GROUP);
+        expect(concurrency['cancel-in-progress']).toBe(PULL_REQUEST_CONCURRENCY_CANCELLATION);
     });
 
     it('should fail closed until a current-head approval completes both heavy security jobs', () => {
@@ -370,11 +391,14 @@ describe('health gates workflow contract', () => {
 
         const scopeScript = assertHeavyScanChain(workflow);
 
-        expect(decideAdmits('pull_request_review', 'submitted', 'approved')).toBe(true);
-        expect(decideAdmits('pull_request_review', 'submitted', 'commented')).toBe(false);
-        expect(decideAdmits('pull_request_review', 'submitted', 'changes_requested')).toBe(false);
-        expect(decideAdmits('pull_request_review', 'dismissed', 'approved')).toBe(false);
-        expect(decideAdmits('pull_request', '', '')).toBe(true);
+        expect(decideAdmits('pull_request_review', 'submitted', 'approved', 'jcosta33-reviewer[bot]')).toBe(true);
+        expect(decideAdmits('pull_request_review', 'submitted', 'approved', 'untrusted-reviewer')).toBe(false);
+        expect(decideAdmits('pull_request_review', 'submitted', 'commented', 'jcosta33-reviewer[bot]')).toBe(false);
+        expect(decideAdmits('pull_request_review', 'submitted', 'changes_requested', 'jcosta33-reviewer[bot]')).toBe(
+            false
+        );
+        expect(decideAdmits('pull_request_review', 'dismissed', 'approved', 'jcosta33-reviewer[bot]')).toBe(false);
+        expect(decideAdmits('pull_request', '', '', '')).toBe(true);
         expect(runScopeScript(scopeScript, 'pull_request_review')).toEqual({
             heavy: 'true',
             rust: 'false',

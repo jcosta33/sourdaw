@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
     chmodSync,
     existsSync,
@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { parseDocument } from 'yaml';
 
 import { coordinateDelivery } from '../deliverPullRequest.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
@@ -79,6 +80,107 @@ function trustedPublishFixture(root: string, policy: string): void {
     runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
 }
 
+type WorkflowRecord = Record<string, unknown>;
+
+const REVIEWER_LOGIN = 'jcosta33-reviewer[bot]';
+const AUTHORIZED_APPROVAL_CONDITION =
+    "github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')";
+const REVIEW_ISOLATED_CONCURRENCY_GROUP =
+    "health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}";
+const AUTHORIZED_CANCELLATION_CONDITION =
+    "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.user.login == 'jcosta33-reviewer[bot]') }}";
+const AUTHORIZED_GATE_NAME =
+    "${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}";
+const AUTHORIZED_GATE_CONDITION =
+    "always() && (github.event_name != 'pull_request_review' || github.event.review.user.login == 'jcosta33-reviewer[bot]')";
+const CODEQL_CONDITION = "github.event_name == 'pull_request' || needs.decide.outputs.heavy == 'true'";
+const CODEQL_REVIEW_HEAD_CONDITION = "github.event_name == 'pull_request_review'";
+const CODEQL_NON_REVIEW_CONDITION = "github.event_name != 'pull_request_review'";
+const CODEQL_REVIEW_REPOSITORY = '${{ github.event.pull_request.head.repo.full_name }}';
+const CODEQL_REVIEW_HEAD = '${{ github.event.review.commit_id }}';
+const CODEQL_UPLOAD_MODE = "${{ github.event_name == 'pull_request_review' && 'never' || 'always' }}";
+const CODEQL_DATABASE_UPLOAD = "${{ github.event_name != 'pull_request_review' }}";
+
+function asWorkflowRecord(value: unknown, label: string): WorkflowRecord {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError(`${label} must be a mapping`);
+    }
+    return value as WorkflowRecord;
+}
+
+function workflowRecordAt(record: WorkflowRecord, key: string): WorkflowRecord {
+    return asWorkflowRecord(record[key], key);
+}
+
+function workflowArrayAt(record: WorkflowRecord, key: string): unknown[] {
+    const value = record[key];
+    if (!Array.isArray(value)) {
+        throw new TypeError(`${key} must be an array`);
+    }
+    return value;
+}
+
+function workflowJob(candidate: WorkflowRecord, name: string): WorkflowRecord {
+    return workflowRecordAt(workflowRecordAt(candidate, 'jobs'), name);
+}
+
+function workflowStep(owner: WorkflowRecord, name: string): WorkflowRecord {
+    const step = workflowArrayAt(owner, 'steps').find(
+        (candidate: unknown) => asWorkflowRecord(candidate, 'step').name === name
+    );
+    if (step === undefined) {
+        throw new Error(`missing workflow step: ${name}`);
+    }
+    return asWorkflowRecord(step, name);
+}
+
+function healthGateWorkflow(): { document: ReturnType<typeof parseDocument>; workflow: WorkflowRecord } {
+    const source = readFileSync(join(import.meta.dirname, '../../.github/workflows/health-gates.yml'), 'utf8');
+    const document = parseDocument(source);
+    if (document.errors.length > 0) {
+        throw new Error(
+            `health-gates.yml is invalid YAML: ${document.errors.map((error) => error.message).join('; ')}`
+        );
+    }
+    return { document, workflow: asWorkflowRecord(document.toJS(), 'workflow') };
+}
+
+function workflowGateResults(workflow: WorkflowRecord): string {
+    return JSON.stringify(
+        Object.fromEntries(
+            workflowArrayAt(workflowJob(workflow, 'gate'), 'needs').map((name) => [String(name), { result: 'success' }])
+        )
+    );
+}
+
+function runWorkflowGate(
+    workflow: WorkflowRecord,
+    event: {
+        action: string;
+        author: string;
+        commit?: string;
+        head?: string;
+        name: string;
+        state: string;
+    }
+): number | null {
+    const gateStep = workflowStep(workflowJob(workflow, 'gate'), 'Require every job to have succeeded or been skipped');
+    return spawnSync('bash', ['-c', String(gateStep.run)], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            EVENT: event.name,
+            REVIEW_ACTION: event.action,
+            REVIEW_AUTHOR: event.author,
+            REVIEW_COMMIT: event.commit ?? 'head-sha',
+            REVIEW_STATE: event.state,
+            PULL_REQUEST_HEAD: event.head ?? 'head-sha',
+            RESULTS: workflowGateResults(workflow),
+        },
+        shell: false,
+    }).status;
+}
+
 describe('package scripts and gitignore', () => {
     it('defines the trusted pnpm commands as direct node invocations', () => {
         const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')) as {
@@ -99,6 +201,94 @@ describe('package scripts and gitignore', () => {
         const gitignore = readFileSync(join(import.meta.dirname, '../../.gitignore'), 'utf8');
         expect(gitignore).toContain('.env.*');
         expect(gitignore).toContain('.agents/review-bundles/');
+    });
+
+    it('authenticates the only review author allowed to affect the required Gate', () => {
+        const { document, workflow } = healthGateWorkflow();
+        expect(document.errors).toEqual([]);
+        const events = workflowRecordAt(workflow, 'on');
+        expect(workflowRecordAt(events, 'pull_request_review').types).toEqual(['submitted', 'dismissed']);
+
+        const concurrency = workflowRecordAt(workflow, 'concurrency');
+        expect(concurrency.group).toBe(REVIEW_ISOLATED_CONCURRENCY_GROUP);
+        expect(concurrency['cancel-in-progress']).toBe(AUTHORIZED_CANCELLATION_CONDITION);
+        expect(workflowJob(workflow, 'decide').if).toBe(AUTHORIZED_APPROVAL_CONDITION);
+
+        const gate = workflowJob(workflow, 'gate');
+        expect(gate.name).toBe(AUTHORIZED_GATE_NAME);
+        expect(gate.if).toBe(AUTHORIZED_GATE_CONDITION);
+        const gateStep = workflowStep(gate, 'Require every job to have succeeded or been skipped');
+        expect(workflowRecordAt(gateStep, 'env').REVIEW_AUTHOR).toBe('${{ github.event.review.user.login }}');
+
+        expect(
+            runWorkflowGate(workflow, {
+                action: 'submitted',
+                author: REVIEWER_LOGIN,
+                name: 'pull_request_review',
+                state: 'approved',
+            })
+        ).toBe(0);
+        expect(
+            runWorkflowGate(workflow, {
+                action: 'dismissed',
+                author: REVIEWER_LOGIN,
+                name: 'pull_request_review',
+                state: 'approved',
+            })
+        ).not.toBe(0);
+        expect(
+            runWorkflowGate(workflow, {
+                action: 'submitted',
+                author: REVIEWER_LOGIN,
+                commit: 'reviewed-sha',
+                head: 'head-sha',
+                name: 'pull_request_review',
+                state: 'approved',
+            })
+        ).not.toBe(0);
+
+        for (const event of [
+            { action: 'submitted', state: 'approved' },
+            { action: 'submitted', state: 'commented' },
+            { action: 'dismissed', state: 'approved' },
+        ]) {
+            expect(
+                runWorkflowGate(workflow, {
+                    ...event,
+                    author: 'untrusted-reviewer',
+                    name: 'pull_request_review',
+                })
+            ).not.toBe(0);
+        }
+    });
+
+    it('keeps fork CodeQL review analysis read-only while pull-request analysis uploads findings', () => {
+        const { workflow } = healthGateWorkflow();
+        const events = workflowRecordAt(workflow, 'on');
+        expect(Object.hasOwn(events, 'pull_request')).toBe(true);
+        expect(Object.hasOwn(events, 'pull_request_target')).toBe(false);
+
+        const codeql = workflowJob(workflow, 'codeql');
+        expect(codeql.if).toBe(CODEQL_CONDITION);
+        expect(workflowRecordAt(codeql, 'permissions')).toEqual({
+            contents: 'read',
+            'security-events': 'write',
+            actions: 'read',
+        });
+        const reviewCheckout = workflowStep(codeql, 'Checkout reviewed head');
+        expect(reviewCheckout.if).toBe(CODEQL_REVIEW_HEAD_CONDITION);
+        expect(workflowRecordAt(reviewCheckout, 'with')).toEqual({
+            repository: CODEQL_REVIEW_REPOSITORY,
+            ref: CODEQL_REVIEW_HEAD,
+        });
+        expect(workflowStep(codeql, 'Checkout').if).toBe(CODEQL_NON_REVIEW_CONDITION);
+
+        const analyze = workflowStep(codeql, 'Analyse');
+        expect(analyze.uses).toBe('github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef');
+        expect(workflowRecordAt(analyze, 'with')).toEqual({
+            upload: CODEQL_UPLOAD_MODE,
+            'upload-database': CODEQL_DATABASE_UPLOAD,
+        });
     });
 
     /**

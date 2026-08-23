@@ -12,10 +12,12 @@ name: Health gates
 # by the unit shards.
 #
 # Only what cannot fit that budget waits for an approving review: the end-to-end
-# suite across twelve shards, CodeQL, and the full-history secret scan. Those
-# also run nightly. An approval re-runs what the last push already ran, which is
-# deliberate — it costs nothing here, and the alternative is a merge decided by
-# results from an older head.
+# suite across twelve shards and the full-history secret scan. CodeQL uploads on
+# pull-request pushes, then analyses the exact reviewed head without uploading
+# when the reviewer bot approves it. The heavy lane also runs nightly. An
+# approval re-runs what the last push already ran, which is deliberate — it
+# costs nothing here, and the alternative is a merge decided by results from an
+# older head.
 #
 # `gate` is the only job the branch ruleset requires by name. It fails on each
 # pull-request push, then passes only when a current-head approval completes the
@@ -41,10 +43,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: health-gates-${{ github.event.pull_request.number || github.ref }}
-  # A newer push or review supersedes any in-flight result for that pull
-  # request. Scheduled runs against main remain independent.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
+  # An untrusted review gets a run-scoped group. Besides protecting a running
+  # approval, this keeps it from replacing an authorized run that is pending in
+  # the shared group (GitHub replaces pending runs even when cancellation is
+  # disabled). A newer push or reviewer-bot event may supersede that group.
+  group: health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.user.login == 'jcosta33-reviewer[bot]') }}
 
 env:
   NODE_VERSION: 24.19.0
@@ -54,9 +58,10 @@ jobs:
     name: Decide scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Only a submitted approval starts review-gated work. Dismissals, change
-    # requests, and comments proceed directly to the fail-closed Gate.
-    if: github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'approved')
+    # Only the reviewer bot's submitted approval starts review-gated work. Its
+    # dismissals and other submitted states proceed to the fail-closed Gate.
+    # Reviews from every other author are inert.
+    if: github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')
     outputs:
       heavy: ${{ steps.scope.outputs.heavy }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -502,10 +507,10 @@ jobs:
   codeql:
     name: CodeQL
     needs: decide
-    # Minutes rather than seconds, so it runs with the heavy lane instead of on
-    # every push. An approval still precedes every merge, so nothing reaches
-    # main unscanned.
-    if: needs.decide.outputs.heavy == 'true'
+    # A pull-request event is the safe place to upload fork findings for PR
+    # annotations. The approval event re-analyses the exact reviewed head but
+    # never uploads: public-fork review tokens are downgraded to read-only.
+    if: github.event_name == 'pull_request' || needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -513,7 +518,15 @@ jobs:
       security-events: write
       actions: read
     steps:
+      - name: Checkout reviewed head
+        if: github.event_name == 'pull_request_review'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.review.commit_id }}
+
       - name: Checkout
+        if: github.event_name != 'pull_request_review'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialise CodeQL
@@ -524,6 +537,11 @@ jobs:
 
       - name: Analyse
         uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          # This pinned action treats `false` as `failure-only`, which can still
+          # write debugging SARIF. `never` is its no-upload mode.
+          upload: ${{ github.event_name == 'pull_request_review' && 'never' || 'always' }}
+          upload-database: ${{ github.event_name != 'pull_request_review' }}
 
   secrets:
     name: Secret scan
@@ -601,7 +619,9 @@ jobs:
     # the ruleset and in the checks list. Renaming it silently breaks the
     # requirement: the ruleset matches by name, and a required check that no job
     # reports leaves every pull request pending forever.
-    name: Gate
+    # A skipped job can satisfy a required check. Untrusted review events are
+    # therefore renamed as well as skipped, so they cannot emit `Gate` at all.
+    name: ${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}
     # The single required status check. It always reports after its dependencies
     # settle. Pull-request pushes and non-approved reviews fail closed; a
     # current-head approval must complete both security jobs successfully.
@@ -631,7 +651,7 @@ jobs:
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
     # passed, so both gate.
-    if: always()
+    if: always() && (github.event_name != 'pull_request_review' || github.event.review.user.login == 'jcosta33-reviewer[bot]')
     needs:
       - decide
       - static
@@ -651,6 +671,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           REVIEW_ACTION: ${{ github.event.action }}
+          REVIEW_AUTHOR: ${{ github.event.review.user.login }}
           REVIEW_STATE: ${{ github.event.review.state }}
           REVIEW_COMMIT: ${{ github.event.review.commit_id }}
           PULL_REQUEST_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -659,6 +680,10 @@ jobs:
           set -euo pipefail
           if [ "$EVENT" = "pull_request" ]; then
             printf 'pull-request pushes cannot satisfy Gate without a current-head approval run\n'
+            exit 1
+          fi
+          if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_AUTHOR" != "jcosta33-reviewer[bot]" ]; then
+            printf 'pull-request review is not from the required reviewer\n'
             exit 1
           fi
           if [ "$EVENT" = "pull_request_review" ] && { [ "$REVIEW_ACTION" != "submitted" ] || [ "$REVIEW_STATE" != "approved" ]; }; then
