@@ -912,15 +912,6 @@ describe('release proof', () => {
             'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
-        const actual = createFixture();
-        assemble(actual);
-        const actualArchive = replaceWebArchive(actual, ['actual.txt']);
-        patchZipMetadata(actualArchive, (bytes, centralOffset) => {
-            bytes.writeUInt32LE(0, centralOffset + 24);
-        });
-        refreshWebArchiveHash(actual);
-        expect(validate(actual)).toContain('ZIP entry expanded bytes do not match its declarations');
-
         const aggregate = createFixture();
         assemble(aggregate);
         const aggregatePaths = Array.from({ length: 11 }, (_value, index) => `file-${String(index)}.txt`);
@@ -960,6 +951,17 @@ describe('release proof', () => {
         const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
+    });
+
+    it('rejects ZIP entry bytes that exceed their declarations', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const archive = replaceWebArchive(fixture, ['actual.txt']);
+        patchZipMetadata(archive, (bytes, centralOffset) => {
+            bytes.writeUInt32LE(0, centralOffset + 24);
+        });
+        refreshWebArchiveHash(fixture);
+        expect(validate(fixture)).toContain('ZIP entry expanded bytes do not match its declarations');
     });
 
     it('hashes ZIP entries without spawning one unzip process per file', () => {
