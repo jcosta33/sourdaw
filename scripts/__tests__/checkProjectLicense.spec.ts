@@ -402,13 +402,13 @@ describe('project license', () => {
         const source = 'https://registry.npmjs.org/ws/-/ws-8.21.1.tgz';
         const revision =
             'sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==';
-        write(
-            root,
-            'server/package-lock.json',
-            JSON.stringify({
-                packages: { 'node_modules/ws': { version: '8.21.1', resolved: source, integrity: revision } },
-            })
-        );
+        const writeLock = (integrity: string): void =>
+            write(
+                root,
+                'server/package-lock.json',
+                JSON.stringify({ packages: { 'node_modules/ws': { version: '8.21.1', resolved: source, integrity } } })
+            );
+        writeLock(revision);
         const archivePath = 'release/dependency-license-proofs/ws-8.21.1.tgz';
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
         writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
@@ -437,7 +437,15 @@ describe('project license', () => {
             'proof archive does not match the locked package'
         );
 
+        const truncated = archive.subarray(0, -1);
+        const truncatedRevision = `sha512-${createHash('sha512').update(truncated).digest('base64')}`;
+        writeFileSync(join(root, archivePath), truncated);
+        writeLock(truncatedRevision);
+        proof.revision = truncatedRevision;
+        expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('proof archive is malformed');
+
         writeFileSync(join(root, archivePath), readFileSync(join(process.cwd(), archivePath)));
+        writeLock(revision);
         proof.revision = 'sha512-stale';
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow(
             'proof source identity does not match'
@@ -505,7 +513,7 @@ describe('project license', () => {
         mkdirSync(join(root, 'package'), { recursive: true });
         writeFileSync(join(root, 'package/LICENSE'), license);
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
-        execFileSync('tar', ['-czf', join(root, archivePath), 'package/LICENSE', 'package/LICENSE'], { cwd: root });
+        execFileSync('tar', ['-czf', join(root, archivePath), 'package/LICENSE', './package/LICENSE'], { cwd: root });
         const archive = readFileSync(join(root, archivePath));
         const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
         const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
@@ -538,6 +546,42 @@ describe('project license', () => {
         };
 
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('proof archive repeats LICENSE');
+    });
+
+    it('rejects non-regular legal members in a locked proof archive', () => {
+        const archivePath = 'release/dependency-license-proofs/example-1.0.0.tgz';
+        mkdirSync(join(root, 'package'), { recursive: true });
+        write(root, 'package/LICENSE', 'target');
+        symlinkSync('LICENSE', join(root, 'package/LICENSE-LINK'));
+        mkdirSync(dirname(join(root, archivePath)), { recursive: true });
+        execFileSync('tar', ['-czf', join(root, archivePath), 'package/LICENSE-LINK'], { cwd: root });
+        const archive = readFileSync(join(root, archivePath));
+        const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
+        const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
+        write(
+            root,
+            'server/package-lock.json',
+            JSON.stringify({
+                packages: { 'node_modules/example': { version: '1.0.0', resolved: source, integrity: revision } },
+            })
+        );
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'npm',
+            name: 'example',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [],
+            serverLockPath: 'node_modules/example',
+            graphs: ['server/package-lock.json'],
+        };
+
+        expect(() =>
+            validateDependencyLicenseProof(root, record, {
+                source,
+                revision,
+                files: [{ archivePath, sourcePath: 'LICENSE-LINK', sha256: '0'.repeat(64) }],
+            })
+        ).toThrow('is not a regular file');
     });
 
     it('enforces SPDX AND, OR, and WITH semantics against full terms', () => {

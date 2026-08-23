@@ -4,9 +4,9 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { gunzipSync } from 'node:zlib';
 
 import parseSpdxExpression from 'spdx-expression-parse';
+import { list as listTarArchive } from 'tar';
 import { parseDocument } from 'yaml';
 
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
@@ -591,31 +591,42 @@ function assertProofFile(
     if (archiveIntegrity !== proof.revision) {
         throw new Error(`${packageId}: proof archive does not match the locked package`);
     }
-    const tar = gunzipSync(archive);
     const wanted = `package/${file.sourcePath}`;
     let legal: LegalFile | undefined;
-    for (let offset = 0; offset + 512 <= tar.length;) {
-        const header = tar.subarray(offset, offset + 512);
-        if (header.every((byte) => byte === 0)) {
-            break;
-        }
-        const field = (start: number, end: number): string =>
-            header.subarray(start, end).toString('utf8').replace(/\0.*$/u, '').trim();
-        const name = field(0, 100);
-        const prefix = field(345, 500);
-        const archivePath = prefix.length === 0 ? name : `${prefix}/${name}`;
-        const size = Number.parseInt(field(124, 136), 8);
-        if (!Number.isSafeInteger(size) || size < 0 || offset + 512 + size > tar.length) {
-            throw new Error(`${packageId}: proof archive is malformed`);
-        }
-        const contents = tar.subarray(offset + 512, offset + 512 + size);
-        if (archivePath === wanted) {
-            if (legal !== undefined) {
-                throw new Error(`${packageId}: proof archive repeats ${file.sourcePath}`);
-            }
-            legal = readLegalBytes(contents, `${file.sourcePath} from ${file.archivePath}`);
-        }
-        offset += 512 + Math.ceil(size / 512) * 512;
+    let policyError: string | undefined;
+    try {
+        listTarArchive({
+            sync: true,
+            file: realPath,
+            onentry(entry) {
+                const archivePath = entry.path.replaceAll('\\', '/').replace(/^\.\/+|\/+$/gu, '');
+                if (archivePath !== wanted) {
+                    entry.resume();
+                    return;
+                }
+                if (!['File', 'OldFile', 'ContiguousFile'].includes(entry.type)) {
+                    policyError = `${packageId}: proof archive member ${file.sourcePath} is not a regular file`;
+                    entry.resume();
+                    return;
+                }
+                if (legal !== undefined) {
+                    policyError = `${packageId}: proof archive repeats ${file.sourcePath}`;
+                    entry.resume();
+                    return;
+                }
+                const chunks: Buffer[] = [];
+                entry.on('data', (chunk) => chunks.push(chunk));
+                entry.on('end', () => {
+                    legal = readLegalBytes(Buffer.concat(chunks), `${file.sourcePath} from ${file.archivePath}`);
+                });
+            },
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${packageId}: proof archive is malformed (${message})`);
+    }
+    if (policyError !== undefined) {
+        throw new Error(policyError);
     }
     if (legal === undefined) {
         throw new Error(`${packageId}: proof archive lacks ${file.sourcePath}`);
@@ -728,9 +739,9 @@ function validateAssembledProof(
     const metadataBlocks = metadataFiles.map((file) => {
         const contents = file.contents.endsWith('\n') ? file.contents : `${file.contents}\n`;
         return [
-            `===== archive metadata ${file.label} sha256:${file.sha256} =====`,
+            `===== installed package metadata ${file.label} sha256:${file.sha256} =====`,
             contents,
-            `===== end archive metadata ${file.label} =====`,
+            `===== end installed package metadata ${file.label} =====`,
         ].join('\n');
     });
     const licenseBlocks = canonicalTerms.map((file, index) => {
@@ -752,7 +763,7 @@ function validateAssembledProof(
         `Declared license: ${record.license}`,
         `Selected SPDX terms: ${assembled.licenses.join(', ')}`,
         '',
-        'The locked published archive omits full license terms. This checked-in notice combines its immutable metadata with canonical SPDX License List text. It is assembled evidence, not an upstream file.',
+        'The resolved package omits full license terms. This checked-in notice combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It is assembled evidence, not an upstream file or an archive-authenticated proof.',
         '',
         ...metadataBlocks,
         ...licenseBlocks,
@@ -762,7 +773,7 @@ function validateAssembledProof(
     return [
         ...record.legalFiles,
         {
-            label: `assembled notice from locked archive metadata and SPDX ${SPDX_LICENSE_LIST_VERSION}`,
+            label: `assembled notice from lock-resolved package metadata and SPDX ${SPDX_LICENSE_LIST_VERSION}`,
             sha256: sha256(bytes),
             contents,
         },

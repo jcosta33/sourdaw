@@ -213,6 +213,9 @@ importers:
       spdx-expression-parse:
         specifier: 5.0.0
         version: 5.0.0
+      tar:
+        specifier: 7.5.22
+        version: 7.5.22
       tsx:
         specifier: 4.23.12
         version: 4.23.12

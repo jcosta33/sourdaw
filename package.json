@@ -148,6 +148,7 @@
         "playwright": "^1.62.1",
         "prettier": "^3.9.6",
         "spdx-expression-parse": "5.0.0",
+        "tar": "7.5.22",
         "tsx": "4.23.12",
         "typescript": "npm:@typescript/typescript6@^6.0.2",
         "typescript-eslint": "^8.67.0",
