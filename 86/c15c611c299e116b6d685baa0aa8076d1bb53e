@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_1c8cf0d27c5085 4090
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_c40cf329ce708e 39-51,211,219-221,225,229,257
+src/modules/AiRuntime/useCases/agentReference/bridgeSharedVocalFxBusesPlan.ts
+  s_a40848e8f8cca9::t_1c8cf0d27c5085 3,23,210-221
+crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs
+  s_a40848e8f8cca9::t_8b97fb98eda959 494-497,499
+  s_a40848e8f8cca9::t_fa7404f2367308 38-39,161,165,191,458-460,466-467,471,487,492,757
+  s_a40848e8f8cca9::t_e8946c8856556e 493
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_a40848e8f8cca9::t_1c8cf0d27c5085 167
+scripts/__tests__/publishLane.spec.ts
+  s_a40848e8f8cca9::t_c40cf329ce708e 58-70,323,347-349,351,356
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_a40848e8f8cca9::t_8b97fb98eda959 273,516-517,626-631
+  s_a40848e8f8cca9::t_fa7404f2367308 122,124-126,151,168,221-223,227-228
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_a40848e8f8cca9::t_c40cf329ce708e 917
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_18d3eafe35cb2b 820,824-825,870-877,881,883
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_18d3eafe35cb2b 405,409-410,773,1056-1064
+scripts/githubAppIdentity.ts
+  s_a40848e8f8cca9::t_c40cf329ce708e 700
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "86c15c611c299e116b6d685baa0aa8076d1bb53e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
