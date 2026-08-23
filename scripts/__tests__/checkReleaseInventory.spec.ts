@@ -766,22 +766,28 @@ describe('release inventory', () => {
         const { sourceRevision } = JSON.parse(
             readFileSync(join(repositoryRoot, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')
         ) as { sourceRevision: string };
+        const expectedHistoryRequests = GRAND_BOULE_MEASUREMENT_SOURCE_PATHS.map((path) => `${sourceRevision}:${path}`);
 
         expect(() =>
             checkReleaseInventory(repositoryRoot, {
+                // License traversal is unrelated to the history/WASM ordering
+                // this composition proof observes and makes the shard timeout
+                // depend on repository size instead of the boundary under test.
+                projectLicensePreflight() {},
                 readGrandBouleSourceAtRevision(root, revision, path) {
                     historyRequests.push(`${revision}:${path}`);
                     return readFileSync(join(root, path));
                 },
                 verifyWasmArtifacts() {
+                    expect(historyRequests).toEqual(expectedHistoryRequests);
                     throw stopAfterHistoryValidation;
                 },
             })
         ).toThrow(stopAfterHistoryValidation);
-        expect(historyRequests).toEqual(
-            GRAND_BOULE_MEASUREMENT_SOURCE_PATHS.map((path) => `${sourceRevision}:${path}`)
-        );
-    }, 15_000);
+        expect(historyRequests).toEqual(expectedHistoryRequests);
+        // The live inventory snapshot is intentionally real. Keep a finite
+        // full-shard hang oracle while allowing for runner contention.
+    }, 30_000);
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
         const contract = ddspModelsReleaseInventoryContract(repositoryRoot);

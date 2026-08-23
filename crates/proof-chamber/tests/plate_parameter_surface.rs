@@ -31,6 +31,9 @@
 
 use proof_chamber::ProofChamberInstance;
 
+#[path = "support/plate_fine_structure.rs"]
+mod plate_fine_structure;
+
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
 const PLATE: f32 = 0.0;
@@ -121,9 +124,9 @@ fn early_rms(output: &[f32]) -> f32 {
 
 /// Three platform-independent scalars of a render.
 ///
-/// They distinguish level, energy, and onset changes. Fine-structure equality
-/// is asserted separately against an explicit default render from the same
-/// process, avoiding platform-sensitive absolute f32 hashes.
+/// They distinguish level, energy, and onset changes. Fine structure is
+/// asserted separately both against an explicit default in the same process
+/// and against portable signed projections of the retained render.
 struct RenderShape {
     peak: f32,
     rms: f32,
@@ -622,6 +625,7 @@ fn the_untouched_plate_still_renders_what_it_always_has() {
         &UNTOUCHED_PLATE_SHAPE,
         "the untouched plate",
     );
+    plate_fine_structure::assert_matches(&output, "the untouched plate");
 
     let explicit_default = render(&[("gravity", 0.5)]);
     assert!(
@@ -632,43 +636,22 @@ fn the_untouched_plate_still_renders_what_it_always_has() {
     );
 }
 
-const FINE_STRUCTURE_PROJECTIONS: [(usize, usize, u64); 8] = [
-    (8_192, 4_096, 0x243f_6a88_85a3_08d3),
-    (8_192, 4_096, 0x1319_8a2e_0370_7344),
-    (16_384, 4_096, 0xa409_3822_299f_31d0),
-    (16_384, 4_096, 0x082e_fa98_ec4e_6c89),
-    (28_672, 4_096, 0x4528_21e6_38d0_1377),
-    (28_672, 4_096, 0xbe54_66cf_34e9_0c6c),
-    (40_960, 4_096, 0xc0ac_29b7_c97c_50dd),
-    (40_960, 4_096, 0x3f84_d5b5_b547_0917),
-];
-
-fn signed_projection(output: &[f32], start: usize, len: usize, seed: u64) -> f64 {
-    let mut state = seed;
-    let mut signed_sum = 0.0_f64;
-    let mut energy = 0.0_f64;
-    for sample in &output[start..start + len] {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        let value = f64::from(*sample);
-        signed_sum += if state & 1 == 0 { value } else { -value };
-        energy += value * value;
-    }
-    signed_sum / (energy.sqrt() * (len as f64).sqrt())
-}
-
-fn fine_structure_projections(output: &[f32]) -> [f64; FINE_STRUCTURE_PROJECTIONS.len()] {
-    FINE_STRUCTURE_PROJECTIONS.map(|(start, len, seed)| signed_projection(output, start, len, seed))
-}
-
-#[cfg(target_os = "linux")]
 #[test]
-fn diagnostic_emits_portable_fine_structure_projections() {
+fn the_fine_structure_anchor_rejects_polarity_and_one_sample_timing_changes() {
     let output = render(&[]);
-    panic!(
-        "PORTABLE_FINE_STRUCTURE_PROJECTIONS={:?}",
-        fine_structure_projections(&output)
+    plate_fine_structure::assert_matches(&output, "the retained plate render");
+
+    let negated: Vec<f32> = output.iter().map(|sample| -*sample).collect();
+    assert!(
+        !plate_fine_structure::matches(&negated),
+        "the signed fine-structure anchor admitted a polarity inversion"
+    );
+
+    let mut shifted = vec![0.0; output.len()];
+    shifted[1..].copy_from_slice(&output[..output.len() - 1]);
+    assert!(
+        !plate_fine_structure::matches(&shifted),
+        "the signed fine-structure anchor admitted a one-sample delay"
     );
 }
 

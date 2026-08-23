@@ -49,6 +49,9 @@
 
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
 
+#[path = "support/plate_fine_structure.rs"]
+mod plate_fine_structure;
+
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
 
@@ -492,9 +495,10 @@ fn the_replay_preserves_most_recent_write_order() {
 /// first 250 ms. The fine structure moved; the sound did not.
 ///
 /// The retained render crosses platform `libm` implementations, so the stable
-/// contract is its readable shape plus an exact same-process comparison with
-/// the first explicit selection below. Both paths use the same platform math;
-/// any constructor/cache disagreement still moves a sample bit.
+/// contract is its readable shape, portable signed projections of its fine
+/// structure, and an exact same-process comparison with the first explicit
+/// selection below. Both paths use the same platform math; any constructor or
+/// cache disagreement still moves a sample bit.
 ///
 /// The render in three readable numbers.
 ///
@@ -518,6 +522,7 @@ fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
         &UNTOLD_INSTANCE_SHAPE,
         "an untold instance",
     );
+    plate_fine_structure::assert_matches(&constructed, "an untold instance");
 
     // The first `algorithm` write happens against an empty cache, so it must
     // hand back the constructor's defaults and not a partial replay.
