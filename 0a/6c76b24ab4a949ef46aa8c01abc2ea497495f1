@@ -1,41 +1,41 @@
 pnpm-lock.yaml
-  s_a40848e8f8cca9::t_134bed7a8cd3c6 141-143,228-230,2541-2543,2916,5564-5575,7794-7797,11204-11205
+  s_a40848e8f8cca9::t_9336d0dc3d94cc 141-143,228-230,2541-2543,2916,5564-5575,7794-7797,11204-11205
 server/__tests__/collab-server.spec.ts
-  s_27578aec2aab3b::t_c81bbc3e7f0102 5-7,22,43
+  s_27578aec2aab3b::t_991233c23c2a35 5-7,22,43
 src/components/daw/__tests__/DawSmallLayoutComponents.spec.tsx
-  s_27578aec2aab3b::t_9b1213a7f9c90a 46,48,51,53
+  s_27578aec2aab3b::t_7b59ed21c2786d 46,48,51,53
 src/modules/AiGeneration/presentations/views/__tests__/PatternBrowser.spec.tsx
-  s_0a3429e31e555d::t_183cf4f14a8c80 48
+  s_0a3429e31e555d::t_1dd3af5caa39c7 48
 src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
-  s_27578aec2aab3b::t_f0fce49216fa7b 259,270
+  s_27578aec2aab3b::t_af72e0892eb120 259,270
 src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.spec.ts
-  s_a40848e8f8cca9::t_f1d2a377eefba1 1-49
+  s_a40848e8f8cca9::t_bcc74fe85098ed 1-49
 src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.ts
-  s_a40848e8f8cca9::t_ff0fe16dbd6220 1-73
+  s_a40848e8f8cca9::t_2d738e19312a75 1-73
 src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
-  s_0a3429e31e555d::t_e141c8ba6184e0 32
+  s_0a3429e31e555d::t_f4b41df3b92fb4 32
 src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
-  s_0a3429e31e555d::t_22cd7483ff4294 193
+  s_0a3429e31e555d::t_d6e13e595ef007 193
 src/modules/CrdtDocument/useCases/projection/__tests__/projectMixStateSlots.spec.ts
-  s_0a3429e31e555d::t_4af3797976f0d2 30
+  s_0a3429e31e555d::t_e1fabde689bbe3 30
 src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
-  s_0a3429e31e555d::t_1b4c00b90c9a12 24
+  s_0a3429e31e555d::t_475001b5ba3a0d 24
 src/modules/Crust/useCases/crustParamBridge/__tests__/setCrustParamWithAudio.spec.ts
-  s_0a3429e31e555d::t_906966e9d061d5 19
+  s_0a3429e31e555d::t_e1195ccbc02b82 19
 package.json
-  s_3835c6623dc8d4::t_956b6fdf7046b9 123,152
+  s_3835c6623dc8d4::t_78333b94fa019b 123,152
 src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
-  s_3835c6623dc8d4::t_8a5f7098de856a 24,41,57-63,157,199-200,202-203,226,266,467,485
+  s_3835c6623dc8d4::t_2894f9982a32e4 24,41,57-63,157,199-200,202-203,226,266,467,485
 src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.integration.spec.ts
-  s_1096cc07ba5c94::t_d8e05d9fed36c1 20,34,52
+  s_1096cc07ba5c94::t_c629269faa9d38 20,34,52
 src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
-  s_1096cc07ba5c94::t_87ec61c4adea5c 24,91,143
+  s_1096cc07ba5c94::t_bb036c40ed86a7 24,91,143
 src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
-  s_1096cc07ba5c94::t_530eab1aebf844 20,35,81
+  s_1096cc07ba5c94::t_fa121d6c22926e 20,35,81
 src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
-  s_1096cc07ba5c94::t_edda78053d875b 25,56,74
+  s_1096cc07ba5c94::t_19c301a404e2c2 25,56,74
 src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
-  s_1096cc07ba5c94::t_afd4a871011bf1 23,50,89
+  s_1096cc07ba5c94::t_13bed2b83241d5 23,50,89
 ---
 {
   "schema_version": "authorship/3.0.0",
