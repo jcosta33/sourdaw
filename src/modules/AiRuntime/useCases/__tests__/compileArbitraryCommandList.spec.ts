@@ -258,6 +258,144 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
+    it('composes writes to distinct parameters on the same selected device in order', () => {
+        const deviceContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-kick'
+                    ? {
+                          ...track,
+                          deviceCount: 1,
+                          devices: [
+                              {
+                                  id: 'device-kick-compressor',
+                                  name: 'Kick Compressor',
+                                  type: 'builtin-compressor',
+                                  bypassed: false,
+                                  parameters: [],
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const selector = {
+            targetArgument: 'deviceId',
+            entity: 'device',
+            where: { name: 'Kick Compressor' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['device-kick-compressor']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'set-threshold',
+                                    name: 'setDeviceParameter',
+                                    arguments: { paramId: 'threshold', value: -18 },
+                                    selector,
+                                },
+                                {
+                                    id: 'set-ratio',
+                                    name: 'setDeviceParameter',
+                                    arguments: { paramId: 'ratio', value: 4 },
+                                    selector,
+                                    dependsOn: ['set-threshold'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            {
+                name: 'setDeviceParameter',
+                arguments: { deviceId: 'device-kick-compressor', paramId: 'threshold', value: -18 },
+            },
+            {
+                name: 'setDeviceParameter',
+                arguments: { deviceId: 'device-kick-compressor', paramId: 'ratio', value: 4 },
+            },
+        ]);
+    });
+
+    it('rejects contradictory writes to the same parameter on the same selected device', () => {
+        const deviceContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-kick'
+                    ? {
+                          ...track,
+                          deviceCount: 1,
+                          devices: [
+                              {
+                                  id: 'device-kick-compressor',
+                                  name: 'Kick Compressor',
+                                  type: 'builtin-compressor',
+                                  bypassed: false,
+                                  parameters: [],
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const selector = {
+            targetArgument: 'deviceId',
+            entity: 'device',
+            where: { name: 'Kick Compressor' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['device-kick-compressor']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'set-threshold-low',
+                                    name: 'setDeviceParameter',
+                                    arguments: { paramId: 'threshold', value: -18 },
+                                    selector,
+                                },
+                                {
+                                    id: 'set-threshold-high',
+                                    name: 'setDeviceParameter',
+                                    arguments: { paramId: 'threshold', value: -12 },
+                                    selector,
+                                    dependsOn: ['set-threshold-low'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for setDeviceParameter on device-kick-compressor are not safely composable.',
+        });
+    });
+
     it('excludes protected targets before it records a stable, revision-bearing scope', () => {
         const result = compileArbitraryCommandList({
             context,
