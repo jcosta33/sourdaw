@@ -11,6 +11,7 @@ import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderT
 import {
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
+    assertDdspReleaseInventory,
     assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
@@ -22,6 +23,7 @@ import {
     DDSP_MODEL_PATHS,
     DDSP_TFJS_APPLICATION_RUNTIME_PATHS,
     DDSP_TFJS_RUNTIME_PATHS,
+    GRAND_BOULE_MEASUREMENT_SOURCE_PATHS,
     ddspModelsReleaseInventoryContract,
     ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
@@ -718,12 +720,38 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
+    it('composes both DDSP contracts directly from the release inventory registry', () => {
+        const liveInventory = JSON.parse(
+            readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
+        ) as ReleaseInventory;
+
+        expect(() => assertDdspReleaseInventory(repositoryRoot, liveInventory)).not.toThrow();
+        expect(() =>
+            assertDdspReleaseInventory(repositoryRoot, {
+                ...liveInventory,
+                surfaces: liveInventory.surfaces.filter(({ id }) => id !== 'ddsp-models'),
+            })
+        ).toThrow('DDSP models release inventory kind does not match provenance');
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
+    it('keeps full live validation bound to Grand Boule source history before WASM verification', () => {
+        const historyRequests: string[] = [];
+        const stopAfterHistoryValidation = new Error('stop after Grand Boule history validation');
+
+        expect(() =>
+            checkReleaseInventory(repositoryRoot, {
+                readGrandBouleSourceAtRevision(root, revision, path) {
+                    historyRequests.push(`${revision}:${path}`);
+                    return execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
+                },
+                verifyWasmArtifacts() {
+                    throw stopAfterHistoryValidation;
+                },
+            })
+        ).toThrow(stopAfterHistoryValidation);
+        expect(historyRequests.map((request) => request.slice(request.indexOf(':') + 1))).toEqual(
+            GRAND_BOULE_MEASUREMENT_SOURCE_PATHS
+        );
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {

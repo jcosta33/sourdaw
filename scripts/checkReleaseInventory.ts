@@ -752,7 +752,7 @@ export function assertGrandBouleReleasedInWasm(root: string): void {
     }
 }
 
-const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
+export const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/quantum.rs',
     'crates/daw-dsp/benches/wasm/deviceRecipes.js',
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
@@ -760,7 +760,26 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'public/wasm/manifest.json',
 ] as const;
 
-export function assertGrandBouleMeasurementAdmission(root: string): void {
+function readGrandBouleSourceAtRevision(root: string, revision: string, path: string): Buffer {
+    return execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
+}
+
+function verifyWasmArtifacts(root: string): void {
+    execFileSync(process.execPath, [resolve(root, 'scripts/verify-wasm-artifacts.ts')], {
+        cwd: root,
+        stdio: 'inherit',
+    });
+}
+
+export type ReleaseInventoryCheckOptions = {
+    readGrandBouleSourceAtRevision?: (root: string, revision: string, path: string) => Buffer;
+    verifyWasmArtifacts?: (root: string) => void;
+};
+
+export function assertGrandBouleMeasurementAdmission(
+    root: string,
+    readSourceAtRevision = readGrandBouleSourceAtRevision
+): void {
     const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
     const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
     const data = JSON.parse(readFileSync(resolve(root, jsonPath), 'utf8')) as {
@@ -787,7 +806,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
         let sourceAtRevision: Buffer;
         try {
-            sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
+            sourceAtRevision = readSourceAtRevision(root, revision, path);
         } catch {
             throw new Error(`Grand Boule measurement source revision cannot provide ${path}`);
         }
@@ -1202,6 +1221,14 @@ function assertSurfaceContract(
 
 export function assertDdspModelsReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
+}
+
+/** Validates the two DDSP registry entries without running the full repository release gate. */
+export function assertDdspReleaseInventory(root: string, inventory: Pick<ReleaseInventory, 'surfaces'>): void {
+    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    assertSurfaceContract(ddspTfjsRuntimeSurface, ddspTfjsRuntimeReleaseInventoryContract(root), 'DDSP TF.js runtime');
+    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    assertDdspModelsReleaseInventory(root, ddspModelsSurface);
 }
 
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
@@ -1647,7 +1674,13 @@ export function loadRepositorySnapshot(
     };
 }
 
-export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceipt {
+export function checkReleaseInventory(
+    root: string,
+    {
+        readGrandBouleSourceAtRevision,
+        verifyWasmArtifacts: verifyWasmArtifactsOverride,
+    }: ReleaseInventoryCheckOptions = {}
+): ReleaseInventoryCheckReceipt {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
     const snapshot = loadRepositorySnapshot(root, inventory);
@@ -1660,14 +1693,11 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
         validate();
         validatedSurfaceIds.push(surfaceId);
     };
-    execFileSync(process.execPath, [resolve(root, 'scripts/verify-wasm-artifacts.ts')], {
-        cwd: root,
-        stdio: 'inherit',
-    });
     assertGrandBouleRustWasmBoundary(root);
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
-    assertGrandBouleMeasurementAdmission(root);
+    assertGrandBouleMeasurementAdmission(root, readGrandBouleSourceAtRevision);
+    (verifyWasmArtifactsOverride ?? verifyWasmArtifacts)(root);
     const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
@@ -1690,16 +1720,8 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
             'owner visual asset'
         )
     );
-    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
-    validateSurface('ddsp-tfjs-runtime', () =>
-        assertSurfaceContract(
-            ddspTfjsRuntimeSurface,
-            ddspTfjsRuntimeReleaseInventoryContract(root),
-            'DDSP TF.js runtime'
-        )
-    );
-    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
-    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
+    assertDdspReleaseInventory(root, inventory);
+    validatedSurfaceIds.push('ddsp-tfjs-runtime', 'ddsp-models');
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
