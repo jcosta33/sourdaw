@@ -1,6 +1,7 @@
 import {
     finalizedOwner,
     isValidPreparedAudioBufferPair,
+    PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY,
     preparedAudioRecoveryKey,
     preparedIdentityFailure,
     promotedOwner,
@@ -490,8 +491,15 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         ) {
             return false;
         }
+        const owner = readPreparedOwner(recovery.metadata);
+        if (owner === null || owner === 'invalid') {
+            return false;
+        }
         bufferStore.put(recovery.data, id);
-        metadataStore.put(recovery.metadata, id);
+        metadataStore.put(
+            { ...recovery.metadata, preparedOwner: finalizedOwner(owner) } satisfies PreparedAudioBufferMetadata,
+            id
+        );
         recoveryStore.delete(id);
         return true;
     }
@@ -1028,10 +1036,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 await awaitPreparedTransaction(transaction);
                 return { status: 'mismatched' as const };
             }
-            if (
-                (disposition === 'project-owned' || owner.status === 'project-owned') &&
-                !isValidPreparedAudioBufferPair(data, metadata)
-            ) {
+            if (!isValidPreparedAudioBufferPair(data, metadata)) {
                 await awaitPreparedTransaction(transaction);
                 return { status: 'failed' as const, reason: 'Prepared audio PCM metadata is invalid.' };
             }
@@ -1256,22 +1261,13 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         const tracked: Array<{ id: string; transaction: PreparedTransaction }> = [];
         const entries = keys.flatMap((key, index) => {
             const value = values[index];
+            if (key === PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY) {
+                return [];
+            }
             const candidate =
                 value !== null && typeof value === 'object' && !Array.isArray(value)
                     ? (value as Record<string, unknown>)
                     : undefined;
-            if (
-                candidate === undefined ||
-                !(
-                    'id' in candidate ||
-                    'revision' in candidate ||
-                    'stagedAtMs' in candidate ||
-                    'operation' in candidate ||
-                    'metadata' in candidate
-                )
-            ) {
-                return [];
-            }
             const recovery = readPreparedAudioRecoveryRecord(value);
             const id = typeof candidate?.id === 'string' && candidate.id.trim().length > 0 ? candidate.id : undefined;
             const stagedAtMs =

@@ -102,20 +102,48 @@ type StoredBufferMeta = {
 
 type FakeBacking = Map<string, StoredAudioBuffer> & { meta: Map<string, StoredBufferMeta> };
 
+function createCompletedRecoveryMigrationTransaction() {
+    const request = {
+        result: undefined as unknown,
+        error: null,
+        onsuccess: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+    };
+    const transaction = {
+        error: null,
+        onabort: null as (() => void) | null,
+        oncomplete: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        objectStore: () => ({
+            get: () => {
+                queueMicrotask(() => {
+                    request.result = { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 };
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+        }),
+    };
+    setTimeout(() => transaction.oncomplete?.(), 0);
+    return transaction;
+}
+
 function installFakeIndexedDb(): FakeBacking {
     const backing = new Map<string, StoredAudioBuffer>() as FakeBacking;
     // The database has two object stores from DB_VERSION 2 on, and they share a
     // key space. A double that handed the same map to both would let the
     // metadata row overwrite the record it describes.
     const metaBacking = new Map<string, StoredBufferMeta>();
-    const recoveryBacking = new Map<string, unknown>();
+    const recoveryBacking = new Map<IDBValidKey, unknown>([
+        [0, { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 }],
+    ]);
     backing.meta = metaBacking;
 
-    function makeStore<Value>(table: Map<string, Value>) {
+    function makeStore<Key, Value>(table: Map<Key, Value>) {
         return {
             clear: () => table.clear(),
-            delete: (key: string) => table.delete(key),
-            get: (key: string) => {
+            delete: (key: Key) => table.delete(key),
+            get: (key: Key) => {
                 const request = {
                     result: undefined as Value | undefined,
                     error: null,
@@ -128,9 +156,22 @@ function installFakeIndexedDb(): FakeBacking {
                 });
                 return request;
             },
+            getAll: () => {
+                const request = {
+                    result: [] as Value[],
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = [...table.values()];
+                    request.onsuccess?.();
+                });
+                return request;
+            },
             getAllKeys: () => {
                 const request = {
-                    result: [] as string[],
+                    result: [] as Key[],
                     error: null,
                     onsuccess: null as (() => void) | null,
                     onerror: null as (() => void) | null,
@@ -141,7 +182,7 @@ function installFakeIndexedDb(): FakeBacking {
                 });
                 return request;
             },
-            put: (value: Value, key: string) => {
+            put: (value: Value, key: Key) => {
                 table.set(key, value);
             },
         };
@@ -161,6 +202,7 @@ function installFakeIndexedDb(): FakeBacking {
     }
 
     const database = {
+        close: vi.fn(),
         objectStoreNames: { contains: () => true },
         createObjectStore: () => bufferStore,
         transaction: () => {
@@ -432,7 +474,10 @@ describe('audioBufferCache conversions', () => {
         const put = vi.fn();
         const database = {
             objectStoreNames: { contains: () => true },
-            transaction: () => {
+            transaction: (storeNames: string | string[]) => {
+                if (storeNames === 'preparedBufferRecovery') {
+                    return createCompletedRecoveryMigrationTransaction();
+                }
                 const transaction: ControlledTransaction = {
                     abort: vi.fn(() => queueMicrotask(() => transaction.onabort?.())),
                     error: null,
@@ -531,7 +576,10 @@ describe('audioBufferCache conversions', () => {
         };
         const database = {
             objectStoreNames: { contains: () => true },
-            transaction: vi.fn(() => {
+            transaction: vi.fn((storeNames: string | string[]) => {
+                if (storeNames === 'preparedBufferRecovery') {
+                    return createCompletedRecoveryMigrationTransaction();
+                }
                 const transaction = {
                     error: null,
                     objectStore: () => store,
@@ -730,6 +778,13 @@ describe('audioBufferCache conversions', () => {
             })
         ).resolves.toEqual({ status: 'already-settled', disposition: 'project-owned' });
         expect(backing.has('retained-pcm')).toBe(true);
+        audioBufferCache
+            .importBuffers({
+                buffers: {},
+                cacheIds: ['retained-pcm'],
+                context: createTestContext(vi.fn()),
+            })
+            ?.publish();
 
         const discarded = await audioBufferCache.persistPreparedBuffer({
             id: 'discarded-pcm',

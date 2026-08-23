@@ -2,8 +2,11 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
 import {
+    isPreparedAudioRecoveryMigrationMarker,
+    PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY,
     isValidPreparedSerializedAudioBuffer,
-    isPreparedAudioRecoveryKey,
+    preparedAudioRecoveryKey,
+    preparedAudioRecoveryMigrationMarker,
     readPreparedAudioRecoveryMetadata,
     readPreparedAudioRecoveryRecord,
     readPreparedOwner,
@@ -201,26 +204,35 @@ const RECOVERY_STORE_NAME = 'preparedBufferRecovery';
 type BufferMeta = PreparedAudioBufferMetadata;
 
 async function migrateLegacyPreparedRecoveryRows(database: IDBDatabase): Promise<void> {
-    const readTransaction = database.transaction(META_STORE_NAME, 'readonly');
-    const metadataStore = readTransaction.objectStore(META_STORE_NAME);
-    const [metadataRows, keys] = await Promise.all([
-        awaitRequest(metadataStore.getAll() as IDBRequest<unknown[]>),
-        awaitRequest(metadataStore.getAllKeys()),
-    ]);
-    await awaitTransaction(readTransaction);
-    const legacyRows = keys.flatMap((key, index) => {
-        const metadata = readPreparedAudioRecoveryMetadata(metadataRows[index]);
-        return typeof key === 'string' && isPreparedAudioRecoveryKey(key) && metadata !== null
-            ? [{ key, metadata }]
-            : [];
-    });
-    if (legacyRows.length === 0) {
+    const markerTransaction = database.transaction(RECOVERY_STORE_NAME, 'readonly');
+    const marker = await awaitRequest(
+        markerTransaction
+            .objectStore(RECOVERY_STORE_NAME)
+            .get(PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY) as IDBRequest<unknown>
+    );
+    await awaitTransaction(markerTransaction);
+    if (isPreparedAudioRecoveryMigrationMarker(marker)) {
         return;
     }
     const transaction = database.transaction([STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME], 'readwrite');
     const bufferStore = transaction.objectStore(STORE_NAME);
     const currentMetadataStore = transaction.objectStore(META_STORE_NAME);
     const recoveryStore = transaction.objectStore(RECOVERY_STORE_NAME);
+    const [currentMarker, metadataRows, keys] = await Promise.all([
+        awaitRequest(recoveryStore.get(PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY) as IDBRequest<unknown>),
+        awaitRequest(currentMetadataStore.getAll() as IDBRequest<unknown[]>),
+        awaitRequest(currentMetadataStore.getAllKeys()),
+    ]);
+    if (isPreparedAudioRecoveryMigrationMarker(currentMarker)) {
+        await awaitTransaction(transaction);
+        return;
+    }
+    const legacyRows = keys.flatMap((key, index) => {
+        const metadata = readPreparedAudioRecoveryMetadata(metadataRows[index]);
+        return typeof key === 'string' && metadata !== null && key === preparedAudioRecoveryKey(metadata.id)
+            ? [{ key, metadata }]
+            : [];
+    });
     for (const { key, metadata } of legacyRows) {
         const [data, existingRecovery] = await Promise.all([
             awaitRequest(bufferStore.get(key) as IDBRequest<SerializedBuffer | undefined>),
@@ -231,18 +243,16 @@ async function migrateLegacyPreparedRecoveryRows(database: IDBDatabase): Promise
             continue;
         }
         if (existing === null) {
-            recoveryStore.put(
-                {
-                    ...metadata,
-                    data,
-                    stagedAtMs: Date.now(),
-                },
-                metadata.id
-            );
+            const migrated = readPreparedAudioRecoveryRecord({ ...metadata, data, stagedAtMs: Date.now() });
+            if (migrated === null) {
+                continue;
+            }
+            recoveryStore.put(migrated, metadata.id);
         }
         bufferStore.delete(key);
         currentMetadataStore.delete(key);
     }
+    recoveryStore.put(preparedAudioRecoveryMigrationMarker(), PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY);
     await awaitTransaction(transaction);
 }
 
@@ -353,7 +363,6 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             settled = true;
             reject(new Error(OPEN_BLOCKED_MESSAGE));
         };
-        let requiresLegacyRecoveryMigration = false;
         req.onupgradeneeded = () => {
             // Creates stores and nothing else. A v1 -> v2 back-fill that walked
             // the records here would hold the upgrade transaction — and every
@@ -376,7 +385,6 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             }
             if (!db.objectStoreNames.contains(RECOVERY_STORE_NAME)) {
                 db.createObjectStore(RECOVERY_STORE_NAME);
-                requiresLegacyRecoveryMigration = true;
             }
         };
         req.onsuccess = () => {
@@ -399,10 +407,6 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
                 onConnectionLoss();
             };
             db.onclose = onConnectionLoss;
-            if (!requiresLegacyRecoveryMigration) {
-                resolve(db);
-                return;
-            }
             void migrateLegacyPreparedRecoveryRows(db).then(
                 () => resolve(db),
                 (error: unknown) => {
@@ -468,6 +472,11 @@ function awaitTransaction(transaction: IDBTransaction): Promise<void> {
 
 type SerializedBuffer = PreparedSerializedAudioBuffer;
 
+type OrdinaryStoredBuffer = Omit<SerializedBuffer, 'lastAccessed' | 'sizeInBytes'> & {
+    lastAccessed?: number;
+    sizeInBytes?: number;
+};
+
 let nextPersistenceGeneration = 0;
 const persistenceGenerationById = new Map<string, number>();
 let nextImportCandidateId = 0;
@@ -525,7 +534,52 @@ function isValidSerializedBuffer(data: unknown): data is SerializedBuffer {
     return isValidPreparedSerializedAudioBuffer(data);
 }
 
-function isValidBufferMetadata(metadata: unknown, data: SerializedBuffer): metadata is BufferMeta {
+function isFloat32Array(value: unknown): value is Float32Array {
+    return Object.prototype.toString.call(value) === '[object Float32Array]';
+}
+
+function readOrdinaryStoredBuffer(data: unknown): OrdinaryStoredBuffer | null {
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+        return null;
+    }
+    const candidate = data as Record<string, unknown>;
+    const channelData = candidate.channelData;
+    if (!Array.isArray(channelData) || !channelData.every(isFloat32Array)) {
+        return null;
+    }
+    const length = channelData[0]?.length ?? 0;
+    const sizeInBytes = channelData.reduce((total, channel) => total + channel.byteLength, 0);
+    if (
+        typeof candidate.sampleRate !== 'number' ||
+        !Number.isFinite(candidate.sampleRate) ||
+        candidate.sampleRate <= 0 ||
+        typeof candidate.numberOfChannels !== 'number' ||
+        !Number.isInteger(candidate.numberOfChannels) ||
+        candidate.numberOfChannels <= 0 ||
+        length <= 0 ||
+        channelData.length !== candidate.numberOfChannels ||
+        !channelData.every((channel) => channel.length === length) ||
+        (candidate.lastAccessed !== undefined &&
+            (typeof candidate.lastAccessed !== 'number' || !Number.isFinite(candidate.lastAccessed))) ||
+        (candidate.sizeInBytes !== undefined && candidate.sizeInBytes !== sizeInBytes)
+    ) {
+        return null;
+    }
+    const validated: OrdinaryStoredBuffer = {
+        sampleRate: candidate.sampleRate,
+        numberOfChannels: candidate.numberOfChannels,
+        channelData,
+    };
+    if (typeof candidate.lastAccessed === 'number') {
+        validated.lastAccessed = candidate.lastAccessed;
+    }
+    if (typeof candidate.sizeInBytes === 'number') {
+        validated.sizeInBytes = candidate.sizeInBytes;
+    }
+    return validated;
+}
+
+function isValidBufferMetadata(metadata: unknown, sizeInBytes: number): metadata is BufferMeta {
     if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
         return false;
     }
@@ -533,7 +587,7 @@ function isValidBufferMetadata(metadata: unknown, data: SerializedBuffer): metad
     return (
         typeof candidate.lastAccessed === 'number' &&
         Number.isFinite(candidate.lastAccessed) &&
-        candidate.sizeInBytes === data.sizeInBytes &&
+        candidate.sizeInBytes === sizeInBytes &&
         (candidate.freezeProjectId === undefined ||
             (typeof candidate.freezeProjectId === 'number' &&
                 Number.isSafeInteger(candidate.freezeProjectId) &&
@@ -591,7 +645,7 @@ async function updateAccessTimeInIdb(id: string): Promise<void> {
  * channels when the field is missing. A record written by a build older than
  * the field would otherwise seed a metadata row claiming zero bytes, and the
  * size collector would then evict everything else before touching it. */
-function recordSizeInBytes(record: SerializedBuffer): number {
+function recordSizeInBytes(record: OrdinaryStoredBuffer): number {
     if (typeof record.sizeInBytes === 'number' && Number.isFinite(record.sizeInBytes)) {
         return record.sizeInBytes;
     }
@@ -1272,14 +1326,15 @@ export const audioBufferCache = {
                 const store = tx.objectStore(STORE_NAME);
                 const metaStore = tx.objectStore(META_STORE_NAME);
                 for (const id of missingIds) {
-                    const [data, metadata] = await Promise.all([
-                        awaitRequest(store.get(id) as IDBRequest<SerializedBuffer | undefined>),
+                    const [storedData, metadata] = await Promise.all([
+                        awaitRequest(store.get(id) as IDBRequest<unknown>),
                         awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>),
                     ]);
+                    const data = readOrdinaryStoredBuffer(storedData);
                     const durableOwner = preparedAudioBufferLifecycle.readPreparedOwner(metadata);
                     if (
-                        !isValidSerializedBuffer(data) ||
-                        (metadata !== undefined && !isValidBufferMetadata(metadata, data)) ||
+                        data === null ||
+                        (metadata !== undefined && !isValidBufferMetadata(metadata, recordSizeInBytes(data))) ||
                         preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, durableOwner)
                     ) {
                         continue;

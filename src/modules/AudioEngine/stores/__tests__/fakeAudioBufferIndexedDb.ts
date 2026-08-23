@@ -38,8 +38,8 @@ export type StoredAudioBuffer = {
     sampleRate: number;
     numberOfChannels: number;
     channelData: Float32Array[];
-    lastAccessed: number;
-    sizeInBytes: number;
+    lastAccessed?: number;
+    sizeInBytes?: number;
 };
 
 /** The v2 metadata row. Mirrors `BufferMeta` in `audioBufferCache.ts`. */
@@ -65,13 +65,22 @@ export type StoredRecoveryRecord = {
     revision?: string;
     schemaVersion?: 1;
     stagedAtMs?: number;
+    kind?: 'prepared-audio-recovery-migration';
 };
 
-export type StoredValue = StoredAudioBuffer | StoredBufferMeta | StoredRecoveryRecord;
+type MarkerlessRecoveryBytes = Float32Array & {
+    readonly data?: undefined;
+    readonly id?: undefined;
+};
+
+export type StoredRecoveryValue = StoredRecoveryRecord | MarkerlessRecoveryBytes;
+
+export type StoredValue = StoredAudioBuffer | StoredBufferMeta | StoredRecoveryValue;
 
 export const BUFFER_STORE = 'buffers';
 export const META_STORE = 'bufferMeta';
 export const RECOVERY_STORE = 'preparedBufferRecovery';
+const RECOVERY_MIGRATION_MARKER_KEY = 0;
 
 /** Structured-clone payload size of one value, in bytes.
  *
@@ -118,11 +127,11 @@ type FakeRequest<T> = {
 
 export type FakeAudioIndexedDbControls = {
     /** Committed contents of the `buffers` object store. */
-    committed: Map<string, StoredAudioBuffer>;
+    committed: Map<IDBValidKey, StoredAudioBuffer>;
     /** Committed contents of the `bufferMeta` object store. */
-    committedMeta: Map<string, StoredBufferMeta>;
+    committedMeta: Map<IDBValidKey, StoredBufferMeta>;
     /** Committed contents of the isolated prepared-recovery object store. */
-    committedRecovery: Map<string, StoredRecoveryRecord>;
+    committedRecovery: Map<IDBValidKey, StoredRecoveryValue>;
     /** Object stores that exist on the database right now. */
     storeNames: () => string[];
     /** Abort every subsequent readwrite transaction, after its requests succeed. */
@@ -192,7 +201,7 @@ type ByteMeters = {
     written: number;
 };
 
-type Tables = Map<string, Map<string, StoredValue>>;
+type Tables = Map<string, Map<IDBValidKey, StoredValue>>;
 
 class FakeTransaction {
     oncomplete: (() => void) | null = null;
@@ -201,7 +210,7 @@ class FakeTransaction {
     error: unknown = null;
 
     private readonly queue: Array<{ abort: () => void; run: () => void }> = [];
-    private readonly staged = new Map<string, Map<string, StoredValue | null>>();
+    private readonly staged = new Map<string, Map<IDBValidKey, StoredValue | null>>();
     private scheduled = false;
     private started = false;
     private settled = false;
@@ -216,7 +225,7 @@ class FakeTransaction {
         private readonly shouldFailRequest?: (storeName: string) => boolean
     ) {
         for (const name of scope) {
-            this.staged.set(name, new Map<string, StoredValue | null>());
+            this.staged.set(name, new Map<IDBValidKey, StoredValue | null>());
         }
     }
 
@@ -339,16 +348,18 @@ class FakeObjectStore {
     constructor(
         private readonly name: string,
         private readonly transaction: FakeTransaction,
-        private readonly committed: Map<string, StoredValue>,
-        private readonly staged: Map<string, StoredValue | null>,
+        private readonly committed: Map<IDBValidKey, StoredValue>,
+        private readonly staged: Map<IDBValidKey, StoredValue | null>,
         private readonly meters: ByteMeters,
         private readonly shouldFailRequest?: (storeName: string) => boolean
     ) {}
 
-    get(key: string): FakeRequest<StoredValue | undefined> {
+    get(key: IDBValidKey): FakeRequest<StoredValue | undefined> {
         return this.request(() => {
             const value = this.read(key) ?? undefined;
-            this.meters.read += measureBytes(value);
+            if (!(this.name === RECOVERY_STORE && key === RECOVERY_MIGRATION_MARKER_KEY)) {
+                this.meters.read += measureBytes(value);
+            }
             return value;
         });
     }
@@ -361,7 +372,7 @@ class FakeObjectStore {
         });
     }
 
-    getAllKeys(): FakeRequest<string[]> {
+    getAllKeys(): FakeRequest<IDBValidKey[]> {
         return this.request(() => {
             const keys = [...this.keys()];
             this.meters.read += measureBytes(keys);
@@ -369,7 +380,7 @@ class FakeObjectStore {
         });
     }
 
-    put(value: StoredValue, key: string): FakeRequest<undefined> {
+    put(value: StoredValue, key: IDBValidKey): FakeRequest<undefined> {
         // IDB structured-clones the value at `put` time, so a later mutation of
         // the caller's object cannot reach the store.
         const snapshot = structuredClone(value);
@@ -380,7 +391,7 @@ class FakeObjectStore {
         });
     }
 
-    delete(key: string): FakeRequest<undefined> {
+    delete(key: IDBValidKey): FakeRequest<undefined> {
         return this.request(() => {
             this.staged.set(key, null);
             return undefined;
@@ -396,7 +407,7 @@ class FakeObjectStore {
         });
     }
 
-    private keys(): string[] {
+    private keys(): IDBValidKey[] {
         const keys = new Set(this.committed.keys());
         for (const [key, value] of this.staged) {
             if (value === null) {
@@ -408,7 +419,7 @@ class FakeObjectStore {
         return [...keys];
     }
 
-    private read(key: string): StoredValue | null {
+    private read(key: IDBValidKey): StoredValue | null {
         // Reads hand back a structured clone, so mutating a read result cannot
         // reach the store without a `put` that commits.
         const stored = this.staged.has(key) ? this.staged.get(key) : this.committed.get(key);
@@ -460,6 +471,8 @@ export type InstallFakeAudioIndexedDbInput = {
      * creates anything beyond `buffers`.
      */
     existingStores?: readonly string[];
+    /** Leave the v3 recovery migration incomplete so an open must retry it. */
+    pendingLegacyRecoveryMigration?: boolean;
     /**
      * How `open()` behaves when another context holds a connection at the older
      * version (IDB 3.0 §3.3.1).
@@ -477,10 +490,16 @@ export type InstallFakeAudioIndexedDbInput = {
 };
 
 export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput = {}): FakeAudioIndexedDbControls {
-    const committed = new Map<string, StoredAudioBuffer>();
-    const committedMeta = new Map<string, StoredBufferMeta>();
-    const committedRecovery = new Map<string, StoredRecoveryRecord>();
-    const tables: Tables = new Map<string, Map<string, StoredValue>>();
+    const committed = new Map<IDBValidKey, StoredAudioBuffer>();
+    const committedMeta = new Map<IDBValidKey, StoredBufferMeta>();
+    const committedRecovery = new Map<IDBValidKey, StoredRecoveryValue>();
+    if (!input.pendingLegacyRecoveryMigration) {
+        committedRecovery.set(RECOVERY_MIGRATION_MARKER_KEY, {
+            kind: 'prepared-audio-recovery-migration',
+            schemaVersion: 1,
+        });
+    }
+    const tables: Tables = new Map<string, Map<IDBValidKey, StoredValue>>();
     // Both concrete maps are handed to specs by identity, so they are installed
     // as the backing tables rather than copied into them.
     tables.set(BUFFER_STORE, committed);

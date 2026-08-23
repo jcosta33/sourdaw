@@ -35,6 +35,27 @@ export type PreparedAudioBufferRecoveryRecord = PreparedAudioBufferRecoveryMetad
     stagedAtMs: number;
 };
 
+export type PreparedAudioBufferRecoveryMigrationMarker = {
+    kind: 'prepared-audio-recovery-migration';
+    schemaVersion: 1;
+};
+
+export const PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY = 0;
+
+export function preparedAudioRecoveryMigrationMarker(): PreparedAudioBufferRecoveryMigrationMarker {
+    return { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 };
+}
+
+export function isPreparedAudioRecoveryMigrationMarker(
+    value: unknown
+): value is PreparedAudioBufferRecoveryMigrationMarker {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const candidate = value as Record<string, unknown>;
+    return candidate.kind === 'prepared-audio-recovery-migration' && candidate.schemaVersion === 1;
+}
+
 /** Legacy v2 key format, retained only to migrate recovery rows out of ordinary stores. */
 export const PREPARED_AUDIO_RECOVERY_KEY_PREFIX = '\u0000sourdaw-prepared-recovery:';
 

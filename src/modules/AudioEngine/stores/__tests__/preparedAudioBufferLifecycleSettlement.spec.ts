@@ -557,6 +557,35 @@ describe('prepared audio-buffer settlement and recovery', () => {
         }
     );
 
+    it('leaves malformed temporary PCM exact and durable when discard validation fails', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'malformed-temporary-discard';
+        const leaseId = `${id}-lease`;
+        const source = createAudioBuffer({ length: 2, sampleRate: 48_000 });
+        source.getChannelData(0).set([0.375, -0.625]);
+        await audioBufferCache.persistPreparedBuffer({ id, buffer: source, leaseId });
+        clearRuntimeAudioBufferCache();
+        const durablePcm = structuredClone(controls.committed.get(id));
+        const durableMetadata = controls.committedMeta.get(id)!;
+        durableMetadata.lastAccessed = Number.NaN;
+
+        await expect(audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio PCM metadata is invalid.',
+        });
+        expect(controls.committed.get(id)).toEqual(durablePcm);
+        expect(controls.committedMeta.get(id)).toBe(durableMetadata);
+        expect(controls.committedRecovery.has(id)).toBe(false);
+
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({ id, leaseId, context: createTestContext(vi.fn()) })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio metadata does not match its PCM.' });
+        expect([...controls.committed.get(id)!.channelData[0]!]).toEqual([0.375, -0.625]);
+        expect(controls.committedRecovery.has(id)).toBe(false);
+    });
+
     it('reclaims only expired unowned prepared PCM after restart', async () => {
         const controls = installFakeAudioIndexedDb();
         await audioBufferCache.persistPreparedBuffer({
@@ -669,7 +698,11 @@ describe('prepared audio-buffer settlement and recovery', () => {
                 status: 'project-owned',
             },
         });
-        controls.committed.set('legacy-data-only', structuredClone(stored));
+        controls.committed.set('legacy-data-only', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.4])],
+        });
         controls.committedMeta.set('metadata-only', {
             lastAccessed: 1,
             sizeInBytes: 4,
@@ -865,7 +898,14 @@ describe('prepared audio-buffer settlement and recovery', () => {
                 await flushIndexedDbTasks(1);
             }
             expect(controls.committed.get(id)).toEqual(stored);
-            expect(controls.committedMeta.get(id)).toEqual(metadata);
+            expect(controls.committedMeta.get(id)).toEqual(
+                pinTiming === 'after-commit'
+                    ? {
+                          ...metadata,
+                          preparedOwner: { ...metadata.preparedOwner!, status: 'project-owned' },
+                      }
+                    : metadata
+            );
             expect(audioBufferCache.has(id)).toBe(false);
         }
     );
@@ -953,8 +993,10 @@ describe('prepared audio-buffer settlement and recovery', () => {
         }
         controls.releaseNextWriteSettlement();
         const prepared = await recovery;
-        expect(prepared?.publish()).toBe(0);
+        expect(prepared?.publish()).toBe(1);
+        expect(audioBufferCache.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.625);
         expect(controls.committed.get(id)?.channelData[0]?.[0]).toBe(0.625);
+        expect(controls.committedMeta.get(id)?.preparedOwner?.status).toBe('project-owned');
         expect([...controls.committedRecovery.values()].some((recovery) => recovery.id === id)).toBe(false);
         await expect(
             audioBufferCache.reopenPreparedBuffer({
