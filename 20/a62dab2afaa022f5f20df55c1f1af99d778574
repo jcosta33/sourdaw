@@ -1,0 +1,64 @@
+src/modules/Arrangement/useCases/device/runtimeDeviceDeltaPostCommit.ts
+  s_a40848e8f8cca9::t_84b631e978638d 24-29,42-47
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_84b631e978638d 28-33,46-51,177
+src/modules/Command/useCases/createVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_466b4552216ff2 41-44,319-322
+  s_a40848e8f8cca9::t_4b0c03b5ad4a62 36-40,338
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_7a6a7d128f1014 189-204,209-210
+  s_a40848e8f8cca9::t_0504f06f334309 176-188,205-208,211-214
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_a40848e8f8cca9::t_ad87cf17ffdd79 15,518-525,528,541-542,550-559,563-583
+  s_a40848e8f8cca9::t_7a6a7d128f1014 584-607
+  s_a40848e8f8cca9::t_1fd1de304ea0c0 141
+  s_a40848e8f8cca9::t_38a4b4412dc92d 137-140,143
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_42a4fef4b50345 692-693,695-864
+  s_a40848e8f8cca9::t_d9167ea47fc372 8-10,17,19,29,54-102
+  s_a40848e8f8cca9::t_0a41f9d132b17b 694
+  s_a40848e8f8cca9::t_28aea0abb67c2c 155-156
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_13e9a775e4c584 95
+src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_a97516a398f021 24-27,29-46,151-167,172
+  s_a40848e8f8cca9::t_a74c19524aeba3 28,53
+  s_a40848e8f8cca9::t_a30d74f8bdc3ee 168-171
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_93dd4f6500d182 859-860,873-874,876-878,880-882,884,950,952-954,1143-1145,1147-1149,1151-1153,1155,1177-1179,1181-1183,1185-1187
+  s_a40848e8f8cca9::t_36d016be6029bb 65-75,82,104,107,109,980
+  s_a40848e8f8cca9::t_e6fd43d9917147 670,672,677
+  s_a40848e8f8cca9::t_86eea3185fa87e 246-256,258-260,262,264,266,1189
+  s_a40848e8f8cca9::t_c099706f58f8e6 1073,1104
+  s_a40848e8f8cca9::t_1b54b536bc19ff 977-979,1043-1045,1048-1049,1051-1052,1072,1074,1103,1105,1115
+  s_a40848e8f8cca9::t_d2affae8f6afd6 1050,1082,1093,1101,1116-1117,1142,1146,1150,1154,1176,1180,1184,1188
+  s_a40848e8f8cca9::t_668c9d3b64f8fa 257,261,263,265,678-680
+  s_a40848e8f8cca9::t_cc38322c0332b3 60-64,76,98-103,105-106,108,110-119
+  s_a40848e8f8cca9::t_9638fa7b32ffec 857-858,872,875,879,883,951
+  s_a40848e8f8cca9::t_33e48e3a8b5713 120
+  s_a40848e8f8cca9::t_1ae2c8c3591fa5 1190
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_466b4552216ff2 44,50-54
+  s_a40848e8f8cca9::t_7a6a7d128f1014 148
+  s_a40848e8f8cca9::t_90aafaa98cae21 45-49,55,60,134-147,149-169,908,927
+src/modules/Command/useCases/parseStoredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_a74c19524aeba3 18-22,97-100,110-111
+  s_a40848e8f8cca9::t_d26fff0e0ee8ae 101-105,112-114,171,186-189
+  s_a40848e8f8cca9::t_466b4552216ff2 17,23-27,106-109,145,172-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "20a62dab2afaa022f5f20df55c1f1af99d778574",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
