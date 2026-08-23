@@ -1,0 +1,26 @@
+tests/e2e/proofStreamingTargetTestId.spec.ts
+  s_a40848e8f8cca9::t_57ceaf4bd2228f 57-60,62
+  s_a40848e8f8cca9::t_2de90f7767fdbc 53
+  s_a40848e8f8cca9::t_3021ac9b0d489d 44,54-55
+  s_a40848e8f8cca9::t_17bd34c262579e 56,61,63
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_a40848e8f8cca9::t_578ef2f7ff16a4 250-256
+src/modules/Proof/presentations/views/ProofPanel.tsx
+  s_a40848e8f8cca9::t_17bd34c262579e 146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "76ffaeae7bb9b0e0ad5e6622773196a2a2f14f8f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
