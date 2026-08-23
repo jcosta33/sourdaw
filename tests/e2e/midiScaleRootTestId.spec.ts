@@ -45,7 +45,10 @@ async function rootReadout(page: Page): Promise<string> {
 /** True when the option at `index` is the selected (active) option of the root select. */
 async function rootOptionIsActive(page: Page, index: number): Promise<boolean> {
     const select = page.getByTestId('toolbar-scale-root');
-    return select.locator('option').nth(index).evaluate((option: HTMLOptionElement) => option.selected);
+    return select
+        .locator('option')
+        .nth(index)
+        .evaluate((option: HTMLOptionElement) => option.selected);
 }
 
 /**
@@ -54,17 +57,9 @@ async function rootOptionIsActive(page: Page, index: number): Promise<boolean> {
  * function of (scaleType, root) and shifts when the root changes.
  */
 async function visibleKeyNoteNames(page: Page): Promise<Set<string>> {
-    const canvas = page.locator('[aria-label="Piano roll editor"]');
-    const labels = await canvas.evaluate((el) => {
-        const rail = el.parentElement?.querySelector('.daw-side-rail');
-        if (!rail) {
-            return [] as string[];
-        }
-        // First child is the ruler header cell; the rest are key rows.
-        return Array.from(rail.children)
-            .slice(1)
-            .map((row) => row.textContent.trim());
-    });
+    const keyLabels = page.getByText(/^[A-G]#?\d+$/);
+    await expect(keyLabels.first()).toBeVisible();
+    const labels = await keyLabels.allTextContents();
     return new Set(
         labels.map((label) => {
             const match = label.match(/^([A-G]#?)/);
