@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_a40848e8f8cca9::t_7c725065bc24f5 26
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_53127f50feb235 348-389
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_d846fff73fad88 624-629,638
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_0d73b824cdf824 1838-1839
+  s_a40848e8f8cca9::t_2c7959a8e105ad 126,394-398,408,525-529,739-740,1473,1816-1817,1821
+  s_a40848e8f8cca9::t_10041a1921ade7 315,368,616-624,2109,2200,2313
+  s_a40848e8f8cca9::t_28ca293da6b521 82-87
+  s_a40848e8f8cca9::t_cc8fa4d5664c48 743-745
+  s_a40848e8f8cca9::t_e799937b42226e 317-327,329-367,420-422,425,441-447
+  s_a40848e8f8cca9::t_b4767925776de2 28,771
+  s_a40848e8f8cca9::t_b26b2975c542af 227,1257,1567,2107
+  s_a40848e8f8cca9::t_b101afccce688c 238-253,256-314
+  s_a40848e8f8cca9::t_93d91d96b338ca 1157,1574-1575,1579-1587,1596-1597,1599-1607
+  s_a40848e8f8cca9::t_762a55320c569d 1540-1543,1659,1714-1717,1732,1771,1815,1852,1881-1888
+  s_a40848e8f8cca9::t_088d503dfa2dc4 1569-1573,1576-1578,1588-1595
+  s_a40848e8f8cca9::t_ec1fb0c97c2ce9 375-376,379,392-393,399-407,409-415,417-419,423-424,426-427,438-439,475-476,480,523-524,530-534,536-545,550-551,556-560
+  s_a40848e8f8cca9::t_015a988484ebed 316,369-371
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_a08fdbe1f3cea5 9,694-695,729,757,762
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_7c725065bc24f5 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a7c8a75a05093b70f9b40cabc98cc251e16e5d14",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
