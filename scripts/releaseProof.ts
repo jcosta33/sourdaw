@@ -7,11 +7,13 @@ import {
     closeSync,
     cpSync,
     existsSync,
+    lstatSync,
     mkdirSync,
     mkdtempSync,
     openSync,
     readFileSync,
     readdirSync,
+    realpathSync,
     renameSync,
     rmSync,
     statSync,
@@ -22,7 +24,12 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { extractFile, listPackage, statFile } from '@electron/asar';
+import { FuseState, FuseV1Options } from '@electron/fuses';
+
+import { checkReleaseInventory } from './checkReleaseInventory.ts';
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from './electronRuntimeContract.ts';
+import { findFuseMismatches, REQUIRED_FUSES } from './flipElectronFuses.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 const SCHEMA_VERSION = 1;
@@ -31,7 +38,17 @@ const DESKTOP_APP_ROOT = 'Sourdaw.app';
 const DESKTOP_RESOURCE_ROOT = `${DESKTOP_APP_ROOT}/Contents/Resources`;
 const DESKTOP_EXECUTABLE = `${DESKTOP_APP_ROOT}/Contents/MacOS/Sourdaw`;
 const DESKTOP_FRAMEWORK_EXECUTABLE = `${DESKTOP_APP_ROOT}/Contents/Frameworks/Sourdaw Framework.framework/Versions/A/Sourdaw Framework`;
+const DESKTOP_FFMPEG = `${DESKTOP_APP_ROOT}/Contents/Frameworks/Sourdaw Framework.framework/Versions/A/Libraries/libffmpeg.dylib`;
 const DESKTOP_NATIVE_ADDON = `${DESKTOP_RESOURCE_ROOT}/sourdaw-native.node`;
+const DESKTOP_ASAR = `${DESKTOP_RESOURCE_ROOT}/app.asar`;
+const ELECTRON_RUNTIME_FFMPEG =
+    'node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib';
+const FUSE_SENTINEL = Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX');
+const MACH_HEADER_64_SIZE = 32;
+const CPU_TYPE_ARM64 = 0x0100000c;
+const MH_EXECUTE = 0x2;
+const MH_DYLIB = 0x6;
+const MH_BUNDLE = 0x8;
 const SOURCE_REQUIRED_PATHS = [
     'package.json',
     'LICENSE',
@@ -88,6 +105,7 @@ type GitIdentity = {
 
 export type ReleaseBuildPhase = 'web' | 'desktop';
 export type ReleaseBuildRunner = (phase: ReleaseBuildPhase, root: string) => void;
+export type ReleaseGateRunner = (root: string) => void;
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -160,6 +178,26 @@ function candidatePath(root: string, value: unknown, label: string, errors: stri
     return path === undefined ? undefined : resolve(root, ...path.split('/'));
 }
 
+function isContained(root: string, path: string): boolean {
+    const fromRoot = relative(root, path);
+    return fromRoot === '' || (!fromRoot.startsWith(`..${sep}`) && fromRoot !== '..' && !isAbsolute(fromRoot));
+}
+
+function containedRealPath(root: string, path: string, label: string, errors: string[]): string | undefined {
+    try {
+        const realRoot = realpathSync(root);
+        const realPath = realpathSync(path);
+        if (!isContained(realRoot, realPath)) {
+            errors.push(`${label}: path escapes its containing directory`);
+            return undefined;
+        }
+        return realPath;
+    } catch {
+        errors.push(`${label}: path cannot be resolved`);
+        return undefined;
+    }
+}
+
 function verifyFileHash(
     root: string,
     pathValue: unknown,
@@ -175,8 +213,11 @@ function verifyFileHash(
     if (path === undefined || hash === undefined) {
         return undefined;
     }
-    if (!existsSync(path) || !statSync(path).isFile()) {
+    if (!existsSync(path) || !lstatSync(path).isFile()) {
         errors.push(`${label}: file is missing`);
+        return undefined;
+    }
+    if (containedRealPath(root, path, label, errors) === undefined) {
         return undefined;
     }
     if (sha256File(path) !== hash) {
@@ -185,8 +226,8 @@ function verifyFileHash(
     return path;
 }
 
-function listFiles(root: string, label: string, errors: string[]): string[] {
-    if (!existsSync(root) || !statSync(root).isDirectory()) {
+function listFiles(root: string, label: string, errors: string[], allowContainedLinks = false): string[] {
+    if (!existsSync(root) || !lstatSync(root).isDirectory()) {
         errors.push(`${label}: directory is missing`);
         return [];
     }
@@ -194,12 +235,22 @@ function listFiles(root: string, label: string, errors: string[]): string[] {
     const visit = (directory: string): void => {
         for (const entry of readdirSync(directory, { withFileTypes: true })) {
             const child = join(directory, entry.name);
-            if (entry.isDirectory()) {
+            const childPath = relative(root, child).split(sep).join('/');
+            const metadata = lstatSync(child);
+            if (metadata.isSymbolicLink()) {
+                if (!allowContainedLinks) {
+                    errors.push(`${label}: symbolic links are forbidden (${childPath})`);
+                } else {
+                    containedRealPath(root, child, `${label} symbolic link ${childPath}`, errors);
+                }
+            } else if (metadata.isDirectory()) {
                 visit(child);
-            } else if (entry.isFile() || entry.isSymbolicLink()) {
-                files.push(relative(root, child).split(sep).join('/'));
+            } else if (metadata.isFile()) {
+                if (containedRealPath(root, child, `${label} file ${childPath}`, errors) !== undefined) {
+                    files.push(childPath);
+                }
             } else {
-                errors.push(`${label}: unsupported entry ${relative(root, child)}`);
+                errors.push(`${label}: unsupported entry ${childPath}`);
             }
         }
     };
@@ -240,8 +291,10 @@ function verifyFileMap(
     }
     for (const path of recordedPaths) {
         const absolute = resolve(directory, ...path.split('/'));
-        if (!existsSync(absolute) || !statSync(absolute).isFile()) {
+        if (!existsSync(absolute) || !lstatSync(absolute).isFile()) {
             errors.push(`${label}: missing ${path}`);
+        } else if (containedRealPath(directory, absolute, `${label} ${path}`, errors) === undefined) {
+            continue;
         } else if (sha256File(absolute) !== recorded[path]) {
             errors.push(`${label}: digest mismatch for ${path}`);
         }
@@ -253,15 +306,16 @@ function fileMap(directory: string): Record<string, string> {
     const result: Record<string, string> = {};
     for (const path of listFiles(directory, 'contents', errors)) {
         const absolute = resolve(directory, ...path.split('/'));
-        if (!statSync(absolute).isFile()) {
-            throw new Error(`contents contains unsupported link: ${path}`);
-        }
         result[path] = sha256File(absolute);
     }
     if (errors.length > 0) {
         throw new Error(errors.join('\n'));
     }
     return result;
+}
+
+function rendererFileMap(directory: string): Record<string, string> {
+    return Object.fromEntries(Object.entries(fileMap(directory)).filter(([path]) => !path.endsWith('.map')));
 }
 
 function readJsonForValidation(path: string, label: string, errors: string[]): JsonRecord | undefined {
@@ -312,6 +366,89 @@ function archiveHasPath(entries: readonly string[], required: string): boolean {
     return entries.some((entry) => entry === required || entry.endsWith(`/${required}`));
 }
 
+function zipEntryModes(path: string, entries: readonly string[], errors: string[]): string[] {
+    try {
+        const modes = execFileSync('unzip', ['-Z', '-l', path], {
+            encoding: 'utf8',
+            maxBuffer: 64 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'ignore'],
+        })
+            .split('\n')
+            .filter((line) => /^[dl-][rwx-]{9}\s/u.test(line))
+            .map((line) => line.slice(0, 10));
+        if (modes.length !== entries.length) {
+            errors.push('zip archive entry metadata is incomplete');
+            return [];
+        }
+        return modes;
+    } catch {
+        errors.push('zip archive entry metadata is unreadable');
+        return [];
+    }
+}
+
+function zipFileBytes(archive: string, path: string): Buffer | undefined {
+    try {
+        return execFileSync('unzip', ['-p', archive, path], { maxBuffer: 256 * 1024 * 1024 });
+    } catch {
+        return undefined;
+    }
+}
+
+function validateZipLinks(
+    archive: string,
+    entries: readonly string[],
+    label: string,
+    allowContainedLinks: boolean,
+    errors: string[]
+): void {
+    const modes = zipEntryModes(archive, entries, errors);
+    const links = new Map<string, string>();
+    for (const [index, mode] of modes.entries()) {
+        if (!mode.startsWith('l')) {
+            continue;
+        }
+        const entry = entries[index];
+        if (entry === undefined) {
+            continue;
+        }
+        if (!allowContainedLinks) {
+            errors.push(`${label} contains a symbolic link: ${entry}`);
+            continue;
+        }
+        const targetBytes = zipFileBytes(archive, entry);
+        const target = targetBytes?.toString('utf8');
+        if (
+            target === undefined ||
+            target.length === 0 ||
+            target.includes('\0') ||
+            target.includes('\\') ||
+            posix.isAbsolute(target)
+        ) {
+            errors.push(`${label} symbolic link ${entry} has an unsafe target`);
+            continue;
+        }
+        const resolved = posix.normalize(posix.join(posix.dirname(entry), target));
+        if (resolved === '..' || resolved.startsWith('../')) {
+            errors.push(`${label} symbolic link ${entry} escapes the package`);
+            continue;
+        }
+        links.set(entry, resolved);
+    }
+    for (const entry of links.keys()) {
+        const visited = new Set<string>([entry]);
+        let target = links.get(entry);
+        while (target !== undefined && links.has(target)) {
+            if (visited.has(target)) {
+                errors.push(`${label} symbolic link ${entry} forms a cycle`);
+                break;
+            }
+            visited.add(target);
+            target = links.get(target);
+        }
+    }
+}
+
 function extractArchive(path: string, type: 'tar' | 'zip', destination: string): void {
     try {
         if (type === 'tar') {
@@ -322,6 +459,10 @@ function extractArchive(path: string, type: 'tar' | 'zip', destination: string):
     } catch {
         throw new Error(`${type} archive extraction failed`);
     }
+}
+
+function validateExtractedPackage(root: string, errors: string[]): void {
+    listFiles(root, 'desktop extracted package', errors, true);
 }
 
 function commitTree(
@@ -371,8 +512,12 @@ function validateGitArchive(
     try {
         extractArchive(archive, 'tar', temporary);
         const sourceRoot = join(temporary, prefix);
-        if (!existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) {
-            errors.push(`${label} archive root is missing`);
+        if (
+            !existsSync(sourceRoot) ||
+            !lstatSync(sourceRoot).isDirectory() ||
+            containedRealPath(temporary, sourceRoot, `${label} archive root`, errors) === undefined
+        ) {
+            errors.push(`${label} archive root is missing or unsafe`);
             return;
         }
         execFileSync('git', ['init', '--quiet'], { cwd: sourceRoot, stdio: 'ignore' });
@@ -460,6 +605,7 @@ function validateSourceManifest(
 function validateWebArchive(path: string, errors: string[]): void {
     const entries = archiveEntries(path, 'zip', errors);
     validateArchivePaths(entries, 'web archive', errors);
+    validateZipLinks(path, entries, 'web archive', false, errors);
     for (const required of ['index.html', 'web-artifact-manifest.json']) {
         if (!archiveHasPath(entries, required)) {
             errors.push(`web archive is missing ${required}`);
@@ -524,6 +670,18 @@ function validateWebManifest(
         if (!sameValue(archiveFiles, expectedFiles)) {
             errors.push('web archive file census does not match web contents');
         }
+        for (const path of expectedFiles) {
+            const archived = zipFileBytes(archivePath, path);
+            const adjacent = resolve(contentsPath, ...path.split('/'));
+            if (
+                archived === undefined ||
+                !existsSync(adjacent) ||
+                !lstatSync(adjacent).isFile() ||
+                sha256Bytes(archived) !== sha256File(adjacent)
+            ) {
+                errors.push(`web archive bytes do not match web contents for ${path}`);
+            }
+        }
     }
     const contract = readJsonForValidation(resolve(root, 'release/web-artifact-manifest.json'), 'web contract', errors);
     if (
@@ -545,18 +703,121 @@ function validateWebManifest(
     }
 }
 
-function isArm64MachO(path: string): boolean {
-    if (!existsSync(path) || !statSync(path).isFile()) {
-        return false;
+function machOError(path: string, expectedFileType: number): string | undefined {
+    if (!existsSync(path) || !lstatSync(path).isFile()) {
+        return 'file is missing';
     }
     const bytes = readFileSync(path);
-    return bytes.length >= 8 && bytes.readUInt32LE(0) === 0xfeedfacf && bytes.readUInt32LE(4) === 0x0100000c;
+    if (bytes.length < MACH_HEADER_64_SIZE || bytes.readUInt32LE(0) !== 0xfeedfacf) {
+        return 'header is not a thin 64-bit little-endian Mach-O';
+    }
+    if (bytes.readUInt32LE(4) !== CPU_TYPE_ARM64) {
+        return 'CPU type is not arm64';
+    }
+    if (bytes.readUInt32LE(12) !== expectedFileType) {
+        return `file type is not ${String(expectedFileType)}`;
+    }
+    const commandCount = bytes.readUInt32LE(16);
+    const commandBytes = bytes.readUInt32LE(20);
+    const commandEnd = MACH_HEADER_64_SIZE + commandBytes;
+    if (commandCount === 0 || commandBytes === 0 || commandEnd > bytes.length) {
+        return 'load-command table is empty or truncated';
+    }
+    let offset = MACH_HEADER_64_SIZE;
+    for (let index = 0; index < commandCount; index += 1) {
+        if (offset + 8 > commandEnd) {
+            return 'load-command header is truncated';
+        }
+        const command = bytes.readUInt32LE(offset);
+        const commandSize = bytes.readUInt32LE(offset + 4);
+        if (command === 0 || commandSize < 8 || commandSize % 8 !== 0 || offset + commandSize > commandEnd) {
+            return 'load-command table is malformed';
+        }
+        offset += commandSize;
+    }
+    return offset === commandEnd ? undefined : 'load-command byte count does not match the header';
 }
 
-function desktopSnapshot(archive: string): { files: Record<string, string>; archiveSha256: string } {
+function validateMachO(path: string, expectedFileType: number, label: string, errors: string[]): void {
+    const error = machOError(path, expectedFileType);
+    if (error !== undefined) {
+        errors.push(`${label} is not a valid thin arm64 Mach-O ${String(expectedFileType)}: ${error}`);
+    }
+}
+
+function validatePackagedFuses(path: string, errors: string[]): void {
+    if (!existsSync(path) || !lstatSync(path).isFile()) {
+        errors.push('desktop Electron framework fuse wire is missing');
+        return;
+    }
+    const bytes = readFileSync(path);
+    const sentinel = bytes.indexOf(FUSE_SENTINEL);
+    if (sentinel === -1 || bytes.indexOf(FUSE_SENTINEL, sentinel + 1) !== -1) {
+        errors.push('desktop Electron framework must contain exactly one fuse wire');
+        return;
+    }
+    const header = sentinel + FUSE_SENTINEL.length;
+    if (header + 2 > bytes.length || bytes[header] !== 1) {
+        errors.push('desktop Electron framework fuse wire version is invalid');
+        return;
+    }
+    const length = bytes[header + 1] ?? 0;
+    if (length === 0 || header + 2 + length > bytes.length) {
+        errors.push('desktop Electron framework fuse wire is truncated');
+        return;
+    }
+    const wire: Partial<Record<FuseV1Options, FuseState>> = {};
+    for (let index = 0; index < length; index += 1) {
+        wire[index as FuseV1Options] = bytes[header + 2 + index] as FuseState;
+    }
+    const mismatches = findFuseMismatches(wire);
+    if (mismatches.length > 0) {
+        errors.push(`desktop Electron REQUIRED_FUSES mismatch: ${mismatches.join('; ')}`);
+    }
+}
+
+function asarRendererFiles(path: string, errors: string[]): Record<string, string> {
+    const files: Record<string, string> = {};
+    try {
+        for (const archivePath of listPackage(path, { isPack: false })) {
+            const normalized = archivePath.replace(/^\//u, '');
+            if (!normalized.startsWith('dist/')) {
+                continue;
+            }
+            const metadata = statFile(path, normalized, false);
+            if ('files' in metadata) {
+                continue;
+            }
+            if ('link' in metadata || metadata.unpacked) {
+                errors.push(`desktop app.asar renderer contains unsupported entry ${normalized}`);
+                continue;
+            }
+            files[normalized.slice('dist/'.length)] = sha256Bytes(extractFile(path, normalized, false));
+        }
+    } catch (error) {
+        errors.push(
+            `desktop app.asar could not be inspected: ${error instanceof Error ? error.message : String(error)}`
+        );
+    }
+    return Object.fromEntries(Object.entries(files).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+type DesktopSnapshot = {
+    files: Record<string, string>;
+    archiveSha256: string;
+    rendererFiles: Record<string, string>;
+    ffmpegSha256: string;
+};
+
+function requiredFuseClaims(): Record<string, boolean> {
+    return Object.fromEntries([...REQUIRED_FUSES].map(([fuse, enabled]) => [FuseV1Options[fuse], enabled]));
+}
+
+function desktopSnapshot(archive: string): DesktopSnapshot {
     const errors: string[] = [];
     const entries = archiveEntries(archive, 'zip', errors);
     validateArchivePaths(entries, 'desktop archive', errors);
+    validateZipLinks(archive, entries, 'desktop archive', true, errors);
     if (entries.some((entry) => entry !== DESKTOP_APP_ROOT && !entry.startsWith(`${DESKTOP_APP_ROOT}/`))) {
         errors.push('desktop archive must contain exactly one top-level Sourdaw.app');
     }
@@ -564,26 +825,44 @@ function desktopSnapshot(archive: string): { files: Record<string, string>; arch
     try {
         if (errors.length === 0) {
             extractArchive(archive, 'zip', temporary);
+            validateExtractedPackage(temporary, errors);
         }
         const appRoot = join(temporary, DESKTOP_APP_ROOT);
         const infoPlist = join(appRoot, 'Contents/Info.plist');
         const resources = join(appRoot, 'Contents/Resources');
-        if (!existsSync(infoPlist) || !statSync(infoPlist).isFile() || !existsSync(resources)) {
+        if (
+            !existsSync(infoPlist) ||
+            !lstatSync(infoPlist).isFile() ||
+            !existsSync(resources) ||
+            !lstatSync(resources).isDirectory()
+        ) {
             errors.push('desktop archive has an invalid macOS application layout');
         }
-        if (!isArm64MachO(join(temporary, DESKTOP_EXECUTABLE))) {
-            errors.push('desktop application executable is not a thin arm64 Mach-O');
-        }
-        if (!isArm64MachO(join(temporary, DESKTOP_FRAMEWORK_EXECUTABLE))) {
-            errors.push('desktop Electron framework is not a thin arm64 Mach-O');
-        }
-        if (!isArm64MachO(join(temporary, DESKTOP_NATIVE_ADDON))) {
-            errors.push('desktop native addon is not a thin arm64 Mach-O');
+        const executable = join(temporary, DESKTOP_EXECUTABLE);
+        const framework = join(temporary, DESKTOP_FRAMEWORK_EXECUTABLE);
+        const nativeAddon = join(temporary, DESKTOP_NATIVE_ADDON);
+        const ffmpeg = join(temporary, DESKTOP_FFMPEG);
+        validateMachO(executable, MH_EXECUTE, 'desktop application executable', errors);
+        validateMachO(framework, MH_DYLIB, 'desktop Electron framework', errors);
+        validateMachO(nativeAddon, MH_BUNDLE, 'desktop native addon', errors);
+        validateMachO(ffmpeg, MH_DYLIB, 'desktop packaged libffmpeg.dylib', errors);
+        validatePackagedFuses(framework, errors);
+        const rendererFiles = asarRendererFiles(join(temporary, DESKTOP_ASAR), errors);
+        if (
+            !Object.hasOwn(rendererFiles, 'index.html') ||
+            !Object.keys(rendererFiles).some((path) => path.startsWith('assets/'))
+        ) {
+            errors.push('desktop app.asar renderer is missing the application entry or assets');
         }
         if (errors.length > 0) {
             throw new Error(errors.join('\n'));
         }
-        return { files: fileMap(resources), archiveSha256: sha256File(archive) };
+        return {
+            files: fileMap(resources),
+            archiveSha256: sha256File(archive),
+            rendererFiles,
+            ffmpegSha256: sha256File(ffmpeg),
+        };
     } finally {
         rmSync(temporary, { recursive: true, force: true });
     }
@@ -630,7 +909,7 @@ function validateDesktopArchiveContents(
     runtimeContract: ElectronRuntimeContract,
     errors: string[]
 ): void {
-    let snapshot: { files: Record<string, string>; archiveSha256: string } | undefined;
+    let snapshot: DesktopSnapshot | undefined;
     try {
         snapshot = desktopSnapshot(artifact);
     } catch (error) {
@@ -644,6 +923,9 @@ function validateDesktopArchiveContents(
         manifest.executablePath !== DESKTOP_EXECUTABLE ||
         manifest.frameworkExecutablePath !== DESKTOP_FRAMEWORK_EXECUTABLE ||
         manifest.nativeAddonPath !== DESKTOP_NATIVE_ADDON ||
+        manifest.asarPath !== DESKTOP_ASAR ||
+        manifest.packagedFfmpegPath !== DESKTOP_FFMPEG ||
+        manifest.packagedFfmpegSha256 !== snapshot.ffmpegSha256 ||
         manifest.archiveSha256 !== artifactSha256 ||
         snapshot.archiveSha256 !== artifactSha256
     ) {
@@ -661,6 +943,35 @@ function validateDesktopArchiveContents(
     for (const required of ['app.asar', 'sourdaw-native.node']) {
         if (!Object.hasOwn(files, required)) {
             errors.push(`desktop archive resources are missing ${required}`);
+        }
+    }
+
+    const receipt = isRecord(manifest.buildReceipt) ? manifest.buildReceipt : undefined;
+    const electron = receipt !== undefined && isRecord(receipt.electronRuntime) ? receipt.electronRuntime : undefined;
+    const rendererFiles = stringMap(receipt?.rendererFiles, 'desktop build receipt.rendererFiles', errors);
+    if (
+        receipt?.command !== 'pnpm desktop:build' ||
+        receipt.sourceRevision !== manifest.sourceRevision ||
+        receipt.rendererOutput !== 'dist' ||
+        !sameValue(receipt.fuses, requiredFuseClaims()) ||
+        electron?.revision !== runtimeContract.revision ||
+        electron.ffmpegPath !== ELECTRON_RUNTIME_FFMPEG ||
+        electron.ffmpegSha256 !== snapshot.ffmpegSha256 ||
+        !sameValue(rendererFiles, snapshot.rendererFiles)
+    ) {
+        errors.push('desktop build receipt does not match the packaged renderer and Electron runtime');
+    }
+    const runtimeFfmpeg = resolve(root, ...ELECTRON_RUNTIME_FFMPEG.split('/'));
+    if (!existsSync(runtimeFfmpeg) || !lstatSync(runtimeFfmpeg).isFile()) {
+        errors.push('installed Electron runtime libffmpeg.dylib is missing');
+    } else {
+        validateMachO(runtimeFfmpeg, MH_DYLIB, 'installed Electron runtime libffmpeg.dylib', errors);
+        if (
+            containedRealPath(root, runtimeFfmpeg, 'installed Electron runtime libffmpeg.dylib', errors) ===
+                undefined ||
+            sha256File(runtimeFfmpeg) !== snapshot.ffmpegSha256
+        ) {
+            errors.push('packaged libffmpeg.dylib does not match the installed Electron runtime used by desktop:build');
         }
     }
 
@@ -1034,11 +1345,20 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     if (!/^[0-9a-f]{40}$/u.test(options.expectedRevision)) {
         errors.push('expected revision must be a 40-character Git SHA');
     }
-    if (!existsSync(options.candidate) || !statSync(options.candidate).isDirectory()) {
+    if (!existsSync(options.candidate) || !lstatSync(options.candidate).isDirectory()) {
         errors.push('release proof candidate directory is missing');
         return errors;
     }
-    const proof = readJsonForValidation(resolve(options.candidate, PROOF_FILE), PROOF_FILE, errors);
+    const proofPath = resolve(options.candidate, PROOF_FILE);
+    if (
+        !existsSync(proofPath) ||
+        !lstatSync(proofPath).isFile() ||
+        containedRealPath(options.candidate, proofPath, PROOF_FILE, errors) === undefined
+    ) {
+        errors.push(`${PROOF_FILE}: file is missing or unsafe`);
+        return errors;
+    }
+    const proof = readJsonForValidation(proofPath, PROOF_FILE, errors);
     if (proof === undefined) {
         return errors;
     }
@@ -1242,7 +1562,7 @@ function runProjectBuild(phase: ReleaseBuildPhase, root: string): void {
 
 function selectDesktopArtifact(root: string): string {
     const directory = resolve(root, 'release/desktop');
-    if (!existsSync(directory) || !statSync(directory).isDirectory()) {
+    if (!existsSync(directory) || !lstatSync(directory).isDirectory()) {
         throw new Error('desktop build produced no release directory');
     }
     const zipFiles = readdirSync(directory, { withFileTypes: true })
@@ -1268,7 +1588,8 @@ export function assembleReleaseProof(
     electronSource: string,
     ffmpegSource: string,
     runtimeContract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT,
-    buildRunner: ReleaseBuildRunner = runProjectBuild
+    buildRunner: ReleaseBuildRunner = runProjectBuild,
+    releaseGate: ReleaseGateRunner = checkReleaseInventory
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
@@ -1309,10 +1630,14 @@ export function assembleReleaseProof(
         buildRunner('web', root);
         assertBuildState(root, revision);
         const webDist = resolve(root, 'dist');
-        if (!existsSync(webDist) || !statSync(webDist).isDirectory()) {
+        if (!existsSync(webDist) || !lstatSync(webDist).isDirectory()) {
             throw new Error('web build produced no dist directory');
         }
+        const webBuildFiles = fileMap(webDist);
         copyDirectory(webDist, webContents);
+        if (!sameValue(fileMap(webContents), webBuildFiles)) {
+            throw new Error('copied web contents do not match the exact web build dist');
+        }
         const webManifest = join(webContents, 'web-artifact-manifest.json');
         writeJson(webManifest, {
             schemaVersion: SCHEMA_VERSION,
@@ -1327,11 +1652,30 @@ export function assembleReleaseProof(
         clearDesktopBuildOutputs(root);
         buildRunner('desktop', root);
         assertBuildState(root, revision);
+        const desktopDist = resolve(root, 'dist');
+        if (!existsSync(desktopDist) || !lstatSync(desktopDist).isDirectory()) {
+            throw new Error('desktop build produced no renderer dist directory');
+        }
+        const rendererFiles = rendererFileMap(desktopDist);
         const desktopArtifact = selectDesktopArtifact(root);
         const artifactName = basename(desktopArtifact);
         const desktopArtifactOut = join(desktopDir, artifactName);
         cpSync(desktopArtifact, desktopArtifactOut);
         const desktop = desktopSnapshot(desktopArtifactOut);
+        if (!sameValue(desktop.rendererFiles, rendererFiles)) {
+            throw new Error('packaged app.asar renderer does not match the exact desktop build dist');
+        }
+        const runtimeFfmpeg = resolve(root, ...ELECTRON_RUNTIME_FFMPEG.split('/'));
+        const runtimeFfmpegError = machOError(runtimeFfmpeg, MH_DYLIB);
+        if (runtimeFfmpegError !== undefined) {
+            throw new Error(`installed Electron runtime libffmpeg.dylib is invalid: ${runtimeFfmpegError}`);
+        }
+        const runtimeFfmpegSha256 = sha256File(runtimeFfmpeg);
+        if (runtimeFfmpegSha256 !== desktop.ffmpegSha256) {
+            throw new Error(
+                'packaged libffmpeg.dylib does not match the installed Electron runtime used by desktop:build'
+            );
+        }
         const runtimeManifest = join(desktopDir, 'ELECTRON-SOURCES.json');
         cpSync(resolve(root, 'public/legal/ELECTRON-SOURCES.json'), runtimeManifest);
         const contentsManifest = join(desktopDir, 'desktop-contents-manifest.json');
@@ -1344,6 +1688,21 @@ export function assembleReleaseProof(
             executablePath: DESKTOP_EXECUTABLE,
             frameworkExecutablePath: DESKTOP_FRAMEWORK_EXECUTABLE,
             nativeAddonPath: DESKTOP_NATIVE_ADDON,
+            asarPath: DESKTOP_ASAR,
+            packagedFfmpegPath: DESKTOP_FFMPEG,
+            packagedFfmpegSha256: desktop.ffmpegSha256,
+            buildReceipt: {
+                command: 'pnpm desktop:build',
+                sourceRevision: revision,
+                rendererOutput: 'dist',
+                rendererFiles,
+                fuses: requiredFuseClaims(),
+                electronRuntime: {
+                    revision: runtimeContract.revision,
+                    ffmpegPath: ELECTRON_RUNTIME_FFMPEG,
+                    ffmpegSha256: runtimeFfmpegSha256,
+                },
+            },
             files: desktop.files,
         });
 
@@ -1449,6 +1808,8 @@ export function assembleReleaseProof(
         if (errors.length > 0) {
             throw new Error(errors.join('\n'));
         }
+        assertBuildState(root, revision);
+        releaseGate(root);
         assertBuildState(root, revision);
         renameSync(candidate, output);
     } catch (error) {

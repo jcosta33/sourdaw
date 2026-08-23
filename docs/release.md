@@ -31,13 +31,17 @@ identify the macOS arm64 release target and `libffmpeg.dylib` output.
 Validate the complete candidate from the same Sourdaw revision:
 
 ```sh
-pnpm release:proof -- --candidate <candidate-directory>
+pnpm guard --profile extended --max-rss-mib 6144 --require-target -- \
+  pnpm release:proof -- --candidate <candidate-directory>
 ```
 
 Validation fails when any manifest is malformed or stale; an artifact,
 archive, commit object, source tree, build input, notice, or legal file is
 missing or changed; material is not adjacent to the desktop ZIP; the package
 layout or architecture is wrong; or source, web, and desktop evidence does not
-bind to the same revision. Unreferenced files also fail the candidate's closed
-file census. The release inventory, Electron provenance, LGPL
-provenance, and project-license checks remain required release gates.
+bind to the same revision. It also verifies the packaged Electron fuses,
+`libffmpeg.dylib`, and `app.asar` renderer against the exact installed runtime
+and renderer output used by the in-process desktop build. Unreferenced files
+also fail the candidate's closed file census. The aggregate release inventory,
+Electron provenance, LGPL provenance, and project-license gate runs for the
+same unchanged revision before the candidate directory is published.
