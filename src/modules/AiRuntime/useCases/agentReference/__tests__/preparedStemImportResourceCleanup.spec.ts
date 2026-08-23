@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    cancelDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'cancelled' }),
+    commitDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'committed' }),
     completeDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
+    completeDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
     prepareDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
+    prepareDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
     releaseDurableStagedAsset: vi.fn().mockResolvedValue({ status: 'released' }),
     releasePreviewAudioBuffer: vi.fn(),
     releaseStagedAsset: vi.fn(),
+    transitionDurablePromotionRecoveryToCleanup: vi.fn().mockResolvedValue({ status: 'prepared' }),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -13,14 +18,20 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
+        cancelDurablePromotionRecovery: mocks.cancelDurablePromotionRecovery,
+        commitDurablePromotionRecovery: mocks.commitDurablePromotionRecovery,
         completeDurableCleanupRecovery: mocks.completeDurableCleanupRecovery,
+        completeDurablePromotionRecovery: mocks.completeDurablePromotionRecovery,
         prepareDurableCleanupRecovery: mocks.prepareDurableCleanupRecovery,
+        prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
         releaseDurableStagedAsset: mocks.releaseDurableStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,
+        transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
     }),
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { agentRunCancellation } from '../../cancelAgentRun';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
 import { createStemImportConfirmationResourceLease } from '../createStemImportConfirmationResourceLease';
 import { preparedStemImportCleanup } from '../discardPreparedStemImportResources';
@@ -103,6 +114,62 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
+    it('makes prepared promotion executable only after the confirmation supplies commit proof', async () => {
+        const lease = createStemImportConfirmationResourceLease(
+            [{ type: 'importStemSet', payload: { stems } }] as never,
+            'stem-promotion:receipt-bound'
+        );
+
+        await lease?.prepareForCommit?.();
+        expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+
+        await lease?.commit?.();
+        await lease?.retain?.();
+
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound', [
+            { leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' },
+        ]);
+        expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound');
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound');
+        expect(mocks.prepareDurablePromotionRecovery.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.commitDurablePromotionRecovery.mock.invocationCallOrder[0]!
+        );
+        expect(mocks.commitDurablePromotionRecovery.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.completeDurablePromotionRecovery.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('uses one cleanup owner when run cancellation races confirmation cancellation', async () => {
+        agentRunLifecycle.create({
+            runId: 'stem-concurrent-cancel',
+            request: 'Import stems.',
+            mode: 'plan',
+            createdRevision: 'r1',
+        });
+        preparedStemImportResources.register({ runId: 'stem-concurrent-cancel', stems });
+        const lease = createStemImportConfirmationResourceLease(
+            [{ type: 'importStemSet', payload: { stems } }] as never,
+            'stem-promotion:concurrent-cancel',
+            'stem-concurrent-cancel'
+        );
+        await lease?.prepareForCommit?.();
+
+        await Promise.all([
+            agentRunCancellation.cancel({ runId: 'stem-concurrent-cancel', reason: 'User cancelled.' }),
+            lease?.release(),
+        ]);
+        await vi.waitFor(() => expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalled());
+
+        expect(mocks.prepareDurableCleanupRecovery).not.toHaveBeenCalled();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).toHaveBeenCalledExactlyOnceWith(
+            'stem-promotion:concurrent-cancel',
+            [{ leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' }]
+        );
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get('stem-concurrent-cancel')?.temporaryAssets).toEqual([]);
+    });
+
     it('persists exact cleanup ownership before a best-effort terminal path may swallow release failure', async () => {
         mocks.completeDurableCleanupRecovery.mockResolvedValueOnce({
             status: 'failed',
@@ -115,5 +182,31 @@ describe('prepared stem import resource cleanup', () => {
             { leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' },
         ]);
         expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith('stem-cleanup:["staged-asset-1"]');
+    });
+
+    it('does not swallow failure to acquire durable cleanup ownership', async () => {
+        mocks.prepareDurableCleanupRecovery.mockResolvedValueOnce({
+            status: 'failed',
+            reason: 'owner-handoff-conflict',
+        });
+
+        await expect(preparedStemImportCleanup.discardBestEffort(stems)).rejects.toThrow(
+            'Could not preserve prepared stem cleanup'
+        );
+
+        expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
+    });
+
+    it('preserves the primary failure when durable cleanup ownership cannot be acquired', async () => {
+        mocks.prepareDurableCleanupRecovery.mockResolvedValueOnce({
+            status: 'failed',
+            reason: 'owner-handoff-conflict',
+        });
+        const primary = new Error('stem decoding failed');
+
+        const result = preparedStemImportCleanup.discardBestEffort(stems, undefined, primary);
+
+        await expect(result).rejects.toThrow('stem decoding failed');
+        await expect(result).rejects.toMatchObject({ errors: [primary, expect.any(Error)] });
     });
 });

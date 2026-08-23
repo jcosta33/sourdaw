@@ -312,6 +312,8 @@ class FakeObjectStore {
             candidate = value.previousOwnerId;
         } else if (this.storeName === 'promotionRecoveries') {
             candidate = value.recoveryId;
+        } else if (this.storeName === 'ownerAuthorities') {
+            candidate = value.ownerId;
         }
         if (typeof candidate !== 'string') {
             throw new DOMException('The record has no supported key', 'DataError');

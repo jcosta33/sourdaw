@@ -10,6 +10,7 @@ export type {
     DurableAssetFailure,
     DurableAssetRepository,
     CancelDurableAssetPromotionRecoveryResult,
+    CommitDurableAssetPromotionRecoveryResult,
     CompleteDurableAssetPromotionRecoveryResult,
     CompleteDurableAssetCleanupRecoveryResult,
     PromoteStagedAssetResult,

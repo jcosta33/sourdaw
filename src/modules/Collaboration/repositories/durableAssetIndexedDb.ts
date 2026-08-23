@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sourdaw-collaboration-original-assets';
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 export const ASSET_STORE = 'assets';
 export const LEASE_STORE = 'leases';
 export const ASSET_OWNER_INDEX = 'by-owner';
@@ -7,12 +7,14 @@ export const ASSET_LEASE_OWNER_INDEX = 'by-lease-owner';
 export const LEASE_OWNER_INDEX = 'by-owner';
 export const OWNER_HANDOFF_STORE = 'ownerHandoffs';
 export const OWNER_HANDOFF_TARGET_INDEX = 'by-next-owner';
+export const OWNER_AUTHORITY_STORE = 'ownerAuthorities';
 export const PROMOTION_RECOVERY_STORE = 'promotionRecoveries';
 export const PROMOTION_RECOVERY_OWNER_INDEX = 'by-owner';
 export const PROMOTION_RECOVERY_LEASE_INDEX = 'by-lease';
 export const RECORD_SCHEMA_VERSION = 2;
 export const OWNER_HANDOFF_SCHEMA_VERSION = 1;
 export const PROMOTION_RECOVERY_SCHEMA_VERSION = 1;
+export const OWNER_AUTHORITY_SCHEMA_VERSION = 1;
 
 export type LeaseState = 'staged' | 'promoted' | 'released';
 export type ActiveLease = { leaseId: string; ownerId: string };
@@ -39,6 +41,12 @@ export type OwnerHandoffRecord = {
     nextOwnerId: string;
     preparedAt: number;
 };
+export type OwnerAuthorityRecord = {
+    schemaVersion: typeof OWNER_AUTHORITY_SCHEMA_VERSION;
+    ownerId: string;
+    canonicalOwnerId: string;
+    epoch: number;
+};
 export type PromotionRecoveryRecord = {
     schemaVersion: typeof PROMOTION_RECOVERY_SCHEMA_VERSION;
     recoveryId: string;
@@ -46,6 +54,7 @@ export type PromotionRecoveryRecord = {
     leaseIds: string[];
     bindings: Array<{ leaseId: string; expectedHash: string }>;
     disposition?: 'promote' | 'release';
+    promotionState?: 'prepared' | 'committed';
     preparedAt: number;
 };
 
@@ -132,6 +141,9 @@ function ensureIndexes(request: IDBOpenDBRequest, oldVersion: number): void {
         : database.createObjectStore(OWNER_HANDOFF_STORE, { keyPath: 'previousOwnerId' });
     if (!handoffStore.indexNames.contains(OWNER_HANDOFF_TARGET_INDEX)) {
         handoffStore.createIndex(OWNER_HANDOFF_TARGET_INDEX, 'nextOwnerId');
+    }
+    if (!database.objectStoreNames.contains(OWNER_AUTHORITY_STORE)) {
+        database.createObjectStore(OWNER_AUTHORITY_STORE, { keyPath: 'ownerId' });
     }
     const promotionRecoveryStore = database.objectStoreNames.contains(PROMOTION_RECOVERY_STORE)
         ? request.transaction!.objectStore(PROMOTION_RECOVERY_STORE)
@@ -265,6 +277,23 @@ function isOwnerHandoffRecord(value: unknown): value is OwnerHandoffRecord {
     );
 }
 
+function isOwnerAuthorityRecord(value: unknown): value is OwnerAuthorityRecord {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return (
+        record.schemaVersion === OWNER_AUTHORITY_SCHEMA_VERSION &&
+        typeof record.ownerId === 'string' &&
+        record.ownerId.length > 0 &&
+        typeof record.canonicalOwnerId === 'string' &&
+        record.canonicalOwnerId.length > 0 &&
+        typeof record.epoch === 'number' &&
+        Number.isSafeInteger(record.epoch) &&
+        record.epoch >= 0
+    );
+}
+
 function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRecord {
     if (typeof value !== 'object' || value === null) {
         return false;
@@ -284,6 +313,10 @@ function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRe
         !Array.isArray(record.bindings) ||
         record.bindings.length === 0 ||
         (record.disposition !== undefined && record.disposition !== 'promote' && record.disposition !== 'release') ||
+        (record.promotionState !== undefined &&
+            record.promotionState !== 'prepared' &&
+            record.promotionState !== 'committed') ||
+        (record.disposition === 'release' && record.promotionState !== undefined) ||
         typeof record.preparedAt !== 'number' ||
         !Number.isSafeInteger(record.preparedAt)
     ) {
@@ -319,6 +352,7 @@ export function createDurableAssetIndexedDb() {
         hashBlob,
         isAssetRecord,
         isLeaseRecord,
+        isOwnerAuthorityRecord,
         isOwnerHandoffRecord,
         isPromotionRecoveryRecord,
         openDurableAssetDatabase,

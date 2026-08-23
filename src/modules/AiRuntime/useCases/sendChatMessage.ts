@@ -858,7 +858,8 @@ export async function sendChatMessage(
                         projectRevision,
                         resourceLease: createStemImportConfirmationResourceLease(
                             result.actions,
-                            `stem-promotion:${confirmationId}`
+                            `stem-promotion:${confirmationId}`,
+                            runId
                         ),
                     });
                     if (!confirmation) {

@@ -146,6 +146,7 @@ const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 type PendingActionResourceLease = {
     bytes: number;
     prepareForCommit?: () => void | Promise<void>;
+    commit?: () => void | Promise<void>;
     release: () => void | Promise<void>;
     retain?: () => void | Promise<void>;
 };
@@ -459,6 +460,11 @@ export function clearPendingActionConfirmations(): void {
 /** Persist resource recovery ownership before the project command may commit. */
 export async function preparePendingActionResourceLeaseForCommit(confirmationId: string): Promise<void> {
     await pendingActionResourceLeases.get(confirmationId)?.prepareForCommit?.();
+}
+
+/** Mark a prepared resource recovery executable only after the command produced a verified commit receipt. */
+export async function commitPendingActionResourceLease(confirmationId: string): Promise<void> {
+    await pendingActionResourceLeases.get(confirmationId)?.commit?.();
 }
 
 type SettlePendingActionResourceLeaseInput = {

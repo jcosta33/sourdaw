@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    commitPendingActionResourceLease,
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
@@ -288,6 +289,7 @@ describe('pendingActionConfirmationStore', () => {
     });
 
     it('hands a committed resource lease to its durable recovery owner before forgetting it', async () => {
+        const commit = vi.fn();
         const release = vi.fn();
         const retain = vi.fn().mockRejectedValue(new Error('promotion remains pending'));
         proposePendingActionConfirmation({
@@ -297,8 +299,10 @@ describe('pendingActionConfirmationStore', () => {
             actions: [{ type: 'createBus', payload: { name: 'Recovery', busId: 'bus-recovery' } }],
             actionLabels: ['Recovery'],
             projectRevision: 'revision-promotion-recovery',
-            resourceLease: { bytes: 1, release, retain },
+            resourceLease: { bytes: 1, commit, release, retain },
         });
+
+        await commitPendingActionResourceLease('confirmation-promotion-recovery');
 
         await expect(
             settlePendingActionResourceLeaseBestEffort({
@@ -308,6 +312,7 @@ describe('pendingActionConfirmationStore', () => {
         ).resolves.toBeUndefined();
         clearPendingActionConfirmations();
 
+        expect(commit).toHaveBeenCalledOnce();
         expect(retain).toHaveBeenCalledOnce();
         expect(release).not.toHaveBeenCalled();
     });

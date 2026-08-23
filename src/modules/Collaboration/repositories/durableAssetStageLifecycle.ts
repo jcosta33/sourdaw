@@ -1,9 +1,12 @@
 import {
     ASSET_STORE,
     LEASE_STORE,
+    OWNER_AUTHORITY_SCHEMA_VERSION,
+    OWNER_AUTHORITY_STORE,
     RECORD_SCHEMA_VERSION,
     type AssetRecord,
     type LeaseRecord,
+    type OwnerAuthorityRecord,
 } from './durableAssetIndexedDb';
 import { createDurableAssetReceiptRetention } from './durableAssetReceiptRetention';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
@@ -17,14 +20,24 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
         async stageAsset(leaseId: string, blob: Blob, name: string) {
             const hash = await records.hashBlob(blob);
             const database = await records.openDurableAssetDatabase();
-            const transaction = database.transaction([ASSET_STORE, LEASE_STORE], 'readwrite');
+            const transaction = database.transaction([ASSET_STORE, LEASE_STORE, OWNER_AUTHORITY_STORE], 'readwrite');
             const completion = records.awaitTransaction(transaction);
             const assetStore = transaction.objectStore(ASSET_STORE);
             const leaseStore = transaction.objectStore(LEASE_STORE);
-            const [existingAsset, existingLease] = await Promise.all([
+            const authorityStore = transaction.objectStore(OWNER_AUTHORITY_STORE);
+            const [existingAsset, existingLease, authorityValue] = await Promise.all([
                 records.readStoredValue(assetStore, hash),
                 records.readStoredValue(leaseStore, leaseId),
+                records.readStoredValue(authorityStore, ownerId),
             ]);
+            if (
+                authorityValue !== undefined &&
+                (!records.isOwnerAuthorityRecord(authorityValue) || authorityValue.canonicalOwnerId !== ownerId)
+            ) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                throw new Error(`Collaboration asset owner authority moved: ${ownerId}`);
+            }
             if (existingAsset !== undefined && !records.isAssetRecord(existingAsset)) {
                 await completion;
                 throw new Error(`Collaboration asset record is corrupt: ${hash}`);
@@ -52,6 +65,14 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                     : [...activeLeases, { leaseId, ownerId }],
             };
             assetStore.put(record);
+            if (authorityValue === undefined) {
+                authorityStore.put({
+                    schemaVersion: OWNER_AUTHORITY_SCHEMA_VERSION,
+                    ownerId,
+                    canonicalOwnerId: ownerId,
+                    epoch: 0,
+                } satisfies OwnerAuthorityRecord);
+            }
             leaseStore.put({
                 schemaVersion: RECORD_SCHEMA_VERSION,
                 leaseId,

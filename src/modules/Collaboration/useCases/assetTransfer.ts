@@ -15,6 +15,7 @@ import {
     type PeerMessage,
 } from '../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../models/SyncChannelConstants';
+import { durableAssetOwnerResolution } from '../repositories/durableAssetOwnerResolution';
 import {
     createDurableAssetRepository,
     type DurableAssetRepository,
@@ -367,37 +368,51 @@ export class AssetTransfer {
 
     /** Persist exact committed-asset promotion ownership before the project transaction starts. */
     async prepareDurablePromotionRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
-        return this.runOwnerOperation((durableAssets) => durableAssets.preparePromotionRecovery(recoveryId, bindings), {
-            resumeRecoveries: false,
-        });
+        return this.runBindingOwnerOperation(bindings, (durableAssets) =>
+            durableAssets.preparePromotionRecovery(recoveryId, bindings)
+        );
+    }
+
+    /** Make a prepared promotion restart-executable after the command returns durable commit proof. */
+    async commitDurablePromotionRecovery(recoveryId: string) {
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.commitPromotionRecovery(recoveryId)
+        );
     }
 
     /** Prove every committed lease promoted before retiring its durable recovery journal. */
     async completeDurablePromotionRecovery(recoveryId: string) {
-        return this.runOwnerOperation((durableAssets) => durableAssets.completePromotionRecovery(recoveryId), {
-            resumeRecoveries: false,
-        });
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.completePromotionRecovery(recoveryId)
+        );
     }
 
     /** Retire a pre-commit recovery claim before releasing its staged leases. */
     async cancelDurablePromotionRecovery(recoveryId: string) {
-        return this.runOwnerOperation((durableAssets) => durableAssets.cancelPromotionRecovery(recoveryId), {
-            resumeRecoveries: false,
-        });
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.cancelPromotionRecovery(recoveryId)
+        );
     }
 
     /** Persist exact staged-asset cleanup ownership before a terminal caller may disappear. */
     async prepareDurableCleanupRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
-        return this.runOwnerOperation((durableAssets) => durableAssets.prepareCleanupRecovery(recoveryId, bindings), {
-            resumeRecoveries: false,
-        });
+        return this.runBindingOwnerOperation(bindings, (durableAssets) =>
+            durableAssets.prepareCleanupRecovery(recoveryId, bindings)
+        );
+    }
+
+    /** Atomically replace a pre-commit promotion claim with exact restart-safe cleanup ownership. */
+    async transitionDurablePromotionRecoveryToCleanup(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
+        return this.runBindingOwnerOperation(bindings, (durableAssets) =>
+            durableAssets.transitionPromotionRecoveryToCleanup(recoveryId, bindings)
+        );
     }
 
     /** Release every cleanup-owned lease and retire its journal atomically. */
     async completeDurableCleanupRecovery(recoveryId: string) {
-        return this.runOwnerOperation((durableAssets) => durableAssets.completeCleanupRecovery(recoveryId), {
-            resumeRecoveries: false,
-        });
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.completeCleanupRecovery(recoveryId)
+        );
     }
 
     /** Release this project identity's durable reference without affecting another project. */
@@ -413,6 +428,10 @@ export class AssetTransfer {
                 return current;
             }
             for (const source of this.durableOwnerHandoffSources.values()) {
+                const incoming = await source.resumeOwnerRebinds();
+                if (incoming.status === 'failed') {
+                    return incoming;
+                }
                 const prepared = await source.prepareOwnerRebind(nextOwnerId);
                 if (prepared.status === 'failed') {
                     return prepared;
@@ -495,6 +514,44 @@ export class AssetTransfer {
             () => undefined
         );
         return task;
+    }
+
+    private runBindingOwnerOperation<Result>(
+        bindings: readonly StagedAssetBinding[],
+        operation: (durableAssets: DurableAssetRepository) => Promise<Result>
+    ) {
+        return this.runOwnerOperation(
+            async (current) => {
+                const resolved = await durableAssetOwnerResolution.binding(bindings);
+                if (resolved.status === 'failed') {
+                    return resolved;
+                }
+                return operation(
+                    resolved.ownerId === this.ownerId ? current : createDurableAssetRepository(resolved.ownerId)
+                );
+            },
+            { resumeRecoveries: false }
+        );
+    }
+
+    private runRecoveryOwnerOperation<Result>(
+        recoveryId: string,
+        operation: (durableAssets: DurableAssetRepository) => Promise<Result>
+    ) {
+        return this.runOwnerOperation(
+            async (current) => {
+                const resolved = await durableAssetOwnerResolution.recovery(recoveryId);
+                if (resolved.status === 'failed') {
+                    return resolved;
+                }
+                return operation(
+                    resolved.status === 'missing' || resolved.ownerId === this.ownerId
+                        ? current
+                        : createDurableAssetRepository(resolved.ownerId)
+                );
+            },
+            { resumeRecoveries: false }
+        );
     }
 
     /** Check if an asset is available locally. */

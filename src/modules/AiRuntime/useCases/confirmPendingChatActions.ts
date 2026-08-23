@@ -23,6 +23,7 @@ import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
 import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
 import {
+    commitPendingActionResourceLease,
     getPendingActionConfirmation,
     preparePendingActionResourceLeaseForCommit,
     recordPendingActionExecution,
@@ -85,6 +86,15 @@ async function settlePendingActionResourcesBestEffort(input: {
     disposition: 'discard' | 'retain';
 }): Promise<void> {
     await settlePendingActionResourceLeaseBestEffort(input);
+}
+
+async function retainCommittedPendingActionResources(confirmationId: string): Promise<void> {
+    try {
+        await commitPendingActionResourceLease(confirmationId);
+    } catch (error) {
+        logger.error(new Error('Committed resource recovery could not be made executable', { cause: error }));
+    }
+    await settlePendingActionResourcesBestEffort({ confirmationId, disposition: 'retain' });
 }
 
 function getVerifiedReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
@@ -219,7 +229,7 @@ async function settleVerifiedBatchReplay(
             completesRun: leaseSettlement.accepted,
         });
         const runPersistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
-        await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'retain' });
+        await retainCommittedPendingActionResources(confirmation.id);
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'executed',
@@ -250,7 +260,7 @@ async function settleVerifiedBatchReplay(
             });
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'retain' });
+        await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -908,7 +918,7 @@ export async function confirmPendingChatActions(
         ]
             .filter(Boolean)
             .join(' ');
-        await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'retain' });
+        await retainCommittedPendingActionResources(confirmation.id);
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {
@@ -1038,7 +1048,7 @@ export async function confirmPendingChatActions(
             }
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'retain' });
+        await settlePendingActionResourcesBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',

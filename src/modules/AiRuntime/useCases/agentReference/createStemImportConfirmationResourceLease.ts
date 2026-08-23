@@ -3,10 +3,12 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 
 import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
+import { preparedStemImportResources } from './registerPreparedStemImportResources';
 
 export function createStemImportConfirmationResourceLease(
     actions: readonly ExecutableRuntimeAction[],
-    recoveryId?: string
+    recoveryId?: string,
+    runId?: string
 ) {
     const stems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
     if (stems.length === 0) {
@@ -21,6 +23,9 @@ export function createStemImportConfirmationResourceLease(
         }
         return { leaseId: stem.assetLeaseId, expectedHash: stem.assetHash };
     });
+    if (runId) {
+        preparedStemImportResources.release({ runId, stems });
+    }
     return {
         bytes: stems.reduce((total, stem) => total + stem.sourceBytes + stem.decodedBytes, 0),
         prepareForCommit: recoveryId
@@ -35,29 +40,31 @@ export function createStemImportConfirmationResourceLease(
                   }
               }
             : undefined,
+        commit: recoveryId
+            ? async () => {
+                  const transfer = getAssetTransfer();
+                  if (!transfer) {
+                      throw new Error('Asset transfer is unavailable for committed stem promotion recovery');
+                  }
+                  const committed = await transfer.commitDurablePromotionRecovery(recoveryId);
+                  if (committed.status === 'failed') {
+                      throw new Error(`Could not commit stem promotion recovery: ${committed.reason}`);
+                  }
+              }
+            : undefined,
         release: async () => {
             if (released) {
                 return;
             }
             releaseInFlight ??= (async () => {
-                if (recoveryId) {
-                    const transfer = getAssetTransfer();
-                    if (!transfer) {
-                        throw new Error('Asset transfer is unavailable for stem promotion recovery cancellation');
-                    }
-                    const cancelled = await transfer.cancelDurablePromotionRecovery(recoveryId);
-                    if (cancelled.status === 'failed') {
-                        throw new Error(`Could not cancel committed stem promotion recovery: ${cancelled.reason}`);
-                    }
-                }
-                await preparedStemImportCleanup.discard(stems);
+                await preparedStemImportCleanup.discard(stems, recoveryId);
                 released = true;
             })().finally(() => {
                 releaseInFlight = null;
             });
             await releaseInFlight;
         },
-        releaseBestEffort: () => preparedStemImportCleanup.discardBestEffort(stems),
+        releaseBestEffort: () => preparedStemImportCleanup.discardBestEffort(stems, recoveryId),
         retain: recoveryId
             ? async () => {
                   const transfer = getAssetTransfer();

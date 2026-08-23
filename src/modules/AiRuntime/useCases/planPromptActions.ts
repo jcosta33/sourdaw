@@ -188,7 +188,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         }
     } catch (error) {
         if (stemImportScope) {
-            await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems);
+            await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems, undefined, error);
         }
         let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
         if (error instanceof AiProposalInvalidatedError) {

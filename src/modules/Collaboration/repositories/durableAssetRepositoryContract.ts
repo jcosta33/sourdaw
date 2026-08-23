@@ -34,6 +34,8 @@ export type PrepareDurableAssetPromotionRecoveryResult =
     { status: 'prepared'; recoveryId: string; ownerId: string } | DurableAssetFailure;
 export type CompleteDurableAssetPromotionRecoveryResult =
     { status: 'completed' | 'missing'; recoveryId: string; promotedHashes: string[] } | DurableAssetFailure;
+export type CommitDurableAssetPromotionRecoveryResult =
+    { status: 'committed' | 'missing'; recoveryId: string } | DurableAssetFailure;
 export type CancelDurableAssetPromotionRecoveryResult =
     { status: 'cancelled' | 'missing'; recoveryId: string } | DurableAssetFailure;
 export type ResumeDurableAssetRecoveriesResult =
@@ -75,9 +77,14 @@ export type DurableAssetRepository = {
         recoveryId: string,
         bindings: readonly StagedAssetBinding[]
     ) => Promise<PrepareDurableAssetPromotionRecoveryResult>;
+    commitPromotionRecovery: (recoveryId: string) => Promise<CommitDurableAssetPromotionRecoveryResult>;
     completePromotionRecovery: (recoveryId: string) => Promise<CompleteDurableAssetPromotionRecoveryResult>;
     cancelPromotionRecovery: (recoveryId: string) => Promise<CancelDurableAssetPromotionRecoveryResult>;
     prepareCleanupRecovery: (
+        recoveryId: string,
+        bindings: readonly StagedAssetBinding[]
+    ) => Promise<PrepareDurableAssetPromotionRecoveryResult>;
+    transitionPromotionRecoveryToCleanup: (
         recoveryId: string,
         bindings: readonly StagedAssetBinding[]
     ) => Promise<PrepareDurableAssetPromotionRecoveryResult>;

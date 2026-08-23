@@ -39,6 +39,12 @@ function releasePreparedStemImportResources(input: {
     for (const stem of input.stems) {
         registrations.get(key(input.runId, stem.audioBufferId))?.();
         registrations.delete(key(input.runId, stem.audioBufferId));
+        const registeredAsset = agentRunLifecycle
+            .get(input.runId)
+            ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        if (!registeredAsset) {
+            continue;
+        }
         agentRunLifecycle.forgetTemporaryAsset({
             runId: input.runId,
             assetId: stem.audioBufferId,

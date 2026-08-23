@@ -7,11 +7,14 @@ import {
     OWNER_HANDOFF_SCHEMA_VERSION,
     OWNER_HANDOFF_STORE,
     OWNER_HANDOFF_TARGET_INDEX,
+    OWNER_AUTHORITY_SCHEMA_VERSION,
+    OWNER_AUTHORITY_STORE,
     PROMOTION_RECOVERY_OWNER_INDEX,
     PROMOTION_RECOVERY_STORE,
     type AssetRecord,
     type LeaseRecord,
     type OwnerHandoffRecord,
+    type OwnerAuthorityRecord,
     type PromotionRecoveryRecord,
 } from './durableAssetIndexedDb';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
@@ -50,7 +53,7 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
     }
     const database = await records.openDurableAssetDatabase();
     const transaction = database.transaction(
-        [ASSET_STORE, LEASE_STORE, OWNER_HANDOFF_STORE, PROMOTION_RECOVERY_STORE],
+        [ASSET_STORE, LEASE_STORE, OWNER_HANDOFF_STORE, OWNER_AUTHORITY_STORE, PROMOTION_RECOVERY_STORE],
         'readwrite'
     );
     const completion = records.awaitTransaction(transaction);
@@ -58,19 +61,31 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
     const leaseStore = transaction.objectStore(LEASE_STORE);
     const handoffStore = transaction.objectStore(OWNER_HANDOFF_STORE);
     const promotionStore = transaction.objectStore(PROMOTION_RECOVERY_STORE);
-    const [handoffValue, ownedAssetValues, leasedAssetValues, leaseValues, promotionValues] = await Promise.all([
+    const authorityStore = transaction.objectStore(OWNER_AUTHORITY_STORE);
+    const [
+        handoffValue,
+        ownedAssetValues,
+        leasedAssetValues,
+        leaseValues,
+        promotionValues,
+        authorityValue,
+        nextAuthority,
+    ] = await Promise.all([
         records.readStoredValue(handoffStore, previousOwnerId),
         records.readIndexedValues(assetStore, ASSET_OWNER_INDEX, previousOwnerId),
         records.readIndexedValues(assetStore, ASSET_LEASE_OWNER_INDEX, previousOwnerId),
         records.readIndexedValues(leaseStore, LEASE_OWNER_INDEX, previousOwnerId),
         records.readIndexedValues(promotionStore, PROMOTION_RECOVERY_OWNER_INDEX, previousOwnerId),
+        records.readStoredValue(authorityStore, previousOwnerId),
+        records.readStoredValue(authorityStore, nextOwnerId),
     ]);
     const indexedAssetValues = [...ownedAssetValues, ...leasedAssetValues];
     if (
         (handoffValue !== undefined && !records.isOwnerHandoffRecord(handoffValue)) ||
         indexedAssetValues.some((value) => !records.isAssetRecord(value)) ||
         leaseValues.some((value) => !records.isLeaseRecord(value)) ||
-        promotionValues.some((value) => !records.isPromotionRecoveryRecord(value))
+        promotionValues.some((value) => !records.isPromotionRecoveryRecord(value)) ||
+        (authorityValue !== undefined && !records.isOwnerAuthorityRecord(authorityValue))
     ) {
         transaction.abort();
         await completion.catch(() => undefined);
@@ -94,6 +109,34 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         // can leave an otherwise empty handoff transaction inactive. A later
         // validation failure aborts and rolls this mutation back atomically.
         handoffStore.delete(previousOwnerId);
+    }
+    const authorityEpoch = records.isOwnerAuthorityRecord(authorityValue) ? authorityValue.epoch : 0;
+    if (
+        records.isOwnerAuthorityRecord(authorityValue) &&
+        authorityValue.canonicalOwnerId !== previousOwnerId &&
+        authorityValue.canonicalOwnerId !== nextOwnerId
+    ) {
+        transaction.abort();
+        await completion.catch(() => undefined);
+        return { status: 'failed', reason: 'owner-handoff-conflict' };
+    }
+    authorityStore.put({
+        schemaVersion: OWNER_AUTHORITY_SCHEMA_VERSION,
+        ownerId: previousOwnerId,
+        canonicalOwnerId: nextOwnerId,
+        epoch: authorityEpoch + 1,
+    } satisfies OwnerAuthorityRecord);
+    if (nextAuthority === undefined) {
+        authorityStore.put({
+            schemaVersion: OWNER_AUTHORITY_SCHEMA_VERSION,
+            ownerId: nextOwnerId,
+            canonicalOwnerId: nextOwnerId,
+            epoch: 0,
+        } satisfies OwnerAuthorityRecord);
+    } else if (!records.isOwnerAuthorityRecord(nextAuthority) || nextAuthority.canonicalOwnerId !== nextOwnerId) {
+        transaction.abort();
+        await completion.catch(() => undefined);
+        return { status: 'failed', reason: 'owner-handoff-conflict' };
     }
     for (const recovery of promotionValues as PromotionRecoveryRecord[]) {
         if (recovery.ownerId !== previousOwnerId) {

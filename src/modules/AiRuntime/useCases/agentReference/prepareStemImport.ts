@@ -152,7 +152,7 @@ export async function prepareStemImport(
             throwIfAborted(signal);
         }
     } catch (error) {
-        await preparedStemImportCleanup.discardBestEffort(prepared);
+        await preparedStemImportCleanup.discardBestEffort(prepared, undefined, error);
         throw error;
     }
 

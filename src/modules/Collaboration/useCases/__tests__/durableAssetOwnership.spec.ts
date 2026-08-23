@@ -463,6 +463,9 @@ describe('durable asset ownership lifecycle', () => {
             ])
         ).resolves.toMatchObject({ status: 'prepared' });
         await expect(
+            transfer.commitDurablePromotionRecovery('stem-promotion:committed-recovery')
+        ).resolves.toMatchObject({ status: 'committed' });
+        await expect(
             createDurableAssetRepository(TEST_OWNER).releaseStagedAsset(staged.leaseId, staged.hash)
         ).resolves.toEqual({ status: 'failed', reason: 'lease-terminal-conflict' });
         durableAssetIndexedDb.failNextReadwriteTransactions(3);
@@ -488,6 +491,57 @@ describe('durable asset ownership lifecycle', () => {
             recreated.cancelDurablePromotionRecovery('stem-promotion:committed-recovery')
         ).resolves.toMatchObject({ status: 'missing' });
         expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
+        recreated.dispose();
+    });
+
+    it('does not let an ordinary durable operation promote a pre-commit recovery claim', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['pre-commit-promotion'], { type: 'audio/wav' }),
+            'pre-commit-promotion.wav',
+            'asset-stage-pre-commit-promotion'
+        );
+        await expect(
+            transfer.prepareDurablePromotionRecovery('stem-promotion:pre-commit', [
+                { leaseId: staged.leaseId, expectedHash: staged.hash },
+            ])
+        ).resolves.toMatchObject({ status: 'prepared' });
+
+        await expect(transfer.reopenDurableAsset(staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'asset-not-owned',
+        });
+        await expect(transfer.cancelDurablePromotionRecovery('stem-promotion:pre-commit')).resolves.toMatchObject({
+            status: 'cancelled',
+        });
+        await expect(transfer.releaseDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'released',
+            assetRemoved: true,
+        });
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+    });
+
+    it('does not strand a staged lease when cancellation crashes after removing its promotion claim', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['cancel-transition-crash'], { type: 'audio/wav' }),
+            'cancel-transition-crash.wav',
+            'asset-stage-cancel-transition-crash'
+        );
+        await transfer.prepareDurablePromotionRecovery('stem-promotion:cancel-transition-crash', [
+            { leaseId: staged.leaseId, expectedHash: staged.hash },
+        ]);
+
+        await transfer.transitionDurablePromotionRecoveryToCleanup('stem-promotion:cancel-transition-crash', [
+            { leaseId: staged.leaseId, expectedHash: staged.hash },
+        ]);
+        transfer.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-terminal-conflict',
+        });
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
         recreated.dispose();
     });
 
@@ -524,6 +578,126 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('keeps an exact staged lease restart-retryable when cleanup ownership preparation aborts', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['cleanup-prepare-restart'], { type: 'audio/wav' }),
+            'cleanup-prepare-restart.wav',
+            'asset-stage-cleanup-prepare-restart'
+        );
+        const binding = { leaseId: staged.leaseId, expectedHash: staged.hash };
+        durableAssetIndexedDb.failNextReadwriteTransactions(1);
+
+        await expect(transfer.prepareDurableCleanupRecovery('stem-cleanup:prepare-restart', [binding])).rejects.toThrow(
+            'aborted'
+        );
+        transfer.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            leaseState: 'staged',
+        });
+        await expect(
+            recreated.prepareDurableCleanupRecovery('stem-cleanup:prepare-restart', [binding])
+        ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(recreated.completeDurableCleanupRecovery('stem-cleanup:prepare-restart')).resolves.toMatchObject({
+            status: 'completed',
+            releasedHashes: [staged.hash],
+        });
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        recreated.dispose();
+    });
+
+    it('settles an incoming source handoff before preparing the source for a chained handoff', async () => {
+        const ownerA = 'project:chain-a';
+        const ownerB = 'project:chain-b';
+        const ownerC = 'project:chain-c';
+        const provisional = 'collaboration-join:chain-provisional';
+        const sourceA = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, ownerA);
+        const staged = await sourceA.stageDurableAsset(
+            new Blob(['chained-owner-handoff'], { type: 'audio/wav' }),
+            'chained-owner-handoff.wav',
+            'asset-stage-chained-owner-handoff'
+        );
+        await sourceA.promoteDurableStagedAsset(staged.leaseId, staged.hash);
+        await createDurableAssetRepository(ownerA).prepareOwnerRebind(ownerB);
+        sourceA.dispose();
+
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisional,
+            createDurableAssetRepository(provisional),
+            { handoffSourceOwnerIds: [ownerB] }
+        );
+        await expect(joining.prepareDurableOwnerRebind(ownerC)).resolves.toMatchObject({ status: 'prepared' });
+        await expect(joining.commitDurableOwnerRebind(ownerC)).resolves.toMatchObject({
+            status: 'rebound',
+            ownerId: ownerC,
+            reboundHashes: expect.arrayContaining([staged.hash]),
+        });
+        joining.dispose();
+
+        await expect(createDurableAssetRepository(ownerC).reopenDurableAsset(staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+        await expect(createDurableAssetRepository(ownerA).reopenDurableAsset(staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'asset-not-owned',
+        });
+    });
+
+    it('routes cleanup to the lease owner when the active project owner changed without a handoff', async () => {
+        const ownerA = 'project:cleanup-lineage-a';
+        const ownerB = 'project:cleanup-lineage-b';
+        const source = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, ownerA);
+        const staged = await source.stageDurableAsset(
+            new Blob(['cleanup-owner-lineage'], { type: 'audio/wav' }),
+            'cleanup-owner-lineage.wav',
+            'asset-stage-cleanup-owner-lineage'
+        );
+        source.dispose();
+
+        const current = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, ownerB);
+        const binding = { leaseId: staged.leaseId, expectedHash: staged.hash };
+        await expect(current.prepareDurableCleanupRecovery('stem-cleanup:owner-lineage', [binding])).resolves.toEqual({
+            status: 'prepared',
+            recoveryId: 'stem-cleanup:owner-lineage',
+            ownerId: ownerA,
+        });
+        await expect(current.completeDurableCleanupRecovery('stem-cleanup:owner-lineage')).resolves.toMatchObject({
+            status: 'completed',
+            releasedHashes: [staged.hash],
+        });
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        current.dispose();
+    });
+
+    it('rejects a delayed independent-realm stage after its owner handoff commits', async () => {
+        const ownerA = 'project:realm-fence-a';
+        const ownerB = 'project:realm-fence-b';
+        const source = createDurableAssetRepository(ownerA);
+        const stageStarted = Promise.withResolvers<void>();
+        const allowStageTransaction = Promise.withResolvers<void>();
+        const lateStage = (async () => {
+            stageStarted.resolve();
+            await allowStageTransaction.promise;
+            return source.stageAsset(
+                'asset-stage-independent-realm',
+                new Blob(['independent-realm-stage']),
+                'independent-realm-stage.wav'
+            );
+        })();
+        await stageStarted.promise;
+        await source.prepareOwnerRebind(ownerB);
+        await source.commitOwnerRebind(ownerB);
+
+        allowStageTransaction.resolve();
+        await expect(lateStage).rejects.toThrow('owner authority moved');
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('leases')).toBe(0);
+    });
+
     it('fences cleanup from ordinary release and atomically transfers its exact claim to promotion', async () => {
         const staged = await transfer.stageDurableAsset(
             new Blob(['cleanup-to-promotion'], { type: 'audio/wav' }),
@@ -541,6 +715,9 @@ describe('durable asset ownership lifecycle', () => {
         await expect(
             transfer.prepareDurablePromotionRecovery('stem-promotion:cleanup-to-promotion', [binding])
         ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(
+            transfer.commitDurablePromotionRecovery('stem-promotion:cleanup-to-promotion')
+        ).resolves.toMatchObject({ status: 'committed' });
         await expect(
             transfer.completeDurableCleanupRecovery('stem-cleanup:cleanup-to-promotion')
         ).resolves.toMatchObject({ status: 'missing' });

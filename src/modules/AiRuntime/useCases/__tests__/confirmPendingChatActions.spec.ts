@@ -427,12 +427,13 @@ describe('confirmPendingChatActions transaction admission', () => {
             projectRevision,
         };
         const prepareForCommit = vi.fn().mockResolvedValue(undefined);
+        const commit = vi.fn().mockResolvedValue(undefined);
         const release = vi.fn().mockResolvedValue(undefined);
         const retain = vi.fn().mockRejectedValue(new Error('promotion remains pending'));
         proposePendingActionConfirmation({
             ...proposal,
             id: 'confirmation-recovery-batch',
-            resourceLease: { bytes: 1, prepareForCommit, release, retain },
+            resourceLease: { bytes: 1, prepareForCommit, commit, release, retain },
         });
 
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch' })).resolves.toEqual({
@@ -440,8 +441,11 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(effectAttempts).toBe(2);
         expect(prepareForCommit).toHaveBeenCalledOnce();
+        expect(commit).toHaveBeenCalledOnce();
         expect(retain).toHaveBeenCalledOnce();
         expect(release).not.toHaveBeenCalled();
+        expect(prepareForCommit.mock.invocationCallOrder[0]).toBeLessThan(commit.mock.invocationCallOrder[0]!);
+        expect(commit.mock.invocationCallOrder[0]).toBeLessThan(retain.mock.invocationCallOrder[0]!);
 
         proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch-retry' });
         await expect(
