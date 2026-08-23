@@ -538,7 +538,8 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     const committed = new Map<IDBValidKey, StoredAudioBuffer>();
     const committedMeta = new Map<IDBValidKey, StoredBufferMeta>();
     const committedRecovery = new Map<IDBValidKey, StoredRecoveryValue>();
-    if (!input.pendingLegacyRecoveryMigration) {
+    const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
+    if (existingStores.has(RECOVERY_STORE) && !input.pendingLegacyRecoveryMigration) {
         committedRecovery.set(RECOVERY_MIGRATION_MARKER_KEY, {
             kind: 'prepared-audio-recovery-migration',
             schemaVersion: 1,
@@ -551,7 +552,6 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     tables.set(META_STORE, committedMeta);
     tables.set(RECOVERY_STORE, committedRecovery);
 
-    const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
     let databaseVersion = 1;
     if (existingStores.has(RECOVERY_STORE)) {
         databaseVersion = 3;

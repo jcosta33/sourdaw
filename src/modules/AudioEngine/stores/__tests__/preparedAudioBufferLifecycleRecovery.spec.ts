@@ -1,3 +1,5 @@
+import { Blob as NodeBlob } from 'node:buffer';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -38,6 +40,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
         const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         source.getChannelData(0)[0] = 0.375;
+        expect(controls.committedRecovery.has(0)).toBe(false);
 
         await expect(
             audioBufferCache.persistPreparedBuffer({
@@ -51,6 +54,10 @@ describe('prepared audio-buffer recovery and project admission', () => {
             leaseId: 'v2-to-v3-prepared-lease',
         });
         expect(controls.storeNames()).toContain(RECOVERY_STORE);
+        expect(controls.committedRecovery.get(0)).toEqual({
+            kind: 'prepared-audio-recovery-migration',
+            schemaVersion: 1,
+        });
     });
 
     it('does not open recovery storage after cancellation and degrades recovery read failure to zero publication', async () => {
@@ -446,26 +453,183 @@ describe('prepared audio-buffer recovery and project admission', () => {
         expect(controls.committedRecovery.get(id)?.data?.channelData[0]?.[0]).toBeCloseTo(0.625);
     });
 
-    it('charges structured-clone containers against recovery quota without looping on cycles', async () => {
+    it('reserves recovery before prepareFromIdb can yield to a committing recovery collection', async () => {
         const controls = installFakeAudioIndexedDb({
             existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
         });
-        const cyclic = new Map<unknown, unknown>();
-        const nestedSet = new Set<unknown>([new Uint8Array([1, 2, 3]), cyclic]);
-        cyclic.set('nested', nestedSet);
-        cyclic.set('self', cyclic);
-        controls.committedRecovery.set('array-buffer-container', new ArrayBuffer(16) as unknown as StoredRecoveryValue);
-        controls.committedRecovery.set('blob-container', new Blob(['recovery']) as unknown as StoredRecoveryValue);
-        controls.committedRecovery.set('map-set-cycle', cyclic as unknown as StoredRecoveryValue);
+        const id = 'prepare-reserves-before-recovery-read';
+        controls.committedRecovery.set(id, {
+            data: {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.625])],
+                lastAccessed: 1,
+                sizeInBytes: 4,
+            },
+            id,
+            metadata: {
+                lastAccessed: 1,
+                preparedOwner: {
+                    schemaVersion: 1,
+                    leaseId: `${id}-lease`,
+                    persistenceRevision: `${id}-persistence`,
+                    status: 'temporary',
+                },
+                sizeInBytes: 4,
+            },
+            operation: 'discard',
+            revision: `${id}-recovery`,
+            schemaVersion: 1,
+            stagedAtMs: 1,
+        });
+        controls.pauseWriteSettlements();
+        const collection = audioBufferCache.garbageCollectBySize(0);
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
 
-        await expect(audioBufferCache.garbageCollectBySize(0)).resolves.toBe(3);
-        expect(controls.committedRecovery.has('array-buffer-container')).toBe(false);
-        expect(controls.committedRecovery.has('blob-container')).toBe(false);
-        expect(controls.committedRecovery.has('map-set-cycle')).toBe(false);
+        const preparedPromise = audioBufferCache.prepareFromIdb({
+            context: createTestContext(
+                vi.fn((_channels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+            ids: [id],
+        });
+        let preparedSettled = false;
+        void preparedPromise.finally(() => {
+            preparedSettled = true;
+        });
+        await flushIndexedDbTasks(2);
+        expect(preparedSettled).toBe(false);
+
+        let collectionSettled = false;
+        void collection.finally(() => {
+            collectionSettled = true;
+        });
+        for (let turn = 0; turn < 60 && (!preparedSettled || !collectionSettled); turn++) {
+            if (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+            }
+            await flushIndexedDbTasks(1);
+        }
+
+        await expect(collection).resolves.toBe(0);
+        const prepared = await preparedPromise;
+        expect(prepared?.publish()).toBe(1);
+        expect(audioBufferCache.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.625);
+        expect(controls.committed.get(id)?.channelData[0]?.[0]).toBeCloseTo(0.625);
+        expect(controls.committedMeta.get(id)?.preparedOwner?.status).toBe('project-owned');
+        expect(controls.committedRecovery.has(id)).toBe(false);
+    });
+
+    it('releases a provisional prepare reservation when continuation is cancelled', async () => {
+        installFakeAudioIndexedDb();
+        const id = 'cancelled-provisional-reservation';
+        const existingId = 'existing-project-reservation';
+        const existingProject = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: [existingId],
+            context: createTestContext(vi.fn()),
+        });
+        expect(existingProject?.publish()).toBe(0);
+        let shouldContinue = true;
+        const preparation = audioBufferCache.prepareFromIdb({
+            context: createTestContext(vi.fn()),
+            ids: [id],
+            shouldContinue: () => shouldContinue,
+        });
+        shouldContinue = false;
+
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id,
+                leaseId: `${id}-lease`,
+                context: createTestContext(vi.fn()),
+            })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is reserved by the project.' });
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id: existingId,
+                leaseId: `${existingId}-lease`,
+                context: createTestContext(vi.fn()),
+            })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is reserved by the project.' });
+        await expect(preparation).resolves.toBeNull();
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id,
+                leaseId: `${id}-lease`,
+                context: createTestContext(vi.fn()),
+            })
+        ).resolves.toEqual({ status: 'missing' });
+    });
+
+    it('releases a provisional prepare reservation when recovery lookup fails', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
+        const id = 'failed-provisional-reservation';
+        controls.failRequestsFrom(RECOVERY_STORE);
+
+        const prepared = await audioBufferCache.prepareFromIdb({
+            context: createTestContext(vi.fn()),
+            ids: [id],
+        });
+        controls.allowRequests();
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id,
+                leaseId: `${id}-lease`,
+                context: createTestContext(vi.fn()),
+            })
+        ).resolves.toEqual({ status: 'missing' });
+
+        expect(prepared?.publish()).toBe(0);
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id,
+                leaseId: `${id}-lease`,
+                context: createTestContext(vi.fn()),
+            })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is reserved by the project.' });
+    });
+
+    it.each([
+        {
+            id: 'array-buffer-container',
+            value: () => new ArrayBuffer(8),
+        },
+        {
+            id: 'blob-container',
+            value: () => new NodeBlob(['123456']),
+        },
+        {
+            id: 'nested-map-set-cycle',
+            value: () => {
+                const cyclic = new Map<unknown, unknown>();
+                const nestedSet = new Set<unknown>([new ArrayBuffer(4), cyclic]);
+                cyclic.set('x', nestedSet);
+                cyclic.set('self', cyclic);
+                return cyclic;
+            },
+        },
+    ])('charges $id size against a positive recovery quota', async ({ id, value }) => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
+        controls.committedRecovery.set(id, value() as unknown as StoredRecoveryValue);
+        controls.committedRecovery.set('four-byte-survivor', 'ok' as unknown as StoredRecoveryValue);
+
+        await expect(audioBufferCache.garbageCollectBySize(5)).resolves.toBe(1);
+        expect(controls.committedRecovery.has(id)).toBe(false);
+        expect(controls.committedRecovery.get('four-byte-survivor')).toBe('ok');
     });
 
     it('rejects temporary reopen after the project reserves the exact buffer ID', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
         const id = 'project-reserved-reopen';
         const leaseId = `${id}-lease`;
         await audioBufferCache.persistPreparedBuffer({
@@ -625,7 +789,9 @@ describe('prepared audio-buffer recovery and project admission', () => {
     );
 
     it('treats whitespace-only durable lease metadata as invalid and never reclaims it', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
         controls.committed.set('invalid-whitespace-owner', {
             sampleRate: 48_000,
             numberOfChannels: 1,
@@ -654,7 +820,9 @@ describe('prepared audio-buffer recovery and project admission', () => {
     });
 
     it('aborts an orphan reclaim when the project admits the exact ID before commit', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
         controls.committed.set('reclaim-project-race', {
             sampleRate: 48_000,
             numberOfChannels: 1,
@@ -692,7 +860,9 @@ describe('prepared audio-buffer recovery and project admission', () => {
     });
 
     it('reconciles a committed orphan deletion when project admission lands after commit', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
         const id = 'reclaim-after-commit-project-race';
         const leaseId = `${id}-lease`;
         controls.committed.set(id, {

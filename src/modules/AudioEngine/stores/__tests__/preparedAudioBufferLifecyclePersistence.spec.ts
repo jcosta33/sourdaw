@@ -16,6 +16,10 @@ import {
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 
+function installCurrentAudioIndexedDb() {
+    return installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
+}
+
 beforeEach(async () => {
     vi.resetModules();
     installTestAudioBufferConstructor();
@@ -29,7 +33,7 @@ afterEach(() => {
 
 describe('prepared audio-buffer persistence and admission', () => {
     it('publishes the committed PCM snapshot when the caller mutates its buffer before commit', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installCurrentAudioIndexedDb();
         controls.pauseWriteSettlements();
         const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         source.getChannelData(0)[0] = 0.25;
@@ -41,6 +45,16 @@ describe('prepared audio-buffer persistence and admission', () => {
         while (controls.pendingWriteSettlementCount() === 0) {
             await flushIndexedDbTasks(1);
         }
+
+        let persistenceSettled = false;
+        void persistence.finally(() => {
+            persistenceSettled = true;
+        });
+        await flushIndexedDbTasks(2);
+        expect(persistenceSettled).toBe(false);
+        expect(audioBufferCache.has('committed-runtime-snapshot')).toBe(false);
+        expect(controls.committed.has('committed-runtime-snapshot')).toBe(false);
+        expect(controls.committedMeta.has('committed-runtime-snapshot')).toBe(false);
 
         source.getChannelData(0)[0] = 0.875;
         controls.releaseNextWriteSettlement();
@@ -159,7 +173,7 @@ describe('prepared audio-buffer persistence and admission', () => {
     });
 
     it('does not publish prepared PCM over a newer ordinary runtime mutation when its durable write aborts', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installCurrentAudioIndexedDb();
         controls.pauseWriteSettlements();
         const prepared = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         prepared.getChannelData(0)[0] = 0.25;
@@ -187,7 +201,7 @@ describe('prepared audio-buffer persistence and admission', () => {
     });
 
     it('keeps a newer same-lease reservation when an older persistence attempt aborts', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installCurrentAudioIndexedDb();
         controls.pauseWriteSettlements();
         controls.abortNextWrite();
         const stale = createAudioBuffer({ length: 1, sampleRate: 48_000 });
@@ -291,7 +305,7 @@ describe('prepared audio-buffer persistence and admission', () => {
     });
 
     it('does not publish prepared runtime PCM after a project-transition clear', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installCurrentAudioIndexedDb();
         controls.pauseWriteSettlements();
         const temporary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         temporary.getChannelData(0)[0] = 0.55;
@@ -359,7 +373,7 @@ describe('prepared audio-buffer persistence and admission', () => {
     });
 
     it('invalidates prepared persist and reopen publication across retained project transitions', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installCurrentAudioIndexedDb();
         controls.pauseWriteSettlements();
         const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         const persistenceInput = { id: 'retained-transition-persist', buffer: source, leaseId: 'persist-lease' };
@@ -519,7 +533,7 @@ describe('prepared audio-buffer persistence and admission', () => {
     });
 
     it('aborts queued prepared persistence when the project pins the ID after admission', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installCurrentAudioIndexedDb();
         controls.pauseWriteSettlements();
         const persistence = audioBufferCache.persistPreparedBuffer({
             id: 'late-project-pin',

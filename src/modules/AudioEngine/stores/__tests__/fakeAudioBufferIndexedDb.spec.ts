@@ -76,6 +76,32 @@ describe('fakeAudioBufferIndexedDb', () => {
         expect(controls.storeNames()).toContain(RECOVERY_STORE);
     });
 
+    it('rolls back an aborted v2-to-v3 schema upgrade without inventing a migration marker', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
+        expect(controls.committedRecovery.has(0)).toBe(false);
+        const blocker = await openDatabase(2);
+        blocker.onversionchange = () => blocker.close();
+
+        await expect(
+            openDatabase(3, (database) => {
+                database.createObjectStore(RECOVERY_STORE);
+                throw new Error('abort upgrade');
+            })
+        ).rejects.toThrow('abort upgrade');
+        expect(controls.storeNames()).not.toContain(RECOVERY_STORE);
+        expect(controls.committedRecovery.has(0)).toBe(false);
+
+        let retryUpgradeCount = 0;
+        const retried = await openDatabase(3, (database) => {
+            retryUpgradeCount++;
+            database.createObjectStore(RECOVERY_STORE);
+        });
+        expect(retryUpgradeCount).toBe(1);
+        expect(retried.version).toBe(3);
+        expect(controls.storeNames()).toContain(RECOVERY_STORE);
+        expect(controls.committedRecovery.has(0)).toBe(false);
+    });
+
     it('serializes overlapping readwrite transactions before the later transaction reads', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         controls.pauseWriteSettlements();

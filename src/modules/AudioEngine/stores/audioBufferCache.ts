@@ -125,12 +125,11 @@ function audioCacheSet(id: string, buffer: AudioBuffer, freezeProjectId?: number
     writeAudioCacheEntry(id, buffer, freezeProjectId, ownershipKnown);
 }
 
-function replacePinnedBufferIds(ids: readonly string[]): void {
+function writePinnedBufferIds(ids: readonly string[]): void {
     pinnedBufferIds.clear();
     for (const id of ids) {
         pinnedBufferIds.add(id);
     }
-    preparedAudioBufferLifecycle.recordProjectReservations(ids);
     while (cache.size > MAX_AUDIO_BUFFER_ENTRIES) {
         let lruKey: string | undefined;
         for (const key of cache.keys()) {
@@ -144,6 +143,11 @@ function replacePinnedBufferIds(ids: readonly string[]): void {
         }
         evictCachedBuffer(lruKey);
     }
+}
+
+function replacePinnedBufferIds(ids: readonly string[]): void {
+    writePinnedBufferIds(ids);
+    preparedAudioBufferLifecycle.recordProjectReservations(ids);
 }
 
 function audioCacheGet(id: string): AudioBuffer | undefined {
@@ -866,8 +870,12 @@ async function prepareBuffersFromIdb({
     ids,
     shouldContinue,
 }: PrepareBuffersFromIdbInput): Promise<PreparedAudioBuffers | null> {
+    if (shouldContinue?.() === false) {
+        return null;
+    }
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
+    const provisionalReservations = ids ? preparedAudioBufferLifecycle.beginProjectReservations(ids) : undefined;
     const excludedTemporaryIds = new Set(temporaryCaptures.keys());
     const settleExcludedTemporaryBuffers = (): Set<string> => {
         const temporaryAtPublication = new Set<string>();
@@ -881,22 +889,28 @@ async function prepareBuffersFromIdb({
     const publishProjectReservations = (): void => {
         settleExcludedTemporaryBuffers();
         if (ids) {
-            replacePinnedBufferIds(ids);
+            if (provisionalReservations) {
+                writePinnedBufferIds(ids);
+                provisionalReservations.promote();
+            } else {
+                replacePinnedBufferIds(ids);
+            }
         }
     };
+    const cancel = (): null => {
+        provisionalReservations?.release();
+        return null;
+    };
     try {
-        if (shouldContinue?.() === false) {
-            return null;
-        }
         if (ids) {
             await preparedAudioBufferLifecycle.recoverProjectReservations(ids);
         }
         if (shouldContinue?.() === false) {
-            return null;
+            return cancel();
         }
         const db = await openDb();
         if (shouldContinue?.() === false) {
-            return null;
+            return cancel();
         }
         const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
         const store = tx.objectStore(STORE_NAME);
@@ -912,7 +926,7 @@ async function prepareBuffersFromIdb({
 
         for (const key of keys) {
             if (shouldContinue?.() === false) {
-                return null;
+                return cancel();
             }
             if (typeof key !== 'string') {
                 continue;
@@ -929,7 +943,7 @@ async function prepareBuffersFromIdb({
                 awaitRequest(metaStore.get(key) as IDBRequest<BufferMeta | undefined>),
             ]);
             if (shouldContinue?.() === false) {
-                return null;
+                return cancel();
             }
             if (
                 preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(
@@ -956,9 +970,13 @@ async function prepareBuffersFromIdb({
             staged.push({ id, buffer });
         }
     } catch {
+        provisionalReservations?.release();
         return {
             publish: () => {
-                publishProjectReservations();
+                settleExcludedTemporaryBuffers();
+                if (ids) {
+                    replacePinnedBufferIds(ids);
+                }
                 return 0;
             },
         };

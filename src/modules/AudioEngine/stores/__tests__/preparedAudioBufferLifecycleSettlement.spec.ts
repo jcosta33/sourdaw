@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { flushIndexedDbTasks, installFakeAudioIndexedDb, type StoredBufferMeta } from './fakeAudioBufferIndexedDb';
+import {
+    BUFFER_STORE,
+    flushIndexedDbTasks,
+    installFakeAudioIndexedDb,
+    META_STORE,
+    RECOVERY_STORE,
+    type StoredBufferMeta,
+} from './fakeAudioBufferIndexedDb';
 import {
     createAudioBuffer,
     createTestContext,
@@ -402,8 +409,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(audioBufferCache.get('delayed-prepare-promotion')?.getChannelData(0)[0]).toBeCloseTo(0);
     });
 
-    it('evicts temporary reopens created after project preparation without disturbing durable runtime owners', async () => {
-        const controls = installFakeAudioIndexedDb();
+    it('blocks temporary reopens after project preparation without disturbing durable runtime owners', async () => {
+        installFakeAudioIndexedDb();
         const completedId = 'delayed-project-completed-reopen';
         const activeId = 'delayed-project-active-reopen';
         const projectOwnedId = 'delayed-project-owned-runtime';
@@ -442,37 +449,24 @@ describe('prepared audio-buffer settlement and recovery', () => {
             ids: [completedId, activeId, projectOwnedId, ordinaryId],
         });
 
-        await expect(
-            audioBufferCache.reopenPreparedBuffer({
-                id: completedId,
-                leaseId: `${completedId}-lease`,
-                context: createTestContext(
-                    vi.fn((_channels: number, length: number, sampleRate: number) =>
-                        createAudioBuffer({ length, sampleRate })
-                    )
-                ),
-            })
-        ).resolves.toEqual({ status: 'reopened', bufferId: completedId, ownership: 'temporary' });
-        controls.pauseReadonlySettlements();
-        const activeReopen = audioBufferCache.reopenPreparedBuffer({
-            id: activeId,
-            leaseId: `${activeId}-lease`,
-            context: createTestContext(
-                vi.fn((_channels: number, length: number, sampleRate: number) =>
-                    createAudioBuffer({ length, sampleRate })
-                )
-            ),
-        });
-        while (controls.pendingReadonlySettlementCount() === 0) {
-            await flushIndexedDbTasks(1);
+        for (const id of [completedId, activeId]) {
+            await expect(
+                audioBufferCache.reopenPreparedBuffer({
+                    id,
+                    leaseId: `${id}-lease`,
+                    context: createTestContext(
+                        vi.fn((_channels: number, length: number, sampleRate: number) =>
+                            createAudioBuffer({ length, sampleRate })
+                        )
+                    ),
+                })
+            ).resolves.toEqual({
+                status: 'failed',
+                reason: 'Prepared audio buffer ID is reserved by the project.',
+            });
         }
 
         expect(project?.publish()).toBe(0);
-        controls.releaseNextReadonlySettlement();
-        await expect(activeReopen).resolves.toEqual({
-            status: 'failed',
-            reason: 'Prepared audio reopen was superseded.',
-        });
         expect(audioBufferCache.has(completedId)).toBe(false);
         expect(audioBufferCache.has(activeId)).toBe(false);
         expect(audioBufferCache.get(projectOwnedId)).not.toBe(projectOwned);
@@ -1141,7 +1135,9 @@ describe('prepared audio-buffer settlement and recovery', () => {
     });
 
     it('does not let a stale reopen overwrite a newer prepared buffer in memory after it commits', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
         controls.pauseWriteSettlements();
         const original = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         original.getChannelData(0)[0] = 0.25;
@@ -1222,7 +1218,9 @@ describe('prepared audio-buffer settlement and recovery', () => {
     });
 
     it('reports a committed owner as persisted when a superseding prepared write later aborts', async () => {
-        const controls = installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+        });
         controls.pauseWriteSettlements();
         const firstBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         firstBuffer.getChannelData(0)[0] = 0.25;
