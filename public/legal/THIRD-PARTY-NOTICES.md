@@ -39,10 +39,11 @@ See [SOURCES.json](./SOURCES.json) for exact package, source, and file identitie
 
 [DEPENDENCY-LICENSES.txt](./DEPENDENCY-LICENSES.txt) binds `pnpm-lock.yaml`, the standalone server's
 `package-lock.json`, and the normal-dependency `Cargo.lock` graph to each package's declared license
-expression, retained legal files, or explicit assembled notice. Assembled notices pair hash-pinned
-lock-resolved metadata with canonical SPDX text; checked proof archives are separately authenticated.
-Generation fails when required evidence is missing. Platform-restricted build auxiliaries are excluded;
-Electron's platform legal bundle remains authoritative for its shipped runtime.
+expression, retained legal files, or an explicit assembled license record. Assembled records pair
+hash-pinned lock-resolved metadata with canonical SPDX text; they do not authenticate package-specific
+attribution. Checked proof archives are separately authenticated. Generation fails when configured
+records are missing or inconsistent. Platform-restricted build auxiliaries are excluded; Electron's
+platform legal bundle remains authoritative for its shipped runtime.
 
 The report identifies exact registry packages and versions, including the MPL-2.0 Rust packages
 whose corresponding source is available from those same crates.io package versions. Dedicated

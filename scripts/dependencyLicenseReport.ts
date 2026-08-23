@@ -551,6 +551,7 @@ function expectedProofIdentity(root: string, record: DependencyLicenseRecord): {
 function assertProofFile(
     packageId: string,
     proof: DependencyLicenseProof,
+    record: DependencyLicenseRecord,
     root: string,
     file: { archivePath: string; sourcePath: string; sha256: string }
 ): LegalFile {
@@ -576,22 +577,30 @@ function assertProofFile(
     ) {
         throw new Error(`${packageId}: proof path escapes ${PROOF_DIRECTORY}`);
     }
-    if (!file.archivePath.endsWith('.tgz')) {
+    const expectedArchiveExtension = record.ecosystem === 'cargo' ? '.crate' : '.tgz';
+    if (!file.archivePath.endsWith(expectedArchiveExtension)) {
         throw new Error(`${packageId}: proof must use a locked package archive`);
     }
+    const canonicalSourcePath = posix.normalize(file.sourcePath.replaceAll('\\', '/'));
     if (
         file.sourcePath.trim().length === 0 ||
-        isAbsolute(file.sourcePath) ||
-        file.sourcePath.split('/').includes('..')
+        file.sourcePath !== canonicalSourcePath ||
+        posix.isAbsolute(canonicalSourcePath) ||
+        canonicalSourcePath === '.' ||
+        canonicalSourcePath.split('/').includes('..')
     ) {
-        throw new Error(`${packageId}: proof source path is missing`);
+        throw new Error(`${packageId}: proof source path must be canonical and relative`);
     }
     const archive = readFileSync(realPath);
-    const archiveIntegrity = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
+    const archiveIntegrity =
+        record.ecosystem === 'cargo'
+            ? `sha256:${sha256(archive)}`
+            : `sha512-${createHash('sha512').update(archive).digest('base64')}`;
     if (archiveIntegrity !== proof.revision) {
         throw new Error(`${packageId}: proof archive does not match the locked package`);
     }
-    const wanted = normalizeProofArchiveMemberPath(`package/${file.sourcePath}`);
+    const archiveRoot = record.ecosystem === 'cargo' ? `${record.name}-${record.version}` : 'package';
+    const wanted = normalizeProofArchiveMemberPath(`${archiveRoot}/${canonicalSourcePath}`);
     let legal: LegalFile | undefined;
     let policyError: string | undefined;
     try {
@@ -760,7 +769,7 @@ function validateAssembledProof(
         ].join('\n');
     });
     const contents = [
-        'Sourdaw assembled dependency compliance notice',
+        'Sourdaw assembled dependency license record',
         '',
         `Package: ${packageId}`,
         `Locked source: ${proof.source}`,
@@ -768,7 +777,7 @@ function validateAssembledProof(
         `Declared license: ${record.license}`,
         `Selected SPDX terms: ${assembled.licenses.join(', ')}`,
         '',
-        'The resolved package omits full license terms. This checked-in notice combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It is assembled evidence, not an upstream file or an archive-authenticated proof.',
+        'The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.',
         '',
         ...metadataBlocks,
         ...licenseBlocks,
@@ -778,7 +787,7 @@ function validateAssembledProof(
     return [
         ...record.legalFiles,
         {
-            label: `assembled notice from lock-resolved package metadata and SPDX ${SPDX_LICENSE_LIST_VERSION}`,
+            label: `assembled license record from lock-resolved package metadata and SPDX ${SPDX_LICENSE_LIST_VERSION}`,
             sha256: sha256(bytes),
             contents,
         },
@@ -805,7 +814,7 @@ export function validateDependencyLicenseProof(
     if (files.length === 0) {
         throw new Error(`${packageId}: proof has no legal evidence`);
     }
-    const legalFiles = files.map((file) => assertProofFile(packageId, proof, root, file));
+    const legalFiles = files.map((file) => assertProofFile(packageId, proof, record, root, file));
     assertLicenseExpressionEvidence(packageId, record.license, legalFiles);
     return legalFiles;
 }
@@ -847,7 +856,7 @@ function applyDependencyLicenseProofs(root: string, records: DependencyLicenseRe
         throw new Error(
             unresolved
                 .sort()
-                .map((packageId) => `${packageId}: exact license and copyright notice could not be proven`)
+                .map((packageId) => `${packageId}: required dependency license record is unavailable`)
                 .join('\n')
         );
     }
@@ -908,7 +917,7 @@ export function renderDependencyLicenseReport(
             return `sha256:${file.sha256}`;
         });
         if (references.length === 0) {
-            throw new Error(`${packageId}: exact license and copyright notice could not be proven`);
+            throw new Error(`${packageId}: required dependency license record is unavailable`);
         }
         const graphs = [...new Set(record.graphs ?? [])].sort().join(',');
         return `${packageId} | ${record.license} | ${[...new Set(references)].sort().join(',')} | ${graphs}`;
@@ -941,9 +950,9 @@ export function renderDependencyLicenseReport(
         'Sourdaw third-party dependency licenses',
         '',
         'Generated from pnpm-lock.yaml, server/package-lock.json, and the normal-dependency Cargo.lock graph.',
-        'Each package keeps its declared license expression and retained legal files or an explicit assembled notice.',
-        `Assembled notices use hash-pinned metadata from the lock-resolved install plus canonical SPDX License List ${SPDX_LICENSE_LIST_VERSION} text; only checked proof archives are byte-authenticated against package integrity.`,
-        'Generation fails when complete legal evidence is unavailable.',
+        'Each package keeps its declared license expression and retained legal files or an explicit assembled license record.',
+        `Assembled records use hash-pinned metadata from the lock-resolved install plus canonical SPDX License List ${SPDX_LICENSE_LIST_VERSION} text; they do not authenticate package-specific attribution. Only checked proof archives are byte-authenticated against package integrity.`,
+        'Generation fails when configured records are missing or inconsistent.',
         '',
         'Source graph digests:',
         ...graphLines,

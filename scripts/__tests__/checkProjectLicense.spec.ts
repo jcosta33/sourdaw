@@ -4,8 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync, gunzipSync } from 'node:zlib';
+import { gzipSync } from 'node:zlib';
 
+import { Header, Pax } from 'tar';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -51,6 +52,23 @@ const ownershipFiles = [
 function write(root: string, path: string, contents: string): void {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), contents);
+}
+
+function encodeTarEntry(path: string, type: 'File' | 'NextFileHasLongPath', contents: Buffer): Buffer {
+    const header = Buffer.alloc(512);
+    new Header({ path, type, mode: 0o644, uid: 0, gid: 0, size: contents.length, mtime: new Date(0) }).encode(header);
+    const padding = Buffer.alloc((512 - (contents.length % 512)) % 512);
+    return Buffer.concat([header, contents, padding]);
+}
+
+function encodeExtendedPathArchive(format: 'pax' | 'gnu', path: string, contents: Buffer): Buffer {
+    const extension =
+        format === 'pax'
+            ? new Pax({ path }).encode()
+            : encodeTarEntry('././@LongLink', 'NextFileHasLongPath', Buffer.from(`${path}\0`));
+    return gzipSync(
+        Buffer.concat([extension, encodeTarEntry('package/LICENSE', 'File', contents), Buffer.alloc(1024)])
+    );
 }
 
 describe('project license', () => {
@@ -215,7 +233,7 @@ describe('project license', () => {
             renderDependencyLicenseReport([
                 { ecosystem: 'npm', name: 'missing', version: '1.0.0', license: 'MIT', legalFiles: [] },
             ])
-        ).toThrow('npm:missing@1.0.0: exact license and copyright notice could not be proven');
+        ).toThrow('npm:missing@1.0.0: required dependency license record is unavailable');
     });
 
     it('binds the report to both JavaScript lock graphs', () => {
@@ -559,16 +577,14 @@ describe('project license', () => {
         expect(() => validateDependencyLicenseProof(root, record, proof)).toThrow('proof archive repeats LICENSE');
     });
 
-    it('reads extended long paths from a locked proof archive', () => {
+    it.each(['pax', 'gnu'] as const)('reads an explicit %s long path from a locked proof archive', (format) => {
         const archivePath = 'release/dependency-license-proofs/example-1.0.0.tgz';
         const sourcePath = `${'legal/'.repeat(18)}LICENSE`;
         const memberPath = `package/${sourcePath}`;
         const license = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'));
-        mkdirSync(dirname(join(root, memberPath)), { recursive: true });
-        writeFileSync(join(root, memberPath), license, { flush: true });
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
-        execFileSync('tar', ['-czf', join(root, archivePath), memberPath], { cwd: root });
-        const archive = readFileSync(join(root, archivePath));
+        const archive = encodeExtendedPathArchive(format, memberPath, license);
+        writeFileSync(join(root, archivePath), archive);
         const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
         const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
         write(
@@ -597,19 +613,87 @@ describe('project license', () => {
         expect(legal?.contents).toBe(license.toString('utf8'));
     });
 
+    it('binds Cargo proof evidence to its locked crate archive', () => {
+        const archivePath = 'release/dependency-license-proofs/example-1.0.0.crate';
+        const license = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'));
+        const archive = gzipSync(
+            Buffer.concat([encodeTarEntry('example-1.0.0/LICENSE', 'File', license), Buffer.alloc(1024)])
+        );
+        mkdirSync(dirname(join(root, archivePath)), { recursive: true });
+        writeFileSync(join(root, archivePath), archive);
+        const checksum = createHash('sha256').update(archive).digest('hex');
+        write(
+            root,
+            'Cargo.lock',
+            `[[package]]\nname = "example"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "${checksum}"\n`
+        );
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'cargo',
+            name: 'example',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [],
+            graphs: ['Cargo.lock'],
+        };
+
+        expect(
+            validateDependencyLicenseProof(root, record, {
+                source: 'https://crates.io/api/v1/crates/example/1.0.0/download',
+                revision: `sha256:${checksum}`,
+                files: [
+                    {
+                        archivePath,
+                        sourcePath: 'LICENSE',
+                        sha256: createHash('sha256').update(license).digest('hex'),
+                    },
+                ],
+            })
+        ).toHaveLength(1);
+    });
+
+    it('rejects proof source traversal after separator normalization', () => {
+        const archivePath = 'release/dependency-license-proofs/example-1.0.0.tgz';
+        mkdirSync(dirname(join(root, archivePath)), { recursive: true });
+        writeFileSync(join(root, archivePath), gzipSync(Buffer.alloc(1024)));
+        const archive = readFileSync(join(root, archivePath));
+        const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
+        const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
+        write(
+            root,
+            'server/package-lock.json',
+            JSON.stringify({
+                packages: { 'node_modules/example': { version: '1.0.0', resolved: source, integrity: revision } },
+            })
+        );
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'npm',
+            name: 'example',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [],
+            serverLockPath: 'node_modules/example',
+            graphs: ['server/package-lock.json'],
+        };
+
+        expect(() =>
+            validateDependencyLicenseProof(root, record, {
+                source,
+                revision,
+                files: [{ archivePath, sourcePath: '..\\LICENSE', sha256: '0'.repeat(64) }],
+            })
+        ).toThrow('proof source path must be canonical and relative');
+    });
+
     it('rejects a malformed member after valid legal evidence', () => {
         const archivePath = 'release/dependency-license-proofs/example-1.0.0.tgz';
         const license = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'));
         mkdirSync(join(root, 'package'), { recursive: true });
         writeFileSync(join(root, 'package/LICENSE'), license);
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
-        execFileSync('tar', ['-czf', join(root, archivePath), 'package/LICENSE'], { cwd: root });
-        const tarBytes = gunzipSync(readFileSync(join(root, archivePath)));
-        const nextHeaderOffset = 512 + Math.ceil(license.length / 512) * 512;
         const malformedHeader = Buffer.alloc(512);
         malformedHeader.write('package/BROKEN');
         const malformedArchive = gzipSync(
-            Buffer.concat([tarBytes.subarray(0, nextHeaderOffset), malformedHeader, Buffer.alloc(1024)])
+            Buffer.concat([encodeTarEntry('package/LICENSE', 'File', license), malformedHeader, Buffer.alloc(1024)])
         );
         writeFileSync(join(root, archivePath), malformedArchive);
         const revision = `sha512-${createHash('sha512').update(malformedArchive).digest('base64')}`;
@@ -761,7 +845,7 @@ describe('project license', () => {
 
         const [upstreamNotice, notice] = validateDependencyLicenseProof(root, record, proof);
         expect(upstreamNotice?.label).toBe('NOTICE');
-        expect(notice?.contents).toContain('assembled evidence, not an upstream file');
+        expect(notice?.contents).toContain('does not authenticate an upstream copyright holder');
         expect(notice?.contents).toContain(metadataContents.trim());
         expect(notice?.contents).toContain('canonical SPDX MIT');
 

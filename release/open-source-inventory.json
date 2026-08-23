@@ -124,7 +124,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:f63a5d7e4b48cb454d3fe255a8bd96de40eec8f52dc4366ccfc87edb038cbcd0:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:4abbc3892059f1e1f271d2233f7fde5c1ab1407f8d4fcb94822c958170113471:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:34a22e363a1f0032e2bea75066e8fc94285cb469dd11bf4fbe172b2a5a686257:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
@@ -212,7 +212,7 @@
                 "sha256:9c6b876c5b9a0239169fbed36da8e51d4e05ccad73647a95fb3c28b5696349b6",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
-            "licenses": ["per-package declared terms, retained legal files, or explicit assembled notices"],
+            "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
             "productSurfaces": ["browser application", "desktop application", "collaboration server"],
             "evidence": [
                 "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
@@ -273,7 +273,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:a5f7e243928c814702f4502c9f7a5e10b235662ecb0e1e11740602839bb9d308:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:0db0f48652f73072ac262100dfdaa0ffb2ec1d9f40f085a048180592da1a4e5d:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -303,7 +303,7 @@
             "sources": ["Cargo.toml", "Cargo.lock"],
             "revisions": ["exact Cargo lock graph"],
             "digests": ["sha256:f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5"],
-            "licenses": ["per-package declared terms, retained legal files, or explicit assembled notices"],
+            "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
             "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
             "obligations": ["Reconcile every distributed dependency license and notice before release."]
@@ -512,7 +512,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:a5f7e243928c814702f4502c9f7a5e10b235662ecb0e1e11740602839bb9d308:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:0db0f48652f73072ac262100dfdaa0ffb2ec1d9f40f085a048180592da1a4e5d:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -746,7 +746,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:a5f7e243928c814702f4502c9f7a5e10b235662ecb0e1e11740602839bb9d308:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:0db0f48652f73072ac262100dfdaa0ffb2ec1d9f40f085a048180592da1a4e5d:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": ["MIT"],
             "productSurfaces": ["TR-808 kick DSP source and compiled distributions"],
