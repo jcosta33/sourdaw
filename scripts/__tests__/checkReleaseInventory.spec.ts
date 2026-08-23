@@ -329,7 +329,9 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
     const sourcePaths = [
         'crates/daw-dsp/benches/quantum.rs',
         'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+        'crates/daw-dsp/benches/wasm/index.html',
         'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+        'crates/daw-dsp/benches/wasm/run.mjs',
         'public/wasm/daw-dsp/daw_dsp_bg.wasm',
     ];
     for (const path of sourcePaths) {
@@ -374,8 +376,8 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
         sourceDigests,
         browser: 'fixture-browser',
         userAgent: 'fixture-agent',
-        budgetMs: 2.666,
-        options: { warmupQuanta: 4, measureQuanta: 8 },
+        budgetMs: (128 / 48_000) * 1_000,
+        options: { warmupQuanta: 4, measureQuanta: 10 },
         load: { before: 1.25, after: 1.5 },
         referenceProject: {
             audioThread: [['grand_boule_ring_consumer', 1]],
@@ -1067,6 +1069,41 @@ describe('release inventory', () => {
             };
             overBudget.rows[0]!.mainThreadWallMs = overBudget.rows[0]!.sampleCount * 3;
             writeFileSync(jsonPath, JSON.stringify(overBudget));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'measured reference project exceeds its render budget'
+            );
+
+            for (const mutate of [
+                (measurement: {
+                    budgetMs: number;
+                    options: { measureQuanta: number };
+                    rows: Array<{ sampleCount: number }>;
+                }) => {
+                    measurement.rows[0]!.sampleCount -= 1;
+                },
+                (measurement: {
+                    budgetMs: number;
+                    options: { measureQuanta: number };
+                    rows: Array<{ sampleCount: number }>;
+                }) => {
+                    measurement.options.measureQuanta += 1;
+                },
+            ]) {
+                const measurement = JSON.parse(original) as {
+                    budgetMs: number;
+                    options: { measureQuanta: number };
+                    rows: Array<{ sampleCount: number }>;
+                };
+                mutate(measurement);
+                writeFileSync(jsonPath, JSON.stringify(measurement));
+                expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                    'sample count must equal the positive integer harness measureQuanta'
+                );
+            }
+
+            const tamperedBudget = JSON.parse(original) as { budgetMs: number };
+            tamperedBudget.budgetMs = 10;
+            writeFileSync(jsonPath, JSON.stringify(tamperedBudget));
             expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
                 'measured reference project exceeds its render budget'
             );

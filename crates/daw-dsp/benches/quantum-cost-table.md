@@ -161,7 +161,9 @@ Measured-source digests:
 
 - `crates/daw-dsp/benches/quantum.rs`: `sha256:0de57088cce2094f76dd9d3eb567552692bdc0146eddbc8b5e15c7c8d9b6b873`
 - `crates/daw-dsp/benches/wasm/deviceRecipes.js`: `sha256:0a93e3d48f15813c2185377551acbfd59e4d65a53dc142f72e61d72953d13ac1`
+- `crates/daw-dsp/benches/wasm/index.html`: `sha256:9f1eb25f246760e4805d687492b06ae985621b9aa1d29b0aa22259b66f5b5d52`
 - `crates/daw-dsp/benches/wasm/quantumCostProcessor.js`: `sha256:e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713`
+- `crates/daw-dsp/benches/wasm/run.mjs`: `sha256:015442c6bfe9cb5cadf25425c5be87043c7d5b391f945c65296720f89844065e`
 - `public/wasm/daw-dsp/daw_dsp_bg.wasm`: `sha256:4f298c97a781372dfc7a5ddb9384bc7c974832b0cbdb05f2144665e6262b9096`
 
 ### On the audio thread — these share the one 2.667 ms deadline

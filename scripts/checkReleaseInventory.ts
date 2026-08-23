@@ -785,9 +785,13 @@ export function assertGrandBouleReleasedInWasm(root: string): void {
 export const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/quantum.rs',
     'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+    'crates/daw-dsp/benches/wasm/index.html',
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+    'crates/daw-dsp/benches/wasm/run.mjs',
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
 ] as const;
+
+const GRAND_BOULE_QUANTUM_BUDGET_MS = (128 / 48_000) * 1_000;
 
 function readGrandBouleSourceAtRevision(root: string, revision: string, path: string): Buffer {
     return execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
@@ -817,6 +821,7 @@ export function assertGrandBouleMeasurementAdmission(
         sourceDigests?: Record<string, string>;
         machine?: { gitSha?: string; workingTree?: string };
         budgetMs?: number;
+        options?: { measureQuanta?: number };
         referenceProject?: { audioWorstQuantumUpperMs?: number };
         rows?: Array<{
             id?: string;
@@ -867,6 +872,17 @@ export function assertGrandBouleMeasurementAdmission(
     ) {
         throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
     }
+    const measureQuanta = data.options?.measureQuanta;
+    const sampleCount = row?.sampleCount;
+    if (
+        !Number.isInteger(measureQuanta) ||
+        measureQuanta! <= 0 ||
+        !Number.isInteger(sampleCount) ||
+        sampleCount! <= 0 ||
+        sampleCount !== measureQuanta
+    ) {
+        throw new Error('Grand Boule measured row sample count must equal the positive integer harness measureQuanta');
+    }
     const measuredWorkerWallMs =
         typeof row?.mainThreadWallMs === 'number' &&
         Number.isFinite(row.mainThreadWallMs) &&
@@ -876,11 +892,11 @@ export function assertGrandBouleMeasurementAdmission(
             ? row.mainThreadWallMs / row.sampleCount
             : Number.NaN;
     if (
-        typeof data.budgetMs !== 'number' ||
+        data.budgetMs !== GRAND_BOULE_QUANTUM_BUDGET_MS ||
         typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
         !Number.isFinite(measuredWorkerWallMs) ||
-        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
-        measuredWorkerWallMs >= data.budgetMs
+        data.referenceProject.audioWorstQuantumUpperMs >= GRAND_BOULE_QUANTUM_BUDGET_MS ||
+        measuredWorkerWallMs >= GRAND_BOULE_QUANTUM_BUDGET_MS
     ) {
         throw new Error('Grand Boule measured reference project exceeds its render budget');
     }
