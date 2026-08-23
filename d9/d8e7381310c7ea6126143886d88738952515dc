@@ -1,0 +1,37 @@
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_c31c3e03149ecf 126,215
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_a8d7e43cb1433d 56-57,75-76,213,343-346,511-513
+  s_a40848e8f8cca9::t_8c3fac24434142 514-516
+src/modules/Project/stores/index.ts
+  s_a40848e8f8cca9::t_c31c3e03149ecf 8
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_c31c3e03149ecf 369-377
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_acb6ade805447c 199,208,224,227-228,239,265,314-316
+  s_a40848e8f8cca9::t_196c1d1ef4cd66 21,28-29,31-35,62-71,95-96,225-226,229-238
+  s_a40848e8f8cca9::t_0ed9b4ed723f0d 97-98
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_acb6ade805447c 219-245
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_0d7b8796fef96b 9,157-171
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_a40848e8f8cca9::t_067acd734542f8 5,11,84-124
+  s_a40848e8f8cca9::t_a98c96e255e5cf 125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d9d8e7381310c7ea6126143886d88738952515dc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
