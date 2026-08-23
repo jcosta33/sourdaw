@@ -1,0 +1,211 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_96cda0e3272a35 19,21,70-72,75-142,154-155,169-170,177-178,184,218-219,221,282,311-312,521,706-720,722-723,726-768,839,841,844,846,848,873,879,929-932,935,937,940-942,963,968,1026,1029,1085,1124,1128,1151,1160,1164,1168,1172,1176,1188,1192-1207,1625-1675
+package.json
+  s_a40848e8f8cca9::t_96cda0e3272a35 5,26-27,30-31,74-77,112,129,154-155
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_96cda0e3272a35 15-17,74-92,216-220,482-485,564,566-580,804,841-846,848-852,898-987,991-1001,1181,1218,1343,1376-1378,1392-1394,1595-1597,1621-1630,1835-1838,1841-1843,1863-1866,1873-1880,1910
+.dependency-cruiser.cjs
+  s_a40848e8f8cca9::t_e8c558141ea5bf 1-2
+.dependency-cruiser.reachability.cjs
+  s_a40848e8f8cca9::t_01ee37b28da0b1 1-2
+.dependency-cruiser.shared.cjs
+  s_a40848e8f8cca9::t_830b4ee1794264 1-2
+.dependency-cruiser.tests.cjs
+  s_a40848e8f8cca9::t_e3bb04be89581a 1-2
+.dependency-cruiser.types.cjs
+  s_a40848e8f8cca9::t_4db8f89852d335 1-2
+.gitattributes
+  s_a40848e8f8cca9::t_4a76d7f91b978b 1-4
+AGENTS.md
+  s_a40848e8f8cca9::t_43f8a077516cab 45-48,61-64
+CONTRIBUTING.md
+  s_a40848e8f8cca9::t_77b8f45d1501f2 3-4,6,8-14,16,18,20-28,30-31,33,35-38,40-41
+Cargo.toml
+  s_a40848e8f8cca9::t_87333f30ae9fb3 16-20
+LICENSE
+  s_a40848e8f8cca9::t_d46f2db4772e82 1-201
+NOTICE
+  s_a40848e8f8cca9::t_03bbeb63578cf3 1-7
+PRIVACY.md
+  s_a40848e8f8cca9::t_fb4b6480ed26fc 1-53
+README.md
+  s_a40848e8f8cca9::t_e4d03dfe6f51c6 3-5,7-9,11,13-20,22-28,32-39,43-51,53,55-60
+SECURITY.md
+  s_a40848e8f8cca9::t_0a2a9d88e64512 3-36
+crates/daw-collab/Cargo.toml
+  s_a40848e8f8cca9::t_66eb02c3e0a602 6-8
+crates/daw-core/Cargo.toml
+  s_a40848e8f8cca9::t_506951e5ef0d7d 6-8
+crates/daw-dsp/Cargo.toml
+  s_a40848e8f8cca9::t_04821a31f3501d 6-8
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_a40848e8f8cca9::t_f4fe8a62e09fd2 22
+crates/daw-dsp/src/toaster/engines/kick_808.rs
+  s_a40848e8f8cca9::t_1c83c6eb798811 13
+crates/daw-engine/Cargo.toml
+  s_a40848e8f8cca9::t_5a23a6da6a05e5 6-8
+crates/daw-io/Cargo.toml
+  s_a40848e8f8cca9::t_2dea6b42571167 6-8
+crates/daw-plugin-host/Cargo.toml
+  s_a40848e8f8cca9::t_f495d4cb52ce12 6-8
+crates/daw-wasm-decoder/Cargo.toml
+  s_a40848e8f8cca9::t_7d718b616aee0c 6-8
+crates/proof-chamber/Cargo.toml
+  s_a40848e8f8cca9::t_e33d1cde56b26e 6-8
+crates/scoring/Cargo.toml
+  s_a40848e8f8cca9::t_2167fffa3a0b7a 6-8
+crates/sourdaw-native/Cargo.toml
+  s_a40848e8f8cca9::t_f64d6da3a533ae 5-7
+docs/README.md
+  s_a40848e8f8cca9::t_07c048f763fc97 3-24
+docs/architecture/01-system.md
+  s_a40848e8f8cca9::t_051aa9a9f8dced 643
+docs/architecture/02-rust-backend.md
+  s_a40848e8f8cca9::t_3abb1e21591917 283
+docs/architecture/04-plugin-hosting-security.md
+  s_a40848e8f8cca9::t_28e627213e681a 51
+docs/architecture/09-ai-stack.md
+  s_a40848e8f8cca9::t_c02ada12eb6da1 1-38
+docs/architecture/10-desktop-packaging.md
+  s_a40848e8f8cca9::t_5e130f3eb04baf 3-5,7,9-14,16,18-20,22-25
+docs/release.md
+  s_a40848e8f8cca9::t_df9d1a2af6ce8e 1-47
+public/legal/DEPENDENCY-LICENSES.txt
+  s_a40848e8f8cca9::t_f35603ec74888b 1-30759
+public/legal/MI-PLAITS-DSP-RS-MIT.txt
+  s_a40848e8f8cca9::t_78775ef63ca680 1-21
+public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt
+  s_a40848e8f8cca9::t_1e755d65e8fd21 1-23
+public/legal/SOURDAW-NOTICE.txt
+  s_a40848e8f8cca9::t_0c9855d295e272 1-7
+public/legal/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_a1c800bd8b6f8c 38-65
+public/legal/TRADEMARKS.md
+  s_a40848e8f8cca9::t_623e74234add1c 5-6
+public/samples/levain/provenance.tsv
+  s_a40848e8f8cca9::t_c482036d3c4473 1362-1379
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_5e49bd25b37c35 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_a40848e8f8cca9::t_869672a4ec83c9 1
+public/wasm/daw-dsp/package.json
+  s_a40848e8f8cca9::t_6a462232b957de 4-6,9-13,23-25
+public/wasm/daw-wasm-decoder/package.json
+  s_a40848e8f8cca9::t_43a184a9a49d56 4-6,9-13,21-23
+public/wasm/manifest.json
+  s_a40848e8f8cca9::t_34f4b3d01965db 12,17-19,21,26,31-33,35,40,45-47,49,54,59
+public/wasm/proof-chamber/package.json
+  s_a40848e8f8cca9::t_32b268930d3e3d 4-6,9-13,23-25
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_a40848e8f8cca9::t_795392844055c1 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_a40848e8f8cca9::t_c631f09b14c054 1
+public/wasm/scoring/package.json
+  s_a40848e8f8cca9::t_70af9f79313711 4-6,9-13,23-25
+public/wasm/scoring/scoring.d.ts
+  s_a40848e8f8cca9::t_89a9d406788cf0 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_a40848e8f8cca9::t_2a108bb199095b 1
+release/dependency-license-proofs.json
+  s_a40848e8f8cca9::t_aad620b503fb5b 1-670
+release/desktop-runtime-material.json
+  s_a40848e8f8cca9::t_413cc42d488712 1-38
+release/spdx-license-texts/Apache-2.0.txt
+  s_a40848e8f8cca9::t_5489f6091d680f 1-73
+release/spdx-license-texts/ISC.txt
+  s_a40848e8f8cca9::t_6d49ef56a256fd 1-8
+release/spdx-license-texts/LGPL-3.0.txt
+  s_a40848e8f8cca9::t_8c1bbf6a0a0c75 1-304
+release/spdx-license-texts/MIT.txt
+  s_a40848e8f8cca9::t_9478ec58b76101 1-18
+release/spdx-license-texts/Unlicense.txt
+  s_a40848e8f8cca9::t_56107972c26bf3 1-10
+release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt
+  s_a40848e8f8cca9::t_4bfafc21914b6c 1-21
+release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs
+  s_a40848e8f8cca9::t_470e39062b092e 1-189
+release/upstream-proofs/mutable-instruments-analog_bass_drum.h
+  s_a40848e8f8cca9::t_8eeb65ddf3520b 1-195
+release/web-artifact-manifest.json
+  s_a40848e8f8cca9::t_01cb16dc2e21f9 1-12
+scripts/__tests__/checkLevainProvenance.spec.ts
+  s_a40848e8f8cca9::t_939bdb7ff89433 50
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_a40848e8f8cca9::t_9d264183684110 1-985
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_313e94ad30f8a3 12-23,30,48-49,58,1046-1051,1053-1064,1078-1080,1191,1237-1297,1335-1351,1356-1401,1464-1491,1584-1603
+scripts/__tests__/releaseProof.spec.ts
+  s_a40848e8f8cca9::t_067cc825a408fc 1-994
+scripts/__tests__/wasmManifestProvenance.spec.ts
+  s_a40848e8f8cca9::t_a38ddf0d5feec7 1-2,7,147-165
+scripts/checkElectronRuntimeProvenance.ts
+  s_a40848e8f8cca9::t_21bef648ad2286 58,66,72
+scripts/checkLevainProvenance.ts
+  s_a40848e8f8cca9::t_500120d0d22176 190-191
+scripts/checkProjectLicense.ts
+  s_a40848e8f8cca9::t_e3f074d56908fc 1-188
+scripts/dependencyLicenseReport.ts
+  s_a40848e8f8cca9::t_5c77d7388874f9 1-1044
+scripts/generateDependencyLicenseReport.ts
+  s_a40848e8f8cca9::t_473e247a0f3b2c 1-17
+scripts/levainSource.ts
+  s_a40848e8f8cca9::t_47ebb999145a96 8
+scripts/markWasmPackageInternal.ts
+  s_a40848e8f8cca9::t_a6fb6b276eb211 1-18
+scripts/releaseProof.ts
+  s_a40848e8f8cca9::t_6fdbb6cdb73800 1-2532
+scripts/strictJson.ts
+  s_a40848e8f8cca9::t_e3b0a56ac88e60 1-20
+scripts/verify-wasm-artifacts.ts
+  s_a40848e8f8cca9::t_7fcab493049521 38-39,41,178-213,270,286-288
+server/LICENSE
+  s_a40848e8f8cca9::t_cd5550776a89c7 1-201
+server/NOTICE
+  s_a40848e8f8cca9::t_1c4723602eb529 1-7
+server/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_52cde1d1f49d31 1-26
+server/package-lock.json
+  s_a40848e8f8cca9::t_f9c79c1868cf90 8
+server/package.json
+  s_a40848e8f8cca9::t_a158d1230f083c 4
+src/infra/store/storage/LocalStorageKeys.ts
+  s_a40848e8f8cca9::t_60fb87f19cddea 1-2
+src/infra/store/storage/createAutomergeStorage.ts
+  s_a40848e8f8cca9::t_aabd62e2cb30ed 121-129,793,1182-1193
+src/modules/AiGeneration/models/MidiPatternType.ts
+  s_a40848e8f8cca9::t_4a36d384140cca 1-2
+src/modules/AiRuntime/models/ToolDefinitions.ts
+  s_a40848e8f8cca9::t_242aeb69cb8480 1-2
+src/modules/AiRuntime/models/Tools/Types.ts
+  s_a40848e8f8cca9::t_34198370c0294d 1-2
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_109f96a1f0c2fe 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_a40848e8f8cca9::t_0052f2cb9dc981 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_a40848e8f8cca9::t_31edd6e8524921 1
+src/modules/Yeast/stores/__tests__/yeastStore.spec.ts
+  s_a40848e8f8cca9::t_76900afd12e6ae 6,27,59,63-76,181-205
+src/modules/Yeast/stores/yeastAutomergeStorage.ts
+  s_a40848e8f8cca9::t_4d6fae1df6d36e 381-382,451-453,508,617-619
+src/modules/Yeast/stores/yeastStore.ts
+  s_a40848e8f8cca9::t_a095dbbe4177da 135-137,143
+pnpm-lock.yaml
+  s_a40848e8f8cca9::t_97a5af9d6c4a47 93-95,144-146,219-224,2541-2543,5070-5078,7810-7811,10734-10742
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2dd9166831ea0053c8d3278df0b8039f10042b7d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
