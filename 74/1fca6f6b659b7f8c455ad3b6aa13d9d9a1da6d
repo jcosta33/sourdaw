@@ -1,0 +1,19 @@
+scripts/strictJson.ts
+  s_0a3429e31e555d::t_b344d175bfb2fe 4,15,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "741fca6f6b659b7f8c455ad3b6aa13d9d9a1da6d",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
