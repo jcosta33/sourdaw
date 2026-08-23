@@ -46,8 +46,7 @@ const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
-        stageLocalAsset:
-            vi.fn<(file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>>(),
+        stageLocalAsset: vi.fn<(file: File, name: string) => Promise<{ hash: string; leaseId: string }>>(),
         decodeAudioFile: vi.fn(),
         detectTempo: vi.fn<() => number | null>(() => 120),
         ensureTrackStrip: vi.fn(),
@@ -57,7 +56,7 @@ const mocks = vi.hoisted(() => {
         generateWebLlmCompletion: vi.fn(),
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
         promoteStagedAsset: vi.fn(),
-        releaseStagedAssets: vi.fn(),
+        releaseStagedAsset: vi.fn(),
         releasePreviewAudioBuffer: vi.fn(),
         removeTrackStrip: vi.fn(),
         setTrackGain: vi.fn(),
@@ -132,7 +131,7 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     getAssetTransfer: () => ({
         stageLocalAsset: mocks.stageLocalAsset,
         promoteStagedAsset: mocks.promoteStagedAsset,
-        releaseStagedAssets: mocks.releaseStagedAssets,
+        releaseStagedAsset: mocks.releaseStagedAsset,
     }),
 }));
 
@@ -331,7 +330,7 @@ describe('stem import and starting mix workflow', () => {
             ),
         }));
         clearAiHistory();
-        await clearPendingActionConfirmations();
+        clearPendingActionConfirmations();
         setArrangementEventBus({ emit: mocks.arrangementEventEmit });
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState, tempo: 100 });
@@ -349,23 +348,8 @@ describe('stem import and starting mix workflow', () => {
         mocks.decodeAudioFile.mockImplementation((file: File) =>
             Promise.resolve({ id: `buffer-${file.name}`, buffer: audioBuffer() })
         );
-        mocks.stageLocalAsset.mockImplementation((_file, name, leaseId) =>
-            Promise.resolve({ hash: `hash-${name}`, leaseId })
-        );
-        mocks.promoteStagedAsset.mockImplementation((leaseId: string, hash: string) =>
-            Promise.resolve({ status: 'promoted', leaseId, hash, blob: new Blob(), name: hash })
-        );
-        mocks.releaseStagedAssets.mockImplementation((bindings: readonly { leaseId: string; expectedHash: string }[]) =>
-            Promise.resolve({
-                status: 'released',
-                releases: bindings.map(({ leaseId, expectedHash }) => ({
-                    status: 'released',
-                    leaseId,
-                    hash: expectedHash,
-                    assetRemoved: true,
-                    ownerRetained: false,
-                })),
-            })
+        mocks.stageLocalAsset.mockImplementation((_file, name) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
         );
         mocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
             Promise.resolve(
@@ -380,7 +364,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     afterEach(async () => {
-        await clearPendingActionConfirmations();
+        clearPendingActionConfirmations();
         await cloudSession.clear();
         clearAiHistory();
         clearUndoHistory();
@@ -415,8 +399,9 @@ describe('stem import and starting mix workflow', () => {
         await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
             status: 'executed',
         });
-        expect(mocks.promoteStagedAsset).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAssets).not.toHaveBeenCalled();
+        expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
+        expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
 
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
         expect(committedTracks).toHaveLength(8);
@@ -497,7 +482,7 @@ describe('stem import and starting mix workflow', () => {
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.releaseStagedAssets).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
     it('stops sequential preparation between expensive stems and releases staged resources', async () => {
@@ -519,7 +504,7 @@ describe('stem import and starting mix workflow', () => {
         expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
         expect(confirmationId()).toBe('');
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');
-        expect(mocks.releaseStagedAssets).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
     it('preserves numbered stem names instead of collapsing them to ambiguous tracks', async () => {
@@ -566,7 +551,7 @@ describe('stem import and starting mix workflow', () => {
 
         expect(confirmationId()).toBe('');
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAssets).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
     it('rejects an oversized selected stem before decode or provider planning', async () => {
@@ -609,8 +594,8 @@ describe('stem import and starting mix workflow', () => {
 
     it('rejects provider omission and releases every preparation lease', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
-        mocks.stageLocalAsset.mockImplementation((_file, name, leaseId) =>
-            Promise.resolve({ hash: `hash-${name}`, leaseId })
+        mocks.stageLocalAsset.mockImplementation((_file, name) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
         );
         mocks.transformPlan.value = (plan) => {
             const call = plan[0];
@@ -626,7 +611,7 @@ describe('stem import and starting mix workflow', () => {
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAssets).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
     it('releases preparation-owned resources when the user cancels the exact proposal', async () => {
@@ -639,7 +624,7 @@ describe('stem import and starting mix workflow', () => {
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAssets).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -656,7 +641,7 @@ describe('stem import and starting mix workflow', () => {
         expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAssets).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -775,7 +760,7 @@ describe('stem import and starting mix workflow', () => {
         });
 
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAssets).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
 

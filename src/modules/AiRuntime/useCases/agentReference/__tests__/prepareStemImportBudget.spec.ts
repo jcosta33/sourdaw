@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     decodeAudioFile: vi.fn(),
+    detectTempo: vi.fn(() => 120),
     pickFiles: vi.fn<() => Promise<File[] | null>>(),
     stageLocalAsset: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
-    detectTempo: vi.fn(),
+    detectTempo: mocks.detectTempo,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: mocks.decodeAudioFile,
@@ -30,6 +31,28 @@ describe('prepareStemImport budget admission', () => {
     beforeEach(() => {
         agentRunLifecycle.clear();
         vi.clearAllMocks();
+    });
+
+    it('prepares executable PCM without committing a durable asset before confirmation receipt', async () => {
+        mocks.pickFiles.mockResolvedValue([
+            new File(['kick'], 'kick.wav', { type: 'audio/wav' }),
+            new File(['snare'], 'snare.wav', { type: 'audio/wav' }),
+        ]);
+        mocks.decodeAudioFile.mockImplementation((file: File) =>
+            Promise.resolve({
+                id: `buffer-${file.name}`,
+                buffer: { duration: 1, length: 48_000, numberOfChannels: 1 },
+            })
+        );
+
+        await expect(prepareStemImport(undefined, () => true)).resolves.toMatchObject({
+            status: 'prepared',
+            stems: [
+                { audioBufferId: 'buffer-kick.wav', sourceName: 'kick.wav' },
+                { audioBufferId: 'buffer-snare.wav', sourceName: 'snare.wav' },
+            ],
+        });
+        expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
     });
 
     it('leaves every category unchanged when a later stem-preparation limit rejects admission', async () => {

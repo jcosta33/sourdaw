@@ -81,6 +81,7 @@ function createAmDoc(): Doc<unknown> {
 
 type SeededDoc = {
     actionHistory?: { entries: { id: string }[] };
+    projectId?: string;
     /** A slot with no store projection — stands in for ordinary project truth. */
     peerProbe?: string;
 };
@@ -181,15 +182,38 @@ describe('AutomergeSync', () => {
         expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
     });
 
-    it('reports an applied root sync even when project identity text need not change', () => {
-        vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
-        const onSyncApplied = vi.fn();
-        const sync = new AutomergeSync(makePeerManager(), { onSyncApplied });
+    it.each([
+        { label: 'the same project identity text', remoteProjectId: undefined },
+        { label: 'a differing project identity', remoteProjectId: 'project:host' },
+    ])(
+        'waits through a change-free handshake and reports the later authoritative root advance with $label',
+        ({ remoteProjectId }) => {
+            const { live: initialLive, remoteSeed } = forkPeerDocs();
+            let live: Doc<unknown> = initialLive;
+            vi.mocked(getCrdtDoc).mockImplementation(() => live);
+            vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+                live = doc;
+            });
+            const onSyncApplied = vi.fn();
+            const sync = new AutomergeSync(makePeerManager(), { onSyncApplied });
 
-        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+            const remote = change(remoteSeed, (draft) => {
+                draft.peerProbe = 'host-authoritative';
+                if (remoteProjectId) {
+                    draft.projectId = remoteProjectId;
+                }
+            });
+            const messages = createPeerSyncMessages({ remote, local: live });
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: messages[0]! });
 
-        expect(onSyncApplied).toHaveBeenCalledExactlyOnceWith({ peerId: 'host-peer', docId: 'root' });
-    });
+            expect(onSyncApplied).not.toHaveBeenCalled();
+            for (const syncMessageBase64 of messages.slice(1)) {
+                sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+            }
+
+            expect(onSyncApplied).toHaveBeenCalledExactlyOnceWith({ peerId: 'host-peer', docId: 'root' });
+        }
+    );
 
     it('defers an incoming branch-document sync until its owning transition releases the document', async () => {
         let releaseTransition: ((outcome: 'aborted' | 'committed') => void) | undefined;

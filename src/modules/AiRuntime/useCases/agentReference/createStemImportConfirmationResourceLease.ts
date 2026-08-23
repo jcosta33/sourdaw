@@ -11,12 +11,12 @@ export function createStemImportConfirmationResourceLease(actions: readonly Exec
     let released = false;
     return {
         bytes: stems.reduce((total, stem) => total + stem.sourceBytes + stem.decodedBytes, 0),
-        release: async () => {
+        release: () => {
             if (released) {
                 return;
             }
-            await discardPreparedStemImportResources(stems);
             released = true;
+            discardPreparedStemImportResources(stems);
         },
     };
 }

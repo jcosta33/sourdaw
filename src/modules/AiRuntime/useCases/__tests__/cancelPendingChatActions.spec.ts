@@ -28,7 +28,6 @@ describe('cancelPendingChatActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.cancelAgentRun.mockResolvedValue({ status: 'cancelled', phase: 'cancelled' });
-        mocks.settlePendingActionResourceLease.mockResolvedValue(undefined);
     });
 
     it('returns {status: "missing"} when the confirmation does not exist', async () => {
@@ -84,32 +83,6 @@ describe('cancelPendingChatActions', () => {
         expect(mocks.cancelAgentRun.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.settlePendingActionResourceLease.mock.invocationCallOrder[0]!
         );
-    });
-
-    it('keeps a proposed confirmation retryable until durable resource release succeeds', async () => {
-        mocks.getPendingActionConfirmation.mockReturnValue({
-            id: 'conf-release-retry',
-            status: 'proposed',
-            assistantMessageId: 'msg-release-retry',
-            actionLabels: ['Import stems'],
-            approvalSnapshot: { actions: [] },
-            runId: 'run-release-retry',
-        });
-        mocks.settlePendingActionResourceLease
-            .mockRejectedValueOnce(new Error('durable release failed'))
-            .mockResolvedValueOnce(undefined);
-
-        await expect(cancelPendingChatActions({ confirmationId: 'conf-release-retry' })).rejects.toThrow(
-            'durable release failed'
-        );
-        expect(mocks.updatePendingActionConfirmationStatus).not.toHaveBeenCalled();
-        expect(mocks.updateChatMessage).not.toHaveBeenCalled();
-
-        await expect(cancelPendingChatActions({ confirmationId: 'conf-release-retry' })).resolves.toEqual({
-            status: 'cancelled',
-        });
-        expect(mocks.settlePendingActionResourceLease).toHaveBeenCalledTimes(2);
-        expect(mocks.updatePendingActionConfirmationStatus).toHaveBeenCalledOnce();
     });
 
     it('updates the chat message with a formatted cancellation summary', async () => {

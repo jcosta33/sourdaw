@@ -188,7 +188,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         }
     } catch (error) {
         if (stemImportScope) {
-            await discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+            discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
         }
         let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
         if (error instanceof AiProposalInvalidatedError) {
@@ -212,7 +212,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         throw error;
     }
     if (stemImportScope && !result.actions.some((action) => action.type === 'importStemSet')) {
-        await discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+        discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
     }
 
     const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(input.prompt, context, projectRevision);
@@ -226,7 +226,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
 
     if (input.signal?.aborted !== true && result.actions.length > 0 && captureProjectRevision() !== projectRevision) {
         if (stemImportScope) {
-            await discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+            discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
         }
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);

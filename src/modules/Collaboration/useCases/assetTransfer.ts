@@ -70,6 +70,7 @@ type AssetTransferCallbacks = {
 type LocalAssetEntry = {
     blob: Blob;
     name: string;
+    durable: boolean;
 };
 
 /**
@@ -202,12 +203,12 @@ export class AssetTransfer {
 
     /** Register a local asset (e.g. after recording or importing). */
     async addLocalAsset(blob: Blob, name: string): Promise<string> {
-        return this.runOwnerOperation(async (durableAssets) => {
-            const stored = await durableAssets.storeDurableAsset(blob, name);
+        return this.runOwnerOperation(async () => {
+            const hash = await hashBlob(blob);
             if (!this.disposed) {
-                this.localAssets.set(stored.hash, { blob: stored.blob, name: stored.name });
+                this.localAssets.set(hash, { blob, name, durable: false });
             }
-            return stored.hash;
+            return hash;
         });
     }
 
@@ -216,7 +217,7 @@ export class AssetTransfer {
         return this.runOwnerOperation(async (durableAssets) => {
             const staged = await durableAssets.stageAsset(leaseId, blob, name);
             if (!this.disposed) {
-                this.localAssets.set(staged.hash, { blob: staged.blob, name: staged.name });
+                this.localAssets.set(staged.hash, { blob: staged.blob, name: staged.name, durable: true });
             }
             return { hash: staged.hash, leaseId: staged.leaseId };
         });
@@ -227,7 +228,7 @@ export class AssetTransfer {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.reopenStagedAsset(leaseId, expectedHash);
             if (result.status === 'opened' && !this.disposed) {
-                this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
+                this.localAssets.set(result.hash, { blob: result.blob, name: result.name, durable: true });
             }
             return result;
         });
@@ -238,7 +239,7 @@ export class AssetTransfer {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.reopenDurableAsset(hash);
             if (result.status === 'opened' && !this.disposed) {
-                this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
+                this.localAssets.set(result.hash, { blob: result.blob, name: result.name, durable: true });
             }
             return result;
         });
@@ -275,7 +276,7 @@ export class AssetTransfer {
         return this.runOwnerOperation(async (durableAssets) => {
             const result = await durableAssets.promoteStagedAsset(leaseId, expectedHash);
             if (!this.disposed && result.status !== 'failed') {
-                this.localAssets.set(result.hash, { blob: result.blob, name: result.name });
+                this.localAssets.set(result.hash, { blob: result.blob, name: result.name, durable: true });
             }
             return result;
         });
@@ -480,9 +481,14 @@ export class AssetTransfer {
         serving.add(hash);
         this.servingHashesByPeer.set(peerId, serving);
         try {
-            // The resident map is only a disposable acceleration cache. A
-            // renderer/session restart must still be able to serve originals
-            // owned by this project, so every request verifies durable truth.
+            const resident = this.localAssets.get(hash);
+            if (resident && !resident.durable) {
+                await this.sendAssetResponse(peerId, hash, resident, missingChunks);
+                return;
+            }
+            // A renderer/session restart has no resident entry. Only an
+            // explicitly promoted project owner may reopen durable bytes;
+            // ordinary local and received session assets never mint ownerIds.
             const durable = await this.runOwnerOperation((durableAssets) => durableAssets.reopenDurableAsset(hash));
             if (this.disposed) {
                 return;
@@ -491,7 +497,7 @@ export class AssetTransfer {
                 this.localAssets.delete(hash);
                 return;
             }
-            const entry = { blob: durable.blob, name: durable.name };
+            const entry = { blob: durable.blob, name: durable.name, durable: true };
             this.localAssets.set(hash, entry);
             await this.sendAssetResponse(peerId, hash, entry, missingChunks);
         } finally {
@@ -750,20 +756,10 @@ export class AssetTransfer {
                 return;
             }
 
-            // The immutable Blob was hashed immediately above; carry that
-            // verification into the durable write instead of digesting the
-            // same full-size original a second time.
-            const stored = await this.runOwnerOperation((durableAssets) =>
-                durableAssets.storeDurableAsset(blob, transfer.manifest.name, actualHash)
-            );
-            if (this.disposed) {
-                return;
-            }
-            if (stored.hash !== hash) {
-                this.abortTransfer(hash, `integrity check failed while storing ${stored.hash}`);
-                return;
-            }
-            this.localAssets.set(hash, { blob: stored.blob, name: stored.name });
+            // Received session bytes stay resident only. Durable ownerIds are
+            // minted exclusively by explicit hash-bound stage/promotion; a
+            // transfer has no project reachability authority to retain them.
+            this.localAssets.set(hash, { blob, name: transfer.manifest.name, durable: false });
             this.clearStallTimer(hash);
             this.requestedHashes.delete(hash);
             // The asset resolved, so the hash owes nothing to the retry policy.

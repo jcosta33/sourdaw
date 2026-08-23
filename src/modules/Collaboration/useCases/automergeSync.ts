@@ -461,7 +461,9 @@ export class AutomergeSync {
         } finally {
             this.isApplyingRemoteSync = false;
         }
-        this.hooks.onSyncApplied?.({ peerId, docId });
+        if (!haveSameHeads(before_heads, getHeads(sanitized_doc))) {
+            this.hooks.onSyncApplied?.({ peerId, docId });
+        }
 
         // Entry-level invalidation, run against the projected post-sync
         // history: capabilities whose entry the sync removed or whose metadata

@@ -8,6 +8,7 @@ type FakeRequest<Result = unknown> = {
 };
 
 type StoredRecord = Record<string, unknown>;
+type FakeIndexDefinition = { keyPath: string; multiEntry: boolean };
 
 class FakeTransaction {
     oncomplete: (() => void) | null = null;
@@ -20,8 +21,10 @@ class FakeTransaction {
 
     constructor(
         private readonly stores: Map<string, Map<string, StoredRecord>>,
+        private readonly indexes: Map<string, Map<string, FakeIndexDefinition>>,
         private readonly storeNames: readonly string[],
-        private readonly mode: IDBTransactionMode
+        private readonly mode: IDBTransactionMode,
+        private readonly onFullScan: () => void = () => undefined
     ) {
         queueMicrotask(() => this.flush());
     }
@@ -34,7 +37,7 @@ class FakeTransaction {
         if (!store) {
             throw new DOMException(`Unknown object store: ${name}`, 'NotFoundError');
         }
-        return new FakeObjectStore(this, name, store);
+        return new FakeObjectStore(this, name, store, this.indexes.get(name) ?? new Map(), this.onFullScan);
     }
 
     enqueue(operation: () => void): void {
@@ -89,14 +92,42 @@ class FakeObjectStore {
     constructor(
         private readonly transaction: FakeTransaction,
         private readonly storeName: string,
-        private readonly values: Map<string, StoredRecord>
+        private readonly values: Map<string, StoredRecord>,
+        private readonly indexes: Map<string, FakeIndexDefinition>,
+        private readonly onFullScan: () => void = () => undefined
     ) {}
+
+    readonly indexNames = { contains: (name: string) => this.indexes.has(name) };
+
+    createIndex(name: string, keyPath: string, options?: IDBIndexParameters) {
+        this.indexes.set(name, { keyPath, multiEntry: options?.multiEntry === true });
+        return this.index(name);
+    }
+
+    index(name: string): { getAll: (key: string) => FakeRequest<StoredRecord[]> } {
+        const definition = this.indexes.get(name);
+        if (!definition) {
+            throw new DOMException(`Unknown index: ${name}`, 'NotFoundError');
+        }
+        return {
+            getAll: (key) =>
+                this.request(() =>
+                    [...this.values.values()].filter((value) => {
+                        const indexed = value[definition.keyPath];
+                        return definition.multiEntry && Array.isArray(indexed)
+                            ? indexed.includes(key)
+                            : indexed === key;
+                    })
+                ),
+        };
+    }
 
     get(key: string): FakeRequest<StoredRecord | undefined> {
         return this.request(() => this.values.get(key));
     }
 
     getAll(): FakeRequest<StoredRecord[]> {
+        this.onFullScan();
         return this.request(() => [...this.values.values()]);
     }
 
@@ -135,37 +166,50 @@ export type FakeDurableAssetIndexedDb = {
     deleteAsset: (hash: string) => void;
     overwriteAssetBlob: (hash: string, blob: Blob) => void;
     overwriteLeaseHash: (leaseId: string, hash: string) => void;
+    overwriteLeaseTerminalAt: (leaseId: string, terminalAt: number) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
+    countRecords: (store: 'assets' | 'leases') => number;
+    getFullScanCount: () => number;
 };
 
 /** Install the exact two-store IndexedDB surface the durable asset owner uses. */
 export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
     const stores = new Map<string, Map<string, StoredRecord>>();
+    const indexes = new Map<string, Map<string, FakeIndexDefinition>>();
+    let fullScanCount = 0;
     const database = {
         objectStoreNames: {
             contains: (name: string) => stores.has(name),
         },
         createObjectStore: (name: string) => {
             stores.set(name, new Map());
-            return {};
+            const storeIndexes = new Map<string, FakeIndexDefinition>();
+            indexes.set(name, storeIndexes);
+            const transaction = new FakeTransaction(stores, indexes, [name], 'readwrite');
+            return new FakeObjectStore(transaction, name, stores.get(name)!, storeIndexes, () => {
+                fullScanCount += 1;
+            });
         },
         close: () => undefined,
         onversionchange: null as (() => void) | null,
         transaction: (names: string | string[], mode: IDBTransactionMode = 'readonly') =>
-            new FakeTransaction(stores, Array.isArray(names) ? names : [names], mode),
+            new FakeTransaction(stores, indexes, Array.isArray(names) ? names : [names], mode, () => {
+                fullScanCount += 1;
+            }),
     };
     vi.stubGlobal('indexedDB', {
         open: () => {
             const request = {
                 result: database,
+                transaction: new FakeTransaction(stores, indexes, [...stores.keys()], 'readwrite'),
                 error: null as DOMException | null,
                 onsuccess: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 onblocked: null as (() => void) | null,
-                onupgradeneeded: null as (() => void) | null,
+                onupgradeneeded: null as ((event: { oldVersion: number }) => void) | null,
             };
             queueMicrotask(() => {
-                request.onupgradeneeded?.();
+                request.onupgradeneeded?.({ oldVersion: 0 });
                 request.onsuccess?.();
             });
             return request;
@@ -176,6 +220,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
             for (const store of stores.values()) {
                 store.clear();
             }
+            fullScanCount = 0;
         },
         deleteAsset: (hash) => {
             stores.get('assets')?.delete(hash);
@@ -194,6 +239,13 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 leaseStore?.set(leaseId, { ...lease, hash });
             }
         },
+        overwriteLeaseTerminalAt: (leaseId, terminalAt) => {
+            const leaseStore = stores.get('leases');
+            const lease = leaseStore?.get(leaseId);
+            if (lease) {
+                leaseStore?.set(leaseId, { ...lease, terminalAt });
+            }
+        },
         unlinkLeaseFromAsset: (leaseId, hash) => {
             const assetStore = stores.get('assets');
             const asset = assetStore?.get(hash);
@@ -206,5 +258,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 });
             }
         },
+        countRecords: (store) => stores.get(store)?.size ?? 0,
+        getFullScanCount: () => fullScanCount,
     };
 }
