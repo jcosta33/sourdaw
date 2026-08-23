@@ -113,14 +113,6 @@ export const trackPresets: readonly PresetAction[] = [
         },
     },
     {
-        id: 'remove-all-tracks',
-        label: 'Delete All Tracks',
-        keywords: ['delete all tracks', 'remove all', 'clear tracks'],
-        category: 'Track',
-        isDestructive: true,
-        buildAction: () => ({ type: 'removeAllTracks' }),
-    },
-    {
         id: 'freeze-track',
         label: 'Freeze Track',
         keywords: ['freeze', 'freeze track', 'render track'],

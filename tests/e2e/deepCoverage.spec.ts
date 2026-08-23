@@ -178,15 +178,21 @@ test.describe('Setlist — list mutations', () => {
         expect(after_second).toBe(before_first);
     });
 
-    test('Count-in bars spinbutton commits in-range values and ignores out-of-range', async ({ page }) => {
+    test('Count-in bars spinbutton preserves an invalid draft until blur, then reverts it', async ({ page }) => {
         const count_in = page.getByRole('spinbutton', { name: 'Count-in bars' });
 
         await count_in.fill('4');
         await expect(count_in).toHaveValue('4');
 
-        // Out-of-range value is silently ignored — value must not become 9.
+        // Keep an invalid draft visible while editing so the field does not
+        // silently discard the user's keystroke.
         await count_in.fill('9');
-        await expect(count_in).not.toHaveValue('9');
+        await expect(count_in).toHaveValue('9');
+
+        // Leaving the field rejects the invalid draft and restores the last
+        // committed value.
+        await count_in.blur();
+        await expect(count_in).toHaveValue('4');
 
         // 0 is valid.
         await count_in.fill('0');
@@ -208,8 +214,8 @@ test.describe('Prompt bar — preview and execution', () => {
 
     test('Destructive command opens a confirm/cancel preview; cancelling keeps tracks', async ({ page }) => {
         const prompt = page.getByRole('textbox', { name: 'Prompt command input' });
-        await prompt.fill('Delete All Tracks');
-        await page.getByRole('option', { name: /Delete All Tracks/i }).click();
+        await prompt.fill('Delete Track');
+        await page.getByRole('option', { name: /Delete Track/i }).click();
 
         // Preview row appears only for destructive actions.
         const confirm = page.getByRole('button', { name: 'Confirm actions' });
@@ -218,26 +224,33 @@ test.describe('Prompt bar — preview and execution', () => {
         await expect(cancel).toBeVisible();
 
         // Cancelling clears the preview without removing any track.
-        const track_rows_before = await page.getByRole('grid', { name: /Track list/i }).getByRole('row').count();
+        const track_rows = page.getByRole('grid', { name: /Track list/i }).locator(':scope > [role="row"]');
+        const track_rows_before = await track_rows.count();
         await cancel.click();
         await expect(confirm).toHaveCount(0);
-        const track_rows_after = await page.getByRole('grid', { name: /Track list/i }).getByRole('row').count();
+        const track_rows_after = await track_rows.count();
         expect(track_rows_after).toBe(track_rows_before);
     });
 
     test('Confirming a destructive command removes tracks and shows an AI change toast', async ({ page }) => {
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const rows_before = await track_list.getByRole('row').count();
+        const track_rows = track_list.locator(':scope > [role="row"]');
+        const rows_before = await track_rows.count();
         expect(rows_before).toBeGreaterThan(0);
 
-        await page.getByRole('textbox', { name: 'Prompt command input' }).fill('Delete All Tracks');
-        await page.getByRole('option', { name: /Delete All Tracks/i }).click();
-        await page.getByRole('button', { name: 'Confirm actions' }).click();
+        await page.getByRole('textbox', { name: 'Prompt command input' }).fill('Delete Track');
+        await page.getByRole('option', { name: /Delete Track/i }).click();
+
+        const confirm = page.getByRole('button', { name: 'Confirm actions' });
+        await expect(confirm).toBeVisible();
+        await confirm.click();
+
+        await expect(track_rows).toHaveCount(rows_before - 1);
 
         // The AI change toast (role=status with Undo/Dismiss) reports the confirmed action.
         const toast = ai_toast(page);
         await expect(toast).toBeVisible();
-        await expect(toast.getByText(/Confirmed:.*Delete All Tracks/i)).toBeVisible();
+        await expect(toast.getByText(/Confirmed:.*Delete Track/i)).toBeVisible();
     });
 });
 

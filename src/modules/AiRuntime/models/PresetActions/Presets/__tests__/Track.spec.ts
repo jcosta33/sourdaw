@@ -155,18 +155,25 @@ describe('trackPresets — remove-track guard', () => {
 });
 
 describe('trackPresets — global actions', () => {
-    it('builds clearSolos and removeAllTracks without requiring selection', () => {
+    it('builds clearSolos without requiring selection', () => {
         const clearSolos = trackPresets.find((p) => p.id === 'clear-solos')!;
-        const removeAll = trackPresets.find((p) => p.id === 'remove-all-tracks')!;
         const clearAction = clearSolos.buildAction(ctxNoSelection);
-        const removeAction = removeAll.buildAction(ctxNoSelection);
         if (clearAction === null || Array.isArray(clearAction)) {
             throw new Error('Expected clearSolos action');
         }
-        if (removeAction === null || Array.isArray(removeAction)) {
-            throw new Error('Expected removeAllTracks action');
-        }
         expect(clearAction.type).toBe('clearSolos');
-        expect(removeAction.type).toBe('removeAllTracks');
+    });
+
+    it('does not expose unsupported removeAllTracks through the preset surface', () => {
+        const presetActionTypes = trackPresets.flatMap((preset) => {
+            const action = preset.buildAction(ctxWithTrack);
+            if (action === null) {
+                return [];
+            }
+            return Array.isArray(action) ? action.map((item) => item.type) : [action.type];
+        });
+
+        expect(trackPresets.map((preset) => preset.id)).not.toContain('remove-all-tracks');
+        expect(presetActionTypes).not.toContain('removeAllTracks');
     });
 });

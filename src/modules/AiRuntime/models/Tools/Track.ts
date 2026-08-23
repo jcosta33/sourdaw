@@ -13,7 +13,6 @@ export const trackTools: readonly ToolSchema[] = [
         ['name', 'kind']
     ),
     tool('removeTrack', 'Delete a track and all its clips/devices.', { trackId: { type: 'string' } }, ['trackId']),
-    tool('removeAllTracks', 'Remove every track from the session.', {}),
     tool('renameTrack', 'Rename a track.', { trackId: { type: 'string' }, name: { type: 'string' } }, [
         'trackId',
         'name',
