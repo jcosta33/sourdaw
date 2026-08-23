@@ -55,9 +55,10 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
             didWrite = true;
         }
 
-        const beforeTrack = getTrackStoreState()?.tracks.find((track) => track.id === trackId);
+        const committedTrackId: string = trackId;
+        const beforeTrack = getTrackStoreState()?.tracks.find((track) => track.id === committedTrackId);
         const before = beforeTrack ? structuredClone(beforeTrack) : null;
-        const device = addExternalDevice(trackId, plugin.id, plugin.name);
+        const device = addExternalDevice(committedTrackId, plugin.id, plugin.name);
         if (!device) {
             return toHandlerExecutionResult(didWrite);
         }
@@ -109,7 +110,7 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                     `External device ${committedDevice.id} is missing its plugin host identity after project commit`
                 );
             }
-            if (!isCommittedExternalDeviceStillAuthoritative(trackId, committedDevice)) {
+            if (!isCommittedExternalDeviceStillAuthoritative(committedTrackId, committedDevice)) {
                 pluginActivationSettled = true;
                 return;
             }
