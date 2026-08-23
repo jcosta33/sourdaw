@@ -17,7 +17,7 @@ see the [third-party notices](./public/legal/THIRD-PARTY-NOTICES.md).
 - **Collaboration:** direct WebRTC sessions, an optional authenticated WebSocket
   relay, and native LAN discovery. These are collaboration transports, not a
   hosted Sourdaw service.
-- **Plugins:** CLAP scanning and hosting on desktop. VST3 is unsupported.
+- **Plugins:** CLAP scanning and hosting on desktop. VST® 3 is unsupported.
 
 ## Prerequisites
 

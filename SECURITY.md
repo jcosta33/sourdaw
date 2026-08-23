@@ -17,7 +17,7 @@ for vulnerabilities and do not open a public issue first.
   candidates, but plugin code and descriptors are read by a bounded child scan
   process. Loaded CLAP plugins then run in the native application process. Scan
   isolation is not hosting isolation.
-- VST3 is unsupported and is not a loadable plugin surface.
+- VST® 3 is unsupported and is not a loadable plugin surface.
 - Sourdaw-owned audio callbacks avoid heap allocation, locks, and blocking IPC.
   This discipline does not make claims about code inside a third-party plugin.
 - Guarded ZIP input is capped at 2 GiB, 10,000 entries, 255-byte paths, 512 MiB
