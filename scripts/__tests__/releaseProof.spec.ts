@@ -10,16 +10,19 @@ import {
     readdirSync,
     rmSync,
     symlinkSync,
+    truncateSync,
     writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from '../electronRuntimeContract';
 import {
     ELECTRON_FFMPEG_BUILD_INPUTS,
+    RELEASE_PROOF_ARCHIVE_LIMITS,
     assembleReleaseProof,
     type ReleaseBuildRunner,
     validateReleaseProof,
@@ -362,6 +365,96 @@ function refreshProofHash(fixture: Fixture, field: string, path: string): void {
     writeJson(join(fixture.candidate, 'release-proof.json'), value);
 }
 
+function refreshWebArchiveHash(fixture: Fixture): void {
+    const value = proof(fixture);
+    const web = webProof(value);
+    web.archiveSha256 = hash(join(fixture.candidate, web.archivePath as string));
+    writeJson(join(fixture.candidate, 'release-proof.json'), value);
+}
+
+function replaceWebArchive(fixture: Fixture, paths: readonly string[]): string {
+    const root = join(fixture.base, 'bounded-web-archive');
+    rmSync(root, { recursive: true, force: true });
+    for (const path of paths) {
+        write(join(root, path), 'x');
+    }
+    const archive = join(fixture.candidate, 'web/sourdaw-web.zip');
+    rmSync(archive);
+    execFileSync('zip', ['-X', '-q', archive, ...paths], { cwd: root });
+    refreshWebArchiveHash(fixture);
+    return archive;
+}
+
+function patchZipMetadata(
+    archive: string,
+    patch: (bytes: Buffer, centralOffset: number, entryCount: number) => void
+): void {
+    const bytes = readFileSync(archive);
+    const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    if (end === -1) {
+        throw new Error('fixture ZIP is missing an end of central directory');
+    }
+    const entryCount = bytes.readUInt16LE(end + 10);
+    patch(bytes, bytes.readUInt32LE(end + 16), entryCount);
+    writeFileSync(archive, bytes);
+}
+
+function replaceSourceArchiveWithGitMetadata(fixture: Fixture, marker: string): void {
+    const value = proof(fixture);
+    const source = value.source as Record<string, unknown>;
+    const archive = join(fixture.candidate, source.archivePath as string);
+    const extracted = join(fixture.base, 'source-with-git-metadata');
+    mkdirSync(extracted, { recursive: true });
+    execFileSync('tar', ['-xzf', archive, '-C', extracted]);
+    const root = join(extracted, `sourdaw-${fixture.revision}`);
+    write(join(root, '.gitattributes'), 'trigger filter=escape\n');
+    write(join(root, 'trigger'), 'fixture');
+    write(
+        join(root, '.git/config'),
+        `[filter "escape"]\n\tclean = sh -c 'touch "${marker}"'\n`
+    );
+    rmSync(archive);
+    execFileSync('tar', ['-czf', archive, basename(root)], { cwd: extracted });
+    source.archiveSha256 = hash(archive);
+    const manifestPath = join(fixture.candidate, source.manifestPath as string);
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    manifest.archiveSha256 = source.archiveSha256;
+    writeJson(manifestPath, manifest);
+    source.manifestSha256 = hash(manifestPath);
+    writeJson(join(fixture.candidate, 'release-proof.json'), value);
+}
+
+function refreshSourceArchiveHash(fixture: Fixture): string {
+    const value = proof(fixture);
+    const source = value.source as Record<string, unknown>;
+    const archive = join(fixture.candidate, source.archivePath as string);
+    source.archiveSha256 = hash(archive);
+    const manifestPath = join(fixture.candidate, source.manifestPath as string);
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    manifest.archiveSha256 = source.archiveSha256;
+    writeJson(manifestPath, manifest);
+    source.manifestSha256 = hash(manifestPath);
+    writeJson(join(fixture.candidate, 'release-proof.json'), value);
+    return archive;
+}
+
+function oversizedTarHeader(size: number): Buffer {
+    const header = Buffer.alloc(512);
+    header.write('oversized', 0);
+    header.write('0000644\0', 100);
+    header.write('0000000\0', 108);
+    header.write('0000000\0', 116);
+    header.write(`${size.toString(8).padStart(11, '0')}\0`, 124);
+    header.write('00000000000\0', 136);
+    header.fill(0x20, 148, 156);
+    header.write('0', 156);
+    header.write('ustar\0', 257);
+    header.write('00', 263);
+    const checksum = header.reduce((total, byte) => total + byte, 0);
+    header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148);
+    return gzipSync(header);
+}
+
 function validate(fixture: Fixture): string {
     return validateReleaseProof({
         root: fixture.root,
@@ -682,6 +775,87 @@ describe('release proof', () => {
         expect(validate(fixture)).toContain(
             `desktop material basename must be electron-${fixture.contract.revision}.tar.gz`
         );
+    });
+
+    it('fails validation closed when the repository is dirty or no longer at the expected revision', () => {
+        const dirty = createFixture();
+        assemble(dirty);
+        write(join(dirty.root, 'untracked-release-input.txt'), 'dirty');
+        expect(validate(dirty)).toContain('release proof validation requires a clean worktree');
+
+        const moved = createFixture();
+        assemble(moved);
+        write(join(moved.root, 'next-revision.txt'), 'next');
+        commit(moved.root, 'advance fixture revision');
+        expect(validate(moved)).toContain('release proof validation checkout HEAD does not match the expected revision');
+    });
+
+    it('rejects Git archive metadata before it can influence reconstructed Git execution', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const marker = join(fixture.base, 'git-filter-ran');
+        replaceSourceArchiveWithGitMetadata(fixture, marker);
+        expect(validate(fixture)).toContain('source archive contains repository metadata');
+        expect(existsSync(marker)).toBe(false);
+    });
+
+    it('rejects ZIP archive resource metadata without expanding hostile payloads', () => {
+        const tar = createFixture();
+        assemble(tar);
+        const tarSource = proof(tar).source as Record<string, unknown>;
+        const tarArchive = join(tar.candidate, tarSource.archivePath as string);
+        writeFileSync(tarArchive, oversizedTarHeader(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1));
+        refreshSourceArchiveHash(tar);
+        expect(validate(tar)).toContain(
+            'tar archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
+        );
+
+        const file = createFixture();
+        assemble(file);
+        const fileSource = proof(file).source as Record<string, unknown>;
+        truncateSync(join(file.candidate, fileSource.archivePath as string), RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
+        expect(validate(file)).toContain('source archive: file exceeds the candidate file-size limit');
+
+        const entry = createFixture();
+        assemble(entry);
+        const entryArchive = replaceWebArchive(entry, ['entry.txt']);
+        patchZipMetadata(entryArchive, (bytes, centralOffset) => {
+            bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
+        });
+        refreshWebArchiveHash(entry);
+        expect(validate(entry)).toContain('zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit');
+
+        const aggregate = createFixture();
+        assemble(aggregate);
+        const aggregatePaths = Array.from({ length: 11 }, (_value, index) => `file-${String(index)}.txt`);
+        const aggregateArchive = replaceWebArchive(aggregate, aggregatePaths);
+        patchZipMetadata(aggregateArchive, (bytes, centralOffset, entryCount) => {
+            let offset = centralOffset;
+            const size = Math.floor(RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes / entryCount) + 1;
+            for (let index = 0; index < entryCount; index += 1) {
+                bytes.writeUInt32LE(size, offset + 24);
+                offset += 46 + bytes.readUInt16LE(offset + 28) + bytes.readUInt16LE(offset + 30) + bytes.readUInt16LE(offset + 32);
+            }
+        });
+        refreshWebArchiveHash(aggregate);
+        expect(validate(aggregate)).toContain('zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit');
+
+        const count = createFixture();
+        assemble(count);
+        const countArchive = replaceWebArchive(count, ['count.txt']);
+        patchZipMetadata(countArchive, (bytes, _centralOffset) => {
+            const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+            bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 8);
+            bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 10);
+        });
+        refreshWebArchiveHash(count);
+        expect(validate(count)).toContain('zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit');
+
+        const depth = createFixture();
+        assemble(depth);
+        const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
+        replaceWebArchive(depth, [deepPath]);
+        expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
     });
 
     it('accepts a complete candidate assembled from the exact artifacts and Git commits', () => {
