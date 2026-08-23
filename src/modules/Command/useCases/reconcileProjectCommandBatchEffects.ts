@@ -22,6 +22,12 @@ function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+function pendingEffectCannotRetryReason(effectKind: 'external-effect' | 'runtime-graph'): string {
+    return effectKind === 'external-effect'
+        ? 'Pending external effect cannot be retried exactly'
+        : 'Pending runtime effect cannot be retried exactly';
+}
+
 export async function reconcileProjectCommandBatchEffects(
     input: ReconcileProjectCommandBatchEffectsInput
 ): Promise<ReconcileProjectCommandBatchEffectsOutput> {
@@ -42,6 +48,7 @@ export async function reconcileProjectCommandBatchEffects(
         return { status: 'failed', reason: 'Pending external effect requires manual repair' };
     }
     const pendingCommandIds = new Set(receipt.pendingEffects.map(({ commandId }) => commandId));
+    const pendingEffectByCommandId = new Map(receipt.pendingEffects.map((effect) => [effect.commandId, effect]));
     const committedCommandIds = new Set(
         receipt.commandOutcomes.filter(({ outcome }) => outcome === 'committed').map(({ commandId }) => commandId)
     );
@@ -61,7 +68,7 @@ export async function reconcileProjectCommandBatchEffects(
     const actions = input.envelope.commands.map(
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
-    const reconciliations: HandlerAfterCommit[] = [];
+    const exactReconciliations = new Map<string, HandlerAfterCommit>();
     try {
         for (const [actionIndex, action] of actions.entries()) {
             const command = input.envelope.commands[actionIndex]!;
@@ -83,8 +90,13 @@ export async function reconcileProjectCommandBatchEffects(
             if (result?.status === 'conflict' || result?.status === 'no-write') {
                 return { status: 'failed', reason: `Action recovery conflicts with its base snapshot: ${action.type}` };
             }
-            if (pendingCommandIds.has(command.commandId) && result?.afterAmbiguousCommit) {
-                reconciliations.push(result.afterAmbiguousCommit);
+            const pendingEffect = pendingEffectByCommandId.get(command.commandId);
+            if (
+                pendingEffect &&
+                !(pendingEffect.kind === 'runtime-graph' && pendingEffect.remediation === 'repair') &&
+                result?.afterAmbiguousCommit
+            ) {
+                exactReconciliations.set(command.commandId, result.afterAmbiguousCommit);
             }
         }
     } catch (error) {
@@ -93,25 +105,48 @@ export async function reconcileProjectCommandBatchEffects(
         workspace.release();
     }
 
-    let requiresCurrentProjectRepair = receipt.pendingEffects.some(
-        (effect) => effect.kind === 'runtime-graph' && effect.remediation === 'repair'
+    const runtimeRepairCommandIds = new Set(
+        receipt.pendingEffects.flatMap((effect) =>
+            effect.kind === 'runtime-graph' && effect.remediation === 'repair' ? [effect.commandId] : []
+        )
     );
-    if (!requiresCurrentProjectRepair && reconciliations.length !== receipt.pendingEffects.length) {
-        return { status: 'failed', reason: 'Pending external effect cannot be retried exactly' };
+
+    for (const effect of receipt.pendingEffects) {
+        if (runtimeRepairCommandIds.has(effect.commandId)) {
+            continue;
+        }
+        if (!exactReconciliations.has(effect.commandId)) {
+            return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
+        }
     }
-    if (!requiresCurrentProjectRepair) {
-        let currentWorkspace: ReturnType<typeof commandBatchPreviewPort.create> = null;
-        try {
+
+    let currentWorkspace: ReturnType<typeof commandBatchPreviewPort.create> = null;
+    try {
+        const exactRetryEffects = receipt.pendingEffects.filter(
+            (effect) => !runtimeRepairCommandIds.has(effect.commandId)
+        );
+        if (exactRetryEffects.length > 0) {
             if (!commandProjectRevisionPort.isConfigured()) {
-                requiresCurrentProjectRepair = true;
+                for (const effect of exactRetryEffects) {
+                    if (effect.kind !== 'runtime-graph') {
+                        return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
+                    }
+                    runtimeRepairCommandIds.add(effect.commandId);
+                }
             } else {
                 currentWorkspace = commandBatchPreviewPort.create(commandProjectRevisionPort.capture());
                 if (!currentWorkspace) {
-                    requiresCurrentProjectRepair = true;
+                    for (const effect of exactRetryEffects) {
+                        if (effect.kind !== 'runtime-graph') {
+                            return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
+                        }
+                        runtimeRepairCommandIds.add(effect.commandId);
+                    }
                 } else {
                     for (const [actionIndex, action] of actions.entries()) {
                         const command = input.envelope.commands[actionIndex]!;
-                        if (!pendingCommandIds.has(command.commandId)) {
+                        const pendingEffect = pendingEffectByCommandId.get(command.commandId);
+                        if (!pendingEffect || runtimeRepairCommandIds.has(command.commandId)) {
                             continue;
                         }
                         const handler = getCommandHandler(action);
@@ -120,8 +155,14 @@ export async function reconcileProjectCommandBatchEffects(
                             handler.executionKind === 'runtime' ||
                             handler.previewExecution !== 'isolated-project'
                         ) {
-                            requiresCurrentProjectRepair = true;
-                            break;
+                            if (pendingEffect.kind !== 'runtime-graph') {
+                                return {
+                                    status: 'failed',
+                                    reason: pendingEffectCannotRetryReason(pendingEffect.kind),
+                                };
+                            }
+                            runtimeRepairCommandIds.add(command.commandId);
+                            continue;
                         }
                         const before = JSON.stringify(currentWorkspace.getProjectDocument());
                         const result = currentWorkspace.scope(() =>
@@ -133,21 +174,34 @@ export async function reconcileProjectCommandBatchEffects(
                         );
                         const after = JSON.stringify(currentWorkspace.getProjectDocument());
                         if (result?.status === 'conflict' || before !== after) {
-                            requiresCurrentProjectRepair = true;
-                            break;
+                            if (pendingEffect.kind !== 'runtime-graph') {
+                                return {
+                                    status: 'failed',
+                                    reason: pendingEffectCannotRetryReason(pendingEffect.kind),
+                                };
+                            }
+                            runtimeRepairCommandIds.add(command.commandId);
                         }
                     }
                 }
             }
-        } catch {
-            requiresCurrentProjectRepair = true;
-        } finally {
-            currentWorkspace?.release();
         }
+    } catch {
+        for (const effect of receipt.pendingEffects) {
+            if (runtimeRepairCommandIds.has(effect.commandId)) {
+                continue;
+            }
+            if (effect.kind !== 'runtime-graph') {
+                return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
+            }
+            runtimeRepairCommandIds.add(effect.commandId);
+        }
+    } finally {
+        currentWorkspace?.release();
     }
 
     try {
-        if (requiresCurrentProjectRepair) {
+        if (runtimeRepairCommandIds.size > 0) {
             if (input.shouldReconcile?.() === false) {
                 return {
                     status: 'failed',
@@ -162,9 +216,15 @@ export async function reconcileProjectCommandBatchEffects(
                 };
             }
             await repair;
-            return { status: 'reconciled' };
         }
-        for (const reconcile of reconciliations) {
+        for (const effect of receipt.pendingEffects) {
+            if (runtimeRepairCommandIds.has(effect.commandId)) {
+                continue;
+            }
+            const reconcile = exactReconciliations.get(effect.commandId);
+            if (!reconcile) {
+                return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
+            }
             if (input.shouldReconcile?.() === false) {
                 return {
                     status: 'failed',

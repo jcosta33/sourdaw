@@ -629,6 +629,187 @@ describe('command batch idempotency', () => {
         expect(repairRuntimeFromProject).toHaveBeenCalledOnce();
     });
 
+    it('does not clear a generic pending effect when runtime graph repair also runs', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        const panStorage = createAutomergeStorage<{ value: number }>('root', 'trackPan');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        expect(panStorage.hydrate?.()).toBe(true);
+        const repairRuntimeFromProject = vi.fn(() => Promise.resolve());
+        let panReconcileAttempts = 0;
+        const panReconcile = vi.fn(() => {
+            panReconcileAttempts += 1;
+            return panReconcileAttempts === 1
+                ? Promise.reject(new Error('render export queue unavailable'))
+                : Promise.resolve();
+        });
+        commandRuntimeRepairPort.setProvider(repairRuntimeFromProject);
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    const runtimeEffect = () => {
+                        throw Object.assign(new Error('runtime graph changed before failure'), {
+                            pendingEffect: {
+                                kind: 'runtime-graph' as const,
+                                reason: 'runtime graph changed before failure',
+                                remediation: 'repair' as const,
+                                state: 'pending' as const,
+                            },
+                        });
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: runtimeEffect,
+                        afterAmbiguousCommit: runtimeEffect,
+                    };
+                },
+            }),
+            setTrackPan: {
+                canReapplyAfterDivergence: () => true,
+                describe: () => ({
+                    inverseAction: {
+                        type: 'setTrackPan',
+                        payload: { trackId: 'track-vocal', pan: 0, expectedPan: -0.2 },
+                    },
+                    label: 'Pan vocal left',
+                }),
+                execute: () => {
+                    panStorage.set({ value: -0.2 });
+                    return {
+                        status: 'written',
+                        afterCommit: () => Promise.reject(new Error('render export queue unavailable')),
+                        afterAmbiguousCommit: panReconcile,
+                    };
+                },
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            } satisfies ActionHandler<SetTrackPanAction>,
+        });
+        const baseRevision = revision(0);
+        const gainCommand = {
+            ...createExecutionCommandEnvelope({
+                action: {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                },
+                expectedEffect: 'Set the vocal gain to 0.8.',
+                normalizedProjectRevision: baseRevision,
+            }).envelope,
+            commandId: '11111111-1111-4111-8111-111111111111',
+        };
+        const panCommand = {
+            ...createExecutionCommandEnvelope({
+                action: {
+                    type: 'setTrackPan',
+                    payload: { trackId: 'track-vocal', pan: -0.2, expectedPan: 0 },
+                },
+                expectedEffect: 'Pan the vocal left.',
+                normalizedProjectRevision: baseRevision,
+            }).envelope,
+            commandId: '22222222-2222-4222-8222-222222222222',
+        };
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision,
+            batchId: 'batch-runtime-and-generic-recovery',
+            commands: [JSON.stringify(gainCommand), JSON.stringify(panCommand)],
+            idempotencyKey: 'client-request-runtime-and-generic',
+            intent: 'Set vocal gain and pan',
+            mode: 'commit',
+            projectId: 'project-idempotency',
+            runId: 'run-runtime-and-generic-recovery',
+        });
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            release: () => Promise.resolve(),
+        });
+        panReconcile.mockClear();
+        const retry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(first).toMatchObject({
+            status: 'committed-with-warning',
+            receipt: {
+                pendingEffects: [
+                    expect.objectContaining({ kind: 'runtime-graph', remediation: 'repair' }),
+                    expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' }),
+                ],
+            },
+        });
+        expect(retry).toMatchObject({ status: 'idempotent-replay', recoveredExternalEffects: true });
+        expect(repairRuntimeFromProject).toHaveBeenCalledOnce();
+        expect(panReconcile).toHaveBeenCalledOnce();
+    });
+
+    it('does not settle a diverged generic effect through runtime graph repair', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        const repairRuntimeFromProject = vi.fn(() => Promise.resolve());
+        let reconcileAttempts = 0;
+        commandRuntimeRepairPort.setProvider(repairRuntimeFromProject);
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    return {
+                        status: 'written',
+                        afterCommit: () => Promise.reject(new Error('render export queue unavailable')),
+                        afterAmbiguousCommit: () => {
+                            reconcileAttempts += 1;
+                            return reconcileAttempts === 1
+                                ? Promise.reject(new Error('render export queue unavailable'))
+                                : Promise.resolve();
+                        },
+                    };
+                },
+            }),
+        });
+        const batch = compileBatch({ batchId: 'batch-diverged-generic-effect', runId: 'run-diverged-generic-effect' });
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        projectDocument = { ...projectDocument, trackGain: { value: 0.5 } };
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            release: () => Promise.resolve(),
+        });
+        const retry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(first).toMatchObject({
+            status: 'committed-with-warning',
+            receipt: {
+                pendingEffects: [expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' })],
+            },
+        });
+        expect(retry).toMatchObject({
+            status: 'ambiguous',
+            reason: 'Pending external effect cannot be retried exactly',
+        });
+        expect(repairRuntimeFromProject).not.toHaveBeenCalled();
+    });
+
     it('does not consume the idempotency key before commit authority is confirmed', async () => {
         const batch = compileBatch();
 
