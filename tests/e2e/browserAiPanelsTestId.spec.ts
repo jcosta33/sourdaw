@@ -38,20 +38,21 @@ test.describe('BrowserAi panels — ModelManagerPanel state change', () => {
         // The AI section's first FieldGroup label mounts when the section body
         // swaps in, proving the BrowserAi panels are rendered — not just that a
         // nav button was clicked.
-        await expect(page.getByRole('dialog').getByText(/AI execution backend/i).first()).toBeVisible();
+        await expect(
+            page
+                .getByRole('dialog')
+                .getByText(/AI execution backend/i)
+                .first()
+        ).toBeVisible();
     });
 
-    test('clicking Download moves the Kokoro model row from a download button to a progress bar', async ({
-        page,
-    }) => {
+    test('clicking Download moves the Kokoro model row from a download button to a progress bar', async ({ page }) => {
         // Initial state: on a fresh project OPFS is empty, so initBrowserAi
         // resolves the Kokoro model to 'not-downloaded' and the row renders a
         // Download button. No progress bar exists yet.
         const downloadButton = page.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ });
         await expect(downloadButton).toBeVisible();
-        await expect(
-            page.getByRole('progressbar', { name: /Downloading Kokoro-82M \(q8f16\):/ })
-        ).toHaveCount(0);
+        await expect(page.getByRole('progressbar', { name: /Downloading Kokoro-82M \(q8f16\):/ })).toHaveCount(0);
 
         // State change: the click drives downloadModel → updateModelStatus(
         // { status: 'downloading', downloadProgress: 0 }) synchronously, before
@@ -72,9 +73,7 @@ test.describe('BrowserAi panels — ModelManagerPanel state change', () => {
         await expect(page.getByText('0%', { exact: true })).toBeVisible();
     });
 
-    test('CapabilityReportPanel surfaces a resolved capability verdict after boot detection', async ({
-        page,
-    }) => {
+    test('CapabilityReportPanel surfaces a resolved capability verdict after boot detection', async ({ page }) => {
         // initBrowserAi() runs at boot and calls setCapabilityReport(report), so
         // by the time the Preferences dialog opens the capability store has left
         // the idle 'No capabilities detected' state. The panel reflects one of

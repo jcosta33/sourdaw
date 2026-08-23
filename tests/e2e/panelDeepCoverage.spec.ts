@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_from_template, launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
