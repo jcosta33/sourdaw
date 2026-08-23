@@ -16,10 +16,11 @@ import {
     type AgentRunDecision,
     type AgentRunError,
     type AgentRunPlan,
+    type AgentRunPendingEffect,
+    type AgentRunPendingEffectContinuation,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
-    type AgentRunRuntimeEffectContinuation,
     type AgentRunSaga,
     type AgentRunSagaStep,
     type AgentRunState,
@@ -123,7 +124,7 @@ function readRanges(value: unknown, allowPoint = false): Array<{ startBeat: numb
     return ranges;
 }
 
-function readCommandBatchAuthority(value: unknown): AgentRunRuntimeEffectContinuation['authority'] | null {
+function readCommandBatchAuthority(value: unknown): AgentRunPendingEffectContinuation['authority'] | null {
     if (!isRecord(value) || !isRecord(value.scope) || !isRecord(value.grants) || !isRecord(value.budgets)) {
         return null;
     }
@@ -211,12 +212,38 @@ function readCommandBatchAuthority(value: unknown): AgentRunRuntimeEffectContinu
     };
 }
 
-function readRuntimeEffectContinuation(value: unknown): AgentRunRuntimeEffectContinuation | null {
+function readPendingEffect(value: unknown): AgentRunPendingEffect | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const commandId = readString(value.commandId);
+    const operation = readString(value.operation);
+    const reason = readString(value.reason);
+    if (
+        commandId === null ||
+        operation === null ||
+        reason === null ||
+        value.state !== 'pending' ||
+        !(
+            (value.kind === 'runtime-graph' && (value.remediation === 'retry' || value.remediation === 'repair')) ||
+            (value.kind === 'external-effect' &&
+                (value.remediation === 'reconcile' || value.remediation === 'manual-repair'))
+        )
+    ) {
+        return null;
+    }
+    if (value.kind === 'runtime-graph') {
+        return { commandId, operation, reason, state: 'pending', kind: value.kind, remediation: value.remediation };
+    }
+    return { commandId, operation, reason, state: 'pending', kind: value.kind, remediation: value.remediation };
+}
+
+function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectContinuation | null {
     if (!isRecord(value)) {
         return null;
     }
     const batchId = readString(value.batchId);
-    const commandIds = readStringArray(value.commandIds);
+    const effects = readCollection(value.effects, readPendingEffect);
     const receiptIdentity = readString(value.receiptIdentity);
     const serializedBatch =
         typeof value.serializedBatch === 'string' &&
@@ -228,20 +255,24 @@ function readRuntimeEffectContinuation(value: unknown): AgentRunRuntimeEffectCon
     const lastError = readNullableString(value.lastError);
     if (
         batchId === null ||
-        commandIds === null ||
+        effects === null ||
+        effects.length === 0 ||
+        new Set(effects.map(({ commandId }) => commandId)).size !== effects.length ||
         receiptIdentity === null ||
         serializedBatch === null ||
         authority === null ||
         lastError === undefined ||
-        (value.mode !== 'retry-exact-effect' && value.mode !== 'repair-current-runtime')
+        (value.recovery !== 'reconcile-batch' && value.recovery !== 'manual-repair') ||
+        (value.recovery === 'manual-repair' && !effects.some(({ remediation }) => remediation === 'manual-repair')) ||
+        (value.recovery === 'reconcile-batch' && effects.some(({ remediation }) => remediation === 'manual-repair'))
     ) {
         return null;
     }
     return {
         batchId,
-        commandIds,
+        effects,
         receiptIdentity,
-        mode: value.mode,
+        recovery: value.recovery,
         serializedBatch,
         authority,
         lastError,
@@ -1352,10 +1383,10 @@ function readAgentRun(value: unknown): AgentRun | null {
     const committedWork = readCollection(value.committedWork, readCommittedWork);
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
-    const runtimeEffectContinuations =
-        value.runtimeEffectContinuations === undefined
+    const pendingEffectContinuations =
+        value.pendingEffectContinuations === undefined
             ? []
-            : readCollection(value.runtimeEffectContinuations, readRuntimeEffectContinuation);
+            : readCollection(value.pendingEffectContinuations, readPendingEffectContinuation);
     const workLeases = readCollection(value.workLeases, readWorkLease);
     const contextEvidence =
         value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
@@ -1403,7 +1434,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         committedWork === null ||
         retriableWork === null ||
         temporaryAssets === null ||
-        runtimeEffectContinuations === null ||
+        pendingEffectContinuations === null ||
         workLeases === null ||
         (contextEvidence === null && value.contextEvidence !== undefined && value.contextEvidence !== null) ||
         cancellationGeneration === null ||
@@ -1477,7 +1508,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         committedWork,
         retriableWork,
         temporaryAssets,
-        runtimeEffectContinuations,
+        pendingEffectContinuations,
         manualResume: {
             required: value.manualResume.required,
             reason: manualResumeReason,

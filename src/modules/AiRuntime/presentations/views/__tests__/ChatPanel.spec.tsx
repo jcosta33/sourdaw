@@ -37,8 +37,8 @@ vi.mock('../../../useCases/cancelPendingChatActions', () => ({
     cancelPendingChatActions: vi.fn(),
 }));
 
-vi.mock('../../../useCases/recoverAgentRunRuntimeEffects', () => ({
-    recoverAgentRunRuntimeEffects: vi.fn(),
+vi.mock('../../../useCases/recoverAgentRunPendingEffects', () => ({
+    recoverAgentRunPendingEffects: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat', () => ({
@@ -103,7 +103,7 @@ const { useStore } = await import('#/infra/store/useStore');
 const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
-const { recoverAgentRunRuntimeEffects } = await import('../../../useCases/recoverAgentRunRuntimeEffects');
+const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
@@ -230,7 +230,7 @@ describe('ChatPanel', () => {
         expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
     });
 
-    it('owns persisted retry and repair continuations after chat history is gone', () => {
+    it('owns persisted retry, repair, reconciliation, and manual continuations after chat history is gone', () => {
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
             store === agentRunStore
                 ? {
@@ -238,21 +238,81 @@ describe('ChatPanel', () => {
                       runs: [
                           {
                               runId: 'run-retry',
-                              runtimeEffectContinuations: [
+                              pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-retry',
-                                      mode: 'retry-exact-effect',
+                                      effects: [
+                                          {
+                                              commandId: 'command-retry',
+                                              kind: 'runtime-graph',
+                                              operation: 'setTrackGain',
+                                              reason: 'The gain node rejected the update.',
+                                              remediation: 'retry',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'reconcile-batch',
                                       lastError: null,
                                   },
                               ],
                           },
                           {
                               runId: 'run-repair',
-                              runtimeEffectContinuations: [
+                              pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-repair',
-                                      mode: 'repair-current-runtime',
+                                      effects: [
+                                          {
+                                              commandId: 'command-repair',
+                                              kind: 'runtime-graph',
+                                              operation: 'addDevice',
+                                              reason: 'The audio graph is stale.',
+                                              remediation: 'repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'reconcile-batch',
                                       lastError: 'The graph needs reconciliation.',
+                                  },
+                              ],
+                          },
+                          {
+                              runId: 'run-reconcile',
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-reconcile',
+                                      effects: [
+                                          {
+                                              commandId: 'command-reconcile',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'The publication queue is unavailable.',
+                                              remediation: 'reconcile',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'reconcile-batch',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                          {
+                              runId: 'run-manual',
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-manual',
+                                      effects: [
+                                          {
+                                              commandId: 'command-manual',
+                                              kind: 'external-effect',
+                                              operation: 'publishRender',
+                                              reason: 'The external system cannot prove an exact retry.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
                                   },
                               ],
                           },
@@ -270,14 +330,27 @@ describe('ChatPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry runtime effect' }));
         fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
-        expect(recoverAgentRunRuntimeEffects).toHaveBeenNthCalledWith(1, {
+        fireEvent.click(screen.getByRole('button', { name: 'Reconcile pending effects' }));
+        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(1, {
             runId: 'run-retry',
             batchId: 'batch-retry',
         });
-        expect(recoverAgentRunRuntimeEffects).toHaveBeenNthCalledWith(2, {
+        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(2, {
             runId: 'run-repair',
             batchId: 'batch-repair',
         });
+        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(3, {
+            runId: 'run-reconcile',
+            batchId: 'batch-reconcile',
+        });
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledTimes(3);
+        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-manual' })).toHaveTextContent(
+            'publishRender: The external system cannot prove an exact retry.'
+        );
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-reconcile' })).toHaveTextContent(
+            'renderProjectSections: The publication queue is unavailable.'
+        );
         expect(screen.getByText('The graph needs reconciliation.')).toBeInTheDocument();
     });
 

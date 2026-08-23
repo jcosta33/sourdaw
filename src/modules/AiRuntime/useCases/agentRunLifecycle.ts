@@ -12,9 +12,9 @@ import {
     type AgentRunError,
     type AgentRunGrants,
     type AgentRunPlan,
+    type AgentRunPendingEffectContinuation,
     type AgentRunPhase,
     type AgentRunProviderUsage,
-    type AgentRunRuntimeEffectContinuation,
     type AgentRunSagaStep,
     type AgentRunScope,
 } from '../models/AgentRun';
@@ -200,7 +200,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         committedWork: [],
         retriableWork: [],
         temporaryAssets: [],
-        runtimeEffectContinuations: [],
+        pendingEffectContinuations: [],
         manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         workLeases: [],
         contextEvidence: null,
@@ -590,16 +590,16 @@ function recordAgentRunSagaStep(input: { runId: string; step: AgentRunSagaStep; 
     });
 }
 
-function recordAgentRunRuntimeEffectContinuation(input: {
+function recordAgentRunPendingEffectContinuation(input: {
     runId: string;
-    continuation: AgentRunRuntimeEffectContinuation;
+    continuation: AgentRunPendingEffectContinuation;
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
         ...run,
         phase: run.committedWork.length > 0 ? 'partially-completed' : run.phase,
-        runtimeEffectContinuations: [
-            ...run.runtimeEffectContinuations.filter(
+        pendingEffectContinuations: [
+            ...run.pendingEffectContinuations.filter(
                 (continuation) => continuation.batchId !== input.continuation.batchId
             ),
             structuredClone(input.continuation),
@@ -607,7 +607,7 @@ function recordAgentRunRuntimeEffectContinuation(input: {
     }));
 }
 
-function failAgentRunRuntimeEffectContinuation(input: {
+function failAgentRunPendingEffectContinuation(input: {
     runId: string;
     batchId: string;
     reason: string;
@@ -615,13 +615,13 @@ function failAgentRunRuntimeEffectContinuation(input: {
 }): AgentRun {
     return updateAgentRun(input.runId, input.failedAt ?? Date.now(), (run) => ({
         ...run,
-        runtimeEffectContinuations: run.runtimeEffectContinuations.map((continuation) =>
+        pendingEffectContinuations: run.pendingEffectContinuations.map((continuation) =>
             continuation.batchId === input.batchId ? { ...continuation, lastError: input.reason } : continuation
         ),
     }));
 }
 
-function completeAgentRunRuntimeEffectContinuation(input: {
+function completeAgentRunPendingEffectContinuation(input: {
     runId: string;
     batchId: string;
     receiptIdentity: string;
@@ -629,7 +629,7 @@ function completeAgentRunRuntimeEffectContinuation(input: {
 }): AgentRun {
     const completedAt = input.completedAt ?? Date.now();
     return updateAgentRun(input.runId, completedAt, (run) => {
-        const runtimeEffectContinuations = run.runtimeEffectContinuations.filter(
+        const pendingEffectContinuations = run.pendingEffectContinuations.filter(
             (continuation) => continuation.batchId !== input.batchId
         );
         const steps = run.saga.steps.map((step) =>
@@ -647,10 +647,10 @@ function completeAgentRunRuntimeEffectContinuation(input: {
         );
         return {
             ...run,
-            phase: !hasUnsettledSaga && runtimeEffectContinuations.length === 0 ? 'completed' : run.phase,
-            runtimeEffectContinuations,
+            phase: !hasUnsettledSaga && pendingEffectContinuations.length === 0 ? 'completed' : run.phase,
+            pendingEffectContinuations,
             manualResume:
-                runtimeEffectContinuations.length === 0 && !hasUnsettledSaga
+                pendingEffectContinuations.length === 0 && !hasUnsettledSaga
                     ? { required: false, reason: null, workIds: [], requiredAt: null }
                     : run.manualResume,
             saga: { schemaVersion: 1, steps },
@@ -1004,9 +1004,9 @@ export const agentRunLifecycle = {
     recordCommittedWork: recordAgentRunCommittedWork,
     recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
-    recordRuntimeEffectContinuation: recordAgentRunRuntimeEffectContinuation,
-    failRuntimeEffectContinuation: failAgentRunRuntimeEffectContinuation,
-    completeRuntimeEffectContinuation: completeAgentRunRuntimeEffectContinuation,
+    recordPendingEffectContinuation: recordAgentRunPendingEffectContinuation,
+    failPendingEffectContinuation: failAgentRunPendingEffectContinuation,
+    completePendingEffectContinuation: completeAgentRunPendingEffectContinuation,
     recordSagaStep: recordAgentRunSagaStep,
     recordSagaCompensation: recordAgentRunSagaCompensation,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,

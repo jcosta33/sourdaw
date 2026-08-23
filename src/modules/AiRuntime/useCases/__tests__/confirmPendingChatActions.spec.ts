@@ -48,7 +48,7 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { recoverAgentRunRuntimeEffects } from '../recoverAgentRunRuntimeEffects';
+import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -491,8 +491,13 @@ describe('confirmPendingChatActions transaction admission', () => {
         };
         proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch' });
 
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch' })).resolves.toEqual({
-            status: 'executed',
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch' })
+        ).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' })],
+            continuation: { kind: 'reconcile-exact-batch' },
         });
         expect(effectAttempts).toBe(2);
 
@@ -814,11 +819,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
             phase: 'partially-completed',
-            runtimeEffectContinuations: [
+            pendingEffectContinuations: [
                 {
                     batchId: 'group-runtime-effect',
-                    commandIds: [envelope.commandId],
-                    mode: 'retry-exact-effect',
+                    effects: [
+                        expect.objectContaining({
+                            commandId: envelope.commandId,
+                            kind: 'runtime-graph',
+                            remediation: 'retry',
+                        }),
+                    ],
+                    recovery: 'reconcile-batch',
                     serializedBatch: commandBatch.serialized,
                 },
             ],
@@ -859,10 +870,10 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(recoverInterruptedAgentRuns()).toEqual({ recoveredRunIds: ['run-runtime-effect'] });
         expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
             manualResume: { required: false },
-            runtimeEffectContinuations: [
+            pendingEffectContinuations: [
                 {
                     batchId: 'group-runtime-effect',
-                    mode: 'retry-exact-effect',
+                    recovery: 'reconcile-batch',
                     serializedBatch: commandBatch.serialized,
                 },
             ],
@@ -874,7 +885,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
 
         await expect(
-            recoverAgentRunRuntimeEffects({
+            recoverAgentRunPendingEffects({
                 runId: 'run-runtime-effect',
                 batchId: 'group-runtime-effect',
             })

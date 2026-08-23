@@ -23,17 +23,18 @@ export function recordAgentRunReceiptSaga(input: {
 }): { effectsPending: boolean } {
     const receiptIdentity = getAgentRunReceiptIdentity(input.receipt);
     const recordedAt = Date.now();
-    const pendingRuntimeEffects = input.receipt.pendingEffects.filter(({ kind }) => kind === 'runtime-graph');
-    const pendingRuntimeEffectStepIds = new Set(
-        pendingRuntimeEffects.map(({ commandId }) => `runtime-effect:${input.receipt.batchId}:${commandId}`)
+    const pendingEffects = input.receipt.pendingEffects;
+    const pendingEffectCommandIds = new Set(pendingEffects.map(({ commandId }) => commandId));
+    const pendingEffectStepIds = new Set(
+        pendingEffects.map(({ commandId }) => `effect:${input.receipt.batchId}:${commandId}`)
     );
-    const completesRun = pendingRuntimeEffects.length > 0 ? false : input.completesRun;
+    const completesRun = pendingEffects.length > 0 ? false : input.completesRun;
     for (const step of agentRunLifecycle.get(input.runId)?.saga.steps ?? []) {
         if (
             step.owner === 'external-effect' &&
             step.workId === input.receipt.batchId &&
-            step.stepId.startsWith(`runtime-effect:${input.receipt.batchId}:`) &&
-            !pendingRuntimeEffectStepIds.has(step.stepId)
+            !pendingEffectStepIds.has(step.stepId) &&
+            ![...pendingEffectCommandIds].some((commandId) => step.stepId.endsWith(`:${commandId}`))
         ) {
             agentRunLifecycle.recordSagaStep({
                 runId: input.runId,
@@ -150,11 +151,11 @@ export function recordAgentRunReceiptSaga(input: {
             }),
         });
     }
-    for (const [index, effect] of pendingRuntimeEffects.entries()) {
+    for (const [index, effect] of pendingEffects.entries()) {
         agentRunLifecycle.recordSagaStep({
             runId: input.runId,
             step: createAgentSagaStep({
-                stepId: `runtime-effect:${input.receipt.batchId}:${effect.commandId}`,
+                stepId: `effect:${input.receipt.batchId}:${effect.commandId}`,
                 order:
                     input.receipt.links.render.length +
                     input.receipt.links.analysis.length +
@@ -172,29 +173,29 @@ export function recordAgentRunReceiptSaga(input: {
             }),
         });
     }
-    if (pendingRuntimeEffects.length > 0 && input.commandBatch) {
-        agentRunLifecycle.recordRuntimeEffectContinuation({
+    if (pendingEffects.length > 0 && input.commandBatch) {
+        agentRunLifecycle.recordPendingEffectContinuation({
             runId: input.runId,
             recordedAt,
             continuation: {
                 authority: structuredClone(input.commandBatch.authority),
                 batchId: input.receipt.batchId,
-                commandIds: pendingRuntimeEffects.map(({ commandId }) => commandId),
+                effects: structuredClone(pendingEffects),
                 lastError: null,
-                mode: pendingRuntimeEffects.some(({ remediation }) => remediation === 'repair')
-                    ? 'repair-current-runtime'
-                    : 'retry-exact-effect',
+                recovery: pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
+                    ? 'manual-repair'
+                    : 'reconcile-batch',
                 receiptIdentity,
                 serializedBatch: input.commandBatch.serialized,
             },
         });
     } else if (
-        pendingRuntimeEffects.length === 0 &&
+        pendingEffects.length === 0 &&
         agentRunLifecycle
             .get(input.runId)
-            ?.runtimeEffectContinuations.some(({ batchId }) => batchId === input.receipt.batchId)
+            ?.pendingEffectContinuations.some(({ batchId }) => batchId === input.receipt.batchId)
     ) {
-        agentRunLifecycle.completeRuntimeEffectContinuation({
+        agentRunLifecycle.completePendingEffectContinuation({
             runId: input.runId,
             batchId: input.receipt.batchId,
             receiptIdentity,

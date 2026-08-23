@@ -18,7 +18,7 @@ import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
-import { recoverAgentRunRuntimeEffects } from '../../useCases/recoverAgentRunRuntimeEffects';
+import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { ChatComposer } from '../components/ChatComposer';
 
@@ -257,8 +257,8 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
-    const runtimeEffectContinuations = (agentRunState?.runs ?? []).flatMap((run) =>
-        run.runtimeEffectContinuations.map((continuation) => ({
+    const pendingEffectContinuations = (agentRunState?.runs ?? []).flatMap((run) =>
+        run.pendingEffectContinuations.map((continuation) => ({
             ...continuation,
             runId: run.runId,
         }))
@@ -302,8 +302,8 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         void cancelPendingChatActions({ confirmationId });
     };
 
-    const handleRecoverRuntimeEffects = (runId: string, batchId: string): void => {
-        void recoverAgentRunRuntimeEffects({ runId, batchId });
+    const handleRecoverPendingEffects = (runId: string, batchId: string): void => {
+        void recoverAgentRunPendingEffects({ runId, batchId });
     };
 
     if (!chatState) {
@@ -311,7 +311,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     }
 
     let chatPanelContent;
-    if (chatState.messages.length === 0 && runtimeEffectContinuations.length === 0) {
+    if (chatState.messages.length === 0 && pendingEffectContinuations.length === 0) {
         chatPanelContent = (
             <Stack align="center" justify="center" className="h-full text-center px-6 opacity-60">
                 <Bot className="size-8 mx-auto mb-3 text-muted-foreground" />
@@ -333,36 +333,68 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         onCancelPendingActions={handleCancelPendingActions}
                     />
                 ))}
-                {runtimeEffectContinuations.map((continuation) => {
-                    const repairsCurrentRuntime = continuation.mode === 'repair-current-runtime';
-                    const actionLabel = repairsCurrentRuntime ? 'Repair audio graph' : 'Retry runtime effect';
+                {pendingEffectContinuations.map((continuation) => {
+                    const manualRepairRequired = continuation.recovery === 'manual-repair';
+                    const hasGenericEffect = continuation.effects.some(({ kind }) => kind === 'external-effect');
+                    const repairsCurrentRuntime = continuation.effects.some(
+                        ({ kind, remediation }) => kind === 'runtime-graph' && remediation === 'repair'
+                    );
+                    let actionLabel = 'Retry runtime effect';
+                    if (hasGenericEffect) {
+                        actionLabel = 'Reconcile pending effects';
+                    } else if (repairsCurrentRuntime) {
+                        actionLabel = 'Repair audio graph';
+                    }
+                    let recoveryDescription =
+                        'Retry only the receipt-bound runtime effect without replaying project actions.';
+                    if (manualRepairRequired) {
+                        recoveryDescription =
+                            'At least one external effect cannot be retried exactly. Inspect its retained details and repair it manually; the project mutation will not replay.';
+                    } else if (hasGenericEffect) {
+                        recoveryDescription =
+                            'Reconcile every receipt-bound external effect without replaying project actions.';
+                    } else if (repairsCurrentRuntime) {
+                        recoveryDescription =
+                            'Rebuild the audio graph from the current project without replaying project actions.';
+                    }
                     return (
                         <div
                             key={`${continuation.runId}:${continuation.batchId}`}
                             className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs"
                         >
-                            <p className="font-medium text-foreground">
-                                Committed project change needs runtime recovery
-                            </p>
-                            <p className="mt-1 text-muted-foreground">
-                                {repairsCurrentRuntime
-                                    ? 'Rebuild the audio graph from the current project without replaying project actions.'
-                                    : 'Retry only the receipt-bound runtime effect without replaying project actions.'}
-                            </p>
+                            <p className="font-medium text-foreground">Committed project change has pending effects</p>
+                            <p className="mt-1 text-muted-foreground">{recoveryDescription}</p>
+                            <ul
+                                className="mt-2 space-y-1 text-muted-foreground"
+                                aria-label={`Pending effects for batch ${continuation.batchId}`}
+                            >
+                                {continuation.effects.map((effect) => (
+                                    <li key={effect.commandId}>
+                                        <span className="font-medium text-foreground">{effect.operation}</span>
+                                        {`: ${effect.reason}`}
+                                    </li>
+                                ))}
+                            </ul>
                             {continuation.lastError ? (
                                 <p className="mt-1 text-destructive">{continuation.lastError}</p>
                             ) : null}
-                            <Button
-                                size="xs"
-                                variant="secondary"
-                                className="mt-2 h-7 gap-1.5 text-[11px]"
-                                disabled={chatState.isGenerating}
-                                aria-label={actionLabel}
-                                onClick={() => handleRecoverRuntimeEffects(continuation.runId, continuation.batchId)}
-                            >
-                                <RotateCw className="size-3" />
-                                {actionLabel}
-                            </Button>
+                            {manualRepairRequired ? (
+                                <p className="mt-2 font-medium text-destructive">Manual repair required</p>
+                            ) : (
+                                <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    className="mt-2 h-7 gap-1.5 text-[11px]"
+                                    disabled={chatState.isGenerating}
+                                    aria-label={actionLabel}
+                                    onClick={() =>
+                                        handleRecoverPendingEffects(continuation.runId, continuation.batchId)
+                                    }
+                                >
+                                    <RotateCw className="size-3" />
+                                    {actionLabel}
+                                </Button>
+                            )}
                         </div>
                     );
                 })}

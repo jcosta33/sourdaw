@@ -22,8 +22,8 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             return run;
         }
         recoveredRunIds.push(run.runId);
-        const recoverableRuntimeBatchIds = new Set(
-            run.runtimeEffectContinuations.map((continuation) => continuation.batchId)
+        const retainedEffectBatchIds = new Set(
+            run.pendingEffectContinuations.map((continuation) => continuation.batchId)
         );
         const orphanedWorkIds = [
             ...run.workLeases.filter((lease) => lease.terminalState === null).map((lease) => lease.workId),
@@ -33,7 +33,7 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
                         (step.state === 'pending' ||
                             step.state === 'external-pending' ||
                             step.state === 'uncompensated') &&
-                        !(step.state === 'external-pending' && recoverableRuntimeBatchIds.has(step.workId))
+                        !(step.state === 'external-pending' && retainedEffectBatchIds.has(step.workId))
                 )
                 .map((step) => step.workId),
         ];
@@ -51,7 +51,7 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
                               (step) =>
                                   step.receiptIdentity !== null &&
                                   step.state !== 'committed' &&
-                                  !(step.state === 'external-pending' && recoverableRuntimeBatchIds.has(step.workId))
+                                  !(step.state === 'external-pending' && retainedEffectBatchIds.has(step.workId))
                           )
                           .map((step) => step.receiptIdentity)
                           .filter((receiptIdentity): receiptIdentity is string => receiptIdentity !== null),
@@ -62,7 +62,7 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
                       ? 'owner-proven-idempotent'
                       : 'never',
                   compensation: run.saga.steps.some(
-                      (step) => step.state === 'external-pending' && !recoverableRuntimeBatchIds.has(step.workId)
+                      (step) => step.state === 'external-pending' && !retainedEffectBatchIds.has(step.workId)
                   )
                       ? 'manual-repair'
                       : 'not-needed',
@@ -90,7 +90,7 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             saga: {
                 schemaVersion: 1,
                 steps: run.saga.steps.map((step) =>
-                    step.state === 'external-pending' && !recoverableRuntimeBatchIds.has(step.workId)
+                    step.state === 'external-pending' && !retainedEffectBatchIds.has(step.workId)
                         ? { ...step, state: 'manual-repair', updatedAt: recoveredAt }
                         : step
                 ),

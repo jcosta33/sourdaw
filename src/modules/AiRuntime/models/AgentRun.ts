@@ -354,11 +354,21 @@ export type AgentRunCommandBatchAuthority = {
     };
 };
 
-export type AgentRunRuntimeEffectContinuation = {
+export type AgentRunPendingEffect = {
+    commandId: string;
+    operation: string;
+    reason: string;
+    state: 'pending';
+} & (
+    | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
+    | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+);
+
+export type AgentRunPendingEffectContinuation = {
     batchId: string;
-    commandIds: string[];
+    effects: AgentRunPendingEffect[];
     receiptIdentity: string;
-    mode: 'retry-exact-effect' | 'repair-current-runtime';
+    recovery: 'reconcile-batch' | 'manual-repair';
     serializedBatch: string;
     authority: AgentRunCommandBatchAuthority;
     lastError: string | null;
@@ -416,7 +426,7 @@ export type AgentRun = {
     committedWork: AgentRunCommittedWork[];
     retriableWork: AgentRunRetriableWork[];
     temporaryAssets: AgentRunTemporaryAsset[];
-    runtimeEffectContinuations: AgentRunRuntimeEffectContinuation[];
+    pendingEffectContinuations: AgentRunPendingEffectContinuation[];
     manualResume: AgentRunManualResume;
     workLeases: AgentRunWorkLease[];
     contextEvidence: AgentContextEvidence | null;

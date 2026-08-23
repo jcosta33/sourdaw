@@ -69,7 +69,7 @@ export { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBin
 export { agentRunCancellation } from './cancelAgentRun';
 export { agentRunLifecycle } from './agentRunLifecycle';
 export { recoverInterruptedAgentRuns } from './agentRunRecovery';
-export { recoverAgentRunRuntimeEffects } from './recoverAgentRunRuntimeEffects';
+export { recoverAgentRunPendingEffects } from './recoverAgentRunPendingEffects';
 export { agentRunWorkLease } from './agentRunWorkLease';
 export { normalizeAgentFailure } from './agentErrorAndSaga';
 export { admitAgentRetry } from './admitAgentRetry';
