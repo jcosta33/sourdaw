@@ -1,0 +1,48 @@
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheConnectionChurn.spec.ts
+  s_a40848e8f8cca9::t_eed2891b93db8c 4,7-8,56
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecyclePersistence.spec.ts
+  s_a40848e8f8cca9::t_9fdf449d6b54c9 308,376,536
+  s_a40848e8f8cca9::t_a12a7b347214aa 49-58
+  s_a40848e8f8cca9::t_30ab81e5500bba 19-22,36,176,204
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheMetadataStore.spec.ts
+  s_a40848e8f8cca9::t_eed2891b93db8c 336-338,347,504
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleSettlement.spec.ts
+  s_a40848e8f8cca9::t_582339c8ee06e5 413
+  s_a40848e8f8cca9::t_eed2891b93db8c 4-10,412,452-466,1138-1140,1221-1223
+  s_a40848e8f8cca9::t_44beaf8aba1581 3
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_a40848e8f8cca9::t_7141d36ed23999 541-542
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.spec.ts
+  s_a40848e8f8cca9::t_a12a7b347214aa 79-103
+  s_a40848e8f8cca9::t_05ed07a3fdea2d 78
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleRecovery.spec.ts
+  s_a40848e8f8cca9::t_30ab81e5500bba 57-60,586,630-632,792-794
+  s_a40848e8f8cca9::t_2ed6c8c4852de8 1-2,605
+  s_a40848e8f8cca9::t_a12a7b347214aa 43,456-528,536-547,555-558,580-585,596-604,606-617,621-626
+  s_a40848e8f8cca9::t_9fdf449d6b54c9 823-825,863-865
+  s_a40848e8f8cca9::t_dc077560b8fb7e 529-535,548-554,559-579,587-595
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_a40848e8f8cca9::t_efae503bd99e96 878
+  s_a40848e8f8cca9::t_7141d36ed23999 128,148-152,873-875,892-897,900-903,909,913,929,946,973,976-979
+src/modules/AudioEngine/stores/preparedAudioBufferLifecycle.ts
+  s_a40848e8f8cca9::t_5892e40a15b4f1 317
+  s_a40848e8f8cca9::t_7141d36ed23999 129-131,133-134,136,139-141,143,145,150,152,180,189,290,299-306,308-316,318-323,325-340,972,1580
+  s_a40848e8f8cca9::t_30ab81e5500bba 291,298,307,324
+  s_a40848e8f8cca9::t_b6c76b8c399ec7 383,610,792,831,902,956,1008,1038,1072,1114,1424,1474,1538,1574,1600
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d795a4a0a322cd8b61392efb6528fb75e061fb25",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
