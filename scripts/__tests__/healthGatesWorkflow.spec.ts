@@ -78,6 +78,13 @@ function assertHeavyScanChain(candidate: UnknownRecord): string {
     if (jobAt(candidate, 'secrets').if !== SECRET_SCAN_CONDITION) {
         throw new Error('secret scan must consume needs.decide.outputs.heavy');
     }
+    if (jobAt(candidate, 'secrets').needs !== 'decide') {
+        throw new Error('secret scan job must depend directly on decide');
+    }
+    const gateNeeds = arrayAt(jobAt(candidate, 'gate'), 'needs');
+    if (!gateNeeds.includes('secrets')) {
+        throw new Error('gate must depend on the secret scan job');
+    }
     return stringAt(scope, 'run');
 }
 
@@ -259,5 +266,31 @@ describe('health gates workflow contract', () => {
         expect(() => assertCredentiallessScanner(legacy)).toThrow(
             'secret scan job must not reference GitHub tokens or repository secrets'
         );
+    });
+
+    it('should reject disconnected or retargeted secret dependency edges', () => {
+        const missingSecretNeeds = asRecord(structuredClone(workflow), 'missing secret dependency workflow');
+        delete jobAt(missingSecretNeeds, 'secrets').needs;
+        expect(() => assertHeavyScanChain(missingSecretNeeds)).toThrow(
+            'secret scan job must depend directly on decide'
+        );
+
+        const retargetedSecretNeeds = asRecord(structuredClone(workflow), 'retargeted secret dependency workflow');
+        jobAt(retargetedSecretNeeds, 'secrets').needs = 'build';
+        expect(() => assertHeavyScanChain(retargetedSecretNeeds)).toThrow(
+            'secret scan job must depend directly on decide'
+        );
+
+        const missingGateNeeds = asRecord(structuredClone(workflow), 'missing gate dependency workflow');
+        arrayAt(jobAt(missingGateNeeds, 'gate'), 'needs').splice(
+            arrayAt(jobAt(missingGateNeeds, 'gate'), 'needs').indexOf('secrets'),
+            1
+        );
+        expect(() => assertHeavyScanChain(missingGateNeeds)).toThrow('gate must depend on the secret scan job');
+
+        const retargetedGateNeeds = asRecord(structuredClone(workflow), 'retargeted gate dependency workflow');
+        const retargetedGateNeedsList = arrayAt(jobAt(retargetedGateNeeds, 'gate'), 'needs');
+        retargetedGateNeedsList[retargetedGateNeedsList.indexOf('secrets')] = 'build';
+        expect(() => assertHeavyScanChain(retargetedGateNeeds)).toThrow('gate must depend on the secret scan job');
     });
 });
