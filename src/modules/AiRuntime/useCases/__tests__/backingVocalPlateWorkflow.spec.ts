@@ -103,6 +103,15 @@ function sendChatMessage(prompt: string) {
 }
 
 type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
+type AudioEngineUseCasesModule = typeof import('#/modules/AudioEngine/useCases');
+type RoutingUseCasesModule = typeof import('#/modules/Routing/useCases');
+type PendingActionConfirmation = NonNullable<ReturnType<typeof getPendingActionConfirmation>>;
+type PendingAction = PendingActionConfirmation['actions'][number];
+type AddDeviceAction = Extract<PendingAction, { type: 'addDevice' }>;
+type AddSendAction = Extract<PendingAction, { type: 'addSend' }>;
+type AutomateSendRangesAction = Extract<PendingAction, { type: 'automateSendRanges' }>;
+type CreateBusAction = Extract<PendingAction, { type: 'createBus' }>;
+type RenderProjectSectionsAction = Extract<PendingAction, { type: 'renderProjectSections' }>;
 type RenderOfflineMock = (options: {
     durationBeats: number;
     onWarning?: (message: string) => void;
@@ -166,17 +175,15 @@ const providerPlan = [
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
-        addDeviceToStrip: vi.fn(),
         backend,
         clearReportedLatency: vi.fn(),
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
-        getAllSidechainRoutes: vi.fn(() => []),
-        removeDeviceFromStrip: vi.fn(),
+        getAllSidechainRoutes: vi.fn<RoutingUseCasesModule['getAllSidechainRoutes']>(() => []),
         removeSend: vi.fn(),
         renderOffline: vi.fn<RenderOfflineMock>(),
-        resolveToasterPadBinding: vi.fn(() => null),
+        resolveToasterPadBinding: vi.fn<AudioEngineUseCasesModule['resolveToasterPadBinding']>(() => undefined),
         setSend: vi.fn(),
         setTrackGain: vi.fn(),
         setTrackMute: vi.fn(),
@@ -288,10 +295,8 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    runtimeMocks.addDeviceToStrip.mockImplementation(original.addDeviceToStrip);
     runtimeMocks.clearReportedLatency.mockImplementation(original.clearReportedLatency);
     runtimeMocks.ensureTrackStrip.mockImplementation(original.ensureTrackStrip);
-    runtimeMocks.removeDeviceFromStrip.mockImplementation(original.removeDeviceFromStrip);
     runtimeMocks.setTrackGain.mockImplementation(original.setTrackGain);
     runtimeMocks.setTrackMute.mockImplementation(original.setTrackMute);
     runtimeMocks.setTrackOutput.mockImplementation(original.setTrackOutput);
@@ -302,10 +307,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     runtimeMocks.resolveToasterPadBinding.mockImplementation(original.resolveToasterPadBinding);
     return {
         ...original,
-        addDeviceToStrip: runtimeMocks.addDeviceToStrip,
         clearReportedLatency: runtimeMocks.clearReportedLatency,
         ensureTrackStrip: runtimeMocks.ensureTrackStrip,
-        removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
         renderOffline: runtimeMocks.renderOffline,
         resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
         setTrackGain: runtimeMocks.setTrackGain,
@@ -345,6 +348,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
+}
+
+function hasTrackKind(payload: { trackId: string | null } | { trackId: string; kind: string }): payload is {
+    trackId: string;
+    kind: string;
+} {
+    return typeof payload.trackId === 'string' && 'kind' in payload && typeof payload.kind === 'string';
+}
+
+function isAddSendAction(action: PendingAction): action is AddSendAction {
+    return action.type === 'addSend';
+}
+
+function isAddDeviceAction(action: PendingAction): action is AddDeviceAction {
+    return action.type === 'addDevice';
+}
+
+function isAutomateSendRangesAction(action: PendingAction): action is AutomateSendRangesAction {
+    return action.type === 'automateSendRanges';
+}
+
+function isCreateBusAction(action: PendingAction): action is CreateBusAction {
+    return action.type === 'createBus';
+}
+
+function isRenderProjectSectionsAction(action: PendingAction): action is RenderProjectSectionsAction {
+    return action.type === 'renderProjectSections';
 }
 
 /**
@@ -874,7 +904,7 @@ describe('backing-vocal plate workflow', () => {
         clearAgentSectionRenderArtifacts();
         setArrangementEventBus({
             emit: (event, payload) => {
-                if (event === 'track.added' && 'trackId' in payload) {
+                if (event === 'track.added' && hasTrackKind(payload)) {
                     if (payload.kind === 'bus') {
                         ensureBusStrip(payload.trackId);
                     } else {
@@ -1072,9 +1102,10 @@ describe('backing-vocal plate workflow', () => {
         await sendChatMessage(PROMPT);
 
         const confirmation = getPendingActionConfirmation(getConfirmationId());
-        expect(
-            confirmation?.actions.filter((action) => action.type === 'addSend').map((action) => action.payload.trackId)
-        ).toEqual(['track-bgv-high', 'track-bgv-low']);
+        expect(confirmation?.actions.filter(isAddSendAction).map((action) => action.payload.trackId)).toEqual([
+            'track-bgv-high',
+            'track-bgv-low',
+        ]);
     });
 
     it('fails closed when another vocal track has no unambiguous lead or backing role', async () => {
@@ -1396,8 +1427,8 @@ describe('backing-vocal plate workflow', () => {
         if (!confirmation) {
             throw new Error('Expected EX-01 confirmation');
         }
-        const createBusAction = confirmation.actions.find((action) => action.type === 'createBus');
-        const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
+        const createBusAction = confirmation.actions.find(isCreateBusAction);
+        const renderAction = confirmation.actions.find(isRenderProjectSectionsAction);
         if (
             createBusAction?.type !== 'createBus' ||
             !createBusAction.payload.busId ||
@@ -1474,15 +1505,17 @@ describe('backing-vocal plate workflow', () => {
         if (!confirmation) {
             throw new Error('Expected EX-01 confirmation');
         }
-        const createBusAction = confirmation.actions.find((action) => action.type === 'createBus');
+        const createBusAction = confirmation.actions.find(isCreateBusAction);
         const filterAction = confirmation.actions.find(
-            (action) => action.type === 'addDevice' && action.payload.deviceType === 'builtin-filter'
+            (action): action is AddDeviceAction =>
+                isAddDeviceAction(action) && action.payload.deviceType === 'builtin-filter'
         );
         const plateAction = confirmation.actions.find(
-            (action) => action.type === 'addDevice' && action.payload.deviceType === 'dutch-oven'
+            (action): action is AddDeviceAction =>
+                isAddDeviceAction(action) && action.payload.deviceType === 'dutch-oven'
         );
-        const automationAction = confirmation.actions.find((action) => action.type === 'automateSendRanges');
-        const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
+        const automationAction = confirmation.actions.find(isAutomateSendRangesAction);
+        const renderAction = confirmation.actions.find(isRenderProjectSectionsAction);
         if (
             createBusAction?.type !== 'createBus' ||
             !createBusAction.payload.busId ||

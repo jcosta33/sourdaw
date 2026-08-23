@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
@@ -299,6 +299,7 @@ function ensureRealTrackStrips(trackIds: readonly string[]): void {
 }
 
 type SetTrackOutputEngineCall = { sourceId: string; targetId: string; result: unknown };
+type RuntimeGraphDeltaSpy = MockInstance<typeof audioEngineUseCases.applyRuntimeGraphDelta>;
 
 /**
  * Reduces an `applyRuntimeGraphDelta` spy down to the `set-track-output`
@@ -306,9 +307,7 @@ type SetTrackOutputEngineCall = { sourceId: string; targetId: string; result: un
  * returned, so a test can prove routing both reached the engine and was
  * accepted by it, not merely attempted.
  */
-function getSetTrackOutputEngineCalls(
-    spy: ReturnType<typeof vi.spyOn<typeof audioEngineUseCases, 'applyRuntimeGraphDelta'>>
-): SetTrackOutputEngineCall[] {
+function getSetTrackOutputEngineCalls(spy: RuntimeGraphDeltaSpy): SetTrackOutputEngineCall[] {
     return spy.mock.calls.flatMap((call, index) => {
         const delta = call[0];
         if (!isRecord(delta) || delta.command !== 'set-track-output' || !Array.isArray(delta.edges)) {
@@ -1028,7 +1027,7 @@ describe('drum bus prompt workflow', () => {
     // but does not restore a spy's original implementation, so an un-restored
     // spy from one test would still be wrapping (and inflating call counts for)
     // the next test's use of the same real, module-scoped function.
-    let engineDeltaSpy: ReturnType<typeof vi.spyOn<typeof audioEngineUseCases, 'applyRuntimeGraphDelta'>> | undefined;
+    let engineDeltaSpy: RuntimeGraphDeltaSpy | undefined;
 
     beforeEach(async () => {
         vi.clearAllMocks();
@@ -1070,7 +1069,7 @@ describe('drum bus prompt workflow', () => {
         clearAgentSectionRenderArtifacts();
         setArrangementEventBus({
             emit: (event, payload) => {
-                if (event === 'track.added' && 'trackId' in payload) {
+                if (event === 'track.added' && typeof payload.trackId === 'string') {
                     audioEngineUseCases.ensureTrackStrip(payload.trackId);
                 }
                 return Promise.resolve();
