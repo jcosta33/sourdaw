@@ -164,7 +164,7 @@ export function bridgeBackingVocalPlatePlan({
         ],
         renderTailSeconds: values.renderTailSeconds,
         verifiedProviderProposalScope: {
-            targetIds: [...removableReverbIds, ...trackIds, busId, filterDeviceId, plateDeviceId],
+            targetIds: [...removableReverbIds, ...trackIds],
             targetRanges: scope.capability.chorusSections.map((section) => ({
                 startBeat: section.startBeat,
                 endBeat: section.endBeat,

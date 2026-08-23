@@ -4087,6 +4087,7 @@ export function bridgeGroundedLlmToolCalls({
         return {
             actions: sharedVocalFxBusesPlan.actions,
             batchLocalActionIdentities: sharedVocalFxBusesPlan.identities,
+            verifiedProviderProposalScope: sharedVocalFxBusesPlan.verifiedProviderProposalScope,
             rejections: [],
         };
     }

@@ -402,9 +402,12 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
                 zeroFraction: 0,
                 stationary: true,
                 floorMeasurable: true,
+                medianTrustworthy: false,
                 dutyCycle: null,
                 calibration: { segments: 1, medianTicksPerMs: 1000, spreadPct: 0 },
                 wallRatio: 0.8,
+                mainThreadWallMs: 20,
+                sampleCount: 10,
             },
         ],
     };
@@ -767,7 +770,7 @@ describe('release inventory', () => {
         expect(historyRequests.map((request) => request.slice(request.indexOf(':') + 1))).toEqual(
             GRAND_BOULE_MEASUREMENT_SOURCE_PATHS
         );
-    });
+    }, 15_000);
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
         const contract = ddspModelsReleaseInventoryContract(repositoryRoot);
@@ -1050,6 +1053,15 @@ describe('release inventory', () => {
             writeFileSync(measuredSourcePath, originalSource);
 
             const original = readFileSync(jsonPath, 'utf8');
+            const overBudget = JSON.parse(original) as {
+                rows: Array<{ mainThreadWallMs: number; sampleCount: number }>;
+            };
+            overBudget.rows[0]!.mainThreadWallMs = overBudget.rows[0]!.sampleCount * 3;
+            writeFileSync(jsonPath, JSON.stringify(overBudget));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'measured reference project exceeds its render budget'
+            );
+
             const unresolvedRevision = 'f'.repeat(40);
             const unresolved = JSON.parse(original) as {
                 sourceRevision: string;

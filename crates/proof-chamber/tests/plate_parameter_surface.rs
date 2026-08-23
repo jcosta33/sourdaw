@@ -119,28 +119,11 @@ fn early_rms(output: &[f32]) -> f32 {
     rms(&output[..EARLY_END.min(output.len())])
 }
 
-/// Three cheap scalars of a render, pinned beside the digest and asserted
-/// before it.
+/// Three platform-independent scalars of a render.
 ///
-/// The digest is a good tripwire and a useless diagnosis. `digest 0x…` is three
-/// opaque integers, identical whether the render moved by one sample of fine
-/// structure, dropped 6 dB, went silent, or swapped its channels — and it is
-/// the *only* thing that fires for a whole class of change. Whoever moves this
-/// constant next has to work out which kind they caused, and the justification
-/// written above it cites T60 from a 50 ms envelope, seven octave bands and a
-/// lag-swept correlation, none of which any instrument in this repo produces.
-/// The number regenerates in one command; the reasoning does not regenerate at
-/// all.
-///
-/// So the scalars go next to it, and they are asserted first so their message
-/// is the one that appears. A change that reds the digest while these hold *is*
-/// the diagnosis — same level, same start, different fine structure, which is
-/// what a retune looks like. A change that reds one of these names itself.
-///
-/// What they do not catch, stated so nobody reads more into them: a channel
-/// swap (the stimulus is mono-summed and this render keeps the left channel
-/// only), and any redistribution of energy that preserves peak, total RMS and
-/// onset. The digest is still the thing that notices those.
+/// They distinguish level, energy, and onset changes. Fine-structure equality
+/// is asserted separately against an explicit default render from the same
+/// process, avoiding platform-sensitive absolute f32 hashes.
 struct RenderShape {
     peak: f32,
     rms: f32,
@@ -165,7 +148,7 @@ fn shape(output: &[f32]) -> RenderShape {
 
 /// Level tolerance, in dB, for the two amplitude scalars.
 ///
-/// Sized to pass the change that produced the current digests and to fail
+/// Sized to pass the measured retune and to fail
 /// anything a listener would call a level change. #1547's one-to-two-sample
 /// retune moved peak by 0.00000 dB and RMS by 0.00013 dB on this render; 0.1 dB
 /// is nearly three orders of magnitude above that and an order of magnitude
@@ -182,8 +165,7 @@ fn assert_shape(actual: &RenderShape, expected: &RenderShape, label: &str) {
     assert!(
         peak_db.abs() < SHAPE_LEVEL_TOLERANCE_DB,
         "{label}: peak moved {peak_db:+.4} dB ({:e} against the pinned {:e}). \
-         That is a level change, not a retune — the digest below would have \
-         told you only that something moved.",
+         That is a level change, not a retune.",
         actual.peak,
         expected.peak
     );
@@ -224,17 +206,6 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
             .all(|(x, y)| x.to_bits() == y.to_bits())
 }
 
-/// FNV-1a over every sample's bit pattern, so any change anywhere in the
-/// buffer moves it.
-fn digest(output: &[f32]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for sample in output {
-        hash ^= u64::from(sample.to_bits());
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
-}
-
 /// What the plate renders with nothing written to it but `algorithm` and
 /// `mix`, which is what every project that never touched a control hears.
 ///
@@ -247,14 +218,14 @@ fn digest(output: &[f32]) -> u64 {
 /// every other assertion in this file while quietly changing what every
 /// existing project sounds like.
 ///
-/// So the reference is a constant rather than a second render. Changing this
-/// number is not a maintenance chore — it means an untouched project now
-/// sounds different, and that belongs in a release note.
+/// The stable contract combines the pinned shape below with same-process exact
+/// equivalence to the explicit shipped default. The latter detects wiring or
+/// default drift without making platform `libm` bits into a release baseline.
 ///
 /// Changed once, by #1546: the constructor's `damping` moved from 0.0005 —
 /// which is bypass, 0.0087 dB at Nyquist — to the 0.3 the panel knob had been
-/// claiming all along. 0x9107_053e_5140_7165 → the value below, re-measured on
-/// this file's stimulus in the same commit as the constructor edit. The
+/// claiming all along, re-measured on this file's stimulus in the same commit
+/// as the constructor edit. The
 /// audible content of that move is measured in
 /// `tests/plate_default_damping.rs`, not fingerprinted: 9.66 dB of 6-12 kHz
 /// shed across the tail against 4.88 dB before.
@@ -274,7 +245,6 @@ fn digest(output: &[f32]) -> u64 {
 /// and the old expression delivered 265, so the fourteen output taps and the
 /// six Schroeder allpasses now match the paper. Six reads still do not, by one
 /// sample each, and `proof_chamber.rs`'s `read` says which and why.
-/// 0x15ca_3842_cec5_5de2 → the value below.
 ///
 /// Unlike #1546 this is *not* a voicing change, and the difference between the
 /// two moves is the reason this comment is longer than the last one. A one-
@@ -298,17 +268,9 @@ fn digest(output: &[f32]) -> u64 {
 /// +0.23 over the next 200 ms, and 0.00 everywhere past 250 ms, because the
 /// tank's circulation period changed rather than its output being delayed.
 ///
-/// That is what a fingerprint is for. An untouched project renders a different
-/// tail with the same level, the same decay time and the same spectrum — worth
-/// a release note for the Pre-Delay fix, not for this.
-const UNTOUCHED_PLATE_DIGEST: u64 = 0x245952ca_4c990c89;
-
 /// The same render, described in three numbers a human can read.
 ///
-/// Regenerate these together with the digest above and never separately: they
-/// are the same render, and a shape that disagrees with its digest means one of
-/// the two was copied from a different run. See `RenderShape` for what each one
-/// is for and what none of them can see.
+/// See `RenderShape` for what each one is for and what none of them can see.
 ///
 /// `onset: 0` is measured, not a placeholder, and it is the weakest of the
 /// three. Both this render and the sibling's are at `mix = 1`, and both measure
@@ -551,8 +513,8 @@ fn size_renders_differently_at_interior_settings() {
 ///
 /// Un-ignore this when the constructor seeds `EarlyReflections` from the field
 /// it also stores. Note the direction of that fix: seeding from 0.75 changes
-/// what an untouched plate renders, so it moves `UNTOUCHED_PLATE_DIGEST` and
-/// `UNTOUCHED_PLATE_SHAPE` with it and belongs in a release note.
+/// what an untouched plate renders, so it moves `UNTOUCHED_PLATE_SHAPE` and
+/// the default-equivalence contract with it and belongs in a release note.
 #[test]
 #[ignore = "pins the plate's split Size default — the field is seeded 0.75 (src/proof_chamber.rs:550) while EarlyReflections is built at 0.5 (:614), so an untouched plate renders a room it does not report. Red until the plate Size default lane lands."]
 fn size_defaults_to_the_documented_value() {
@@ -651,7 +613,6 @@ fn the_untouched_plate_still_renders_what_it_always_has() {
     // is exactly 1.0 at the shipped default, so wiring a parameter that was
     // inert does not move a single sample of any project that never wrote it.
     //
-    // This digest was taken from the plate *before* gravity read its field.
     let output = render(&[]);
 
     // Scalars first, so that when both fire it is the readable one that
@@ -662,16 +623,12 @@ fn the_untouched_plate_still_renders_what_it_always_has() {
         "the untouched plate",
     );
 
-    let digest_now = digest(&output);
-    assert_eq!(
-        digest_now, UNTOUCHED_PLATE_DIGEST,
-        "the untouched plate changed: an existing project that never wrote a \
-         control now renders differently. digest {digest_now:#x}. The three \
-         scalars above held, so the level, the total energy and the start of \
-         this render are all where they were — what moved is fine structure, \
-         which is what a delay-length or coefficient retune looks like. If that \
-         was the intent, re-measure and move this constant with the reasoning; \
-         if it was not, the change is smaller than it looks and harder to see."
+    let explicit_default = render(&[("gravity", 0.5)]);
+    assert!(
+        identical(&output, &explicit_default),
+        "an untouched plate does not render exactly like its explicit shipped \
+         gravity default: max_delta {:e}",
+        max_delta(&output, &explicit_default)
     );
 }
 

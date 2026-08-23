@@ -55,6 +55,19 @@ function fixtureGit(repository: string, args: string[]): string {
     return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
 }
 
+function runPackageRoute(repository: string, args: string[], env: NodeJS.ProcessEnv): string {
+    const pnpmCli = process.env.npm_execpath;
+    if (!pnpmCli) {
+        throw new Error('The protected-publisher fixture requires the active pnpm CLI path');
+    }
+    return execFileSync(process.execPath, [pnpmCli, ...args], {
+        cwd: repository,
+        env,
+        encoding: 'utf8',
+        timeout: 8_000,
+    });
+}
+
 function initializeRepository(path: string): void {
     mkdirSync(path, { recursive: true });
     fixtureGit(path, ['init', '-b', 'main']);
@@ -307,11 +320,7 @@ describe('lane publish', () => {
                 TEST_MINT_LOG: mintLog,
                 TEST_EVENT_LOG: eventLog,
             };
-            execFileSync('pnpm', ['lane:publish', '12', '--test', TEST_INSTRUCTIONS], {
-                cwd: primary,
-                env: launcherEnv,
-                encoding: 'utf8',
-            });
+            runPackageRoute(primary, ['lane:publish', '12', '--test', TEST_INSTRUCTIONS], launcherEnv);
 
             expect(JSON.parse(readFileSync(mintLog, 'utf8').trim())).toEqual({
                 permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
@@ -335,24 +344,16 @@ describe('lane publish', () => {
                 )
             ).toBeGreaterThan(pushEvent);
             expect(events[pullRequestWriteEvent - 1]).toBe('fetch');
+            expect(() => runPackageRoute(primary, ['lane:publish', '--lane', authorizedLane], launcherEnv)).toThrow(
+                /issue lanes must publish by issue number/
+            );
             expect(() =>
-                execFileSync('pnpm', ['lane:publish', '--lane', authorizedLane], {
-                    cwd: primary,
-                    env: launcherEnv,
-                    encoding: 'utf8',
-                })
-            ).toThrow(/issue lanes must publish by issue number/);
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', '--lane', join(authorizedLane, '.github')], {
-                    cwd: primary,
-                    env: launcherEnv,
-                    encoding: 'utf8',
-                })
+                runPackageRoute(primary, ['lane:publish', '--lane', join(authorizedLane, '.github')], launcherEnv)
             ).toThrow(/--lane must name the exact author worktree root/);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
-    });
+    }, 20_000);
 
     it('resolves the locked lane before requesting its diff-scoped publishing token', () => {
         const source = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');

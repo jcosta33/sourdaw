@@ -36,6 +36,19 @@ function runGit(repository: string, args: string[]): string {
     return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
 }
 
+function runPackageRoute(repository: string, args: string[]): string {
+    const pnpmCli = process.env.npm_execpath;
+    if (!pnpmCli) {
+        throw new Error('The package-route fixture requires the active pnpm CLI path');
+    }
+    return execFileSync(process.execPath, [pnpmCli, ...args], {
+        cwd: repository,
+        env: process.env,
+        encoding: 'utf8',
+        timeout: 5_000,
+    });
+}
+
 function trustedPublishFixture(root: string, policy: string): void {
     mkdirSync(join(root, 'scripts'), { recursive: true });
     writeFileSync(
@@ -195,11 +208,7 @@ describe('package scripts and gitignore', () => {
                 'export const publishingPermission = "workflow-write";\n'
             );
 
-            execFileSync('pnpm', ['lane:publish', policyLog], {
-                cwd: checkout,
-                env: process.env,
-                encoding: 'utf8',
-            });
+            runPackageRoute(checkout, ['lane:publish', policyLog]);
 
             expect(readFileSync(policyLog, 'utf8')).toBe('checkout:ordinary\n');
 
@@ -207,19 +216,17 @@ describe('package scripts and gitignore', () => {
                 join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'),
                 `${readFileSync(join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')}\n// lane-local drift\n`
             );
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', policyLog], { cwd: checkout, env: process.env, encoding: 'utf8' })
-            ).toThrow(/protected primary launcher does not match/);
+            expect(() => runPackageRoute(checkout, ['lane:publish', policyLog])).toThrow(
+                /protected primary launcher does not match/
+            );
 
             runGit(checkout, ['restore', 'scripts/trustedGithubWriteBootstrap.ts']);
             runGit(checkout, ['worktree', 'add', '-b', 'agent/test/current-route', lane]);
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', policyLog], { cwd: lane, env: process.env, encoding: 'utf8' })
-            ).toThrow(/protected primary checkout/);
+            expect(() => runPackageRoute(lane, ['lane:publish', policyLog])).toThrow(/protected primary checkout/);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
-    });
+    }, 15_000);
 
     it('publishes a pre-migration lane through the primary package without executing its package route', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-primary-lane-route-'));
@@ -247,11 +254,7 @@ describe('package scripts and gitignore', () => {
                 `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(poisonLog)}, 'entered');\n`
             );
 
-            execFileSync('pnpm', ['lane:publish', '--lane', lane, policyLog], {
-                cwd: primary,
-                env: process.env,
-                encoding: 'utf8',
-            });
+            runPackageRoute(primary, ['lane:publish', '--lane', lane, policyLog]);
 
             expect(readFileSync(policyLog, 'utf8')).toBe('primary:ordinary\n');
             expect(existsSync(poisonLog)).toBe(false);

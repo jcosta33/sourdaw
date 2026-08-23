@@ -914,6 +914,7 @@ describe('isolated gh sessions', () => {
             expect(runCredentialHelper(helperPath, 'get', 'protocol=https\nhost=github.com.evil.example\n\n')).toBe('');
             expect(runCredentialHelper(helperPath, 'get', 'protocol=http\nhost=github.com\n\n')).toBe('');
             expect(runCredentialHelper(helperPath, 'store', 'protocol=https\nhost=github.com\n\n')).toBe('');
+            expect(runCredentialHelper(helperPath, 'erase', 'protocol=https\nhost=github.com\n\n')).toBe('');
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
         }

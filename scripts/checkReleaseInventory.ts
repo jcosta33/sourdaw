@@ -817,10 +817,12 @@ export function assertGrandBouleMeasurementAdmission(
         sourceDigests?: Record<string, string>;
         machine?: { gitSha?: string; workingTree?: string };
         budgetMs?: number;
-        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+        referenceProject?: { audioWorstQuantumUpperMs?: number };
         rows?: Array<{
             id?: string;
             costSite?: string;
+            mainThreadWallMs?: number;
+            sampleCount?: number;
             warmVerify?: { ok?: boolean; detail?: string };
             lateVerify?: { ok?: boolean; detail?: string };
         }>;
@@ -865,12 +867,20 @@ export function assertGrandBouleMeasurementAdmission(
     ) {
         throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
     }
+    const measuredWorkerWallMs =
+        typeof row?.mainThreadWallMs === 'number' &&
+        Number.isFinite(row.mainThreadWallMs) &&
+        typeof row.sampleCount === 'number' &&
+        Number.isFinite(row.sampleCount) &&
+        row.sampleCount > 0
+            ? row.mainThreadWallMs / row.sampleCount
+            : Number.NaN;
     if (
         typeof data.budgetMs !== 'number' ||
         typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
-        typeof data.referenceProject.workerMedianMs !== 'number' ||
+        !Number.isFinite(measuredWorkerWallMs) ||
         data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
-        data.referenceProject.workerMedianMs >= data.budgetMs
+        measuredWorkerWallMs >= data.budgetMs
     ) {
         throw new Error('Grand Boule measured reference project exceeds its render budget');
     }
