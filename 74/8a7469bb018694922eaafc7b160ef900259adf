@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_c1c24175bec745 282
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_7dd438a0a1fd55 2340,2356-2365,2372,2410,2417-2421,2423-2424,2426-2435,2448,2450
+  s_a40848e8f8cca9::t_3d305035743cb4 2455-2456
+src/modules/Command/useCases/__tests__/getExecutableAppActionGroundingRules.spec.ts
+  s_a40848e8f8cca9::t_c1c24175bec745 6-58,108-110,112-134
+  s_a40848e8f8cca9::t_37d5e56074031a 111,135-136
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_c1c24175bec745 138,364-476
+  s_a40848e8f8cca9::t_37d5e56074031a 110,136-137,139-272,274-363
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_7dd438a0a1fd55 2332,2348-2357,2364,2402,2409-2413,2415-2416,2418-2427,2440,2442
+  s_a40848e8f8cca9::t_421ae9f79df78e 2447-2448
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "748a7469bb018694922eaafc7b160ef900259adf",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
