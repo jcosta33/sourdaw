@@ -1,0 +1,23 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_a40848e8f8cca9::t_46c9470b5ccdad 662-667,681-687,690-697,701-704,710-715
+  s_a40848e8f8cca9::t_2e5f2936f07db9 698-700
+  s_a40848e8f8cca9::t_76c68a640a6c4c 721
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_a40848e8f8cca9::t_a0977c2a79e51e 11,22,127,242,754,876,887
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "95d65b744e22c56b148626af6af431262afeb6dd",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
