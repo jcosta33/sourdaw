@@ -22,7 +22,7 @@ describe('agent protocol versioning', () => {
         expect(new Set(manifest.map(({ id }) => id)).size).toBe(manifest.length);
         expect(
             manifest.find(({ id }) => id === 'device-manifest')?.operations.some(({ name }) => name === 'grand-boule')
-        ).toBe(false);
+        ).toBe(true);
 
         for (const contract of manifest) {
             expect(contract.owner.length).toBeGreaterThan(0);
