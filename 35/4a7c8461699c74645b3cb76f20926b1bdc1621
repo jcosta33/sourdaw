@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeDrumRenderComparisonPlan.ts
+  s_a40848e8f8cca9::t_67ca67d1b927a6 1,22,116-124
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_66742a7444d617 336-338
+  s_a40848e8f8cca9::t_c11bea27ecef0a 13,84-104,159-160,276-292,333-335,339-349,351
+  s_a40848e8f8cca9::t_3ed48d47ce8dc4 350
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_6b6d730032b657 28,47-54,83-88,127,228,239-263,265-282,285-328,330-372,376-377,380,393-416,418-428,435-436,440-441,443-449,702-703,706-708,734,761
+  s_a40848e8f8cca9::t_1e0cebb0b8f781 785-789
+  s_a40848e8f8cca9::t_bcf74b60c026e8 1237-1241
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_a2dd544df2bf51 110-146,149-163,174-179
+  s_a40848e8f8cca9::t_d5e499dfdc7b57 147-148,164-173
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_67ca67d1b927a6 3998
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_335b16bba8f7e0 13,317-337,386-388,398,479-488,533-546,548
+  s_27578aec2aab3b::t_d5cfa210520a7f 547
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "354a7c8461699c74645b3cb76f20926b1bdc1621",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
