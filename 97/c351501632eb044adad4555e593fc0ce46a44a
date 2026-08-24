@@ -1,0 +1,22 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_b9cd0d1bfb8b9d 959,961,971,989,992,994,998-1003,1009-1014,1021,1024,1026
+  s_27578aec2aab3b::t_74f70012c70f0e 983
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_27578aec2aab3b::t_1e9c7b893bcd8f 73-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "97c351501632eb044adad4555e593fc0ce46a44a",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
