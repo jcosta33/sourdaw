@@ -222,12 +222,14 @@ export type RepositorySnapshot = {
 
 export type RepositorySnapshotFileReader = {
     open?: (path: string, flags: number) => number;
+    noFollowFlag?: () => unknown;
     readBytes(fileDescriptor: number): Buffer;
     readText(fileDescriptor: number): string;
 };
 
 const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
     open: (path, flags) => openSync(path, flags),
+    noFollowFlag: () => Reflect.get(constants, 'O_NOFOLLOW'),
     readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
     readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
 };
@@ -332,14 +334,16 @@ function openRepositoryRegularFile(
 ): number {
     let fileDescriptor: number | undefined;
     try {
+        const noFollowFlag =
+            readFile.noFollowFlag === undefined ? Reflect.get(constants, 'O_NOFOLLOW') : readFile.noFollowFlag();
+        if (typeof noFollowFlag !== 'number' || noFollowFlag === 0) {
+            throw new Error(`no-follow open is unavailable: ${absolutePath}`);
+        }
         const beforeOpen = lstatSync(absolutePath);
         if (!beforeOpen.isFile()) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
-        if (constants.O_NOFOLLOW === 0) {
-            throw new Error(`no-follow open is unavailable: ${absolutePath}`);
-        }
-        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | noFollowFlag);
         const opened = fstatSync(fileDescriptor);
         if (!opened.isFile()) {
             throw new Error(`not a regular file: ${absolutePath}`);

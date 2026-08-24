@@ -1231,6 +1231,43 @@ describe('release inventory', () => {
         }
     });
 
+    it('does not open or read path-addressed digests without no-follow support', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-no-follow-'));
+        const path = 'public/legal/safe.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        try {
+            mkdirSync(dirname(join(root, path)), { recursive: true });
+            writeFileSync(join(root, path), 'safe legal bytes');
+            let opens = 0;
+            let reads = 0;
+            const readFile = {
+                noFollowFlag: () => undefined,
+                open: (openPath: string) => {
+                    opens += 1;
+                    return openSync(openPath, constants.O_RDONLY);
+                },
+                readBytes: (fileDescriptor: number) => {
+                    reads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => {
+                    reads += 1;
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(opens).toBe(0);
+            expect(reads).toBe(0);
+            expect(changed.fileDigests[path]).toBe('missing');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('should reject a path-addressed digest whose tracked file was deleted', () => {
         const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
         const trackedPath = 'src/provider.ts';

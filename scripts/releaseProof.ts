@@ -172,7 +172,8 @@ function sha256File(path: string): string {
 function sha256ContainedRegularFile(root: string, path: string): string | undefined {
     let descriptor: number | undefined;
     try {
-        if (constants.O_NOFOLLOW === 0) {
+        const noFollowFlag = Reflect.get(constants, 'O_NOFOLLOW');
+        if (typeof noFollowFlag !== 'number' || noFollowFlag === 0) {
             return undefined;
         }
         const rootRealPath = realpathSync(root);
@@ -180,7 +181,7 @@ function sha256ContainedRegularFile(root: string, path: string): string | undefi
         if (!beforeOpen.isFile()) {
             return undefined;
         }
-        descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+        descriptor = openSync(path, constants.O_RDONLY | noFollowFlag);
         const opened = fstatSync(descriptor);
         const afterOpen = lstatSync(path);
         const realPath = realpathSync(path);
