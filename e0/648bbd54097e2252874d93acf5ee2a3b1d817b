@@ -1,0 +1,41 @@
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_d3a9a14b2f5fd4 515,632
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_ae8b196a2d58b3 238,248,250-253
+  s_a40848e8f8cca9::t_4a4f3d4e512f07 32,127,168,420,468,780,849-850
+  s_a40848e8f8cca9::t_43671dc15ec662 49-55,206-207,210,228-237,239-247,249,254-268,280,282-286,388-392,640-644,705-707
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_d3a9a14b2f5fd4 23-24
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_233f25bc7dd5eb 66-71,91-98,150-157,160-169,298-303,305
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_a40848e8f8cca9::t_ae8b196a2d58b3 167
+  s_a40848e8f8cca9::t_42d38d38bdb579 3,24,166,168-174
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_d2b6b53e9fba61 7,99
+  s_a40848e8f8cca9::t_42d38d38bdb579 4013
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_e388225504d861 9-13,46-55,708-709,743,771-786,791-795
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_a40848e8f8cca9::t_d3a9a14b2f5fd4 26-27,43-55,141-144
+src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.ts
+  s_a40848e8f8cca9::t_89ea1750663c07 1-246
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_42d38d38bdb579 624-658,667
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e0648bbd54097e2252874d93acf5ee2a3b1d817b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
