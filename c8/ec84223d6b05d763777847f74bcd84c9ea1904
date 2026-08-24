@@ -1,0 +1,42 @@
+scripts/releaseProof.ts
+  s_27578aec2aab3b::t_61b945a7bfb79d 1336-1337,1374-1376,1380,1720-1721,1798,1802,1815,1929-1930,2036-2037
+  s_27578aec2aab3b::t_9fd70b04aa1fef 8,11,37,128,138,172-221,439-440,457-460,463,471,479,481
+  s_27578aec2aab3b::t_2768d4f8e1453b 2133-2138,2200-2211,2417-2418,2422,2634-2640,2645
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_bfbdb9088c137d 241-245,339-341,350-353,438,440-441,446-450,1965,2012-2013,2016-2018,2035,2039-2041,2045,2047,2051,2059,2063,2071,2079,2082,2091,2105
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_228ea635143520 934
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_aa5d85276dac9c 3-13,1079-1104
+  s_27578aec2aab3b::t_d44eb2c531b86e 1105,1107-1108,1207-1233
+  s_a40848e8f8cca9::t_03ba637ccb9d07 1106,1109
+scripts/__tests__/releaseProof.spec.ts
+  s_27578aec2aab3b::t_4c053d2bd74400 34
+  s_27578aec2aab3b::t_5970c0aeac298e 631-642
+  s_27578aec2aab3b::t_1239d7e3f2216a 888,892
+  s_27578aec2aab3b::t_7dd36fcbe1142c 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "c8ec84223d6b05d763777847f74bcd84c9ea1904",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
