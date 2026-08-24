@@ -58,6 +58,7 @@ import {
     REQUIRED_SNAPSHOT_PATHS,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
+    type RepositorySnapshotFileReader,
     type ReleaseInventory,
     type RepositorySnapshot,
     validateReleaseInventory,
@@ -1627,6 +1628,48 @@ describe('release inventory', () => {
                 ).toEqual([boundaryIndex]);
                 writeFileSync(absolute, original);
             }
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a Grand Boule tracked-file swap before either reader consumes it', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-tracked-swap-'));
+        writeGrandBouleReleaseFixture(root);
+        const swappedPath = join(root, 'crates/daw-dsp/src/grand_boule/engine.rs');
+        const outside = join(root, 'outside.rs');
+        writeFileSync(outside, 'outside source');
+        let swapped = false;
+        let readsAfterSwap = 0;
+        const reader: RepositorySnapshotFileReader = {
+            open(path, flags) {
+                if (path === swappedPath) {
+                    rmSync(swappedPath);
+                    symlinkSync(outside, swappedPath);
+                    swapped = true;
+                }
+                return openSync(path, flags);
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            readBytes(descriptor) {
+                if (swapped) {
+                    readsAfterSwap += 1;
+                }
+                return readFileSync(descriptor);
+            },
+            readText(descriptor) {
+                if (swapped) {
+                    readsAfterSwap += 1;
+                }
+                return readFileSync(descriptor, 'utf8');
+            },
+        };
+
+        try {
+            expect(() => grandBouleReleaseInventoryContract(root, reader)).toThrow(
+                'Grand Boule release source is unsafe: crates/daw-dsp/src/grand_boule/engine.rs'
+            );
+            expect(readsAfterSwap).toBe(0);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

@@ -437,7 +437,11 @@ function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
         .sort();
 }
 
-function trackedFilesSha256(root: string, files: readonly string[]): string {
+function trackedFilesSha256(
+    root: string,
+    files: readonly string[],
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+): string {
     const hash = createHash('sha256');
     const rootRealPath = realpathSync(root);
     for (const file of files) {
@@ -448,7 +452,7 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
         hash.update(file);
         hash.update('\0');
         try {
-            hash.update(readRepositoryRegularFile(rootRealPath, absolute, repositorySnapshotFileReader));
+            hash.update(readRepositoryRegularFile(rootRealPath, absolute, readFile));
         } catch {
             throw new Error(`Grand Boule release source is unsafe: ${file}`);
         }
@@ -457,12 +461,16 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
     return hash.digest('hex');
 }
 
-function trackedSetSha256(root: string, pathspecs: readonly string[]): string {
+function trackedSetSha256(
+    root: string,
+    pathspecs: readonly string[],
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+): string {
     const files = trackedFiles(root, pathspecs);
     if (files.length === 0) {
         throw new Error(`Grand Boule release source boundary has no tracked files: ${pathspecs.join(', ')}`);
     }
-    return trackedFilesSha256(root, files);
+    return trackedFilesSha256(root, files, readFile);
 }
 
 export const AUDIO_WORKLET_SOURCES = [
@@ -1289,7 +1297,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
 } as const;
 
 export function grandBouleReleaseInventoryContract(
-    root: string
+    root: string,
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
 ): Pick<
     ReleaseSurface,
     | 'kind'
@@ -1327,7 +1336,7 @@ export function grandBouleReleaseInventoryContract(
         ],
         digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
             ({ gitPathspecs, digestLabel }) =>
-                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs)}:${digestLabel}`
+                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs, readFile)}:${digestLabel}`
         ),
         licenses: ['Apache-2.0'],
         productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],

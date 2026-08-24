@@ -13,7 +13,6 @@ import {
     mkdirSync,
     mkdtempSync,
     openSync,
-    readFileSync,
     readSync,
     readdirSync,
     realpathSync,
@@ -120,6 +119,8 @@ export const RELEASE_PROOF_ARCHIVE_LIMITS = {
 
 type JsonRecord = Record<string, unknown>;
 
+class FileReadLimitError extends Error {}
+
 export type ReleaseProofOptions = {
     root: string;
     candidate: string;
@@ -136,6 +137,7 @@ type GitIdentity = {
 export type ReleaseBuildPhase = 'web' | 'desktop';
 export type ReleaseBuildRunner = (phase: ReleaseBuildPhase, root: string) => void;
 export type ReleaseGateRunner = (root: string, releaseInventory?: ReleaseInventory) => void;
+export type ReleaseInventoryReader = (root: string) => ReleaseInventory;
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -169,7 +171,12 @@ function sha256File(path: string): string {
     }
 }
 
-function sha256ContainedRegularFile(root: string, path: string): string | undefined {
+function withContainedRegularFile<Result>(
+    root: string,
+    path: string,
+    maxBytes: number,
+    consume: (descriptor: number) => Result
+): Result | undefined {
     let descriptor: number | undefined;
     try {
         const noFollowFlag = Reflect.get(constants, 'O_NOFOLLOW');
@@ -183,6 +190,9 @@ function sha256ContainedRegularFile(root: string, path: string): string | undefi
         }
         descriptor = openSync(path, constants.O_RDONLY | noFollowFlag);
         const opened = fstatSync(descriptor);
+        if (opened.size > maxBytes) {
+            throw new FileReadLimitError();
+        }
         const afterOpen = lstatSync(path);
         const realPath = realpathSync(path);
         const resolved = statSync(realPath);
@@ -199,6 +209,25 @@ function sha256ContainedRegularFile(root: string, path: string): string | undefi
         ) {
             return undefined;
         }
+        return consume(descriptor);
+    } catch (error) {
+        if (error instanceof FileReadLimitError) {
+            throw error;
+        }
+        return undefined;
+    } finally {
+        if (descriptor !== undefined) {
+            closeSync(descriptor);
+        }
+    }
+}
+
+function sha256ContainedRegularFile(
+    root: string,
+    path: string,
+    maxBytes = RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes
+): string | undefined {
+    return withContainedRegularFile(root, path, maxBytes, (descriptor) => {
         const hash = createHash('sha256');
         const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
         let position = 0;
@@ -211,13 +240,7 @@ function sha256ContainedRegularFile(root: string, path: string): string | undefi
             }
         } while (bytesRead > 0);
         return hash.digest('hex');
-    } catch {
-        return undefined;
-    } finally {
-        if (descriptor !== undefined) {
-            closeSync(descriptor);
-        }
-    }
+    });
 }
 
 function gitObjectId(type: 'commit', value: Buffer): string {
@@ -228,24 +251,44 @@ function writeJson(path: string, value: unknown): void {
     writeFileSync(path, `${JSON.stringify(value, null, 4)}\n`);
 }
 
-function readBoundedFile(path: string, maxBytes: number, label: string): Buffer {
-    const size = statSync(path).size;
-    if (size > maxBytes) {
-        throw new Error(`${label} exceeds the ${String(maxBytes)}-byte read limit`);
+function readBoundedFile(root: string, path: string, maxBytes: number, label: string): Buffer {
+    let value: Buffer | undefined;
+    try {
+        value = withContainedRegularFile(root, path, maxBytes, (descriptor) => {
+            const size = fstatSync(descriptor).size;
+            const contents = Buffer.alloc(size);
+            let offset = 0;
+            while (offset < contents.length) {
+                const bytesRead = readSync(descriptor, contents, offset, contents.length - offset, offset);
+                if (bytesRead === 0) {
+                    throw new Error(`${label} changed while reading`);
+                }
+                offset += bytesRead;
+            }
+            return contents;
+        });
+    } catch (error) {
+        if (error instanceof FileReadLimitError) {
+            throw new TypeError(`${label} exceeds the ${String(maxBytes)}-byte read limit`, { cause: error });
+        }
+        throw error;
     }
-    return readFileSync(path);
+    if (value === undefined) {
+        throw new Error(`${label} cannot be read safely within the ${String(maxBytes)}-byte read limit`);
+    }
+    return value;
 }
 
-function readJson(path: string): unknown {
+function readJson(root: string, path: string): unknown {
     return parseJsonWithUniqueKeys(
-        readBoundedFile(path, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, 'JSON document').toString('utf8'),
+        readBoundedFile(root, path, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, 'JSON document').toString('utf8'),
         path
     );
 }
 
-function readCommitObject(path: string, label: string, errors: string[]): Buffer | undefined {
+function readCommitObject(root: string, path: string, label: string, errors: string[]): Buffer | undefined {
     try {
-        return readBoundedFile(path, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes, `${label} commit object`);
+        return readBoundedFile(root, path, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes, `${label} commit object`);
     } catch (error) {
         errors.push(error instanceof Error ? error.message : `${label} commit object cannot be read`);
         return undefined;
@@ -253,7 +296,7 @@ function readCommitObject(path: string, label: string, errors: string[]): Buffer
 }
 
 function expectedDesktopArtifactName(root: string): string {
-    const value = readJson(resolve(root, 'package.json'));
+    const value = readJson(root, resolve(root, 'package.json'));
     const version = isRecord(value) ? value.version : undefined;
     if (typeof version !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.+-]*$/u.test(version)) {
         throw new Error('project package version cannot identify the desktop artifact');
@@ -330,18 +373,25 @@ function verifyFileHash(
     if (path === undefined || hash === undefined) {
         return undefined;
     }
-    if (!existsSync(path) || !lstatSync(path).isFile()) {
+    if (!existsSync(path)) {
         errors.push(`${label}: file is missing`);
         return undefined;
     }
-    if (containedRealPath(root, path, label, errors) === undefined) {
+    let actualHash: string | undefined;
+    try {
+        actualHash = sha256ContainedRegularFile(root, path);
+    } catch (error) {
+        if (error instanceof FileReadLimitError) {
+            errors.push(`${label}: file exceeds the candidate file-size limit`);
+            return undefined;
+        }
+        throw error;
+    }
+    if (actualHash === undefined) {
+        errors.push(`${label}: file is missing or unsafe`);
         return undefined;
     }
-    if (statSync(path).size > RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes) {
-        errors.push(`${label}: file exceeds the candidate file-size limit`);
-        return undefined;
-    }
-    if (sha256File(path) !== hash) {
+    if (actualHash !== hash) {
         errors.push(`${label}: digest mismatch`);
     }
     return path;
@@ -500,13 +550,23 @@ function verifyFileMap(
     }
     for (const path of recordedPaths) {
         const absolute = resolve(directory, ...path.split('/'));
-        if (!existsSync(absolute) || !lstatSync(absolute).isFile()) {
+        if (!existsSync(absolute)) {
             errors.push(`${label}: missing ${path}`);
-        } else if (containedRealPath(directory, absolute, `${label} ${path}`, errors) === undefined) {
             continue;
-        } else if (statSync(absolute).size > RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes) {
-            errors.push(`${label}: file exceeds the candidate file-size limit for ${path}`);
-        } else if (sha256File(absolute) !== recorded[path]) {
+        }
+        let actualHash: string | undefined;
+        try {
+            actualHash = sha256ContainedRegularFile(directory, absolute);
+        } catch (error) {
+            if (error instanceof FileReadLimitError) {
+                errors.push(`${label}: file exceeds the candidate file-size limit for ${path}`);
+                continue;
+            }
+            throw error;
+        }
+        if (actualHash === undefined) {
+            errors.push(`${label}: missing or unsafe ${path}`);
+        } else if (actualHash !== recorded[path]) {
             errors.push(`${label}: digest mismatch for ${path}`);
         }
     }
@@ -533,9 +593,9 @@ function rendererFileMap(directory: string): Record<string, string> {
     );
 }
 
-function readJsonForValidation(path: string, label: string, errors: string[]): JsonRecord | undefined {
+function readJsonForValidation(root: string, path: string, label: string, errors: string[]): JsonRecord | undefined {
     try {
-        const value = readJson(path);
+        const value = readJson(root, path);
         if (!isRecord(value)) {
             errors.push(`${label}: JSON root must be an object`);
             return undefined;
@@ -1266,7 +1326,8 @@ function validateSourceManifest(
         'source commit object',
         errors
     );
-    const commitObject = commitPath === undefined ? undefined : readCommitObject(commitPath, 'source', errors);
+    const commitObject =
+        commitPath === undefined ? undefined : readCommitObject(candidate, commitPath, 'source', errors);
     if (archivePath !== undefined && commitObject !== undefined) {
         validateGitArchive(
             archivePath,
@@ -1281,7 +1342,7 @@ function validateSourceManifest(
     if (manifestPath === undefined) {
         return;
     }
-    const manifest = readJsonForValidation(manifestPath, 'source manifest', errors);
+    const manifest = readJsonForValidation(candidate, manifestPath, 'source manifest', errors);
     if (manifest === undefined) {
         return;
     }
@@ -1348,7 +1409,7 @@ function validateWebManifest(
     if (contentsPath === undefined || manifestPath === undefined) {
         return;
     }
-    const manifest = readJsonForValidation(manifestPath, 'web manifest', errors);
+    const manifest = readJsonForValidation(candidate, manifestPath, 'web manifest', errors);
     if (manifest === undefined) {
         return;
     }
@@ -1388,17 +1449,17 @@ function validateWebManifest(
         for (const path of expectedFiles) {
             const archived = archive.hashes.get(path);
             const adjacent = resolve(contentsPath, ...path.split('/'));
-            if (
-                archived === undefined ||
-                !existsSync(adjacent) ||
-                !lstatSync(adjacent).isFile() ||
-                archived !== sha256File(adjacent)
-            ) {
+            if (archived === undefined || archived !== sha256ContainedRegularFile(contentsPath, adjacent)) {
                 errors.push(`web archive bytes do not match web contents for ${path}`);
             }
         }
     }
-    const contract = readJsonForValidation(resolve(root, 'release/web-artifact-manifest.json'), 'web contract', errors);
+    const contract = readJsonForValidation(
+        root,
+        resolve(root, 'release/web-artifact-manifest.json'),
+        'web contract',
+        errors
+    );
     if (
         contract !== undefined &&
         !sameValue(contract, {
@@ -1819,6 +1880,7 @@ function validateDesktopArchiveContents(
 }
 
 function validateBuildMaterial(
+    candidate: string,
     desktop: JsonRecord,
     runtimeContract: ElectronRuntimeContract,
     paths: {
@@ -1834,9 +1896,11 @@ function validateBuildMaterial(
     const electronCommit =
         paths.electronCommit === undefined
             ? undefined
-            : readCommitObject(paths.electronCommit, 'Electron source', errors);
+            : readCommitObject(candidate, paths.electronCommit, 'Electron source', errors);
     const ffmpegCommit =
-        paths.ffmpegCommit === undefined ? undefined : readCommitObject(paths.ffmpegCommit, 'FFmpeg source', errors);
+        paths.ffmpegCommit === undefined
+            ? undefined
+            : readCommitObject(candidate, paths.ffmpegCommit, 'FFmpeg source', errors);
     const electronTree =
         electronCommit === undefined
             ? undefined
@@ -1870,7 +1934,7 @@ function validateBuildMaterial(
     if (paths.buildManifest === undefined || paths.buildInputs === undefined) {
         return;
     }
-    const build = readJsonForValidation(paths.buildManifest, 'FFmpeg build material', errors);
+    const build = readJsonForValidation(candidate, paths.buildManifest, 'FFmpeg build material', errors);
     if (build === undefined) {
         return;
     }
@@ -1911,9 +1975,8 @@ function validateBuildMaterial(
             const adjacent = join(paths.buildInputs, ...path.split('/'));
             if (
                 archived === undefined ||
-                !existsSync(adjacent) ||
                 sha256Bytes(archived) !== inputs[path] ||
-                sha256File(adjacent) !== inputs[path]
+                sha256ContainedRegularFile(paths.buildInputs, adjacent) !== inputs[path]
             ) {
                 errors.push(`Electron FFmpeg build input ${path} does not match the source archive`);
             }
@@ -2022,7 +2085,7 @@ function validateDesktop(
     const manifest =
         contentsManifestPath === undefined
             ? undefined
-            : readJsonForValidation(contentsManifestPath, 'desktop contents manifest', errors);
+            : readJsonForValidation(candidate, contentsManifestPath, 'desktop contents manifest', errors);
     if (manifest !== undefined) {
         if (manifest.sourceRevision !== expectedRevision) {
             errors.push('desktop contents manifest revision does not match candidate revision');
@@ -2040,6 +2103,7 @@ function validateDesktop(
         }
     }
     const expectedRuntime = readJsonForValidation(
+        root,
         resolve(root, 'public/legal/ELECTRON-SOURCES.json'),
         'repository Electron manifest',
         errors
@@ -2047,7 +2111,7 @@ function validateDesktop(
     const actualRuntime =
         runtimeManifestPath === undefined
             ? undefined
-            : readJsonForValidation(runtimeManifestPath, 'desktop runtime manifest', errors);
+            : readJsonForValidation(candidate, runtimeManifestPath, 'desktop runtime manifest', errors);
     if (
         expectedRuntime !== undefined &&
         actualRuntime !== undefined &&
@@ -2056,6 +2120,7 @@ function validateDesktop(
         errors.push('desktop runtime manifest does not match repository provenance');
     }
     const material = readJsonForValidation(
+        root,
         resolve(root, 'release/desktop-runtime-material.json'),
         'desktop material contract',
         errors
@@ -2064,6 +2129,7 @@ function validateDesktop(
         errors.push('desktop material contract identity drifted');
     }
     validateBuildMaterial(
+        candidate,
         desktop,
         runtimeContract,
         { electronArchive, electronCommit, ffmpegArchive, ffmpegCommit, buildManifest, buildInputs },
@@ -2104,7 +2170,7 @@ function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: s
     const webContents = safeRelativePath(web?.contentsPath, 'web.contentsPath', errors);
     const webManifest = candidatePath(candidate, web?.manifestPath, 'web.manifestPath', errors);
     if (webContents !== undefined && webManifest !== undefined && existsSync(webManifest)) {
-        const manifest = readJsonForValidation(webManifest, 'web manifest census', errors);
+        const manifest = readJsonForValidation(candidate, webManifest, 'web manifest census', errors);
         const files = manifest === undefined ? {} : stringMap(manifest.files, 'web manifest census.files', errors);
         for (const path of Object.keys(files)) {
             expected.add(posix.join(webContents, path));
@@ -2114,7 +2180,7 @@ function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: s
     const buildInputs = safeRelativePath(desktop?.buildInputsPath, 'desktop.buildInputsPath', errors);
     const buildManifest = candidatePath(candidate, desktop?.ffmpegBuildPath, 'desktop.ffmpegBuildPath', errors);
     if (buildInputs !== undefined && buildManifest !== undefined && existsSync(buildManifest)) {
-        const manifest = readJsonForValidation(buildManifest, 'FFmpeg build census', errors);
+        const manifest = readJsonForValidation(candidate, buildManifest, 'FFmpeg build census', errors);
         const files =
             manifest === undefined ? {} : stringMap(manifest.buildInputs, 'FFmpeg build census.inputs', errors);
         for (const path of Object.keys(files)) {
@@ -2164,7 +2230,7 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         errors.push(`${PROOF_FILE}: file is missing or unsafe`);
         return errors;
     }
-    const proof = readJsonForValidation(proofPath, PROOF_FILE, errors);
+    const proof = readJsonForValidation(options.candidate, proofPath, PROOF_FILE, errors);
     if (proof === undefined) {
         return errors;
     }
@@ -2416,11 +2482,12 @@ export function assembleReleaseProof(
     runtimeContract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT,
     buildRunner: ReleaseBuildRunner = runProjectBuild,
     releaseGate: ReleaseGateRunner = (gateRoot, releaseInventory) =>
-        checkReleaseInventory(gateRoot, undefined, releaseInventory)
+        checkReleaseInventory(gateRoot, undefined, releaseInventory),
+    inventoryReader: ReleaseInventoryReader = readReleaseInventory
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
-    const releaseInventory = readReleaseInventory(root);
+    const releaseInventory = inventoryReader(root);
     const sourceIdentity = verifyGitCheckout(
         root,
         execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' }).trim(),

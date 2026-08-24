@@ -20,6 +20,7 @@ import { gzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { readReleaseInventory, type ReleaseInventory } from '../checkReleaseInventory';
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from '../electronRuntimeContract';
 import {
     ELECTRON_FFMPEG_BUILD_INPUTS,
@@ -386,7 +387,8 @@ function fixtureBuildRunner(fixture: Fixture): ReleaseBuildRunner {
 function assemble(
     fixture: Fixture,
     buildRunner: ReleaseBuildRunner = fixtureBuildRunner(fixture),
-    releaseGate: (root: string) => void = () => undefined
+    releaseGate: (root: string, releaseInventory?: ReleaseInventory) => void = () => undefined,
+    inventoryReader: (root: string) => ReleaseInventory = readReleaseInventory
 ): void {
     assembleReleaseProof(
         fixture.root,
@@ -395,7 +397,8 @@ function assemble(
         fixture.ffmpegSource,
         fixture.contract,
         buildRunner,
-        releaseGate
+        releaseGate,
+        inventoryReader
     );
 }
 
@@ -520,6 +523,28 @@ afterEach(() => {
 });
 
 describe('release proof', () => {
+    it('reads one inventory snapshot and passes that exact object to validation and the release gate', () => {
+        const fixture = createFixture();
+        const inventory = readReleaseInventory(fixture.root);
+        let inventoryReads = 0;
+        let gatedInventory: ReleaseInventory | undefined;
+
+        assemble(
+            fixture,
+            fixtureBuildRunner(fixture),
+            (_root, releaseInventory) => {
+                gatedInventory = releaseInventory;
+            },
+            () => {
+                inventoryReads += 1;
+                return inventory;
+            }
+        );
+
+        expect(inventoryReads).toBe(1);
+        expect(gatedInventory).toBe(inventory);
+    });
+
     it('pins the WebLLM packaged legal path list', () => {
         expect(hashValue(JSON.stringify([...WEBLLM_REQUIRED_LEGAL_FILES].sort()))).toBe(
             WEBLLM_PACKAGED_PATH_LIST_DIGEST
