@@ -127,6 +127,7 @@ export type ReleaseProofOptions = {
     expectedRevision: string;
     runtimeContract?: ElectronRuntimeContract;
     releaseInventory?: ReleaseInventory;
+    releaseInventoryReader?: ReleaseInventoryReader;
     fileReader?: ReleaseProofFileReader;
 };
 
@@ -2342,7 +2343,8 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     const runtimeContract = options.runtimeContract ?? ELECTRON_RUNTIME_CONTRACT;
     let releaseInventory: ReleaseInventory | undefined;
     try {
-        releaseInventory = options.releaseInventory ?? readReleaseInventory(options.root);
+        releaseInventory =
+            options.releaseInventory ?? (options.releaseInventoryReader ?? readReleaseInventory)(options.root);
     } catch (error) {
         errors.push(error instanceof Error ? error.message : 'release inventory cannot be read safely');
     }

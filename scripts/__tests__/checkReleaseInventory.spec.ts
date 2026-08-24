@@ -2141,14 +2141,20 @@ describe('release inventory', () => {
         );
     });
 
-    it('runs the project-license preflight before loading the inventory', () => {
+    it('passes the captured inventory marker scan to the project-license preflight', () => {
         let called = false;
+        const capturedInventory = inventory();
 
         expect(() =>
-            checkReleaseInventory('/inventory-is-not-read', () => {
-                called = true;
-                throw new Error('project license preflight sentinel');
-            })
+            checkReleaseInventory(
+                '/inventory-is-not-read',
+                (_root, inventoryContents) => {
+                    called = true;
+                    expect(inventoryContents).toBe(JSON.stringify(capturedInventory));
+                    throw new Error('project license preflight sentinel');
+                },
+                capturedInventory
+            )
         ).toThrow('project license preflight sentinel');
         expect(called).toBe(true);
     });

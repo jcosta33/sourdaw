@@ -238,12 +238,20 @@ export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
 
-export function readReleaseInventory(root: string): ReleaseInventory {
+type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
+
+function readReleaseInventoryContents(root: string): string {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const contents = readRepositoryRegularText(realpathSync(root), inventoryPath, repositorySnapshotFileReader);
     if (contents === undefined) {
         throw new Error(`release inventory cannot be read safely: ${inventoryPath}`);
     }
+    return contents;
+}
+
+export function readReleaseInventory(root: string): ReleaseInventory {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const contents = readReleaseInventoryContents(root);
     return parseJsonWithUniqueKeys<ReleaseInventory>(contents, inventoryPath);
 }
 
@@ -2022,11 +2030,14 @@ export function loadRepositorySnapshot(
 
 export function checkReleaseInventory(
     root: string,
-    projectLicensePreflight = checkProjectLicense,
+    projectLicensePreflight: ProjectLicensePreflight = (preflightRoot, inventoryContents) =>
+        checkProjectLicense(preflightRoot, undefined, inventoryContents),
     inventory?: ReleaseInventory
 ): ReleaseInventoryCheckReceipt {
-    projectLicensePreflight(root);
-    const currentInventory = inventory ?? readReleaseInventory(root);
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const inventoryContents = inventory === undefined ? readReleaseInventoryContents(root) : JSON.stringify(inventory);
+    const currentInventory = inventory ?? parseJsonWithUniqueKeys<ReleaseInventory>(inventoryContents, inventoryPath);
+    projectLicensePreflight(root, inventoryContents);
     const snapshot = loadRepositorySnapshot(root, currentInventory);
     const errors = validateReleaseInventory(currentInventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
