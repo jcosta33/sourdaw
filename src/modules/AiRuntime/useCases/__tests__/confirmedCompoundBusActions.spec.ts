@@ -44,6 +44,7 @@ import {
 
 const runtimeMocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     clearReportedLatency: vi.fn(),
     engineRemoveSend: vi.fn(),
     engineSetSend: vi.fn(),
@@ -56,6 +57,7 @@ const runtimeMocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
     removeTrackStrip: runtimeMocks.removeTrackStrip,
@@ -400,6 +402,13 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([
             { busId: BUS_ID, level: 0.25, preFader: false },
         ]);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'replace-track-device-chain',
+                operation: 'add-device',
+                after: expect.objectContaining({ id: BUS_ID }),
+            })
+        );
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
         const undoEntries = undoStore.value?.past ?? [];
         expect(undoEntries).toHaveLength(3);
@@ -408,7 +417,6 @@ describe('confirmed compound bus actions', () => {
 
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(BUS_ID, expect.any(String));
         expect(runtimeMocks.engineRemoveSend).toHaveBeenCalledWith('track-vocals', BUS_ID);
     });
 
@@ -420,8 +428,7 @@ describe('confirmed compound bus actions', () => {
         expect(result.status).toBe('failed');
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
         expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
         expect(getPendingActionConfirmation('confirmation-conflict')?.status).toBe('failed');
