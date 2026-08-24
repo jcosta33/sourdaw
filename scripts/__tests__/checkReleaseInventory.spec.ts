@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { constants, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1034,21 +1034,29 @@ describe('release inventory', () => {
             mkdirSync(dirname(targetPath), { recursive: true });
             writeFileSync(targetPath, 'contained legal bytes');
             symlinkSync(targetPath, join(root, symlinkPath));
-            let reads = 0;
+            let opens = 0;
+            let byteReads = 0;
+            let textReads = 0;
             const readFile = {
+                open: (path: string) => {
+                    opens += 1;
+                    return openSync(path, constants.O_RDONLY);
+                },
                 readBytes: (fileDescriptor: number) => {
-                    reads += 1;
+                    byteReads += 1;
                     return readFileSync(fileDescriptor);
                 },
                 readText: (fileDescriptor: number) => {
-                    reads += 1;
+                    textReads += 1;
                     return readFileSync(fileDescriptor, 'utf8');
                 },
             };
 
             const changed = loadRepositorySnapshot(root, value, [symlinkPath], readFile);
 
-            expect(reads).toBe(0);
+            expect(opens).toBe(0);
+            expect(byteReads).toBe(0);
+            expect(textReads).toBe(0);
             expect(changed.fileDigests[symlinkPath]).toBe('missing');
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`

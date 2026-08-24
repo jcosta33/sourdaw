@@ -221,11 +221,13 @@ export type RepositorySnapshot = {
 };
 
 export type RepositorySnapshotFileReader = {
+    open?: (path: string, flags: number) => number;
     readBytes(fileDescriptor: number): Buffer;
     readText(fileDescriptor: number): string;
 };
 
 const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
+    open: (path, flags) => openSync(path, flags),
     readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
     readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
 };
@@ -319,14 +321,18 @@ function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
     );
 }
 
-function openRepositoryRegularFile(rootRealPath: string, absolutePath: string): number {
+function openRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): number {
     let fileDescriptor: number | undefined;
     try {
         const beforeOpen = lstatSync(absolutePath);
         if (!beforeOpen.isFile()) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
-        fileDescriptor = openSync(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
         const opened = fstatSync(fileDescriptor);
         if (!opened.isFile()) {
             throw new Error(`not a regular file: ${absolutePath}`);
@@ -356,7 +362,7 @@ function readRepositoryRegularFile(
     absolutePath: string,
     readFile: RepositorySnapshotFileReader
 ): Buffer {
-    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath);
+    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
     try {
         return readFile.readBytes(fileDescriptor);
     } finally {
@@ -371,7 +377,7 @@ function readRepositoryRegularText(
 ): string | undefined {
     let fileDescriptor: number;
     try {
-        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath);
+        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
     } catch {
         return undefined;
     }
