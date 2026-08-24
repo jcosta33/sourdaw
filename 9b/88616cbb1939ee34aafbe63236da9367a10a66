@@ -1,0 +1,25 @@
+src/modules/AiRuntime/presentations/views/__tests__/VoiceCommandOverlay.spec.tsx
+  s_a40848e8f8cca9::t_95960b6a5ae1a6 92
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_a40848e8f8cca9::t_3028c7d4ab8ed5 325-326,333
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_a40848e8f8cca9::t_3028c7d4ab8ed5 317-321,327-329,332-334
+src/components/daw/__tests__/DawSmallLayoutComponents.spec.tsx
+  s_a40848e8f8cca9::t_3028c7d4ab8ed5 46,48,51,53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9b88616cbb1939ee34aafbe63236da9367a10a66",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
