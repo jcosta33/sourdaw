@@ -1,0 +1,31 @@
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_c315fb6f3dccf7 934
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_ded4fb9a0fd952 86-87,105-156
+  s_27578aec2aab3b::t_60cfd6d228ab24 809
+  s_27578aec2aab3b::t_80a48d2ef9c9a7 88
+  s_27578aec2aab3b::t_8d71230038f7d6 806-808,814,866
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_c6119bf49588d3 277
+  s_27578aec2aab3b::t_63e32dd0b07461 254
+scripts/__tests__/releaseProof.spec.ts
+  s_27578aec2aab3b::t_fdd726efd3d05e 524-526
+  s_27578aec2aab3b::t_f6d3d16d087d82 523,527-528
+  s_27578aec2aab3b::t_80a48d2ef9c9a7 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "02946bc0f7ca210a6158c84ae20506c356b04b61",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.4"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
