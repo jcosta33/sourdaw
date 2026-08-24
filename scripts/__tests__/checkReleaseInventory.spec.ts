@@ -59,6 +59,7 @@ import {
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
     type ReleaseInventory,
+    type ReleaseInventoryCheckReceipt,
     type RepositorySnapshot,
     validateReleaseInventory,
     wasmReleaseInventoryContract,
@@ -853,17 +854,24 @@ describe('release inventory', () => {
 
     it('returns the complete ordered DDSP receipt from the default release check', () => {
         const laterValidationSentinel = new Error('stop after default DDSP receipt');
-        let ddspSurfaceIds: readonly string[] | undefined;
+        const liveInventory = readReleaseInventory(repositoryRoot);
+        let receipt: ReleaseInventoryCheckReceipt | undefined;
 
         expect(() =>
             checkReleaseInventory(repositoryRoot, {
-                afterDdspValidation(validatedSurfaceIds) {
-                    ddspSurfaceIds = validatedSurfaceIds;
+                projectLicensePreflight() {},
+                readInventory() {
+                    return liveInventory;
+                },
+                afterDdspValidation(value) {
+                    receipt = value;
                     throw laterValidationSentinel;
                 },
             })
         ).toThrow(laterValidationSentinel);
-        expect(ddspSurfaceIds).toEqual(['ddsp-tfjs-runtime', 'ddsp-models']);
+        expect(receipt).toEqual({
+            validatedSurfaceIds: ['ddsp-tfjs-runtime', 'ddsp-models'],
+        });
     });
 
     it('pins the WebLLM legal closure to exact paths, source buckets, and path-addressed digests', () => {

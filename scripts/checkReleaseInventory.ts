@@ -239,7 +239,7 @@ export type ReleaseInventoryCheckReceipt = {
 export type ReleaseInventoryCheckOptions = {
     projectLicensePreflight?: ProjectLicensePreflight;
     readInventory?: (root: string) => ReleaseInventory;
-    afterDdspValidation?: (validatedSurfaceIds: readonly ['ddsp-tfjs-runtime', 'ddsp-models']) => void;
+    afterDdspValidation?: (receipt: ReleaseInventoryCheckReceipt) => void;
 };
 
 type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
@@ -2058,13 +2058,14 @@ export function checkReleaseInventory(
     }
     projectLicensePreflight(root, inventoryContents);
     assertDdspReleaseInventory(root, currentInventory);
-    afterDdspValidation?.(DDSP_VALIDATED_SURFACE_IDS);
+    const receipt: ReleaseInventoryCheckReceipt = { validatedSurfaceIds: [...DDSP_VALIDATED_SURFACE_IDS] };
+    afterDdspValidation?.(receipt);
     const snapshot = loadRepositorySnapshot(root, currentInventory);
     const errors = validateReleaseInventory(currentInventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
-    const validatedSurfaceIds: string[] = [];
+    const { validatedSurfaceIds } = receipt;
     const validateSurface = (surfaceId: string, validate: () => void): void => {
         validate();
         validatedSurfaceIds.push(surfaceId);
@@ -2113,7 +2114,6 @@ export function checkReleaseInventory(
             'owner visual asset'
         )
     );
-    validatedSurfaceIds.push(...DDSP_VALIDATED_SURFACE_IDS);
     checkElectronRuntimeProvenance(root);
     const electronSurface = currentInventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
@@ -2140,7 +2140,7 @@ export function checkReleaseInventory(
     process.stdout.write(
         `release inventory valid: ${String(currentInventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
     );
-    return { validatedSurfaceIds };
+    return receipt;
 }
 
 const entry = process.argv[1];

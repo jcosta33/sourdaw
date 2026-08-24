@@ -50,6 +50,7 @@ class NoopArrangementEventBus extends ArrangementEventBus {
 }
 
 const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
+const REVERB_DEVICE_ID = 'device-ai-00000000-0000-4000-8000-000000000001';
 
 describe('compound bus AppAction batch', () => {
     beforeEach(() => {
@@ -81,7 +82,10 @@ describe('compound bus AppAction batch', () => {
     it('creates and targets one stable bus identity inside a compensable atomic batch', async () => {
         const actions = [
             { type: 'createBus', payload: { name: 'Vocal Plate', busId: BUS_ID } },
-            { type: 'addDevice', payload: { trackId: BUS_ID, deviceType: 'builtin-reverb' } },
+            {
+                type: 'addDevice',
+                payload: { trackId: BUS_ID, deviceType: 'builtin-reverb', deviceId: REVERB_DEVICE_ID },
+            },
             {
                 type: 'addSend',
                 payload: {
@@ -106,16 +110,31 @@ describe('compound bus AppAction batch', () => {
         const vocals = state?.tracks.find((track) => track.id === 'track-vocals');
         expect(bus?.kind).toBe('bus');
         expect(bus?.devices).toHaveLength(1);
-        expect(bus?.devices[0]?.id).toMatch(/^device-/u);
+        expect(bus?.devices[0]?.id).toBe(REVERB_DEVICE_ID);
         expect(bus?.devices[0]?.type).toBe('builtin-reverb');
         expect(vocals?.sends).toEqual([{ busId: BUS_ID, level: 0.25, preFader: false }]);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
-            expect.objectContaining({
-                command: 'replace-track-device-chain',
-                operation: 'add-device',
-                after: expect.objectContaining({ id: BUS_ID }),
-            })
-        );
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith({
+            schemaVersion: 1,
+            command: 'replace-track-device-chain',
+            correlation: {
+                appRevision: expect.any(Number),
+                projectRevision: expect.any(String),
+            },
+            operation: 'add-device',
+            before: { id: BUS_ID, kind: 'bus', devices: [] },
+            after: {
+                id: BUS_ID,
+                kind: 'bus',
+                devices: [
+                    {
+                        id: REVERB_DEVICE_ID,
+                        type: 'builtin-reverb',
+                        parameterIds: ['rev-damping', 'rev-decay', 'rev-lowcut', 'rev-mix', 'rev-predelay', 'rev-size'],
+                    },
+                ],
+            },
+            parameters: [],
+        });
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
     });
 });

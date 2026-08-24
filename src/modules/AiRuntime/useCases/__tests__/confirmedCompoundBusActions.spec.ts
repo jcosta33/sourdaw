@@ -79,6 +79,7 @@ const noActionHistoryMetadataPort = {
 
 const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
 const BUS_ALTERNATIVE_ID = 'alternative-ai-00000000-0000-4000-8000-000000000001';
+const REVERB_DEVICE_ID = 'device-ai-00000000-0000-4000-8000-000000000001';
 
 function createVocalsTrack(): Track {
     return {
@@ -130,7 +131,12 @@ function createCompoundActions(includeConflictingSend = false): ExecutableRuntim
         },
         {
             type: 'addDevice',
-            payload: { trackId: BUS_ID, deviceType: 'builtin-reverb', expectedDeviceIds: [] },
+            payload: {
+                trackId: BUS_ID,
+                deviceType: 'builtin-reverb',
+                deviceId: REVERB_DEVICE_ID,
+                expectedDeviceIds: [],
+            },
         },
         {
             type: 'addSend',
@@ -402,13 +408,28 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([
             { busId: BUS_ID, level: 0.25, preFader: false },
         ]);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
-            expect.objectContaining({
-                command: 'replace-track-device-chain',
-                operation: 'add-device',
-                after: expect.objectContaining({ id: BUS_ID }),
-            })
-        );
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith({
+            schemaVersion: 1,
+            command: 'replace-track-device-chain',
+            correlation: {
+                appRevision: expect.any(Number),
+                projectRevision: expect.any(String),
+            },
+            operation: 'add-device',
+            before: { id: BUS_ID, kind: 'bus', devices: [] },
+            after: {
+                id: BUS_ID,
+                kind: 'bus',
+                devices: [
+                    {
+                        id: REVERB_DEVICE_ID,
+                        type: 'builtin-reverb',
+                        parameterIds: ['rev-damping', 'rev-decay', 'rev-lowcut', 'rev-mix', 'rev-predelay', 'rev-size'],
+                    },
+                ],
+            },
+            parameters: [],
+        });
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
         const undoEntries = undoStore.value?.past ?? [];
         expect(undoEntries).toHaveLength(3);
