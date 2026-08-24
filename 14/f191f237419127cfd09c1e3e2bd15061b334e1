@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_d308dc06020d77 29,45-52,123,158-166,168-170,172-205,211,213-217,222-233,328,349,453,565
+src/modules/Arrangement/handlers/batchFeature/handleRemoveAdjustmentRegion.ts
+  s_a40848e8f8cca9::t_c393a2860a68ae 36
+src/modules/Arrangement/handlers/batchFeature/adjustmentLayerHandlers.ts
+  s_a40848e8f8cca9::t_24ddbfe73575a3 122-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "14f191f237419127cfd09c1e3e2bd15061b334e1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
