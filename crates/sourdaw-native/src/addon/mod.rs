@@ -338,7 +338,9 @@ impl SourdawNative {
                 commands::speech::cancel_dictation(session_id, &singletons.dictation)
             })
             .await
-            .map_err(|error| Error::from_reason(format!("Dictation cancellation worker failed: {error}")))?,
+            .map_err(|error| {
+                Error::from_reason(format!("Dictation cancellation worker failed: {error}"))
+            })?,
         )
     }
 
