@@ -10,6 +10,7 @@ import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentRef
 const MAX_ITEMS = 16;
 const MAX_COMMANDS = 32;
 const MAX_REPEAT = 8;
+const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
 type Entity = 'track' | 'clip' | 'device' | 'automation-lane';
 
@@ -313,6 +314,27 @@ function detectDependencyCycle(items: readonly Record<string, unknown>[]): strin
     return [...dependencies.keys()].some(visit) ? 'Structured command list has an unknown or cyclic dependency.' : null;
 }
 
+function dependsTransitivelyOn(
+    itemId: string,
+    dependencyId: string,
+    dependenciesByItemId: ReadonlyMap<string, readonly string[]>
+): boolean {
+    const pending = [...(dependenciesByItemId.get(itemId) ?? [])];
+    const visited = new Set<string>();
+    while (pending.length > 0) {
+        const candidate = pending.pop();
+        if (candidate === undefined || visited.has(candidate)) {
+            continue;
+        }
+        if (candidate === dependencyId) {
+            return true;
+        }
+        visited.add(candidate);
+        pending.push(...(dependenciesByItemId.get(candidate) ?? []));
+    }
+    return false;
+}
+
 /**
  * Turns the provider's bounded semantic list into ordinary registered commands.
  * The provider never receives generated IDs, state guards, approval authority, or
@@ -361,6 +383,9 @@ export function compileArbitraryCommandList(input: {
     if (dependencyRejection !== null) {
         return { status: 'rejected', reason: dependencyRejection };
     }
+    const dependenciesByItemId = new Map(
+        items.map((item) => [item.id as string, (item.dependsOn as string[] | undefined) ?? []] as const)
+    );
     const candidates = collectCandidates(input.context);
     const protectedTargetIds = new Set(plan?.scope.protectedTargetIds ?? []);
     const commands: ToolCallResult[] = [];
@@ -370,6 +395,7 @@ export function compileArbitraryCommandList(input: {
     const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
     const targetCommandArguments = new Map<string, string>();
     const canonicalCommandKeys = new Set<string>();
+    const producerItemIdsByBinding = new Map<string, string>();
 
     for (const [index, item] of items.entries()) {
         const commandStart = commands.length;
@@ -450,6 +476,16 @@ export function compileArbitraryCommandList(input: {
                 commandStart,
                 commandCount: commands.length - commandStart,
             });
+            if (item.name === 'createBus' && item.arguments.binding !== undefined) {
+                const binding = item.arguments.binding;
+                if (typeof binding !== 'string' || !BATCH_LOCAL_BINDING_PATTERN.test(binding)) {
+                    return { status: 'rejected', reason: 'Batch-local producer has an invalid binding.' };
+                }
+                if (producerItemIdsByBinding.has(binding)) {
+                    return { status: 'rejected', reason: `Duplicate batch-local producer binding: ${binding}` };
+                }
+                producerItemIdsByBinding.set(binding, item.id);
+            }
             continue;
         }
         const selector = parseSelector(item.selector);
@@ -492,6 +528,22 @@ export function compileArbitraryCommandList(input: {
             }
             const value = item.arguments[rule.argument];
             if (value === undefined) {
+                continue;
+            }
+            if (typeof value === 'string' && value.startsWith('$')) {
+                const binding = value.slice(1);
+                const producerItemId = producerItemIdsByBinding.get(binding);
+                if (
+                    rule.cardinality === 'many' ||
+                    rule.allowBatchLocal === false ||
+                    producerItemId === undefined ||
+                    !dependsTransitivelyOn(item.id, producerItemId, dependenciesByItemId)
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: `Batch-local target ${value} requires an earlier declared producer dependency.`,
+                    };
+                }
                 continue;
             }
             let stableIds: readonly string[] | null = null;

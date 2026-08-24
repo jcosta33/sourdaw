@@ -10,6 +10,7 @@ import {
 } from './compileArbitraryCommandList';
 
 const MAX_COMMANDS = 32;
+const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
 type Candidate = {
     id: string;
@@ -80,6 +81,27 @@ function sameToolCalls(left: readonly ToolCallResult[], right: readonly ToolCall
     );
 }
 
+function dependsTransitivelyOn(
+    item: ArbitraryCommandListEvidence['items'][number],
+    dependencyId: string,
+    itemsById: ReadonlyMap<string, ArbitraryCommandListEvidence['items'][number]>
+): boolean {
+    const pending = [...item.dependsOn];
+    const visited = new Set<string>();
+    while (pending.length > 0) {
+        const candidate = pending.pop();
+        if (candidate === undefined || visited.has(candidate)) {
+            continue;
+        }
+        if (candidate === dependencyId) {
+            return true;
+        }
+        visited.add(candidate);
+        pending.push(...(itemsById.get(candidate)?.dependsOn ?? []));
+    }
+    return false;
+}
+
 /** Re-checks bounded, app-owned compiler proof at the bridge boundary before any grounding bypass. */
 export function validateArbitraryCommandListEvidence(input: {
     evidence: ArbitraryCommandListEvidence;
@@ -134,6 +156,8 @@ export function validateArbitraryCommandListEvidence(input: {
         selectorByItemId.set(selector.itemId, selector);
     }
     const itemIds = new Set<string>();
+    const itemsById = new Map(evidence.items.map((item) => [item.itemId, item]));
+    const producerItemIdsByBinding = new Map<string, string>();
     const resolvedTargetIds: string[] = [];
     const targetOverridesByCallIndex = new Map<number, readonly CompilerResolvedTargetOverride[]>();
     const addTargetOverride = (commandIndex: number, override: CompilerResolvedTargetOverride): void => {
@@ -249,6 +273,23 @@ export function validateArbitraryCommandListEvidence(input: {
                 continue;
             }
             for (const targetId of targetIds) {
+                if (targetId.startsWith('$')) {
+                    const binding = targetId.slice(1);
+                    const producerItemId = producerItemIdsByBinding.get(binding);
+                    if (
+                        targetRule.cardinality === 'many' ||
+                        targetRule.allowBatchLocal === false ||
+                        !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+                        producerItemId === undefined ||
+                        !dependsTransitivelyOn(item, producerItemId, itemsById)
+                    ) {
+                        return {
+                            status: 'rejected',
+                            reason: 'Structured command compiler evidence batch-local target is invalid.',
+                        };
+                    }
+                    continue;
+                }
                 const matchingCommands = itemCommands.filter((command) => {
                     const value = command.arguments[targetRule.argument];
                     return Array.isArray(value) ? value.includes(targetId) : value === targetId;
@@ -287,6 +328,25 @@ export function validateArbitraryCommandListEvidence(input: {
                 if (!resolvedTargetIds.includes(targetId)) {
                     resolvedTargetIds.push(targetId);
                 }
+            }
+        }
+        if (item.commandName === 'createBus') {
+            for (const command of itemCommands) {
+                const binding = command.arguments.binding;
+                if (binding === undefined) {
+                    continue;
+                }
+                if (
+                    typeof binding !== 'string' ||
+                    !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+                    producerItemIdsByBinding.has(binding)
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Structured command compiler evidence batch-local producer is invalid.',
+                    };
+                }
+                producerItemIdsByBinding.set(binding, item.itemId);
             }
         }
         itemIds.add(item.itemId);

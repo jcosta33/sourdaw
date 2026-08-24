@@ -3995,6 +3995,7 @@ export function bridgeGroundedLlmToolCalls({
             actions: drumRenderComparisonPlan.actions,
             appOwnedRenderTailSeconds: drumRenderComparisonPlan.renderTailSeconds,
             batchLocalActionIdentities: drumRenderComparisonPlan.identities,
+            verifiedProviderProposalScope: drumRenderComparisonPlan.verifiedProviderProposalScope,
             rejections: [],
         };
     }

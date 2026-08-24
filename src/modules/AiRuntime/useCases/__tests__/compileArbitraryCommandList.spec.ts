@@ -107,6 +107,76 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    it('admits a batch-local bus target only through its declared producer dependency', () => {
+        const compile = (dependsOn: string[] | undefined) =>
+            compileArbitraryCommandList({
+                context,
+                revision: 'revision-1',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan(['track-kick']),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'create-drum-bus',
+                                        name: 'createBus',
+                                        arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                                    },
+                                    {
+                                        id: 'route-kick',
+                                        name: 'setTrackOutput',
+                                        arguments: { outputId: '$drum-bus' },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { name: 'Kick' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                        dependsOn,
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const accepted = compile(['create-drum-bus']);
+        expect(accepted).toMatchObject({
+            status: 'accepted',
+            calls: [
+                {
+                    arguments: {
+                        commands: [
+                            { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } },
+                            {
+                                name: 'setTrackOutput',
+                                arguments: { trackId: 'track-kick', outputId: '$drum-bus' },
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
+        if (accepted.status === 'accepted' && accepted.compilerEvidence !== undefined) {
+            expect(
+                validateArbitraryCommandListEvidence({
+                    evidence: accepted.compilerEvidence,
+                    calls: accepted.compilerEvidence.commands,
+                    context,
+                    revision: 'revision-1',
+                })
+            ).toMatchObject({ status: 'accepted' });
+        }
+        expect(compile(undefined)).toMatchObject({
+            status: 'rejected',
+            reason: 'Batch-local target $drum-bus requires an earlier declared producer dependency.',
+        });
+    });
+
     it('canonicalizes idempotent selector repetition into one guarded write per stable target', () => {
         const result = compileArbitraryCommandList({
             context,
