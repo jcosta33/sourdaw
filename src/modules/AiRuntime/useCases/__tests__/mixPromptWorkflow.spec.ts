@@ -25,6 +25,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -41,6 +42,13 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import {
+    createHostedSemanticListPlanningResponder,
+    createProviderSemanticListPlanningResponder,
+    decodeHostedProviderUserMessage,
+    type ProviderPlanCall,
+    type SemanticCommandListItem,
+} from './providerToolPlanningFixture';
 
 const PROMPT =
     'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
@@ -172,6 +180,52 @@ function getHostedRequestBody(): string {
     return body;
 }
 
+function createProviderList(plan: readonly ProviderPlanCall[]): SemanticCommandListItem[] {
+    const trackNames = new Map([
+        ['track-lead-vocal', 'Lead Vocal'],
+        ['track-guitar-left', 'Guitar Left'],
+        ['track-guitar-right', 'Guitar Right'],
+        ['track-room-mic', 'Room Mic'],
+        ['track-drum-bus', 'Drum Bus'],
+    ]);
+    return plan.map((call, index) => {
+        const { trackId, ...argumentsWithoutTrackId } = call.arguments;
+        const trackName = typeof trackId === 'string' ? trackNames.get(trackId) : undefined;
+        if (trackName === undefined) {
+            throw new TypeError('Expected an exact mix fixture target');
+        }
+        return {
+            id: `mix-command-${String(index + 1)}`,
+            name: call.name,
+            arguments: argumentsWithoutTrackId,
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { name: trackName },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+            ...(index === 0 ? {} : { dependsOn: [`mix-command-${String(index)}`] }),
+        };
+    });
+}
+
+function setProviderPlan(plan: readonly ProviderPlanCall[]): void {
+    const scope = {
+        targetIds: plan.flatMap((call) => (typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : [])),
+        targetRanges: [],
+        protectedTargetIds: ['track-drum-bus'],
+        protectedRanges: [],
+    };
+    const webResponder = createProviderSemanticListPlanningResponder(createProviderList(plan), scope);
+    const hostedResponder = createHostedSemanticListPlanningResponder(createProviderList(plan), scope);
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
+        Promise.resolve(webResponder(userMessage))
+    );
+    runtimeMocks.fetch.mockImplementation(async (_input, init) =>
+        hostedResponder(decodeHostedProviderUserMessage(init))
+    );
+}
+
 function expectExactMix(): void {
     expect(getTrack('track-lead-vocal')).toMatchObject({ gain: 0.7, pan: 0, muted: false });
     expect(getTrack('track-guitar-left')).toMatchObject({ gain: 1, pan: -20, muted: false });
@@ -187,24 +241,7 @@ describe('mix prompt workflow', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        setProviderPlan(providerPlan);
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -226,6 +263,7 @@ describe('mix prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const tracks = [
@@ -262,6 +300,7 @@ describe('mix prompt workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState });
@@ -389,12 +428,10 @@ describe('mix prompt workflow', () => {
     });
 
     it('rejects provider enlargement that targets the protected Drum Bus', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
-                ...providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
-                { name: 'muteTrack', arguments: { trackId: 'track-drum-bus', muted: true } },
-            ])
-        );
+        setProviderPlan([
+            ...providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
+            { name: 'muteTrack', arguments: { trackId: 'track-drum-bus', muted: true } },
+        ]);
         const projectBefore = structuredClone(trackStore.value?.tracks);
         const runtimeBefore = {
             gains: new Map(runtimeMocks.gains),
