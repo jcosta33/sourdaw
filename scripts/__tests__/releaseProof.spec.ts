@@ -26,11 +26,15 @@ import {
     RELEASE_PROOF_ARCHIVE_LIMITS,
     RELEASE_PROOF_TYPE_LIMITS,
     assembleReleaseProof,
+    webLlmRequiredLegalFiles,
     type ReleaseBuildRunner,
     validateReleaseProof,
 } from '../releaseProof';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const WEBLLM_REQUIRED_LEGAL_FILES = webLlmRequiredLegalFiles(workspaceRoot);
+const WEBLLM_REQUIRED_SOURCE_LEGAL_FILES = WEBLLM_REQUIRED_LEGAL_FILES.map((path) => `public/${path}`);
+const WEBLLM_PACKAGED_PATH_LIST_DIGEST = '03220ef72279533c5110dea8cad8b087065c2232238096c6cc50cf3f48a10603';
 const fixtureRoots: string[] = [];
 const electronRepository = 'https://example.test/electron/electron';
 const ffmpegRepository = 'https://example.test/chromium/ffmpeg';
@@ -255,6 +259,9 @@ function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: D
     for (const path of ['ELECTRON-SOURCES.json', 'RELINKING.md', 'THIRD-PARTY-NOTICES.md']) {
         write(join(resources, `legal/${path}`), readFileSync(join(fixture.root, 'public/legal', path)));
     }
+    for (const path of WEBLLM_REQUIRED_LEGAL_FILES) {
+        write(join(resources, path), readFileSync(join(fixture.root, 'public', path)));
+    }
     mkdirSync(archiveDirectory, { recursive: true });
     const archive = join(archiveDirectory, options.artifactName ?? 'Sourdaw-1.0.0-arm64-mac.zip');
     execFileSync('zip', ['-X', '-y', '-q', '-r', archive, appName], { cwd: packageRoot });
@@ -297,6 +304,9 @@ function createFixture(options: DesktopOptions = {}): Fixture {
     write(join(root, 'public/legal/Apache-2.0.txt'), 'fixture Apache license');
     write(join(root, 'public/legal/DEPENDENCY-LICENSES.txt'), 'fixture dependency licenses');
     write(join(root, 'public/legal/SOURDAW-NOTICE.txt'), 'fixture Sourdaw notice');
+    for (const [index, path] of WEBLLM_REQUIRED_LEGAL_FILES.entries()) {
+        write(join(root, 'public', path), `fixture WebLLM legal file ${String(index)}\n`);
+    }
     write(join(root, 'package.json'), '{"version":"1.0.0"}\n');
     write(
         join(root, '.gitignore'),
@@ -304,7 +314,15 @@ function createFixture(options: DesktopOptions = {}): Fixture {
     );
     write(join(root, 'LICENSE'), 'fixture license\n');
     write(join(root, 'NOTICE'), 'fixture notice\n');
-    writeJson(join(root, 'release/open-source-inventory.json'), {});
+    writeJson(join(root, 'release/open-source-inventory.json'), {
+        schemaVersion: 1,
+        surfaces: [
+            {
+                id: 'webllm-qwen-artifacts',
+                paths: WEBLLM_REQUIRED_SOURCE_LEGAL_FILES,
+            },
+        ],
+    });
     writeJson(join(root, 'release/desktop-runtime-material.json'), desktopMaterial(contract));
     writeJson(join(root, 'release/web-artifact-manifest.json'), {
         schemaVersion: 1,
@@ -338,9 +356,21 @@ function writeWebBuild(fixture: Fixture, marker = 'current'): void {
     const webDist = join(fixture.root, 'dist');
     write(join(webDist, 'index.html'), `<!doctype html><title>${marker}</title>`);
     write(join(webDist, 'assets/app.js'), `console.log("${marker}");`);
-    for (const path of ['Apache-2.0.txt', 'DEPENDENCY-LICENSES.txt', 'THIRD-PARTY-NOTICES.md']) {
-        write(join(webDist, `legal/${path}`), readFileSync(join(fixture.root, 'public/legal', path)));
+    for (const path of ['legal/DEPENDENCY-LICENSES.txt', ...WEBLLM_REQUIRED_LEGAL_FILES]) {
+        write(join(webDist, path), readFileSync(join(fixture.root, 'public', path)));
     }
+}
+
+function rewriteDesktopArchive(fixture: Fixture, mutate: (root: string) => void): void {
+    const value = proof(fixture);
+    const archive = join(fixture.candidate, desktopProof(value).artifactPath as string);
+    const extracted = join(fixture.base, 'mutated-desktop-archive');
+    rmSync(extracted, { recursive: true, force: true });
+    mkdirSync(extracted, { recursive: true });
+    execFileSync('unzip', ['-qq', archive, '-d', extracted]);
+    mutate(extracted);
+    rmSync(archive);
+    execFileSync('zip', ['-X', '-y', '-q', '-r', archive, 'Sourdaw.app'], { cwd: extracted });
 }
 
 function fixtureBuildRunner(fixture: Fixture): ReleaseBuildRunner {
@@ -490,6 +520,12 @@ afterEach(() => {
 });
 
 describe('release proof', () => {
+    it('pins the WebLLM packaged legal path list', () => {
+        expect(hashValue(JSON.stringify([...WEBLLM_REQUIRED_LEGAL_FILES].sort()))).toBe(
+            WEBLLM_PACKAGED_PATH_LIST_DIGEST
+        );
+    });
+
     it('rejects a malformed proof manifest', () => {
         const fixture = createFixture();
         assemble(fixture);
@@ -608,6 +644,61 @@ describe('release proof', () => {
         webProof(value).archiveSha256 = hash(archive);
         writeJson(join(fixture.candidate, 'release-proof.json'), value);
         expect(validate(fixture)).toContain('web archive bytes do not match web contents for assets/app.js');
+    });
+
+    it('rejects candidates that omit the Qwen legal notice from both packaged surfaces', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        rmSync(join(fixture.candidate, 'web/contents/legal/Qwen-NOTICE.txt'));
+        rewriteDesktopArchive(fixture, (root) => {
+            rmSync(join(root, 'Sourdaw.app/Contents/Resources/legal/Qwen-NOTICE.txt'));
+        });
+
+        expect(validate(fixture)).toMatch(
+            /web WebLLM legal file legal\/Qwen-NOTICE\.txt is missing or drifted[\s\S]*desktop WebLLM legal file legal\/Qwen-NOTICE\.txt is missing or drifted/u
+        );
+    });
+
+    it('rejects candidates that omit a nested tvm-ffi legal file from both packaged surfaces', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        rmSync(join(fixture.candidate, 'web/contents/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt'));
+        rewriteDesktopArchive(fixture, (root) => {
+            rmSync(
+                join(
+                    root,
+                    'Sourdaw.app/Contents/Resources/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt'
+                )
+            );
+        });
+
+        expect(validate(fixture)).toMatch(
+            /web WebLLM legal file legal\/Apache-TVM\/3rdparty\/tvm-ffi\/licenses\/LICENSE\.dlpack\.txt is missing or drifted[\s\S]*desktop WebLLM legal file legal\/Apache-TVM\/3rdparty\/tvm-ffi\/licenses\/LICENSE\.dlpack\.txt is missing or drifted/u
+        );
+    });
+
+    it('rejects an inventory-derived WebLLM legal file whose web contents bytes drift', () => {
+        const fixture = createFixture();
+        const legalFile = WEBLLM_REQUIRED_LEGAL_FILES[0]!;
+        assemble(fixture);
+        write(join(fixture.candidate, 'web/contents', legalFile), 'drifted web legal bytes');
+
+        const errors = validate(fixture);
+        expect(errors).toContain(`web WebLLM legal file ${legalFile} is missing or drifted`);
+        expect(errors).not.toContain(`desktop WebLLM legal file ${legalFile} is missing or drifted`);
+    });
+
+    it('rejects an inventory-derived WebLLM legal file whose desktop archive bytes drift', () => {
+        const fixture = createFixture();
+        const legalFile = WEBLLM_REQUIRED_LEGAL_FILES[0]!;
+        assemble(fixture);
+        rewriteDesktopArchive(fixture, (root) => {
+            write(join(root, 'Sourdaw.app/Contents/Resources', legalFile), 'drifted desktop legal bytes');
+        });
+
+        const errors = validate(fixture);
+        expect(errors).toContain(`desktop WebLLM legal file ${legalFile} is missing or drifted`);
+        expect(errors).not.toContain(`web WebLLM legal file ${legalFile} is missing or drifted`);
     });
 
     it('rejects FFmpeg source checked out at the wrong commit', () => {
