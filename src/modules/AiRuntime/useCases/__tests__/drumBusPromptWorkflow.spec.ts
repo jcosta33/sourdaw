@@ -638,81 +638,131 @@ function setMf06Project(): void {
     trackStore.set({ tracks: [kick, bassSynth, bassDi, guitar], selectedTrackId: null, ghostClips: [] });
 }
 
-function createMf06ProviderPlanFromUserMessage(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
+type Mf06ProviderPlan = { items: SemanticCommandListItem[]; scope: ProviderScope };
+
+function expectSidechainRoutingCapability(userMessage: string | undefined): void {
+    if (userMessage === undefined) {
+        throw new TypeError('Expected provider planning request');
     }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context)) {
-        throw new TypeError('Expected object-shaped project context');
-    }
-    const capability = context.sidechainRoutingCapability;
-    if (!isRecord(capability) || capability.actionType !== 'addSidechainRoute') {
-        throw new TypeError('Expected app-owned MF-06 capability');
-    }
-    if (typeof context.projectRevision !== 'string' || capability.baseRevision !== context.projectRevision) {
-        throw new TypeError('Expected revision-bound MF-06 capability');
-    }
-    const allowedAction = capability.allowedAction;
-    const targets = capability.targets;
-    if (!isRecord(allowedAction) || !Array.isArray(allowedAction.exactRoutes) || !Array.isArray(targets)) {
-        throw new TypeError('Expected exact MF-06 route capability');
-    }
-    const targetDeviceIds = new Set(
-        targets.flatMap((target) => (isRecord(target) && typeof target.deviceId === 'string' ? [target.deviceId] : []))
-    );
-    return allowedAction.exactRoutes.map((route) => {
-        if (
-            !isRecord(route) ||
-            typeof route.sourceTrackId !== 'string' ||
-            typeof route.targetTrackId !== 'string' ||
-            typeof route.targetDeviceId !== 'string' ||
-            !targetDeviceIds.has(route.targetDeviceId)
-        ) {
-            throw new TypeError('Expected MF-06 routes to match capability-filtered target devices');
-        }
-        return { name: 'addSidechainRoute', arguments: { ...route } };
+    expect(decodeProviderPlanningFixtureContext(userMessage).capabilityData.sidechainRoutingCapability).toMatchObject({
+        actionType: 'addSidechainRoute',
     });
 }
 
-function useMf06WebLlmFixture(
-    transform: (plan: ReturnType<typeof createMf06ProviderPlanFromUserMessage>) => void = () => undefined
-): void {
+function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06ProviderPlan {
+    const planningContext = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = planningContext.capabilityData.sidechainRoutingCapability;
+    if (!isRecord(capability) || capability.actionType !== 'addSidechainRoute') {
+        throw new TypeError('Expected app-owned MF-06 capability');
+    }
+    if (planningContext.revision === null || capability.baseRevision !== planningContext.revision) {
+        throw new TypeError('Expected revision-bound MF-06 capability');
+    }
+    const source = capability.source;
+    const allowedAction = capability.allowedAction;
+    const targets = capability.targets;
+    const protectedTargets = capability.protectedTargets;
+    if (
+        !isRecord(source) ||
+        typeof source.trackId !== 'string' ||
+        !isRecord(allowedAction) ||
+        allowedAction.type !== 'addSidechainRoute' ||
+        !Array.isArray(allowedAction.exactRoutes) ||
+        !Array.isArray(targets) ||
+        !Array.isArray(protectedTargets)
+    ) {
+        throw new TypeError('Expected exact MF-06 route capability');
+    }
+
+    const targetsByDeviceId = new Map<string, { trackId: string; deviceName: string; deviceType: string }>();
+    const targetTrackIds = new Set<string>();
+    for (const target of targets) {
+        if (
+            !isRecord(target) ||
+            typeof target.deviceId !== 'string' ||
+            typeof target.trackId !== 'string' ||
+            typeof target.deviceName !== 'string' ||
+            typeof target.deviceType !== 'string' ||
+            targetsByDeviceId.has(target.deviceId)
+        ) {
+            throw new TypeError('Expected unique semantic MF-06 targets');
+        }
+        targetsByDeviceId.set(target.deviceId, {
+            trackId: target.trackId,
+            deviceName: target.deviceName,
+            deviceType: target.deviceType,
+        });
+        targetTrackIds.add(target.trackId);
+    }
+
+    const targetIds: string[] = [];
+    const items = allowedAction.exactRoutes.map((route, index): SemanticCommandListItem => {
+        if (
+            !isRecord(route) ||
+            route.sourceTrackId !== source.trackId ||
+            typeof route.targetTrackId !== 'string' ||
+            typeof route.targetDeviceId !== 'string'
+        ) {
+            throw new TypeError('Expected MF-06 routes to match the app-owned source');
+        }
+        const target = targetsByDeviceId.get(route.targetDeviceId);
+        if (
+            target === undefined ||
+            target.trackId !== route.targetTrackId ||
+            targetIds.includes(route.targetDeviceId)
+        ) {
+            throw new TypeError('Expected MF-06 routes to match capability-filtered target devices');
+        }
+        for (const targetId of [target.trackId, source.trackId, route.targetDeviceId]) {
+            if (!targetIds.includes(targetId)) {
+                targetIds.push(targetId);
+            }
+        }
+        return {
+            id: `sidechain-route-${String(index + 1)}`,
+            name: 'addSidechainRoute',
+            arguments: { sourceTrackId: source.trackId, targetTrackId: target.trackId },
+            selector: {
+                targetArgument: 'targetDeviceId',
+                entity: 'device',
+                where: { name: target.deviceName, trackId: target.trackId, type: target.deviceType },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+        };
+    });
+    if (targetIds.length !== targetsByDeviceId.size + targetTrackIds.size + 1) {
+        throw new TypeError('Expected complete MF-06 capability target ordering');
+    }
+
+    const protectedTargetIds = protectedTargets.map((target) => {
+        if (!isRecord(target) || typeof target.id !== 'string' || typeof target.name !== 'string') {
+            throw new TypeError('Expected exact MF-06 protected target scope');
+        }
+        return target.id;
+    });
+    return {
+        items,
+        scope: { targetIds, targetRanges: [], protectedTargetIds, protectedRanges: [] },
+    };
+}
+
+function useMf06WebLlmFixture(transform: (items: SemanticCommandListItem[]) => void = () => undefined): void {
     runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
         const plan = createMf06ProviderPlanFromUserMessage(userMessage);
-        transform(plan);
-        return Promise.resolve(JSON.stringify(plan));
+        transform(plan.items);
+        return Promise.resolve(createProviderSemanticListPlanningResponder(plan.items, plan.scope)(userMessage));
     });
 }
 
 function useMf06HostedFixture({ reverse = false }: { reverse?: boolean } = {}): void {
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = createMf06ProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+        const userMessage = getHostedUserMessage(init);
+        const plan = createMf06ProviderPlanFromUserMessage(userMessage);
         if (reverse) {
-            plan.reverse();
+            plan.items.reverse();
+            plan.scope.targetIds.reverse();
         }
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        return Promise.resolve(createHostedSemanticListPlanningResponder(plan.items, plan.scope)(userMessage));
     });
 }
 
@@ -1990,6 +2040,11 @@ describe('drum bus prompt workflow', () => {
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
         );
+        if (!confirmation) {
+            throw new Error(
+                `Expected MF-06 confirmation: ${JSON.stringify(chatStore.value?.messages.at(-1) ?? 'missing')}`
+            );
+        }
         expect(confirmation?.actions).toEqual([
             {
                 type: 'addSidechainRoute',
@@ -2099,9 +2154,9 @@ describe('drum bus prompt workflow', () => {
 
         await sendChatMessage(EX06_PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
+        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls.at(-1)?.[1];
         expect(providerRequest).toContain(EX06_PROMPT);
-        expect(providerRequest).toContain('"sidechainRoutingCapability"');
+        expectSidechainRoutingCapability(providerRequest);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
@@ -2183,46 +2238,19 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(3);
     });
 
-    it('normalizes the exact hosted EX-06 masking plan to the WebLLM action order', async () => {
+    it('rejects a reordered hosted EX-06 compiler graph without a confirmation', async () => {
         setMf06Project();
         runtimeMocks.backend.value = 'cloud';
         useMf06HostedFixture({ reverse: true });
 
         await sendChatMessage(EX06_PROMPT);
 
-        const userMessage = getHostedUserMessage(getHostedRequestBody());
+        const userMessage = getHostedUserMessage(runtimeMocks.fetch.mock.calls.at(-1)?.[1]);
         expect(userMessage).toContain(EX06_PROMPT);
-        expect(userMessage).toContain('"sidechainRoutingCapability"');
-        const confirmation = getPendingActionConfirmation(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
-                ?.pendingActionConfirmationId ?? ''
-        );
-        expect(confirmation?.actions).toEqual([
-            {
-                type: 'addSidechainRoute',
-                payload: {
-                    sourceTrackId: 'track-kick',
-                    targetTrackId: 'track-bass-synth',
-                    targetDeviceId: 'device-bass-comp-a',
-                },
-            },
-            {
-                type: 'addSidechainRoute',
-                payload: {
-                    sourceTrackId: 'track-kick',
-                    targetTrackId: 'track-bass-synth',
-                    targetDeviceId: 'device-bass-comp-b',
-                },
-            },
-            {
-                type: 'addSidechainRoute',
-                payload: {
-                    sourceTrackId: 'track-kick',
-                    targetTrackId: 'track-bass-di',
-                    targetDeviceId: 'device-bass-di-comp',
-                },
-            },
-        ]);
+        expectSidechainRoutingCapability(userMessage);
+        expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
+        expect(sidechainStore.value?.routes).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each(['omission', 'enlargement'] as const)(
@@ -2236,11 +2264,18 @@ describe('drum bus prompt workflow', () => {
                     return;
                 }
                 plan.push({
+                    id: 'sidechain-route-enlargement',
                     name: 'addSidechainRoute',
-                    arguments: {
-                        sourceTrackId: 'track-kick',
-                        targetTrackId: 'track-guitar',
-                        targetDeviceId: 'device-guitar-comp',
+                    arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-guitar' },
+                    selector: {
+                        targetArgument: 'targetDeviceId',
+                        entity: 'device',
+                        where: {
+                            name: 'Guitar Compressor',
+                            trackId: 'track-guitar',
+                            type: 'builtin-sidechain-compressor',
+                        },
+                        quantity: { unit: 'targets', exactly: 1 },
                     },
                 });
             });
@@ -2287,23 +2322,17 @@ describe('drum bus prompt workflow', () => {
         expect(terminalMessage?.content).not.toContain('Outcome: committed');
     });
 
-    it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
+    it('rejects a reversed hosted MF-06 compiler graph without a confirmation', async () => {
         setMf06Project();
         runtimeMocks.backend.value = 'cloud';
         useMf06HostedFixture({ reverse: true });
 
         await sendChatMessage(MF06_PROMPT);
 
-        const confirmation = getPendingActionConfirmation(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
-                ?.pendingActionConfirmationId ?? ''
-        );
-        expect(getHostedUserMessage(getHostedRequestBody())).toContain('"sidechainRoutingCapability"');
-        expect(
-            confirmation?.actions.flatMap((action) =>
-                action.type === 'addSidechainRoute' ? [action.payload.targetDeviceId] : []
-            )
-        ).toEqual(['device-bass-comp-a', 'device-bass-comp-b', 'device-bass-di-comp']);
+        expectSidechainRoutingCapability(getHostedUserMessage(getHostedRequestBody()));
+        expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
+        expect(sidechainStore.value?.routes).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each(['omission', 'duplicate', 'enlargement'] as const)(
@@ -2317,11 +2346,18 @@ describe('drum bus prompt workflow', () => {
                     plan[2] = plan[0]!;
                 } else {
                     plan.push({
+                        id: 'sidechain-route-enlargement',
                         name: 'addSidechainRoute',
-                        arguments: {
-                            sourceTrackId: 'track-kick',
-                            targetTrackId: 'track-guitar',
-                            targetDeviceId: 'device-guitar-comp',
+                        arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-guitar' },
+                        selector: {
+                            targetArgument: 'targetDeviceId',
+                            entity: 'device',
+                            where: {
+                                name: 'Guitar Compressor',
+                                trackId: 'track-guitar',
+                                type: 'builtin-sidechain-compressor',
+                            },
+                            quantity: { unit: 'targets', exactly: 1 },
                         },
                     });
                 }

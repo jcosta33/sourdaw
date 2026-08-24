@@ -1,3 +1,5 @@
+import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 
 export type AgentReferenceCapability =
@@ -10,6 +12,7 @@ export type AgentReferenceCapability =
     | 'output'
     | 'device-host-track'
     | 'device'
+    | 'sidechain-capable-device'
     | 'device-parameter'
     | 'vca-group'
     | 'vca-member-track'
@@ -55,6 +58,13 @@ export function isAgentReferenceCapabilityCandidate(input: {
     }
     if (input.capability === 'device') {
         return input.context.tracks.some((candidate) => candidate.devices.some((device) => device.id === input.id));
+    }
+    if (input.capability === 'sidechain-capable-device') {
+        return input.context.tracks.some((candidate) =>
+            candidate.devices.some(
+                (device) => device.id === input.id && getSidechainTargetCapability(device.type) !== null
+            )
+        );
     }
     if (input.capability === 'device-parameter') {
         return input.context.tracks.some((candidate) =>
