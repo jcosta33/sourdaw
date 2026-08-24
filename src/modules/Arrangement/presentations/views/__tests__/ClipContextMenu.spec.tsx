@@ -22,6 +22,7 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('../../../stores/trackStore', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../../stores/trackStore')>()),
     trackStore: {
+        subscribe: vi.fn(() => () => undefined),
         value: {
             tracks: [
                 {

@@ -110,7 +110,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return {
         ...actual,
-        trackStore: { __kind: 'track' },
+        trackStore: { __kind: 'track', subscribe: vi.fn(() => () => undefined) },
         defaultTrackState: { tracks: [], selectedTrackId: null },
         warpStates: mocks.warpStates,
         getWarpState: (clipId: string) =>

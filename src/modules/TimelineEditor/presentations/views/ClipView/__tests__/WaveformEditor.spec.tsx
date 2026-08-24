@@ -145,6 +145,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
+        subscribe: vi.fn(() => () => undefined),
         get value() {
             return { tracks: [] };
         },

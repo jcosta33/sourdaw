@@ -29,6 +29,7 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        subscribe: vi.fn(() => () => undefined),
     },
 }));
 
