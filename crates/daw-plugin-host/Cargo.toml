@@ -3,6 +3,9 @@ name = "daw-plugin-host"
 version = "0.1.0"
 edition = "2021"
 description = "Native plugin discovery and CLAP hosting, parameter access, and GUI lifecycle."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["rlib"]

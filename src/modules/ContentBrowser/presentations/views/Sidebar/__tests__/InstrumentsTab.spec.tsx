@@ -37,6 +37,18 @@ const commandMocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
 }));
+const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
+
+vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/release/deviceReleaseAdmission')>();
+
+    return {
+        ...actual,
+        findWithheldDeviceType: (devices: ReadonlyArray<{ type: string }>) =>
+            devices.find(({ type }) => injectedWithheldDeviceTypes.has(type))?.type ??
+            actual.findWithheldDeviceType(devices),
+    };
+});
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
@@ -125,6 +137,7 @@ describe('InstrumentsTab', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        injectedWithheldDeviceTypes.clear();
         arrangementMocks.getFactoryPresets.mockReturnValue([]);
         arrangementMocks.getUserPresets.mockReturnValue([]);
         arrangementMocks.saveCurrentAsPreset.mockReturnValue({ id: 'saved-preset' });
@@ -292,7 +305,7 @@ describe('InstrumentsTab', () => {
         expect(showToaster).toHaveBeenCalledWith('toaster-device-1');
     });
 
-    it('does not advertise a device withheld from release', () => {
+    it('advertises Grand Boule', () => {
         renderWithTooltip(
             <InstrumentsTab
                 selectedTrackId={mockTrack.id}
@@ -307,17 +320,18 @@ describe('InstrumentsTab', () => {
             />
         );
 
-        expect(screen.queryByRole('button', { name: /^Grand Boule/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Grand Boule/ })).toBeInTheDocument();
     });
 
     it('explains why a preserved preset with a withheld device cannot load', () => {
+        injectedWithheldDeviceTypes.add('test-withheld-device');
         const preset = {
-            id: 'legacy-grand-boule',
-            name: 'Legacy Grand Boule',
+            id: 'withheld-preset',
+            name: 'Withheld preset',
             category: 'keys',
             description: '',
             trackKind: 'audio',
-            devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }],
+            devices: [{ type: 'test-withheld-device', name: 'Withheld test device', parameterValues: {} }],
             tags: [],
             author: 'user',
             isFactory: false,
@@ -328,7 +342,7 @@ describe('InstrumentsTab', () => {
         renderWithTooltip(
             <InstrumentsTab
                 selectedTrackId={mockTrack.id}
-                searchQuery="legacy"
+                searchQuery="withheld"
                 selectedTrack={mockTrack}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
@@ -338,10 +352,10 @@ describe('InstrumentsTab', () => {
             />
         );
 
-        fireEvent.click(screen.getByText('Legacy Grand Boule'));
+        fireEvent.click(screen.getByText('Withheld preset'));
 
         expect(notificationMocks.notifyUser).toHaveBeenCalledWith(
-            'Preset contains withheld device "grand-boule" and cannot be loaded in this build.',
+            'Preset contains withheld device "test-withheld-device" and cannot be loaded in this build.',
             'error'
         );
     });
@@ -350,7 +364,7 @@ describe('InstrumentsTab', () => {
         arrangementMocks.saveCurrentAsPreset.mockReturnValue(null);
         const selectedTrack = {
             ...mockTrack,
-            devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }],
+            devices: [{ type: 'test-withheld-device', name: 'Withheld test device', parameterValues: {} }],
         };
 
         renderWithTooltip(
@@ -367,9 +381,9 @@ describe('InstrumentsTab', () => {
         );
 
         fireEvent.click(screen.getByTitle('Save "Track 1" as preset'));
-        fireEvent.change(screen.getByPlaceholderText('Preset name…'), { target: { value: 'Legacy piano' } });
+        fireEvent.change(screen.getByPlaceholderText('Preset name…'), { target: { value: 'Withheld preset' } });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-        expect(screen.getByDisplayValue('Legacy piano')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('Withheld preset')).toBeInTheDocument();
     });
 });

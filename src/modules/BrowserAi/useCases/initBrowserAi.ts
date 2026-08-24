@@ -25,6 +25,8 @@ import { setCapabilityReport, setCapabilityError } from '../stores/capabilitySto
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 
+import { getDdspPhraseId } from './getDdspPhraseId';
+
 /** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
 let midiStaleSubscription: (() => void) | undefined;
 export const KOKORO_MODEL_ENTRY: KokoroModel = {
@@ -186,14 +188,27 @@ export const initBrowserAi = inject({
 
                 const renderedStatuses = new Set(['preview', 'final', 'stale']);
                 for (const clipId of Object.keys(nextNotesByClipId)) {
-                    const currentStatus = queueState.phraseStatusMap[clipId];
-                    if (!currentStatus || !renderedStatuses.has(currentStatus)) {
-                        continue;
-                    }
                     // Compare by reference — note arrays are replaced on every edit
                     if (nextNotesByClipId[clipId] !== prevNotesByClipId[clipId]) {
-                        markPhraseStale(clipId);
-                        logger.debug(`[BrowserAi] Phrase ${clipId} marked stale after MIDI edit`);
+                        const ddspPhraseId = getDdspPhraseId(clipId);
+                        for (const phraseId of [clipId, ddspPhraseId]) {
+                            // A completed canonical DDSP phrase carries its exact render-source
+                            // fingerprint. ClipMidiAiSection owns invalidation for those phrases,
+                            // so this coarse note-reference subscription remains only as a
+                            // backward-compatible fallback for untracked DDSP previews.
+                            if (
+                                phraseId === ddspPhraseId &&
+                                queueState.phraseSourceFingerprints?.[phraseId] !== undefined
+                            ) {
+                                continue;
+                            }
+                            const currentStatus = queueState.phraseStatusMap[phraseId];
+                            if (!currentStatus || !renderedStatuses.has(currentStatus)) {
+                                continue;
+                            }
+                            markPhraseStale(phraseId);
+                            logger.debug(`[BrowserAi] Phrase ${phraseId} marked stale after MIDI edit`);
+                        }
                     }
                 }
                 prevNotesByClipId = nextNotesByClipId;

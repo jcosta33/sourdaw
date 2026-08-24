@@ -4,7 +4,7 @@ import { NOTE_NAMES } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 
 /**
- * Interactive 3D grand piano model (§8).
+ * Interactive 3D grand piano model.
  *
  * Renders a simplified grand piano from a front-quarter view using WebGL2.
  * Animates hammers on note-on, key depression, damper lift on sustain/hold,

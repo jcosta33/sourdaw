@@ -45,9 +45,10 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0029](0029-electron-desktop-shell.md)                              | The desktop shell is Electron over a shell-agnostic native crate — **resolves the packaging deferral in 0012**                          |
 | [0030](0030-exact-model-release-admission.md)                       | Exact model artifacts require release admission — **DDSP superseded by 0035; WebLLM superseded by 0036; otherwise accepted**            |
 | [0031](0031-native-plugin-format-strategy.md)                       | Sourdaw hosts CLAP and commits to VST3; VST2 and Audio Units are permanently out                                                        |
-| [0032](0032-withhold-grand-boule-from-release.md)                   | Preserve Grand Boule but withhold it from released product paths                                                                        |
-| [0033](0033-grand-boule-string-soundboard-boundary.md)              | Make Grand Boule string-modal derivation and soundboard resonance independently explicit                                                |
-| [0034](0034-grand-boule-native-only-wasm-contract.md)               | Keep Grand Boule native-only at the daw-dsp WASM boundary                                                                               |
+| [0032](0032-withhold-grand-boule-from-release.md)                   | Preserve Grand Boule but withhold it from released product paths — **superseded by 0036**                                               |
+| [0033](0033-grand-boule-string-soundboard-boundary.md)              | Make Grand Boule string-modal derivation and soundboard resonance independently explicit — **superseded by 0036**                       |
+| [0034](0034-grand-boule-native-only-wasm-contract.md)               | Keep Grand Boule native-only at the daw-dsp WASM boundary — **superseded by 0036**                                                      |
+| [0036](0036-readmit-grand-boule.md)                                 | Readmit Grand Boule with a finite FIR body and project-authored voicings — **supersedes 0032, 0033, and 0034**                          |
 | [0035](0035-admit-direct-magenta-ddsp-checkpoint-downloads.md)      | Admit exact DDSP checkpoint downloads directly from Magenta without claiming a checkpoint license                                       |
 | [0036](0036-admit-webllm-qwen-conversions-under-apache-2.0.md)      | Admit byte-pinned WebLLM Qwen conversions with runtime notices and accepted checkpoint/build provenance gaps                            |
 

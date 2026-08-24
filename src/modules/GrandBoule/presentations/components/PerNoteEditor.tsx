@@ -1,5 +1,5 @@
 /**
- * Per-note parameter editor for the Grand Boule piano (§3.1).
+ * Per-note parameter editor for the Grand Boule piano.
  *
  * Displays 8 physical-modelling parameter knobs for a selected piano key.
  * The user picks a note via a compact dropdown (keys 1–88), then adjusts

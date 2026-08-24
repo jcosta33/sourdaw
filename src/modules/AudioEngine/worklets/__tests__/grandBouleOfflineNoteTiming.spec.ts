@@ -83,9 +83,7 @@ class GrandBouleInstanceMock {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: vi.fn(() => ({ memory: wasmStub.memory })),
-}));
-vi.mock('../grandBouleWasmInstance', () => ({
-    createGrandBouleWasmInstance: () => new GrandBouleInstanceMock(),
+    GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
 vi.mock('../grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));

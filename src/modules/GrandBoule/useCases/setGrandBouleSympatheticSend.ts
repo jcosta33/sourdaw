@@ -3,7 +3,7 @@ import { type Store } from '#/infra/store/types';
  * Update the Grand Boule sympathetic-resonance send level.
  *
  * Drives how much of the bridge bus is fed into the global sympathetic
- * resonator bank (§4.3).
+ * resonator bank.
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';

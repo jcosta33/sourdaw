@@ -91,9 +91,9 @@ describe('findWasmDescriptor', () => {
         expect(findWasmDescriptor('')).toBeUndefined();
     });
 
-    it('keeps withheld implementations out of the released runtime registry', () => {
+    it('publishes Grand Boule through the released runtime registry', () => {
         expect(findWasmDescriptor('grand-boule')).toBeDefined();
-        expect(findReleasedWasmDescriptor('grand-boule')).toBeUndefined();
+        expect(findReleasedWasmDescriptor('grand-boule')).toBeDefined();
     });
 
     it('should apply the validated Proof patch after queued restored flat params', async () => {
