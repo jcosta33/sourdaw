@@ -34,6 +34,7 @@
                 ".dependency-cruiser.types.cjs",
                 ".editorconfig",
                 ".gitignore",
+                ".gitleaksignore",
                 ".gitleaks.toml",
                 ".node-version",
                 ".oxlintrc.json",
@@ -1480,6 +1481,24 @@
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://x-access-token:${slot}@github.com/${slot}.git",
             "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/run-gitleaks-history-scan.sh",
+            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
+            "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
+            "templateSha256": "4639ee5ab8e36f77880dd75717d49cccac4c92c4b919c570f5449d6ea2aec7a8"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
+            "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
         },
         {
             "surface": "project-source",
