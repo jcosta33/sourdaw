@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { createAutomationLane, type AutomationLane, type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 import { beginDrawSession } from '../beginDrawSession';
@@ -114,7 +116,7 @@ describe('automationDrawMode', () => {
 
         const currentPoints = [
             { beat: 0, value: 0.25, curve: 'linear', tension: 0 },
-            { beat: 2, value: 1, curve: 'step', tension: 0 },
+            { beat: 2, value: FADER_MAX_GAIN, curve: 'step', tension: 0 },
         ];
         expect(animationFrame.cancelAnimationFrameMock).toHaveBeenCalledWith(101);
         expect(isDrawSessionActive()).toBe(false);

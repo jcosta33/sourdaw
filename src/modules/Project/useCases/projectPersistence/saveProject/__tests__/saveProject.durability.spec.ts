@@ -195,9 +195,12 @@ describe('saveProject durability', () => {
 
         await expect(saveProject()).resolves.toBe(true);
 
-        const buildOrder = mocks.buildProjectData.mock.invocationCallOrder[0];
-        const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder[0];
-        const persistOrder = mocks.persistCrdtProject.mock.invocationCallOrder[0];
+        // Identity migration may persist before the save-local snapshot is
+        // built. Compare the latest calls owned by this save, not the first
+        // calls across migration and snapshot persistence.
+        const buildOrder = mocks.buildProjectData.mock.invocationCallOrder.at(-1);
+        const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder.at(-1);
+        const persistOrder = mocks.persistCrdtProject.mock.invocationCallOrder.at(-1);
         // build → persist → capture: the revision baseline is captured AFTER
         // persist settles so the save's own CRDT bookkeeping (the persist
         // commit's mutationEpoch/heads advance) is in the baseline, not in the
