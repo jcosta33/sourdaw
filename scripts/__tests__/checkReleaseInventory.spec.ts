@@ -956,7 +956,9 @@ describe('release inventory', () => {
         const root = join(base, 'repository');
         const trackedPath = 'provider.ts';
         const symlinkPath = 'public/legal/escaped.ts';
+        const markSymlinkPath = 'public/legal/escaped.md';
         const outsidePath = join(base, 'outside.ts');
+        const outsideMarkPath = join(base, 'outside.md');
         const value: ReleaseInventory = {
             schemaVersion: 1,
             surfaces: [
@@ -966,7 +968,7 @@ describe('release inventory', () => {
                     retention: 'keep',
                     owner: 'OS-01',
                     releaseModes: ['source'],
-                    paths: [trackedPath, symlinkPath],
+                    paths: [trackedPath, symlinkPath, markSymlinkPath],
                     sources: ['git:example/repository'],
                     revisions: ['deadbeef'],
                     digests: [`sha256:${fixtureDigest}:${symlinkPath}`],
@@ -978,35 +980,50 @@ describe('release inventory', () => {
             ],
             snapshots: [],
             externalReferences: [],
-            marks: [],
+            marks: [{ value: 'UnsafeMark', paths: [markSymlinkPath] }],
         };
 
         try {
             mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
             mkdirSync(dirname(join(root, symlinkPath)), { recursive: true });
+            mkdirSync(dirname(join(root, markSymlinkPath)), { recursive: true });
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(outsidePath, "export const escaped = 'https://outside.example';\n");
+            writeFileSync(outsideMarkPath, 'UnsafeMark');
             symlinkSync(outsidePath, join(root, symlinkPath));
+            symlinkSync(outsideMarkPath, join(root, markSymlinkPath));
             const forbiddenReads: string[] = [];
             const readFile = {
                 readBytes: (path: string) => {
-                    if (path === join(root, symlinkPath) || path === outsidePath) {
+                    if (
+                        path === join(root, symlinkPath) ||
+                        path === join(root, markSymlinkPath) ||
+                        path === outsidePath ||
+                        path === outsideMarkPath
+                    ) {
                         forbiddenReads.push(path);
                     }
                     return readFileSync(path);
                 },
                 readText: (path: string) => {
-                    if (path === join(root, symlinkPath) || path === outsidePath) {
+                    if (
+                        path === join(root, symlinkPath) ||
+                        path === join(root, markSymlinkPath) ||
+                        path === outsidePath ||
+                        path === outsideMarkPath
+                    ) {
                         forbiddenReads.push(path);
                     }
                     return readFileSync(path, 'utf8');
                 },
             };
 
-            const changed = loadRepositorySnapshot(root, value, [trackedPath, symlinkPath], readFile);
+            const changed = loadRepositorySnapshot(root, value, [trackedPath, symlinkPath, markSymlinkPath], readFile);
 
             expect(forbiddenReads).toEqual([]);
+            expect(changed.externalReferences).toEqual([]);
             expect(changed.fileDigests[symlinkPath]).toBe('missing');
+            expect(changed.markPaths.UnsafeMark).toEqual([]);
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );

@@ -70,6 +70,8 @@ describe('AiSection', () => {
         expect(screen.getByRole('option', { name: 'Automatic' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Browser WebLLM' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Hosted provider' })).toBeInTheDocument();
+        expect(screen.getByText(/Automatic uses WebLLM in this browser only/)).toBeInTheDocument();
+        expect(screen.queryByText(/No local language model is admitted in this release/)).not.toBeInTheDocument();
 
         fireEvent.change(screen.getByLabelText('AI execution backend'), { target: { value: 'webllm' } });
         expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('webllm');
