@@ -185,6 +185,7 @@ function runWorkflowShell(label, body, env) {
 const events = workflow.on;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
+const unit = workflow.jobs?.unit;
 const gate = workflow.jobs?.gate;
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
@@ -196,6 +197,7 @@ const secretScanRun = secretScan?.run ?? '';
 const secretScanUses = secretScan?.uses ?? '';
 const secretsEnv = secrets?.env ?? {};
 const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
+const unitRun = stepNamed(unit, 'Run shard')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
     'decide',
@@ -336,6 +338,10 @@ expect(
     'secret scan invocation must not branch on the triggering event'
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
+expect(
+    unitRun === 'pnpm test:run -- --shard=${{ matrix.shard }}/4',
+    'unit shard must pass its Vitest shard argument through pnpm to the test wrapper'
+);
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
 expect(
     Array.isArray(gateNeeds) &&

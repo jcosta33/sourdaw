@@ -281,7 +281,7 @@ jobs:
       - name: Run shard
         env:
           VITEST_MAX_WORKERS: 4
-        run: pnpm test:run --shard=${{ matrix.shard }}/4
+        run: pnpm test:run -- --shard=${{ matrix.shard }}/4
 
   build:
     name: Production build
