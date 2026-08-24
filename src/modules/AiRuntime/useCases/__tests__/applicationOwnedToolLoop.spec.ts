@@ -63,6 +63,12 @@ const context: ProjectContext = {
     playheadPosition: 0,
 };
 
+function parseMessageSection(message: string, heading: string): unknown {
+    const start = message.indexOf(`${heading}:\n`);
+    const end = message.indexOf('\n\n', start);
+    return JSON.parse(message.slice(start + heading.length + 2, end === -1 ? undefined : end));
+}
+
 describe('application-owned tool loop', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -82,7 +88,14 @@ describe('application-owned tool loop', () => {
             revisionToken: 'revision-2',
             queryType: 'project-summary',
             page: { offset: 0, limit: 20, total: 1 },
-            items: [{ id: 'project-1', kind: 'project', name: 'Song' }],
+            items: [
+                { id: 'retained-query-item', kind: 'project', name: 'Song' },
+                ...Array.from({ length: 2 }, (_, index) => ({
+                    id: `filler-${String(index)}`,
+                    kind: 'project',
+                    name: 'x'.repeat(128),
+                })),
+            ],
             nextCursor: null,
             warnings: [],
         });
@@ -134,13 +147,26 @@ describe('application-owned tool loop', () => {
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
-        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
-        expect(continuationMessage).toContain('"callId":"provider-query-1"');
-        expect(continuationMessage).toContain('revision-2');
-        expect(continuationMessage).toContain('project-summary');
+        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1] ?? '';
+        const relevantEvidence = parseMessageSection(continuationMessage, 'relevant_evidence') as {
+            receipts: Array<{ id: string; summary: { value: string; truncated: boolean } }>;
+        };
+        const correlatedReceiptContext = relevantEvidence.receipts[0];
+        expect(correlatedReceiptContext).toMatchObject({ id: 'application-tool-loop', summary: { truncated: true } });
+        expect(correlatedReceiptContext?.summary.value).toContain('"callId":"provider-query-1"');
+        expect(correlatedReceiptContext?.summary.value).toContain('"revision":"revision-2"');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.applicationToolReceipts).toMatchObject([
-            { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
+            {
+                callId: 'provider-query-1',
+                toolName: 'project.query',
+                status: 'success',
+                revision: 'revision-2',
+                data: {
+                    queryType: 'project-summary',
+                    items: expect.arrayContaining([expect.objectContaining({ id: 'retained-query-item' })]),
+                },
+            },
             { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
     });
@@ -269,9 +295,14 @@ describe('application-owned tool loop', () => {
     it('publishes the compact catalog and rejects unavailable tools before local execution', async () => {
         const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
         expect(schemas.map((schema) => schema.function.name)).toEqual(
-            expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
+            expect.arrayContaining([
+                'project.query',
+                'agent.catalog.discover',
+                'command.batch.propose',
+                'device.factory-manifest.read',
+            ])
         );
-        expect(schemas).toHaveLength(8);
+        expect(schemas).toHaveLength(9);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
         expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
 

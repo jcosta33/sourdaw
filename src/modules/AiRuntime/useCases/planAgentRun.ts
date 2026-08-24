@@ -23,6 +23,8 @@ type PlanAgentRunInput = {
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
     providerProposal?: AgentRunProviderProposal;
+    /** Application-verified provider scope before canonical actions expand generated identities. */
+    verifiedProviderProposalScope?: AgentRunScope;
     /** Provider-originated actions cannot reach plan persistence without semantic evidence. */
     requireProviderProposal?: boolean;
     readyAssetIds?: readonly string[];
@@ -38,7 +40,19 @@ type PlanAgentRunResult =
     | { status: 'rejected'; reason: string };
 
 function sameScope(left: AgentRunScope, right: AgentRunScope): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    const hasExactIds = (leftIds: readonly string[], rightIds: readonly string[]): boolean => {
+        if (leftIds.length !== rightIds.length) {
+            return false;
+        }
+        const ids = new Set(leftIds);
+        return ids.size === rightIds.length && rightIds.every((id) => ids.has(id));
+    };
+    return (
+        hasExactIds(left.targetIds, right.targetIds) &&
+        hasExactIds(left.protectedTargetIds, right.protectedTargetIds) &&
+        JSON.stringify(left.targetRanges) === JSON.stringify(right.targetRanges) &&
+        JSON.stringify(left.protectedRanges) === JSON.stringify(right.protectedRanges)
+    );
 }
 
 function isComplex(input: PlanAgentRunInput): boolean {
@@ -124,7 +138,10 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
     ) {
         return { status: 'rejected', reason: 'Provider proposed an unsupported application capability.' };
     }
-    if (input.providerProposal?.scope && !sameScope(input.providerProposal.scope, input.scope)) {
+    if (
+        input.providerProposal?.scope &&
+        !sameScope(input.providerProposal.scope, input.verifiedProviderProposalScope ?? input.scope)
+    ) {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };
     }
     const capabilities = deriveCapabilities(input);

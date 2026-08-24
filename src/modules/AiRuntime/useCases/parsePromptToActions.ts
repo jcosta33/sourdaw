@@ -621,6 +621,41 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    let verifiedProviderProposalScope = bridged.verifiedProviderProposalScope;
+                    if (verifiedProviderProposalScope === undefined && bridged.bassProcessingCopyScope !== undefined) {
+                        verifiedProviderProposalScope = {
+                            targetIds: [
+                                ...new Set([
+                                    ...bridged.bassProcessingCopyScope.entries.flatMap((entry) => [
+                                        entry.layer.id,
+                                        ...entry.layer.affectedTrackIds,
+                                    ]),
+                                    bridged.bassProcessingCopyScope.targetSection.id,
+                                ]),
+                            ],
+                            targetRanges: bridged.bassProcessingCopyScope.entries.map((entry) => ({
+                                startBeat: entry.targetRegion.startBeat,
+                                endBeat: entry.targetRegion.endBeat,
+                            })),
+                            protectedTargetIds: bridged.bassProcessingCopyScope.protectedObjects.map(
+                                (object) => object.id
+                            ),
+                            protectedRanges: [],
+                        };
+                    }
+                    if (verifiedProviderProposalScope === undefined && bridged.syncopatedArpeggioScope !== undefined) {
+                        verifiedProviderProposalScope = {
+                            targetIds: [
+                                bridged.syncopatedArpeggioScope.trackId,
+                                bridged.syncopatedArpeggioScope.clipId,
+                            ],
+                            targetRanges: [],
+                            protectedTargetIds: bridged.syncopatedArpeggioScope.protectedObjects.map(
+                                (object) => object.id
+                            ),
+                            protectedRanges: [],
+                        };
+                    }
                     return {
                         actions: guarded.actions,
                         rawText: prompt,
@@ -629,6 +664,7 @@ export const parsePromptToActions = inject({ logger })(
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
+                        ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
                     };
                 }
 

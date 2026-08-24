@@ -4,6 +4,7 @@ import {
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
+import { type AgentRunScope } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
@@ -95,6 +96,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
+    verifiedProviderProposalScope?: AgentRunScope;
 };
 
 type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
@@ -4008,6 +4010,7 @@ export function bridgeGroundedLlmToolCalls({
             actions: backingVocalPlatePlan.actions,
             appOwnedRenderTailSeconds: backingVocalPlatePlan.renderTailSeconds,
             batchLocalActionIdentities: backingVocalPlatePlan.identities,
+            verifiedProviderProposalScope: backingVocalPlatePlan.verifiedProviderProposalScope,
             rejections: [],
         };
     }

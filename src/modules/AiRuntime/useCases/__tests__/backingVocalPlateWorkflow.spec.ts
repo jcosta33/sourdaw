@@ -29,6 +29,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -45,7 +46,13 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import {
+    createHostedWorkflowPlanningResponder,
+    createProviderWorkflowPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderScope,
+} from './providerToolPlanningFixture';
 
 const PROMPT =
     'Remove reverbs from all backing vocals, create one shared plate bus with EQ before plate reverb and a 250 Hz high-pass, create post-fader sends at -18 dB, automate them to -10 dB over the final four bars of every chorus, protect the lead vocal, render each chorus, and receipt every created, removed, routed, automated, and rendered object.';
@@ -117,6 +124,7 @@ const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         addDeviceToStrip: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted' as const, application: 'applied' as const })),
         backend,
         clearReportedLatency: vi.fn(),
         ensureTrackStrip: vi.fn(),
@@ -157,6 +165,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     clearReportedLatency: runtimeMocks.clearReportedLatency,
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
     removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
@@ -194,19 +203,11 @@ function isUnknownArray(value: unknown): value is unknown[] {
 }
 
 function createProviderPlanFromUserMessage(userMessage: string): ProviderPlanCall[] {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
-    const capability = context.backingVocalPlateCapability;
+    const context = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = context.capabilityData.backingVocalPlateCapability;
     if (
         !isRecord(capability) ||
-        capability.baseRevision !== context.projectRevision ||
+        capability.baseRevision !== context.revision ||
         !isUnknownArray(capability.orderedToolPlan)
     ) {
         throw new TypeError('Expected revision-bound EX-01 capability');
@@ -224,6 +225,47 @@ function createProviderPlanFromUserMessage(userMessage: string): ProviderPlanCal
     return plan;
 }
 
+function getProviderScope(userMessage: string): ProviderScope {
+    const capability = decodeProviderPlanningFixtureContext(userMessage).capabilityData.backingVocalPlateCapability;
+    if (
+        !isRecord(capability) ||
+        !isUnknownArray(capability.backingVocals) ||
+        !isUnknownArray(capability.chorusSections) ||
+        !isUnknownArray(capability.protectedObjects)
+    ) {
+        throw new TypeError('Expected complete EX-01 provider scope');
+    }
+    const tracks = capability.backingVocals.map((track) => {
+        if (!isRecord(track) || typeof track.trackId !== 'string' || !isUnknownArray(track.removableReverbDeviceIds)) {
+            throw new TypeError('Expected exact EX-01 backing-vocal targets');
+        }
+        const removableReverbDeviceIds = track.removableReverbDeviceIds.map((deviceId) => {
+            if (typeof deviceId !== 'string') {
+                throw new TypeError('Expected exact EX-01 removable reverb ID');
+            }
+            return deviceId;
+        });
+        return { trackId: track.trackId, removableReverbDeviceIds };
+    });
+    const targetIds = [
+        ...tracks.flatMap((track) => track.removableReverbDeviceIds),
+        ...tracks.map((track) => track.trackId),
+    ];
+    const targetRanges = capability.chorusSections.map((section) => {
+        if (!isRecord(section) || typeof section.startBeat !== 'number' || typeof section.endBeat !== 'number') {
+            throw new TypeError('Expected exact EX-01 chorus range');
+        }
+        return { startBeat: section.startBeat, endBeat: section.endBeat };
+    });
+    const protectedTargetIds = capability.protectedObjects.map((object) => {
+        if (!isRecord(object) || typeof object.id !== 'string') {
+            throw new TypeError('Expected exact EX-01 protected object');
+        }
+        return object.id;
+    });
+    return { targetIds, targetRanges, protectedTargetIds, protectedRanges: [] };
+}
+
 function getWebLlmUserMessage(): string {
     const userMessage: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1];
     if (typeof userMessage !== 'string') {
@@ -232,46 +274,16 @@ function getWebLlmUserMessage(): string {
     return userMessage;
 }
 
-function getHostedUserMessage(requestBody: string): string {
-    const request: unknown = JSON.parse(requestBody);
-    if (!isRecord(request) || !isUnknownArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
-    }
-    const userMessage = request.messages.find(
-        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
-    );
-    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
-    }
-    return userMessage.content;
-}
-
 function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderPlanCall[]): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'backing-vocal-plate',
-            createPlan(getHostedUserMessage(init.body))
-        );
+        const userMessage = decodeHostedProviderUserMessage(init);
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+            createHostedWorkflowPlanningResponder(
+                createPlan(userMessage),
+                'backing-vocal-plate',
+                getProviderScope
+            )(userMessage)
         );
     });
 }
@@ -373,12 +385,11 @@ describe('backing-vocal plate workflow', () => {
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
             Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'backing-vocal-plate',
-                        createProviderPlanFromUserMessage(userMessage)
-                    )
-                )
+                createProviderWorkflowPlanningResponder(
+                    createProviderPlanFromUserMessage(userMessage),
+                    'backing-vocal-plate',
+                    getProviderScope
+                )(userMessage)
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
@@ -406,6 +417,7 @@ describe('backing-vocal plate workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
@@ -453,6 +465,7 @@ describe('backing-vocal plate workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
         automationStore.set({ lanes: [] });
@@ -624,7 +637,11 @@ describe('backing-vocal plate workflow', () => {
                 arguments: { ...call.arguments },
             }));
             return Promise.resolve(
-                JSON.stringify(withWorkflowCapabilitySelection('backing-vocal-plate', transform(plan)))
+                createProviderWorkflowPlanningResponder(
+                    transform(plan),
+                    'backing-vocal-plate',
+                    getProviderScope
+                )(userMessage)
             );
         });
 
@@ -685,7 +702,9 @@ describe('backing-vocal plate workflow', () => {
         if (typeof requestBody !== 'string') {
             throw new TypeError('Expected one hosted provider request body');
         }
-        expect(createProviderPlanFromUserMessage(getHostedUserMessage(requestBody))).toEqual(providerPlan);
+        expect(createProviderPlanFromUserMessage(decodeHostedProviderUserMessage({ body: requestBody }))).toEqual(
+            providerPlan
+        );
         expect(confirmation?.actions.map((action) => action.type)).toEqual([
             'removeDevice',
             'removeDevice',
@@ -758,7 +777,7 @@ describe('backing-vocal plate workflow', () => {
         });
     });
 
-    it('reports a persistent partial render as committed with warning and keeps the group undoable', async () => {
+    it('reports a persistent partial render, refuses an out-of-budget retry, and keeps the group undoable', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -827,8 +846,8 @@ describe('backing-vocal plate workflow', () => {
         if (failedRetry.status !== 'failed') {
             throw new Error(`Expected failed render retry, received ${failedRetry.status}`);
         }
-        expect(failedRetry.reason).toContain('chorus two renderer unavailable');
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
+        expect(failedRetry.reason).toContain('exceed the user budget for maxRenderJobs');
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
         expect(trackStore.value?.tracks).toEqual(committedTracks);
         expect(automationStore.value?.lanes).toEqual(committedLanes);
         expect(undoStore.value?.past).toHaveLength(11);
@@ -836,46 +855,6 @@ describe('backing-vocal plate workflow', () => {
             status: 'executed',
             followUpStatus: 'retryable',
         });
-
-        runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
-
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'executed',
-        });
-
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
-        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(
-            renderAction.payload.jobs.map((job) => job.jobId)
-        );
-        expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(automationStore.value?.lanes).toEqual(committedLanes);
-        expect(undoStore.value?.past).toHaveLength(11);
-        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
-            status: 'executed',
-            error: null,
-        });
-        const completedReceipt = chatStore.value?.messages.find(
-            (message) => message.pendingActionConfirmationId === confirmation.id
-        );
-        expect(completedReceipt?.content).toContain(
-            'Missing section render artifacts completed without replaying project actions'
-        );
-        const completedReceiptLines = completedReceipt?.content.split('\n') ?? [];
-        const completedRenderReceiptIndex = completedReceiptLines.findIndex((line) =>
-            line.startsWith('- **renderProjectSections**:')
-        );
-        const completedRenderAffectedIds = completedReceiptLines
-            .slice(completedRenderReceiptIndex + 1)
-            .find((line) => line.startsWith('  - Affected IDs:'));
-        expect(completedRenderAffectedIds).toBeDefined();
-        expect(completedRenderAffectedIds).toContain(failedJob.sectionId);
-        expect(completedRenderAffectedIds).toContain(failedJob.jobId);
-        const completedRenderExecution = getPendingActionConfirmation(confirmation.id)?.executedActions.find(
-            (execution) => execution.actionType === 'renderProjectSections'
-        );
-        expect(completedRenderExecution?.affectedIds).toContain(failedJob.sectionId);
-        expect(completedRenderExecution?.affectedIds).toContain(failedJob.jobId);
-        expect(completedReceipt?.content).not.toContain('Do not replay the confirmed project actions');
 
         await undo();
         expect(trackStore.value?.tracks).toEqual(originalTracks);
