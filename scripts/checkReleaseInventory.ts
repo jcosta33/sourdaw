@@ -2,8 +2,19 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { extname, relative, resolve } from 'node:path';
+import {
+    closeSync,
+    constants,
+    existsSync,
+    fstatSync,
+    lstatSync,
+    openSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    statSync,
+} from 'node:fs';
+import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
@@ -209,6 +220,18 @@ export type RepositorySnapshot = {
     markPaths: Record<string, string[]>;
 };
 
+export type RepositorySnapshotFileReader = {
+    open?: (path: string, flags: number) => number;
+    readBytes(fileDescriptor: number): Buffer;
+    readText(fileDescriptor: number): string;
+};
+
+const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
+    open: (path, flags) => openSync(path, flags),
+    readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
+    readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
+};
+
 export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
@@ -236,6 +259,133 @@ function sortedUnique(values: string[]): string[] {
 
 function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function isSemanticSha256Label(value: string): boolean {
+    return value.startsWith('@');
+}
+
+function isByteCountPrefixedRemoteArtifact(value: string): boolean {
+    return /^(?:bytes:)?[0-9]+:/u.test(value);
+}
+
+function isUriLikeDigestLabel(value: string): boolean {
+    return /^[a-z][a-z0-9+.+-]*:/iu.test(value);
+}
+
+function isWindowsPathLikeDigestLabel(value: string): boolean {
+    return value.includes('\\') || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value);
+}
+
+function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
+    const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
+    const sha256 = match?.[1];
+    const path = match?.[2];
+    if (
+        sha256 === undefined ||
+        path === undefined ||
+        isSemanticSha256Label(path) ||
+        isByteCountPrefixedRemoteArtifact(path) ||
+        (isUriLikeDigestLabel(path) && !isWindowsPathLikeDigestLabel(path))
+    ) {
+        return undefined;
+    }
+    return { path, sha256 };
+}
+
+function isCanonicalPathAddress(path: string): boolean {
+    return (
+        !path.includes('\\') &&
+        !path.includes('\0') &&
+        !/^[A-Za-z]:/u.test(path) &&
+        !posix.isAbsolute(path) &&
+        !win32.isAbsolute(path) &&
+        path !== '.' &&
+        path !== '..' &&
+        !path.startsWith('../') &&
+        !path.includes('/../') &&
+        !path.endsWith('/..') &&
+        !path.endsWith('/') &&
+        posix.normalize(path) === path
+    );
+}
+
+function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
+    const relativePath = relative(rootRealPath, realPath);
+    return (
+        relativePath === '..' ||
+        relativePath.startsWith('../') ||
+        relativePath.startsWith('..\\') ||
+        posix.isAbsolute(relativePath) ||
+        win32.isAbsolute(relativePath)
+    );
+}
+
+function openRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): number {
+    let fileDescriptor: number | undefined;
+    try {
+        const beforeOpen = lstatSync(absolutePath);
+        if (!beforeOpen.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const opened = fstatSync(fileDescriptor);
+        if (!opened.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        const realPath = realpathSync(absolutePath);
+        if (pathEscapesRoot(rootRealPath, realPath)) {
+            throw new Error(`path escapes repository root: ${absolutePath}`);
+        }
+        const resolved = statSync(realPath);
+        if (opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        return fileDescriptor;
+    } catch (error) {
+        if (fileDescriptor !== undefined) {
+            closeSync(fileDescriptor);
+        }
+        throw error;
+    }
+}
+
+function readRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): Buffer {
+    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    try {
+        return readFile.readBytes(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
+}
+
+function readRepositoryRegularText(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): string | undefined {
+    let fileDescriptor: number;
+    try {
+        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    } catch {
+        return undefined;
+    }
+    try {
+        return readFile.readText(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
 }
 
 function directorySha256(root: string, directory: string): string {
@@ -1545,6 +1695,7 @@ export function validateReleaseInventory(
     requiredComponentPaths: Readonly<Record<string, readonly string[]>> = {}
 ): string[] {
     const errors: Array<string | undefined> = [];
+    const trackedFiles = new Set(snapshot.releaseFiles);
     if (inventory.schemaVersion !== 1) {
         errors.push('schemaVersion must be 1');
     }
@@ -1586,6 +1737,21 @@ export function validateReleaseInventory(
         for (const path of surface.paths) {
             if (!snapshot.releaseFiles.some((trackedPath) => pathMatches(path, trackedPath))) {
                 errors.push(`${surface.id}: path is not tracked: ${path}`);
+            }
+        }
+        for (const digest of surface.digests) {
+            const addressed = pathAddressedSha256(digest);
+            if (addressed === undefined) {
+                continue;
+            }
+            if (!isCanonicalPathAddress(addressed.path)) {
+                errors.push(
+                    `${surface.id}: path-addressed digest path must be normalized and relative: ${addressed.path}`
+                );
+            } else if (!trackedFiles.has(addressed.path) || snapshot.fileDigests[addressed.path] === 'missing') {
+                errors.push(`${surface.id}: path-addressed digest target is missing or untracked: ${addressed.path}`);
+            } else if (snapshot.fileDigests[addressed.path] !== addressed.sha256) {
+                errors.push(`${surface.id}: path-addressed digest drifted: ${addressed.path}`);
             }
         }
     }
@@ -1746,30 +1912,47 @@ export function validateReleaseInventory(
 
 export function loadRepositorySnapshot(
     root: string,
-    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'>,
-    trackedFiles?: string[]
+    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'> & Partial<Pick<ReleaseInventory, 'surfaces'>>,
+    trackedFiles?: string[],
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
 ): RepositorySnapshot {
+    const rootRealPath = realpathSync(root);
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+    const isSafeTrackedPath = (path: string): boolean =>
+        isCanonicalPathAddress(path) &&
+        trackedFilesInWorktree.includes(path) &&
+        !pathEscapesRoot(rootRealPath, resolve(rootRealPath, path));
     const files = trackedFilesInWorktree.filter((path) => existsSync(resolve(root, path)));
     const contents = new Map<string, string>();
-    const readText = (path: string): string => {
+    const readText = (path: string): string | undefined => {
         const cached = contents.get(path);
         if (cached !== undefined) {
             return cached;
         }
-        const value = readFileSync(resolve(root, path), 'utf8');
-        contents.set(path, value);
+        const value = readRepositoryRegularText(rootRealPath, resolve(root, path), readFile);
+        if (value !== undefined) {
+            contents.set(path, value);
+        }
         return value;
     };
     const scannedFiles = files.filter(isScannedSource);
     const markFiles = files.filter(isMarkSource);
-    const discoveredReferences = scannedFiles.flatMap((path) =>
-        externalReferences(readText(path)).map((reference) => ({ file: path, ...reference }))
-    );
+    const discoveredReferences = scannedFiles.flatMap((path) => {
+        const contents = readText(path);
+        return contents === undefined
+            ? []
+            : externalReferences(contents).map((reference) => ({ file: path, ...reference }));
+    });
     const snapshotPaths = sortedUnique([
         ...REQUIRED_SNAPSHOT_PATHS,
-        ...(inventory.snapshots ?? []).map((entry) => entry.path),
+        ...(inventory.snapshots ?? []).map((entry) => entry.path).filter(isSafeTrackedPath),
+        ...(inventory.surfaces ?? []).flatMap((surface) =>
+            surface.digests.flatMap((digest) => {
+                const addressed = pathAddressedSha256(digest);
+                return addressed === undefined || !isSafeTrackedPath(addressed.path) ? [] : [addressed.path];
+            })
+        ),
     ]);
     const fileDigests = Object.fromEntries(
         snapshotPaths.map((path) => {
@@ -1777,7 +1960,7 @@ export function loadRepositorySnapshot(
                 return [
                     path,
                     createHash('sha256')
-                        .update(readFileSync(resolve(root, path)))
+                        .update(readRepositoryRegularFile(rootRealPath, resolve(root, path), readFile))
                         .digest('hex'),
                 ];
             } catch {
@@ -1788,7 +1971,12 @@ export function loadRepositorySnapshot(
     const markPaths = Object.fromEntries(
         (inventory.marks ?? []).map((mark) => [
             mark.value,
-            markFiles.filter((path) => containsMark(readText(path), mark.value)).sort(),
+            markFiles
+                .filter((path) => {
+                    const contents = readText(path);
+                    return contents !== undefined && containsMark(contents, mark.value);
+                })
+                .sort(),
         ])
     );
     return {
