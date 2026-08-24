@@ -1,0 +1,29 @@
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_a40848e8f8cca9::t_c0c301cf2326d4 917
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_c0c301cf2326d4 222
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_a40848e8f8cca9::t_c0c301cf2326d4 550-559
+scripts/githubAppIdentity.ts
+  s_a40848e8f8cca9::t_c0c301cf2326d4 700
+scripts/__tests__/publishLane.spec.ts
+  s_a40848e8f8cca9::t_c0c301cf2326d4 355
+scripts/__tests__/resourceGuard.spec.ts
+  s_a40848e8f8cca9::t_c0c301cf2326d4 757-759
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ced1d8e16b6344fb7408d93c986e2dfd9ac3195e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
