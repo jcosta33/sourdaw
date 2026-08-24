@@ -21,6 +21,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 import { type AppAction, type ClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -87,6 +88,7 @@ function persistLegacyGlueMacro(probability?: number): Extract<AppAction, { type
 
 describe('handleGlueClips atomic integration', () => {
     beforeEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('glue clips atomic integration');
         removeCrdtDoc('root');
@@ -138,6 +140,7 @@ describe('handleGlueClips atomic integration', () => {
     });
 
     afterEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

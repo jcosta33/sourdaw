@@ -20,6 +20,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -46,6 +47,7 @@ function makeAudioBuffer(channelData: Float32Array, sampleRate: number): AudioBu
 
 describe('handleSplitClip atomic integration', () => {
     beforeEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('split clip atomic integration');
         removeCrdtDoc('root');
@@ -84,6 +86,7 @@ describe('handleSplitClip atomic integration', () => {
     });
 
     afterEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

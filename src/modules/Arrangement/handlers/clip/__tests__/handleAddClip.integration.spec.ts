@@ -17,6 +17,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
@@ -30,6 +31,7 @@ const noActionHistoryMetadataPort = {
 
 describe('handleAddClip atomic integration', () => {
     beforeEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('add clip atomic integration');
         removeCrdtDoc('root');
@@ -47,6 +49,7 @@ describe('handleAddClip atomic integration', () => {
     });
 
     afterEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
