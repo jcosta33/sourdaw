@@ -149,7 +149,7 @@ the floor doctrine working: on a clock that cannot stall, contention leaves the 
 | OS | macOS 26.6.2 (25G83), arm64 |
 | Browser | **151.0.7922.173** (Google Chrome stable, headless) |
 | User agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36` |
-| **Commit measured** | **`45dc71e12fb0c505c5c970aaf46e2a9a43b9d92d`** |
+| **Commit measured** | **`26a362bbc4a5b9a74d46dd713951eb9f411ded68`** |
 | Base it sits on | `40948238a3c62aeaa4bfb84fea2c781b43ca81b2` |
 | Working tree | clean |
 | Taken | 2026-08-22T21:51:41.935Z |
