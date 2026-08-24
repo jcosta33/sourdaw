@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -51,8 +52,13 @@ const runtimeMocks = vi.hoisted(() => {
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'workflow-test-revision' },
+            runtimeRevision: 1,
+        })),
         notifyUser: vi.fn(),
-        projectTrackToLiveStrip: vi.fn(),
         removeBusStrip: vi.fn(),
         removeTrackStrip: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
@@ -61,6 +67,7 @@ const runtimeMocks = vi.hoisted(() => {
         setTrackOutput: vi.fn(),
         setTrackPan: vi.fn(),
         setTrackSoloGate: vi.fn(),
+        wireSidechainRoutes: vi.fn(),
     };
 });
 
@@ -84,13 +91,15 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: runtimeMocks.notifyUser,
 }));
 
-vi.mock('../../../Arrangement/useCases/projectTrackToLiveStrip', () => ({
-    projectTrackToLiveStrip: runtimeMocks.projectTrackToLiveStrip,
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
+    wireSidechainRoutes: runtimeMocks.wireSidechainRoutes,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
+    initializeTrackStripFromSnapshot: runtimeMocks.initializeTrackStripFromSnapshot,
     removeBusStrip: runtimeMocks.removeBusStrip,
     removeTrackStrip: runtimeMocks.removeTrackStrip,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
@@ -383,6 +392,12 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
 describe('delete muted empty tracks prompt workflow', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'workflow-test-revision' },
+            runtimeRevision: 1,
+        });
         runtimeMocks.removeTrackStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
         setProviderPlan(providerPlan);
@@ -575,6 +590,10 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(receipt?.content).toContain('Affected IDs: track-muted-midi');
         expect(receipt?.content).toContain('Protected unchanged: "Muted Bus" (bus-muted-empty)');
 
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
+        runtimeMocks.setTrackGain.mockClear();
+        runtimeMocks.wireSidechainRoutes.mockClear();
+
         await undo();
 
         expect(getTrack('track-muted-audio').muted).toBe(true);
@@ -582,16 +601,31 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(
             trackStore.value?.tracks.filter((track) => !protectedBefore?.some((item) => item.id === track.id))
         ).toHaveLength(2);
-        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
-            trackId: 'track-muted-audio',
-            deferSidechainWiring: true,
-            activateDormantExternalPlugins: true,
-        });
-        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
-            trackId: 'track-muted-midi',
-            deferSidechainWiring: true,
-            activateDormantExternalPlugins: true,
-        });
+        const restoredTrackIds = runtimeMocks.initializeTrackStripFromSnapshot.mock.calls.map(([snapshot]) =>
+            isRecord(snapshot) && Array.isArray(snapshot.nodes) && isRecord(snapshot.nodes[0])
+                ? snapshot.nodes[0].id
+                : undefined
+        );
+        expect(restoredTrackIds).toEqual(['track-muted-midi', 'track-muted-audio']);
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                command: 'initialize-track-strip',
+                nodes: [expect.objectContaining({ id: 'track-muted-midi', devices: [] })],
+                output: { kind: 'output', sourceId: 'track-muted-midi', targetId: 'master' },
+            })
+        );
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                command: 'initialize-track-strip',
+                nodes: [expect.objectContaining({ id: 'track-muted-audio', devices: [] })],
+                output: { kind: 'output', sourceId: 'track-muted-audio', targetId: 'master' },
+            })
+        );
+        expect(runtimeMocks.setTrackGain).toHaveBeenCalledWith('track-muted-midi', 1);
+        expect(runtimeMocks.setTrackGain).toHaveBeenCalledWith('track-muted-audio', 1);
+        expect(runtimeMocks.wireSidechainRoutes).not.toHaveBeenCalled();
 
         await redo();
 
@@ -614,20 +648,36 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
-        runtimeMocks.projectTrackToLiveStrip.mockClear();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
+        runtimeMocks.wireSidechainRoutes.mockClear();
 
         await undo();
 
         expect(trackStore.value).toEqual(beforeDeletion);
-        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
-            trackId: 'track-muted-audio',
-            deferSidechainWiring: true,
-        });
-        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
-            trackId: 'track-muted-midi',
-            deferSidechainWiring: true,
-            activateDormantExternalPlugins: true,
-        });
+        const restoredSnapshots = runtimeMocks.initializeTrackStripFromSnapshot.mock.calls.map(
+            ([snapshot]) => snapshot
+        );
+        expect(
+            restoredSnapshots.map((snapshot) =>
+                isRecord(snapshot) && isRecord(snapshot.output) ? snapshot.output.sourceId : undefined
+            )
+        ).toEqual(['track-muted-midi', 'track-muted-audio', 'track-muted-audio']);
+        expect(restoredSnapshots[0]).toEqual(
+            expect.objectContaining({
+                nodes: [expect.objectContaining({ id: 'track-muted-midi' })],
+                output: { kind: 'output', sourceId: 'track-muted-midi', targetId: 'master' },
+            })
+        );
+        expect(restoredSnapshots.at(-1)).toEqual(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({ id: 'track-muted-audio' }),
+                    expect.objectContaining({ id: 'track-muted-midi' }),
+                ],
+                output: { kind: 'output', sourceId: 'track-muted-audio', targetId: 'track-muted-midi' },
+            })
+        );
+        expect(runtimeMocks.wireSidechainRoutes).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
     });

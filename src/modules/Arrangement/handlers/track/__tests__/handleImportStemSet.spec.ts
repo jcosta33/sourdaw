@@ -18,7 +18,8 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { LEGACY_MIDI_PROBABILITY_SEED, midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { setMidiStoreState } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -88,6 +89,13 @@ const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
+};
+
+const emptyMidiStoreState: MidiStoreState = {
+    probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+    notesByClipId: {},
+    ccByClipId: {},
+    pitchBendByClipId: {},
 };
 
 function createStemImportAction(): ImportStemSetAction {
@@ -194,7 +202,7 @@ describe('handleImportStemSet', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        midiStore.set(defaultMidiStoreState);
+        setMidiStoreState(emptyMidiStoreState);
     });
 
     afterEach(() => {
@@ -202,7 +210,7 @@ describe('handleImportStemSet', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        midiStore.set(defaultMidiStoreState);
+        setMidiStoreState(emptyMidiStoreState);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -265,7 +273,7 @@ describe('handleImportStemSet', () => {
         const inverse = await applyStemImport(action);
         const midiState = requireMidiState();
 
-        midiStore.set({
+        setMidiStoreState({
             ...midiState,
             notesByClipId: {
                 ...midiState.notesByClipId,

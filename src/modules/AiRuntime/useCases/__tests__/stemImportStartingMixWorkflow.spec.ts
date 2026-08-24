@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -66,8 +67,13 @@ const mocks = vi.hoisted(() => {
         executeBatchError: { value: null as Error | null },
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'workflow-test-revision' },
+            runtimeRevision: 1,
+        })),
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
-        projectTrackToLiveStrip: vi.fn(),
         promoteStagedAsset: vi.fn(),
         releaseStagedAsset: vi.fn(),
         releasePreviewAudioBuffer: vi.fn(),
@@ -125,13 +131,10 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({ detectTempo: mocks.detectTempo }));
 
-vi.mock('../../../Arrangement/useCases/projectTrackToLiveStrip', () => ({
-    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
-}));
-
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
+    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
     removeTrackStrip: mocks.removeTrackStrip,
     setTrackGain: mocks.setTrackGain,
@@ -530,6 +533,12 @@ describe('stem import and starting mix workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
+        mocks.initializeTrackStripFromSnapshot.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'workflow-test-revision' },
+            runtimeRevision: 1,
+        });
         mocks.backend.value = 'webllm';
         mocks.executeBatchError.value = null;
         vi.stubGlobal('fetch', mocks.fetch);
@@ -945,7 +954,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reconciles a transient live-strip projection failure after the atomic project commit', async () => {
-        mocks.projectTrackToLiveStrip.mockImplementationOnce(() => {
+        mocks.initializeTrackStripFromSnapshot.mockImplementationOnce(() => {
             throw new Error('transient strip projection failure');
         });
         await sendChatMessage(PROMPT);
@@ -956,7 +965,7 @@ describe('stem import and starting mix workflow', () => {
         });
 
         expect(trackStore.value?.tracks).toHaveLength(8);
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(7);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(STEM_SOURCE_NAMES.length + 1);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
@@ -995,7 +1004,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reports persistent live-strip projection failure as committed with a manual-repair warning', async () => {
-        mocks.projectTrackToLiveStrip.mockImplementation(() => {
+        mocks.initializeTrackStripFromSnapshot.mockImplementation(() => {
             throw new Error('persistent strip projection failure');
         });
         await sendChatMessage(PROMPT);
@@ -1007,6 +1016,7 @@ describe('stem import and starting mix workflow', () => {
 
         expect(trackStore.value?.tracks).toHaveLength(8);
         expect(undoStore.value?.past).toHaveLength(1);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(STEM_SOURCE_NAMES.length * 2);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );

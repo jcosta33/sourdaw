@@ -81,6 +81,14 @@ function requireRestoreAction(action: AppAction | null | undefined): RestoreMidi
     return action;
 }
 
+function requireCanReapplyAfterDivergence(): NonNullable<typeof handleRestoreMidiClipNotes.canReapplyAfterDivergence> {
+    const canReapplyAfterDivergence = handleRestoreMidiClipNotes.canReapplyAfterDivergence;
+    if (canReapplyAfterDivergence === undefined) {
+        throw new Error('Expected restore replay guard');
+    }
+    return canReapplyAfterDivergence;
+}
+
 function arrangeCopyFixture(): CopyMidiArticulationsAction {
     const track = createTrack({
         id: trackId,
@@ -164,7 +172,9 @@ describe('handleRestoreMidiClipNotes', () => {
 
         expect(handleCopyMidiArticulations.execute(action)).toEqual({ status: 'written' });
         expect(midiStoreSnapshot(targetClipId)).toEqual([targetNoteAfterCopy()]);
-        expect(handleRestoreMidiClipNotes.canReapplyAfterDivergence?.(inverse)).toBe(true);
+
+        const canReapplyAfterDivergence = requireCanReapplyAfterDivergence();
+        expect(canReapplyAfterDivergence(inverse)).toBe(true);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         expect(midiStoreSnapshot(targetClipId)).toEqual([targetNote()]);
 
@@ -177,7 +187,7 @@ describe('handleRestoreMidiClipNotes', () => {
             pitchBendByClipId: {},
         });
 
-        expect(handleRestoreMidiClipNotes.canReapplyAfterDivergence?.(inverse)).toBe(false);
+        expect(canReapplyAfterDivergence(inverse)).toBe(false);
         expect(handleRestoreMidiClipNotes.validate(inverse, { actions: [inverse], actionIndex: 0 })).toBe(false);
     });
 });

@@ -25,12 +25,32 @@ type MockAdjustmentLayerState = {
         color: string;
     }>;
 };
+type MockAdjustmentLayer = MockAdjustmentLayerState['layers'][number];
 type MockTrackState = {
     tracks: Array<{ id: string; frozen: boolean }>;
 };
 
 let adjustmentLayerState: MockAdjustmentLayerState | null = null;
 let trackState: MockTrackState | null = null;
+
+function requireWrittenLayer(): MockAdjustmentLayer {
+    if (!adjustmentLayerState) {
+        throw new Error('Expected adjustment-layer state after the real add execution');
+    }
+    const [layer] = adjustmentLayerState.layers;
+    if (!layer) {
+        throw new Error('Expected the real add execution to retain an adjustment layer');
+    }
+    return layer;
+}
+
+function requireWrittenRegion(layer: MockAdjustmentLayer): ExpectedRegion {
+    const [region] = layer.regions;
+    if (!region) {
+        throw new Error('Expected the real add execution to write an adjustment region');
+    }
+    return region;
+}
 
 vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
@@ -144,7 +164,8 @@ describe('handleRemoveAdjustmentRegion', () => {
         }
 
         void adjustmentLayerHandlers.addAdjustmentRegion.execute(action);
-        expect(adjustmentLayerState?.layers[0].regions[0]).toEqual(expectedWrittenRegion);
+        const writtenRegion = requireWrittenRegion(requireWrittenLayer());
+        expect(writtenRegion).toEqual(expectedWrittenRegion);
         for (const handler of compensationHandlers) {
             expect(handler.canReapplyAfterDivergence?.(compensation)).toBe(true);
         }
@@ -156,10 +177,7 @@ describe('handleRemoveAdjustmentRegion', () => {
         const action = createAddAction();
         const compensation = createAddCompensation(action);
         void adjustmentLayerHandlers.addAdjustmentRegion.execute(action);
-        const writtenRegion = adjustmentLayerState?.layers[0].regions[0];
-        if (!writtenRegion) {
-            throw new Error('Expected the real add execution to write a region');
-        }
+        const writtenRegion = requireWrittenRegion(requireWrittenLayer());
         writtenRegion.blend = 0.5;
 
         for (const handler of compensationHandlers) {
