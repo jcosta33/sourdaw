@@ -1,12 +1,21 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { aiBackendPreferenceStore } from '../../../../stores/aiBackendPreferenceStore';
 import { setActiveAborter } from '../../../../stores/chatStore';
 import { llmStatusStore } from '../../../../stores/llmStatusStore';
 import { setAiBackendPreference } from '../setAiBackendPreference';
 
+const mocks = vi.hoisted(() => ({
+    admission: { webLlm: true },
+}));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({
+    MODEL_RELEASE_ADMISSION: mocks.admission,
+}));
+
 describe('setAiBackendPreference', () => {
     beforeEach(() => {
+        mocks.admission.webLlm = true;
         aiBackendPreferenceStore.set('auto');
         setActiveAborter(null);
         llmStatusStore.set({ state: 'idle' });
@@ -35,6 +44,16 @@ describe('setAiBackendPreference', () => {
 
         expect(aiBackendPreferenceStore.value).toBe('webllm');
         expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'browser-model' });
+    });
+
+    it('fails closed when a stored WebLLM preference is no longer admitted', () => {
+        mocks.admission.webLlm = false;
+        llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: 'browser-model' });
+
+        setAiBackendPreference('webllm');
+
+        expect(aiBackendPreferenceStore.value).toBe('auto');
+        expect(llmStatusStore.value).toEqual({ state: 'idle' });
     });
 
     it('preserves the active backend when returning to automatic mode', () => {

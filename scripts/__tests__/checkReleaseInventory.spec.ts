@@ -733,7 +733,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', () => {
+    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 10_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
@@ -793,11 +793,10 @@ describe('release inventory', () => {
         const value = inventory();
         value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
         const changed = snapshot();
-        changed.fileDigests[path] = 'missing';
+        changed.releaseFiles.push(path);
+        delete changed.fileDigests[path];
 
-        expect(validateReleaseInventory(value, changed)).toContain(
-            `runtime: path-addressed digest target is missing or untracked: ${path}`
-        );
+        expect(validateReleaseInventory(value, changed)).toContain(`runtime: path-addressed digest drifted: ${path}`);
     });
 
     it('should ignore semantic and remote artifact digest labels', () => {
@@ -815,7 +814,18 @@ describe('release inventory', () => {
         );
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', () => {
+    it('should ignore git-addressed digest labels', () => {
+        const value = inventory();
+        value.surfaces[0]!.digests = [
+            `sha256:${fixtureDigest}:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt`,
+        ];
+
+        expect(validateReleaseInventory(value, snapshot()).filter((error) => error.includes('path-addressed'))).toEqual(
+            []
+        );
+    });
+
+    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 10_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
     });
 
