@@ -145,7 +145,8 @@ function createPostCommitRuntimeEffect(
         if (!liveStrip && !hasLiveProjectHostTrack(after.id)) {
             return;
         }
-        let runtimeTarget = after;
+        const authoritativeTarget = findUniqueTrack(after.id);
+        let runtimeTarget = authoritativeTarget ?? after;
         let result: RuntimeDeviceDeltaResult;
         if (liveStrip) {
             result = applyDeviceChainRuntimeDelta({
@@ -155,7 +156,6 @@ function createPostCommitRuntimeEffect(
                 batchContext,
             });
         } else {
-            const authoritativeTarget = findUniqueTrack(after.id);
             if (!authoritativeTarget) {
                 result = {
                     acceptance: 'rejected',

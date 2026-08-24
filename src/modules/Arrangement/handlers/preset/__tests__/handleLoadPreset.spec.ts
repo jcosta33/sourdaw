@@ -301,6 +301,52 @@ describe('handleLoadPreset', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
     });
 
+    it('uses the authoritative final same-track chain for parameters on an existing live strip', async () => {
+        const presetAction = action();
+        const finalDevice: DeviceSnapshot = {
+            id: 'final-device-1',
+            name: 'Final',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: { threshold: -12 },
+        };
+        const laterDeviceMutation: AppAction = {
+            type: 'restorePresetDeviceChain',
+            payload: {
+                trackId: 'track-1',
+                expectedBefore: {
+                    id: 'track-1',
+                    kind: 'midi',
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [finalDevice],
+            },
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [finalDevice] }] });
+        const result = await handleLoadPreset.execute(presetAction, {
+            actions: [presetAction, laterDeviceMutation],
+            actionIndex: 0,
+        });
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+
+        await result.afterCommit();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith({
+            before: expect.objectContaining({ id: 'track-1', devices: [oldDevice] }),
+            after: expect.objectContaining({ id: 'track-1', devices: [newDevice] }),
+            operation: 'replace-device-chain',
+            batchContext: { actions: [presetAction, laterDeviceMutation], actionIndex: 0 },
+        });
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'final-device-1', 'threshold', -12);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
+    });
+
     it('initializes a newly created Toaster folder from its committed after-state, not its empty before-state', async () => {
         mocks.getTrackStrip.mockReturnValue(undefined);
         const toasterDevice: DeviceSnapshot = {
