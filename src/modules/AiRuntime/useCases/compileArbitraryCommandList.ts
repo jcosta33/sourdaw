@@ -270,6 +270,15 @@ function isIdempotentSetCommand(name: string): boolean {
     return name.startsWith('set') || ['armTrack', 'bypassDevice', 'muteTrack', 'soloTrack'].includes(name);
 }
 
+function getTargetWriteIdentity(
+    targetRules: readonly { argument: string }[],
+    arguments_: Readonly<Record<string, unknown>>
+): string {
+    return JSON.stringify(
+        targetRules.map((targetRule) => [targetRule.argument, arguments_[targetRule.argument] ?? null])
+    );
+}
+
 function detectDependencyCycle(items: readonly Record<string, unknown>[]): string | null {
     const dependencies = new Map<string, string[]>();
     for (const item of items) {
@@ -475,10 +484,59 @@ export function compileArbitraryCommandList(input: {
                 reason: 'Bulk selector resolved a target outside the command capability contract.',
             };
         }
+        const directTargetIdsByArgument = new Map<string, readonly string[]>();
+        for (const rule of rules.targetRules) {
+            if (rule.argument === selector.targetArgument) {
+                directTargetIdsByArgument.set(rule.argument, resolved.stableIds);
+                continue;
+            }
+            const value = item.arguments[rule.argument];
+            if (value === undefined) {
+                continue;
+            }
+            let stableIds: readonly string[] | null = null;
+            if (rule.cardinality === 'many') {
+                if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+                    stableIds = value;
+                }
+            } else if (typeof value === 'string') {
+                stableIds = [value];
+            }
+            if (stableIds === null || stableIds.length === 0) {
+                return {
+                    status: 'rejected',
+                    reason: `Direct command target ${rule.argument} is outside the command capability contract.`,
+                };
+            }
+            const dependencyIds =
+                rule.dependsOn === undefined ? [] : (directTargetIdsByArgument.get(rule.dependsOn) ?? []);
+            if (
+                stableIds.some((stableId) => protectedTargetIds.has(stableId)) ||
+                stableIds.some((stableId) =>
+                    (dependencyIds.length === 0 ? [undefined] : dependencyIds).some(
+                        (dependencyId) =>
+                            !isAgentReferenceCapabilityCandidate({
+                                capability: rule.capability,
+                                context: input.context,
+                                ...(dependencyId === undefined ? {} : { dependencyId }),
+                                id: stableId,
+                            })
+                    )
+                )
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: `Direct command target ${rule.argument} is outside the command capability contract.`,
+                };
+            }
+            directTargetIdsByArgument.set(rule.argument, stableIds);
+        }
         evidence.push(resolved.evidence);
-        for (const stableId of resolved.stableIds) {
-            if (!orderedTargetIds.includes(stableId)) {
-                orderedTargetIds.push(stableId);
+        for (const rule of rules.targetRules) {
+            for (const stableId of directTargetIdsByArgument.get(rule.argument) ?? []) {
+                if (!orderedTargetIds.includes(stableId)) {
+                    orderedTargetIds.push(stableId);
+                }
             }
         }
         if (repeat > 1 && !isIdempotentSetCommand(item.name)) {
@@ -499,13 +557,16 @@ export function compileArbitraryCommandList(input: {
                 };
             }
             targetWrites.set(stableId, { destructive: isDestructive, itemId: item.id });
-            const targetCommandKey = `${item.name}\u0000${stableId}`;
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = {
                     name: item.name,
                     arguments: { ...item.arguments, [selector.targetArgument]: stableId },
                 };
                 const commandKey = JSON.stringify(command);
+                const targetCommandKey = `${item.name}\u0000${getTargetWriteIdentity(
+                    rules.targetRules,
+                    command.arguments
+                )}`;
                 const priorArguments = targetCommandArguments.get(targetCommandKey);
                 if (priorArguments !== undefined && priorArguments !== commandKey) {
                     return {

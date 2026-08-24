@@ -7,6 +7,15 @@ export type ProviderScope = {
     protectedRanges: Array<{ startBeat: number; endBeat: number }>;
 };
 
+export type SemanticCommandListItem = {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    selector?: Record<string, unknown>;
+    repeat?: Record<string, unknown>;
+    dependsOn?: string[];
+};
+
 export type ProviderPlanningFixtureContext = {
     hasCommandCatalogReceipt: boolean;
     capabilityData: Record<string, unknown>;
@@ -228,6 +237,38 @@ export function createProviderWorkflowPlanningResponder(
     };
 }
 
+/**
+ * Returns catalog discovery for each new planning attempt and the semantic list only after that
+ * attempt records its catalog receipt. This prevents a provider retry from inheriting a prior
+ * attempt's fixture turn while retaining the real catalog contract.
+ */
+export function createProviderSemanticListPlanningResponder(
+    items: readonly SemanticCommandListItem[],
+    scope: ProviderScope,
+    workflowCapabilityId?: string
+): (userMessage: string) => string {
+    const commandNames = [...new Set(items.map((item) => item.name))];
+    return (userMessage) => {
+        if (!decodeProviderPlanningFixtureContext(userMessage).hasCommandCatalogReceipt) {
+            return JSON.stringify([
+                { name: 'agent.catalog.discover', arguments: { category: 'command', names: commandNames } },
+            ]);
+        }
+        return JSON.stringify([
+            ...(workflowCapabilityId === undefined
+                ? []
+                : [{ name: 'selectWorkflowCapability', arguments: { capabilityId: workflowCapabilityId } }]),
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    list: { schemaVersion: 1, items },
+                    plan: createPlanProposal(scope, commandNames),
+                },
+            },
+        ]);
+    };
+}
+
 export function createHostedToolPlanningResponder(
     plan: readonly ProviderPlanCall[],
     scope?: ProviderScope
@@ -242,5 +283,14 @@ export function createHostedWorkflowPlanningResponder(
     scope: ProviderWorkflowScope
 ): (userMessage: string) => Response {
     const respond = createProviderWorkflowPlanningResponder(plan, workflowCapabilityId, scope);
+    return (userMessage) => createHostedFixture(respond(userMessage));
+}
+
+export function createHostedSemanticListPlanningResponder(
+    items: readonly SemanticCommandListItem[],
+    scope: ProviderScope,
+    workflowCapabilityId?: string
+): (userMessage: string) => Response {
+    const respond = createProviderSemanticListPlanningResponder(items, scope, workflowCapabilityId);
     return (userMessage) => createHostedFixture(respond(userMessage));
 }

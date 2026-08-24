@@ -1,3 +1,5 @@
+import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -217,12 +219,57 @@ export function validateArbitraryCommandListEvidence(input: {
                 ]);
             }
         }
-        itemIds.add(item.itemId);
-        for (const stableId of item.stableIds) {
-            if (!resolvedTargetIds.includes(stableId)) {
-                resolvedTargetIds.push(stableId);
+        const groundingRules = getExecutableAppActionGroundingRules(item.commandName);
+        if (groundingRules === null) {
+            return { status: 'rejected', reason: 'Structured command compiler evidence target scope is invalid.' };
+        }
+        const itemCommands = evidence.commands.slice(item.commandStart, item.commandStart + item.commandCount);
+        for (const targetRule of groundingRules.targetRules) {
+            const targetIds =
+                targetRule.argument === item.targetArgument
+                    ? item.stableIds
+                    : itemCommands.flatMap((command) => {
+                          const value = command.arguments[targetRule.argument];
+                          if (targetRule.cardinality === 'many') {
+                              return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+                                  ? value
+                                  : [];
+                          }
+                          return typeof value === 'string' ? [value] : [];
+                      });
+            if (targetIds.length === 0) {
+                continue;
+            }
+            for (const targetId of targetIds) {
+                const matchingCommands = itemCommands.filter((command) => {
+                    const value = command.arguments[targetRule.argument];
+                    return Array.isArray(value) ? value.includes(targetId) : value === targetId;
+                });
+                const commandsToValidate = matchingCommands.length === 0 ? itemCommands : matchingCommands;
+                if (
+                    protectedTargetIds.has(targetId) ||
+                    commandsToValidate.some((command) => {
+                        const dependencyValue =
+                            targetRule.dependsOn === undefined ? undefined : command.arguments[targetRule.dependsOn];
+                        return !isAgentReferenceCapabilityCandidate({
+                            capability: targetRule.capability,
+                            context: input.context,
+                            ...(typeof dependencyValue === 'string' ? { dependencyId: dependencyValue } : {}),
+                            id: targetId,
+                        });
+                    })
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Structured command compiler evidence target scope is invalid.',
+                    };
+                }
+                if (!resolvedTargetIds.includes(targetId)) {
+                    resolvedTargetIds.push(targetId);
+                }
             }
         }
+        itemIds.add(item.itemId);
         commandCursor += item.commandCount;
     }
     if (
