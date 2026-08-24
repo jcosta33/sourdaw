@@ -1,0 +1,52 @@
+scripts/__tests__/releaseProof.spec.ts
+  s_a40848e8f8cca9::t_f200db023fff55 427-432,934,951-956,961-970,985-988,997,1005,1015,1035,1047
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_fa5473daf4e35c 380-455
+  s_a40848e8f8cca9::t_2e19a79a8eb087 378-379
+src/modules/CrdtDocument/handlers/previewBranches/__tests__/handleDeleteDrumPreviewBranches.spec.ts
+  s_a40848e8f8cca9::t_b9d0cdbf516701 1-3,5-96,117-131
+  s_a40848e8f8cca9::t_0485b39d097590 4
+  s_a40848e8f8cca9::t_a1bf5117cc6adf 97-116
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_4a1ed3d8a20665 676,703,717,725
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_80ea12bd0dd3ad 130,219,1255,1267
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_a1bf5117cc6adf 924-926,929-931
+  s_a40848e8f8cca9::t_54ac6cc5e7f706 35,869,898-905
+  s_a40848e8f8cca9::t_093f4c685b8b60 868,870-897,906-923,927-928,932-936
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_a40848e8f8cca9::t_ff2a52d308c6e0 259,270
+src/modules/Arrangement/handlers/track/__tests__/handleDiscardImportedStemSet.spec.ts
+  s_a40848e8f8cca9::t_0485b39d097590 6
+  s_a40848e8f8cca9::t_a17df6a7e44d53 1-5,7-71,99-110
+  s_a40848e8f8cca9::t_a1bf5117cc6adf 72-98
+.github/workflows/health-gates.yml
+  s_a40848e8f8cca9::t_98073664615085 672-685
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_0488ad2de51add 844-851
+scripts/test-health-gate-scripts.sh
+  s_a40848e8f8cca9::t_d968a5412fba16 185-196,213-214,357-372
+package.json
+  s_a40848e8f8cca9::t_28725066265260 130,161
+pnpm-lock.yaml
+  s_a40848e8f8cca9::t_62f5aba831b508 147-149,240-242,2556-2558,5588-5599,7820-7823,11239-11240
+public/legal/DEPENDENCY-LICENSES.txt
+  s_a40848e8f8cca9::t_b97d58022d8f8f 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6292f24d492362dac84353eab95047e94319889a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
