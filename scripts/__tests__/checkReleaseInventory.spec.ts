@@ -924,15 +924,17 @@ describe('release inventory', () => {
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(join(base, 'outside.txt'), 'outside');
             writeFileSync(join(root, untrackedPath), 'untracked');
+            const forbiddenReads: string[] = [];
             const readFile = ((path: string, options?: string) => {
                 if (path === join(base, 'outside.txt') || path === join(root, untrackedPath)) {
-                    throw new Error(`unexpected path-addressed digest read: ${path}`);
+                    forbiddenReads.push(path);
                 }
                 return options === undefined ? readFileSync(path) : readFileSync(path, options);
             }) as typeof readFileSync;
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
 
+            expect(forbiddenReads).toEqual([]);
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
             expect(validateReleaseInventory(value, changed)).toEqual(

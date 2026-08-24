@@ -279,6 +279,9 @@ function isCanonicalPathAddress(path: string): boolean {
         !win32.isAbsolute(path) &&
         path !== '.' &&
         path !== '..' &&
+        !path.startsWith('../') &&
+        !path.includes('/../') &&
+        !path.endsWith('/..') &&
         !path.endsWith('/') &&
         posix.normalize(path) === path
     );
@@ -1809,7 +1812,8 @@ export function validateReleaseInventory(
 export function loadRepositorySnapshot(
     root: string,
     inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'> & Partial<Pick<ReleaseInventory, 'surfaces'>>,
-    trackedFiles?: string[]
+    trackedFiles?: string[],
+    readFile: typeof readFileSync = readFileSync
 ): RepositorySnapshot {
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
@@ -1820,7 +1824,7 @@ export function loadRepositorySnapshot(
         if (cached !== undefined) {
             return cached;
         }
-        const value = readFileSync(resolve(root, path), 'utf8');
+        const value = readFile(resolve(root, path), 'utf8');
         contents.set(path, value);
         return value;
     };
@@ -1835,7 +1839,11 @@ export function loadRepositorySnapshot(
         ...(inventory.surfaces ?? []).flatMap((surface) =>
             surface.digests.flatMap((digest) => {
                 const addressed = pathAddressedSha256(digest);
-                return addressed === undefined || !isCanonicalPathAddress(addressed.path) ? [] : [addressed.path];
+                return addressed === undefined ||
+                    !isCanonicalPathAddress(addressed.path) ||
+                    !trackedFilesInWorktree.includes(addressed.path)
+                    ? []
+                    : [addressed.path];
             })
         ),
     ]);
@@ -1845,7 +1853,7 @@ export function loadRepositorySnapshot(
                 return [
                     path,
                     createHash('sha256')
-                        .update(readFileSync(resolve(root, path)))
+                        .update(readFile(resolve(root, path)))
                         .digest('hex'),
                 ];
             } catch {
