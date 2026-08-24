@@ -339,8 +339,8 @@ expect(
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
 expect(
-    unitRun === 'pnpm test:run -- --shard=${{ matrix.shard }}/4',
-    'unit shard must pass its Vitest shard argument through pnpm to the test wrapper'
+    unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
+    'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
 expect(
