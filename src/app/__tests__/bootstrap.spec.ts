@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import type { ArrangementEventBus } from '#/modules/Arrangement/useCases/arrangementEventBus';
+import type {
+    RuntimeGraphProjectRevisionValidator,
+    RuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/models/RuntimeGraphDelta';
+import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
+
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
 // and, at import time (not inside a callable function), wires their runtime
 // dependencies and hands every module's `get<Module>Handlers()` result to the
@@ -61,6 +68,13 @@ const {
     setAutomationParameterRangeResolverMock,
     clampTrackGainMock,
     setMidiLearnDependenciesMock,
+    registerCrdtStorageRuntimeMock,
+    captureProjectRevisionMock,
+    setArrangementEventBusMock,
+    configureRuntimeGraphProjectRevisionValidatorMock,
+    configureRuntimeGraphTopologyValidatorMock,
+    runtimeGraphTopologyMock,
+    setNotificationEventBusMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -98,6 +112,16 @@ const {
         // has to be identifiable by reference.
         clampTrackGainMock: vi.fn<(trackId: string, gain: number) => number>(),
         setMidiLearnDependenciesMock: vi.fn<(dependencies: { clampTrackGain: unknown }) => void>(),
+        registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
+        setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
+        configureRuntimeGraphProjectRevisionValidatorMock:
+            vi.fn<(validator: RuntimeGraphProjectRevisionValidator) => void>(),
+        configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator) => void>(),
+        runtimeGraphTopologyMock: {
+            matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
+        },
+        setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
     };
 });
 
@@ -143,12 +167,12 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
-    setArrangementEventBus: noop,
+    setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
     setVcaRuntimeProjectionDependencies: setVcaRuntimeProjectionDependenciesMock,
     getSongStructureHandlers: sentinelHandlers('SongStructure'),
-    runtimeGraphTopology: { matchesCurrentProject: noop },
+    runtimeGraphTopology: runtimeGraphTopologyMock,
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
@@ -172,8 +196,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureOfflineYeastMidiProcessing: noop,
     stopAllScheduled: noop,
     compileAudioGraphTopology: noop,
-    configureRuntimeGraphProjectRevisionValidator: noop,
-    configureRuntimeGraphTopologyValidator: noop,
+    configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
+    configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -251,7 +275,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: noop },
-    captureProjectRevision: () => 'revision-1',
+    captureProjectRevision: captureProjectRevisionMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -261,7 +285,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
     clearActionHistory: noop,
-    registerCrdtStorageRuntime: noop,
+    registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -409,7 +433,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 vi.mock('#/utils/capabilities', () => ({ logCapabilities: noop }));
 
 vi.mock('#/utils/Notification/notificationEventBus', () => ({
-    setNotificationEventBus: noop,
+    setNotificationEventBus: setNotificationEventBusMock,
     // `storageFullNotice` reaches this module through `notifyUser`, whose
     // `inject` call needs the token at import time.
     NotificationEventBus: class {},
@@ -502,6 +526,28 @@ describe('bootstrap', () => {
         expect(configureCommandBatchIdempotencyMock).toHaveBeenCalledExactlyOnceWith({
             canExecute: canExecuteCommandBatchMock,
         });
+    });
+
+    it('wires project runtime validation and event buses in the composition root', () => {
+        expect(registerCrdtStorageRuntimeMock).toHaveBeenCalledExactlyOnceWith();
+        expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
+
+        expect(configureRuntimeGraphProjectRevisionValidatorMock).toHaveBeenCalledTimes(1);
+        const projectRevisionValidatorCall = configureRuntimeGraphProjectRevisionValidatorMock.mock.calls.at(0);
+        if (!projectRevisionValidatorCall) {
+            throw new Error('bootstrap never configured the runtime graph project revision validator');
+        }
+        const [projectRevisionValidator] = projectRevisionValidatorCall;
+        captureProjectRevisionMock.mockReturnValue('revision-1');
+        expect(projectRevisionValidator('revision-1')).toBe(true);
+        captureProjectRevisionMock.mockReturnValue('revision-2');
+        expect(projectRevisionValidator('revision-1')).toBe(false);
+        expect(captureProjectRevisionMock).toHaveBeenCalledTimes(2);
+
+        expect(configureRuntimeGraphTopologyValidatorMock).toHaveBeenCalledExactlyOnceWith(
+            runtimeGraphTopologyMock.matchesCurrentProject
+        );
+        expect(setNotificationEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
     });
 
     it('registers the exact forward and restore global-time owner preparations', () => {
