@@ -659,10 +659,12 @@ type Clamp = readonly [number, number];
  *   - remapped `(value / 10.0).clamp(0.0, 1.0)` (`grinder/pedals.rs:36-38`) and
  *     `(value * 0.01).clamp(0.0, 1.0)` (`crust/engine.rs:389`), where the clamp
  *     bounds the *transformed* value and say nothing about the wire domain
- *   - named-constant bounds; `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each
- *     defined more than once with different values in different modules
- *     (`crust/bands.rs:19` = 5 against `bacteria/engine.rs:22` = 6), so a
- *     name-only resolver picks the wrong one
+ *   - arbitrary named-constant bounds; `MAX_BANDS`, `MAX_BURSTS` and
+ *     `MAX_VOICES` are each defined more than once with different values in
+ *     different modules (`crust/bands.rs:19` = 5 against
+ *     `bacteria/engine.rs:22` = 6), so a repository-wide name resolver picks
+ *     the wrong one. The explicit `clamped_param(value, min, max, fallback)`
+ *     helper is read only against constants declared in that same source file.
  */
 function readClampsFromFiles(files: readonly string[]): {
     byName: ReadonlyMap<string, Clamp>;
@@ -676,22 +678,47 @@ function readClampsFromFiles(files: readonly string[]): {
     const clamp = new RegExp(
         String.raw`(?:value|\(\s*value\s+as\s+\w+\s*\))\.clamp\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*\)`
     );
+    const guardedClamp = new RegExp(
+        String.raw`\bclamped_param\(\s*value\s*,\s*(${RUST_NUMBER}|[A-Z][A-Z0-9_]*)\s*,\s*(${RUST_NUMBER}|[A-Z][A-Z0-9_]*)\s*,`
+    );
+    const rustConstant = new RegExp(
+        String.raw`\bconst\s+([A-Z][A-Z0-9_]*)\s*:\s*[A-Za-z0-9_:<>]+\s*=\s*(${RUST_NUMBER})\s*;`,
+        'g'
+    );
 
     for (const file of files) {
-        for (const body of readParamFunctionBodies(stripComments(readFileSync(file, 'utf8')))) {
+        const source = stripComments(readFileSync(file, 'utf8'));
+        const constants = new Map(
+            [...source.matchAll(rustConstant)].map((match) => [match[1]!, Number(match[2]!.replaceAll('_', ''))])
+        );
+        const readBound = (token: string): number | undefined => {
+            if (token === '') {
+                return undefined;
+            }
+            if (/^[A-Z]/.test(token)) {
+                return constants.get(token);
+            }
+            return Number(token.replaceAll('_', ''));
+        };
+
+        for (const body of readParamFunctionBodies(source)) {
             const flattened = body.replaceAll(/\s+/g, ' ');
             const headers = [...flattened.matchAll(armHeader)];
             for (const [index, header] of headers.entries()) {
                 const start = header.index + header[0].length;
                 const end = headers[index + 1]?.index ?? flattened.length;
-                const hit = clamp.exec(flattened.slice(start, end));
-                if (hit === null) {
+                const arm = flattened.slice(start, end);
+                const hit = clamp.exec(arm);
+                const guardedHit = hit === null ? guardedClamp.exec(arm) : null;
+                const min = hit === null ? readBound(guardedHit?.[1] ?? '') : Number(hit[1]);
+                const max = hit === null ? readBound(guardedHit?.[2] ?? '') : Number(hit[2]);
+                if (min === undefined || max === undefined || !Number.isFinite(min) || !Number.isFinite(max)) {
                     continue;
                 }
                 const names = [header[1]!, ...[...header[2]!.matchAll(/"([\w-]+)"/g)].map((alt) => alt[1]!)];
                 for (const name of names) {
                     const spans = found.get(name) ?? new Set<string>();
-                    spans.add(`${Number(hit[1])},${Number(hit[2])}`);
+                    spans.add(`${min},${max}`);
                     found.set(name, spans);
                 }
             }
