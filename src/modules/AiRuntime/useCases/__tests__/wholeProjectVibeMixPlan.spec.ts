@@ -52,6 +52,8 @@ const providerPlan = [
     },
 ] as const;
 
+type ProviderCall = { name: string; arguments: Record<string, unknown> };
+
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
@@ -87,16 +89,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    if (typeof schemas.availableCapabilities !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(schemas.availableCapabilities);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
 function createProviderPlanFromUserMessage(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context)) {
-        throw new TypeError('Expected object-shaped project context');
-    }
+    const context = getProviderContext(userMessage);
     const capability = context.wholeProjectVibeMixCapability;
     if (!isRecord(capability) || capability.actionType !== 'automateTrackGainRange') {
         throw new TypeError('Expected app-owned whole-project vibe-mix capability');
@@ -125,6 +144,164 @@ function createProviderPlanFromUserMessage(userMessage: string) {
             },
         },
     ];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchema(userMessage: string): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items) ||
+        !discovery.data.items.some(
+            (item) =>
+                isRecord(item) &&
+                isRecord(item.function) &&
+                item.function.name === 'automateTrackGainRange' &&
+                isRecord(item.function.parameters)
+        )
+    ) {
+        throw new TypeError('Expected disclosed automateTrackGainRange schema receipt');
+    }
+}
+
+function asCommandBatchProposal(userMessage: string, commands: readonly ProviderCall[]): ProviderCall[] {
+    const context = getProviderContext(userMessage);
+    const capability = context.wholeProjectVibeMixCapability;
+    if (
+        !isRecord(capability) ||
+        capability.baseRevision !== context.projectRevision ||
+        !isRecord(capability.targetSection) ||
+        typeof capability.targetSection.id !== 'string' ||
+        typeof capability.targetSection.startBeat !== 'number' ||
+        typeof capability.targetSection.endBeat !== 'number' ||
+        !Array.isArray(capability.exactTargetIds) ||
+        !capability.exactTargetIds.every((id) => typeof id === 'string') ||
+        !Array.isArray(capability.protectedObjectIds) ||
+        !capability.protectedObjectIds.every((id) => typeof id === 'string')
+    ) {
+        throw new TypeError('Expected complete revision-bound whole-project vibe-mix scope');
+    }
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands,
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Lift the exact rhythm-section buses only during Chorus Two.',
+                    constraints: ['Preserve lead vocals, locked clips, tempo map, master chain, routing, and devices.'],
+                    scope: {
+                        targetIds: capability.exactTargetIds,
+                        targetRanges: [
+                            {
+                                startBeat: capability.targetSection.startBeat,
+                                endBeat: capability.targetSection.endBeat,
+                            },
+                        ],
+                        protectedTargetIds: capability.protectedObjectIds,
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['automateTrackGainRange'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate exact bus, section, gain, and protected-object identities.'],
+                    stoppingConditions: ['Stop if the revision, target section, headroom, or protection set changes.'],
+                },
+            },
+        },
+    ];
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function installProviderFixtures(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan): void {
+    let webLlmAwaitingReceipt = false;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) => {
+        if (!webLlmAwaitingReceipt) {
+            webLlmAwaitingReceipt = true;
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['automateTrackGainRange'] },
+                    },
+                ])
+            );
+        }
+        webLlmAwaitingReceipt = false;
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(userMessage, plan)));
+    });
+    let hostedAwaitingReceipt = false;
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        if (!hostedAwaitingReceipt) {
+            hostedAwaitingReceipt = true;
+            return Promise.resolve(
+                toolCallsResponse([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['automateTrackGainRange'] },
+                    },
+                ])
+            );
+        }
+        hostedAwaitingReceipt = false;
+        const userMessage = getHostedUserMessage(init.body);
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(userMessage, plan)));
+    });
 }
 
 function getHostedUserMessage(requestBody: string): string {
@@ -243,32 +420,7 @@ describe('whole-project vibe-mix planning', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(JSON.stringify(createProviderPlanFromUserMessage(userMessage)))
-        );
-        runtimeMocks.fetch.mockImplementation((_input, init) => {
-            if (typeof init?.body !== 'string') {
-                throw new TypeError('Expected hosted provider request body');
-            }
-            const derivedPlan = createProviderPlanFromUserMessage(getHostedUserMessage(init.body));
-            return Promise.resolve(
-                new Response(
-                    JSON.stringify({
-                        choices: [
-                            {
-                                finish_reason: 'tool_calls',
-                                message: {
-                                    tool_calls: derivedPlan.map((call) => ({
-                                        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                    })),
-                                },
-                            },
-                        ],
-                    }),
-                    { status: 200, headers: { 'Content-Type': 'application/json' } }
-                )
-            );
-        });
+        installProviderFixtures();
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -605,7 +757,12 @@ describe('whole-project vibe-mix planning', () => {
             [{ ...providerPlan[0], arguments: { ...providerPlan[0].arguments, gainDb: 3 } }],
         ];
         for (const invalidPlan of invalidPlans) {
-            runtimeMocks.generateWebLlmCompletion.mockResolvedValueOnce(JSON.stringify(invalidPlan));
+            installProviderFixtures(() =>
+                invalidPlan.map((call) => ({
+                    name: call.name,
+                    arguments: { ...call.arguments },
+                }))
+            );
             await sendChatMessage(PROMPT);
             expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
             expect(getGainLanes()).toEqual([]);

@@ -42,6 +42,8 @@ const providerPlan = [
     { name: 'removeTrack', arguments: { trackId: 'track-muted-midi' } },
 ] as const;
 
+type ProviderCall = { name: string; arguments: Readonly<Record<string, unknown>> };
+
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
@@ -184,25 +186,171 @@ function getHostedRequestBody(): string {
     return body;
 }
 
-function setProviderPlan(plan: readonly { name: string; arguments: Readonly<Record<string, unknown>> }[]): void {
-    runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(plan));
-    runtimeMocks.fetch.mockResolvedValue(
-        new Response(
-            JSON.stringify({
-                choices: [
-                    {
-                        finish_reason: 'tool_calls',
-                        message: {
-                            tool_calls: plan.map((call) => ({
-                                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                            })),
-                        },
-                    },
-                ],
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, names: readonly string[]): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set(
+        discovery.data.items.flatMap((item) =>
+            isRecord(item) && isRecord(item.function) && typeof item.function.name === 'string'
+                ? [item.function.name]
+                : []
         )
     );
+    for (const name of names) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Delete exactly the muted empty ordinary tracks.',
+                    constraints: ['Preserve buses and groups.'],
+                    scope: {
+                        targetIds: plan.flatMap((call) =>
+                            typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+                        ),
+                        targetRanges: [],
+                        protectedTargetIds: ['bus-muted-empty', 'group-muted-empty'],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: [...new Set(plan.map((call) => call.name))],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate muted, empty, ordinary-track identity before deletion.'],
+                    stoppingConditions: ['Stop if any target is nonempty, unmuted, a bus, or a group.'],
+                },
+            },
+        },
+    ];
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function getHostedUserMessage(body: string): string {
+    const request: unknown = JSON.parse(body);
+    const message =
+        isRecord(request) && Array.isArray(request.messages)
+            ? request.messages.find(
+                  (entry) => isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string'
+              )
+            : undefined;
+    if (!isRecord(message) || typeof message.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return message.content;
+}
+
+function setProviderPlan(plan: readonly ProviderCall[]): void {
+    const names = [...new Set(plan.map((call) => call.name))];
+    let webLlmTurn = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+        webLlmTurn += 1;
+        if (webLlmTurn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (webLlmTurn === 1) {
+            return Promise.resolve(
+                JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        assertDiscoveredCommandSchemas(userMessage, names);
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan)));
+    });
+    let hostedTurn = 0;
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        hostedTurn += 1;
+        if (hostedTurn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        if (hostedTurn === 1) {
+            return Promise.resolve(
+                toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), names);
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan)));
+    });
 }
 
 describe('delete muted empty tracks prompt workflow', () => {

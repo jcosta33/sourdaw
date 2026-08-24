@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -12,14 +16,15 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
-import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -49,7 +54,9 @@ const BASS_AMP_INSERTED_DEVICE_IDS = [
     'device-bass-amp-chorus',
 ];
 
-const providerPlan = [
+type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
+
+const providerPlan: readonly [ProviderPlanCall, ProviderPlanCall] = [
     {
         name: 'addDevice',
         arguments: { trackId: 'track-bass-di', deviceType: 'Compressor', afterDeviceId: 'device-bass-di-eq' },
@@ -58,7 +65,7 @@ const providerPlan = [
         name: 'addDevice',
         arguments: { trackId: 'track-bass-amp', deviceType: 'Compressor', afterDeviceId: 'device-bass-amp-eq' },
     },
-] as const;
+];
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -69,6 +76,9 @@ const runtimeMocks = vi.hoisted(() => {
         generateWebLlmCompletion: vi.fn(),
         removeDeviceFromStrip: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
+        transformPlan: {
+            value: (plan: ProviderPlanCall[]): ProviderPlanCall[] => plan,
+        },
         updateDeviceParam: vi.fn(),
     };
 });
@@ -102,6 +112,257 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getProviderProjectTargets(userMessage: string): unknown[] {
+    const projectSection = getProviderSection(userMessage, 'untrusted_project_data');
+    if (!isRecord(projectSection.data) || !Array.isArray(projectSection.data.selectableTargets)) {
+        throw new TypeError('Expected full selectable project targets in provider request');
+    }
+    return projectSection.data.selectableTargets;
+}
+
+function assertBassCompressorProviderContext(userMessage: string): void {
+    const revision = getProviderSection(userMessage, 'revision_and_selection').revision;
+    const targets = getProviderProjectTargets(userMessage);
+    const targetById = new Map<string, Record<string, unknown>>();
+    for (const target of targets) {
+        if (isRecord(target) && typeof target.id === 'string') {
+            targetById.set(target.id, target);
+        }
+    }
+    if (
+        typeof revision !== 'string' ||
+        targetById.get('track-bass-di')?.frozen !== false ||
+        targetById.get('track-bass-amp')?.frozen !== false ||
+        targetById.get('track-bass-frozen')?.frozen !== true
+    ) {
+        throw new TypeError('Expected revision-bound bass compressor project targets');
+    }
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find((receipt) => {
+        if (!isRecord(receipt) || receipt.id !== 'application-tool-loop' || !isRecord(receipt.summary)) {
+            return false;
+        }
+        return receipt.summary.truncated === false && typeof receipt.summary.value === 'string';
+    });
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const lines = summary.value.split('\n');
+    const payload = lines[lines.length - 1];
+    if (!payload) {
+        throw new TypeError('Expected serialized application tool receipt payload');
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function getExpectedCatalogCommandNames(finalCalls: readonly ProviderPlanCall[]): string[] {
+    const names = finalCalls.flatMap((call) => {
+        if (call.name !== 'command.batch.propose') {
+            return [];
+        }
+        const commands = call.arguments.commands;
+        return Array.isArray(commands)
+            ? commands.flatMap((command) =>
+                  isRecord(command) && typeof command.name === 'string' ? [command.name] : []
+              )
+            : [];
+    });
+    return [...new Set(names)];
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderPlanCall[]): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !Array.isArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set<string>();
+    for (const item of discoveryReceipt.data.items) {
+        if (
+            isRecord(item) &&
+            isRecord(item.function) &&
+            typeof item.function.name === 'string' &&
+            isRecord(item.function.parameters)
+        ) {
+            disclosedNames.add(item.function.name);
+        }
+    }
+    for (const name of getExpectedCatalogCommandNames(finalCalls)) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+function getBassCompressorPlanScope(plan: readonly ProviderPlanCall[]) {
+    const protectedTargetIds = ['track-bass-frozen'];
+    const protectedSet = new Set(protectedTargetIds);
+    const targetIds = new Set<string>();
+    for (const call of plan) {
+        if (call.name !== 'addDevice') {
+            continue;
+        }
+        for (const argumentName of ['trackId', 'afterDeviceId']) {
+            const value = call.arguments[argumentName];
+            if (typeof value === 'string' && !protectedSet.has(value)) {
+                targetIds.add(value);
+            }
+        }
+    }
+    return {
+        targetIds: [...targetIds],
+        targetRanges: [],
+        protectedTargetIds,
+        protectedRanges: [],
+    };
+}
+
+function asCommandBatchProposal(plan: readonly ProviderPlanCall[]): ProviderPlanCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Insert one compressor after each canonical EQ on the unfrozen bass targets.',
+                    constraints: ['Preserve frozen bass tracks and every existing device order and state.'],
+                    scope: getBassCompressorPlanScope(plan),
+                    capabilityIds: [...new Set(plan.map((call) => call.name))],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate both exact target chains against the current project revision.'],
+                    stoppingConditions: ['Stop before mutation if any target, anchor, or protection guard conflicts.'],
+                },
+            },
+        },
+    ];
+}
+
+function catalogDiscoveryPlan(finalCalls: readonly ProviderPlanCall[]): ProviderPlanCall[] {
+    return [
+        {
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: getExpectedCatalogCommandNames(finalCalls) },
+        },
+    ];
+}
+
+function createFinalProviderCalls(userMessage: string): ProviderPlanCall[] {
+    assertBassCompressorProviderContext(userMessage);
+    return asCommandBatchProposal(runtimeMocks.transformPlan.value([...providerPlan]));
+}
+
+function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage: string) => Promise<string> {
+    let turn = 0;
+    return (_systemPrompt, userMessage) => {
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (turn === 1) {
+            return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(asCommandBatchProposal(providerPlan))));
+        }
+        const finalCalls = createFinalProviderCalls(userMessage);
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        return Promise.resolve(JSON.stringify(finalCalls));
+    };
+}
+
+function getHostedUserMessage(requestBody: string): string {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    const userMessage = request.messages.find(
+        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
+    );
+    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return userMessage.content;
+}
+
+function toolCallsResponse(calls: readonly ProviderPlanCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let turn = 0;
+    return (_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        const userMessage = getHostedUserMessage(init.body);
+        if (turn === 1) {
+            return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(asCommandBatchProposal(providerPlan))));
+        }
+        const finalCalls = createFinalProviderCalls(userMessage);
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        return Promise.resolve(toolCallsResponse(finalCalls));
+    };
+}
 
 function createDevice(id: string, name: string, type: string): Track['devices'][number] {
     return { id, name, type, bypassed: false, parameterValues: {} };
@@ -159,6 +420,14 @@ function getConfirmation() {
     );
 }
 
+function getWebLlmUserMessage(): string {
+    const userMessage: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1];
+    if (typeof userMessage !== 'string') {
+        throw new TypeError('Expected one WebLLM user message');
+    }
+    return userMessage;
+}
+
 function getHostedRequestBody(): string {
     const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
     if (typeof body !== 'string') {
@@ -173,24 +442,9 @@ describe('bass compressor prompt workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.removeDeviceFromStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        runtimeMocks.transformPlan.value = (plan) => plan;
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder());
+        runtimeMocks.fetch.mockImplementation(createTurnTrackedHostedResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -212,6 +466,11 @@ describe('bass compressor prompt workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const bassDi = createTrack({ id: 'track-bass-di', name: 'Bass DI' });
         bassDi.devices.push({
@@ -256,11 +515,16 @@ describe('bass compressor prompt workflow', () => {
         const bassAmpDevicesBefore = structuredClone(getTrack('track-bass-amp').devices);
         await sendChatMessage(PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        const providerRequest = getWebLlmUserMessage();
         expect(providerRequest).toContain(PROMPT);
-        expect(providerRequest).toContain('device-bass-di-eq');
-        expect(providerRequest).toContain('device-bass-amp-eq');
-        expect(providerRequest).toContain('"frozen":true');
+        expect(getProviderProjectTargets(providerRequest)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'track-bass-di', kind: 'audio', frozen: false }),
+                expect.objectContaining({ id: 'track-bass-amp', kind: 'audio', frozen: false }),
+                expect.objectContaining({ id: 'track-bass-frozen', kind: 'audio', frozen: true }),
+            ])
+        );
 
         const confirmation = getConfirmation();
         expect(confirmation?.actions).toEqual([
@@ -371,7 +635,10 @@ describe('bass compressor prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(getHostedRequestBody()).toContain('\\"frozen\\":true');
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(getProviderProjectTargets(getHostedUserMessage(getHostedRequestBody()))).toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: 'track-bass-frozen', frozen: true })])
+        );
         const confirmation = getConfirmation();
         expect(confirmation?.actions).toEqual([
             {
@@ -411,19 +678,17 @@ describe('bass compressor prompt workflow', () => {
     });
 
     it('rejects provider enlargement to a frozen bass track without a proposal or write', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
-                ...providerPlan,
-                {
-                    name: 'addDevice',
-                    arguments: {
-                        trackId: 'track-bass-frozen',
-                        deviceType: 'Compressor',
-                        afterDeviceId: 'device-bass-frozen-eq',
-                    },
+        runtimeMocks.transformPlan.value = (_plan) => [
+            ...providerPlan,
+            {
+                name: 'addDevice',
+                arguments: {
+                    trackId: 'track-bass-frozen',
+                    deviceType: 'Compressor',
+                    afterDeviceId: 'device-bass-frozen-eq',
                 },
-            ])
-        );
+            },
+        ];
         const before = structuredClone(trackStore.value?.tracks);
 
         await sendChatMessage(PROMPT);
@@ -528,19 +793,17 @@ describe('bass compressor prompt workflow', () => {
                 };
             }),
         });
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
-                {
-                    name: 'addDevice',
-                    arguments: {
-                        trackId: 'track-bass-di',
-                        deviceType: 'Compressor',
-                        afterDeviceId: 'device-bass-di-saturator',
-                    },
+        runtimeMocks.transformPlan.value = () => [
+            {
+                name: 'addDevice',
+                arguments: {
+                    trackId: 'track-bass-di',
+                    deviceType: 'Compressor',
+                    afterDeviceId: 'device-bass-di-saturator',
                 },
-                providerPlan[1],
-            ])
-        );
+            },
+            providerPlan[1],
+        ];
 
         await sendChatMessage(PROMPT);
 

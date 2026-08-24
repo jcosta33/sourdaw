@@ -3039,9 +3039,10 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'remove the compressor from Vocals'
         );
         const masterNamedBus = createTrack({ id: 'bus-master-name', name: 'Master', kind: 'bus' });
+        const secondMasterNamedBus = createTrack({ id: 'bus-master-name-2', name: 'Master', kind: 'bus' });
         const duplicateMasterNameContext = {
             ...projectContext,
-            tracks: [...projectContext.tracks, masterNamedBus],
+            tracks: [...projectContext.tracks, masterNamedBus, secondMasterNamedBus],
             selectedTrackId: masterNamedBus.id,
         };
         const ambiguousMasterName = bridge(

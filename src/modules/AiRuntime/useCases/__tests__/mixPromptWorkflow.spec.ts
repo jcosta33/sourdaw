@@ -52,6 +52,8 @@ const providerPlan = [
     { name: 'muteTrack', arguments: { trackId: 'track-room-mic', muted: true } },
 ] as const;
 
+type ProviderCall = { name: string; arguments: Record<string, unknown> };
+
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
@@ -172,6 +174,174 @@ function getHostedRequestBody(): string {
     return body;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Apply the exact requested mix changes while preserving the Drum Bus.',
+                    constraints: ['Leave the Drum Bus unchanged.'],
+                    scope: {
+                        targetIds: [
+                            ...new Set(
+                                plan.flatMap((call) =>
+                                    typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+                                )
+                            ),
+                        ],
+                        targetRanges: [],
+                        protectedTargetIds: ['track-drum-bus'],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: [...new Set(plan.map((call) => call.name))],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate exact track identities, values, and protected Drum Bus state.'],
+                    stoppingConditions: ['Stop if any target or protected-state precondition fails.'],
+                },
+            },
+        },
+    ];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const lines = String(receiptSummary.summary.value).split('\n');
+    const parsed: unknown = JSON.parse(lines.at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, names: readonly string[]): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set(
+        discovery.data.items.flatMap((item) =>
+            isRecord(item) && isRecord(item.function) && typeof item.function.name === 'string'
+                ? [item.function.name]
+                : []
+        )
+    );
+    for (const name of names) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function setProviderPlan(plan: readonly ProviderCall[]): void {
+    const names = [...new Set(plan.map((call) => call.name))];
+    let webLlmTurn = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+        webLlmTurn += 1;
+        if (webLlmTurn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (webLlmTurn === 1) {
+            return Promise.resolve(
+                JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        assertDiscoveredCommandSchemas(userMessage, names);
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan)));
+    });
+    let hostedTurn = 0;
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        hostedTurn += 1;
+        if (hostedTurn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        if (hostedTurn === 1) {
+            return Promise.resolve(
+                toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        const request: unknown = JSON.parse(init.body);
+        const userMessage =
+            isRecord(request) && Array.isArray(request.messages)
+                ? request.messages.find(
+                      (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
+                  )
+                : undefined;
+        if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
+            throw new TypeError('Expected hosted provider user message');
+        }
+        assertDiscoveredCommandSchemas(userMessage.content, names);
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan)));
+    });
+}
+
 function expectExactMix(): void {
     expect(getTrack('track-lead-vocal')).toMatchObject({ gain: 0.7, pan: 0, muted: false });
     expect(getTrack('track-guitar-left')).toMatchObject({ gain: 1, pan: -20, muted: false });
@@ -185,26 +355,10 @@ function expectExactMix(): void {
 
 describe('mix prompt workflow', () => {
     beforeEach(async () => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        setProviderPlan(providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })));
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -220,7 +374,6 @@ describe('mix prompt workflow', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
-        configureAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -389,12 +542,10 @@ describe('mix prompt workflow', () => {
     });
 
     it('rejects provider enlargement that targets the protected Drum Bus', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
-                ...providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
-                { name: 'muteTrack', arguments: { trackId: 'track-drum-bus', muted: true } },
-            ])
-        );
+        setProviderPlan([
+            ...providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
+            { name: 'muteTrack', arguments: { trackId: 'track-drum-bus', muted: true } },
+        ]);
         const projectBefore = structuredClone(trackStore.value?.tracks);
         const runtimeBefore = {
             gains: new Map(runtimeMocks.gains),

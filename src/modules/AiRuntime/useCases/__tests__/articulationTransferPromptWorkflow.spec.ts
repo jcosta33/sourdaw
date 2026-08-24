@@ -185,14 +185,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function createProviderPlan(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context');
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
     }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    if (typeof schemas.availableCapabilities !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(schemas.availableCapabilities);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
+function createProviderPlan(userMessage: string) {
+    const context = getProviderContext(userMessage);
+    if (typeof context.projectRevision !== 'string') {
         throw new TypeError('Expected revision-bound project context');
     }
     const capability = context.articulationTransferCapability;
@@ -214,6 +234,188 @@ function createProviderPlan(userMessage: string) {
     });
 }
 
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchema(userMessage: string): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items) ||
+        !discovery.data.items.some(
+            (item) =>
+                isRecord(item) &&
+                isRecord(item.function) &&
+                item.function.name === 'copyMidiArticulations' &&
+                isRecord(item.function.parameters)
+        )
+    ) {
+        throw new TypeError('Expected disclosed copyMidiArticulations schema receipt');
+    }
+}
+
+function getArticulationPlanScope(userMessage: string) {
+    const context = getProviderContext(userMessage);
+    const capability = context.articulationTransferCapability;
+    if (
+        !isRecord(capability) ||
+        capability.baseRevision !== context.projectRevision ||
+        !Array.isArray(capability.clipPairs) ||
+        !Array.isArray(capability.protectedClipIds)
+    ) {
+        throw new TypeError('Expected complete revision-bound articulation-transfer scope');
+    }
+    const targetIds: string[] = [];
+    const protectedTargetIds = capability.protectedClipIds.flatMap((id) => (typeof id === 'string' ? [id] : []));
+    for (const pair of capability.clipPairs) {
+        if (
+            !isRecord(pair) ||
+            typeof pair.trackId !== 'string' ||
+            typeof pair.sourceClipId !== 'string' ||
+            typeof pair.targetClipId !== 'string' ||
+            !Array.isArray(pair.notePairs)
+        ) {
+            throw new TypeError('Expected exact articulation-transfer clip and note pairs');
+        }
+        targetIds.push(pair.trackId, pair.sourceClipId, pair.targetClipId);
+        for (const notePair of pair.notePairs) {
+            if (!isRecord(notePair) || typeof notePair.targetNoteId !== 'string') {
+                throw new TypeError('Expected exact articulation-transfer target note');
+            }
+        }
+        protectedTargetIds.push(`${pair.targetClipId}:non-articulation`);
+    }
+    return { targetIds: [...new Set(targetIds)], targetRanges: [], protectedTargetIds, protectedRanges: [] };
+}
+
+function asCommandBatchProposal(
+    userMessage: string,
+    commands: readonly { name: string; arguments: Record<string, string> }[]
+) {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands,
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Copy articulations across the exact app-owned Chorus One to Chorus Two clip pairs.',
+                    constraints: ['Preserve pitch, velocity, timing, expression, and every protected clip.'],
+                    scope: getArticulationPlanScope(userMessage),
+                    capabilityIds: ['copyMidiArticulations'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [
+                        'Validate revision, exact clip pairs, note topology, and articulation support.',
+                    ],
+                    stoppingConditions: ['Stop if any clip, note, device, or protection precondition changes.'],
+                },
+            },
+        },
+    ];
+}
+
+function toolCallsResponse(calls: readonly { name: string; arguments: Record<string, unknown> }[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function createWebLlmResponder() {
+    let awaitingReceipt = false;
+    return (_systemPrompt: string, userMessage: string) => {
+        if (!awaitingReceipt) {
+            awaitingReceipt = true;
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['copyMidiArticulations'] },
+                    },
+                ])
+            );
+        }
+        awaitingReceipt = false;
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = runtimeMocks.transformPlan.value(createProviderPlan(userMessage));
+        return Promise.resolve(
+            JSON.stringify(
+                withWorkflowCapabilitySelection('articulation-transfer', asCommandBatchProposal(userMessage, plan))
+            )
+        );
+    };
+}
+
+function createHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let awaitingReceipt = false;
+    return (_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        if (!awaitingReceipt) {
+            awaitingReceipt = true;
+            return Promise.resolve(
+                toolCallsResponse([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['copyMidiArticulations'] },
+                    },
+                ])
+            );
+        }
+        awaitingReceipt = false;
+        const userMessage = getHostedUserMessage(init.body);
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = runtimeMocks.transformPlan.value(createProviderPlan(userMessage));
+        return Promise.resolve(
+            toolCallsResponse(
+                withWorkflowCapabilitySelection('articulation-transfer', asCommandBatchProposal(userMessage, plan))
+            )
+        );
+    };
+}
+
 function getHostedUserMessage(body: string): string {
     const request: unknown = JSON.parse(body);
     if (!isRecord(request) || !Array.isArray(request.messages)) {
@@ -230,32 +432,7 @@ function getHostedUserMessage(body: string): string {
 
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
-    runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'articulation-transfer',
-            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
-        );
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
-    });
+    runtimeMocks.fetch.mockImplementation(createHostedResponder());
 }
 
 function getConfirmationId(): string {
@@ -271,16 +448,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'articulation-transfer',
-                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
-            )
-        );
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createWebLlmResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -457,7 +625,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 }),
             }),
         ]);
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(1);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
     });
 
     it('includes every unambiguous MIDI chorus pair and protects audio clips and non-articulation fields', async () => {
