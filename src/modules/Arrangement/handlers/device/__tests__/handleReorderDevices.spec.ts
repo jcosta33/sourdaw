@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { createTrack } from '../../../models/Track';
-import { runtimeGraphTopology } from '../../../useCases/runtimeGraphTopology';
-import { getPlannedTrackState } from '../../getPlannedTrackState';
 import { handleReorderDevices } from '../handleReorderDevices';
 
 type ReorderDevicesAction = Extract<AppAction, { type: 'reorderDevices' }>;
@@ -36,6 +34,57 @@ function createAudioTrack() {
     return track;
 }
 
+const currentTopology = {
+    id: 'audio-1',
+    kind: 'audio' as const,
+    devices: [
+        { id: 'device-1', type: 'builtin-compressor', parameterIds: [] },
+        { id: 'device-2', type: 'builtin-eq', parameterIds: ['frequency'] },
+    ],
+};
+
+const preReorderTopology = {
+    id: 'audio-1',
+    kind: 'audio' as const,
+    devices: [
+        { id: 'device-1', type: 'builtin-compressor', parameterIds: [] },
+        {
+            id: 'device-3',
+            type: 'builtin-delay',
+            parameterIds: ['delay-feedback', 'delay-highcut', 'delay-lowcut', 'delay-mix', 'delay-time'],
+        },
+        { id: 'device-2', type: 'builtin-eq', parameterIds: ['frequency'] },
+    ],
+};
+
+const postReorderTopology = {
+    id: 'audio-1',
+    kind: 'audio' as const,
+    devices: [
+        {
+            id: 'device-3',
+            type: 'builtin-delay',
+            parameterIds: ['delay-feedback', 'delay-highcut', 'delay-lowcut', 'delay-mix', 'delay-time'],
+        },
+        { id: 'device-1', type: 'builtin-compressor', parameterIds: [] },
+        { id: 'device-2', type: 'builtin-eq', parameterIds: ['frequency'] },
+    ],
+};
+
+const addedDelayDevice = {
+    id: 'device-3',
+    name: 'Delay',
+    type: 'builtin-delay',
+    bypassed: false,
+    parameterValues: {
+        'delay-time': 250,
+        'delay-feedback': 0.4,
+        'delay-lowcut': 80,
+        'delay-highcut': 12000,
+        'delay-mix': 0.3,
+    },
+};
+
 function createBatchContext(action: ReorderDevicesAction): HandlerValidationContext {
     return {
         actionIndex: 1,
@@ -61,7 +110,7 @@ function createReorderAction(): ReorderDevicesAction {
             trackId: 'audio-1',
             deviceId: 'device-3',
             targetIndex: 0,
-            expectedBefore: { id: 'audio-1', kind: 'audio', devices: [] },
+            expectedBefore: preReorderTopology,
         },
     };
 }
@@ -77,16 +126,34 @@ describe('handleReorderDevices', () => {
         const action = createReorderAction();
         const batchContext = createBatchContext(action);
         mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
-        const plannedTrack = getPlannedTrackState(batchContext, 'audio-1');
-        if (!plannedTrack) {
-            throw new Error('Expected a projected track for the reorder batch');
-        }
-        const afterTrack = {
-            ...plannedTrack,
-            devices: [plannedTrack.devices[1]!, plannedTrack.devices[0]!, plannedTrack.devices[2]!],
+        const expectedBeforeTrack = {
+            ...currentTrack,
+            devices: [
+                {
+                    id: 'device-1',
+                    name: 'Compressor',
+                    type: 'builtin-compressor',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+                addedDelayDevice,
+                {
+                    id: 'device-2',
+                    name: 'EQ',
+                    type: 'builtin-eq',
+                    bypassed: false,
+                    parameterValues: { frequency: 1000 },
+                },
+            ],
         };
-        action.payload.expectedBefore = runtimeGraphTopology.createNode(plannedTrack);
+        const afterTrack = {
+            ...expectedBeforeTrack,
+            devices: [addedDelayDevice, expectedBeforeTrack.devices[0]!, expectedBeforeTrack.devices[2]!],
+        };
 
+        expect(handleReorderDevices.describe(action).inverseAction?.payload.expectedBefore).toEqual(
+            postReorderTopology
+        );
         expect(handleReorderDevices.validate?.(action, batchContext)).toBe(true);
 
         const result = handleReorderDevices.execute(action, batchContext);
@@ -99,7 +166,7 @@ describe('handleReorderDevices', () => {
         result.afterCommit();
 
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith({
-            before: plannedTrack,
+            before: expectedBeforeTrack,
             after: afterTrack,
             operation: 'reorder-device',
             batchContext,
@@ -112,7 +179,7 @@ describe('handleReorderDevices', () => {
         const batchContext = createBatchContext(action);
         mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
 
-        action.payload.expectedBefore = runtimeGraphTopology.createNode(currentTrack);
+        action.payload.expectedBefore = currentTopology;
         expect(handleReorderDevices.validate?.(action, batchContext)).toBe(false);
         expect(handleReorderDevices.execute(action, batchContext)).toEqual({ status: 'conflict' });
         expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
@@ -125,13 +192,8 @@ describe('handleReorderDevices', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
 
         action.payload.expectedBefore = {
-            ...runtimeGraphTopology.createNode(getPlannedTrackState(batchContext, 'audio-1') ?? currentTrack),
-            devices: [
-                ...runtimeGraphTopology.createNode(getPlannedTrackState(batchContext, 'audio-1') ?? currentTrack)
-                    .devices,
-                runtimeGraphTopology.createNode(getPlannedTrackState(batchContext, 'audio-1') ?? currentTrack)
-                    .devices[0]!,
-            ],
+            ...preReorderTopology,
+            devices: [...preReorderTopology.devices, preReorderTopology.devices[0]!],
         };
 
         expect(handleReorderDevices.validate?.(action, batchContext)).toBe(false);
