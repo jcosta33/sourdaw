@@ -39,7 +39,7 @@ function normalizeScope(value: unknown): AgentRunScope | null {
             Number.isFinite(range.startBeat) &&
             typeof range.endBeat === 'number' &&
             Number.isFinite(range.endBeat) &&
-            range.endBeat > range.startBeat
+            range.endBeat >= range.startBeat
                 ? { startBeat: range.startBeat, endBeat: range.endBeat }
                 : null
         );

@@ -18,6 +18,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -33,7 +34,14 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import {
+    createHostedWorkflowPlanningResponder,
+    createProviderWorkflowPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderPlanCall,
+    type ProviderScope,
+} from './providerToolPlanningFixture';
 
 const PROMPT = 'Copy chorus-one articulation to chorus two without copying pitches or velocities.';
 const PARAPHRASE =
@@ -186,17 +194,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function createProviderPlan(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
-    const capability = context.articulationTransferCapability;
-    if (!isRecord(capability) || capability.baseRevision !== context.projectRevision) {
+    const context = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = context.capabilityData.articulationTransferCapability;
+    if (!isRecord(capability) || capability.baseRevision !== context.revision) {
         throw new TypeError('Expected revision-bound MF-03 capability');
     }
     const allowedAction = capability.allowedAction;
@@ -214,48 +214,77 @@ function createProviderPlan(userMessage: string) {
     });
 }
 
-function getHostedUserMessage(body: string): string {
-    const request: unknown = JSON.parse(body);
-    if (!isRecord(request) || !Array.isArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
+function getProviderScope(userMessage: string): ProviderScope {
+    const capability = decodeProviderPlanningFixtureContext(userMessage).capabilityData.articulationTransferCapability;
+    if (!isRecord(capability) || !Array.isArray(capability.clipPairs) || !Array.isArray(capability.protectedClipIds)) {
+        throw new TypeError('Expected complete MF-03 provider scope');
     }
-    const userMessage = request.messages.find(
-        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
-    );
-    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
-    }
-    return userMessage.content;
+    const targetIds = capability.clipPairs.flatMap((pair) => {
+        if (
+            !isRecord(pair) ||
+            typeof pair.trackId !== 'string' ||
+            typeof pair.sourceClipId !== 'string' ||
+            typeof pair.targetClipId !== 'string'
+        ) {
+            throw new TypeError('Expected complete MF-03 clip-pair scope');
+        }
+        return [pair.trackId, pair.sourceClipId, pair.targetClipId];
+    });
+    const protectedClipIds = capability.protectedClipIds.map((clipId) => {
+        if (typeof clipId !== 'string') {
+            throw new TypeError('Expected exact MF-03 protected clip ID');
+        }
+        return clipId;
+    });
+    const nonArticulationIds = capability.clipPairs.map((pair) => {
+        if (!isRecord(pair) || typeof pair.targetClipId !== 'string') {
+            throw new TypeError('Expected exact MF-03 target clip ID');
+        }
+        return `${pair.targetClipId}:non-articulation`;
+    });
+    return {
+        targetIds: [...new Set(targetIds)],
+        targetRanges: capability.clipPairs.map((pair) => {
+            if (!isRecord(pair) || !Array.isArray(pair.notePairs)) {
+                throw new TypeError('Expected complete MF-03 note-pair scope');
+            }
+            const beats = pair.notePairs.map((notePair) => {
+                if (!isRecord(notePair) || typeof notePair.relativeStartBeat !== 'number') {
+                    throw new TypeError('Expected exact MF-03 note-pair time');
+                }
+                return notePair.relativeStartBeat;
+            });
+            return { startBeat: Math.min(...beats), endBeat: Math.max(...beats) };
+        }),
+        protectedTargetIds: [...protectedClipIds, ...nonArticulationIds],
+        protectedRanges: [],
+    };
 }
 
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'articulation-transfer',
-            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
-        );
+        const userMessage = decodeHostedProviderUserMessage(init);
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+            createHostedWorkflowPlanningResponder(
+                runtimeMocks.transformPlan.value(createProviderPlan(userMessage)) as ProviderPlanCall[],
+                'articulation-transfer',
+                getProviderScope
+            )(userMessage)
         );
     });
+}
+
+function useWebFixture(): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+        Promise.resolve(
+            createProviderWorkflowPlanningResponder(
+                runtimeMocks.transformPlan.value(createProviderPlan(userMessage)) as ProviderPlanCall[],
+                'articulation-transfer',
+                getProviderScope
+            )(userMessage)
+        )
+    );
 }
 
 function getConfirmationId(): string {
@@ -271,16 +300,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'articulation-transfer',
-                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
-            )
-        );
+        useWebFixture();
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -301,6 +321,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({ tracks: [createTrack()], selectedTrackId: null, ghostClips: [] });
         markerStore.set({
             markers: [],
@@ -341,6 +362,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
     afterEach(() => {
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearHandlerRegistry();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -457,7 +479,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 }),
             }),
         ]);
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(1);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
     });
 
     it('includes every unambiguous MIDI chorus pair and protects audio clips and non-articulation fields', async () => {
