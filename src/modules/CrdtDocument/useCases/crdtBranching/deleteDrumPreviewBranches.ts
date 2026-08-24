@@ -11,29 +11,33 @@ function arraysEqual(left: readonly string[], right: readonly string[]): boolean
     return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-export function deleteDrumPreviewBranches(action: DeleteDrumPreviewBranchesAction): Promise<boolean> {
+function isDeleteDrumPreviewBranchesReplayGuarded(action: DeleteDrumPreviewBranchesAction): boolean {
     const { branches } = action.payload;
-    if (
-        action.payload.ownerId.length === 0 ||
-        action.payload.expectedSourceBranchId.length === 0 ||
-        branches.length !== 3 ||
-        new Set(branches.map(({ branchId }) => branchId)).size !== 3 ||
-        new Set(branches.map(({ rootDocId }) => rootDocId)).size !== 3 ||
-        branches.some(
+    return (
+        action.payload.ownerId.length > 0 &&
+        action.payload.expectedSourceBranchId.length > 0 &&
+        branches.length === 3 &&
+        new Set(branches.map(({ branchId }) => branchId)).size === 3 &&
+        new Set(branches.map(({ rootDocId }) => rootDocId)).size === 3 &&
+        branches.every(
             ({ branchId, branchName, expectedHeads, rootDocId }) =>
-                branchId.length === 0 ||
-                branchName.length === 0 ||
-                rootDocId !== `branch_${branchId}` ||
-                expectedHeads.length === 0
+                branchId.length > 0 &&
+                branchName.length > 0 &&
+                rootDocId === `branch_${branchId}` &&
+                expectedHeads.length > 0
         )
-    ) {
-        return Promise.resolve(false);
+    );
+}
+
+function canDeleteDrumPreviewBranches(action: DeleteDrumPreviewBranchesAction): boolean {
+    if (!isDeleteDrumPreviewBranchesReplayGuarded(action)) {
+        return false;
     }
+    const { branches } = action.payload;
     const state = branchStore.value;
     if (!state || state.activeBranchId !== action.payload.expectedSourceBranchId) {
-        return Promise.resolve(false);
+        return false;
     }
-    const branchIds = new Set(branches.map(({ branchId }) => branchId));
     for (const expected of branches) {
         const matches = state.branches.filter(({ branchId }) => branchId === expected.branchId);
         const record = matches[0];
@@ -47,10 +51,22 @@ export function deleteDrumPreviewBranches(action: DeleteDrumPreviewBranchesActio
             record.note !== `agent-preview:${action.payload.ownerId}` ||
             !arraysEqual(heads, expected.expectedHeads)
         ) {
-            return Promise.resolve(false);
+            return false;
         }
     }
+    return true;
+}
 
+function deleteDrumPreviewBranches(action: DeleteDrumPreviewBranchesAction): Promise<boolean> {
+    const { branches } = action.payload;
+    if (!canDeleteDrumPreviewBranches(action)) {
+        return Promise.resolve(false);
+    }
+    const state = branchStore.value;
+    if (!state) {
+        return Promise.resolve(false);
+    }
+    const branchIds = new Set(branches.map(({ branchId }) => branchId));
     return runBranchDocumentTransition({
         affectedDocIds: branches.map(({ rootDocId }) => rootDocId),
         previousState: state,
@@ -69,3 +85,9 @@ export function deleteDrumPreviewBranches(action: DeleteDrumPreviewBranchesActio
         },
     });
 }
+
+export const drumPreviewBranchDeletion = {
+    canDelete: canDeleteDrumPreviewBranches,
+    execute: deleteDrumPreviewBranches,
+    isReplayGuarded: isDeleteDrumPreviewBranchesReplayGuarded,
+} as const;
