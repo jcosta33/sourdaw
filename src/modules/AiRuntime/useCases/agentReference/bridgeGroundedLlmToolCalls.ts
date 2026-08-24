@@ -3603,6 +3603,18 @@ function groundToolCall({
         ) {
             continue;
         }
+        const compilerTargetOverride = resolvedTargetOverrides?.find(
+            (override) => override.argument === targetRule.argument
+        );
+        if (
+            call.name === 'addSidechainRoute' &&
+            targetRule.argument === 'targetDeviceId' &&
+            compilerTargetOverride === undefined
+        ) {
+            // The final MF-06 scope comparison owns direct provider device
+            // admission because it sees the complete app-enumerated route set.
+            continue;
+        }
         if (targetRule.cardinality === 'many') {
             const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
             const result = resolveAgentReferenceArray({
@@ -3685,9 +3697,6 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
-        const compilerTargetOverride = resolvedTargetOverrides?.find(
-            (override) => override.argument === targetRule.argument
-        );
         if (compilerTargetOverride !== undefined) {
             if (
                 targetRule.capability !== compilerTargetOverride.capability ||
