@@ -32,7 +32,7 @@ import { FuseV1Options, type FuseState } from '@electron/fuses';
 import { Unzip, UnzipInflate } from 'fflate';
 import { Parser as TarParser } from 'tar';
 
-import { checkReleaseInventory } from './checkReleaseInventory.ts';
+import { checkReleaseInventory, readReleaseInventory } from './checkReleaseInventory.ts';
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from './electronRuntimeContract.ts';
 import { findFuseMismatches, REQUIRED_FUSES } from './flipElectronFuses.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
@@ -77,6 +77,9 @@ const WEB_REQUIRED_FILES = [
     'legal/DEPENDENCY-LICENSES.txt',
     'legal/THIRD-PARTY-NOTICES.md',
 ] as const;
+const WEBLLM_SURFACE_ID = 'webllm-qwen-artifacts';
+const PUBLIC_LEGAL_PREFIX = 'public/legal/';
+const PACKAGED_LEGAL_PREFIX = 'legal/';
 
 export const ELECTRON_FFMPEG_BUILD_INPUTS = [
     '.github/actions/build-electron/action.yml',
@@ -365,6 +368,67 @@ function stringMap(value: unknown, label: string, errors: string[]): Record<stri
     return result;
 }
 
+function isConcreteInventoryFilePath(path: string): boolean {
+    if (path.includes('\\') || path.includes('\0') || path.endsWith('/') || /[*?[\]{}]/u.test(path)) {
+        return false;
+    }
+    const normalized = posix.normalize(path);
+    return (
+        !isAbsolute(path) &&
+        normalized === path &&
+        path !== '.' &&
+        !path.startsWith('../') &&
+        !path.includes('/../') &&
+        !path.endsWith('/..')
+    );
+}
+
+export function webLlmRequiredLegalFiles(root: string): string[] {
+    const surface = readReleaseInventory(root).surfaces.find((entry) => entry.id === WEBLLM_SURFACE_ID);
+    if (surface === undefined) {
+        throw new Error(`release inventory is missing ${WEBLLM_SURFACE_ID} surface`);
+    }
+    const required = [
+        ...new Set(
+            surface.paths
+                .filter((path) => path.startsWith(PUBLIC_LEGAL_PREFIX) && isConcreteInventoryFilePath(path))
+                .map((path) => `${PACKAGED_LEGAL_PREFIX}${path.slice(PUBLIC_LEGAL_PREFIX.length)}`)
+        ),
+    ].sort();
+    if (required.length === 0) {
+        throw new Error(`release inventory ${WEBLLM_SURFACE_ID} surface declares no concrete public/legal files`);
+    }
+    return required;
+}
+
+function validateWebLlmLegalFiles(
+    root: string,
+    packagedFiles: Record<string, string>,
+    label: string,
+    errors: string[],
+    contentsPath?: string
+): void {
+    let requiredFiles: string[];
+    try {
+        requiredFiles = webLlmRequiredLegalFiles(root);
+    } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        return;
+    }
+    for (const required of requiredFiles) {
+        const sourcePath = resolve(root, 'public', ...required.split('/'));
+        const packagedPath = contentsPath === undefined ? undefined : resolve(contentsPath, ...required.split('/'));
+        const sourceDigest =
+            existsSync(sourcePath) && lstatSync(sourcePath).isFile() ? sha256File(sourcePath) : undefined;
+        const contentsMatch =
+            packagedPath === undefined ||
+            (existsSync(packagedPath) && lstatSync(packagedPath).isFile() && sha256File(packagedPath) === sourceDigest);
+        if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest || !contentsMatch) {
+            errors.push(`${label} WebLLM legal file ${required} is missing or drifted`);
+        }
+    }
+}
+
 function verifyFileMap(
     directory: string,
     recorded: Record<string, string>,
@@ -405,7 +469,11 @@ function fileMap(directory: string): Record<string, string> {
 }
 
 function rendererFileMap(directory: string): Record<string, string> {
-    return Object.fromEntries(Object.entries(fileMap(directory)).filter(([path]) => !path.endsWith('.map')));
+    return Object.fromEntries(
+        Object.entries(fileMap(directory))
+            .filter(([path]) => !path.endsWith('.map'))
+            .sort(([left], [right]) => left.localeCompare(right))
+    );
 }
 
 function readJsonForValidation(path: string, label: string, errors: string[]): JsonRecord | undefined {
@@ -1250,6 +1318,7 @@ function validateWebManifest(
             errors.push(`web legal file ${required} is missing or drifted`);
         }
     }
+    validateWebLlmLegalFiles(root, files, 'web', errors, contentsPath);
     if (archivePath !== undefined && archive !== undefined) {
         const archiveFiles = archive.entries.map((entry) => entry.path).sort();
         const expectedFiles = ['web-artifact-manifest.json', ...Object.keys(files)].sort();
@@ -1670,6 +1739,7 @@ function validateDesktopArchiveContents(
             errors.push(`desktop legal file ${packaged} is missing or drifted`);
         }
     }
+    validateWebLlmLegalFiles(root, snapshot.files, 'desktop', errors);
     const target = runtimeContract.targets.find((item) => item.platform === 'darwin' && item.arch === 'arm64');
     if (target === undefined) {
         errors.push('Electron runtime contract has no darwin arm64 target');

@@ -196,8 +196,8 @@ never mints or spawns `gh`. The slug is `work` if omitted, and never purely nume
 number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
 `agent/<issue>/<slug>`. The pull request closes that issue by default; campaign slices use
 `lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`,
-and `lane:publish` must run from inside that lane because the working directory identifies it. Touch
-only your own lane.
+and `lane:publish` takes its absolute path with `--lane`. Run publishing from the protected primary
+checkout, never through a lane's package route. Touch only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -252,16 +252,16 @@ exception at all: lane tooling owns every push, because a push from anywhere els
 review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
 tracker state. Identity for a script-covered write is the App that script mints, not a persona.
 
-| Need                        | Command                                                           |
-| --------------------------- | ----------------------------------------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]`                                   |
-| Push; open or update the PR | `pnpm lane:publish [issue] [--relates] [--test "<instructions>"]` |
-| Write the review bundle     | `pnpm review:prepare <pr>`                                        |
-| Post `review.json`          | `pnpm review:publish <pr>`                                        |
-| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`             |
-| Squash-merge                | `pnpm deliver <pr>`                                               |
-| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>` |
-| Remove a spent lane         | `pnpm lane:remove <path>`                                         |
+| Need                        | Command                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| Open a lane                 | `pnpm lane:open [issue] [slug]`                                                             |
+| Push; open or update the PR | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--test "<instructions>"]` |
+| Write the review bundle     | `pnpm review:prepare <pr>`                                                                  |
+| Post `review.json`          | `pnpm review:publish <pr>`                                                                  |
+| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                       |
+| Squash-merge                | `pnpm deliver <pr>`                                                                         |
+| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                           |
+| Remove a spent lane         | `pnpm lane:remove <path>`                                                                   |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
@@ -269,16 +269,17 @@ Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`)
 the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
 `jcosta33-reviewer[bot]`. `deliver` does not mint the reviewer.
 
-If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
-scripts may run from the working tree.
+The protected primary checkout is the launcher trust boundary for snapshot-backed GitHub writes.
+Run `lane:publish`, `deliver`, and `issue:reconcile` through its package route. The launcher and the
+command's whole script closure must match one pinned `origin/main` commit and are read only from the
+primary repository; lane files are data, never executable delivery code. A lane that predates the
+launcher contract or merely trails `main` therefore publishes or delivers without merging first.
 
-`deliver` and `issue:reconcile` enforce that for the scripts they execute: the command's whole
-script closure is read from `origin/main` and run from a snapshot, so a lane's copy of any of them
-never runs. A lane that is merely behind `main` therefore delivers without merging first — the code
-that runs is main's either way, and forcing a merge to prove it only risks staling generated
-artifacts. Their loader, `scripts/trustedGithubWriteBootstrap.ts`, is the exception: `package.json`
-resolves it from the working tree, and nothing in the snapshot imports it, so it is the one file in
-the closure that runs as the lane holds it.
+This boundary isolates lane-controlled files, not arbitrary code already running as the operator.
+The operator environment before the primary launcher starts is trusted, and processes under that
+same account can read its credential files. Snapshot and token-bearing children discard Node
+loader/preload settings and Git, GitHub CLI, GitHub Actions, and App overrides, then use the launcher
+resolved `git` and `gh` executables.
 
 Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
 a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
@@ -312,11 +313,11 @@ the manifest agrees and the artifact is stale. `pnpm wasm:all` covers all of the
 rebase can merge cleanly and still leave wasm stale; `pnpm wasm:verify` is the only proof of
 freshness.
 
-`lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
-it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
-standing in, so an issueless lane is publishable only from inside itself. It pushes without
-`--force`, and refuses any lane with uncommitted changes: commit the work yourself with a
-conventional subject first.
+`lane:publish` names the lane it resolved, then prints the PR number last. Invoke it from the
+protected primary checkout. An issue number resolves an issue lane by branch prefix; `--lane` takes
+the absolute worktree root of an issueless or off-convention lane. It pushes without `--force`, and
+refuses any lane with uncommitted changes: commit the work yourself with a conventional subject
+first.
 
 A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it with the
 newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
@@ -334,12 +335,12 @@ Related tickets reads `None.` only for a lane whose branch carries no issue. It 
 conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
 to title the pull request. It does not enable auto-merge or post a review.
 
-An author-locked, off-convention branch may also publish — but only from inside its own worktree,
-since no issue argument ever resolves one, and only once the repository already has an open pull
-request for that exact branch, which is what proves the worktree a genuine, if stranded, lane
-rather than one locked for an unrelated purpose. That path never writes a title or body: pushing is
-the whole of what publishing it means, so it leaves the pull request exactly as its owner wrote it,
-and it refuses outright if that pull request is no longer open by the time the push lands.
+An author-locked, off-convention branch may also publish through `--lane <absolute-path>`, but only
+once the repository already has an open pull request for that exact branch, which is what proves the
+worktree a genuine, if stranded, lane rather than one locked for an unrelated purpose. That path
+never writes a title or body: pushing is the whole of what publishing it means, so it leaves the
+pull request exactly as its owner wrote it, and it refuses outright if that pull request is no longer
+open by the time the push lands.
 
 Write the pull request for a teammate who was not in the session. Under the template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation

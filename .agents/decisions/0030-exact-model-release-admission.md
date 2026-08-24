@@ -2,7 +2,7 @@
 type: adr
 id: 0030
 title: Exact model artifacts require release admission
-status: partially superseded by 0035 (DDSP checkpoints only)
+status: partially superseded by 0035 (DDSP checkpoints only) and 0037 (WebLLM Qwen conversions only)
 date: 2026-08-17
 owner: The Sourdaw team
 sources:
@@ -24,6 +24,10 @@ sources:
 
 **Accepted 2026-08-17.** This narrows ADR 0016: browser-capable model features still require exact
 artifact admission. Browser WebLLM architecture remains, but its quantized artifacts are withheld.
+
+> **Partial supersession — 2026-08-22.** ADR 0037 supersedes this decision only for the three
+> pinned WebLLM Qwen conversions and the WebLLM-withholding consequence below. Every other
+> admission requirement, stack decision, and consequence remains accepted.
 
 ## Context
 

@@ -534,16 +534,71 @@ jobs:
     if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
-      - name: Checkout
+      - name: Checkout trusted scanner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted-scanner
+          persist-credentials: false
+
+      - name: Checkout scan target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: scan-target
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate secret scanner positive control
+        working-directory: ${{ github.workspace }}
+        env:
+          GITLEAKS_EXPECTED_LEAK_EXIT_CODE: 79
+        run: |
+          set -euo pipefail
+          umask 077
+          positive_control_repo=$(mktemp -d "$RUNNER_TEMP/gitleaks-positive-control.XXXXXX")
+          trap 'rm -rf "$positive_control_repo"' EXIT
+
+          git -C "$positive_control_repo" init --initial-branch=main
+          git -C "$positive_control_repo" config user.email sourdaw-ci@example.invalid
+          git -C "$positive_control_repo" config user.name 'Sourdaw CI'
+          synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
+          mkdir -p "$positive_control_repo/public/wasm"
+          printf 'aws_access_key_id = "%s" // gitleaks:allow\n' \
+            "$synthetic_access_key" > "$positive_control_repo/public/wasm/fixture.js"
+          cat > "$positive_control_repo/.gitleaks.toml" <<'GITLEAKS_CONFIG'
+          title = "Untrusted suppression fixture"
+
+          [extend]
+          useDefault = true
+
+          [allowlist]
+          description = "Would suppress every finding if target-root config were loaded"
+          regexes = ['''.*''']
+          GITLEAKS_CONFIG
+          git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml
+          git -C "$positive_control_repo" commit -m 'add synthetic secret fixture'
+
+          set +e
+          GITLEAKS_EXIT_CODE="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+            sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$positive_control_repo/.git"
+          positive_control_status=$?
+          set -e
+
+          if [ "$positive_control_status" -ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" ]; then
+            printf 'expected Gitleaks positive control to exit %s, got %s\n' \
+              "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+              "$positive_control_status" >&2
+            exit 1
+          fi
 
       - name: Scan history for secrets
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ${{ github.workspace }}
+        run: sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$GITHUB_WORKSPACE/scan-target/.git"
 
   nightly-report:
     name: Nightly failure report
