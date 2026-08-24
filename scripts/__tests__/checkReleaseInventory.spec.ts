@@ -1085,6 +1085,8 @@ describe('release inventory', () => {
         const targetPath = join(root, 'public/legal/target.txt');
         const value = inventory();
         value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        let byteReads = 0;
+        let textReads = 0;
 
         try {
             mkdirSync(dirname(filePath), { recursive: true });
@@ -1096,13 +1098,24 @@ describe('release inventory', () => {
                     symlinkSync(targetPath, filePath);
                     return openSync(openPath, constants.O_RDONLY);
                 },
-                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                readBytes: (fileDescriptor: number) => {
+                    byteReads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => {
+                    textReads += 1;
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
             };
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
 
             expect(changed.fileDigests[path]).toBe('missing');
+            expect(byteReads).toBe(0);
+            expect(textReads).toBe(0);
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
         } finally {
             rmSync(base, { recursive: true, force: true });
         }

@@ -2,10 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     chmodSync,
+    constants,
     cpSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
+    openSync,
     readFileSync,
     readdirSync,
     renameSync,
@@ -29,6 +31,7 @@ import {
     assembleReleaseProof,
     webLlmRequiredLegalFiles,
     type ReleaseBuildRunner,
+    type ReleaseProofFileReader,
     validateReleaseProof,
 } from '../releaseProof';
 
@@ -507,12 +510,13 @@ function oversizedTarHeader(size: number): Buffer {
     return gzipSync(header);
 }
 
-function validate(fixture: Fixture): string {
+function validate(fixture: Fixture, fileReader?: ReleaseProofFileReader): string {
     return validateReleaseProof({
         root: fixture.root,
         candidate: fixture.candidate,
         expectedRevision: fixture.revision,
         runtimeContract: fixture.contract,
+        fileReader,
     }).join('\n');
 }
 
@@ -649,6 +653,33 @@ describe('release proof', () => {
         rmSync(material);
         symlinkSync(outside, material);
         expect(validate(fixture)).toMatch(/symbolic links are forbidden|file is missing/u);
+    });
+
+    it.each([
+        ['web manifest', 'web/contents/web-artifact-manifest.json'],
+        ['web archive', 'web/sourdaw-web.zip'],
+    ])('rejects a %s path swapped to a symlink before its descriptor opens', (_label, candidatePath) => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const path = join(fixture.candidate, candidatePath);
+        const outside = join(fixture.base, `${candidatePath.replaceAll('/', '-')}.outside`);
+        writeFileSync(outside, 'untrusted replacement');
+        const fileReader: ReleaseProofFileReader = {
+            open(openPath, flags) {
+                if (openPath === path) {
+                    rmSync(path);
+                    symlinkSync(outside, path);
+                }
+                return openSync(openPath, flags);
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+        };
+
+        const errors = validate(fixture, fileReader);
+
+        expect(errors).toContain(
+            `${candidatePath.startsWith('web/contents') ? 'web manifest' : 'web archive'}: file is missing or unsafe`
+        );
     });
 
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
