@@ -43,6 +43,7 @@ tar -xzf "$gitleaks_archive" -C "$gitleaks_dir" gitleaks
 "$gitleaks_dir/gitleaks" git \
     --config "$gitleaks_config" \
     --gitleaks-ignore-path "$gitleaks_ignore" \
+    --ignore-gitleaks-allow \
     --no-banner \
     --no-color \
     --redact=100 \

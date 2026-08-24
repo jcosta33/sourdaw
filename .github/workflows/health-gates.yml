@@ -567,7 +567,9 @@ jobs:
           git -C "$positive_control_repo" config user.email sourdaw-ci@example.invalid
           git -C "$positive_control_repo" config user.name 'Sourdaw CI'
           synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
-          printf 'aws_access_key_id = "%s"\n' "$synthetic_access_key" > "$positive_control_repo/synthetic-secret.txt"
+          mkdir -p "$positive_control_repo/public/wasm"
+          printf 'aws_access_key_id = "%s" // gitleaks:allow\n' \
+            "$synthetic_access_key" > "$positive_control_repo/public/wasm/fixture.js"
           cat > "$positive_control_repo/.gitleaks.toml" <<'GITLEAKS_CONFIG'
           title = "Untrusted suppression fixture"
 
@@ -578,7 +580,7 @@ jobs:
           description = "Would suppress every finding if target-root config were loaded"
           regexes = ['''.*''']
           GITLEAKS_CONFIG
-          git -C "$positive_control_repo" add synthetic-secret.txt .gitleaks.toml
+          git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml
           git -C "$positive_control_repo" commit -m 'add synthetic secret fixture'
 
           set +e

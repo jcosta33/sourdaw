@@ -141,6 +141,7 @@ import { parse } from 'yaml';
 
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
+const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
 const failures = [];
 
 function expect(condition, message) {
@@ -279,6 +280,8 @@ expect(
         gitleaksHelper.includes('--gitleaks-ignore-path "$gitleaks_ignore"'),
     'secret scan must force the trusted checkout ignore file instead of loading cwd-controlled ignore rules'
 );
+expect(gitleaksHelper.includes('--ignore-gitleaks-allow'), 'secret scan must reject PR-authored gitleaks:allow annotations');
+expect(!/^\s*paths\s*=/mu.test(gitleaksConfig), 'trusted Gitleaks config must not contain path-wide allowlists');
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
 expect(
@@ -297,9 +300,15 @@ expect(
     'positive control secret must be assembled at runtime'
 );
 expect(
+    positiveControlRun.includes('mkdir -p "$positive_control_repo/public/wasm"') &&
+        positiveControlRun.includes('aws_access_key_id = "%s" // gitleaks:allow') &&
+        positiveControlRun.includes('> "$positive_control_repo/public/wasm/fixture.js"'),
+    'positive control must place an annotated secret under a formerly excluded path'
+);
+expect(
     positiveControlRun.includes('cat > "$positive_control_repo/.gitleaks.toml"') &&
         positiveControlRun.includes('regexes = [\'\'\'.*\'\'\']') &&
-        positiveControlRun.includes('git -C "$positive_control_repo" add synthetic-secret.txt .gitleaks.toml'),
+        positiveControlRun.includes('git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml'),
     'positive control must commit a target-root config that would suppress the synthetic secret if loaded'
 );
 expect(
@@ -360,7 +369,7 @@ expect(!existsSync(maliciousHelperMarker), 'PR-owned target helper must not infl
 const workflowGitleaksCommands = readFileSync(workflowCommandLog, 'utf8')
     .split('\n')
     .filter((line) => line.startsWith('gitleaks git '));
-const trustedGitleaksPrefix = `gitleaks git --config ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaks.toml --gitleaks-ignore-path ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaksignore --no-banner --no-color --redact=100 --verbose`;
+const trustedGitleaksPrefix = `gitleaks git --config ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaks.toml --gitleaks-ignore-path ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaksignore --ignore-gitleaks-allow --no-banner --no-color --redact=100 --verbose`;
 expect(
     workflowGitleaksCommands.some(
         (command) =>
@@ -408,7 +417,7 @@ printf '%s\n' \
     'sha256sum --check --status' \
     "sha256sum stdin: $gitleaks_sha256  $gitleaks_archive" \
     "tar -xzf $gitleaks_archive -C $gitleaks_dir gitleaks" \
-    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --no-banner --no-color --redact=100 --verbose --exit-code=1 --log-opts=--all $gitleaks_target" \
+    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --ignore-gitleaks-allow --no-banner --no-color --redact=100 --verbose --exit-code=1 --log-opts=--all $gitleaks_target" \
     > "$temp_root/expected-gitleaks-success.log"
 diff -u "$temp_root/expected-gitleaks-success.log" "$temp_root/gitleaks-success.log"
 
@@ -428,7 +437,7 @@ printf '%s\n' \
     'sha256sum --check --status' \
     "sha256sum stdin: $gitleaks_sha256  $gitleaks_override_archive" \
     "tar -xzf $gitleaks_override_archive -C $gitleaks_override_dir gitleaks" \
-    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --no-banner --no-color --redact=100 --verbose --exit-code=79 --log-opts=--all $gitleaks_target" \
+    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --ignore-gitleaks-allow --no-banner --no-color --redact=100 --verbose --exit-code=79 --log-opts=--all $gitleaks_target" \
     > "$temp_root/expected-gitleaks-override.log"
 diff -u "$temp_root/expected-gitleaks-override.log" "$temp_root/gitleaks-override.log"
 
