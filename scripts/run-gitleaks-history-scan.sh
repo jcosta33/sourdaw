@@ -14,12 +14,17 @@ script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 trusted_root=$(CDPATH= cd "$script_dir/.." && pwd)
 scan_target=$1
 gitleaks_config="$trusted_root/.gitleaks.toml"
+gitleaks_ignore="$trusted_root/.gitleaksignore"
 gitleaks_archive="$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
 gitleaks_dir="$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}"
 gitleaks_url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
 
 if [ ! -f "$gitleaks_config" ]; then
     printf 'trusted Gitleaks config not found: %s\n' "$gitleaks_config" >&2
+    exit 2
+fi
+if [ ! -f "$gitleaks_ignore" ]; then
+    printf 'trusted Gitleaks ignore file not found: %s\n' "$gitleaks_ignore" >&2
     exit 2
 fi
 
@@ -37,6 +42,7 @@ tar -xzf "$gitleaks_archive" -C "$gitleaks_dir" gitleaks
 
 "$gitleaks_dir/gitleaks" git \
     --config "$gitleaks_config" \
+    --gitleaks-ignore-path "$gitleaks_ignore" \
     --no-banner \
     --no-color \
     --redact=100 \

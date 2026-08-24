@@ -34,6 +34,7 @@
                 ".dependency-cruiser.types.cjs",
                 ".editorconfig",
                 ".gitignore",
+                ".gitleaksignore",
                 ".gitleaks.toml",
                 ".node-version",
                 ".oxlintrc.json",

@@ -25,8 +25,10 @@ cp "$repo_root/scripts/health-gates-web.sh" "$temp_root/scripts/health-gates-web
 cp "$repo_root/scripts/health-gates-server.sh" "$temp_root/scripts/health-gates-server.sh"
 cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/scripts/run-gitleaks-history-scan.sh"
 cp "$repo_root/.gitleaks.toml" "$temp_root/.gitleaks.toml"
+cp "$repo_root/.gitleaksignore" "$temp_root/.gitleaksignore"
 cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/trusted-scanner/scripts/run-gitleaks-history-scan.sh"
 cp "$repo_root/.gitleaks.toml" "$temp_root/trusted-scanner/.gitleaks.toml"
+cp "$repo_root/.gitleaksignore" "$temp_root/trusted-scanner/.gitleaksignore"
 cat > "$temp_root/scan-target/scripts/run-gitleaks-history-scan.sh" <<'SH'
 #!/bin/sh
 set -eu
@@ -272,6 +274,11 @@ expect(
         gitleaksHelper.includes('--config "$gitleaks_config"'),
     'secret scan must force the trusted checkout config instead of loading target-controlled configuration'
 );
+expect(
+    gitleaksHelper.includes('gitleaks_ignore="$trusted_root/.gitleaksignore"') &&
+        gitleaksHelper.includes('--gitleaks-ignore-path "$gitleaks_ignore"'),
+    'secret scan must force the trusted checkout ignore file instead of loading cwd-controlled ignore rules'
+);
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
 expect(
@@ -290,14 +297,20 @@ expect(
     'positive control secret must be assembled at runtime'
 );
 expect(
+    positiveControlRun.includes('cat > "$positive_control_repo/.gitleaks.toml"') &&
+        positiveControlRun.includes('regexes = [\'\'\'.*\'\'\']') &&
+        positiveControlRun.includes('git -C "$positive_control_repo" add synthetic-secret.txt .gitleaks.toml'),
+    'positive control must commit a target-root config that would suppress the synthetic secret if loaded'
+);
+expect(
     positiveControlRun.includes('GITLEAKS_EXIT_CODE="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"'),
     'positive control must run the helper with the distinct leak exit code'
 );
 expect(
     positiveControlRun.includes(
-        'sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$positive_control_repo"'
+        'sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$positive_control_repo/.git"'
     ),
-    'positive control must scan the temporary repository with the trusted helper'
+    'positive control must scan the temporary repository Git database with the trusted helper'
 );
 expect(positiveControl?.['working-directory'] === '${{ github.workspace }}', 'positive control must run outside the untrusted checkout');
 expect(
@@ -344,9 +357,22 @@ runWorkflowShell('positive control', positiveControlRun, {
 });
 runWorkflowShell('secret scan', secretScanRun, { ...workflowShellEnv, FAKE_GITLEAKS_STATUS: '0' });
 expect(!existsSync(maliciousHelperMarker), 'PR-owned target helper must not influence either scanner invocation');
+const workflowGitleaksCommands = readFileSync(workflowCommandLog, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith('gitleaks git '));
+const trustedGitleaksPrefix = `gitleaks git --config ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaks.toml --gitleaks-ignore-path ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaksignore --no-banner --no-color --redact=100 --verbose`;
 expect(
-    readFileSync(workflowCommandLog, 'utf8').includes(
-        `gitleaks git --config ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaks.toml --no-banner --no-color --redact=100 --verbose --exit-code=1 --log-opts=--all ${process.env.TEST_TEMP_ROOT}/scan-target/.git`
+    workflowGitleaksCommands.some(
+        (command) =>
+            command.startsWith(`${trustedGitleaksPrefix} --exit-code=79 --log-opts=--all `) &&
+            command.includes('/gitleaks-positive-control.') &&
+            command.endsWith('/.git')
+    ),
+    'positive control must use trusted config and ignore inputs while scanning the fixture Git database'
+);
+expect(
+    workflowGitleaksCommands.includes(
+        `${trustedGitleaksPrefix} --exit-code=1 --log-opts=--all ${process.env.TEST_TEMP_ROOT}/scan-target/.git`
     ),
     'actual scan must use trusted config and exclude target-controlled config files from the scanner source path'
 );
@@ -382,7 +408,7 @@ printf '%s\n' \
     'sha256sum --check --status' \
     "sha256sum stdin: $gitleaks_sha256  $gitleaks_archive" \
     "tar -xzf $gitleaks_archive -C $gitleaks_dir gitleaks" \
-    "gitleaks git --config $temp_root/.gitleaks.toml --no-banner --no-color --redact=100 --verbose --exit-code=1 --log-opts=--all $gitleaks_target" \
+    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --no-banner --no-color --redact=100 --verbose --exit-code=1 --log-opts=--all $gitleaks_target" \
     > "$temp_root/expected-gitleaks-success.log"
 diff -u "$temp_root/expected-gitleaks-success.log" "$temp_root/gitleaks-success.log"
 
@@ -402,7 +428,7 @@ printf '%s\n' \
     'sha256sum --check --status' \
     "sha256sum stdin: $gitleaks_sha256  $gitleaks_override_archive" \
     "tar -xzf $gitleaks_override_archive -C $gitleaks_override_dir gitleaks" \
-    "gitleaks git --config $temp_root/.gitleaks.toml --no-banner --no-color --redact=100 --verbose --exit-code=79 --log-opts=--all $gitleaks_target" \
+    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --no-banner --no-color --redact=100 --verbose --exit-code=79 --log-opts=--all $gitleaks_target" \
     > "$temp_root/expected-gitleaks-override.log"
 diff -u "$temp_root/expected-gitleaks-override.log" "$temp_root/gitleaks-override.log"
 
