@@ -322,14 +322,15 @@ describe('TimelineSurface', () => {
     });
 });
 
-// Minimal track fixture for the marquee/zoom coverage: only the fields the
-// render-model reads (id, kind, height, clips).
+// Minimal track fixture for the marquee/zoom coverage. The shared track-store
+// subscriber also resolves Yeast racks from every track's device collection.
 const makeTrack = (overrides: Partial<{ id: string; kind: string; height: number }> = {}) =>
     ({
         id: 't1',
         kind: 'midi',
         height: 48,
         clips: [],
+        devices: [],
         ...overrides,
     }) as never;
 
