@@ -26,6 +26,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -41,7 +42,13 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import {
+    createHostedWorkflowPlanningResponder,
+    createProviderWorkflowPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderScope,
+} from './providerToolPlanningFixture';
 
 const PROMPT = 'Add a syncopated arpeggio while preserving voicing and harmonic rhythm.';
 const PARAPHRASE =
@@ -136,22 +143,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isUnknownArray(value: unknown): value is unknown[] {
-    return Array.isArray(value);
-}
-
 function createProviderPlan(userMessage: string): ProviderCall[] {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
-    const capability = context.syncopatedArpeggioCapability;
-    if (!isRecord(capability) || capability.baseRevision !== context.projectRevision) {
+    const context = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = context.capabilityData.syncopatedArpeggioCapability;
+    if (!isRecord(capability) || capability.baseRevision !== context.revision) {
         throw new TypeError('Expected revision-bound EX-07 capability');
     }
     const allowedAction = capability.allowedAction;
@@ -172,48 +167,52 @@ function createProviderPlan(userMessage: string): ProviderCall[] {
     ];
 }
 
-function getHostedUserMessage(body: string): string {
-    const request: unknown = JSON.parse(body);
-    if (!isRecord(request) || !isUnknownArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
+function getProviderScope(userMessage: string): ProviderScope {
+    const capability = decodeProviderPlanningFixtureContext(userMessage).capabilityData.syncopatedArpeggioCapability;
+    if (!isRecord(capability) || !isRecord(capability.target) || !Array.isArray(capability.protectedClipIds)) {
+        throw new TypeError('Expected complete EX-07 provider scope');
     }
-    const userMessage = request.messages.find(
-        (message: unknown) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
-    );
-    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
+    const { trackId, clipId } = capability.target;
+    if (typeof trackId !== 'string' || typeof clipId !== 'string') {
+        throw new TypeError('Expected exact EX-07 target scope');
     }
-    return userMessage.content;
+    return {
+        targetIds: [trackId, clipId],
+        targetRanges: [],
+        protectedTargetIds: capability.protectedClipIds.map((id) => {
+            if (typeof id !== 'string') {
+                throw new TypeError('Expected exact EX-07 protected ID');
+            }
+            return id;
+        }),
+        protectedRanges: [],
+    };
 }
 
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'syncopated-arpeggio',
-            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
-        );
+        const userMessage = decodeHostedProviderUserMessage(init);
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+            createHostedWorkflowPlanningResponder(
+                runtimeMocks.transformPlan.value(createProviderPlan(userMessage)),
+                'syncopated-arpeggio',
+                getProviderScope
+            )(userMessage)
         );
     });
+}
+
+function useWebFixture(): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+        Promise.resolve(
+            createProviderWorkflowPlanningResponder(
+                runtimeMocks.transformPlan.value(createProviderPlan(userMessage)),
+                'syncopated-arpeggio',
+                getProviderScope
+            )(userMessage)
+        )
+    );
 }
 
 function getConfirmationId(): string {
@@ -241,16 +240,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'syncopated-arpeggio',
-                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
-            )
-        );
+        useWebFixture();
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -272,6 +262,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({
             tracks: [
                 createTrack('track-chords', 'Chords', 'clip-chords'),
@@ -300,6 +291,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
     afterEach(() => {
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearHandlerRegistry();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
