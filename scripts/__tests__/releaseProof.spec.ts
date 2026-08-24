@@ -30,9 +30,11 @@ import {
     RELEASE_PROOF_ARCHIVE_LIMITS,
     RELEASE_PROOF_TYPE_LIMITS,
     assembleReleaseProof,
+    prepareAtomicDirectoryPublisher,
     webLlmRequiredLegalFiles,
     type ReleaseBuildRunner,
     type ReleaseProofFileReader,
+    type ReleaseProofPublisherPreparer,
     type ReleaseProofValidator,
     validateReleaseProof,
 } from '../releaseProof';
@@ -395,7 +397,8 @@ function assemble(
     releaseGate: (root: string, releaseInventory?: ReleaseInventory) => void = () => undefined,
     inventoryReader: (root: string) => ReleaseInventory = readReleaseInventory,
     validator?: ReleaseProofValidator,
-    snapshotFileReader?: ReleaseProofFileReader
+    snapshotFileReader?: ReleaseProofFileReader,
+    publisherPreparer?: ReleaseProofPublisherPreparer
 ): void {
     assembleReleaseProof(
         fixture.root,
@@ -407,7 +410,8 @@ function assemble(
         releaseGate,
         inventoryReader,
         validator,
-        snapshotFileReader
+        snapshotFileReader,
+        publisherPreparer
     );
 }
 
@@ -650,7 +654,81 @@ describe('release proof', () => {
         expect(validate(fixture, fileReader)).toContain(
             'source commit object: file exceeds the candidate file-size limit'
         );
+        expect(proofReads).toBeGreaterThan(0);
         expect(commitReads).toBe(0);
+    });
+
+    it('stops reading a proof that grows beyond its JSON limit', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const proofPath = join(fixture.candidate, 'release-proof.json');
+        let proofDescriptor: number | undefined;
+        let proofReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === proofPath) {
+                    proofDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === proofDescriptor) {
+                    proofReads += 1;
+                    if (proofReads === 1) {
+                        truncateSync(proofPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
+                    }
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        expect(validate(fixture, fileReader)).toContain('JSON document exceeds');
+        expect(proofReads).toBe(1);
+    });
+
+    it('charges a no-follow proof read to the cumulative candidate budget', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const proofPath = join(fixture.candidate, 'release-proof.json');
+        const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
+        let proofDescriptor: number | undefined;
+        let manifestDescriptor: number | undefined;
+        let proofFlags: number | undefined;
+        let proofReads = 0;
+        let manifestReads = 0;
+        const budget = readFileSync(proofPath).length;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === proofPath) {
+                    proofDescriptor = descriptor;
+                    proofFlags = flags;
+                } else if (path === manifestPath) {
+                    manifestDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === proofDescriptor) {
+                    proofReads += 1;
+                }
+                if (descriptor === manifestDescriptor) {
+                    manifestReads += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+            snapshotByteLimit: budget,
+        };
+
+        expect(validate(fixture, fileReader)).toContain(
+            `source manifest: cumulative candidate snapshot byte limit exceeded (${String(budget)} bytes)`
+        );
+        expect(proofReads).toBeGreaterThan(0);
+        expect(manifestReads).toBe(0);
+        expect((proofFlags ?? 0) & constants.O_NOFOLLOW).not.toBe(0);
     });
 
     it('rejects an already-oversize candidate manifest without reading descriptor bytes', () => {
@@ -726,8 +804,10 @@ describe('release proof', () => {
         const fixture = createFixture();
         assemble(fixture);
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
+        const proofPath = join(fixture.candidate, 'release-proof.json');
         const source = proof(fixture).source as Record<string, unknown>;
         const sourceArchivePath = join(fixture.candidate, source.archivePath as string);
+        const budget = readFileSync(proofPath).length + readFileSync(manifestPath).length;
         let archiveDescriptor: number | undefined;
         let archiveReads = 0;
         const fileReader: ReleaseProofFileReader = {
@@ -747,11 +827,11 @@ describe('release proof', () => {
                 }
                 return readSync(descriptor, buffer, offset, length, position);
             },
-            snapshotByteLimit: readFileSync(manifestPath).length,
+            snapshotByteLimit: budget,
         };
 
         expect(validate(fixture, fileReader)).toContain(
-            `source archive: cumulative candidate snapshot byte limit exceeded (${String(readFileSync(manifestPath).length)} bytes)`
+            `source archive: cumulative candidate snapshot byte limit exceeded (${String(budget)} bytes)`
         );
         expect(archiveReads).toBe(0);
     });
@@ -811,6 +891,7 @@ describe('release proof', () => {
             throw new Error('web fixture needs at least two contents members');
         }
         const referencedPaths = [
+            'release-proof.json',
             requiredFixturePath(source, 'manifestPath'),
             requiredFixturePath(source, 'archivePath'),
             requiredFixturePath(source, 'commitPath'),
@@ -874,6 +955,7 @@ describe('release proof', () => {
             throw new Error('build fixture needs at least two input members');
         }
         const referencedPaths = [
+            'release-proof.json',
             requiredFixturePath(source, 'manifestPath'),
             requiredFixturePath(source, 'archivePath'),
             requiredFixturePath(source, 'commitPath'),
@@ -1468,6 +1550,118 @@ describe('release proof', () => {
         } else {
             expect(readdirSync(fixture.candidate)).toEqual([]);
         }
+    });
+
+    it('uses an absolute system compiler even when PATH contains publisher shims', () => {
+        const fixture = createFixture();
+        const marker = join(fixture.base, 'publisher-shim-ran');
+        const bin = join(fixture.base, 'bin');
+        for (const executable of ['xcrun', 'cc', 'clang']) {
+            const path = join(bin, executable);
+            write(path, `#!/bin/sh\nprintf invoked > "${marker}"\nexit 99\n`);
+            chmodSync(path, 0o755);
+        }
+        const originalPath = process.env.PATH;
+        process.env.PATH = `${bin}:${originalPath ?? ''}`;
+        try {
+            assemble(fixture);
+        } finally {
+            process.env.PATH = originalPath;
+        }
+
+        expect(existsSync(marker)).toBe(false);
+        expect(validate(fixture)).toBe('');
+    });
+
+    it('rejects and invalidates a publisher that reports success without moving the validated directory', () => {
+        const fixture = createFixture();
+        let gated = false;
+        let invalidated = false;
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+            expect(gated).toBe(true);
+            return {
+                publish: () => undefined,
+                invalidate() {
+                    invalidated = true;
+                },
+                dispose: () => undefined,
+            };
+        };
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => {
+                    gated = true;
+                },
+                readReleaseInventory,
+                undefined,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('reported success without moving the validated directory');
+        expect(invalidated).toBe(true);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('rejects and cleans a compiled helper replaced through the publisher process seam', () => {
+        const fixture = createFixture();
+        let helperRoot: string | undefined;
+        const publisherPreparer: ReleaseProofPublisherPreparer = () =>
+            prepareAtomicDirectoryPublisher((executable) => {
+                helperRoot = dirname(executable);
+                chmodSync(helperRoot, 0o700);
+                renameSync(executable, `${executable}.captured`);
+                write(executable, 'replacement helper');
+                chmodSync(executable, 0o500);
+                return { status: 0, stderr: '' };
+            });
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('publisher identity changed during publication');
+        expect(helperRoot).toBeDefined();
+        expect(existsSync(helperRoot ?? '')).toBe(false);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('rejects and invalidates a replaced publisher that moves a different directory to the output', () => {
+        const fixture = createFixture();
+        let invalidated = false;
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
+            publish(source, destination) {
+                const replacement = mkdtempSync(join(dirname(source), '.replacement-publisher-'));
+                renameSync(source, `${source}.captured`);
+                renameSync(replacement, destination);
+            },
+            invalidate() {
+                invalidated = true;
+            },
+            dispose: () => undefined,
+        });
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('did not publish the validated directory identity');
+        expect(invalidated).toBe(true);
+        expect(readdirSync(fixture.candidate)).toEqual([]);
     });
 
     it('rejects unreferenced files outside the closed candidate census', () => {

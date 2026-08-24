@@ -167,7 +167,19 @@ type CandidateCensusMaps = {
     webFiles?: Record<string, string>;
 };
 
-type AtomicDirectoryPublisher = (source: string, destination: string) => void;
+export type ReleaseProofPublisher = {
+    publish: (source: string, destination: string) => void;
+    invalidate: () => void;
+    dispose: () => void;
+};
+
+export type ReleaseProofPublisherPreparer = () => ReleaseProofPublisher;
+
+export type ReleaseProofPublisherRunner = (
+    executable: string,
+    source: string,
+    destination: string
+) => { status: number | null; error?: Error; stderr: string };
 
 const releaseProofFileReader: ReleaseProofFileReader = {
     open: (path, flags) => openSync(path, flags),
@@ -208,59 +220,188 @@ int main(int argc, char **argv) {
 }
 `;
 
-let atomicRenameHelper: string | undefined;
-let atomicRenameHelperRoot: string | undefined;
+const ATOMIC_RENAME_HELPER_LIMIT = 4 * 1024 * 1024;
 
-function prepareAtomicDirectoryPublisher(): AtomicDirectoryPublisher {
-    if (atomicRenameHelper === undefined) {
-        if (process.platform !== 'darwin' && process.platform !== 'linux') {
-            throw new Error(`atomic release proof publication is unavailable on ${process.platform}`);
+function sha256Descriptor(descriptor: number, size: number): string {
+    const hash = createHash('sha256');
+    const chunk = Buffer.alloc(Math.min(HASH_CHUNK_BYTES, Math.max(1, size)));
+    let position = 0;
+    while (position < size) {
+        const bytesRead = readSync(descriptor, chunk, 0, Math.min(chunk.length, size - position), position);
+        if (bytesRead <= 0) {
+            throw new Error('atomic release proof publisher changed while its identity was checked');
         }
-        atomicRenameHelperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-exclusive-rename-'));
-        atomicRenameHelper = join(atomicRenameHelperRoot, 'rename-exclusive');
-        const compiler = process.platform === 'darwin' ? 'xcrun' : 'cc';
+        hash.update(chunk.subarray(0, bytesRead));
+        position += bytesRead;
+    }
+    return hash.digest('hex');
+}
+
+export function prepareAtomicDirectoryPublisher(
+    runner: ReleaseProofPublisherRunner = (executable, source, destination) => {
+        const result = spawnSync(executable, [source, destination], {
+            encoding: 'utf8',
+            env: { PATH: '/usr/bin:/bin' },
+        });
+        return {
+            status: result.status,
+            ...(result.error === undefined ? {} : { error: result.error }),
+            stderr: result.stderr,
+        };
+    }
+): ReleaseProofPublisher {
+    if (process.platform !== 'darwin' && process.platform !== 'linux') {
+        throw new Error(`atomic release proof publication is unavailable on ${process.platform}`);
+    }
+    const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-exclusive-rename-'));
+    const helperPath = join(helperRoot, 'rename-exclusive');
+    const rootIdentity = lstatSync(helperRoot);
+    let descriptor: number | undefined;
+    try {
+        const compiler = process.platform === 'darwin' ? '/usr/bin/xcrun' : '/usr/bin/cc';
         const compilerArgs = [
             ...(process.platform === 'darwin' ? ['clang'] : []),
             '-x',
             'c',
             '-O2',
             '-o',
-            atomicRenameHelper,
+            helperPath,
             '-',
         ];
         const compiled = spawnSync(compiler, compilerArgs, {
             encoding: 'utf8',
+            env: { PATH: '/usr/bin:/bin' },
             input: ATOMIC_RENAME_HELPER_SOURCE,
         });
         if (compiled.status !== 0) {
-            rmSync(atomicRenameHelperRoot, { recursive: true, force: true });
-            atomicRenameHelper = undefined;
-            atomicRenameHelperRoot = undefined;
             throw new Error(
                 `atomic release proof publisher could not be prepared: ${compiled.error?.message ?? compiled.stderr.trim()}`
             );
         }
-        process.once('exit', () => {
-            if (atomicRenameHelperRoot !== undefined) {
-                rmSync(atomicRenameHelperRoot, { recursive: true, force: true });
+        chmodSync(helperPath, 0o500);
+        const beforeOpen = lstatSync(helperPath);
+        descriptor = openSync(helperPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const opened = fstatSync(descriptor);
+        if (
+            !beforeOpen.isFile() ||
+            !opened.isFile() ||
+            beforeOpen.dev !== opened.dev ||
+            beforeOpen.ino !== opened.ino ||
+            opened.size <= 0 ||
+            opened.size > ATOMIC_RENAME_HELPER_LIMIT ||
+            (opened.mode & 0o777) !== 0o500
+        ) {
+            throw new Error('atomic release proof publisher has an unsafe compiled identity');
+        }
+        const identity = {
+            dev: opened.dev,
+            ino: opened.ino,
+            mode: opened.mode,
+            size: opened.size,
+            digest: sha256Descriptor(descriptor, opened.size),
+        };
+        chmodSync(helperRoot, 0o500);
+        let valid = true;
+        const invalidate = (): void => {
+            valid = false;
+            if (descriptor !== undefined) {
+                closeSync(descriptor);
+                descriptor = undefined;
             }
-        });
-    }
-    if (atomicRenameHelper === undefined) {
-        throw new Error('atomic release proof publisher is unavailable');
-    }
-    const helper = atomicRenameHelper;
-    return (source, destination) => {
-        const published = spawnSync(helper, [source, destination], { encoding: 'utf8' });
-        if (published.status === 17) {
-            throw new Error('release proof output appeared before atomic publication');
+            try {
+                const currentRoot = lstatSync(helperRoot);
+                if (currentRoot.dev === rootIdentity.dev && currentRoot.ino === rootIdentity.ino) {
+                    chmodSync(helperRoot, 0o700);
+                    rmSync(helperRoot, { recursive: true, force: true });
+                }
+            } catch {
+                // The private helper was already removed or replaced and must not be followed.
+            }
+        };
+        const verifyIdentity = (): number => {
+            if (!valid || descriptor === undefined) {
+                throw new Error('atomic release proof publisher is unavailable');
+            }
+            const current = fstatSync(descriptor);
+            const currentPath = lstatSync(helperPath);
+            const currentRoot = lstatSync(helperRoot);
+            if (
+                !current.isFile() ||
+                !currentPath.isFile() ||
+                !currentRoot.isDirectory() ||
+                current.dev !== identity.dev ||
+                current.ino !== identity.ino ||
+                current.mode !== identity.mode ||
+                current.size !== identity.size ||
+                currentPath.dev !== identity.dev ||
+                currentPath.ino !== identity.ino ||
+                currentPath.mode !== identity.mode ||
+                currentPath.size !== identity.size ||
+                currentRoot.dev !== rootIdentity.dev ||
+                currentRoot.ino !== rootIdentity.ino ||
+                (currentRoot.mode & 0o777) !== 0o500 ||
+                sha256Descriptor(descriptor, current.size) !== identity.digest
+            ) {
+                invalidate();
+                throw new Error('atomic release proof publisher identity changed during publication');
+            }
+            return descriptor;
+        };
+        return {
+            publish(source, destination) {
+                const pinnedDescriptor = verifyIdentity();
+                const published = runner(helperPath, source, destination);
+                void pinnedDescriptor;
+                verifyIdentity();
+                if (published.status === 17) {
+                    throw new Error('release proof output appeared before atomic publication');
+                }
+                if (published.status !== 0) {
+                    throw new Error(
+                        `atomic release proof publication failed: ${published.error?.message ?? published.stderr.trim()}`
+                    );
+                }
+            },
+            invalidate,
+            dispose: invalidate,
+        };
+    } catch (error) {
+        if (descriptor !== undefined) {
+            closeSync(descriptor);
         }
-        if (published.status !== 0) {
-            throw new Error(
-                `atomic release proof publication failed: ${published.error?.message ?? published.stderr.trim()}`
-            );
+        try {
+            chmodSync(helperRoot, 0o700);
+            rmSync(helperRoot, { recursive: true, force: true });
+        } catch {
+            // Preparation already removed the private helper.
         }
-    };
+        throw error;
+    }
+}
+
+function publishValidatedDirectory(publisher: ReleaseProofPublisher, source: string, destination: string): void {
+    const sourceMetadata = lstatSync(source);
+    if (!sourceMetadata.isDirectory()) {
+        publisher.invalidate();
+        throw new Error('release proof publication source is not a directory');
+    }
+    try {
+        publisher.publish(source, destination);
+        if (existsSync(source)) {
+            throw new Error('atomic release proof publisher reported success without moving the validated directory');
+        }
+        const destinationMetadata = lstatSync(destination);
+        if (
+            !destinationMetadata.isDirectory() ||
+            destinationMetadata.dev !== sourceMetadata.dev ||
+            destinationMetadata.ino !== sourceMetadata.ino
+        ) {
+            throw new Error('atomic release proof publisher did not publish the validated directory identity');
+        }
+    } catch (error) {
+        publisher.invalidate();
+        throw error;
+    }
 }
 
 function candidateSnapshotBudget(fileReader: ReleaseProofFileReader): CandidateSnapshotBudget {
@@ -484,7 +625,8 @@ function readBoundedFile(
     path: string,
     maxBytes: number,
     label: string,
-    fileReader: ReleaseProofFileReader = releaseProofFileReader
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    budget?: CandidateSnapshotBudget
 ): Buffer {
     let value: Buffer | undefined;
     try {
@@ -493,29 +635,75 @@ function readBoundedFile(
             path,
             maxBytes,
             (descriptor) => {
-                const size = fstatSync(descriptor).size;
-                const contents = Buffer.alloc(size);
-                let offset = 0;
-                while (offset < contents.length) {
-                    const bytesRead = (fileReader.read ?? readSync)(
-                        descriptor,
-                        contents,
-                        offset,
-                        contents.length - offset,
-                        offset
-                    );
-                    if (bytesRead === 0) {
+                const chunks: Buffer[] = [];
+                const chunk = Buffer.alloc(Math.max(1, Math.min(HASH_CHUNK_BYTES, maxBytes)));
+                let position = 0;
+                while (true) {
+                    const observedSize = fstatSync(descriptor).size;
+                    if (observedSize > maxBytes) {
+                        throw new FileReadLimitError('file');
+                    }
+                    if (budget !== undefined && Math.max(0, observedSize - position) > budget.remaining) {
+                        throw new FileReadLimitError('aggregate');
+                    }
+                    const remainingFileBytes = maxBytes - position;
+                    const remainingBudgetBytes = budget?.remaining ?? remainingFileBytes;
+                    const readLength = Math.min(chunk.length, remainingFileBytes, remainingBudgetBytes);
+                    if (readLength === 0) {
+                        const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, 1, position);
+                        if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > 1) {
+                            throw new Error(`${label} changed while reading`);
+                        }
+                        if (bytesRead > 0) {
+                            throw new FileReadLimitError(remainingFileBytes === 0 ? 'file' : 'aggregate');
+                        }
+                        const finalSize = fstatSync(descriptor).size;
+                        if (finalSize > maxBytes) {
+                            throw new FileReadLimitError('file');
+                        }
+                        if (budget !== undefined && Math.max(0, finalSize - position) > budget.remaining) {
+                            throw new FileReadLimitError('aggregate');
+                        }
+                        if (finalSize !== position) {
+                            throw new Error(`${label} changed while reading`);
+                        }
+                        break;
+                    }
+                    const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, readLength, position);
+                    if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > readLength) {
                         throw new Error(`${label} changed while reading`);
                     }
-                    offset += bytesRead;
+                    if (bytesRead === 0) {
+                        const finalSize = fstatSync(descriptor).size;
+                        if (finalSize > maxBytes) {
+                            throw new FileReadLimitError('file');
+                        }
+                        if (budget !== undefined && Math.max(0, finalSize - position) > budget.remaining) {
+                            throw new FileReadLimitError('aggregate');
+                        }
+                        if (finalSize !== position) {
+                            throw new Error(`${label} changed while reading`);
+                        }
+                        break;
+                    }
+                    chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+                    position += bytesRead;
+                    if (budget !== undefined) {
+                        budget.remaining -= bytesRead;
+                    }
                 }
-                return contents;
+                return Buffer.concat(chunks, position);
             },
             fileReader
         );
     } catch (error) {
         if (error instanceof FileReadLimitError) {
-            throw new TypeError(`${label} exceeds the ${String(maxBytes)}-byte read limit`, { cause: error });
+            throw new TypeError(
+                error.kind === 'aggregate' && budget !== undefined
+                    ? `${label} exceeds the cumulative candidate snapshot byte limit (${String(budget.limit)} bytes)`
+                    : `${label} exceeds the ${String(maxBytes)}-byte read limit`,
+                { cause: error }
+            );
         }
         throw error;
     }
@@ -525,9 +713,16 @@ function readBoundedFile(
     return value;
 }
 
-function readJson(root: string, path: string): unknown {
+function readJson(
+    root: string,
+    path: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    budget?: CandidateSnapshotBudget
+): unknown {
     return parseJsonWithUniqueKeys(
-        readBoundedFile(root, path, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, 'JSON document').toString('utf8'),
+        readBoundedFile(root, path, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, 'JSON document', fileReader, budget).toString(
+            'utf8'
+        ),
         path
     );
 }
@@ -905,9 +1100,16 @@ function rendererFileMap(directory: string): Record<string, string> {
     );
 }
 
-function readJsonForValidation(root: string, path: string, label: string, errors: string[]): JsonRecord | undefined {
+function readJsonForValidation(
+    root: string,
+    path: string,
+    label: string,
+    errors: string[],
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    budget?: CandidateSnapshotBudget
+): JsonRecord | undefined {
     try {
-        const value = readJson(root, path);
+        const value = readJson(root, path, fileReader, budget);
         if (!isRecord(value)) {
             errors.push(`${label}: JSON root must be an object`);
             return undefined;
@@ -2631,6 +2833,8 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         errors.push('release proof candidate directory is missing');
         return errors;
     }
+    const fileReader = options.fileReader ?? releaseProofFileReader;
+    const snapshotBudget = candidateSnapshotBudget(fileReader);
     const proofPath = resolve(options.candidate, PROOF_FILE);
     if (
         !existsSync(proofPath) ||
@@ -2640,7 +2844,7 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         errors.push(`${PROOF_FILE}: file is missing or unsafe`);
         return errors;
     }
-    const proof = readJsonForValidation(options.candidate, proofPath, PROOF_FILE, errors);
+    const proof = readJsonForValidation(options.candidate, proofPath, PROOF_FILE, errors, fileReader, snapshotBudget);
     if (proof === undefined) {
         return errors;
     }
@@ -2675,8 +2879,6 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     }
     const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-snapshot-'));
     try {
-        const fileReader = options.fileReader ?? releaseProofFileReader;
-        const snapshotBudget = candidateSnapshotBudget(fileReader);
         validateSourceManifest(
             options.candidate,
             proof,
@@ -2925,7 +3127,8 @@ export function assembleReleaseProof(
         checkReleaseInventory(gateRoot, undefined, releaseInventory),
     inventoryReader: ReleaseInventoryReader = readReleaseInventory,
     validator: ReleaseProofValidator = validateReleaseProof,
-    publicationFileReader: ReleaseProofFileReader = releaseProofFileReader
+    publicationFileReader: ReleaseProofFileReader = releaseProofFileReader,
+    publisherPreparer: ReleaseProofPublisherPreparer = prepareAtomicDirectoryPublisher
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
@@ -2952,9 +3155,9 @@ export function assembleReleaseProof(
         throw new Error('assembly output must not already exist');
     }
     mkdirSync(dirname(output), { recursive: true });
-    const publishDirectory = prepareAtomicDirectoryPublisher();
     const candidate = mkdtempSync(join(dirname(output), `.${basename(output)}.tmp-`));
     let publicationCandidate: string | undefined;
+    let publisher: ReleaseProofPublisher | undefined;
     try {
         const sourceDir = join(candidate, 'source');
         const webDir = join(candidate, 'web');
@@ -3158,6 +3361,7 @@ export function assembleReleaseProof(
         assertBuildState(root, revision);
         releaseGate(root, releaseInventory);
         assertBuildState(root, revision);
+        publisher = publisherPreparer();
         publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
         snapshotCandidateTree(candidate, publicationCandidate, publicationFileReader);
         rmSync(candidate, { recursive: true, force: true });
@@ -3171,13 +3375,15 @@ export function assembleReleaseProof(
         if (publicationErrors.length > 0) {
             throw new Error(publicationErrors.join('\n'));
         }
-        publishDirectory(publicationCandidate, output);
+        publishValidatedDirectory(publisher, publicationCandidate, output);
     } catch (error) {
         rmSync(candidate, { recursive: true, force: true });
         if (publicationCandidate !== undefined) {
             rmSync(publicationCandidate, { recursive: true, force: true });
         }
         throw error;
+    } finally {
+        publisher?.dispose();
     }
 }
 
