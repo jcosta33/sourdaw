@@ -113,7 +113,7 @@ describe('AiSection', () => {
     it('reflects an explicit WebLLM preference in web builds', () => {
         mocks.isDesktop = false;
         mocks.backendPreference.value = 'webllm';
-        mocks.resolveBackend.mockReturnValue('webllm');
+        mocks.resolveBackend.mockReturnValue('none');
 
         render(<AiSection />);
 

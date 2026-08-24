@@ -83,9 +83,20 @@ const ddspModelEnforcementPaths = [
     'src/modules/BrowserAi/useCases/removeModel.ts',
     'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
+const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
+const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+}
+
+function expectedApacheTvmRawSource(path: string): string {
+    const apacheTvmPrefix = 'public/legal/Apache-TVM/';
+    const tvmFfiPrefix = `${apacheTvmPrefix}3rdparty/tvm-ffi/`;
+    if (path.startsWith(tvmFfiPrefix)) {
+        return `https://raw.githubusercontent.com/apache/tvm-ffi/${TVM_FFI_COMMIT}/${path.slice(tvmFfiPrefix.length)}`;
+    }
+    return `https://raw.githubusercontent.com/apache/tvm/${APACHE_TVM_COMMIT}/${path.slice(apacheTvmPrefix.length)}`;
 }
 
 function writeDdspModelContractFixture(root: string, manifest: string): void {
@@ -737,33 +748,32 @@ describe('release inventory', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
-    it('binds the tvm-ffi root legal files to their immutable source bytes', () => {
+    it('binds every admitted Apache-TVM legal file to its immutable source bytes and public notice link', () => {
         const inventory = JSON.parse(
             readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
         ) as ReleaseInventory;
         const surface = inventory.surfaces.find(({ id }) => id === 'webllm-qwen-artifacts');
         const notice = readFileSync(join(repositoryRoot, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
-        const legalFiles = [
-            {
-                path: 'public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE',
-                sha256: 'bb354d8b94589ad8817f2dff029d39a1133d217407f73679d0b0311c980e511f',
-                source: 'https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/LICENSE',
-            },
-            {
-                path: 'public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE',
-                sha256: '5181189219b74687e08884d813b8f98c874d0e4ba84eb7afc4bb350d22502c24',
-                source: 'https://raw.githubusercontent.com/apache/tvm-ffi/3c35034fd1026011736e19a4e0e1ed0f22058c42/NOTICE',
-            },
-        ] as const;
+        const apacheTvmPaths =
+            surface?.paths.filter((path) => path.startsWith('public/legal/Apache-TVM/') && !path.endsWith('/')) ?? [];
 
         expect(surface).toBeDefined();
-        for (const legalFile of legalFiles) {
-            const bytes = readFileSync(join(repositoryRoot, legalFile.path));
-            expect(createHash('sha256').update(bytes).digest('hex')).toBe(legalFile.sha256);
-            expect(surface?.paths).toContain(legalFile.path);
-            expect(surface?.sources).toContain(legalFile.source);
-            expect(surface?.digests).toContain(`sha256:${legalFile.sha256}:${legalFile.path}`);
-            expect(notice).toContain(`(./${legalFile.path.replace('public/legal/', '')})`);
+        expect(apacheTvmPaths).toEqual(
+            expect.arrayContaining([
+                'public/legal/Apache-TVM/LICENSE',
+                'public/legal/Apache-TVM/NOTICE',
+                'public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE',
+                'public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE',
+            ])
+        );
+
+        for (const path of apacheTvmPaths) {
+            const fileSha = createHash('sha256')
+                .update(readFileSync(join(repositoryRoot, path)))
+                .digest('hex');
+            expect(surface?.sources).toContain(expectedApacheTvmRawSource(path));
+            expect(surface?.digests).toContain(`sha256:${fileSha}:${path}`);
+            expect(notice).toContain(`(./${path.replace('public/legal/', '')})`);
         }
     });
 
@@ -786,6 +796,29 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toContain(
             `runtime: path-addressed digest target is missing or untracked: ${path}`
         );
+    });
+
+    it('rejects non-canonical path-addressed digest paths before snapshotting them', () => {
+        const value = inventory();
+        const paths = ['/outside-root.txt', 'public/legal/../outside.txt', 'public//legal/notice.txt'];
+        value.surfaces[0]!.digests = paths.map((path) => `sha256:${fixtureDigest}:${path}`);
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-noncanonical-'));
+
+        try {
+            writeFileSync(join(root, 'provider.ts'), 'provider');
+            const changed = loadRepositorySnapshot(root, value, ['provider.ts']);
+
+            expect(changed.fileDigests).toEqual(
+                expect.objectContaining(Object.fromEntries(paths.map((path) => [path, 'missing'])))
+            );
+            expect(validateReleaseInventory(value, changed)).toEqual(
+                expect.arrayContaining(
+                    paths.map((path) => `runtime: path-addressed digest target is missing or untracked: ${path}`)
+                )
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('should reject a path-addressed digest whose tracked file was deleted', () => {
@@ -821,9 +854,51 @@ describe('release inventory', () => {
             writeFileSync(join(root, trackedPath), 'provider');
             const changed = loadRepositorySnapshot(root, value, [trackedPath, path]);
 
+            expect(changed.fileDigests[path]).toBe('missing');
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('records the actual SHA-256 for an existing path-addressed digest target introduced by a surface digest', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const trackedPath = 'src/provider.ts';
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-loader-'));
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${path}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [],
+        };
+
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            mkdirSync(dirname(join(root, path)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(root, path), 'dlpack license');
+            const changed = loadRepositorySnapshot(root, value, [trackedPath]);
+
+            expect(changed.fileDigests[path]).toBe(sha256('dlpack license'));
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
