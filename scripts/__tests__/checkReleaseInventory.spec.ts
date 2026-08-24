@@ -888,6 +888,64 @@ describe('release inventory', () => {
         }
     });
 
+    it('does not read unsafe or untracked path-addressed digest targets', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-unreadable-digest-'));
+        const root = join(base, 'repository');
+        const trackedPath = 'provider.ts';
+        const unsafePath = '../outside.txt';
+        const untrackedPath = 'public/legal/untracked.txt';
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${unsafePath}`, `sha256:${fixtureDigest}:${untrackedPath}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [],
+        };
+
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            mkdirSync(dirname(join(root, untrackedPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(base, 'outside.txt'), 'outside');
+            writeFileSync(join(root, untrackedPath), 'untracked');
+            const readFile = ((path: string, options?: string) => {
+                if (path === join(base, 'outside.txt') || path === join(root, untrackedPath)) {
+                    throw new Error(`unexpected path-addressed digest read: ${path}`);
+                }
+                return options === undefined ? readFileSync(path) : readFileSync(path, options);
+            }) as typeof readFileSync;
+
+            const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
+
+            expect(changed.fileDigests[unsafePath]).toBeUndefined();
+            expect(changed.fileDigests[untrackedPath]).toBeUndefined();
+            expect(validateReleaseInventory(value, changed)).toEqual(
+                expect.arrayContaining([
+                    `runtime: path-addressed digest path must be normalized and relative: ${unsafePath}`,
+                    `runtime: path-addressed digest target is missing or untracked: ${untrackedPath}`,
+                ])
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('should reject a path-addressed digest whose tracked file was deleted', () => {
         const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
         const trackedPath = 'src/provider.ts';
@@ -963,7 +1021,7 @@ describe('release inventory', () => {
             mkdirSync(dirname(join(root, path)), { recursive: true });
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(join(root, path), 'dlpack license');
-            const changed = loadRepositorySnapshot(root, value, [trackedPath]);
+            const changed = loadRepositorySnapshot(root, value, [trackedPath, path]);
 
             expect(changed.fileDigests[path]).toBe(sha256('dlpack license'));
         } finally {

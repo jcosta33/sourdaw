@@ -677,6 +677,30 @@ describe('release proof', () => {
         );
     });
 
+    it('rejects an inventory-derived WebLLM legal file whose web contents bytes drift', () => {
+        const fixture = createFixture();
+        const legalFile = WEBLLM_REQUIRED_LEGAL_FILES[0]!;
+        assemble(fixture);
+        write(join(fixture.candidate, 'web/contents', legalFile), 'drifted web legal bytes');
+
+        const errors = validate(fixture);
+        expect(errors).toContain(`web WebLLM legal file ${legalFile} is missing or drifted`);
+        expect(errors).not.toContain(`desktop WebLLM legal file ${legalFile} is missing or drifted`);
+    });
+
+    it('rejects an inventory-derived WebLLM legal file whose desktop archive bytes drift', () => {
+        const fixture = createFixture();
+        const legalFile = WEBLLM_REQUIRED_LEGAL_FILES[0]!;
+        assemble(fixture);
+        rewriteDesktopArchive(fixture, (root) => {
+            write(join(root, 'Sourdaw.app/Contents/Resources', legalFile), 'drifted desktop legal bytes');
+        });
+
+        const errors = validate(fixture);
+        expect(errors).toContain(`desktop WebLLM legal file ${legalFile} is missing or drifted`);
+        expect(errors).not.toContain(`web WebLLM legal file ${legalFile} is missing or drifted`);
+    });
+
     it('rejects FFmpeg source checked out at the wrong commit', () => {
         const fixture = createFixture();
         write(join(fixture.ffmpegSource, 'wrong.c'), 'int wrong(void) { return 1; }\n');
