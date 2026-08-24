@@ -18,6 +18,7 @@ import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
 
 const runtimeMocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     engineRemoveSend: vi.fn(),
     engineSetSend: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
@@ -27,6 +28,7 @@ const runtimeMocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
     updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
 
@@ -107,6 +109,13 @@ describe('compound bus AppAction batch', () => {
         expect(bus?.devices[0]?.id).toMatch(/^device-/u);
         expect(bus?.devices[0]?.type).toBe('builtin-reverb');
         expect(vocals?.sends).toEqual([{ busId: BUS_ID, level: 0.25, preFader: false }]);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'replace-track-device-chain',
+                operation: 'add-device',
+                after: expect.objectContaining({ id: BUS_ID }),
+            })
+        );
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
     });
 });
