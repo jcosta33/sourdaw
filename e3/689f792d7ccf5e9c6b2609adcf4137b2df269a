@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/__tests__/providerToolPlanningFixture.ts
+  s_a40848e8f8cca9::t_45b9760f2a05e7 10-18,240-271,288-294
+  s_a40848e8f8cca9::t_3e1241bcb0d84f 295-296
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_c015efd5c53347 240-241
+  s_a40848e8f8cca9::t_400df7a697486b 1-2,222-239,242-269,272
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_26c66efe58fd7a 30,49-54,81,83-118,128,159
+  s_a40848e8f8cca9::t_5b4e57e488d1da 292-299,320,344
+  s_a40848e8f8cca9::t_c8d59841ee8c77 375,377-378,526,528-529,572
+  s_a40848e8f8cca9::t_5c17747518f689 82
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_a82680d32785e9 659-665
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_d6966a59f30df3 497-504
+  s_a40848e8f8cca9::t_9049b6cfc9c8b5 273-281,566-569
+  s_a40848e8f8cca9::t_5c17747518f689 487-493,495-496,505-533,535-539
+  s_a40848e8f8cca9::t_6e4c3d4ee424d4 494
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e3689f792d7ccf5e9c6b2609adcf4137b2df269a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
