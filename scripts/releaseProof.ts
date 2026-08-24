@@ -295,6 +295,49 @@ function sha256ContainedRegularFile(
     );
 }
 
+function digestCandidateDescriptor(
+    descriptor: number,
+    maxBytes: number,
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader,
+    consume: (bytes: Buffer) => void = () => undefined
+): string {
+    let observedSize = fstatSync(descriptor).size;
+    if (observedSize > budget.remaining) {
+        throw new FileReadLimitError('aggregate');
+    }
+    const hash = createHash('sha256');
+    const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
+    let position = 0;
+    while (true) {
+        if (position >= observedSize) {
+            observedSize = fstatSync(descriptor).size;
+            if (observedSize > maxBytes) {
+                throw new FileReadLimitError('file');
+            }
+            if (observedSize - position > budget.remaining) {
+                throw new FileReadLimitError('aggregate');
+            }
+            if (position >= observedSize) {
+                return hash.digest('hex');
+            }
+        }
+        const readLength = Math.min(chunk.length, observedSize - position, maxBytes - position, budget.remaining);
+        const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, readLength, position);
+        if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > readLength) {
+            throw new FileReadLimitError('file');
+        }
+        if (bytesRead === 0) {
+            return hash.digest('hex');
+        }
+        const bytes = chunk.subarray(0, bytesRead);
+        hash.update(bytes);
+        consume(bytes);
+        position += bytesRead;
+        budget.remaining -= bytesRead;
+    }
+}
+
 function snapshotCandidateFile(
     root: string,
     path: string,
@@ -309,47 +352,12 @@ function snapshotCandidateFile(
         path,
         maxBytes,
         (descriptor) => {
-            let observedSize = fstatSync(descriptor).size;
-            if (observedSize > budget.remaining) {
-                throw new FileReadLimitError('aggregate');
-            }
             const output = openSync(snapshotPath, 'wx');
             try {
-                const hash = createHash('sha256');
-                const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
-                let position = 0;
-                while (true) {
-                    if (position >= observedSize) {
-                        observedSize = fstatSync(descriptor).size;
-                        if (observedSize > maxBytes) {
-                            throw new FileReadLimitError('file');
-                        }
-                        if (observedSize - position > budget.remaining) {
-                            throw new FileReadLimitError('aggregate');
-                        }
-                        if (position >= observedSize) {
-                            return { digest: hash.digest('hex'), snapshotPath };
-                        }
-                    }
-                    const readLength = Math.min(
-                        chunk.length,
-                        observedSize - position,
-                        maxBytes - position,
-                        budget.remaining
-                    );
-                    const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, readLength, position);
-                    if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > readLength) {
-                        throw new FileReadLimitError('file');
-                    }
-                    if (bytesRead === 0) {
-                        return { digest: hash.digest('hex'), snapshotPath };
-                    }
-                    const bytes = chunk.subarray(0, bytesRead);
-                    hash.update(bytes);
-                    writeSync(output, bytes);
-                    position += bytesRead;
-                    budget.remaining -= bytesRead;
-                }
+                const digest = digestCandidateDescriptor(descriptor, maxBytes, budget, fileReader, (bytes) =>
+                    writeSync(output, bytes)
+                );
+                return { digest, snapshotPath };
             } finally {
                 closeSync(output);
             }
@@ -592,6 +600,46 @@ function listFiles(root: string, label: string, errors: string[], allowContained
         }
     }
     return files.sort();
+}
+
+function candidateTreeBinding(candidate: string): string {
+    const label = 'release proof candidate publication';
+    const errors: string[] = [];
+    const paths = listFiles(candidate, label, errors);
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+    const budget = candidateSnapshotBudget(releaseProofFileReader);
+    const binding = createHash('sha256');
+    for (const path of paths) {
+        const absolute = resolve(candidate, ...path.split('/'));
+        const digest = withContainedRegularFile(
+            candidate,
+            absolute,
+            RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+            (descriptor) =>
+                digestCandidateDescriptor(
+                    descriptor,
+                    RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+                    budget,
+                    releaseProofFileReader
+                ),
+            releaseProofFileReader
+        );
+        if (digest === undefined) {
+            throw new Error(`${label}: missing or unsafe ${path}`);
+        }
+        binding.update(path).update('\0').update(digest).update('\0');
+    }
+    const finalErrors: string[] = [];
+    const finalPaths = listFiles(candidate, label, finalErrors);
+    if (finalErrors.length > 0) {
+        throw new Error(finalErrors.join('\n'));
+    }
+    if (!sameValue(paths, finalPaths)) {
+        throw new Error('release proof candidate bytes or census changed while binding publication');
+    }
+    return binding.digest('hex');
 }
 
 function stringMap(value: unknown, label: string, errors: string[]): Record<string, string> {
@@ -2967,6 +3015,7 @@ export function assembleReleaseProof(
             },
         };
         writeJson(join(candidate, PROOF_FILE), proof);
+        const validatedCandidateBinding = candidateTreeBinding(candidate);
         const errors = validator({
             root,
             candidate,
@@ -2980,6 +3029,9 @@ export function assembleReleaseProof(
         assertBuildState(root, revision);
         releaseGate(root, releaseInventory);
         assertBuildState(root, revision);
+        if (candidateTreeBinding(candidate) !== validatedCandidateBinding) {
+            throw new Error('release proof candidate bytes or census changed during validation');
+        }
         renameSync(candidate, output);
     } catch (error) {
         rmSync(candidate, { recursive: true, force: true });

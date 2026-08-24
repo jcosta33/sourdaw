@@ -820,6 +820,63 @@ describe('release proof', () => {
         expect(swapped).toBe(true);
     });
 
+    it.each([
+        ['web manifest', 'web/contents/web-artifact-manifest.json'],
+        ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],
+    ])('does not publish a %s swapped after its bytes are captured', (_label, candidatePath) => {
+        const fixture = createFixture();
+        let targetDescriptor: number | undefined;
+        let swapped = false;
+        const validator: ReleaseProofValidator = (options) => {
+            const path = join(options.candidate, candidatePath);
+            const fileReader: ReleaseProofFileReader = {
+                open(openPath, flags) {
+                    const descriptor = openSync(openPath, flags);
+                    if (openPath === path) {
+                        targetDescriptor = descriptor;
+                    }
+                    return descriptor;
+                },
+                noFollowFlag: () => constants.O_NOFOLLOW,
+                read(descriptor, buffer, offset, length, position) {
+                    if (descriptor === targetDescriptor && !swapped) {
+                        swapped = true;
+                        rmSync(path);
+                        write(path, '{');
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
+            };
+            const errors = validateReleaseProof({ ...options, fileReader });
+            expect(errors).toEqual([]);
+            return errors;
+        };
+
+        expect(() =>
+            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator)
+        ).toThrow('release proof candidate bytes or census changed during validation');
+        expect(swapped).toBe(true);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it.each([
+        ['web contents', 'web/contents/assets/app.js'],
+        ['FFmpeg build input', 'desktop/build-inputs/electron/DEPS'],
+    ])('does not publish a changed %s directory member after validation', (_label, candidatePath) => {
+        const fixture = createFixture();
+        const validator: ReleaseProofValidator = (options) => {
+            const errors = validateReleaseProof(options);
+            expect(errors).toEqual([]);
+            write(join(options.candidate, candidatePath), 'post-validation replacement');
+            return errors;
+        };
+
+        expect(() =>
+            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator)
+        ).toThrow('release proof candidate bytes or census changed during validation');
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
         const fixture = createFixture();
         assemble(fixture);
