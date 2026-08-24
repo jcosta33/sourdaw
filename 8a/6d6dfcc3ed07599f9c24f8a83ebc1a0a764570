@@ -1,0 +1,92 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_a4ec86cd87d3a2 283,348,359-381,384-412,415-425,430-458,460-466,468-471,473-478,616,628,854,934
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_65aed64b0bbe47 3,86-90,96-156,844-1307
+  s_a40848e8f8cca9::t_e376898d27a26d 1308
+.agents/decisions/0030-exact-model-release-admission.md
+  s_a40848e8f8cca9::t_748938d234a3ac 5,28-31
+.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md
+  s_a40848e8f8cca9::t_a063c8b0dc674d 1-111
+.agents/decisions/README.md
+  s_a40848e8f8cca9::t_a3b5b46d75fca5 46,52-53
+README.md
+  s_a40848e8f8cca9::t_376f8d30257b61 6,8,11-32,36-38,40,42-44,46-49,55-63,94-95,100-101
+docs/architecture/09-ai-stack.md
+  s_a40848e8f8cca9::t_cbe24df87e8246 12-21
+public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE
+  s_a40848e8f8cca9::t_0696a52a0e0572 1-217
+public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE
+  s_a40848e8f8cca9::t_ddb27ec1e53713 1-5
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt
+  s_a40848e8f8cca9::t_90714ad2266845 1-201
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.libbacktrace.txt
+  s_a40848e8f8cca9::t_d330f5e202747f 1-29
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.pytorch.txt
+  s_a40848e8f8cca9::t_bb2e8bbe36169f 1-84
+public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/NOTICE.pytorch.txt
+  s_a40848e8f8cca9::t_03a8cb733995e6 1-456
+public/legal/Apache-TVM/LICENSE
+  s_a40848e8f8cca9::t_53b776c36bf2d2 1-230
+public/legal/Apache-TVM/NOTICE
+  s_a40848e8f8cca9::t_85d5174cd80c25 1-5
+public/legal/Apache-TVM/licenses/LICENSE.blockingconcurrentqueue.txt
+  s_a40848e8f8cca9::t_358962de37dd17 1-26
+public/legal/Apache-TVM/licenses/LICENSE.builtin_fp16.txt
+  s_a40848e8f8cca9::t_3a8806b028a10f 1-311
+public/legal/Apache-TVM/licenses/LICENSE.concurrentqueue.txt
+  s_a40848e8f8cca9::t_3634ac90122389 1-22
+public/legal/Apache-TVM/licenses/LICENSE.cutlass.txt
+  s_a40848e8f8cca9::t_6dc11a2ad4b4a1 1-23
+public/legal/Apache-TVM/licenses/LICENSE.cutlass_fpA_intB_gemm.txt
+  s_a40848e8f8cca9::t_f90af4e570c21a 1-202
+public/legal/Apache-TVM/licenses/LICENSE.l2_cache_flush.txt
+  s_a40848e8f8cca9::t_57dfcadde8bea5 1-218
+public/legal/Apache-TVM/licenses/LICENSE.libflash_attn.txt
+  s_a40848e8f8cca9::t_92c01e0281ee44 1-29
+public/legal/Apache-TVM/licenses/LICENSE.rang.txt
+  s_a40848e8f8cca9::t_c0592ff68e24b4 1-24
+public/legal/Apache-TVM/licenses/LICENSE.tensorrt_llm.txt
+  s_a40848e8f8cca9::t_5060ab4d2bf9d0 1-202
+public/legal/Apache-TVM/licenses/LICENSE.vllm.txt
+  s_a40848e8f8cca9::t_e122274a21fe15 1-201
+public/legal/MLC-LLM-NOTICE.txt
+  s_a40848e8f8cca9::t_decc1eb5159289 1-3
+public/legal/Qwen-NOTICE.txt
+  s_a40848e8f8cca9::t_d749bebc5f1573 1-26
+public/legal/THIRD-PARTY-NOTICES.md
+  s_a40848e8f8cca9::t_77d3b775f33ac8 81-119
+scripts/__tests__/releaseProof.spec.ts
+  s_a40848e8f8cca9::t_f484c5e2034081 29,35-37,262-264,307-309,317-325,359-360,364-375,523-528,649-703
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_961471bdb3de1b 5-17,223-234,270-396,1711,1755-1769,1928-1930,1932,1935-1938,1941,1946-1949,1954-1959,1962-1968,1976,1987-1992
+scripts/releaseProof.ts
+  s_a40848e8f8cca9::t_68ae006fa54d2d 35,80-82,371-431,472-476,1321,1742
+src/infra/release/__tests__/modelReleaseAdmission.spec.ts
+  s_a40848e8f8cca9::t_ef460b23071e1b 1-9
+src/infra/release/modelReleaseAdmission.ts
+  s_a40848e8f8cca9::t_ba6edfd67d5f36 7
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts
+  s_a40848e8f8cca9::t_7b657cc518f16f 6,12,19-22,42,53-60,70-79
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts
+  s_a40848e8f8cca9::t_ba1429df67e6fb 1,8-15,18,33-50
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_a40848e8f8cca9::t_bd471457b5d182 37,70,74-76,80,83-86,112-116
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_a40848e8f8cca9::t_7bd40b4adee547 7,18-21,59,67,71,73-74,76-77,100,104-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "8a6d6dfcc3ed07599f9c24f8a83ebc1a0a764570",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
