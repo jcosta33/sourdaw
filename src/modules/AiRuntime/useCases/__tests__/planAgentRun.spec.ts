@@ -231,6 +231,58 @@ describe('planAgentRun', () => {
         ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('capability') }));
     });
 
+    it.each([
+        {
+            label: 'provider scope',
+            applicationTargetIds: ['bass-1', 'drum-bus'],
+            providerTargetIds: ['bass-1', 'bass-1'],
+        },
+        {
+            label: 'application-owned scope',
+            applicationTargetIds: ['bass-1', 'bass-1'],
+            providerTargetIds: ['bass-1', 'drum-bus'],
+        },
+    ])('rejects duplicate IDs in the $label', ({ applicationTargetIds, providerTargetIds }) => {
+        const result = planAgentRun({
+            request: 'Mute the scoped tracks.',
+            revision: 'heads-duplicate-scope',
+            actions: [{ type: 'muteTrack' }],
+            actionLabels: ['Mute the scoped tracks'],
+            scope: {
+                targetIds: applicationTargetIds,
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            grants: {
+                allowedOperationPrefixes: ['muteTrack'],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: false,
+            providerProposal: providerProposal({
+                scope: {
+                    targetIds: providerTargetIds,
+                    targetRanges: [],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+            }),
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') })
+        );
+    });
+
     it('persists and hydrates a canonical revision-bound plan rather than resume prose', () => {
         const planned = planAgentRun({
             request: 'Raise Bass by 1 dB.',

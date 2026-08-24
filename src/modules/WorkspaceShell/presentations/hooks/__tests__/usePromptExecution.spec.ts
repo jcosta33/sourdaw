@@ -471,6 +471,75 @@ describe('usePromptExecution', () => {
         expect(vi.mocked(executePlannedActions)).toHaveBeenCalledTimes(1);
     });
 
+    it('preserves compiler dependencies and batch-local bindings through prompt confirmation', async () => {
+        const busId = 'bus-ai-drum';
+        const actions = [
+            { type: 'createBus', payload: { name: 'Drum Bus', busId } },
+            { type: 'setTrackGain', payload: { trackId: busId, gain: 0.8, expectedGain: 1 } },
+        ] satisfies AppAction[];
+        const actionCommandGraph = {
+            dependenciesByActionIndex: [[], [0]],
+            batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
+        } as const;
+        vi.mocked(parsePromptToActions).mockResolvedValue({
+            actions,
+            actionCommandGraph,
+            rawText: 'Create a Drum Bus, then set its gain to 0.8.',
+            requiresConfirmation: true,
+        });
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.setValue('Create a Drum Bus, then set its gain to 0.8.'));
+
+        await act(async () => {
+            await result.current.handleSubmit(formEvent as never);
+        });
+        expect(result.current.preview).toEqual(
+            expect.objectContaining({
+                actions,
+                actionCommandGraph,
+            })
+        );
+
+        await act(async () => {
+            await result.current.confirmPreview();
+        });
+        expect(executionUseCaseMocks.executePromptActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions,
+                actionCommandGraph,
+                successVerb: 'Confirmed',
+            })
+        );
+    });
+
+    it('forwards compiler dependencies and batch-local bindings through immediate prompt execution', async () => {
+        const busId = 'bus-ai-drum';
+        const actions = [
+            { type: 'createBus', payload: { name: 'Drum Bus', busId } },
+            { type: 'setTrackGain', payload: { trackId: busId, gain: 0.8, expectedGain: 1 } },
+        ] satisfies AppAction[];
+        const actionCommandGraph = {
+            dependenciesByActionIndex: [[], [0]],
+            batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
+        } as const;
+        vi.mocked(parsePromptToActions).mockResolvedValue({
+            actions,
+            actionCommandGraph,
+            rawText: 'Create a Drum Bus, then set its gain to 0.8.',
+            requiresConfirmation: false,
+        });
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.setValue('Create a Drum Bus, then set its gain to 0.8.'));
+
+        await act(async () => {
+            await result.current.handleSubmit(formEvent as never);
+        });
+
+        expect(executionUseCaseMocks.executePromptActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({ actions, actionCommandGraph })
+        );
+    });
+
     it('notifies when no executable action matches', async () => {
         const { result } = renderHook(() => usePromptExecution());
 

@@ -1,6 +1,7 @@
 import {
     isExecutableAppActionType,
     type ExecutableAppActionDirectionalIntent,
+    type ExecutableAppActionMutationIdentityRule,
     type ExecutableAppActionTargetRule,
     type ExecutableAppActionValueRule,
 } from './executableAppActionRegistry';
@@ -11,6 +12,8 @@ type ExecutableAppActionGroundingRules = {
     intentPhrases: readonly string[];
     directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
+    mutationIdempotent: boolean;
+    mutationIdentityRules: readonly ExecutableAppActionMutationIdentityRule[];
     valueRules: readonly ExecutableAppActionValueRule[];
 };
 
@@ -23,6 +26,8 @@ export function getExecutableAppActionGroundingRules(actionType: string): Execut
         actionType: registration.actionType,
         intentPhrases: registration.intentPhrases,
         targetRules: registration.targetChecks,
+        mutationIdempotent: registration.mutationIdempotent,
+        mutationIdentityRules: registration.mutationIdentityRules,
         valueRules: registration.valueRules,
     };
     if (registration.directionalIntent) {

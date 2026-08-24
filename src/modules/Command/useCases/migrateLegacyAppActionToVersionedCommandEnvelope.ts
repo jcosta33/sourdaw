@@ -8,6 +8,7 @@ import { materializeCommandApplicationIds } from './materializeCommandApplicatio
 
 type MigrateLegacyAppActionToVersionedCommandEnvelopeInput = {
     action: AppAction;
+    dependencyIds?: readonly string[];
     expectedEffect?: string;
     normalizedProjectRevision?: string;
     options?: ExecuteOptions;
@@ -25,6 +26,7 @@ export function migrateLegacyAppActionToVersionedCommandEnvelope(
     return createExecutionCommandEnvelope({
         action: materialized.action,
         applicationAssignedIds: materialized.applicationAssignedIds,
+        dependencyIds: input.dependencyIds,
         expectedEffect: input.expectedEffect ?? handler.describe(materialized.action).label,
         normalizedProjectRevision: input.normalizedProjectRevision,
         options: input.options,

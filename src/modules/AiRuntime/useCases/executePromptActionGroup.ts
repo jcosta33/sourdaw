@@ -2,6 +2,8 @@ import { generateGroupId, isExecutableAppActionType } from '#/modules/Command/us
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type ActionCommandGraph } from '../models/ActionCommandGraph';
+
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { describePlannedAction } from './describePlannedAction';
 import { executePlannedActions } from './executePlannedActions';
@@ -10,6 +12,7 @@ import { notifyAiChange } from './notifyAiChange';
 
 type ExecutePromptActionGroupInput = {
     actions: readonly AppAction[];
+    actionCommandGraph?: ActionCommandGraph;
     prompt: string;
     projectRevision: string;
     executionMode?: 'atomic';
@@ -30,6 +33,7 @@ export async function executePromptActionGroup(input: ExecutePromptActionGroupIn
     const group = generateGroupId(input.prompt);
     const commandBatch = compilePlannedActionCommandBatch({
         actions: input.actions,
+        actionCommandGraph: input.actionCommandGraph,
         actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
         autoCommit: true,
         autoCommitApproval: () =>

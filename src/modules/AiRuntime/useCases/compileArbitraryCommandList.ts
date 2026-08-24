@@ -1,21 +1,24 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
+import {
+    parseSemanticCommandList,
+    SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+    SEMANTIC_COMMAND_LIST_MAX_REPEAT,
+    type SemanticCommandListEntity,
+    type SemanticCommandListItem,
+    type SemanticCommandListSelector,
+} from '../models/SemanticCommandList';
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 
-const MAX_ITEMS = 16;
-const MAX_COMMANDS = 32;
-const MAX_REPEAT = 8;
-
-type Entity = 'track' | 'clip' | 'device' | 'automation-lane';
-
 type Candidate = {
     id: string;
-    entity: Entity;
+    entity: SemanticCommandListEntity;
     name?: string;
     kind?: string;
     type?: string;
@@ -34,18 +37,29 @@ export type ArbitraryCommandListSelectorEvidence = {
     preconditions: Array<{ stableId: string; fingerprint: string }>;
 };
 
+export type ArbitraryCommandListDirectTargetEvidence = {
+    argument: string;
+    capability: string;
+    cardinality: 'one' | 'many';
+    stableIds: string[];
+};
+
 type CompiledItemEvidence = {
     canonicalStableIds: string[];
+    declaredCommandIdentities: string[];
     itemId: string;
     commandName: string;
     dependsOn: string[];
     declaredCommandCount: number;
     omittedCommandCount: number;
+    representativeCommandIndexes: number[];
     stableIds: string[];
     commandStart: number;
     commandCount: number;
     targetArgument?: string;
     targetCapability?: string;
+    targetCardinality?: 'many';
+    directTargets?: ArbitraryCommandListDirectTargetEvidence[];
 };
 
 export type ArbitraryCommandListEvidence = {
@@ -117,7 +131,14 @@ function collectCandidates(context: ProjectContext): Candidate[] {
         trackId: lane.trackId,
         enabled: lane.enabled,
     }));
-    return [...tracks, ...clips, ...devices, ...lanes];
+    const adjustmentLayers = (context.adjustmentLayers ?? []).map((layer) => ({
+        id: layer.id,
+        entity: 'adjustment-layer' as const,
+        name: layer.name,
+        type: layer.effectType,
+        enabled: layer.enabled,
+    }));
+    return [...tracks, ...clips, ...devices, ...lanes, ...adjustmentLayers];
 }
 
 function containsForbiddenProviderAuthority(value: unknown): boolean {
@@ -131,7 +152,7 @@ function containsForbiddenProviderAuthority(value: unknown): boolean {
 }
 
 function parseIdList(value: unknown, label: string): string[] | RejectedCompilation {
-    if (!Array.isArray(value) || value.length > MAX_COMMANDS) {
+    if (!Array.isArray(value) || value.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
         return { status: 'rejected', reason: `${label} must contain bounded stable IDs.` };
     }
     const ids: string[] = [];
@@ -147,84 +168,18 @@ function parseIdList(value: unknown, label: string): string[] | RejectedCompilat
     return ids;
 }
 
-function parseSelector(value: unknown):
-    | {
-          targetArgument: string;
-          entity: Entity;
-          where: Record<string, string>;
-          excludedIds: string[];
-          condition: { field: 'muted' | 'locked' | 'bypassed' | 'enabled'; equals: boolean } | undefined;
-          exactly: number;
-      }
-    | RejectedCompilation {
-    if (
-        !isRecord(value) ||
-        !hasOnlyKeys(value, ['targetArgument', 'entity', 'where', 'excludeIds', 'condition', 'quantity'])
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector does not match the versioned application contract.' };
-    }
-    if (
-        !isSafeId(value.targetArgument) ||
-        !['track', 'clip', 'device', 'automation-lane'].includes(String(value.entity))
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector has an invalid target argument or entity.' };
-    }
-    if (
-        !isRecord(value.quantity) ||
-        !hasOnlyKeys(value.quantity, ['unit', 'exactly']) ||
-        value.quantity.unit !== 'targets'
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector requires an exact target quantity with unit targets.' };
-    }
-    const exactly = value.quantity.exactly;
-    if (typeof exactly !== 'number' || !Number.isInteger(exactly) || exactly < 1 || exactly > MAX_COMMANDS) {
-        return { status: 'rejected', reason: 'Bulk selector target quantity is outside the application bound.' };
-    }
-    const where = value.where === undefined ? {} : value.where;
-    if (
-        !isRecord(where) ||
-        !hasOnlyKeys(where, ['name', 'kind', 'type', 'trackId']) ||
-        Object.values(where).some((entry) => !isSafeId(entry))
-    ) {
-        return { status: 'rejected', reason: 'Bulk selector has an invalid semantic match clause.' };
-    }
-    const excluded = value.excludeIds === undefined ? [] : parseIdList(value.excludeIds, 'Bulk selector exclusion');
-    if ('status' in excluded) {
-        return excluded;
-    }
-    let condition: { field: 'muted' | 'locked' | 'bypassed' | 'enabled'; equals: boolean } | undefined;
-    if (value.condition !== undefined) {
-        if (
-            !isRecord(value.condition) ||
-            !hasOnlyKeys(value.condition, ['field', 'equals']) ||
-            !['muted', 'locked', 'bypassed', 'enabled'].includes(String(value.condition.field)) ||
-            typeof value.condition.equals !== 'boolean'
-        ) {
-            return { status: 'rejected', reason: 'Bulk selector has an invalid conditional clause.' };
-        }
-        condition = value.condition as typeof condition;
-    }
-    return {
-        targetArgument: value.targetArgument,
-        entity: value.entity as Entity,
-        where: where as Record<string, string>,
-        excludedIds: excluded,
-        condition,
-        exactly,
-    };
-}
-
 function resolveSelector(input: {
     candidates: readonly Candidate[];
-    selector: ReturnType<typeof parseSelector> & { status?: never };
+    selector: SemanticCommandListSelector;
     protectedTargetIds: ReadonlySet<string>;
     itemId: string;
 }): { stableIds: string[]; evidence: ArbitraryCommandListSelectorEvidence } | RejectedCompilation {
+    const where = input.selector.where ?? {};
     const candidates = input.candidates.filter((candidate) => {
         if (candidate.entity !== input.selector.entity) {
             return false;
         }
-        if (Object.entries(input.selector.where).some(([key, value]) => candidate[key as keyof Candidate] !== value)) {
+        if (Object.entries(where).some(([key, value]) => candidate[key as keyof Candidate] !== value)) {
             return false;
         }
         return (
@@ -232,12 +187,13 @@ function resolveSelector(input: {
             candidate[input.selector.condition.field] === input.selector.condition.equals
         );
     });
-    const excludedIds = new Set([...input.selector.excludedIds, ...input.protectedTargetIds]);
+    const explicitlyExcludedIds = input.selector.excludeIds ?? [];
+    const excludedIds = new Set([...explicitlyExcludedIds, ...input.protectedTargetIds]);
     const protectedExclusions = candidates
         .filter((candidate) => input.protectedTargetIds.has(candidate.id))
         .map((candidate) => candidate.id);
     const stableIds = candidates.filter((candidate) => !excludedIds.has(candidate.id)).map((candidate) => candidate.id);
-    if (stableIds.length !== input.selector.exactly) {
+    if (stableIds.length !== input.selector.quantity.exactly) {
         return {
             status: 'rejected',
             reason: `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, not its exact quantity.`,
@@ -248,7 +204,7 @@ function resolveSelector(input: {
         evidence: {
             itemId: input.itemId,
             stableIds,
-            excludedIds: [...input.selector.excludedIds],
+            excludedIds: [...explicitlyExcludedIds],
             protectedExclusions,
             preconditions: stableIds.map((stableId) => {
                 const candidate = candidates.find((entry) => entry.id === stableId);
@@ -259,15 +215,11 @@ function resolveSelector(input: {
 }
 
 function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stableIds: readonly string[]): boolean {
-    return (
-        plan !== null &&
-        plan.scope.targetIds.length === stableIds.length &&
-        plan.scope.targetIds.every((id, index) => id === stableIds[index])
-    );
-}
-
-function isIdempotentSetCommand(name: string): boolean {
-    return name.startsWith('set') || ['armTrack', 'bypassDevice', 'muteTrack', 'soloTrack'].includes(name);
+    if (plan === null || plan.scope.targetIds.length !== stableIds.length) {
+        return false;
+    }
+    const proposedIds = new Set(plan.scope.targetIds);
+    return proposedIds.size === stableIds.length && stableIds.every((id) => proposedIds.has(id));
 }
 
 function canonicalJson(value: unknown): string {
@@ -287,51 +239,434 @@ function getCanonicalCommandIdentity(command: ToolCallResult): string {
     return canonicalJson(command);
 }
 
-function getTargetWriteIdentity(
-    name: string,
-    targetRules: readonly { argument: string }[],
+type MutationIdentityRule = {
+    arguments: readonly { argument: string; cardinality?: 'many' }[];
+    fallbackArguments?: readonly { argument: string; cardinality?: 'many' }[];
+    resourceFamily?: string;
+    resourceReferenceOnly?: true;
+};
+
+function expandMutationIdentityValues(
+    argumentRules: MutationIdentityRule['arguments'],
     arguments_: Readonly<Record<string, unknown>>
-): string {
-    return canonicalJson({
-        name,
-        targetArguments: Object.fromEntries(
-            targetRules.map((targetRule) => [targetRule.argument, arguments_[targetRule.argument]])
-        ),
-    });
+): unknown[][] | null {
+    let expandedIdentityValues: unknown[][] = [[]];
+    for (const argumentRule of argumentRules) {
+        const value = arguments_[argumentRule.argument];
+        if (argumentRule.cardinality === 'many' && (!Array.isArray(value) || value.length === 0)) {
+            return null;
+        }
+        const values = argumentRule.cardinality === 'many' ? (value as unknown[]) : [value];
+        expandedIdentityValues = expandedIdentityValues.flatMap((identityValues) =>
+            values.map((entry) => [...identityValues, entry])
+        );
+    }
+    return expandedIdentityValues;
 }
 
-function detectDependencyCycle(items: readonly Record<string, unknown>[]): string | null {
+function getExpandedMutationIdentityValues(
+    rule: MutationIdentityRule,
+    arguments_: Readonly<Record<string, unknown>>
+): unknown[][] | null {
+    if (
+        rule.fallbackArguments !== undefined &&
+        rule.arguments.some((argumentRule) => arguments_[argumentRule.argument] === undefined)
+    ) {
+        return expandMutationIdentityValues(rule.fallbackArguments, arguments_);
+    }
+    const primaryValues = expandMutationIdentityValues(rule.arguments, arguments_);
+    return primaryValues;
+}
+
+function getMutationWriteIdentities(
+    name: string,
+    mutationIdentityRules: readonly MutationIdentityRule[],
+    arguments_: Readonly<Record<string, unknown>>
+): string[] | null {
+    if (mutationIdentityRules.length === 0) {
+        return [];
+    }
+    const mutationWriteIdentities: string[] = [];
+    for (const rule of mutationIdentityRules) {
+        if (rule.resourceReferenceOnly === true) {
+            continue;
+        }
+        const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
+        if (expandedIdentityValues === null) {
+            return null;
+        }
+        mutationWriteIdentities.push(
+            ...expandedIdentityValues.map((mutationIdentity) => canonicalJson({ name, mutationIdentity }))
+        );
+    }
+    return mutationWriteIdentities;
+}
+
+function getMutationResourceWriteIdentities(
+    mutationIdentityRules: readonly MutationIdentityRule[],
+    arguments_: Readonly<Record<string, unknown>>
+): string[] | null {
+    const resourceWriteIdentities: string[] = [];
+    for (const rule of mutationIdentityRules) {
+        if (rule.resourceFamily === undefined) {
+            continue;
+        }
+        const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
+        if (expandedIdentityValues === null) {
+            return null;
+        }
+        resourceWriteIdentities.push(
+            ...expandedIdentityValues.map((mutationIdentity) =>
+                canonicalJson({ resourceFamily: rule.resourceFamily, mutationIdentity })
+            )
+        );
+    }
+    return resourceWriteIdentities;
+}
+
+function materializeMutationIdentityArguments(
+    command: ToolCallResult,
+    context: ProjectContext
+): Readonly<Record<string, unknown>> {
+    if (command.name !== 'addSidechainRoute' && command.name !== 'removeSidechainRoute') {
+        return command.arguments;
+    }
+
+    const sourceTrackId = command.arguments.sourceTrackId;
+    const suppliedTargetTrackId = command.arguments.targetTrackId;
+    const suppliedTargetDeviceId = command.arguments.targetDeviceId;
+    const targetTrackIdFromDevice =
+        typeof suppliedTargetDeviceId === 'string'
+            ? context.tracks.find((track) => track.devices.some((device) => device.id === suppliedTargetDeviceId))?.id
+            : undefined;
+    const targetTrackId = targetTrackIdFromDevice ?? suppliedTargetTrackId;
+    if (typeof targetTrackId !== 'string') {
+        return command.arguments;
+    }
+
+    const existingRouteDeviceIds =
+        typeof sourceTrackId === 'string'
+            ? (context.sidechainRoutes ?? [])
+                  .filter((route) => route.sourceTrackId === sourceTrackId && route.targetTrackId === targetTrackId)
+                  .map((route) => route.targetDeviceId)
+            : [];
+    const supportedTargetDeviceIds =
+        context.tracks
+            .find((track) => track.id === targetTrackId)
+            ?.devices.filter((device) => getSidechainTargetCapability(device.type) !== null)
+            .map((device) => device.id) ?? [];
+    let targetDeviceId: string | undefined;
+    if (typeof suppliedTargetDeviceId === 'string') {
+        targetDeviceId = suppliedTargetDeviceId;
+    } else if (existingRouteDeviceIds.length === 1) {
+        targetDeviceId = existingRouteDeviceIds[0];
+    } else if (supportedTargetDeviceIds.length === 1) {
+        targetDeviceId = supportedTargetDeviceIds[0];
+    }
+
+    return {
+        ...command.arguments,
+        targetTrackId,
+        ...(targetDeviceId === undefined ? {} : { targetDeviceId }),
+    };
+}
+
+function getMutationIdentityLabel(
+    mutationIdentityRules: readonly MutationIdentityRule[],
+    arguments_: Readonly<Record<string, unknown>>
+): string {
+    const values: unknown[] = [];
+    for (const rule of mutationIdentityRules) {
+        if (rule.resourceReferenceOnly === true) {
+            continue;
+        }
+        const expandedIdentityValues = getExpandedMutationIdentityValues(rule, arguments_);
+        if (expandedIdentityValues !== null) {
+            values.push(...expandedIdentityValues.flat());
+        }
+    }
+    return values.length === 0 ? 'singleton resource' : values.join(',');
+}
+
+function checkCommandWriteConflict(input: {
+    command: ToolCallResult;
+    context: ProjectContext;
+    mutationIdempotent: boolean;
+    mutationIdentityRules: readonly MutationIdentityRule[];
+    mutationResourceWrites: Map<string, { destructive: boolean }>;
+    targetCommandArguments: Map<string, string>;
+    targetLabel: string;
+}): { status: 'accepted'; commandKey: string } | RejectedCompilation {
+    const commandKey = getCanonicalCommandIdentity(input.command);
+    const materializedArguments = materializeMutationIdentityArguments(input.command, input.context);
+    const mutationWriteIdentities = getMutationWriteIdentities(
+        input.command.name,
+        input.mutationIdentityRules,
+        materializedArguments
+    );
+    const mutationResourceWriteIdentities = getMutationResourceWriteIdentities(
+        input.mutationIdentityRules,
+        materializedArguments
+    );
+    if (mutationWriteIdentities === null || mutationResourceWriteIdentities === null) {
+        return {
+            status: 'rejected',
+            reason: `Structured command mutation identity does not match the registered contract: ${input.command.name}`,
+        };
+    }
+    if (
+        mutationWriteIdentities.some((identity) => {
+            const priorArguments = input.targetCommandArguments.get(identity);
+            return priorArguments !== undefined && (!input.mutationIdempotent || priorArguments !== commandKey);
+        })
+    ) {
+        return {
+            status: 'rejected',
+            reason: `Structured command writes for ${input.command.name} on ${input.targetLabel} are not safely composable.`,
+        };
+    }
+    const destructive = /^remove|^delete/u.test(input.command.name);
+    if (
+        mutationResourceWriteIdentities.some((identity) => {
+            const priorWrite = input.mutationResourceWrites.get(identity);
+            return priorWrite !== undefined && (destructive || priorWrite.destructive);
+        })
+    ) {
+        return {
+            status: 'rejected',
+            reason: 'Structured command list contains contradictory mutation resources.',
+        };
+    }
+    for (const identity of mutationWriteIdentities) {
+        input.targetCommandArguments.set(identity, commandKey);
+    }
+    for (const identity of mutationResourceWriteIdentities) {
+        input.mutationResourceWrites.set(identity, { destructive });
+    }
+    return { status: 'accepted', commandKey };
+}
+
+function stableTopologicalSort(
+    items: readonly SemanticCommandListItem[]
+): { status: 'accepted'; items: SemanticCommandListItem[] } | RejectedCompilation {
     const dependencies = new Map<string, string[]>();
     for (const item of items) {
         const id = item.id;
         if (!isSafeId(id) || dependencies.has(id)) {
-            return 'Structured command list item IDs must be unique stable identifiers.';
+            return {
+                status: 'rejected',
+                reason: 'Structured command list item IDs must be unique stable identifiers.',
+            };
         }
         const dependsOn =
             item.dependsOn === undefined ? [] : parseIdList(item.dependsOn, 'Structured command dependencies');
         if ('status' in dependsOn) {
-            return dependsOn.reason;
+            return dependsOn;
         }
         dependencies.set(id, dependsOn);
     }
-    const visiting = new Set<string>();
+    if ([...dependencies.values()].some((itemDependencies) => itemDependencies.some((id) => !dependencies.has(id)))) {
+        return { status: 'rejected', reason: 'Structured command list has an unknown dependency.' };
+    }
+    const remaining = new Set(items.map((item) => item.id));
+    const sorted: SemanticCommandListItem[] = [];
+    while (remaining.size > 0) {
+        const next = items.find(
+            (item) => remaining.has(item.id) && (dependencies.get(item.id) ?? []).every((id) => !remaining.has(id))
+        );
+        if (next === undefined) {
+            return { status: 'rejected', reason: 'Structured command list has a cyclic dependency.' };
+        }
+        sorted.push(next);
+        remaining.delete(next.id);
+    }
+    return { status: 'accepted', items: sorted };
+}
+
+const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+
+function capabilityRequiresConcreteDependency(capability: string): boolean {
+    return capability === 'device' || capability === 'device-parameter';
+}
+
+type BatchLocalBindingProducer = {
+    itemId: string;
+};
+
+function dependsTransitivelyOn(
+    item: SemanticCommandListItem,
+    dependencyId: string,
+    itemsById: ReadonlyMap<string, SemanticCommandListItem>
+): boolean {
     const visited = new Set<string>();
-    const visit = (id: string): boolean => {
-        if (visiting.has(id)) {
+    const pending = [...(item.dependsOn ?? [])];
+    while (pending.length > 0) {
+        const candidateId = pending.pop();
+        if (candidateId === undefined || visited.has(candidateId)) {
+            continue;
+        }
+        if (candidateId === dependencyId) {
             return true;
         }
-        if (visited.has(id)) {
-            return false;
+        visited.add(candidateId);
+        pending.push(...(itemsById.get(candidateId)?.dependsOn ?? []));
+    }
+    return false;
+}
+
+function validateTargetArgumentsWithoutSelectors(input: {
+    context: ProjectContext;
+    item: SemanticCommandListItem;
+    itemsById: ReadonlyMap<string, SemanticCommandListItem>;
+    producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
+    protectedTargetIds: ReadonlySet<string>;
+    selectorArgument?: string;
+    selectorStableIds?: readonly string[];
+    targetRules: readonly {
+        argument: string;
+        allowBatchLocal?: boolean;
+        capability: string;
+        cardinality?: 'many';
+        dependsOn?: string;
+        distinctFrom?: string;
+        optional?: boolean;
+    }[];
+}): { status: 'accepted'; directTargets: ArbitraryCommandListDirectTargetEvidence[] } | RejectedCompilation {
+    const directTargets: ArbitraryCommandListDirectTargetEvidence[] = [];
+    const stableIdsByArgument = new Map<string, readonly string[]>();
+    if (input.selectorArgument !== undefined && input.selectorStableIds !== undefined) {
+        stableIdsByArgument.set(input.selectorArgument, input.selectorStableIds);
+    }
+    for (const targetRule of input.targetRules) {
+        if (targetRule.argument === input.selectorArgument) {
+            continue;
         }
-        visiting.add(id);
-        const cycle = (dependencies.get(id) ?? []).some(
-            (dependency) => !dependencies.has(dependency) || visit(dependency)
+        const value = input.item.arguments[targetRule.argument];
+        if (value === undefined && targetRule.optional) {
+            continue;
+        }
+        if (typeof value === 'string' && value.startsWith('$')) {
+            if (targetRule.cardinality === 'many' || targetRule.allowBatchLocal === false) {
+                return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
+            }
+            const binding = value.slice(1);
+            if (!BATCH_LOCAL_BINDING_PATTERN.test(binding)) {
+                return { status: 'rejected', reason: `Malformed batch-local target reference: ${value}` };
+            }
+            const producer = input.producersByBinding.get(binding);
+            if (producer === undefined || !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)) {
+                return {
+                    status: 'rejected',
+                    reason: `Batch-local target ${value} requires an earlier bounded producer dependency.`,
+                };
+            }
+            continue;
+        }
+        if (input.selectorArgument === undefined) {
+            return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
+        }
+        let stableIds: string[];
+        if (targetRule.cardinality === 'many') {
+            const parsedIds = parseIdList(value, `Direct command target ${targetRule.argument}`);
+            if ('status' in parsedIds || parsedIds.length === 0) {
+                return 'status' in parsedIds
+                    ? parsedIds
+                    : {
+                          status: 'rejected',
+                          reason: `Direct command target ${targetRule.argument} must contain bounded stable IDs.`,
+                      };
+            }
+            stableIds = parsedIds;
+        } else if (isSafeId(value)) {
+            stableIds = [value];
+        } else {
+            return {
+                status: 'rejected',
+                reason: `Direct command target ${targetRule.argument} must be one bounded stable ID.`,
+            };
+        }
+        const dependencyIds =
+            targetRule.dependsOn === undefined
+                ? []
+                : (stableIdsByArgument.get(targetRule.dependsOn) ??
+                  (() => {
+                      const dependencyValue = input.item.arguments[targetRule.dependsOn];
+                      if (typeof dependencyValue === 'string' && !dependencyValue.startsWith('$')) {
+                          return [dependencyValue];
+                      }
+                      if (Array.isArray(dependencyValue) && dependencyValue.every(isSafeId)) {
+                          return dependencyValue;
+                      }
+                      return [];
+                  })());
+        if (
+            targetRule.dependsOn !== undefined &&
+            dependencyIds.length === 0 &&
+            capabilityRequiresConcreteDependency(targetRule.capability)
+        ) {
+            return {
+                status: 'rejected',
+                reason: `Direct command target ${targetRule.argument} has no immutable dependency boundary.`,
+            };
+        }
+        const isEligible = stableIds.every((stableId) =>
+            (dependencyIds.length === 0 ? [undefined] : dependencyIds).every((dependencyId) =>
+                isAgentReferenceCapabilityCandidate({
+                    capability: targetRule.capability,
+                    context: input.context,
+                    ...(dependencyId === undefined ? {} : { dependencyId }),
+                    id: stableId,
+                })
+            )
         );
-        visiting.delete(id);
-        visited.add(id);
-        return cycle;
-    };
-    return [...dependencies.keys()].some(visit) ? 'Structured command list has an unknown or cyclic dependency.' : null;
+        if (!isEligible || stableIds.some((stableId) => input.protectedTargetIds.has(stableId))) {
+            return {
+                status: 'rejected',
+                reason: `Direct command target ${targetRule.argument} is outside the command capability contract.`,
+            };
+        }
+        const distinctIds =
+            targetRule.distinctFrom === undefined
+                ? []
+                : (stableIdsByArgument.get(targetRule.distinctFrom) ??
+                  (isSafeId(input.item.arguments[targetRule.distinctFrom])
+                      ? [input.item.arguments[targetRule.distinctFrom] as string]
+                      : []));
+        if (stableIds.some((stableId) => distinctIds.includes(stableId))) {
+            return {
+                status: 'rejected',
+                reason: `Direct command target ${targetRule.argument} violates the distinct target contract.`,
+            };
+        }
+        stableIdsByArgument.set(targetRule.argument, stableIds);
+        directTargets.push({
+            argument: targetRule.argument,
+            capability: targetRule.capability,
+            cardinality: targetRule.cardinality === 'many' ? 'many' : 'one',
+            stableIds,
+        });
+    }
+    return { status: 'accepted', directTargets };
+}
+
+function getDeclaredBatchLocalBinding(
+    item: SemanticCommandListItem,
+    repeat: number
+): string | RejectedCompilation | null {
+    const binding = item.arguments.binding;
+    if (binding === undefined) {
+        return null;
+    }
+    if (
+        item.name !== 'createBus' ||
+        typeof binding !== 'string' ||
+        !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+        item.selector !== undefined ||
+        repeat !== 1
+    ) {
+        return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded createBus item.' };
+    }
+    return binding;
 }
 
 /**
@@ -365,41 +700,29 @@ export function compileArbitraryCommandList(input: {
         };
     }
     const plan = normalizeAgentPlanProposal(proposal.arguments.plan);
-    const list = proposal.arguments.list;
-    if (
-        list.schemaVersion !== 1 ||
-        !Array.isArray(list.items) ||
-        list.items.length === 0 ||
-        list.items.length > MAX_ITEMS
-    ) {
-        return { status: 'rejected', reason: 'Structured command list has an unsupported version or item budget.' };
+    const parsedList = parseSemanticCommandList(proposal.arguments.list);
+    if (parsedList.status === 'rejected') {
+        return parsedList;
     }
-    if (list.items.some((item) => !isRecord(item))) {
-        return { status: 'rejected', reason: 'Structured command list contains an invalid item.' };
+    const sortedItems = stableTopologicalSort(parsedList.value.items);
+    if (sortedItems.status === 'rejected') {
+        return sortedItems;
     }
-    const items = list.items as Record<string, unknown>[];
-    const dependencyRejection = detectDependencyCycle(items);
-    if (dependencyRejection !== null) {
-        return { status: 'rejected', reason: dependencyRejection };
-    }
+    const items = sortedItems.items;
     const candidates = collectCandidates(input.context);
     const protectedTargetIds = new Set(plan?.scope.protectedTargetIds ?? []);
     const commands: ToolCallResult[] = [];
     const evidence: ArbitraryCommandListSelectorEvidence[] = [];
     const compiledItems: CompiledItemEvidence[] = [];
     const orderedTargetIds: string[] = [];
-    const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
     const targetCommandArguments = new Map<string, string>();
-    const canonicalCommandKeys = new Set<string>();
+    const mutationResourceWrites = new Map<string, { destructive: boolean }>();
+    const canonicalCommandIndexByKey = new Map<string, number>();
+    const itemsById = new Map(items.map((item) => [item.id, item]));
+    const producersByBinding = new Map<string, BatchLocalBindingProducer>();
 
-    for (const [index, item] of items.entries()) {
+    for (const item of items) {
         const commandStart = commands.length;
-        if (!hasOnlyKeys(item, ['id', 'name', 'arguments', 'selector', 'repeat', 'dependsOn'])) {
-            return { status: 'rejected', reason: 'Structured command item contains unsupported authority fields.' };
-        }
-        if (!isSafeId(item.id) || !isSafeId(item.name) || !isRecord(item.arguments)) {
-            return { status: 'rejected', reason: 'Structured command item has an invalid command shape.' };
-        }
         if (containsForbiddenProviderAuthority(item.arguments)) {
             return { status: 'rejected', reason: 'Provider supplied application-owned authority or expected state.' };
         }
@@ -415,46 +738,60 @@ export function compileArbitraryCommandList(input: {
         if ('status' in dependsOn) {
             return dependsOn;
         }
-        const priorIds = new Set(items.slice(0, index).map((entry) => entry.id));
-        if (dependsOn.some((dependency) => !priorIds.has(dependency))) {
-            return {
-                status: 'rejected',
-                reason: 'Structured command dependencies must refer to earlier ordered items.',
-            };
+        const repeat = item.repeat?.count ?? 1;
+        if (repeat < 1 || repeat > SEMANTIC_COMMAND_LIST_MAX_REPEAT) {
+            return { status: 'rejected', reason: 'Structured command repetition exceeds the application bound.' };
         }
-        let repeat = 1;
-        if (item.repeat !== undefined) {
-            if (
-                !isRecord(item.repeat) ||
-                !hasOnlyKeys(item.repeat, ['count']) ||
-                !Number.isInteger(item.repeat.count)
-            ) {
-                return {
-                    status: 'rejected',
-                    reason: 'Structured command repetition does not match the application contract.',
-                };
-            }
-            repeat = item.repeat.count as number;
-            if (repeat < 1 || repeat > MAX_REPEAT) {
-                return { status: 'rejected', reason: 'Structured command repetition exceeds the application bound.' };
-            }
+        const declaredBinding = getDeclaredBatchLocalBinding(item, repeat);
+        if (isRecord(declaredBinding) && 'status' in declaredBinding) {
+            return declaredBinding;
+        }
+        if (typeof declaredBinding === 'string' && producersByBinding.has(declaredBinding)) {
+            return { status: 'rejected', reason: `Duplicate batch-local binding: ${declaredBinding}` };
         }
         if (item.selector === undefined) {
+            const declaredCommandIdentities: string[] = [];
             let omittedCommandCount = 0;
-            if (rules.targetRules.length > 0) {
-                return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
+            const representativeCommandIndexes: number[] = [];
+            const targetValidation = validateTargetArgumentsWithoutSelectors({
+                context: input.context,
+                item,
+                itemsById,
+                producersByBinding,
+                protectedTargetIds,
+                targetRules: rules.targetRules,
+            });
+            if (targetValidation.status === 'rejected') {
+                return targetValidation;
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = { name: item.name, arguments: { ...item.arguments } };
-                const commandKey = getCanonicalCommandIdentity(command);
-                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                const writeCheck = checkCommandWriteConflict({
+                    command,
+                    context: input.context,
+                    mutationIdempotent: rules.mutationIdempotent,
+                    mutationIdentityRules: rules.mutationIdentityRules,
+                    mutationResourceWrites,
+                    targetCommandArguments,
+                    targetLabel: getMutationIdentityLabel(rules.mutationIdentityRules, command.arguments),
+                });
+                if (writeCheck.status === 'rejected') {
+                    return writeCheck;
+                }
+                const { commandKey } = writeCheck;
+                declaredCommandIdentities.push(commandKey);
+                const canonicalCommandIndex = canonicalCommandIndexByKey.get(commandKey);
+                if (rules.mutationIdempotent && canonicalCommandIndex !== undefined) {
                     omittedCommandCount += 1;
+                    representativeCommandIndexes.push(canonicalCommandIndex);
                     continue;
                 }
-                canonicalCommandKeys.add(commandKey);
+                const commandIndex = commands.length;
+                canonicalCommandIndexByKey.set(commandKey, commandIndex);
+                representativeCommandIndexes.push(commandIndex);
                 commands.push(command);
             }
-            if (commands.length > MAX_COMMANDS) {
+            if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
                 return {
                     status: 'rejected',
                     reason: 'Structured command list exceeds the application command budget.',
@@ -462,23 +799,25 @@ export function compileArbitraryCommandList(input: {
             }
             compiledItems.push({
                 canonicalStableIds: [],
+                declaredCommandIdentities,
                 itemId: item.id,
                 commandName: item.name,
                 dependsOn,
                 declaredCommandCount: repeat,
                 omittedCommandCount,
+                representativeCommandIndexes,
                 stableIds: [],
                 commandStart,
                 commandCount: commands.length - commandStart,
             });
+            if (typeof declaredBinding === 'string') {
+                producersByBinding.set(declaredBinding, { itemId: item.id });
+            }
             continue;
         }
-        const selector = parseSelector(item.selector);
-        if ('status' in selector) {
-            return selector;
-        }
+        const selector = item.selector;
         const targetRule = rules.targetRules.find((rule) => rule.argument === selector.targetArgument);
-        if (targetRule === undefined || targetRule.cardinality === 'many') {
+        if (targetRule === undefined) {
             return {
                 status: 'rejected',
                 reason: 'Bulk selector is incompatible with the discovered command target contract.',
@@ -491,14 +830,42 @@ export function compileArbitraryCommandList(input: {
         if ('status' in resolved) {
             return resolved;
         }
+        const targetValidation = validateTargetArgumentsWithoutSelectors({
+            context: input.context,
+            item,
+            itemsById,
+            producersByBinding,
+            protectedTargetIds,
+            selectorArgument: selector.targetArgument,
+            selectorStableIds: resolved.stableIds,
+            targetRules: rules.targetRules,
+        });
+        if (targetValidation.status === 'rejected') {
+            return targetValidation;
+        }
+        const directTargetsByArgument = new Map(
+            targetValidation.directTargets.map((directTarget) => [directTarget.argument, directTarget.stableIds])
+        );
+        const selectorDependencyIds =
+            targetRule.dependsOn === undefined ? [] : (directTargetsByArgument.get(targetRule.dependsOn) ?? []);
         if (
+            (targetRule.dependsOn !== undefined &&
+                selectorDependencyIds.length === 0 &&
+                capabilityRequiresConcreteDependency(targetRule.capability)) ||
             !resolved.stableIds.every((stableId) =>
-                isAgentReferenceCapabilityCandidate({
-                    capability: targetRule.capability,
-                    context: input.context,
-                    id: stableId,
-                })
-            )
+                (selectorDependencyIds.length === 0 ? [undefined] : selectorDependencyIds).every((dependencyId) =>
+                    isAgentReferenceCapabilityCandidate({
+                        capability: targetRule.capability,
+                        context: input.context,
+                        ...(dependencyId === undefined ? {} : { dependencyId }),
+                        id: stableId,
+                    })
+                )
+            ) ||
+            (targetRule.distinctFrom !== undefined &&
+                resolved.stableIds.some((stableId) =>
+                    (directTargetsByArgument.get(targetRule.distinctFrom!) ?? []).includes(stableId)
+                ))
         ) {
             return {
                 status: 'rejected',
@@ -506,68 +873,85 @@ export function compileArbitraryCommandList(input: {
             };
         }
         evidence.push(resolved.evidence);
-        for (const stableId of resolved.stableIds) {
-            if (!orderedTargetIds.includes(stableId)) {
-                orderedTargetIds.push(stableId);
+        for (const rule of rules.targetRules) {
+            const stableIds =
+                rule.argument === selector.targetArgument
+                    ? resolved.stableIds
+                    : (directTargetsByArgument.get(rule.argument) ?? []);
+            for (const stableId of stableIds) {
+                if (!orderedTargetIds.includes(stableId)) {
+                    orderedTargetIds.push(stableId);
+                }
             }
         }
-        if (repeat > 1 && !isIdempotentSetCommand(item.name)) {
+        if (repeat > 1 && !rules.mutationIdempotent) {
             return {
                 status: 'rejected',
                 reason: `Structured command repetition is not safely composable: ${item.name}`,
             };
         }
         const canonicalStableIds: string[] = [];
+        const declaredCommandIdentities: string[] = [];
         let omittedCommandCount = 0;
-        for (const stableId of resolved.stableIds) {
-            const isDestructive = /^remove|^delete/u.test(item.name);
-            const previousWrite = targetWrites.get(stableId);
-            if (previousWrite && (isDestructive || previousWrite.destructive) && previousWrite.itemId !== item.id) {
-                return {
-                    status: 'rejected',
-                    reason: 'Structured command list contains contradictory target dependencies.',
-                };
-            }
-            targetWrites.set(stableId, { destructive: isDestructive, itemId: item.id });
+        const representativeCommandIndexes: number[] = [];
+        const selectedArgumentValues: Array<string | string[]> =
+            targetRule.cardinality === 'many' ? [[...resolved.stableIds]] : [...resolved.stableIds];
+        for (const selectedTarget of selectedArgumentValues) {
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = {
                     name: item.name,
-                    arguments: { ...item.arguments, [selector.targetArgument]: stableId },
+                    arguments: { ...item.arguments, [selector.targetArgument]: selectedTarget },
                 };
-                const commandKey = getCanonicalCommandIdentity(command);
-                const targetCommandKey = getTargetWriteIdentity(item.name, rules.targetRules, command.arguments);
-                const priorArguments = targetCommandArguments.get(targetCommandKey);
-                if (priorArguments !== undefined && priorArguments !== commandKey) {
-                    return {
-                        status: 'rejected',
-                        reason: `Structured command writes for ${item.name} on ${stableId} are not safely composable.`,
-                    };
+                const writeCheck = checkCommandWriteConflict({
+                    command,
+                    context: input.context,
+                    mutationIdempotent: rules.mutationIdempotent,
+                    mutationIdentityRules: rules.mutationIdentityRules,
+                    mutationResourceWrites,
+                    targetCommandArguments,
+                    targetLabel: resolved.stableIds.join(','),
+                });
+                if (writeCheck.status === 'rejected') {
+                    return writeCheck;
                 }
-                targetCommandArguments.set(targetCommandKey, commandKey);
-                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                const { commandKey } = writeCheck;
+                declaredCommandIdentities.push(commandKey);
+                const canonicalCommandIndex = canonicalCommandIndexByKey.get(commandKey);
+                if (rules.mutationIdempotent && canonicalCommandIndex !== undefined) {
                     omittedCommandCount += 1;
+                    representativeCommandIndexes.push(canonicalCommandIndex);
                     continue;
                 }
-                canonicalCommandKeys.add(commandKey);
-                canonicalStableIds.push(stableId);
+                const commandIndex = commands.length;
+                canonicalCommandIndexByKey.set(commandKey, commandIndex);
+                representativeCommandIndexes.push(commandIndex);
+                if (targetRule.cardinality === 'many') {
+                    canonicalStableIds.push(...resolved.stableIds);
+                } else {
+                    canonicalStableIds.push(selectedTarget as string);
+                }
                 commands.push(command);
             }
         }
-        if (commands.length > MAX_COMMANDS) {
+        if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
             return { status: 'rejected', reason: 'Structured command list exceeds the application command budget.' };
         }
         compiledItems.push({
             canonicalStableIds,
+            declaredCommandIdentities,
             itemId: item.id,
             commandName: item.name,
             dependsOn,
-            declaredCommandCount: resolved.stableIds.length * repeat,
+            declaredCommandCount: (targetRule.cardinality === 'many' ? 1 : resolved.stableIds.length) * repeat,
             omittedCommandCount,
+            representativeCommandIndexes,
             stableIds: [...resolved.stableIds],
             commandStart,
             commandCount: commands.length - commandStart,
             targetArgument: selector.targetArgument,
             targetCapability: targetRule.capability,
+            ...(targetRule.cardinality === 'many' ? { targetCardinality: 'many' as const } : {}),
+            ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
     }
     if (!hasExactScope(plan, orderedTargetIds)) {

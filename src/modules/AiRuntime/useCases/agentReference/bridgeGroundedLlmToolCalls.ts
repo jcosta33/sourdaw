@@ -4,6 +4,7 @@ import {
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
+import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
@@ -95,6 +96,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
+    actionCommandGraph?: ActionCommandGraph;
 };
 
 type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
@@ -119,6 +121,38 @@ type CollectBatchLocalBusBindingsResult =
 
 type ResolveBatchLocalBusReferenceResult =
     { status: 'none' } | { status: 'resolved'; binding: BatchLocalBusBinding } | { status: 'rejected'; reason: string };
+
+function hasExactTargetIdSet(assertedIds: unknown, expectedIds: readonly string[]): boolean {
+    if (!Array.isArray(assertedIds)) {
+        return false;
+    }
+    const assertedIdSet = new Set(assertedIds);
+    return assertedIdSet.size === expectedIds.length && expectedIds.every((targetId) => assertedIdSet.has(targetId));
+}
+
+function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson).join(',')}]`;
+    }
+    if (typeof value === 'object' && value !== null) {
+        const record = value as Readonly<Record<string, unknown>>;
+        return `{${Object.keys(record)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+            .join(',')}}`;
+    }
+    return JSON.stringify(value) ?? 'undefined';
+}
+
+function hasExactCanonicalToolCallOrder(
+    expected: readonly ToolCallResult[],
+    actual: readonly ToolCallResult[]
+): boolean {
+    return (
+        expected.length === actual.length &&
+        expected.every((expectedCall, index) => canonicalJson(expectedCall) === canonicalJson(actual[index]))
+    );
+}
 
 type ActionPromptScope = PromptClause & {
     directional: boolean;
@@ -3543,6 +3577,8 @@ function groundToolCall({
             : null;
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
+    const wholeProjectVibeMixScope =
+        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
@@ -3575,6 +3611,14 @@ function groundToolCall({
             continue;
         }
         if (
+            wholeProjectVibeMixScope &&
+            call.name === 'automateTrackGainRange' &&
+            targetRule.argument === 'trackIds' &&
+            hasExactTargetIdSet(assertedValue, wholeProjectVibeMixScope.targetIds)
+        ) {
+            continue;
+        }
+        if (
             drumRoutingScope?.status === 'request' &&
             call.name === 'setTrackOutput' &&
             targetRule.argument === 'trackId' &&
@@ -3599,6 +3643,28 @@ function groundToolCall({
             typeof assertedValue === 'string' &&
             bulkMutedEmptyTrackDeletionTargetIds.includes(assertedValue)
         ) {
+            continue;
+        }
+        const compilerTargetOverride = resolvedTargetOverrides?.find(
+            (override) => override.argument === targetRule.argument
+        );
+        if (
+            targetRule.cardinality === 'many' &&
+            compilerTargetOverride !== undefined &&
+            'stableIds' in compilerTargetOverride
+        ) {
+            if (
+                compilerTargetOverride.cardinality !== 'many' ||
+                targetRule.capability !== compilerTargetOverride.capability ||
+                JSON.stringify(assertedValue) !== JSON.stringify(compilerTargetOverride.stableIds)
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
+                );
+            }
+            groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
             continue;
         }
         if (targetRule.cardinality === 'many') {
@@ -3663,6 +3729,20 @@ function groundToolCall({
                     `Batch-local bus cannot satisfy target capability ${targetRule.capability}`
                 );
             }
+            if (compilerTargetOverride !== undefined && 'batchLocalBinding' in compilerTargetOverride) {
+                if (
+                    compilerTargetOverride.capability !== targetRule.capability ||
+                    compilerTargetOverride.batchLocalBinding !== batchLocalReference.binding.binding
+                ) {
+                    return rejection(
+                        index,
+                        call.name,
+                        `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
+                    );
+                }
+                groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
+                continue;
+            }
             if (
                 !containsBatchLocalBusEvidence(
                     targetPrompt,
@@ -3683,13 +3763,12 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
-        const compilerTargetOverride = resolvedTargetOverrides?.find(
-            (override) => override.argument === targetRule.argument
-        );
-        if (compilerTargetOverride !== undefined) {
+        if (compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride) {
             if (
+                compilerTargetOverride.cardinality !== 'one' ||
+                compilerTargetOverride.stableIds.length !== 1 ||
                 targetRule.capability !== compilerTargetOverride.capability ||
-                assertedValue !== compilerTargetOverride.stableId
+                assertedValue !== compilerTargetOverride.stableIds[0]
             ) {
                 return rejection(
                     index,
@@ -3697,7 +3776,7 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
-            groundedArguments[targetRule.argument] = compilerTargetOverride.stableId;
+            groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
             continue;
         }
         const bulkSiblingTargetIds =
@@ -3943,6 +4022,7 @@ export function bridgeGroundedLlmToolCalls({
     workflowCapabilityId,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
+    let compilerActionCommandGraph: ActionCommandGraph | undefined;
     if (compilerEvidence !== undefined) {
         const compilerValidation = validateArbitraryCommandListEvidence({
             evidence: compilerEvidence,
@@ -3954,6 +4034,26 @@ export function bridgeGroundedLlmToolCalls({
             return { actions: [], rejections: [rejection(0, '<batch>', compilerValidation.reason)] };
         }
         compilerTargetOverridesByCallIndex = compilerValidation.targetOverridesByCallIndex;
+        compilerActionCommandGraph = compilerValidation.actionCommandGraph;
+    }
+    // These workflows expand provider calls into generated app-owned actions. Until they can rebuild an
+    // action-aligned graph, compiler evidence cannot safely cross the partial-acceptance boundary.
+    if (
+        compilerActionCommandGraph !== undefined &&
+        (workflowCapabilityId === 'shared-vocal-fx-buses' ||
+            workflowCapabilityId === 'drum-render-comparison' ||
+            workflowCapabilityId === 'backing-vocal-plate')
+    ) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(
+                    0,
+                    '<batch>',
+                    'Compiler command graphs cannot enter application-expanded specialized workflows'
+                ),
+            ],
+        };
     }
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({
@@ -4307,8 +4407,6 @@ export function bridgeGroundedLlmToolCalls({
     if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
         const providerCall = providerVibeMixCalls[0];
         const assertedTrackIds = providerCall?.arguments.trackIds;
-        const providerTargetSet = Array.isArray(assertedTrackIds) ? new Set(assertedTrackIds) : new Set<unknown>();
-        const scopeTargetSet = new Set(wholeProjectVibeMixScope?.targetIds ?? []);
         if (!wholeProjectVibeMixScope || !providerCall) {
             return {
                 actions: [],
@@ -4320,8 +4418,7 @@ export function bridgeGroundedLlmToolCalls({
         const matchesScope =
             calls.length === 1 &&
             providerVibeMixCalls.length === 1 &&
-            providerTargetSet.size === scopeTargetSet.size &&
-            [...scopeTargetSet].every((trackId) => providerTargetSet.has(trackId)) &&
+            hasExactTargetIdSet(assertedTrackIds, wholeProjectVibeMixScope.targetIds) &&
             providerCall.arguments.sectionName === wholeProjectVibeMixScope.section.name &&
             providerCall.arguments.gainDb === wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb;
         if (!matchesScope) {
@@ -4462,6 +4559,23 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
+    if (
+        compilerActionCommandGraph !== undefined &&
+        (compilerEvidence === undefined ||
+            compilerTargetOverridesByCallIndex === undefined ||
+            !hasExactCanonicalToolCallOrder(compilerEvidence.commands, effectiveCalls))
+    ) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(
+                    0,
+                    '<batch>',
+                    'Compiler evidence indexes no longer match the specialized workflow command order'
+                ),
+            ],
+        };
+    }
     const collectedBindings = collectBatchLocalBusBindings(effectiveCalls, context);
     if (collectedBindings.status === 'rejected') {
         return {
@@ -4570,6 +4684,17 @@ export function bridgeGroundedLlmToolCalls({
         }
         return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
     });
+    if (
+        compilerActionCommandGraph !== undefined &&
+        rejections.length === 0 &&
+        (bridged.actions.length !== compilerActionCommandGraph.dependenciesByActionIndex.length ||
+            bridged.actions.some((action, index) => action.type !== effectiveCalls[index]?.name))
+    ) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'Compiler action graph no longer matches the bridged command batch')],
+        };
+    }
     if (rejections.some((bridgeRejection) => bridgeRejection.name === 'glueClips')) {
         return { actions: [], rejections: [rejection(0, '<batch>', invalidGlueRequestReason)] };
     }
@@ -4594,6 +4719,9 @@ export function bridgeGroundedLlmToolCalls({
             ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
             ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
             ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
+            ...(rejections.length === 0 && compilerActionCommandGraph !== undefined
+                ? { actionCommandGraph: compilerActionCommandGraph }
+                : {}),
             rejections,
         };
     }
@@ -4607,6 +4735,7 @@ export function bridgeGroundedLlmToolCalls({
         ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
         ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
         batchLocalActionIdentities,
+        ...(compilerActionCommandGraph === undefined ? {} : { actionCommandGraph: compilerActionCommandGraph }),
         rejections,
     };
 }
