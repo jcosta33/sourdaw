@@ -113,7 +113,7 @@ const {
         // Distinguishable from `noop` on purpose: this spec asserts the MIDI
         // learn seam receives Arrangement's own `clampTrackGain`, so the stand-in
         // has to be identifiable by reference.
-        clampTrackGainMock: vi.fn<(trackId: string, gain: number) => number>(),
+        clampTrackGainMock: vi.fn<(gain: number) => number>(),
         setMidiLearnDependenciesMock: vi.fn<(dependencies: { clampTrackGain: unknown }) => void>(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
