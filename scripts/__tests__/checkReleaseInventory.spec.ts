@@ -1087,17 +1087,23 @@ describe('release inventory', () => {
         value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
         let byteReads = 0;
         let textReads = 0;
+        const attemptedFlags: number[] = [];
+        let successfulReplacementOpens = 0;
 
         try {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, 'contained legal bytes');
             linkSync(filePath, targetPath);
             const readFile = {
-                open: (openPath: string) => {
+                open: (openPath: string, flags: number) => {
                     rmSync(filePath);
                     symlinkSync(targetPath, filePath);
-                    return openSync(openPath, constants.O_RDONLY);
+                    attemptedFlags.push(flags);
+                    const descriptor = openSync(openPath, flags);
+                    successfulReplacementOpens += 1;
+                    return descriptor;
                 },
+                noFollowFlag: () => constants.O_NOFOLLOW,
                 readBytes: (fileDescriptor: number) => {
                     byteReads += 1;
                     return readFileSync(fileDescriptor);
@@ -1113,6 +1119,9 @@ describe('release inventory', () => {
             expect(changed.fileDigests[path]).toBe('missing');
             expect(byteReads).toBe(0);
             expect(textReads).toBe(0);
+            expect(attemptedFlags).toHaveLength(1);
+            expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
+            expect(successfulReplacementOpens).toBe(0);
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
@@ -1654,14 +1663,21 @@ describe('release inventory', () => {
         writeFileSync(outside, 'outside source');
         let swapped = false;
         let readsAfterSwap = 0;
+        const attemptedFlags: number[] = [];
+        let successfulReplacementOpens = 0;
         const reader: RepositorySnapshotFileReader = {
             open(path, flags) {
                 if (path === swappedPath) {
                     rmSync(swappedPath);
                     symlinkSync(outside, swappedPath);
                     swapped = true;
+                    attemptedFlags.push(flags);
                 }
-                return openSync(path, flags);
+                const descriptor = openSync(path, flags);
+                if (path === swappedPath) {
+                    successfulReplacementOpens += 1;
+                }
+                return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             readBytes(descriptor) {
@@ -1683,6 +1699,9 @@ describe('release inventory', () => {
                 'Grand Boule release source is unsafe: crates/daw-dsp/src/grand_boule/engine.rs'
             );
             expect(readsAfterSwap).toBe(0);
+            expect(attemptedFlags).toHaveLength(1);
+            expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
+            expect(successfulReplacementOpens).toBe(0);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

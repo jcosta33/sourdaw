@@ -394,7 +394,8 @@ function assemble(
     buildRunner: ReleaseBuildRunner = fixtureBuildRunner(fixture),
     releaseGate: (root: string, releaseInventory?: ReleaseInventory) => void = () => undefined,
     inventoryReader: (root: string) => ReleaseInventory = readReleaseInventory,
-    validator?: ReleaseProofValidator
+    validator?: ReleaseProofValidator,
+    snapshotFileReader?: ReleaseProofFileReader
 ): void {
     assembleReleaseProof(
         fixture.root,
@@ -405,7 +406,8 @@ function assemble(
         buildRunner,
         releaseGate,
         inventoryReader,
-        validator
+        validator,
+        snapshotFileReader
     );
 }
 
@@ -531,32 +533,44 @@ afterEach(() => {
 });
 
 describe('release proof', () => {
-    it('reads one inventory snapshot and passes that exact object to validation and the release gate', () => {
+    it('passes one inventory object to staging validation, final validation, and the release gate', () => {
         const fixture = createFixture();
         const inventory = readReleaseInventory(fixture.root);
         let inventoryReads = 0;
-        let validatedInventory: ReleaseInventory | undefined;
+        let stagingInventory: ReleaseInventory | undefined;
+        let publicationInventory: ReleaseInventory | undefined;
         let gatedInventory: ReleaseInventory | undefined;
+        let gateCompleted = false;
+        const observedInventory: ReleaseInventory = new Proxy(inventory, {
+            get(target, property, receiver) {
+                if (gateCompleted && property === 'surfaces') {
+                    publicationInventory = observedInventory;
+                }
+                return Reflect.get(target, property, receiver);
+            },
+        });
 
         assemble(
             fixture,
             fixtureBuildRunner(fixture),
             (_root, releaseInventory) => {
                 gatedInventory = releaseInventory;
+                gateCompleted = true;
             },
             () => {
                 inventoryReads += 1;
-                return inventory;
+                return observedInventory;
             },
             (options) => {
-                validatedInventory = options.releaseInventory;
+                stagingInventory = options.releaseInventory;
                 return validateReleaseProof(options);
             }
         );
 
         expect(inventoryReads).toBe(1);
-        expect(validatedInventory).toBe(inventory);
-        expect(gatedInventory).toBe(inventory);
+        expect(stagingInventory).toBe(observedInventory);
+        expect(gatedInventory).toBe(observedInventory);
+        expect(publicationInventory).toBe(observedInventory);
     });
 
     it('pins the WebLLM packaged legal path list', () => {
@@ -577,13 +591,46 @@ describe('release proof', () => {
         assemble(fixture);
         const proofPath = join(fixture.candidate, 'release-proof.json');
         const originalProof = readFileSync(proofPath);
+        let commitPath: string | undefined;
+        let proofDescriptor: number | undefined;
+        let commitDescriptor: number | undefined;
+        let proofReads = 0;
+        let commitReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (descriptor === proofDescriptor && path !== proofPath) {
+                    proofDescriptor = undefined;
+                }
+                if (descriptor === commitDescriptor && path !== commitPath) {
+                    commitDescriptor = undefined;
+                }
+                if (path === proofPath) {
+                    proofDescriptor = descriptor;
+                } else if (path === commitPath) {
+                    commitDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === proofDescriptor) {
+                    proofReads += 1;
+                }
+                if (descriptor === commitDescriptor) {
+                    commitReads += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
         truncateSync(proofPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
-        expect(validate(fixture)).toContain('JSON document exceeds');
+        expect(validate(fixture, fileReader)).toContain('JSON document exceeds');
+        expect(proofReads).toBe(0);
         writeFileSync(proofPath, originalProof);
 
         const value = proof(fixture);
         const source = value.source as Record<string, unknown>;
-        const commitPath = join(fixture.candidate, source.commitPath as string);
+        commitPath = join(fixture.candidate, source.commitPath as string);
         truncateSync(commitPath, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes + 1);
         source.commitSha256 = hash(commitPath);
         const manifestPath = join(fixture.candidate, source.manifestPath as string);
@@ -592,7 +639,10 @@ describe('release proof', () => {
         writeJson(manifestPath, manifest);
         source.manifestSha256 = hash(manifestPath);
         writeJson(proofPath, value);
-        expect(validate(fixture)).toContain('source commit object: file exceeds the candidate file-size limit');
+        expect(validate(fixture, fileReader)).toContain(
+            'source commit object: file exceeds the candidate file-size limit'
+        );
+        expect(commitReads).toBe(0);
     });
 
     it('rejects an already-oversize candidate manifest without reading descriptor bytes', () => {
@@ -623,6 +673,13 @@ describe('release proof', () => {
 
         expect(validate(fixture, fileReader)).toContain('source manifest: file exceeds the candidate file-size limit');
         expect(manifestReads).toBe(0);
+    });
+
+    it('uses default descriptor open and read operations when only no-follow support is supplied', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+
+        expect(validate(fixture, { noFollowFlag: () => constants.O_NOFOLLOW })).toEqual('');
     });
 
     it('stops snapshotting when a candidate manifest grows beyond its consumer limit', () => {
@@ -689,6 +746,166 @@ describe('release proof', () => {
             `source archive: cumulative candidate snapshot byte limit exceeded (${String(readFileSync(manifestPath).length)} bytes)`
         );
         expect(archiveReads).toBe(0);
+    });
+
+    it.each([
+        ['web contents', 'web/contents/assets/app.js'],
+        ['Electron FFmpeg build inputs', 'desktop/build-inputs/electron/DEPS'],
+    ])('stops hashing a growing %s member at the running file limit', (label, candidatePath) => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const path = join(fixture.candidate, candidatePath);
+        let targetDescriptor: number | undefined;
+        let targetReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(openPath, flags) {
+                const descriptor = openSync(openPath, flags);
+                if (descriptor === targetDescriptor && openPath !== path) {
+                    targetDescriptor = undefined;
+                }
+                if (openPath === path) {
+                    targetDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === targetDescriptor) {
+                    targetReads += 1;
+                    if (targetReads === 1) {
+                        truncateSync(path, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
+                    }
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        expect(validate(fixture, fileReader)).toContain(`${label}: file exceeds the candidate file-size limit`);
+        expect(targetReads).toBe(1);
+    });
+
+    it('stops before reading a web contents member that exhausts the cumulative validation budget', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const value = proof(fixture);
+        const source = value.source as Record<string, string>;
+        const web = value.web as Record<string, string>;
+        const manifest = JSON.parse(readFileSync(join(fixture.candidate, web.manifestPath), 'utf8')) as Record<
+            string,
+            unknown
+        >;
+        const files = manifest.files as Record<string, string>;
+        const memberPaths = Object.keys(files).sort();
+        const firstMember = memberPaths[0];
+        const exhaustedMember = memberPaths[1];
+        if (firstMember === undefined || exhaustedMember === undefined) {
+            throw new Error('web fixture needs at least two contents members');
+        }
+        const referencedPaths = [
+            source.manifestPath,
+            source.archivePath,
+            source.commitPath,
+            web.manifestPath,
+            web.archivePath,
+        ];
+        const budget = [...referencedPaths, `web/contents/${firstMember}`].reduce(
+            (total, path) => total + readFileSync(join(fixture.candidate, path)).length,
+            0
+        );
+        const exhaustedPath = join(fixture.candidate, 'web/contents', exhaustedMember);
+        let exhaustedDescriptor: number | undefined;
+        let exhaustedReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === exhaustedPath) {
+                    exhaustedDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === exhaustedDescriptor) {
+                    exhaustedReads += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+            snapshotByteLimit: budget,
+        };
+
+        expect(validate(fixture, fileReader)).toContain(
+            `web contents: cumulative candidate snapshot byte limit exceeded (${String(budget)} bytes)`
+        );
+        expect(exhaustedReads).toBe(0);
+    });
+
+    it('stops before reading a build-input member that exhausts the cumulative validation budget', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const value = proof(fixture);
+        const source = value.source as Record<string, string>;
+        const web = value.web as Record<string, string>;
+        const desktop = value.desktop as Record<string, string>;
+        const webManifest = JSON.parse(readFileSync(join(fixture.candidate, web.manifestPath), 'utf8')) as Record<
+            string,
+            unknown
+        >;
+        const webFiles = Object.keys(webManifest.files as Record<string, string>);
+        const buildManifest = JSON.parse(
+            readFileSync(join(fixture.candidate, desktop.ffmpegBuildPath), 'utf8')
+        ) as Record<string, unknown>;
+        const buildInputs = Object.keys(buildManifest.buildInputs as Record<string, string>).sort();
+        const firstInput = buildInputs[0];
+        const exhaustedInput = buildInputs[1];
+        if (firstInput === undefined || exhaustedInput === undefined) {
+            throw new Error('build fixture needs at least two input members');
+        }
+        const referencedPaths = [
+            source.manifestPath,
+            source.archivePath,
+            source.commitPath,
+            web.manifestPath,
+            web.archivePath,
+            desktop.artifactPath,
+            desktop.contentsManifestPath,
+            desktop.runtimeManifestPath,
+            desktop.electronSourcePath,
+            desktop.electronCommitPath,
+            desktop.ffmpegSourcePath,
+            desktop.ffmpegCommitPath,
+            desktop.ffmpegBuildPath,
+            ...webFiles.map((path) => `web/contents/${path}`),
+            `${desktop.buildInputsPath}/${firstInput}`,
+        ];
+        const budget = referencedPaths.reduce(
+            (total, path) => total + readFileSync(join(fixture.candidate, path)).length,
+            0
+        );
+        const exhaustedPath = join(fixture.candidate, desktop.buildInputsPath, exhaustedInput);
+        let exhaustedDescriptor: number | undefined;
+        let exhaustedReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === exhaustedPath) {
+                    exhaustedDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === exhaustedDescriptor) {
+                    exhaustedReads += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+            snapshotByteLimit: budget,
+        };
+
+        expect(validate(fixture, fileReader)).toContain(
+            `Electron FFmpeg build inputs: cumulative candidate snapshot byte limit exceeded (${String(budget)} bytes)`
+        );
+        expect(exhaustedReads).toBe(0);
     });
 
     it('rejects a stale candidate revision', () => {
@@ -770,13 +987,20 @@ describe('release proof', () => {
         const path = join(fixture.candidate, candidatePath);
         const outside = join(fixture.base, `${candidatePath.replaceAll('/', '-')}.outside`);
         writeFileSync(outside, 'untrusted replacement');
+        const attemptedFlags: number[] = [];
+        let successfulReplacementOpens = 0;
         const fileReader: ReleaseProofFileReader = {
             open(openPath, flags) {
                 if (openPath === path) {
                     rmSync(path);
                     symlinkSync(outside, path);
+                    attemptedFlags.push(flags);
                 }
-                return openSync(openPath, flags);
+                const descriptor = openSync(openPath, flags);
+                if (openPath === path) {
+                    successfulReplacementOpens += 1;
+                }
+                return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
         };
@@ -786,6 +1010,9 @@ describe('release proof', () => {
         expect(errors).toContain(
             `${candidatePath.startsWith('web/contents') ? 'web manifest' : 'web archive'}: file is missing or unsafe`
         );
+        expect(attemptedFlags).toHaveLength(1);
+        expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
+        expect(successfulReplacementOpens).toBe(0);
     });
 
     it.each([
@@ -823,16 +1050,12 @@ describe('release proof', () => {
     it.each([
         ['web manifest', 'web/contents/web-artifact-manifest.json'],
         ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],
-    ])('publishes frozen %s bytes when the mutable source is swapped after capture', (_label, candidatePath) => {
+    ])('rejects a staged %s swapped before the publication snapshot', (_label, candidatePath) => {
         const fixture = createFixture();
         let targetDescriptor: number | undefined;
         let swapped = false;
-        let expectedBytes: Buffer | undefined;
-        let mutableCandidate: string | undefined;
         const validator: ReleaseProofValidator = (options) => {
-            mutableCandidate = options.candidate;
             const path = join(options.candidate, candidatePath);
-            expectedBytes = readFileSync(path);
             const fileReader: ReleaseProofFileReader = {
                 open(openPath, flags) {
                     const descriptor = openSync(openPath, flags);
@@ -856,34 +1079,83 @@ describe('release proof', () => {
             return errors;
         };
 
-        assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator);
+        expect(() =>
+            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator)
+        ).toThrow('digest mismatch');
         expect(swapped).toBe(true);
-        expect(readFileSync(join(fixture.candidate, candidatePath))).toEqual(expectedBytes);
-        expect(mutableCandidate).not.toBe(fixture.candidate);
-        if (mutableCandidate === undefined) {
-            throw new Error('custom validator did not observe the mutable candidate');
-        }
-        expect(existsSync(mutableCandidate)).toBe(false);
-        expect(validate(fixture)).toEqual('');
+        expect(existsSync(fixture.candidate)).toBe(false);
     });
 
     it.each([
         ['web contents', 'web/contents/assets/app.js'],
         ['FFmpeg build input', 'desktop/build-inputs/electron/DEPS'],
-    ])('publishes a frozen %s directory member when its mutable source changes', (_label, candidatePath) => {
+    ])('rejects a staged %s directory member changed before the publication snapshot', (_label, candidatePath) => {
         const fixture = createFixture();
-        let expectedBytes: Buffer | undefined;
         const validator: ReleaseProofValidator = (options) => {
-            expectedBytes = readFileSync(join(options.candidate, candidatePath));
             const errors = validateReleaseProof(options);
             expect(errors).toEqual([]);
             write(join(options.candidate, candidatePath), 'post-validation replacement');
             return errors;
         };
 
-        assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator);
-        expect(readFileSync(join(fixture.candidate, candidatePath))).toEqual(expectedBytes);
-        expect(validate(fixture)).toEqual('');
+        expect(() =>
+            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator)
+        ).toThrow('digest mismatch');
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('never opens, reads, or publishes a replacement swapped during snapshot capture', () => {
+        const fixture = createFixture();
+        const candidateSuffix = 'web/contents/web-artifact-manifest.json';
+        let capturedDescriptor: number | undefined;
+        let capturedOpens = 0;
+        let replacementOpens = 0;
+        let capturedReads = 0;
+        let swappedPath: string | undefined;
+        let capturedFlags: number | undefined;
+        const snapshotFileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                if (path.endsWith(candidateSuffix) && swappedPath === undefined) {
+                    capturedFlags = flags;
+                    const descriptor = openSync(path, flags);
+                    capturedDescriptor = descriptor;
+                    capturedOpens += 1;
+                    swappedPath = path;
+                    rmSync(path);
+                    write(path, '{');
+                    return descriptor;
+                }
+                if (path === swappedPath) {
+                    replacementOpens += 1;
+                }
+                return openSync(path, flags);
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === capturedDescriptor) {
+                    capturedReads += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                snapshotFileReader
+            )
+        ).toThrow('release proof candidate snapshot: missing or unsafe web/contents/web-artifact-manifest.json');
+
+        expect(capturedOpens).toBe(1);
+        expect(capturedReads).toBe(0);
+        expect(replacementOpens).toBe(0);
+        expect(capturedFlags).toBeDefined();
+        expect((capturedFlags ?? 0) & constants.O_NOFOLLOW).not.toBe(0);
+        expect(existsSync(fixture.candidate)).toBe(false);
     });
 
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
@@ -1142,6 +1414,47 @@ describe('release proof', () => {
         expect(existsSync(fixture.candidate)).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.tmp-'))).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.publication-'))).toBe(false);
+    });
+
+    it('snapshots and rejects a candidate mutation made by the release gate', () => {
+        const fixture = createFixture();
+        let mutableCandidate: string | undefined;
+        const validator: ReleaseProofValidator = (options) => {
+            mutableCandidate = options.candidate;
+            return validateReleaseProof(options);
+        };
+        const gate = (): void => {
+            if (mutableCandidate === undefined) {
+                throw new Error('staging validation did not expose its candidate');
+            }
+            write(join(mutableCandidate, 'web/contents/assets/app.js'), 'release-gate mutation');
+        };
+
+        expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate, readReleaseInventory, validator)).toThrow(
+            'web contents: digest mismatch for assets/app.js'
+        );
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it.each(['file', 'empty directory'] as const)('does not replace a concurrently introduced output %s', (kind) => {
+        const fixture = createFixture();
+        const marker = 'concurrent output';
+        const gate = (): void => {
+            if (kind === 'file') {
+                write(fixture.candidate, marker);
+            } else {
+                mkdirSync(fixture.candidate);
+            }
+        };
+
+        expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate)).toThrow(
+            'release proof output appeared before atomic publication'
+        );
+        if (kind === 'file') {
+            expect(readFileSync(fixture.candidate, 'utf8')).toBe(marker);
+        } else {
+            expect(readdirSync(fixture.candidate)).toEqual([]);
+        }
     });
 
     it('rejects unreferenced files outside the closed candidate census', () => {

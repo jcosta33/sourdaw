@@ -16,7 +16,6 @@ import {
     readSync,
     readdirSync,
     realpathSync,
-    renameSync,
     rmSync,
     statSync,
     symlinkSync,
@@ -168,11 +167,101 @@ type CandidateCensusMaps = {
     webFiles?: Record<string, string>;
 };
 
+type AtomicDirectoryPublisher = (source: string, destination: string) => void;
+
 const releaseProofFileReader: ReleaseProofFileReader = {
     open: (path, flags) => openSync(path, flags),
     noFollowFlag: () => Reflect.get(constants, 'O_NOFOLLOW'),
     read: (descriptor, buffer, offset, length, position) => readSync(descriptor, buffer, offset, length, position),
 };
+
+const ATOMIC_RENAME_HELPER_SOURCE = String.raw`
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#include <unistd.h>
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE 1
+#endif
+#endif
+
+int main(int argc, char **argv) {
+    if (argc != 3) {
+        return 64;
+    }
+#if defined(__APPLE__)
+    int result = renamex_np(argv[1], argv[2], RENAME_EXCL);
+#elif defined(__linux__)
+    int result = syscall(SYS_renameat2, AT_FDCWD, argv[1], AT_FDCWD, argv[2], RENAME_NOREPLACE);
+#else
+#error unsupported release proof publication platform
+#endif
+    if (result == 0) {
+        return 0;
+    }
+    int failure = errno;
+    perror("exclusive rename");
+    return failure == EEXIST ? 17 : 1;
+}
+`;
+
+let atomicRenameHelper: string | undefined;
+let atomicRenameHelperRoot: string | undefined;
+
+function prepareAtomicDirectoryPublisher(): AtomicDirectoryPublisher {
+    if (atomicRenameHelper === undefined) {
+        if (process.platform !== 'darwin' && process.platform !== 'linux') {
+            throw new Error(`atomic release proof publication is unavailable on ${process.platform}`);
+        }
+        atomicRenameHelperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-exclusive-rename-'));
+        atomicRenameHelper = join(atomicRenameHelperRoot, 'rename-exclusive');
+        const compiler = process.platform === 'darwin' ? 'xcrun' : 'cc';
+        const compilerArgs = [
+            ...(process.platform === 'darwin' ? ['clang'] : []),
+            '-x',
+            'c',
+            '-O2',
+            '-o',
+            atomicRenameHelper,
+            '-',
+        ];
+        const compiled = spawnSync(compiler, compilerArgs, {
+            encoding: 'utf8',
+            input: ATOMIC_RENAME_HELPER_SOURCE,
+        });
+        if (compiled.status !== 0) {
+            rmSync(atomicRenameHelperRoot, { recursive: true, force: true });
+            atomicRenameHelper = undefined;
+            atomicRenameHelperRoot = undefined;
+            throw new Error(
+                `atomic release proof publisher could not be prepared: ${compiled.error?.message ?? compiled.stderr.trim()}`
+            );
+        }
+        process.once('exit', () => {
+            if (atomicRenameHelperRoot !== undefined) {
+                rmSync(atomicRenameHelperRoot, { recursive: true, force: true });
+            }
+        });
+    }
+    if (atomicRenameHelper === undefined) {
+        throw new Error('atomic release proof publisher is unavailable');
+    }
+    const helper = atomicRenameHelper;
+    return (source, destination) => {
+        const published = spawnSync(helper, [source, destination], { encoding: 'utf8' });
+        if (published.status === 17) {
+            throw new Error('release proof output appeared before atomic publication');
+        }
+        if (published.status !== 0) {
+            throw new Error(
+                `atomic release proof publication failed: ${published.error?.message ?? published.stderr.trim()}`
+            );
+        }
+    };
+}
 
 function candidateSnapshotBudget(fileReader: ReleaseProofFileReader): CandidateSnapshotBudget {
     const requested = fileReader.snapshotByteLimit;
@@ -336,6 +425,22 @@ function digestCandidateDescriptor(
         position += bytesRead;
         budget.remaining -= bytesRead;
     }
+}
+
+function sha256CandidateFile(
+    root: string,
+    path: string,
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
+): string | undefined {
+    return withContainedRegularFile(
+        root,
+        path,
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        (descriptor) =>
+            digestCandidateDescriptor(descriptor, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes, budget, fileReader),
+        fileReader
+    );
 }
 
 function snapshotCandidateFile(
@@ -602,14 +707,18 @@ function listFiles(root: string, label: string, errors: string[], allowContained
     return files.sort();
 }
 
-function snapshotCandidateTree(candidate: string, snapshot: string): void {
+function snapshotCandidateTree(
+    candidate: string,
+    snapshot: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader
+): void {
     const label = 'release proof candidate snapshot';
     const errors: string[] = [];
     const paths = listFiles(candidate, label, errors);
     if (errors.length > 0) {
         throw new Error(errors.join('\n'));
     }
-    const budget = candidateSnapshotBudget(releaseProofFileReader);
+    const budget = candidateSnapshotBudget(fileReader);
     for (const path of paths) {
         const source = resolve(candidate, ...path.split('/'));
         const destination = resolve(snapshot, ...path.split('/'));
@@ -625,7 +734,7 @@ function snapshotCandidateTree(candidate: string, snapshot: string): void {
                         descriptor,
                         RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
                         budget,
-                        releaseProofFileReader,
+                        fileReader,
                         (bytes) => writeSync(output, bytes)
                     );
                     return true;
@@ -633,7 +742,7 @@ function snapshotCandidateTree(candidate: string, snapshot: string): void {
                     closeSync(output);
                 }
             },
-            releaseProofFileReader
+            fileReader
         );
         if (copied !== true) {
             throw new Error(`${label}: missing or unsafe ${path}`);
@@ -710,8 +819,7 @@ function validateWebLlmLegalFiles(
     inventory: ReleaseInventory,
     packagedFiles: Record<string, string>,
     label: string,
-    errors: string[],
-    contentsPath?: string
+    errors: string[]
 ): void {
     let requiredFiles: string[];
     try {
@@ -722,12 +830,8 @@ function validateWebLlmLegalFiles(
     }
     for (const required of requiredFiles) {
         const sourcePath = resolve(root, 'public', ...required.split('/'));
-        const packagedPath = contentsPath === undefined ? undefined : resolve(contentsPath, ...required.split('/'));
         const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
-        const contentsMatch =
-            packagedPath === undefined ||
-            (contentsPath !== undefined && sha256ContainedRegularFile(contentsPath, packagedPath) === sourceDigest);
-        if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest || !contentsMatch) {
+        if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest) {
             errors.push(`${label} WebLLM legal file ${required} is missing or drifted`);
         }
     }
@@ -738,10 +842,13 @@ function verifyFileMap(
     recorded: Record<string, string>,
     label: string,
     errors: string[],
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader,
     excluded: readonly string[] = []
-): void {
+): Record<string, string> {
     const actual = listFiles(directory, label, errors).filter((path) => !excluded.includes(path));
     const recordedPaths = Object.keys(recorded).sort();
+    const verified: Record<string, string> = {};
     if (!sameValue(actual, recordedPaths)) {
         errors.push(`${label}: file census mismatch`);
     }
@@ -753,20 +860,28 @@ function verifyFileMap(
         }
         let actualHash: string | undefined;
         try {
-            actualHash = sha256ContainedRegularFile(directory, absolute);
+            actualHash = sha256CandidateFile(directory, absolute, budget, fileReader);
         } catch (error) {
             if (error instanceof FileReadLimitError) {
-                errors.push(`${label}: file exceeds the candidate file-size limit for ${path}`);
+                errors.push(
+                    error.kind === 'aggregate'
+                        ? `${label}: cumulative candidate snapshot byte limit exceeded (${String(budget.limit)} bytes)`
+                        : `${label}: file exceeds the candidate file-size limit for ${path}`
+                );
                 continue;
             }
             throw error;
         }
         if (actualHash === undefined) {
             errors.push(`${label}: missing or unsafe ${path}`);
-        } else if (actualHash !== recorded[path]) {
-            errors.push(`${label}: digest mismatch for ${path}`);
+        } else {
+            verified[path] = actualHash;
+            if (actualHash !== recorded[path]) {
+                errors.push(`${label}: digest mismatch for ${path}`);
+            }
         }
     }
+    return verified;
 }
 
 function fileMap(directory: string): Record<string, string> {
@@ -1666,7 +1781,9 @@ function validateWebManifest(
         errors.push('web manifest build command drifted');
     }
     const files = stringMap(manifest.files, 'web manifest.files', errors);
-    verifyFileMap(contentsPath, files, 'web contents', errors, ['web-artifact-manifest.json']);
+    const verifiedFiles = verifyFileMap(contentsPath, files, 'web contents', errors, snapshotBudget, fileReader, [
+        'web-artifact-manifest.json',
+    ]);
     if (!Object.hasOwn(files, 'index.html') || !Object.keys(files).some((path) => path.startsWith('assets/'))) {
         errors.push('web contents is missing the required application entry or assets');
     }
@@ -1675,14 +1792,12 @@ function validateWebManifest(
             errors.push(`web contents is missing ${required}`);
         }
         const sourcePath = resolve(root, 'public', required);
-        const webPath = resolve(contentsPath, ...required.split('/'));
         const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
-        const webDigest = sha256ContainedRegularFile(contentsPath, webPath);
-        if (sourceDigest === undefined || sourceDigest !== webDigest) {
+        if (sourceDigest === undefined || sourceDigest !== verifiedFiles[required]) {
             errors.push(`web legal file ${required} is missing or drifted`);
         }
     }
-    validateWebLlmLegalFiles(root, releaseInventory, files, 'web', errors, contentsPath);
+    validateWebLlmLegalFiles(root, releaseInventory, verifiedFiles, 'web', errors);
     if (archivePath !== undefined && archive !== undefined) {
         const archiveFiles = archive.entries.map((entry) => entry.path).sort();
         const expectedFiles = ['web-artifact-manifest.json', ...Object.keys(files)].sort();
@@ -1691,10 +1806,7 @@ function validateWebManifest(
         }
         for (const path of expectedFiles) {
             const archived = archive.hashes.get(path);
-            const adjacentDigest =
-                path === 'web-artifact-manifest.json'
-                    ? manifestPath.digest
-                    : sha256ContainedRegularFile(contentsPath, resolve(contentsPath, ...path.split('/')));
+            const adjacentDigest = path === 'web-artifact-manifest.json' ? manifestPath.digest : verifiedFiles[path];
             if (archived === undefined || archived !== adjacentDigest) {
                 errors.push(`web archive bytes do not match web contents for ${path}`);
             }
@@ -2138,7 +2250,9 @@ function validateBuildMaterial(
         buildManifest?: VerifiedCandidateFile;
         buildInputs?: string;
     },
-    errors: string[]
+    errors: string[],
+    snapshotBudget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
 ): Record<string, string> | undefined {
     const electronCommit =
         paths.electronCommit === undefined
@@ -2219,17 +2333,19 @@ function validateBuildMaterial(
     if (!sameValue(Object.keys(inputs).sort(), [...ELECTRON_FFMPEG_BUILD_INPUTS].sort())) {
         errors.push('FFmpeg build material exact input list drifted');
     }
-    verifyFileMap(paths.buildInputs, inputs, 'Electron FFmpeg build inputs', errors);
+    const verifiedInputs = verifyFileMap(
+        paths.buildInputs,
+        inputs,
+        'Electron FFmpeg build inputs',
+        errors,
+        snapshotBudget,
+        fileReader
+    );
     if (paths.electronArchive !== undefined) {
         const prefix = `electron-${runtimeContract.revision}`;
         for (const path of ELECTRON_FFMPEG_BUILD_INPUTS) {
             const archived = archiveFileBytes(paths.electronArchive.snapshotPath, prefix, path);
-            const adjacent = join(paths.buildInputs, ...path.split('/'));
-            if (
-                archived === undefined ||
-                sha256Bytes(archived) !== inputs[path] ||
-                sha256ContainedRegularFile(paths.buildInputs, adjacent) !== inputs[path]
-            ) {
+            if (archived === undefined || sha256Bytes(archived) !== verifiedInputs[path]) {
                 errors.push(`Electron FFmpeg build input ${path} does not match the source archive`);
             }
         }
@@ -2426,7 +2542,9 @@ function validateDesktop(
         desktop,
         runtimeContract,
         { electronArchive, electronCommit, ffmpegArchive, ffmpegCommit, buildManifest, buildInputs },
-        errors
+        errors,
+        snapshotBudget,
+        fileReader
     );
 }
 
@@ -2806,7 +2924,8 @@ export function assembleReleaseProof(
     releaseGate: ReleaseGateRunner = (gateRoot, releaseInventory) =>
         checkReleaseInventory(gateRoot, undefined, releaseInventory),
     inventoryReader: ReleaseInventoryReader = readReleaseInventory,
-    validator: ReleaseProofValidator = validateReleaseProof
+    validator: ReleaseProofValidator = validateReleaseProof,
+    publicationFileReader: ReleaseProofFileReader = releaseProofFileReader
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
@@ -2833,6 +2952,7 @@ export function assembleReleaseProof(
         throw new Error('assembly output must not already exist');
     }
     mkdirSync(dirname(output), { recursive: true });
+    const publishDirectory = prepareAtomicDirectoryPublisher();
     const candidate = mkdtempSync(join(dirname(output), `.${basename(output)}.tmp-`));
     let publicationCandidate: string | undefined;
     try {
@@ -3023,8 +3143,6 @@ export function assembleReleaseProof(
             },
         };
         writeJson(join(candidate, PROOF_FILE), proof);
-        publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
-        snapshotCandidateTree(candidate, publicationCandidate);
         if (validator !== validateReleaseProof) {
             const customErrors = validator({
                 root,
@@ -3037,6 +3155,11 @@ export function assembleReleaseProof(
                 throw new Error(customErrors.join('\n'));
             }
         }
+        assertBuildState(root, revision);
+        releaseGate(root, releaseInventory);
+        assertBuildState(root, revision);
+        publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
+        snapshotCandidateTree(candidate, publicationCandidate, publicationFileReader);
         rmSync(candidate, { recursive: true, force: true });
         const publicationErrors = validateReleaseProof({
             root,
@@ -3048,10 +3171,7 @@ export function assembleReleaseProof(
         if (publicationErrors.length > 0) {
             throw new Error(publicationErrors.join('\n'));
         }
-        assertBuildState(root, revision);
-        releaseGate(root, releaseInventory);
-        assertBuildState(root, revision);
-        renameSync(publicationCandidate, output);
+        publishDirectory(publicationCandidate, output);
     } catch (error) {
         rmSync(candidate, { recursive: true, force: true });
         if (publicationCandidate !== undefined) {
