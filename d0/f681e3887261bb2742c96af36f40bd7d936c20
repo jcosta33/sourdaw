@@ -1,0 +1,34 @@
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_3306704dfd8f6f 239-241,247-252,2020-2021,2024-2027
+scripts/checkProjectLicense.ts
+  s_27578aec2aab3b::t_2f66aae8b9ada7 67,130-133,167-168,179
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_27578aec2aab3b::t_c1051dcf39696e 217-225
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_f5780e606d97a2 934
+scripts/releaseProof.ts
+  s_27578aec2aab3b::t_d89bd86fe37481 482-483,2137-2138
+  s_27578aec2aab3b::t_8e228ff748da05 129,140,2421-2422,2426,2644
+scripts/__tests__/releaseProof.spec.ts
+  s_27578aec2aab3b::t_ff7cdd05e62005 390-391,400-401,888-889,895,898-905,907
+  s_27578aec2aab3b::t_c4f6a5af185f93 23
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_d123e2fca1c4ad 2051,2053,2056-2060
+  s_27578aec2aab3b::t_4a76b355ecdc73 2061-2064
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d0f681e3887261bb2742c96af36f40bd7d936c20",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
