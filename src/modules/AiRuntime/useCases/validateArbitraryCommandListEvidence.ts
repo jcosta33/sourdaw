@@ -126,7 +126,8 @@ export function validateArbitraryCommandListEvidence(input: {
         };
     }
     const candidatesById = new Map(collectCandidates(input.context).map((candidate) => [candidate.id, candidate]));
-    const protectedTargetIds = new Set(evidence.proposalScope.protectedTargetIds);
+    const protectedTargetIds = new Set(evidence.verifiedProposalScope.protectedTargetIds);
+    const verifiedProtectedTargetIds: string[] = [];
     const selectorByItemId = new Map<string, ArbitraryCommandListSelectorEvidence>();
     for (const selector of evidence.selectors) {
         if (selectorByItemId.has(selector.itemId) || selector.stableIds.length === 0) {
@@ -152,6 +153,11 @@ export function validateArbitraryCommandListEvidence(input: {
             new Set(selector.excludedIds).size !== selector.excludedIds.length
         ) {
             return { status: 'rejected', reason: 'Structured command compiler evidence preconditions no longer hold.' };
+        }
+        for (const protectedTargetId of selector.protectedExclusions) {
+            if (!verifiedProtectedTargetIds.includes(protectedTargetId)) {
+                verifiedProtectedTargetIds.push(protectedTargetId);
+            }
         }
         selectorByItemId.set(selector.itemId, selector);
     }
@@ -313,18 +319,6 @@ export function validateArbitraryCommandListEvidence(input: {
                         reason: 'Structured command compiler evidence target scope is invalid.',
                     };
                 }
-                if (targetRule.argument !== item.targetArgument && targetRule.cardinality !== 'many') {
-                    for (const command of matchingCommands) {
-                        const commandIndex = evidence.commands.indexOf(command, item.commandStart);
-                        if (commandIndex >= item.commandStart) {
-                            addTargetOverride(commandIndex, {
-                                argument: targetRule.argument,
-                                capability: targetRule.capability,
-                                stableId: targetId,
-                            });
-                        }
-                    }
-                }
                 if (!resolvedTargetIds.includes(targetId)) {
                     resolvedTargetIds.push(targetId);
                 }
@@ -354,8 +348,12 @@ export function validateArbitraryCommandListEvidence(input: {
     }
     if (
         commandCursor !== evidence.commands.length ||
-        evidence.proposalScope.targetIds.length !== resolvedTargetIds.length ||
-        !evidence.proposalScope.targetIds.every((stableId, index) => stableId === resolvedTargetIds[index])
+        evidence.verifiedProposalScope.targetIds.length !== resolvedTargetIds.length ||
+        !evidence.verifiedProposalScope.targetIds.every((stableId, index) => stableId === resolvedTargetIds[index]) ||
+        JSON.stringify(evidence.verifiedProposalScope.targetRanges) !== JSON.stringify([]) ||
+        JSON.stringify(evidence.verifiedProposalScope.protectedTargetIds) !==
+            JSON.stringify(verifiedProtectedTargetIds) ||
+        JSON.stringify(evidence.verifiedProposalScope.protectedRanges) !== JSON.stringify([])
     ) {
         return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
     }

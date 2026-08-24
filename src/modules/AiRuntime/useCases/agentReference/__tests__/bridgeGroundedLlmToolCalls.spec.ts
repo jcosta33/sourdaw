@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { compileArbitraryCommandList } from '../../compileArbitraryCommandList';
 import { bridgeGroundedLlmToolCalls } from '../bridgeGroundedLlmToolCalls';
 
 type ProjectTrack = ProjectContext['tracks'][number];
@@ -88,6 +89,113 @@ function bridge(
 ) {
     return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures, sectionSignatures });
 }
+
+describe('compiler-resolved target grounding', () => {
+    it('does not let a provider-authored parameter override the parameter named in the prompt', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) =>
+                track.id === vocals.id
+                    ? {
+                          ...track,
+                          devices: [
+                              {
+                                  id: 'device-vocal-compressor',
+                                  name: 'Vocal Compressor',
+                                  type: 'builtin-compressor',
+                                  bypassed: false,
+                                  parameters: [
+                                      {
+                                          id: 'parameter-vocal-ratio',
+                                          name: 'Ratio',
+                                          type: 'float',
+                                          value: 2,
+                                          minValue: 1,
+                                          maxValue: 20,
+                                          unit: ':1',
+                                      },
+                                      {
+                                          id: 'parameter-vocal-threshold',
+                                          name: 'Threshold',
+                                          type: 'float',
+                                          value: -12,
+                                          minValue: -60,
+                                          maxValue: 0,
+                                          unit: 'dB',
+                                      },
+                                  ],
+                              },
+                          ],
+                          deviceCount: 1,
+                      }
+                    : track
+            ),
+        };
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: 'Set the vocal compressor ratio.',
+                            constraints: [],
+                            scope: {
+                                targetIds: ['device-vocal-compressor', 'parameter-vocal-threshold'],
+                                targetRanges: [],
+                                protectedTargetIds: [],
+                                protectedRanges: [],
+                            },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'set-vocal-compressor',
+                                    name: 'setDeviceParameter',
+                                    arguments: { paramId: 'parameter-vocal-threshold', value: -18 },
+                                    selector: {
+                                        targetArgument: 'deviceId',
+                                        entity: 'device',
+                                        where: { name: 'Vocal Compressor' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(compiled.status).toBe('accepted');
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error('Expected a valid owner-bound compiler evidence fixture');
+        }
+        const result = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            projectRevision: 'revision-1',
+            prompt: 'set the Ratio on the Vocal Compressor to 4',
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            expect.objectContaining({
+                name: 'setDeviceParameter',
+                reason: expect.stringContaining('paramId'),
+            }),
+        ]);
+    });
+});
 
 describe('setPlayback grounding', () => {
     it('grounds explicit play, resume, and pause polarity', () => {

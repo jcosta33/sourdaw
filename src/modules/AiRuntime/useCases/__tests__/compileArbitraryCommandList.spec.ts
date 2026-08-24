@@ -646,6 +646,117 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
+    it.each([
+        {
+            name: 'setTempo',
+            commands: [
+                { id: 'tempo-100', name: 'setTempo', arguments: { bpm: 100 } },
+                { id: 'tempo-140', name: 'setTempo', arguments: { bpm: 140 } },
+            ],
+        },
+        {
+            name: 'setMasterGain',
+            commands: [
+                { id: 'gain-60', name: 'setMasterGain', arguments: { gain: 0.6 } },
+                { id: 'gain-90', name: 'setMasterGain', arguments: { gain: 0.9 } },
+            ],
+        },
+    ])('rejects contradictory targetless $name writes while retaining exact duplicate dedupe', ({ name, commands }) => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: { schemaVersion: 1, items: commands },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: `Structured command writes for ${name} on the global project field are not safely composable.`,
+        });
+
+        const duplicate = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [commands[0]!, { ...commands[0]!, id: `${name}-duplicate` }],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(duplicate).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: { commands: [{ name, arguments: commands[0]!.arguments }] },
+        });
+    });
+
+    it('rejects provider scope ranges and protected identities that compiled selectors cannot prove', () => {
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const scopeVariants = [
+            {
+                targetIds: ['track-kick'],
+                targetRanges: [{ startBeat: 4, endBeat: 8 }],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            {
+                targetIds: ['track-kick'],
+                targetRanges: [],
+                protectedTargetIds: ['track-hat'],
+                protectedRanges: [],
+            },
+            {
+                targetIds: ['track-kick'],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [{ startBeat: 12, endBeat: 16 }],
+            },
+        ];
+
+        for (const scope of scopeVariants) {
+            const result = compileArbitraryCommandList({
+                context,
+                revision: 'revision-1',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: { ...plan(['track-kick']), scope },
+                            list: {
+                                schemaVersion: 1,
+                                items: [{ id: 'mute-kick', name: 'muteTrack', arguments: { muted: true }, selector }],
+                            },
+                        },
+                    },
+                ],
+            });
+
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'Structured command list resolved scope does not exactly match the provider proposal.',
+            });
+        }
+    });
+
     it('rejects a device parameter that belongs to a different device during compilation', () => {
         const deviceContext = contextWithOwnedDeviceParameters();
         const result = compileArbitraryCommandList({

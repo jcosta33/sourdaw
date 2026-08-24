@@ -52,7 +52,7 @@ type CompiledItemEvidence = {
 export type ArbitraryCommandListEvidence = {
     schemaVersion: 1;
     snapshotRevision: string;
-    proposalScope: AgentPlanProposal['scope'];
+    verifiedProposalScope: AgentPlanProposal['scope'];
     selectors: ArbitraryCommandListSelectorEvidence[];
     items: CompiledItemEvidence[];
     commands: ToolCallResult[];
@@ -259,11 +259,16 @@ function resolveSelector(input: {
     };
 }
 
-function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stableIds: readonly string[]): boolean {
+function hasExactScope(
+    plan: ReturnType<typeof normalizeAgentPlanProposal>,
+    verifiedScope: AgentPlanProposal['scope']
+): boolean {
     return (
         plan !== null &&
-        plan.scope.targetIds.length === stableIds.length &&
-        plan.scope.targetIds.every((id, index) => id === stableIds[index])
+        JSON.stringify(plan.scope.targetIds) === JSON.stringify(verifiedScope.targetIds) &&
+        JSON.stringify(plan.scope.targetRanges) === JSON.stringify(verifiedScope.targetRanges) &&
+        JSON.stringify(plan.scope.protectedTargetIds) === JSON.stringify(verifiedScope.protectedTargetIds) &&
+        JSON.stringify(plan.scope.protectedRanges) === JSON.stringify(verifiedScope.protectedRanges)
     );
 }
 
@@ -278,6 +283,9 @@ function getTargetWriteIdentity(
 ): string {
     if (commandName === 'setTrackOutput') {
         return JSON.stringify([['trackId', arguments_.trackId ?? null]]);
+    }
+    if (targetRules.length === 0 && isIdempotentSetCommand(commandName)) {
+        return JSON.stringify([['global', commandName]]);
     }
     return JSON.stringify(
         targetRules.map((targetRule) => [targetRule.argument, arguments_[targetRule.argument] ?? null])
@@ -400,6 +408,7 @@ export function compileArbitraryCommandList(input: {
     const targetCommandArguments = new Map<string, string>();
     const canonicalCommandKeys = new Set<string>();
     const producerItemIdsByBinding = new Map<string, string>();
+    const verifiedProtectedTargetIds: string[] = [];
 
     for (const [index, item] of items.entries()) {
         const commandStart = commands.length;
@@ -456,6 +465,19 @@ export function compileArbitraryCommandList(input: {
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = { name: item.name, arguments: { ...item.arguments } };
                 const commandKey = JSON.stringify(command);
+                const targetCommandKey = `${item.name}\u0000${getTargetWriteIdentity(
+                    item.name,
+                    rules.targetRules,
+                    command.arguments
+                )}`;
+                const priorArguments = targetCommandArguments.get(targetCommandKey);
+                if (priorArguments !== undefined && priorArguments !== commandKey) {
+                    return {
+                        status: 'rejected',
+                        reason: `Structured command writes for ${item.name} on the global project field are not safely composable.`,
+                    };
+                }
+                targetCommandArguments.set(targetCommandKey, commandKey);
                 if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
                     omittedCommandCount += 1;
                     continue;
@@ -592,6 +614,11 @@ export function compileArbitraryCommandList(input: {
             directTargetIdsByArgument.set(rule.argument, stableIds);
         }
         evidence.push(resolved.evidence);
+        for (const protectedTargetId of resolved.evidence.protectedExclusions) {
+            if (!verifiedProtectedTargetIds.includes(protectedTargetId)) {
+                verifiedProtectedTargetIds.push(protectedTargetId);
+            }
+        }
         for (const rule of rules.targetRules) {
             for (const stableId of directTargetIdsByArgument.get(rule.argument) ?? []) {
                 if (!orderedTargetIds.includes(stableId)) {
@@ -662,7 +689,13 @@ export function compileArbitraryCommandList(input: {
             targetCapability: targetRule.capability,
         });
     }
-    if (!hasExactScope(plan, orderedTargetIds)) {
+    const verifiedProposalScope: AgentPlanProposal['scope'] = {
+        targetIds: orderedTargetIds,
+        targetRanges: [],
+        protectedTargetIds: verifiedProtectedTargetIds,
+        protectedRanges: [],
+    };
+    if (!hasExactScope(plan, verifiedProposalScope)) {
         return {
             status: 'rejected',
             reason: 'Structured command list resolved scope does not exactly match the provider proposal.',
@@ -678,7 +711,7 @@ export function compileArbitraryCommandList(input: {
                 : {
                       schemaVersion: 1,
                       snapshotRevision: input.revision,
-                      proposalScope: structuredClone(plan.scope),
+                      verifiedProposalScope: structuredClone(verifiedProposalScope),
                       selectors: structuredClone(evidence),
                       items: structuredClone(compiledItems),
                       commands: structuredClone(commands),

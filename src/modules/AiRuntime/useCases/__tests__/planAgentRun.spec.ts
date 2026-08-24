@@ -231,6 +231,77 @@ describe('planAgentRun', () => {
         ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('capability') }));
     });
 
+    it.each([
+        {
+            label: 'omitted target range',
+            providerScope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            verifiedScope: {
+                targetIds: ['bass-1'],
+                targetRanges: [{ startBeat: 8, endBeat: 16 }],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+        },
+        {
+            label: 'invented target range',
+            providerScope: {
+                targetIds: ['bass-1'],
+                targetRanges: [{ startBeat: 8, endBeat: 16 }],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            verifiedScope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        },
+        {
+            label: 'invented protected identity',
+            providerScope: {
+                targetIds: ['bass-1'],
+                targetRanges: [],
+                protectedTargetIds: ['master'],
+                protectedRanges: [],
+            },
+            verifiedScope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        },
+        {
+            label: 'invented protected range',
+            providerScope: {
+                targetIds: ['bass-1'],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [{ startBeat: 16, endBeat: 24 }],
+            },
+            verifiedScope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        },
+    ])('rejects a provider $label against independently verified scope', ({ providerScope, verifiedScope }) => {
+        const result = planAgentRun({
+            request: 'Mute Bass.',
+            revision: 'heads-1',
+            actions: [{ type: 'muteTrack' }],
+            actionLabels: ['Mute Bass'],
+            scope: verifiedScope,
+            verifiedProviderProposalScope: verifiedScope,
+            grants: {
+                allowedOperationPrefixes: ['muteTrack'],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: false,
+            providerProposal: providerProposal({ scope: providerScope }),
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') })
+        );
+    });
+
     it('persists and hydrates a canonical revision-bound plan rather than resume prose', () => {
         const planned = planAgentRun({
             request: 'Raise Bass by 1 dB.',

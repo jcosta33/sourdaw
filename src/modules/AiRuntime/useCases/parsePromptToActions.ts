@@ -668,7 +668,7 @@ export const parsePromptToActions = inject({ logger })(
                         workflowCapabilityId === undefined &&
                         compiledList.compilerEvidence !== undefined
                     ) {
-                        verifiedProviderProposalScope = compiledList.compilerEvidence.proposalScope;
+                        verifiedProviderProposalScope = compiledList.compilerEvidence.verifiedProposalScope;
                     }
                     return {
                         actions: guarded.actions,
