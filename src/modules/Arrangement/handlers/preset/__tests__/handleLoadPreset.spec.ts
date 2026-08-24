@@ -218,6 +218,10 @@ describe('handleLoadPreset', () => {
 
     it('initializes a missing live strip from the committed replacement snapshot before applying parameters', async () => {
         mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }] });
         const result = await handleLoadPreset.execute(action());
         if (!result || result.status !== 'written') {
             throw new Error('Preset load did not produce a project write');
@@ -246,11 +250,59 @@ describe('handleLoadPreset', () => {
         );
     });
 
+    it('initializes a missing live strip directly from the authoritative final same-track chain', async () => {
+        const presetAction = action();
+        const finalDevice: DeviceSnapshot = {
+            id: 'final-device-1',
+            name: 'Final',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: { threshold: -12 },
+        };
+        const laterDeviceMutation: AppAction = {
+            type: 'restorePresetDeviceChain',
+            payload: {
+                trackId: 'track-1',
+                expectedBefore: {
+                    id: 'track-1',
+                    kind: 'midi',
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [finalDevice],
+            },
+        };
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [finalDevice] }] });
+        const result = await handleLoadPreset.execute(presetAction, {
+            actions: [presetAction, laterDeviceMutation],
+            actionIndex: 0,
+        });
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+
+        await result.afterCommit();
+
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({
+                        id: 'track-1',
+                        devices: [{ id: 'final-device-1', type: 'builtin-compressor', parameterIds: ['threshold'] }],
+                    }),
+                ],
+            })
+        );
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'final-device-1', 'threshold', -12);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
+    });
+
     it('initializes a newly created Toaster folder from its committed after-state, not its empty before-state', async () => {
         mocks.getTrackStrip.mockReturnValue(undefined);
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }],
-        });
         const toasterDevice: DeviceSnapshot = {
             id: 'toaster-device',
             name: 'Toaster',
@@ -258,6 +310,12 @@ describe('handleLoadPreset', () => {
             bypassed: false,
             parameterValues: { masterGain: 1.2 },
         };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }] })
+            .mockReturnValue({
+                tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [toasterDevice] }],
+            });
         const toasterAction = action({
             trackId: 'toaster-folder',
             expectedProjectRevision: undefined,

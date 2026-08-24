@@ -109,17 +109,14 @@ function isReplacementStillAuthoritative(after: Track): boolean {
     return current !== null && runtimeGraphTopology.matchesNode(current, runtimeGraphTopology.createNode(after));
 }
 
-function initializeMissingLiveStrip(after: Track): RuntimeDeviceDeltaResult {
+function initializeMissingLiveStrip(target: Track): RuntimeDeviceDeltaResult {
     const tracks = getTrackStoreState()?.tracks ?? [];
-    const projectTracks = tracks.some((track) => track.id === after.id)
-        ? tracks.map((track) => (track.id === after.id ? after : track))
-        : [...tracks, after];
-    const snapshot = compileTrackStripInitializationSnapshot(after, projectTracks);
+    const snapshot = compileTrackStripInitializationSnapshot(target, tracks);
     if (!snapshot) {
         return {
             acceptance: 'rejected',
             application: 'not-applied',
-            reason: `Cannot initialize preset runtime strip for track ${after.id}`,
+            reason: `Cannot initialize preset runtime strip for track ${target.id}`,
         };
     }
     return initializeTrackStripFromSnapshot(snapshot);
@@ -148,14 +145,28 @@ function createPostCommitRuntimeEffect(
         if (!liveStrip && !hasLiveProjectHostTrack(after.id)) {
             return;
         }
-        const result = liveStrip
-            ? applyDeviceChainRuntimeDelta({
-                  before,
-                  after,
-                  operation: 'replace-device-chain',
-                  batchContext,
-              })
-            : initializeMissingLiveStrip(after);
+        let runtimeTarget = after;
+        let result: RuntimeDeviceDeltaResult;
+        if (liveStrip) {
+            result = applyDeviceChainRuntimeDelta({
+                before,
+                after,
+                operation: 'replace-device-chain',
+                batchContext,
+            });
+        } else {
+            const authoritativeTarget = findUniqueTrack(after.id);
+            if (!authoritativeTarget) {
+                result = {
+                    acceptance: 'rejected',
+                    application: 'not-applied',
+                    reason: `Cannot initialize preset runtime strip for track ${after.id}`,
+                };
+            } else {
+                runtimeTarget = authoritativeTarget;
+                result = initializeMissingLiveStrip(authoritativeTarget);
+            }
+        }
         if (result.acceptance === 'superseded' && result.application === 'not-applied') {
             return;
         }
@@ -171,9 +182,9 @@ function createPostCommitRuntimeEffect(
         }
         // Parameter controls are intentionally separate from the topology
         // delta. They run only after the exact live chain was accepted.
-        for (const device of after.devices) {
+        for (const device of runtimeTarget.devices) {
             for (const [parameterId, value] of Object.entries(device.parameterValues)) {
-                updateDeviceParam(after.id, device.id, parameterId, value);
+                updateDeviceParam(runtimeTarget.id, device.id, parameterId, value);
             }
         }
     };
