@@ -86,6 +86,20 @@ describe('grinderControlRateParams', () => {
             deviceType: 'grinder',
             parameterIds: ['transformerHysteresis', 'cabIrSlot', 'neuralCpuBudget'],
         });
+        const initialization = postMessage.mock.calls.find(
+            (call) => (call[0] as { command?: string }).command === 'initialize-fallback-control'
+        )?.[0] as { correlation?: { workletGeneration?: unknown } } | undefined;
+        const workletGeneration = initialization?.correlation?.workletGeneration;
+        expect(
+            typeof workletGeneration === 'number' && Number.isSafeInteger(workletGeneration) && workletGeneration > 0
+        ).toBe(true);
+        if (
+            typeof workletGeneration !== 'number' ||
+            !Number.isSafeInteger(workletGeneration) ||
+            workletGeneration <= 0
+        ) {
+            throw new Error('Grinder fallback initialization did not provide a positive safe generation');
+        }
         postMessage.mockClear();
 
         grinder.setParam('transformerHysteresis', 0.7);
@@ -114,7 +128,7 @@ describe('grinderControlRateParams', () => {
                 parameterId: 'transformerHysteresis',
             },
             value: 0.7,
-            correlation: { workletGeneration: expect.any(Number), controlSequence: 1 },
+            correlation: { workletGeneration, controlSequence: 1 },
             scheduling: { targetFrame: null, deadlineFrame: null },
         });
         expect(postMessage).toHaveBeenNthCalledWith(2, {
@@ -127,7 +141,7 @@ describe('grinderControlRateParams', () => {
                 parameterId: 'cabIrSlot',
             },
             value: 3,
-            correlation: { workletGeneration: expect.any(Number), controlSequence: 2 },
+            correlation: { workletGeneration, controlSequence: 2 },
             scheduling: { targetFrame: null, deadlineFrame: null },
         });
         expect(workletNodeCreations).toBe(1);
