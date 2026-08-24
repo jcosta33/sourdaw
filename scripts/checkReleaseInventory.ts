@@ -7,6 +7,7 @@ import {
     constants,
     existsSync,
     fstatSync,
+    lstatSync,
     openSync,
     readFileSync,
     readdirSync,
@@ -321,10 +322,17 @@ function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
 function openRepositoryRegularFile(rootRealPath: string, absolutePath: string): number {
     let fileDescriptor: number | undefined;
     try {
+        const beforeOpen = lstatSync(absolutePath);
+        if (!beforeOpen.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
         fileDescriptor = openSync(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
         const opened = fstatSync(fileDescriptor);
         if (!opened.isFile()) {
             throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
         }
         const realPath = realpathSync(absolutePath);
         if (pathEscapesRoot(rootRealPath, realPath)) {

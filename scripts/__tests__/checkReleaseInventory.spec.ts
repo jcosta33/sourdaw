@@ -1022,6 +1022,42 @@ describe('release inventory', () => {
         }
     });
 
+    it('does not read a tracked path-addressed digest symlink contained by the repository', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-contained-symlink-digest-'));
+        const root = join(base, 'repository');
+        const symlinkPath = 'public/legal/contained.txt';
+        const targetPath = join(root, 'public/legal/target.txt');
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${symlinkPath}`];
+
+        try {
+            mkdirSync(dirname(targetPath), { recursive: true });
+            writeFileSync(targetPath, 'contained legal bytes');
+            symlinkSync(targetPath, join(root, symlinkPath));
+            let reads = 0;
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    reads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => {
+                    reads += 1;
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [symlinkPath], readFile);
+
+            expect(reads).toBe(0);
+            expect(changed.fileDigests[symlinkPath]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('reads scanned text from its opened file when the path swaps to an outside symlink', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-swap-'));
         const root = join(base, 'repository');
