@@ -924,20 +924,18 @@ describe('release inventory', () => {
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(join(base, 'outside.txt'), 'outside');
             writeFileSync(join(root, untrackedPath), 'untracked');
-            const forbiddenReads: string[] = [];
+            let digestReads = 0;
             const readFile = {
-                readBytes: (path: string) => {
-                    if (path === join(base, 'outside.txt') || path === join(root, untrackedPath)) {
-                        forbiddenReads.push(path);
-                    }
-                    return readFileSync(path);
+                readBytes: (fileDescriptor: number) => {
+                    digestReads += 1;
+                    return readFileSync(fileDescriptor);
                 },
-                readText: (path: string) => readFileSync(path, 'utf8'),
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
             };
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
 
-            expect(forbiddenReads).toEqual([]);
+            expect(digestReads).toBe(0);
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
             expect(validateReleaseInventory(value, changed)).toEqual(
@@ -994,27 +992,19 @@ describe('release inventory', () => {
             symlinkSync(outsideMarkPath, join(root, markSymlinkPath));
             const forbiddenReads: string[] = [];
             const readFile = {
-                readBytes: (path: string) => {
-                    if (
-                        path === join(root, symlinkPath) ||
-                        path === join(root, markSymlinkPath) ||
-                        path === outsidePath ||
-                        path === outsideMarkPath
-                    ) {
-                        forbiddenReads.push(path);
+                readBytes: (fileDescriptor: number) => {
+                    const contents = readFileSync(fileDescriptor, 'utf8');
+                    if (contents.includes('outside')) {
+                        forbiddenReads.push(contents);
                     }
-                    return readFileSync(path);
+                    return Buffer.from(contents);
                 },
-                readText: (path: string) => {
-                    if (
-                        path === join(root, symlinkPath) ||
-                        path === join(root, markSymlinkPath) ||
-                        path === outsidePath ||
-                        path === outsideMarkPath
-                    ) {
-                        forbiddenReads.push(path);
+                readText: (fileDescriptor: number) => {
+                    const contents = readFileSync(fileDescriptor, 'utf8');
+                    if (contents.includes('outside') || contents.includes('UnsafeMark')) {
+                        forbiddenReads.push(contents);
                     }
-                    return readFileSync(path, 'utf8');
+                    return contents;
                 },
             };
 
@@ -1027,6 +1017,103 @@ describe('release inventory', () => {
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('reads scanned text from its opened file when the path swaps to an outside symlink', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-swap-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.ts';
+        const filePath = join(root, path);
+        const outsidePath = join(base, 'outside.ts');
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, "export const safe = 'inside';\n");
+            writeFileSync(outsidePath, "export const escaped = 'https://outside.net';\n");
+            const readFile = {
+                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
+                readText: (fileDescriptor: number) => {
+                    rmSync(filePath);
+                    symlinkSync(outsidePath, filePath);
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], readFile);
+
+            expect(changed.externalReferences).toEqual([]);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('reads path-addressed digest bytes from its opened file when the path swaps to an outside symlink', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-byte-swap-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.txt';
+        const filePath = join(root, path);
+        const outsidePath = join(base, 'outside.txt');
+        const safeContents = 'inside legal bytes';
+        const outsideContents = 'outside legal bytes';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${sha256(safeContents)}:${path}`];
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, safeContents);
+            writeFileSync(outsidePath, outsideContents);
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    rmSync(filePath);
+                    symlinkSync(outsidePath, filePath);
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe(sha256(safeContents));
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read non-canonical or untracked snapshot paths', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-unsafe-snapshots-'));
+        const root = join(base, 'repository');
+        const trackedPath = 'provider.ts';
+        const unsafePath = '../outside.txt';
+        const untrackedPath = 'public/legal/untracked.txt';
+        const value = inventory();
+        value.surfaces = [];
+        value.snapshots = [
+            { path: unsafePath, sha256: fixtureDigest },
+            { path: untrackedPath, sha256: fixtureDigest },
+        ];
+
+        try {
+            mkdirSync(dirname(join(root, untrackedPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(base, 'outside.txt'), 'outside');
+            writeFileSync(join(root, untrackedPath), 'untracked');
+            let digestReads = 0;
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    digestReads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
+
+            expect(digestReads).toBe(0);
+            expect(changed.fileDigests[unsafePath]).toBeUndefined();
+            expect(changed.fileDigests[untrackedPath]).toBeUndefined();
         } finally {
             rmSync(base, { recursive: true, force: true });
         }

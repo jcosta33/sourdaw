@@ -2,7 +2,17 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import {
+    closeSync,
+    constants,
+    existsSync,
+    fstatSync,
+    openSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    statSync,
+} from 'node:fs';
 import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -210,13 +220,13 @@ export type RepositorySnapshot = {
 };
 
 export type RepositorySnapshotFileReader = {
-    readBytes(path: string): Buffer;
-    readText(path: string): string;
+    readBytes(fileDescriptor: number): Buffer;
+    readText(fileDescriptor: number): string;
 };
 
 const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
-    readBytes: (path) => readFileSync(path),
-    readText: (path) => readFileSync(path, 'utf8'),
+    readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
+    readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
 };
 
 export type ReleaseInventoryCheckReceipt = {
@@ -308,13 +318,28 @@ function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
     );
 }
 
-function assertRepositoryRegularFile(rootRealPath: string, absolutePath: string): void {
-    const stat = lstatSync(absolutePath);
-    if (!stat.isFile()) {
-        throw new Error(`not a regular file: ${absolutePath}`);
-    }
-    if (pathEscapesRoot(rootRealPath, realpathSync(absolutePath))) {
-        throw new Error(`path escapes repository root: ${absolutePath}`);
+function openRepositoryRegularFile(rootRealPath: string, absolutePath: string): number {
+    let fileDescriptor: number | undefined;
+    try {
+        fileDescriptor = openSync(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const opened = fstatSync(fileDescriptor);
+        if (!opened.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        const realPath = realpathSync(absolutePath);
+        if (pathEscapesRoot(rootRealPath, realPath)) {
+            throw new Error(`path escapes repository root: ${absolutePath}`);
+        }
+        const resolved = statSync(realPath);
+        if (opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        return fileDescriptor;
+    } catch (error) {
+        if (fileDescriptor !== undefined) {
+            closeSync(fileDescriptor);
+        }
+        throw error;
     }
 }
 
@@ -323,8 +348,12 @@ function readRepositoryRegularFile(
     absolutePath: string,
     readFile: RepositorySnapshotFileReader
 ): Buffer {
-    assertRepositoryRegularFile(rootRealPath, absolutePath);
-    return readFile.readBytes(absolutePath);
+    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath);
+    try {
+        return readFile.readBytes(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
 }
 
 function readRepositoryRegularText(
@@ -332,12 +361,17 @@ function readRepositoryRegularText(
     absolutePath: string,
     readFile: RepositorySnapshotFileReader
 ): string | undefined {
+    let fileDescriptor: number;
     try {
-        assertRepositoryRegularFile(rootRealPath, absolutePath);
+        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath);
     } catch {
         return undefined;
     }
-    return readFile.readText(absolutePath);
+    try {
+        return readFile.readText(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
 }
 
 function directorySha256(root: string, directory: string): string {
@@ -1871,6 +1905,10 @@ export function loadRepositorySnapshot(
     const rootRealPath = realpathSync(root);
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+    const isSafeTrackedPath = (path: string): boolean =>
+        isCanonicalPathAddress(path) &&
+        trackedFilesInWorktree.includes(path) &&
+        !pathEscapesRoot(rootRealPath, resolve(rootRealPath, path));
     const files = trackedFilesInWorktree.filter((path) => existsSync(resolve(root, path)));
     const contents = new Map<string, string>();
     const readText = (path: string): string | undefined => {
@@ -1894,15 +1932,11 @@ export function loadRepositorySnapshot(
     });
     const snapshotPaths = sortedUnique([
         ...REQUIRED_SNAPSHOT_PATHS,
-        ...(inventory.snapshots ?? []).map((entry) => entry.path),
+        ...(inventory.snapshots ?? []).map((entry) => entry.path).filter(isSafeTrackedPath),
         ...(inventory.surfaces ?? []).flatMap((surface) =>
             surface.digests.flatMap((digest) => {
                 const addressed = pathAddressedSha256(digest);
-                return addressed === undefined ||
-                    !isCanonicalPathAddress(addressed.path) ||
-                    !trackedFilesInWorktree.includes(addressed.path)
-                    ? []
-                    : [addressed.path];
+                return addressed === undefined || !isSafeTrackedPath(addressed.path) ? [] : [addressed.path];
             })
         ),
     ]);
