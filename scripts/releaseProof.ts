@@ -119,7 +119,11 @@ export const RELEASE_PROOF_ARCHIVE_LIMITS = {
 
 type JsonRecord = Record<string, unknown>;
 
-class FileReadLimitError extends Error {}
+class FileReadLimitError extends Error {
+    constructor(readonly kind: 'file' | 'aggregate') {
+        super();
+    }
+}
 
 export type ReleaseProofOptions = {
     root: string;
@@ -140,15 +144,28 @@ export type ReleaseBuildPhase = 'web' | 'desktop';
 export type ReleaseBuildRunner = (phase: ReleaseBuildPhase, root: string) => void;
 export type ReleaseGateRunner = (root: string, releaseInventory?: ReleaseInventory) => void;
 export type ReleaseInventoryReader = (root: string) => ReleaseInventory;
+export type ReleaseProofValidator = (options: ReleaseProofOptions) => string[];
 export type ReleaseProofFileReader = {
     open?: (path: string, flags: number) => number;
     noFollowFlag?: () => unknown;
     read?: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => number;
+    snapshotByteLimit?: number;
 };
 
 type VerifiedCandidateFile = {
     candidatePath: string;
+    digest: string;
     snapshotPath: string;
+};
+
+type CandidateSnapshotBudget = {
+    limit: number;
+    remaining: number;
+};
+
+type CandidateCensusMaps = {
+    buildInputs?: Record<string, string>;
+    webFiles?: Record<string, string>;
 };
 
 const releaseProofFileReader: ReleaseProofFileReader = {
@@ -156,6 +173,15 @@ const releaseProofFileReader: ReleaseProofFileReader = {
     noFollowFlag: () => Reflect.get(constants, 'O_NOFOLLOW'),
     read: (descriptor, buffer, offset, length, position) => readSync(descriptor, buffer, offset, length, position),
 };
+
+function candidateSnapshotBudget(fileReader: ReleaseProofFileReader): CandidateSnapshotBudget {
+    const requested = fileReader.snapshotByteLimit;
+    const limit =
+        requested === undefined || !Number.isSafeInteger(requested)
+            ? RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes
+            : Math.max(0, Math.min(requested, RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes));
+    return { limit, remaining: limit };
+}
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -210,7 +236,7 @@ function withContainedRegularFile<Result>(
         descriptor = (fileReader.open ?? openSync)(path, constants.O_RDONLY | noFollowFlag);
         const opened = fstatSync(descriptor);
         if (opened.size > maxBytes) {
-            throw new FileReadLimitError();
+            throw new FileReadLimitError('file');
         }
         const afterOpen = lstatSync(path);
         const realPath = realpathSync(path);
@@ -273,30 +299,57 @@ function snapshotCandidateFile(
     root: string,
     path: string,
     snapshotRoot: string,
+    maxBytes: number,
+    budget: CandidateSnapshotBudget,
     fileReader: ReleaseProofFileReader
 ): { digest: string; snapshotPath: string } | undefined {
     const snapshotPath = join(snapshotRoot, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
     return withContainedRegularFile(
         root,
         path,
-        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        maxBytes,
         (descriptor) => {
+            let observedSize = fstatSync(descriptor).size;
+            if (observedSize > budget.remaining) {
+                throw new FileReadLimitError('aggregate');
+            }
             const output = openSync(snapshotPath, 'wx');
             try {
                 const hash = createHash('sha256');
                 const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
                 let position = 0;
-                let bytesRead: number;
-                do {
-                    bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, chunk.length, position);
-                    if (bytesRead > 0) {
-                        const bytes = chunk.subarray(0, bytesRead);
-                        hash.update(bytes);
-                        writeSync(output, bytes);
-                        position += bytesRead;
+                while (true) {
+                    if (position >= observedSize) {
+                        observedSize = fstatSync(descriptor).size;
+                        if (observedSize > maxBytes) {
+                            throw new FileReadLimitError('file');
+                        }
+                        if (observedSize - position > budget.remaining) {
+                            throw new FileReadLimitError('aggregate');
+                        }
+                        if (position >= observedSize) {
+                            return { digest: hash.digest('hex'), snapshotPath };
+                        }
                     }
-                } while (bytesRead > 0);
-                return { digest: hash.digest('hex'), snapshotPath };
+                    const readLength = Math.min(
+                        chunk.length,
+                        observedSize - position,
+                        maxBytes - position,
+                        budget.remaining
+                    );
+                    const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, readLength, position);
+                    if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > readLength) {
+                        throw new FileReadLimitError('file');
+                    }
+                    if (bytesRead === 0) {
+                        return { digest: hash.digest('hex'), snapshotPath };
+                    }
+                    const bytes = chunk.subarray(0, bytesRead);
+                    hash.update(bytes);
+                    writeSync(output, bytes);
+                    position += bytesRead;
+                    budget.remaining -= bytesRead;
+                }
             } finally {
                 closeSync(output);
             }
@@ -443,8 +496,10 @@ function verifyFileHash(
     pathValue: unknown,
     hashValue: unknown,
     label: string,
+    maxBytes: number,
     errors: string[],
     snapshotRoot: string,
+    budget: CandidateSnapshotBudget,
     fileReader: ReleaseProofFileReader
 ): VerifiedCandidateFile | undefined {
     const path = candidatePath(root, pathValue, `${label}.path`, errors);
@@ -461,10 +516,14 @@ function verifyFileHash(
     }
     let snapshot: { digest: string; snapshotPath: string } | undefined;
     try {
-        snapshot = snapshotCandidateFile(root, path, snapshotRoot, fileReader);
+        snapshot = snapshotCandidateFile(root, path, snapshotRoot, maxBytes, budget, fileReader);
     } catch (error) {
         if (error instanceof FileReadLimitError) {
-            errors.push(`${label}: file exceeds the candidate file-size limit`);
+            errors.push(
+                error.kind === 'aggregate'
+                    ? `${label}: cumulative candidate snapshot byte limit exceeded (${String(budget.limit)} bytes)`
+                    : `${label}: file exceeds the candidate file-size limit`
+            );
             return undefined;
         }
         throw error;
@@ -476,7 +535,7 @@ function verifyFileHash(
     if (snapshot.digest !== hash) {
         errors.push(`${label}: digest mismatch`);
     }
-    return { candidatePath: path, snapshotPath: snapshot.snapshotPath };
+    return { candidatePath: path, digest: snapshot.digest, snapshotPath: snapshot.snapshotPath };
 }
 
 function listFiles(root: string, label: string, errors: string[], allowContainedLinks = false): string[] {
@@ -1389,6 +1448,7 @@ function validateSourceManifest(
     expectedRevision: string,
     errors: string[],
     snapshotRoot: string,
+    snapshotBudget: CandidateSnapshotBudget,
     fileReader: ReleaseProofFileReader
 ): void {
     const source = requiredRecord(proof, 'source', 'release proof', errors);
@@ -1400,8 +1460,10 @@ function validateSourceManifest(
         source.manifestPath,
         source.manifestSha256,
         'source manifest',
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const archive = verifyFileHash(
@@ -1409,8 +1471,10 @@ function validateSourceManifest(
         source.archivePath,
         source.archiveSha256,
         'source archive',
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const commitPath = verifyFileHash(
@@ -1418,8 +1482,10 @@ function validateSourceManifest(
         source.commitPath,
         source.commitSha256,
         'source commit object',
+        RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const commitObject =
@@ -1496,19 +1562,22 @@ function validateWebManifest(
     errors: string[],
     releaseInventory: ReleaseInventory,
     snapshotRoot: string,
+    snapshotBudget: CandidateSnapshotBudget,
     fileReader: ReleaseProofFileReader
-): void {
+): Record<string, string> | undefined {
     const web = requiredRecord(proof, 'web', 'release proof', errors);
     if (web === undefined) {
-        return;
+        return undefined;
     }
     const manifestPath = verifyFileHash(
         candidate,
         web.manifestPath,
         web.manifestSha256,
         'web manifest',
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const archivePath = verifyFileHash(
@@ -1516,18 +1585,20 @@ function validateWebManifest(
         web.archivePath,
         web.archiveSha256,
         'web archive',
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const contentsPath = candidatePath(candidate, web.contentsPath, 'web.contentsPath', errors);
     const archive = archivePath === undefined ? undefined : validateWebArchive(archivePath.snapshotPath, errors);
     if (contentsPath === undefined || manifestPath === undefined) {
-        return;
+        return undefined;
     }
     const manifest = readJsonForValidation(snapshotRoot, manifestPath.snapshotPath, 'web manifest', errors);
     if (manifest === undefined) {
-        return;
+        return undefined;
     }
     if (manifest.schemaVersion !== SCHEMA_VERSION || manifest.artifact !== 'web') {
         errors.push('web manifest identity drifted');
@@ -1564,8 +1635,11 @@ function validateWebManifest(
         }
         for (const path of expectedFiles) {
             const archived = archive.hashes.get(path);
-            const adjacent = resolve(contentsPath, ...path.split('/'));
-            if (archived === undefined || archived !== sha256ContainedRegularFile(contentsPath, adjacent)) {
+            const adjacentDigest =
+                path === 'web-artifact-manifest.json'
+                    ? manifestPath.digest
+                    : sha256ContainedRegularFile(contentsPath, resolve(contentsPath, ...path.split('/')));
+            if (archived === undefined || archived !== adjacentDigest) {
                 errors.push(`web archive bytes do not match web contents for ${path}`);
             }
         }
@@ -1593,6 +1667,7 @@ function validateWebManifest(
     ) {
         errors.push('web contract drifted');
     }
+    return files;
 }
 
 function machOError(path: string, expectedFileType: number): string | undefined {
@@ -2008,7 +2083,7 @@ function validateBuildMaterial(
         buildInputs?: string;
     },
     errors: string[]
-): void {
+): Record<string, string> | undefined {
     const electronCommit =
         paths.electronCommit === undefined
             ? undefined
@@ -2048,7 +2123,7 @@ function validateBuildMaterial(
         );
     }
     if (paths.buildManifest === undefined || paths.buildInputs === undefined) {
-        return;
+        return undefined;
     }
     const build = readJsonForValidation(
         snapshotRoot,
@@ -2057,7 +2132,7 @@ function validateBuildMaterial(
         errors
     );
     if (build === undefined) {
-        return;
+        return undefined;
     }
     const electron = isRecord(build.electron) ? build.electron : undefined;
     const ffmpeg = isRecord(build.ffmpeg) ? build.ffmpeg : undefined;
@@ -2103,6 +2178,7 @@ function validateBuildMaterial(
             }
         }
     }
+    return inputs;
 }
 
 function validateDesktop(
@@ -2114,11 +2190,12 @@ function validateDesktop(
     runtimeContract: ElectronRuntimeContract,
     releaseInventory: ReleaseInventory,
     snapshotRoot: string,
+    snapshotBudget: CandidateSnapshotBudget,
     fileReader: ReleaseProofFileReader
-): void {
+): Record<string, string> | undefined {
     const desktop = requiredRecord(proof, 'desktop', 'release proof', errors);
     if (desktop === undefined) {
-        return;
+        return undefined;
     }
     if (desktop.platform !== 'darwin' || desktop.arch !== 'arm64') {
         errors.push('desktop proof must target darwin arm64');
@@ -2150,8 +2227,10 @@ function validateDesktop(
         desktop.artifactPath,
         desktop.artifactSha256,
         'desktop artifact',
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     if (artifactPath !== undefined && basename(artifactPath.candidatePath) !== expectedArtifactName) {
@@ -2162,8 +2241,10 @@ function validateDesktop(
         desktop.contentsManifestPath,
         desktop.contentsManifestSha256,
         'desktop contents manifest',
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const runtimeManifestPath = verifyFileHash(
@@ -2171,8 +2252,10 @@ function validateDesktop(
         desktop.runtimeManifestPath,
         desktop.runtimeManifestSha256,
         'desktop runtime manifest',
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const electronArchive = verifyFileHash(
@@ -2180,8 +2263,10 @@ function validateDesktop(
         desktop.electronSourcePath,
         desktop.electronSourceSha256,
         'Electron source archive',
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const electronCommit = verifyFileHash(
@@ -2189,8 +2274,10 @@ function validateDesktop(
         desktop.electronCommitPath,
         desktop.electronCommitSha256,
         'Electron commit object',
+        RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const ffmpegArchive = verifyFileHash(
@@ -2198,8 +2285,10 @@ function validateDesktop(
         desktop.ffmpegSourcePath,
         desktop.ffmpegSourceSha256,
         'FFmpeg source archive',
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const ffmpegCommit = verifyFileHash(
@@ -2207,8 +2296,10 @@ function validateDesktop(
         desktop.ffmpegCommitPath,
         desktop.ffmpegCommitSha256,
         'FFmpeg commit object',
+        RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const buildManifest = verifyFileHash(
@@ -2216,8 +2307,10 @@ function validateDesktop(
         desktop.ffmpegBuildPath,
         desktop.ffmpegBuildSha256,
         'FFmpeg build material',
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
         errors,
         snapshotRoot,
+        snapshotBudget,
         fileReader
     );
     const buildInputs = candidatePath(candidate, desktop.buildInputsPath, 'desktop.buildInputsPath', errors);
@@ -2272,7 +2365,7 @@ function validateDesktop(
     if (material !== undefined && !sameValue(material, expectedDesktopMaterial(runtimeContract))) {
         errors.push('desktop material contract identity drifted');
     }
-    validateBuildMaterial(
+    return validateBuildMaterial(
         snapshotRoot,
         desktop,
         runtimeContract,
@@ -2288,7 +2381,12 @@ function addCensusPath(value: unknown, label: string, expected: Set<string>, err
     }
 }
 
-function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: string[]): void {
+function validateCandidateCensus(
+    candidate: string,
+    proof: JsonRecord,
+    maps: CandidateCensusMaps,
+    errors: string[]
+): void {
     const expected = new Set<string>([PROOF_FILE]);
     const source = isRecord(proof.source) ? proof.source : undefined;
     const web = isRecord(proof.web) ? proof.web : undefined;
@@ -2312,22 +2410,15 @@ function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: s
     }
 
     const webContents = safeRelativePath(web?.contentsPath, 'web.contentsPath', errors);
-    const webManifest = candidatePath(candidate, web?.manifestPath, 'web.manifestPath', errors);
-    if (webContents !== undefined && webManifest !== undefined && existsSync(webManifest)) {
-        const manifest = readJsonForValidation(candidate, webManifest, 'web manifest census', errors);
-        const files = manifest === undefined ? {} : stringMap(manifest.files, 'web manifest census.files', errors);
-        for (const path of Object.keys(files)) {
+    if (webContents !== undefined && maps.webFiles !== undefined) {
+        for (const path of Object.keys(maps.webFiles)) {
             expected.add(posix.join(webContents, path));
         }
     }
 
     const buildInputs = safeRelativePath(desktop?.buildInputsPath, 'desktop.buildInputsPath', errors);
-    const buildManifest = candidatePath(candidate, desktop?.ffmpegBuildPath, 'desktop.ffmpegBuildPath', errors);
-    if (buildInputs !== undefined && buildManifest !== undefined && existsSync(buildManifest)) {
-        const manifest = readJsonForValidation(candidate, buildManifest, 'FFmpeg build census', errors);
-        const files =
-            manifest === undefined ? {} : stringMap(manifest.buildInputs, 'FFmpeg build census.inputs', errors);
-        for (const path of Object.keys(files)) {
+    if (buildInputs !== undefined && maps.buildInputs !== undefined) {
+        for (const path of Object.keys(maps.buildInputs)) {
             expected.add(posix.join(buildInputs, path));
         }
     }
@@ -2411,9 +2502,20 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-snapshot-'));
     try {
         const fileReader = options.fileReader ?? releaseProofFileReader;
-        validateSourceManifest(options.candidate, proof, options.expectedRevision, errors, snapshotRoot, fileReader);
+        const snapshotBudget = candidateSnapshotBudget(fileReader);
+        validateSourceManifest(
+            options.candidate,
+            proof,
+            options.expectedRevision,
+            errors,
+            snapshotRoot,
+            snapshotBudget,
+            fileReader
+        );
+        let webFiles: Record<string, string> | undefined;
+        let buildInputs: Record<string, string> | undefined;
         if (releaseInventory !== undefined) {
-            validateWebManifest(
+            webFiles = validateWebManifest(
                 options.root,
                 options.candidate,
                 proof,
@@ -2421,9 +2523,10 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
                 errors,
                 releaseInventory,
                 snapshotRoot,
+                snapshotBudget,
                 fileReader
             );
-            validateDesktop(
+            buildInputs = validateDesktop(
                 options.root,
                 options.candidate,
                 proof,
@@ -2432,10 +2535,11 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
                 runtimeContract,
                 releaseInventory,
                 snapshotRoot,
+                snapshotBudget,
                 fileReader
             );
         }
-        validateCandidateCensus(options.candidate, proof, errors);
+        validateCandidateCensus(options.candidate, proof, { buildInputs, webFiles }, errors);
         return errors;
     } finally {
         rmSync(snapshotRoot, { recursive: true, force: true });
@@ -2645,7 +2749,8 @@ export function assembleReleaseProof(
     buildRunner: ReleaseBuildRunner = runProjectBuild,
     releaseGate: ReleaseGateRunner = (gateRoot, releaseInventory) =>
         checkReleaseInventory(gateRoot, undefined, releaseInventory),
-    inventoryReader: ReleaseInventoryReader = readReleaseInventory
+    inventoryReader: ReleaseInventoryReader = readReleaseInventory,
+    validator: ReleaseProofValidator = validateReleaseProof
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
@@ -2861,7 +2966,7 @@ export function assembleReleaseProof(
             },
         };
         writeJson(join(candidate, PROOF_FILE), proof);
-        const errors = validateReleaseProof({
+        const errors = validator({
             root,
             candidate,
             expectedRevision: revision,

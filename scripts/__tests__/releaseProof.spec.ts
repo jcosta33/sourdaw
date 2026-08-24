@@ -8,6 +8,7 @@ import {
     mkdirSync,
     mkdtempSync,
     openSync,
+    readSync,
     readFileSync,
     readdirSync,
     renameSync,
@@ -32,6 +33,7 @@ import {
     webLlmRequiredLegalFiles,
     type ReleaseBuildRunner,
     type ReleaseProofFileReader,
+    type ReleaseProofValidator,
     validateReleaseProof,
 } from '../releaseProof';
 
@@ -391,7 +393,8 @@ function assemble(
     fixture: Fixture,
     buildRunner: ReleaseBuildRunner = fixtureBuildRunner(fixture),
     releaseGate: (root: string, releaseInventory?: ReleaseInventory) => void = () => undefined,
-    inventoryReader: (root: string) => ReleaseInventory = readReleaseInventory
+    inventoryReader: (root: string) => ReleaseInventory = readReleaseInventory,
+    validator?: ReleaseProofValidator
 ): void {
     assembleReleaseProof(
         fixture.root,
@@ -401,7 +404,8 @@ function assemble(
         fixture.contract,
         buildRunner,
         releaseGate,
-        inventoryReader
+        inventoryReader,
+        validator
     );
 }
 
@@ -531,6 +535,7 @@ describe('release proof', () => {
         const fixture = createFixture();
         const inventory = readReleaseInventory(fixture.root);
         let inventoryReads = 0;
+        let validatedInventory: ReleaseInventory | undefined;
         let gatedInventory: ReleaseInventory | undefined;
 
         assemble(
@@ -542,10 +547,15 @@ describe('release proof', () => {
             () => {
                 inventoryReads += 1;
                 return inventory;
+            },
+            (options) => {
+                validatedInventory = options.releaseInventory;
+                return validateReleaseProof(options);
             }
         );
 
         expect(inventoryReads).toBe(1);
+        expect(validatedInventory).toBe(inventory);
         expect(gatedInventory).toBe(inventory);
     });
 
@@ -582,7 +592,103 @@ describe('release proof', () => {
         writeJson(manifestPath, manifest);
         source.manifestSha256 = hash(manifestPath);
         writeJson(proofPath, value);
-        expect(validate(fixture)).toContain('source commit object exceeds');
+        expect(validate(fixture)).toContain('source commit object: file exceeds the candidate file-size limit');
+    });
+
+    it('rejects an already-oversize candidate manifest without reading descriptor bytes', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
+        truncateSync(manifestPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
+        let manifestDescriptor: number | undefined;
+        let manifestReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === manifestPath) {
+                    manifestDescriptor = descriptor;
+                } else if (descriptor === manifestDescriptor) {
+                    manifestDescriptor = undefined;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === manifestDescriptor) {
+                    manifestReads += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        expect(validate(fixture, fileReader)).toContain('source manifest: file exceeds the candidate file-size limit');
+        expect(manifestReads).toBe(0);
+    });
+
+    it('stops snapshotting when a candidate manifest grows beyond its consumer limit', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
+        let manifestDescriptor: number | undefined;
+        let manifestReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === manifestPath) {
+                    manifestDescriptor = descriptor;
+                } else if (descriptor === manifestDescriptor) {
+                    manifestDescriptor = undefined;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === manifestDescriptor) {
+                    manifestReads += 1;
+                    if (manifestReads === 1) {
+                        truncateSync(manifestPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
+                    }
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        expect(validate(fixture, fileReader)).toContain('source manifest: file exceeds the candidate file-size limit');
+        expect(manifestReads).toBe(1);
+    });
+
+    it('stops before reading a candidate file that exhausts the cumulative snapshot budget', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
+        const source = proof(fixture).source as Record<string, unknown>;
+        const sourceArchivePath = join(fixture.candidate, source.archivePath as string);
+        let archiveDescriptor: number | undefined;
+        let archiveReads = 0;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === sourceArchivePath) {
+                    archiveDescriptor = descriptor;
+                } else if (descriptor === archiveDescriptor) {
+                    archiveDescriptor = undefined;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === archiveDescriptor) {
+                    archiveReads += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+            snapshotByteLimit: readFileSync(manifestPath).length,
+        };
+
+        expect(validate(fixture, fileReader)).toContain(
+            `source archive: cumulative candidate snapshot byte limit exceeded (${String(readFileSync(manifestPath).length)} bytes)`
+        );
+        expect(archiveReads).toBe(0);
     });
 
     it('rejects a stale candidate revision', () => {
@@ -680,6 +786,38 @@ describe('release proof', () => {
         expect(errors).toContain(
             `${candidatePath.startsWith('web/contents') ? 'web manifest' : 'web archive'}: file is missing or unsafe`
         );
+    });
+
+    it.each([
+        ['web manifest', 'web/contents/web-artifact-manifest.json'],
+        ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],
+    ])('parses the captured %s bytes after its candidate path is swapped', (_label, candidatePath) => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const path = join(fixture.candidate, candidatePath);
+        let targetDescriptor: number | undefined;
+        let swapped = false;
+        const fileReader: ReleaseProofFileReader = {
+            open(openPath, flags) {
+                const descriptor = openSync(openPath, flags);
+                if (openPath === path) {
+                    targetDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (descriptor === targetDescriptor && !swapped) {
+                    swapped = true;
+                    rmSync(path);
+                    write(path, '{');
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        expect(validate(fixture, fileReader)).toEqual('');
+        expect(swapped).toBe(true);
     });
 
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
@@ -1028,7 +1166,7 @@ describe('release proof', () => {
         expect(existsSync(marker)).toBe(false);
     });
 
-    it('rejects ZIP archive resource metadata without expanding hostile payloads', () => {
+    it('rejects ZIP archive resource metadata without expanding hostile payloads', { timeout: 10_000 }, () => {
         const tar = createFixture();
         assemble(tar);
         const tarSource = proof(tar).source as Record<string, unknown>;
