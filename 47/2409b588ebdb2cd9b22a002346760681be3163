@@ -1,0 +1,46 @@
+src/modules/Arrangement/handlers/track/__tests__/handleDiscardImportedStemSet.spec.ts
+  s_a40848e8f8cca9::t_ed7448bb7570db 4
+  s_a40848e8f8cca9::t_f2fed5a0e2773e 6,45-53,74,115
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_2f6bc1841536a7 513-515,521
+  s_a40848e8f8cca9::t_ff910504369f73 275,279-281,627
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_807a14980ab99c 242,247-248,2061,2116
+src/modules/Arrangement/handlers/__tests__/undoableHandlersAudit.spec.ts
+  s_a40848e8f8cca9::t_807a14980ab99c 391
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_ff910504369f73 33,61-65,68-72,79-82
+scripts/checkVitestCollectionScope.ts
+  s_a40848e8f8cca9::t_e47a305065ad97 52
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_f2fed5a0e2773e 220-224,226-233
+  s_a40848e8f8cca9::t_f171b6d6c1c72f 73-128,601-740
+  s_a40848e8f8cca9::t_a78eb433db9b2e 741
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f2fed5a0e2773e 1518-1535
+vite.config.ts
+  s_a40848e8f8cca9::t_e47a305065ad97 74-76
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_807a14980ab99c 854-856,858-865
+  s_a40848e8f8cca9::t_e06aa89fd4a0e2 1702
+scripts/test-health-gate-scripts.sh
+  s_a40848e8f8cca9::t_f2fed5a0e2773e 362-366
+src/modules/CrdtDocument/handlers/previewBranches/__tests__/handleDeleteDrumPreviewBranches.spec.ts
+  s_a40848e8f8cca9::t_f2fed5a0e2773e 3,76-81,130-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "472409b588ebdb2cd9b22a002346760681be3163",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
