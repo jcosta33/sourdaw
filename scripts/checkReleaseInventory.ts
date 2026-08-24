@@ -213,6 +213,12 @@ export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
 
+export type ReleaseInventoryCheckOptions = {
+    projectLicensePreflight?: (root: string) => void;
+    readInventory?: (root: string) => ReleaseInventory;
+    afterDdspValidation?: () => void;
+};
+
 export function readReleaseInventory(root: string): ReleaseInventory {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     return parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
@@ -1340,6 +1346,13 @@ export function assertDdspModelsReleaseInventory(root: string, surface: Partial<
     assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
 }
 
+function assertDdspReleaseInventory(root: string, inventory: Pick<ReleaseInventory, 'surfaces'>): void {
+    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    assertSurfaceContract(ddspTfjsRuntimeSurface, ddspTfjsRuntimeReleaseInventoryContract(root), 'DDSP TF.js runtime');
+    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    assertDdspModelsReleaseInventory(root, ddspModelsSurface);
+}
+
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
 }
@@ -1804,10 +1817,17 @@ export function loadRepositorySnapshot(
 
 export function checkReleaseInventory(
     root: string,
-    projectLicensePreflight = checkProjectLicense
+    options: ReleaseInventoryCheckOptions | ((root: string) => void) = {}
 ): ReleaseInventoryCheckReceipt {
+    const {
+        projectLicensePreflight = checkProjectLicense,
+        readInventory = readReleaseInventory,
+        afterDdspValidation,
+    } = typeof options === 'function' ? { projectLicensePreflight: options } : options;
     projectLicensePreflight(root);
-    const inventory = readReleaseInventory(root);
+    const inventory = readInventory(root);
+    assertDdspReleaseInventory(root, inventory);
+    afterDdspValidation?.();
     const snapshot = loadRepositorySnapshot(root, inventory);
     const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
@@ -1860,16 +1880,7 @@ export function checkReleaseInventory(
             'owner visual asset'
         )
     );
-    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
-    validateSurface('ddsp-tfjs-runtime', () =>
-        assertSurfaceContract(
-            ddspTfjsRuntimeSurface,
-            ddspTfjsRuntimeReleaseInventoryContract(root),
-            'DDSP TF.js runtime'
-        )
-    );
-    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
-    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
+    validatedSurfaceIds.push('ddsp-tfjs-runtime', 'ddsp-models');
     checkElectronRuntimeProvenance(root);
     const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

@@ -733,12 +733,46 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
+    it('composes both DDSP contracts before repository-wide release validation', () => {
+        const liveInventory = readReleaseInventory(repositoryRoot);
+        const laterValidationSentinel = new Error('later release validation sentinel');
+        let laterValidationCalls = 0;
+
+        expect(() =>
+            checkReleaseInventory(repositoryRoot, {
+                projectLicensePreflight() {},
+                readInventory() {
+                    return liveInventory;
+                },
+                afterDdspValidation() {
+                    laterValidationCalls += 1;
+                    throw laterValidationSentinel;
+                },
+            })
+        ).toThrow(laterValidationSentinel);
+        expect(laterValidationCalls).toBe(1);
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
+    it.each([
+        ['ddsp-tfjs-runtime', 'DDSP TF.js runtime'],
+        ['ddsp-models', 'DDSP models'],
+    ] as const)('rejects an absent %s surface before later release validation', (surfaceId, label) => {
+        const inventory = readReleaseInventory(repositoryRoot);
+        inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== surfaceId);
+        let laterValidationCalls = 0;
+
+        expect(() =>
+            checkReleaseInventory(repositoryRoot, {
+                projectLicensePreflight() {},
+                readInventory() {
+                    return inventory;
+                },
+                afterDdspValidation() {
+                    laterValidationCalls += 1;
+                },
+            })
+        ).toThrow(`${label} release inventory kind does not match provenance`);
+        expect(laterValidationCalls).toBe(0);
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
