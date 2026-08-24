@@ -364,7 +364,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // GrandBoule on a track hosting two before the scope was added.
         'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
-        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 7,
+        // Count provenance: new file entry, measured 1 — the morph reconciler
+        // owns the single direct runtime write after projecting the six morph
+        // parameters. The six calls formerly owned by
+        // `setGrandBouleMorphPosition.ts` moved here.
+        'src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts': 1,
+        // Count provenance: measured 1, was 7 — this use case retains one
+        // contract mention and now delegates the six runtime writes to the
+        // morph reconciler above.
+        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
@@ -525,11 +533,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // Count provenance: 4 = the compileAutomationSegments import line
-        // (matched twice: named import + module path), its single call site,
-        // and one doc-comment mention added by the AU-3 affine-scale fix
-        // (#765). The executable call surface is unchanged and singular.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
+        // Count provenance: measured 6, was 4 — the executable import and call
+        // surface remains singular. Two later boundary-law comments added
+        // `compileAutomationEvents` references, which this lexical census also
+        // deliberately counts.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -567,6 +575,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Gluten/useCases/index.ts': 1,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,
+        // Count provenance: new file entry, measured 2 — the lifecycle event
+        // contract and subscriber registration hydrate a newly loaded Grand
+        // Boule engine from project state.
+        'src/modules/GrandBoule/useCases/grandBouleSubscriber.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts': 1,
         'src/modules/Grinder/useCases/index.ts': 1,
@@ -695,6 +707,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: new guarded clip-state restore path, measured 3 —
+        // each track snapshot reconstructs `devices:` before the registered
+        // undo/redo action restores the complete track state.
+        'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // the Arrangement handler commits through executeAppAction. Project
         // writer is `writeDeviceToProject`; this is the handler's topology
@@ -782,6 +798,9 @@ const DEVICE_DATA_COUNTS = {
         // executeAppAction, the same shape as setExternalPluginState above.
         'src/modules/Arrangement/useCases/device/setDeviceState.ts': 1,
         'src/modules/Arrangement/useCases/device/updateMidiFxParam.ts': 1,
+        // Count provenance: measured 1 — the pure undo/redo snapshot captures
+        // each track's device collection as executable data.
+        'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
         'src/modules/Arrangement/useCases/duplicateTrack.ts': 1,
         'src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts': 2,
         'src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts': 1,
@@ -813,12 +832,18 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
+        // Count provenance: measured 1 — the agent-facing projection builds a
+        // runtime track contract with an ordered device collection.
+        'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/addDeviceChain.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/attachSidechainCompressor.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/createBus.ts': 1,
     },
     static: {
+        // Count provenance: measured 1 — the public agent project-model type
+        // declares a track device collection and has no executable access.
+        'src/modules/Project/models/AgentProjectModelContract.ts': 1,
         'src/modules/Arrangement/models/SoundPreset.ts': 2,
         // Count provenance: new file entry from #2347 ("migrate stored device
         // parameters before preset load"), measured 1 — the `parameterValues:
