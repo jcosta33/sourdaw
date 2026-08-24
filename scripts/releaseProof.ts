@@ -602,44 +602,51 @@ function listFiles(root: string, label: string, errors: string[], allowContained
     return files.sort();
 }
 
-function candidateTreeBinding(candidate: string): string {
-    const label = 'release proof candidate publication';
+function snapshotCandidateTree(candidate: string, snapshot: string): void {
+    const label = 'release proof candidate snapshot';
     const errors: string[] = [];
     const paths = listFiles(candidate, label, errors);
     if (errors.length > 0) {
         throw new Error(errors.join('\n'));
     }
     const budget = candidateSnapshotBudget(releaseProofFileReader);
-    const binding = createHash('sha256');
     for (const path of paths) {
-        const absolute = resolve(candidate, ...path.split('/'));
-        const digest = withContainedRegularFile(
+        const source = resolve(candidate, ...path.split('/'));
+        const destination = resolve(snapshot, ...path.split('/'));
+        mkdirSync(dirname(destination), { recursive: true });
+        const copied = withContainedRegularFile(
             candidate,
-            absolute,
+            source,
             RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
-            (descriptor) =>
-                digestCandidateDescriptor(
-                    descriptor,
-                    RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
-                    budget,
-                    releaseProofFileReader
-                ),
+            (descriptor) => {
+                const output = openSync(destination, 'wx');
+                try {
+                    digestCandidateDescriptor(
+                        descriptor,
+                        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+                        budget,
+                        releaseProofFileReader,
+                        (bytes) => writeSync(output, bytes)
+                    );
+                    return true;
+                } finally {
+                    closeSync(output);
+                }
+            },
             releaseProofFileReader
         );
-        if (digest === undefined) {
+        if (copied !== true) {
             throw new Error(`${label}: missing or unsafe ${path}`);
         }
-        binding.update(path).update('\0').update(digest).update('\0');
     }
-    const finalErrors: string[] = [];
-    const finalPaths = listFiles(candidate, label, finalErrors);
-    if (finalErrors.length > 0) {
-        throw new Error(finalErrors.join('\n'));
+    const snapshotErrors: string[] = [];
+    const snapshotPaths = listFiles(snapshot, label, snapshotErrors);
+    if (snapshotErrors.length > 0) {
+        throw new Error(snapshotErrors.join('\n'));
     }
-    if (!sameValue(paths, finalPaths)) {
-        throw new Error('release proof candidate bytes or census changed while binding publication');
+    if (!sameValue(paths, snapshotPaths)) {
+        throw new Error('release proof candidate census changed while creating the publication snapshot');
     }
-    return binding.digest('hex');
 }
 
 function stringMap(value: unknown, label: string, errors: string[]): Record<string, string> {
@@ -2827,6 +2834,7 @@ export function assembleReleaseProof(
     }
     mkdirSync(dirname(output), { recursive: true });
     const candidate = mkdtempSync(join(dirname(output), `.${basename(output)}.tmp-`));
+    let publicationCandidate: string | undefined;
     try {
         const sourceDir = join(candidate, 'source');
         const webDir = join(candidate, 'web');
@@ -3015,26 +3023,40 @@ export function assembleReleaseProof(
             },
         };
         writeJson(join(candidate, PROOF_FILE), proof);
-        const validatedCandidateBinding = candidateTreeBinding(candidate);
-        const errors = validator({
+        publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
+        snapshotCandidateTree(candidate, publicationCandidate);
+        if (validator !== validateReleaseProof) {
+            const customErrors = validator({
+                root,
+                candidate,
+                expectedRevision: revision,
+                runtimeContract,
+                releaseInventory,
+            });
+            if (customErrors.length > 0) {
+                throw new Error(customErrors.join('\n'));
+            }
+        }
+        rmSync(candidate, { recursive: true, force: true });
+        const publicationErrors = validateReleaseProof({
             root,
-            candidate,
+            candidate: publicationCandidate,
             expectedRevision: revision,
             runtimeContract,
             releaseInventory,
         });
-        if (errors.length > 0) {
-            throw new Error(errors.join('\n'));
+        if (publicationErrors.length > 0) {
+            throw new Error(publicationErrors.join('\n'));
         }
         assertBuildState(root, revision);
         releaseGate(root, releaseInventory);
         assertBuildState(root, revision);
-        if (candidateTreeBinding(candidate) !== validatedCandidateBinding) {
-            throw new Error('release proof candidate bytes or census changed during validation');
-        }
-        renameSync(candidate, output);
+        renameSync(publicationCandidate, output);
     } catch (error) {
         rmSync(candidate, { recursive: true, force: true });
+        if (publicationCandidate !== undefined) {
+            rmSync(publicationCandidate, { recursive: true, force: true });
+        }
         throw error;
     }
 }

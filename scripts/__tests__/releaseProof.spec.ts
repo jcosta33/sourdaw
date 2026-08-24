@@ -823,12 +823,16 @@ describe('release proof', () => {
     it.each([
         ['web manifest', 'web/contents/web-artifact-manifest.json'],
         ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],
-    ])('does not publish a %s swapped after its bytes are captured', (_label, candidatePath) => {
+    ])('publishes frozen %s bytes when the mutable source is swapped after capture', (_label, candidatePath) => {
         const fixture = createFixture();
         let targetDescriptor: number | undefined;
         let swapped = false;
+        let expectedBytes: Buffer | undefined;
+        let mutableCandidate: string | undefined;
         const validator: ReleaseProofValidator = (options) => {
+            mutableCandidate = options.candidate;
             const path = join(options.candidate, candidatePath);
+            expectedBytes = readFileSync(path);
             const fileReader: ReleaseProofFileReader = {
                 open(openPath, flags) {
                     const descriptor = openSync(openPath, flags);
@@ -852,29 +856,34 @@ describe('release proof', () => {
             return errors;
         };
 
-        expect(() =>
-            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator)
-        ).toThrow('release proof candidate bytes or census changed during validation');
+        assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator);
         expect(swapped).toBe(true);
-        expect(existsSync(fixture.candidate)).toBe(false);
+        expect(readFileSync(join(fixture.candidate, candidatePath))).toEqual(expectedBytes);
+        expect(mutableCandidate).not.toBe(fixture.candidate);
+        if (mutableCandidate === undefined) {
+            throw new Error('custom validator did not observe the mutable candidate');
+        }
+        expect(existsSync(mutableCandidate)).toBe(false);
+        expect(validate(fixture)).toEqual('');
     });
 
     it.each([
         ['web contents', 'web/contents/assets/app.js'],
         ['FFmpeg build input', 'desktop/build-inputs/electron/DEPS'],
-    ])('does not publish a changed %s directory member after validation', (_label, candidatePath) => {
+    ])('publishes a frozen %s directory member when its mutable source changes', (_label, candidatePath) => {
         const fixture = createFixture();
+        let expectedBytes: Buffer | undefined;
         const validator: ReleaseProofValidator = (options) => {
+            expectedBytes = readFileSync(join(options.candidate, candidatePath));
             const errors = validateReleaseProof(options);
             expect(errors).toEqual([]);
             write(join(options.candidate, candidatePath), 'post-validation replacement');
             return errors;
         };
 
-        expect(() =>
-            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator)
-        ).toThrow('release proof candidate bytes or census changed during validation');
-        expect(existsSync(fixture.candidate)).toBe(false);
+        assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, validator);
+        expect(readFileSync(join(fixture.candidate, candidatePath))).toEqual(expectedBytes);
+        expect(validate(fixture)).toEqual('');
     });
 
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
@@ -1132,6 +1141,7 @@ describe('release proof', () => {
         expect(gated).toBe(true);
         expect(existsSync(fixture.candidate)).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.tmp-'))).toBe(false);
+        expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.publication-'))).toBe(false);
     });
 
     it('rejects unreferenced files outside the closed candidate census', () => {
