@@ -34,6 +34,7 @@ import {
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const WEBLLM_REQUIRED_LEGAL_FILES = webLlmRequiredLegalFiles(workspaceRoot);
 const WEBLLM_REQUIRED_SOURCE_LEGAL_FILES = WEBLLM_REQUIRED_LEGAL_FILES.map((path) => `public/${path}`);
+const WEBLLM_PACKAGED_PATH_LIST_DIGEST = '03220ef72279533c5110dea8cad8b087065c2232238096c6cc50cf3f48a10603';
 const fixtureRoots: string[] = [];
 const electronRepository = 'https://example.test/electron/electron';
 const ffmpegRepository = 'https://example.test/chromium/ffmpeg';
@@ -519,6 +520,12 @@ afterEach(() => {
 });
 
 describe('release proof', () => {
+    it('pins the WebLLM packaged legal path list', () => {
+        expect(hashValue(JSON.stringify([...WEBLLM_REQUIRED_LEGAL_FILES].sort()))).toBe(
+            WEBLLM_PACKAGED_PATH_LIST_DIGEST
+        );
+    });
+
     it('rejects a malformed proof manifest', () => {
         const fixture = createFixture();
         assemble(fixture);

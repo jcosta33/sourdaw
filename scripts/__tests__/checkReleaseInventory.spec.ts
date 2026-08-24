@@ -83,6 +83,9 @@ const ddspModelEnforcementPaths = [
     'src/modules/BrowserAi/useCases/removeModel.ts',
     'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
+const WEBLLM_SURFACE_ID = 'webllm-qwen-artifacts';
+const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
+const WEBLLM_LEGAL_CLOSURE_DIGEST = '29ae9a90a1fe893c5a57581377e127a041af4ee3cc392e388da8c1f042279bc0';
 const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
 const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 
@@ -97,6 +100,58 @@ function expectedApacheTvmRawSource(path: string): string {
         return `https://raw.githubusercontent.com/apache/tvm-ffi/${TVM_FFI_COMMIT}/${path.slice(tvmFfiPrefix.length)}`;
     }
     return `https://raw.githubusercontent.com/apache/tvm/${APACHE_TVM_COMMIT}/${path.slice(apacheTvmPrefix.length)}`;
+}
+
+function isConcreteWebLlmLegalPath(path: string): boolean {
+    return path.startsWith(WEBLLM_LEGAL_PATH_PREFIX) && !path.endsWith('/');
+}
+
+function webLlmLegalSourceBuckets(sources: readonly string[]): Record<string, string[]> {
+    return {
+        apacheTvmRaw: sources
+            .filter(
+                (source) =>
+                    source.startsWith('https://raw.githubusercontent.com/apache/tvm/') ||
+                    source.startsWith('https://raw.githubusercontent.com/apache/tvm-ffi/')
+            )
+            .sort(),
+        mlcLlmNotice: sources.filter((source) => source.startsWith('https://github.com/mlc-ai/mlc-llm/tree/')).sort(),
+        qwenLicenseSet: sources.filter((source) => source.startsWith('https://huggingface.co/Qwen/')).sort(),
+        webLlmLicense: sources.filter((source) => source.startsWith('https://github.com/mlc-ai/web-llm/blob/')).sort(),
+    };
+}
+
+function webLlmLegalSourceKinds(path: string): string[] {
+    if (path.startsWith('public/legal/Apache-TVM/')) {
+        return ['apacheTvmRaw'];
+    }
+    if (path === 'public/legal/MLC-LLM-NOTICE.txt') {
+        return ['mlcLlmNotice'];
+    }
+    if (path === 'public/legal/Qwen-NOTICE.txt') {
+        return ['qwenLicenseSet'];
+    }
+    if (path === 'public/legal/Apache-2.0.txt') {
+        return ['webLlmLicense'];
+    }
+    if (path === 'public/legal/THIRD-PARTY-NOTICES.md') {
+        return ['apacheTvmRaw', 'mlcLlmNotice', 'qwenLicenseSet', 'webLlmLicense'];
+    }
+    throw new Error(`unexpected WebLLM legal path in oracle: ${path}`);
+}
+
+function webLlmLegalClosureOracle() {
+    const surface = readReleaseInventory(repositoryRoot).surfaces.find(({ id }) => id === WEBLLM_SURFACE_ID);
+    if (surface === undefined) {
+        throw new Error(`missing ${WEBLLM_SURFACE_ID} surface`);
+    }
+    const legalPaths = surface.paths.filter(isConcreteWebLlmLegalPath).sort();
+    return {
+        legalPaths,
+        sourceBuckets: webLlmLegalSourceBuckets(surface.sources),
+        pathSourceKinds: Object.fromEntries(legalPaths.map((path) => [path, webLlmLegalSourceKinds(path)])),
+        pathDigests: surface.digests.filter((digest) => /^sha256:[0-9a-f]{64}:public\/legal\//u.test(digest)).sort(),
+    };
 }
 
 function writeDdspModelContractFixture(root: string, manifest: string): void {
@@ -748,11 +803,15 @@ describe('release inventory', () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
+    it('pins the WebLLM legal closure to exact paths, source buckets, and path-addressed digests', () => {
+        expect(sha256(JSON.stringify(webLlmLegalClosureOracle()))).toBe(WEBLLM_LEGAL_CLOSURE_DIGEST);
+    });
+
     it('binds every admitted Apache-TVM legal file to its immutable source bytes and public notice link', () => {
         const inventory = JSON.parse(
             readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
         ) as ReleaseInventory;
-        const surface = inventory.surfaces.find(({ id }) => id === 'webllm-qwen-artifacts');
+        const surface = inventory.surfaces.find(({ id }) => id === WEBLLM_SURFACE_ID);
         const notice = readFileSync(join(repositoryRoot, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
         const apacheTvmPaths =
             surface?.paths.filter((path) => path.startsWith('public/legal/Apache-TVM/') && !path.endsWith('/')) ?? [];
@@ -804,6 +863,7 @@ describe('release inventory', () => {
             '/outside-root.txt',
             'public/legal/../outside.txt',
             'public//legal/notice.txt',
+            'C:public/legal/Qwen-NOTICE.txt',
             'C:\\outside.txt',
             '\\\\server\\share\\notice.txt',
             'public\\legal\\notice.txt',

@@ -251,7 +251,7 @@ function isUriLikeDigestLabel(value: string): boolean {
 }
 
 function isWindowsPathLikeDigestLabel(value: string): boolean {
-    return value.includes('\\') || win32.isAbsolute(value);
+    return value.includes('\\') || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value);
 }
 
 function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
@@ -274,6 +274,7 @@ function isCanonicalPathAddress(path: string): boolean {
     return (
         !path.includes('\\') &&
         !path.includes('\0') &&
+        !/^[A-Za-z]:/u.test(path) &&
         !posix.isAbsolute(path) &&
         !win32.isAbsolute(path) &&
         path !== '.' &&
