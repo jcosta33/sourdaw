@@ -688,9 +688,6 @@ function gitCredentialHelperSource(token: string): string {
     return [
         '#!/bin/sh',
         'set -eu',
-        'if [ "${1-}" != get ]; then',
-        '    exit 0',
-        'fi',
         'protocol=',
         'host=',
         'while IFS= read -r line || [ -n "$line" ]; do',
@@ -700,7 +697,7 @@ function gitCredentialHelperSource(token: string): string {
         "        '') break ;;",
         '    esac',
         'done',
-        'if [ "$protocol" = https ] && [ "$host" = github.com ]; then',
+        'if [ "${1-}" = get ] && [ "$protocol" = https ] && [ "$host" = github.com ]; then',
         `    printf 'username=x-access-token\\npassword=%s\\n' '${token}'`,
         'fi',
         '',

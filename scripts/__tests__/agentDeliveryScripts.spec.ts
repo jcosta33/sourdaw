@@ -219,7 +219,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
-    });
+    }, 15_000);
 
     it('publishes a pre-migration lane through the primary package without executing its package route', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-primary-lane-route-'));

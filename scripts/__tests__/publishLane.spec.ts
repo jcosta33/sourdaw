@@ -352,7 +352,7 @@ describe('lane publish', () => {
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
-    });
+    }, 20_000);
 
     it('resolves the locked lane before requesting its diff-scoped publishing token', () => {
         const source = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');

@@ -546,10 +546,17 @@ describe('project license', () => {
     it('rejects duplicate legal members in a locked proof archive', () => {
         const archivePath = 'release/dependency-license-proofs/example-1.0.0.tgz';
         const license = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'));
-        mkdirSync(join(root, 'package'), { recursive: true });
-        writeFileSync(join(root, 'package/LICENSE'), license);
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
-        execFileSync('tar', ['-czf', join(root, archivePath), 'package/LICENSE', './package/LICENSE'], { cwd: root });
+        writeFileSync(
+            join(root, archivePath),
+            gzipSync(
+                Buffer.concat([
+                    encodeTarEntry('package/LICENSE', 'File', license),
+                    encodeTarEntry('./package/LICENSE', 'File', license),
+                    Buffer.alloc(1024),
+                ])
+            )
+        );
         const archive = readFileSync(join(root, archivePath));
         const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
         const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
