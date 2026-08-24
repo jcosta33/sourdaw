@@ -24,9 +24,12 @@ technical risk never qualify for escalation. Missing access is a blocker, not a 
 Encountered defects are never out of scope: existing rot measurably causes new rot, and delegated
 agents imitate the code around them. A defect is observable misbehavior, a broken invariant, or a
 contradiction with a documented contract — never style preference. Sizeable defects get their own
-lane; small unrelated ones batch into one hygiene lane; work you cannot take now is filed at any
-size, written so a cold session can execute it. "Worth noting" is not an outcome — a thing worth
-noting is a thing worth fixing or filing.
+lane; small unrelated ones batch into one hygiene lane. A defect you are fixing yourself needs no
+issue: the lane and pull request are its claim, and an issue filed only to be closed again in the
+same hour is tracker noise. File only what you are leaving behind — when you must keep working on
+something else, file it at any size, written so a cold session or another agent can pick it up
+later. "Worth noting" is not an outcome — a thing worth noting is a thing worth fixing or handing
+off.
 
 ## Delegation
 
