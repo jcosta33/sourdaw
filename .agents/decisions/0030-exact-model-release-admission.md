@@ -2,7 +2,7 @@
 type: adr
 id: 0030
 title: Exact model artifacts require release admission
-status: partially superseded by 0035 (DDSP checkpoints) and 0037 (WebLLM Qwen conversions)
+status: partially superseded by 0035 (DDSP checkpoints only) and 0037 (WebLLM Qwen conversions only)
 date: 2026-08-17
 owner: The Sourdaw team
 sources:
@@ -46,7 +46,7 @@ from product controls. Its neutral architecture may remain.
 | Whisper                 | Admit    | Pinned `ggml-base.en.bin` size and SHA-256; MIT model repository; Unlicense `whisper-rs` runtime. |
 | DDSP checkpoints        | Withhold | Exact GCS checkpoint licenses and immutable digests remain unproved.                              |
 | RAVE models             | Withhold | No model artifact, source, digest, or license is admitted.                                        |
-| WebLLM Qwen conversions | Withhold | Historical decision; ADR 0037 now admits only the three pinned Qwen conversions under Apache-2.0. |
+| WebLLM Qwen conversions | Withhold | Base Qwen licenses do not prove the exact MLC quantized artifact repositories.                    |
 | Native denoise          | Keep     | The current downward expander is first-party DSP with no external model artifact.                 |
 | Stem separation         | Withhold | No replacement model stack is admitted; the current repository reports it unavailable.            |
 
@@ -57,10 +57,8 @@ loading and keeps DDSP out of the runtime registry and model manager.
 ## Consequences
 
 - Hosted language models remain desktop-only and explicit.
-- The original release had no browser-local language model; ADR 0037 admits the pinned WebLLM Qwen
-  conversions.
+- This release has no browser-local language model.
 - Kokoro, Whisper, and Basic Pitch remain available with their notices.
 - Native denoise remains available without a model dependency.
-- DDSP and RAVE can return only after a later ADR admits exact artifacts and obligations. ADR 0037
-  admits the pinned WebLLM Qwen conversions with its stated obligations.
+- DDSP, RAVE, or WebLLM can return only after a later ADR admits exact artifacts and obligations.
 - Stem separation remains unavailable until a complete replacement stack passes admission.

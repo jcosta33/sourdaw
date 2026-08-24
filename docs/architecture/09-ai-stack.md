@@ -9,16 +9,18 @@ source build. Model weights are separate artifacts with separate terms.
   the desktop native gateway. Configure them with
   `SOURDAW_ANTHROPIC_API_KEY`, `SOURDAW_OPENAI_API_KEY`, or
   `SOURDAW_OPENAI_COMPATIBLE_API_KEY`, respectively.
-- The exact pinned WebLLM Qwen conversions admitted by ADR 0037 are available on
+- The exact pinned WebLLM Qwen conversions admitted by
+  [ADR 0037](../../.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md) are available on
   browser and desktop release surfaces. WebLLM may be selected on any platform,
   but runtime use still requires WebGPU; explicit selection fails closed when
   that capability is unavailable and never falls back to a hosted provider.
   Artifact admission is separate from runtime capability: the release manifest
-  pins and verifies each artifact before storage or inference. ADR 0037 records
-  the remaining unproven exact Qwen checkpoint mapping and build inputs; those
-  gaps must not be represented as proven provenance. Browser hosted credentials
-  are not supported. An unauthenticated OpenAI-compatible loopback endpoint
-  remains a local browser path.
+  pins and verifies each artifact before storage or inference.
+  [ADR 0037](../../.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md)
+  records the remaining unproven exact Qwen checkpoint mapping and build inputs;
+  those gaps must not be represented as proven provenance. Browser hosted
+  credentials are not supported. An unauthenticated OpenAI-compatible loopback
+  endpoint remains a local browser path.
 
 ## Audio and speech models
 

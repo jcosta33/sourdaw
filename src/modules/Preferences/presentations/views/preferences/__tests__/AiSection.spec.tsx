@@ -129,4 +129,25 @@ describe('AiSection', () => {
         expect(screen.queryByRole('option', { name: 'Browser WebLLM' })).not.toBeInTheDocument();
         expect(screen.getByLabelText('AI execution backend')).toHaveValue('auto');
     });
+
+    it('resolves a stale persisted WebLLM preference to Automatic when admission is off', () => {
+        mocks.admission.webLlm = false;
+        mocks.isDesktop = false;
+        mocks.backendPreference.value = 'webllm';
+        mocks.resolveBackend.mockReturnValue('webllm');
+
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('AI execution backend')).toHaveValue('auto');
+    });
+
+    it('resolves a stale persisted cloud preference to Automatic in web builds', () => {
+        mocks.isDesktop = false;
+        mocks.backendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('AI execution backend')).toHaveValue('auto');
+    });
 });

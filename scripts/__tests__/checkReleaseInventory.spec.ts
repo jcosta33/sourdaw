@@ -790,13 +790,43 @@ describe('release inventory', () => {
 
     it('should reject a path-addressed digest whose tracked file was deleted', () => {
         const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
-        const value = inventory();
-        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
-        const changed = snapshot();
-        changed.releaseFiles.push(path);
-        delete changed.fileDigests[path];
+        const trackedPath = 'src/provider.ts';
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-loader-'));
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${path}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [],
+        };
 
-        expect(validateReleaseInventory(value, changed)).toContain(`runtime: path-addressed digest drifted: ${path}`);
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            const changed = loadRepositorySnapshot(root, value, [trackedPath, path]);
+
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('should ignore semantic and remote artifact digest labels', () => {
@@ -809,9 +839,7 @@ describe('release inventory', () => {
         const changed = snapshot();
         changed.fileDigests['public/icon.png'] = 'b'.repeat(64);
 
-        expect(validateReleaseInventory(value, changed).filter((error) => error.includes('path-addressed'))).toEqual(
-            []
-        );
+        expect(validateReleaseInventory(value, changed)).toEqual([]);
     });
 
     it('should ignore git-addressed digest labels', () => {
@@ -820,9 +848,7 @@ describe('release inventory', () => {
             `sha256:${fixtureDigest}:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt`,
         ];
 
-        expect(validateReleaseInventory(value, snapshot()).filter((error) => error.includes('path-addressed'))).toEqual(
-            []
-        );
+        expect(validateReleaseInventory(value, snapshot())).toEqual([]);
     });
 
     it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 10_000 }, () => {
