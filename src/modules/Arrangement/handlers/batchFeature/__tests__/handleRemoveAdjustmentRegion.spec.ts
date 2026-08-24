@@ -12,7 +12,18 @@ const mocks = vi.hoisted(() => ({
 
 type ExpectedRegion = NonNullable<Extract<AppAction, { type: 'removeAdjustmentRegion' }>['payload']['expectedRegion']>;
 type MockAdjustmentLayerState = {
-    layers: Array<{ id: string; regions: ExpectedRegion[] }>;
+    layers: Array<{
+        id: string;
+        name: string;
+        effectType: AdjustmentLayerSnapshot['effectType'];
+        parameters: AdjustmentLayerSnapshot['parameters'];
+        affectedTrackIds: string[];
+        insertionIndex: number;
+        regions: ExpectedRegion[];
+        enabled: boolean;
+        mix: number;
+        color: string;
+    }>;
 };
 type MockTrackState = {
     tracks: Array<{ id: string; frozen: boolean }>;
@@ -25,6 +36,9 @@ vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
         get value() {
             return adjustmentLayerState;
+        },
+        set: (next: MockAdjustmentLayerState | null) => {
+            adjustmentLayerState = next;
         },
     },
 }));
@@ -53,9 +67,32 @@ const expectedLayer: AdjustmentLayerSnapshot = {
     mix: 1,
     color: '#fff',
 };
+const expectedWrittenRegion: ExpectedRegion = {
+    id: 'region-copy',
+    startBeat: 48,
+    endBeat: 64,
+    blend: 0.75,
+    fadeInBeats: 0.5,
+    fadeOutBeats: 0.25,
+};
 
-function createAddCompensation(): Extract<AppAction, { type: 'removeAdjustmentRegion' }> {
-    const inverseAction = handleAddAdjustmentRegion.describe({
+function createLayer(): MockAdjustmentLayerState['layers'][number] {
+    return {
+        id: expectedLayer.id,
+        name: expectedLayer.name,
+        effectType: expectedLayer.effectType,
+        parameters: expectedLayer.parameters,
+        affectedTrackIds: [...expectedLayer.affectedTrackIds],
+        insertionIndex: expectedLayer.insertionIndex,
+        regions: [],
+        enabled: expectedLayer.enabled,
+        mix: expectedLayer.mix,
+        color: expectedLayer.color,
+    };
+}
+
+function createAddAction(): Extract<AppAction, { type: 'addAdjustmentRegion' }> {
+    return {
         type: 'addAdjustmentRegion',
         payload: {
             layerId: expectedLayer.id,
@@ -68,7 +105,13 @@ function createAddCompensation(): Extract<AppAction, { type: 'removeAdjustmentRe
             expectedLayer,
             expectedTracks: [{ trackId: 'track-bass', trackName: 'Bass', frozen: false }],
         },
-    }).inverseAction;
+    };
+}
+
+function createAddCompensation(
+    action: Extract<AppAction, { type: 'addAdjustmentRegion' }>
+): Extract<AppAction, { type: 'removeAdjustmentRegion' }> {
+    const inverseAction = handleAddAdjustmentRegion.describe(action).inverseAction;
     if (inverseAction?.type !== 'removeAdjustmentRegion') {
         throw new Error('Expected addAdjustmentRegion compensation');
     }
@@ -80,7 +123,7 @@ const compensationHandlers = [handleRemoveAdjustmentRegion, adjustmentLayerHandl
 describe('handleRemoveAdjustmentRegion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        adjustmentLayerState = { layers: [{ id: expectedLayer.id, regions: [] }] };
+        adjustmentLayerState = { layers: [createLayer()] };
         trackState = { tracks: [{ id: 'track-bass', frozen: false }] };
     });
 
@@ -92,34 +135,37 @@ describe('handleRemoveAdjustmentRegion', () => {
         expect(mocks.removeAdjustmentRegion).toHaveBeenCalledWith('L', 'R');
     });
 
-    it('certifies add compensation before and after the guarded region is written', () => {
-        const compensation = createAddCompensation();
+    it('removes real add output when the guarded region is absent or exactly live', () => {
+        const action = createAddAction();
+        const compensation = createAddCompensation(action);
 
         for (const handler of compensationHandlers) {
             expect(handler.canReapplyAfterDivergence?.(compensation)).toBe(true);
         }
 
-        adjustmentLayerState = {
-            layers: [{ id: expectedLayer.id, regions: [compensation.payload.expectedRegion] }],
-        };
+        void adjustmentLayerHandlers.addAdjustmentRegion.execute(action);
+        expect(adjustmentLayerState?.layers[0].regions[0]).toEqual(expectedWrittenRegion);
         for (const handler of compensationHandlers) {
             expect(handler.canReapplyAfterDivergence?.(compensation)).toBe(true);
         }
+        expect(adjustmentLayerHandlers.removeAdjustmentRegion.execute(compensation)).toEqual({ status: 'written' });
+        expect(mocks.removeAdjustmentRegion).toHaveBeenCalledWith(expectedLayer.id, expectedWrittenRegion.id);
     });
 
     it('rejects add compensation after a collaborator changes the guarded region', () => {
-        const compensation = createAddCompensation();
-        adjustmentLayerState = {
-            layers: [
-                {
-                    id: expectedLayer.id,
-                    regions: [{ ...compensation.payload.expectedRegion, blend: 0.5 }],
-                },
-            ],
-        };
+        const action = createAddAction();
+        const compensation = createAddCompensation(action);
+        void adjustmentLayerHandlers.addAdjustmentRegion.execute(action);
+        const writtenRegion = adjustmentLayerState?.layers[0].regions[0];
+        if (!writtenRegion) {
+            throw new Error('Expected the real add execution to write a region');
+        }
+        writtenRegion.blend = 0.5;
 
         for (const handler of compensationHandlers) {
             expect(handler.canReapplyAfterDivergence?.(compensation)).toBe(false);
         }
+        expect(adjustmentLayerHandlers.removeAdjustmentRegion.execute(compensation)).toEqual({ status: 'conflict' });
+        expect(mocks.removeAdjustmentRegion).not.toHaveBeenCalled();
     });
 });

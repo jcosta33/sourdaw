@@ -290,9 +290,8 @@ function getApplicationAssignedTargetIds(
 const SELECTED_STEM_ASSETS_READY_ID = 'selected-stem-assets';
 
 function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly ExecutableRuntimeAction[]): string[] {
-    const selectedStemAssetIds = actions.flatMap((action) =>
-        action.type === 'importStemSet' ? action.payload.stems.map((stem) => stem.audioBufferId) : []
-    );
+    const selectedStems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
+    const selectedStemAssetIds = selectedStems.map((stem) => stem.audioBufferId);
     if (selectedStemAssetIds.length === 0) {
         return [];
     }
@@ -311,7 +310,7 @@ function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly Exe
         return [];
     }
 
-    return [SELECTED_STEM_ASSETS_READY_ID];
+    return [SELECTED_STEM_ASSETS_READY_ID, ...new Set(selectedStems.map((stem) => stem.stemId))];
 }
 
 export async function sendChatMessage(

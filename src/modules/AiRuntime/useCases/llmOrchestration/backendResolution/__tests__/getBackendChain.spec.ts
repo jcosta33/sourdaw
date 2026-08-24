@@ -53,6 +53,12 @@ describe('getBackendChain', () => {
         expect(getBackendChain()).toEqual([]);
     });
 
+    it('does not fall back to a hosted provider for explicit browser-local selection', () => {
+        mocks.preference.value = 'webllm';
+
+        expect(getBackendChain()).toEqual([]);
+    });
+
     it('uses a hosted provider only after explicit selection', () => {
         mocks.preference.value = 'cloud';
 

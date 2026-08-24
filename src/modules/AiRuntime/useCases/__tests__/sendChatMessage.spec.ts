@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { type planPromptActions } from '../planPromptActions';
@@ -127,6 +128,25 @@ function createAddTrackAction(): ExecutableRuntimeAction {
     };
 }
 
+function createProviderProposal(assetIds: string[]): AgentRunProviderProposal {
+    return {
+        semantic: { classification: 'simple', uncertainty: [] },
+        objective: 'Import the prepared stems.',
+        constraints: ['Use only the prepared stem selection.'],
+        scope: {
+            targetIds: [],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        },
+        capabilityIds: [],
+        assetIds,
+        alternatives: [],
+        validationStrategy: ['Validate prepared-stem readiness before confirmation.'],
+        stoppingConditions: ['Stop if the prepared stem is unavailable.'],
+    };
+}
+
 function configureCommandPlanning(action: ExecutableRuntimeAction): void {
     const scope = {
         targetIds: [],
@@ -164,7 +184,11 @@ function configureCommandPlanning(action: ExecutableRuntimeAction): void {
     });
 }
 
-function configurePromptPlanning(action: ExecutableRuntimeAction, readiness: PreparedStemReadiness): void {
+function configurePromptPlanning(
+    action: ExecutableRuntimeAction,
+    readiness: PreparedStemReadiness,
+    providerProposal?: AgentRunProviderProposal
+): void {
     configureCommandPlanning(action);
     mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
         const runId = input.streamIdentity?.runId;
@@ -191,7 +215,12 @@ function configurePromptPlanning(action: ExecutableRuntimeAction, readiness: Pre
         }
         return {
             context: {},
-            result: { actions: [action], rawText: 'fixture plan', requiresConfirmation: true },
+            result: {
+                actions: [action],
+                rawText: 'fixture plan',
+                requiresConfirmation: true,
+                ...(providerProposal === undefined ? {} : { providerProposal }),
+            },
             projectRevision: 'revision-fixture',
         };
     });
@@ -262,6 +291,30 @@ describe('sendChatMessage retained-provider selection', () => {
             expect.objectContaining({ id: 'selected-stem-assets', source: 'asset', status: 'available' })
         );
         expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
+    });
+
+    it('admits provider asset ids that name the same-run prepared stems', async () => {
+        configurePromptPlanning(createStemImportAction('buffer-ready'), 'ready', createProviderProposal(['stem-kick']));
+
+        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
+
+        expect(getPlannedRun().plan?.capabilities).toContainEqual(
+            expect.objectContaining({ id: 'stem-kick', source: 'asset', status: 'available' })
+        );
+        expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
+    });
+
+    it('fails closed when a provider asset id does not name a selected prepared stem', async () => {
+        configurePromptPlanning(
+            createStemImportAction('buffer-ready'),
+            'ready',
+            createProviderProposal(['stem-provider-invented'])
+        );
+
+        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
+
+        expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null });
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
     });
 
     it('fails closed when the prepared-stem resources are absent', async () => {

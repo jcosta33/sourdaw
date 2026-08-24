@@ -658,6 +658,55 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
     });
 
+    it('normalizes a single-onset articulation-transfer target range', async () => {
+        const state = midiStore.value!;
+        midiStore.set({
+            ...state,
+            notesByClipId: {
+                ...state.notesByClipId,
+                'clip-chorus-one': [
+                    Object.assign(
+                        { id: 'source-low', pitch: 60, startBeat: 0, duration: 1, velocity: 110 },
+                        { articulation: 'staccato' }
+                    ),
+                ],
+                'clip-chorus-two': [
+                    Object.assign(
+                        { id: 'target-low', pitch: 62, startBeat: 0, duration: 1, velocity: 72 },
+                        { articulation: 'legato' }
+                    ),
+                ],
+            },
+        });
+
+        await sendChatMessage(PROMPT);
+
+        const confirmationId = getConfirmationId();
+        expect(confirmationId).not.toBe('');
+        expect(getPendingActionConfirmation(confirmationId)?.actions).toEqual([
+            expect.objectContaining({
+                type: 'copyMidiArticulations',
+                payload: expect.objectContaining({
+                    sourceClipId: 'clip-chorus-one',
+                    targetClipId: 'clip-chorus-two',
+                    notePairs: [{ sourceNoteId: 'source-low', targetNoteId: 'target-low' }],
+                }),
+            }),
+        ]);
+
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({ status: 'executed' });
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']).toEqual([
+            {
+                id: 'target-low',
+                pitch: 62,
+                startBeat: 0,
+                duration: 1,
+                velocity: 72,
+                articulation: 'staccato',
+            },
+        ]);
+    });
+
     it('includes every unambiguous MIDI chorus pair and protects audio clips and non-articulation fields', async () => {
         addSecondMidiAndAudioTracks();
 
