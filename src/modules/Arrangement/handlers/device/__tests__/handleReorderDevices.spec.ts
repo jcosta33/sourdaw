@@ -156,7 +156,10 @@ describe('handleReorderDevices', () => {
         );
         expect(handleReorderDevices.validate?.(action, batchContext)).toBe(true);
 
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [expectedBeforeTrack] });
+
         const result = handleReorderDevices.execute(action, batchContext);
+        expect(result).toMatchObject({ status: 'written' });
         if (!result || result instanceof Promise || result.status !== 'written' || !result.afterCommit) {
             throw new Error('Expected a written reorder result');
         }
