@@ -21,7 +21,7 @@ type DeleteDrumPreviewBranchesAction = Extract<AppAction, { type: 'deleteDrumPre
 
 const ownerId = 'preview-owner';
 
-function createCandidateRecords(): BranchRecord[] {
+function createCandidateRecords(sourceBranchId = MAIN_BRANCH_ID): BranchRecord[] {
     return ['candidate-1', 'candidate-2', 'candidate-3'].map((branchId, index) => {
         const rootDocId = `branch_${branchId}`;
         automergeRepository.createChildDoc(rootDocId);
@@ -32,7 +32,7 @@ function createCandidateRecords(): BranchRecord[] {
             branchId,
             name: `Candidate ${String(index + 1)}`,
             rootDocId,
-            sourceBranchId: MAIN_BRANCH_ID,
+            sourceBranchId,
             createdAt: 100 + index,
             createdFromHeads: ['source-head'],
             note: `agent-preview:${ownerId}`,
@@ -40,12 +40,15 @@ function createCandidateRecords(): BranchRecord[] {
     });
 }
 
-function createDeleteAction(records: readonly BranchRecord[]): DeleteDrumPreviewBranchesAction {
+function createDeleteAction(
+    records: readonly BranchRecord[],
+    expectedSourceBranchId = MAIN_BRANCH_ID
+): DeleteDrumPreviewBranchesAction {
     return {
         type: 'deleteDrumPreviewBranches',
         payload: {
             ownerId,
-            expectedSourceBranchId: MAIN_BRANCH_ID,
+            expectedSourceBranchId,
             branches: records.map(({ branchId, name, rootDocId }) => ({
                 branchId,
                 branchName: name,
@@ -56,9 +59,9 @@ function createDeleteAction(records: readonly BranchRecord[]): DeleteDrumPreview
     };
 }
 
-function installBranchState(records: readonly BranchRecord[]): void {
+function installBranchState(records: readonly BranchRecord[], activeBranchId = MAIN_BRANCH_ID): void {
     branchStore.set({
-        activeBranchId: MAIN_BRANCH_ID,
+        activeBranchId,
         branches: [
             {
                 branchId: MAIN_BRANCH_ID,
@@ -113,9 +116,20 @@ describe('createDeleteDrumPreviewBranchesHandler', () => {
         expect(handler.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
     });
 
-    it('removes only the guarded targets and preserves an unrelated collaborator branch', async () => {
-        const records = createCandidateRecords();
-        const action = createDeleteAction(records);
+    it('removes only the guarded targets and preserves the active source and collaborator branches', async () => {
+        const sourceRootDocId = 'branch_source';
+        automergeRepository.createChildDoc(sourceRootDocId);
+        const sourceRecord: BranchRecord = {
+            branchId: 'source',
+            name: 'Source branch',
+            rootDocId: sourceRootDocId,
+            sourceBranchId: MAIN_BRANCH_ID,
+            createdAt: 50,
+            createdFromHeads: ['main-head'],
+            note: '',
+        };
+        const records = createCandidateRecords(sourceRecord.branchId);
+        const action = createDeleteAction(records, sourceRecord.branchId);
         const collaboratorRootDocId = 'branch_collaborator';
         automergeRepository.createChildDoc(collaboratorRootDocId);
         automergeRepository.changeDoc<Record<string, unknown>>(collaboratorRootDocId, (draft) => {
@@ -130,11 +144,12 @@ describe('createDeleteDrumPreviewBranchesHandler', () => {
             createdFromHeads: ['source-head'],
             note: 'collaborator-work',
         };
-        installBranchState([...records, collaboratorRecord]);
+        installBranchState([sourceRecord, ...records, collaboratorRecord], sourceRecord.branchId);
         const handler = createDeleteDrumPreviewBranchesHandler({ canMutateBranchMetadata: () => true });
 
         await expect(handler.execute(action)).resolves.toEqual({ status: 'written' });
-        expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
+        expect(branchStore.value?.activeBranchId).toBe(sourceRecord.branchId);
+        expect(branchStore.value?.branches).toContainEqual(sourceRecord);
         expect(branchStore.value?.branches).toContainEqual(collaboratorRecord);
         expect(automergeRepository.hasDoc(collaboratorRootDocId)).toBe(true);
         expect(records.every(({ rootDocId }) => !automergeRepository.hasDoc(rootDocId))).toBe(true);

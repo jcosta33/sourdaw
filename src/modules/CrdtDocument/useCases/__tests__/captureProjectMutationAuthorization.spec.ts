@@ -30,6 +30,7 @@ describe('captureProjectMutationAuthorization', () => {
 
         expect(transaction.status).toBe('returned');
         expect(authorizations).toEqual([true, true, true]);
+        expect(isAuthorized()).toBe(true);
     });
 
     it('revokes authorization after a different storage transaction owner mutates the project', () => {
