@@ -375,32 +375,84 @@ describe('bass compressor prompt workflow', () => {
         ).toEqual(bassAmpDevicesBefore);
         expect(getTrack('track-bass-frozen')).toEqual(frozenBefore);
         expect(getTrack('track-guitar')).toEqual(guitarBefore);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenNthCalledWith(
-            1,
-            expect.objectContaining({
-                command: 'replace-track-device-chain',
-                operation: 'add-device',
-                after: expect.objectContaining({
-                    id: 'track-bass-di',
-                    devices: expect.arrayContaining([
-                        expect.objectContaining({ id: 'device-ai-track-bass-di-builtin-compressor' }),
-                    ]),
-                }),
-            })
-        );
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenNthCalledWith(
-            2,
-            expect.objectContaining({
-                command: 'replace-track-device-chain',
-                operation: 'add-device',
-                after: expect.objectContaining({
-                    id: 'track-bass-amp',
-                    devices: expect.arrayContaining([
-                        expect.objectContaining({ id: 'device-ai-track-bass-amp-builtin-compressor' }),
-                    ]),
-                }),
-            })
-        );
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenNthCalledWith(1, {
+            schemaVersion: 1,
+            command: 'replace-track-device-chain',
+            correlation: {
+                appRevision: expect.any(Number),
+                projectRevision: expect.any(String),
+            },
+            operation: 'add-device',
+            before: {
+                id: 'track-bass-di',
+                kind: 'audio',
+                devices: [
+                    { id: 'device-bass-di-eq', type: 'builtin-eq', parameterIds: [] },
+                    { id: 'device-bass-di-saturator', type: 'builtin-saturator', parameterIds: ['drive'] },
+                ],
+            },
+            after: {
+                id: 'track-bass-di',
+                kind: 'audio',
+                devices: [
+                    { id: 'device-bass-di-eq', type: 'builtin-eq', parameterIds: [] },
+                    {
+                        id: 'device-ai-track-bass-di-builtin-compressor',
+                        type: 'builtin-compressor',
+                        parameterIds: [
+                            'comp-attack',
+                            'comp-knee',
+                            'comp-makeup',
+                            'comp-ratio',
+                            'comp-release',
+                            'comp-threshold',
+                        ],
+                    },
+                    { id: 'device-bass-di-saturator', type: 'builtin-saturator', parameterIds: ['drive'] },
+                ],
+            },
+            parameters: [],
+        });
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenNthCalledWith(2, {
+            schemaVersion: 1,
+            command: 'replace-track-device-chain',
+            correlation: {
+                appRevision: expect.any(Number),
+                projectRevision: expect.any(String),
+            },
+            operation: 'add-device',
+            before: {
+                id: 'track-bass-amp',
+                kind: 'audio',
+                devices: [
+                    { id: 'device-bass-amp-preamp', type: 'builtin-preamp', parameterIds: [] },
+                    { id: 'device-bass-amp-eq', type: 'builtin-eq', parameterIds: [] },
+                    { id: 'device-bass-amp-chorus', type: 'builtin-chorus', parameterIds: [] },
+                ],
+            },
+            after: {
+                id: 'track-bass-amp',
+                kind: 'audio',
+                devices: [
+                    { id: 'device-bass-amp-preamp', type: 'builtin-preamp', parameterIds: [] },
+                    { id: 'device-bass-amp-eq', type: 'builtin-eq', parameterIds: [] },
+                    {
+                        id: 'device-ai-track-bass-amp-builtin-compressor',
+                        type: 'builtin-compressor',
+                        parameterIds: [
+                            'comp-attack',
+                            'comp-knee',
+                            'comp-makeup',
+                            'comp-ratio',
+                            'comp-release',
+                            'comp-threshold',
+                        ],
+                    },
+                    { id: 'device-bass-amp-chorus', type: 'builtin-chorus', parameterIds: [] },
+                ],
+            },
+            parameters: [],
+        });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );

@@ -32,6 +32,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -862,6 +863,75 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(11);
+    });
+
+    it('retries an in-budget missing render without replaying the committed project actions', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        if (!confirmation) {
+            throw new Error('Expected EX-01 confirmation');
+        }
+        const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
+        if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
+            throw new Error('Expected materialized render jobs');
+        }
+        const [successfulJob, failedJob] = renderAction.payload.jobs;
+        if (!successfulJob || !failedJob) {
+            throw new Error('Expected two materialized render jobs');
+        }
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === 64) {
+                return Promise.reject(new Error('chorus two renderer unavailable'));
+            }
+            return Promise.resolve(createTestAudioBuffer());
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
+        const committedLanes = structuredClone(automationStore.value?.lanes ?? []);
+        const committedExecutionIds = getPendingActionConfirmation(confirmation.id)?.executedActions.map(
+            ({ commandId }) => commandId
+        );
+        const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
+        agentRunStore.set({
+            ...agentRunStore.value!,
+            runs: agentRunStore.value!.runs.map((run) =>
+                run.runId === confirmation.runId
+                    ? { ...run, budgets: { ...run.budgets, limits: { ...run.budgets.limits, maxRenderJobs: 3 } } }
+                    : run
+            ),
+        });
+
+        runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeRetry + 1);
+        expect(getAgentSectionRenderArtifacts().map(({ jobId, sectionId }) => ({ jobId, sectionId }))).toEqual([
+            { jobId: successfulJob.jobId, sectionId: successfulJob.sectionId },
+            { jobId: failedJob.jobId, sectionId: failedJob.sectionId },
+        ]);
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(automationStore.value?.lanes).toEqual(committedLanes);
+        expect(undoStore.value?.past).toHaveLength(11);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'complete',
+        });
+        expect(
+            getPendingActionConfirmation(confirmation.id)?.executedActions.map(({ commandId }) => commandId)
+        ).toEqual(committedExecutionIds);
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(receipt?.content).toContain(
+            'Missing section render artifacts completed without replaying project actions.'
+        );
+        expect(receipt?.content).toContain(successfulJob.jobId);
+        expect(receipt?.content).toContain(failedJob.jobId);
     });
 
     it('keeps the whole undo and redo group retryable across collaborator lane and freeze conflicts', async () => {

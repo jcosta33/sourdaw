@@ -182,6 +182,18 @@ function runWorkflowShell(label, body, env) {
     expect(result.status === 0, `${label} must execute outside the scan target: ${result.stderr.trim()}`);
 }
 
+function runGateReviewAdmission(eventName, reviewState) {
+    const result = spawnSync('bash', ['-c', gateReviewAdmissionRun], {
+        encoding: 'utf8',
+        env: { ...process.env, EVENT_NAME: eventName, REVIEW_STATE: reviewState },
+    });
+    expect(
+        result.error === undefined,
+        `Gate review admission must start for ${eventName}: ${result.error?.message ?? ''}`
+    );
+    return result.status;
+}
+
 const events = workflow.on;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
@@ -198,6 +210,8 @@ const secretScanUses = secretScan?.uses ?? '';
 const secretsEnv = secrets?.env ?? {};
 const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
 const unitRun = stepNamed(unit, 'Run shard');
+const gateReviewAdmission = stepNamed(gate, 'Reject unapproved review triggers');
+const gateReviewAdmissionRun = gateReviewAdmission?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
     'decide',
@@ -340,6 +354,22 @@ expect(
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(
+    gateReviewAdmission?.env?.EVENT_NAME === '${{ github.event_name }}' &&
+        gateReviewAdmission?.env?.REVIEW_STATE === '${{ github.event.review.state }}',
+    'Gate must receive the triggering event and review state'
+);
+expect(
+    runGateReviewAdmission('pull_request_review', 'approved') === 0,
+    'approved pull_request_review events must retain the heavy Gate path'
+);
+for (const reviewState of ['changes_requested', 'commented']) {
+    expect(
+        runGateReviewAdmission('pull_request_review', reviewState) !== 0,
+        `${reviewState} pull_request_review events must fail Gate instead of emitting a green result`
+    );
+}
+expect(runGateReviewAdmission('pull_request', '') === 0, 'pull_request events must retain the normal Gate path');
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&

@@ -673,6 +673,7 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
     ) {
         throw new TypeError('Expected exact MF-06 route capability');
     }
+    const sourceTrackId = source.trackId;
 
     const targetsByDeviceId = new Map<string, { trackId: string; deviceName: string; deviceType: string }>();
     const targetTrackIds = new Set<string>();
@@ -699,7 +700,7 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
     const items = allowedAction.exactRoutes.map((route, index): SemanticCommandListItem => {
         if (
             !isRecord(route) ||
-            route.sourceTrackId !== source.trackId ||
+            route.sourceTrackId !== sourceTrackId ||
             typeof route.targetTrackId !== 'string' ||
             typeof route.targetDeviceId !== 'string'
         ) {
@@ -713,7 +714,7 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
         ) {
             throw new TypeError('Expected MF-06 routes to match capability-filtered target devices');
         }
-        for (const targetId of [target.trackId, source.trackId, route.targetDeviceId]) {
+        for (const targetId of [target.trackId, sourceTrackId, route.targetDeviceId]) {
             if (!targetIds.includes(targetId)) {
                 targetIds.push(targetId);
             }
@@ -721,7 +722,7 @@ function createMf06ProviderPlanFromUserMessage(userMessage: string): Mf06Provide
         return {
             id: `sidechain-route-${String(index + 1)}`,
             name: 'addSidechainRoute',
-            arguments: { sourceTrackId: source.trackId, targetTrackId: target.trackId },
+            arguments: { sourceTrackId, targetTrackId: target.trackId },
             selector: {
                 targetArgument: 'targetDeviceId',
                 entity: 'device',

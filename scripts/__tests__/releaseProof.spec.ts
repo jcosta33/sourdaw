@@ -424,6 +424,12 @@ function refreshWebArchiveHash(fixture: Fixture): void {
     writeJson(join(fixture.candidate, 'release-proof.json'), value);
 }
 
+function withCopiedCandidate(fixture: Fixture, name: string): Fixture {
+    const candidate = join(fixture.base, `candidate-${name}`);
+    cpSync(fixture.candidate, candidate, { recursive: true });
+    return { ...fixture, candidate };
+}
+
 function replaceWebArchive(fixture: Fixture, paths: readonly string[]): string {
     const root = join(fixture.base, 'bounded-web-archive');
     rmSync(root, { recursive: true, force: true });
@@ -925,6 +931,7 @@ describe('release proof', () => {
         assemble(fixture);
         const value = proof(fixture);
         const desktop = desktopProof(value);
+        const expectedErrors: string[] = [];
         for (const field of [
             'artifactPath',
             'contentsManifestPath',
@@ -941,24 +948,26 @@ describe('release proof', () => {
             mkdirSync(dirname(join(fixture.candidate, relocatedPath)), { recursive: true });
             renameSync(join(fixture.candidate, originalPath), join(fixture.candidate, relocatedPath));
             desktop[field] = relocatedPath;
-            writeJson(join(fixture.candidate, 'release-proof.json'), value);
-            expect(validate(fixture)).toContain(`desktop material path must be ${originalPath}`);
-            renameSync(join(fixture.candidate, relocatedPath), join(fixture.candidate, originalPath));
-            desktop[field] = originalPath;
+            expectedErrors.push(`desktop material path must be ${originalPath}`);
+        }
+        writeJson(join(fixture.candidate, 'release-proof.json'), value);
+        const errors = validate(fixture);
+        for (const expectedError of expectedErrors) {
+            expect(errors).toContain(expectedError);
         }
     });
 
     it('fails validation closed when the repository is dirty or no longer at the expected revision', () => {
-        const dirty = createFixture();
-        assemble(dirty);
-        write(join(dirty.root, 'untracked-release-input.txt'), 'dirty');
-        expect(validate(dirty)).toContain('release proof validation requires a clean worktree');
+        const fixture = createFixture();
+        assemble(fixture);
+        const dirtyPath = join(fixture.root, 'untracked-release-input.txt');
+        write(dirtyPath, 'dirty');
+        expect(validate(fixture)).toContain('release proof validation requires a clean worktree');
 
-        const moved = createFixture();
-        assemble(moved);
-        write(join(moved.root, 'next-revision.txt'), 'next');
-        commit(moved.root, 'advance fixture revision');
-        expect(validate(moved)).toContain(
+        rmSync(dirtyPath);
+        write(join(fixture.root, 'next-revision.txt'), 'next');
+        commit(fixture.root, 'advance fixture revision');
+        expect(validate(fixture)).toContain(
             'release proof validation checkout HEAD does not match the expected revision'
         );
     });
@@ -973,8 +982,10 @@ describe('release proof', () => {
     });
 
     it('rejects ZIP archive resource metadata without expanding hostile payloads', () => {
-        const tar = createFixture();
-        assemble(tar);
+        const fixture = createFixture();
+        assemble(fixture);
+
+        const tar = withCopiedCandidate(fixture, 'hostile-tar');
         const tarSource = proof(tar).source as Record<string, unknown>;
         const tarArchive = join(tar.candidate, tarSource.archivePath as string);
         writeFileSync(tarArchive, oversizedTarHeader(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1));
@@ -983,8 +994,7 @@ describe('release proof', () => {
             'tar archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
-        const file = createFixture();
-        assemble(file);
+        const file = withCopiedCandidate(fixture, 'hostile-file');
         const fileSource = proof(file).source as Record<string, unknown>;
         truncateSync(
             join(file.candidate, fileSource.archivePath as string),
@@ -992,8 +1002,7 @@ describe('release proof', () => {
         );
         expect(validate(file)).toContain('source archive: file exceeds the candidate file-size limit');
 
-        const entry = createFixture();
-        assemble(entry);
+        const entry = withCopiedCandidate(fixture, 'hostile-entry');
         const entryArchive = replaceWebArchive(entry, ['entry.txt']);
         patchZipMetadata(entryArchive, (bytes, centralOffset) => {
             bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
@@ -1003,8 +1012,7 @@ describe('release proof', () => {
             'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
-        const aggregate = createFixture();
-        assemble(aggregate);
+        const aggregate = withCopiedCandidate(fixture, 'hostile-aggregate');
         const aggregatePaths = Array.from({ length: 11 }, (_value, index) => `file-${String(index)}.txt`);
         const aggregateArchive = replaceWebArchive(aggregate, aggregatePaths);
         patchZipMetadata(aggregateArchive, (bytes, centralOffset, entryCount) => {
@@ -1024,8 +1032,7 @@ describe('release proof', () => {
             'zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit'
         );
 
-        const count = createFixture();
-        assemble(count);
+        const count = withCopiedCandidate(fixture, 'hostile-count');
         const countArchive = replaceWebArchive(count, ['count.txt']);
         patchZipMetadata(countArchive, (bytes, _centralOffset) => {
             const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
@@ -1037,8 +1044,7 @@ describe('release proof', () => {
             'zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit'
         );
 
-        const depth = createFixture();
-        assemble(depth);
+        const depth = withCopiedCandidate(fixture, 'hostile-depth');
         const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');

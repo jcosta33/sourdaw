@@ -841,6 +841,14 @@ describe('release inventory', () => {
         expect(laterValidationCalls).toBe(0);
     });
 
+    it('returns the complete ordered DDSP receipt from the default release check', { timeout: 10_000 }, () => {
+        const ddspSurfaceIds = checkReleaseInventory(repositoryRoot).validatedSurfaceIds.filter((surfaceId) =>
+            ['ddsp-tfjs-runtime', 'ddsp-models'].includes(surfaceId)
+        );
+
+        expect(ddspSurfaceIds).toEqual(['ddsp-tfjs-runtime', 'ddsp-models']);
+    });
+
     it('pins the WebLLM legal closure to exact paths, source buckets, and path-addressed digests', () => {
         expect(sha256(JSON.stringify(webLlmLegalClosureOracle()))).toBe(WEBLLM_LEGAL_CLOSURE_DIGEST);
     });

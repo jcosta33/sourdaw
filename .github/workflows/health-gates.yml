@@ -669,6 +669,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # A requested-changes or comment review intentionally starts no work in
+      # `decide`. This aggregate must fail instead of turning those skipped
+      # jobs into a green required check that masks the pull-request run.
+      - name: Reject unapproved review triggers
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request_review" ] && [ "$REVIEW_STATE" != "approved" ]; then
+            printf 'refusing Gate for pull_request_review state %s\n' "$REVIEW_STATE"
+            exit 1
+          fi
+
       - name: Require every job to have succeeded or been skipped
         env:
           RESULTS: ${{ toJSON(needs) }}
