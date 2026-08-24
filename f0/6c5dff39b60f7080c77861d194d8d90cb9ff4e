@@ -1,0 +1,25 @@
+.agents/decisions/0030-exact-model-release-admission.md
+  s_27578aec2aab3b::t_e624e4892e725f 5,49,60,63
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_9647521cdbfe89 793-817,819-829,842,851
+docs/architecture/09-ai-stack.md
+  s_27578aec2aab3b::t_aa6cf093f8aa05 12-13,18-23
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_27578aec2aab3b::t_76a46e84c3f524 132-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f06c5dff39b60f7080c77861d194d8d90cb9ff4e",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.4"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
