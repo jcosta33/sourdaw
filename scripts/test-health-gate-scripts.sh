@@ -113,8 +113,9 @@ chmod +x "$extract_dir/gitleaks"
 SH
 chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" node --input-type=module <<'NODE'
-import { readFileSync } from 'node:fs';
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" node --input-type=module <<'NODE'
+import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
@@ -129,6 +130,25 @@ function expect(condition, message) {
 
 function stepNamed(job, name) {
     return job?.steps?.find((step) => step.name === name);
+}
+
+function runResolveScope(event, scopes) {
+    const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-${event}.output`;
+    writeFileSync(outputPath, '');
+    const result = spawnSync('bash', ['-c', resolveScopeRun], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            EVENT: event,
+            RUST: scopes.rust,
+            SERVER: scopes.server,
+            E2E: scopes.e2e,
+            WEB: scopes.web,
+            GITHUB_OUTPUT: outputPath,
+        },
+    });
+    expect(result.status === 0, `Resolve scope must execute for ${event}: ${result.stderr.trim()}`);
+    return readFileSync(outputPath, 'utf8');
 }
 
 const events = workflow.on;
@@ -168,12 +188,24 @@ expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
     'decide must run the heavy path only for approved pull_request_review submissions'
 );
+const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
+const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
+const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
 expect(
-    resolveScopeRun.includes('"$EVENT" = "schedule"') &&
-        resolveScopeRun.includes('"$EVENT" = "workflow_dispatch"') &&
-        resolveScopeRun.includes('heavy=true') &&
-        resolveScopeRun.includes('"$EVENT" = "pull_request_review"'),
-    'schedule, dispatch, and pull_request_review events must keep resolving to the heavy path'
+    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    'schedule must enable the heavy path and every scope'
+);
+expect(
+    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    'workflow_dispatch must enable the heavy path and every scope'
+);
+expect(
+    runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\n',
+    'pull_request_review must enable the heavy path and preserve path-filter outputs'
+);
+expect(
+    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\n',
+    'pull_request must disable the heavy path and preserve path-filter outputs'
 );
 expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(checkout?.uses ?? ''), 'secrets checkout action must be pinned to a full commit SHA');
@@ -274,6 +306,26 @@ printf '%s\n' \
     "gitleaks git --no-banner --no-color --redact=100 --verbose --exit-code=1 --log-opts=--all $gitleaks_target" \
     > "$temp_root/expected-gitleaks-success.log"
 diff -u "$temp_root/expected-gitleaks-success.log" "$temp_root/gitleaks-success.log"
+
+gitleaks_override_runner_temp="$temp_root/gitleaks-override-runner"
+mkdir -p "$gitleaks_override_runner_temp"
+gitleaks_override_archive="$gitleaks_override_runner_temp/gitleaks_${gitleaks_version}_linux_x64.tar.gz"
+gitleaks_override_dir="$gitleaks_override_runner_temp/gitleaks-${gitleaks_version}"
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/gitleaks-override.log" \
+    RUNNER_TEMP="$gitleaks_override_runner_temp" \
+    GITLEAKS_VERSION="$gitleaks_version" \
+    GITLEAKS_SHA256="$gitleaks_sha256" \
+    GITLEAKS_EXIT_CODE=79 \
+    sh "$temp_root/scripts/run-gitleaks-history-scan.sh" "$gitleaks_target" >/dev/null
+printf '%s\n' \
+    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --output $gitleaks_override_archive $gitleaks_url" \
+    'sha256sum --check --status' \
+    "sha256sum stdin: $gitleaks_sha256  $gitleaks_override_archive" \
+    "tar -xzf $gitleaks_override_archive -C $gitleaks_override_dir gitleaks" \
+    "gitleaks git --no-banner --no-color --redact=100 --verbose --exit-code=79 --log-opts=--all $gitleaks_target" \
+    > "$temp_root/expected-gitleaks-override.log"
+diff -u "$temp_root/expected-gitleaks-override.log" "$temp_root/gitleaks-override.log"
 
 bad_checksum_runner_temp="$temp_root/gitleaks-bad-checksum-runner"
 mkdir -p "$bad_checksum_runner_temp"
