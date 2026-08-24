@@ -1,24 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { type AppAction, type DeviceSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import {
+    type applyDeviceChainRuntimeDelta,
     type DeviceChainRuntimeDeltaDischarged,
     type DeviceChainRuntimeDeltaSuperseded,
 } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleLoadPreset } from '../handleLoadPreset';
 
 const mocks = vi.hoisted(() => ({
-    applyDeviceChainRuntimeDelta: vi.fn(),
+    applyDeviceChainRuntimeDelta: vi.fn<typeof applyDeviceChainRuntimeDelta>(),
     captureProjectRevision: vi.fn(() => 'project-1'),
     findPresetById: vi.fn(),
     getTrackStrip: vi.fn<() => unknown>(() => ({})),
     hasLiveProjectHostTrack: vi.fn(() => true),
     getTrackStoreState: vi.fn(),
-    initializeTrackStripFromSnapshot: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(),
     matchesMaterializedPresetDevices: vi.fn(() => true),
     updateDeviceParam: vi.fn(),
     updateTrack: vi.fn(),
@@ -149,6 +151,10 @@ describe('handleLoadPreset', () => {
     });
 
     it('writes the catalog-owned project chain before applying its runtime delta and parameters', async () => {
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }] });
         const result = await handleLoadPreset.execute(action());
 
         expect(result).toMatchObject({ status: 'written' });
@@ -563,6 +569,11 @@ describe('handleLoadPreset', () => {
     });
 
     it('returns clean Command success only after the runtime replacement applies and parameters follow', async () => {
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }] });
         registerHandlerMap({ loadPreset: handleLoadPreset });
 
         await expect(executeAppAction(action())).resolves.toBeUndefined();

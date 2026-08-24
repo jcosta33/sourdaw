@@ -25,10 +25,7 @@ import { updateTrack } from '../../useCases/updateTrack';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
-type RuntimeDeviceDeltaResult = Exclude<
-    ReturnType<typeof applyDeviceChainRuntimeDelta>,
-    Readonly<{ acceptance: 'superseded' }>
->;
+type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
 
 function findUniqueTrack(trackId: string): Track | null {
     const matches = (getTrackStoreState()?.tracks ?? []).filter((track) => track.id === trackId);
