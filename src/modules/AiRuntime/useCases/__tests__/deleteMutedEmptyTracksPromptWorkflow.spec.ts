@@ -18,6 +18,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -34,6 +35,13 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import {
+    createHostedSemanticListPlanningResponder,
+    createProviderSemanticListPlanningResponder,
+    decodeHostedProviderUserMessage,
+    type ProviderPlanCall,
+    type SemanticCommandListItem,
+} from './providerToolPlanningFixture';
 
 const PROMPT = 'Delete all muted empty tracks, but preserve buses and groups.';
 
@@ -49,6 +57,10 @@ const runtimeMocks = vi.hoisted(() => {
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(() => ({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+        })),
         removeBusStrip: vi.fn(),
         removeTrackStrip: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
@@ -79,6 +91,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
+    initializeTrackStripFromSnapshot: runtimeMocks.initializeTrackStripFromSnapshot,
     removeBusStrip: runtimeMocks.removeBusStrip,
     removeTrackStrip: runtimeMocks.removeTrackStrip,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
@@ -184,24 +197,56 @@ function getHostedRequestBody(): string {
     return body;
 }
 
-function setProviderPlan(plan: readonly { name: string; arguments: Readonly<Record<string, unknown>> }[]): void {
-    runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(plan));
-    runtimeMocks.fetch.mockResolvedValue(
-        new Response(
-            JSON.stringify({
-                choices: [
-                    {
-                        finish_reason: 'tool_calls',
-                        message: {
-                            tool_calls: plan.map((call) => ({
-                                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                            })),
-                        },
-                    },
-                ],
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-        )
+function createProviderList(plan: readonly ProviderPlanCall[]): SemanticCommandListItem[] {
+    const trackNames = new Map([
+        ['track-muted-audio', 'Muted Audio'],
+        ['track-muted-midi', 'Muted MIDI'],
+        ['track-unmuted-empty', 'Unmuted Empty'],
+    ]);
+    return plan.map((call, index) => {
+        const { trackId, ...argumentsWithoutTrackId } = call.arguments;
+        const trackName = typeof trackId === 'string' ? trackNames.get(trackId) : undefined;
+        if (trackName === undefined) {
+            throw new TypeError('Expected an exact delete-track fixture target');
+        }
+        return {
+            id: `remove-muted-empty-track-${String(index + 1)}`,
+            name: call.name,
+            arguments: argumentsWithoutTrackId,
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { name: trackName },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+            ...(index === 0 ? {} : { dependsOn: [`remove-muted-empty-track-${String(index)}`] }),
+        };
+    });
+}
+
+function setProviderPlan(plan: readonly ProviderPlanCall[]): void {
+    const targetIds = plan.flatMap((call) =>
+        typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+    );
+    const scope = {
+        targetIds,
+        targetRanges: [],
+        protectedTargetIds: [
+            'bus-muted-empty',
+            'group-muted-empty',
+            'track-muted-nonempty',
+            'track-unmuted-empty',
+            'master',
+        ],
+        protectedRanges: [],
+    };
+    const webResponder = createProviderSemanticListPlanningResponder(createProviderList(plan), scope);
+    const hostedResponder = createHostedSemanticListPlanningResponder(createProviderList(plan), scope);
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
+        Promise.resolve(webResponder(userMessage))
+    );
+    runtimeMocks.fetch.mockImplementation(async (_input, init) =>
+        hostedResponder(decodeHostedProviderUserMessage(init))
     );
 }
 
@@ -232,6 +277,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         vcaGroupStore.set({ groups: [] });
@@ -264,6 +310,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         vcaGroupStore.set({ groups: [] });
         configureAutomergeStoragePort(null);
@@ -275,7 +322,7 @@ describe('delete muted empty tracks prompt workflow', () => {
     it('compiles the exact app-owned target set into one guarded destructive confirmation', async () => {
         await sendChatMessage(PROMPT);
 
-        expect(generateWebLlmCompletion).toHaveBeenCalledOnce();
+        expect(generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         const request = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
         expect(request).toContain(PROMPT);
         expect(request).toContain('track-muted-audio');
@@ -407,8 +454,12 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(
             trackStore.value?.tracks.filter((track) => !protectedBefore?.some((item) => item.id === track.id))
         ).toHaveLength(2);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({ nodes: [expect.objectContaining({ id: 'track-muted-audio' })] })
+        );
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({ nodes: [expect.objectContaining({ id: 'track-muted-midi' })] })
+        );
 
         await redo();
 
@@ -431,13 +482,21 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
-        runtimeMocks.ensureTrackStrip.mockClear();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
 
         await undo();
 
         expect(trackStore.value).toEqual(beforeDeletion);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: expect.arrayContaining([expect.objectContaining({ id: 'track-muted-audio' })]),
+            })
+        );
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: expect.arrayContaining([expect.objectContaining({ id: 'track-muted-midi' })]),
+            })
+        );
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
     });
