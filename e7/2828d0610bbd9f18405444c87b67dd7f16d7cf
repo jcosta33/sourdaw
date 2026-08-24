@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_063d49e366a8c4 1467,1534-1537,1561,1563-1591,1593-1601,1653,1708-1711,1726,1765,1809-1811,1815,1832-1833,1846
+  s_a40848e8f8cca9::t_68a801631b5eb6 15,257-281,502-503,507,550-561,563-572,577-578,583-587
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e72828d0610bbd9f18405444c87b67dd7f16d7cf",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
