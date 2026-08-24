@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { extname, relative, resolve } from 'node:path';
+import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
@@ -264,6 +264,19 @@ function pathAddressedSha256(value: string): { path: string; sha256: string } | 
         return undefined;
     }
     return { path, sha256 };
+}
+
+function isCanonicalPathAddress(path: string): boolean {
+    return (
+        !path.includes('\\') &&
+        !path.includes('\0') &&
+        !posix.isAbsolute(path) &&
+        !win32.isAbsolute(path) &&
+        path !== '.' &&
+        path !== '..' &&
+        !path.endsWith('/') &&
+        posix.normalize(path) === path
+    );
 }
 
 function directorySha256(root: string, directory: string): string {
@@ -1622,7 +1635,11 @@ export function validateReleaseInventory(
             if (addressed === undefined) {
                 continue;
             }
-            if (!trackedFiles.has(addressed.path)) {
+            if (!isCanonicalPathAddress(addressed.path)) {
+                errors.push(
+                    `${surface.id}: path-addressed digest path must be normalized and relative: ${addressed.path}`
+                );
+            } else if (!trackedFiles.has(addressed.path)) {
                 errors.push(`${surface.id}: path-addressed digest target is missing or untracked: ${addressed.path}`);
             } else if (snapshot.fileDigests[addressed.path] !== addressed.sha256) {
                 errors.push(`${surface.id}: path-addressed digest drifted: ${addressed.path}`);
@@ -1813,7 +1830,7 @@ export function loadRepositorySnapshot(
         ...(inventory.surfaces ?? []).flatMap((surface) =>
             surface.digests.flatMap((digest) => {
                 const addressed = pathAddressedSha256(digest);
-                return addressed === undefined ? [] : [addressed.path];
+                return addressed === undefined || !isCanonicalPathAddress(addressed.path) ? [] : [addressed.path];
             })
         ),
     ]);

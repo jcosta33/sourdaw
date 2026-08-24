@@ -808,12 +808,12 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'provider.ts'), 'provider');
             const changed = loadRepositorySnapshot(root, value, ['provider.ts']);
 
-            expect(changed.fileDigests).toEqual(
-                expect.objectContaining(Object.fromEntries(paths.map((path) => [path, 'missing'])))
+            expect(changed.fileDigests).not.toEqual(
+                expect.objectContaining(Object.fromEntries(paths.map((path) => [path, expect.anything()])))
             );
             expect(validateReleaseInventory(value, changed)).toEqual(
                 expect.arrayContaining(
-                    paths.map((path) => `runtime: path-addressed digest target is missing or untracked: ${path}`)
+                    paths.map((path) => `runtime: path-addressed digest path must be normalized and relative: ${path}`)
                 )
             );
         } finally {
