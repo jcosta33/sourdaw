@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -925,12 +925,15 @@ describe('release inventory', () => {
             writeFileSync(join(base, 'outside.txt'), 'outside');
             writeFileSync(join(root, untrackedPath), 'untracked');
             const forbiddenReads: string[] = [];
-            const readFile = ((path: string, options?: string) => {
-                if (path === join(base, 'outside.txt') || path === join(root, untrackedPath)) {
-                    forbiddenReads.push(path);
-                }
-                return options === undefined ? readFileSync(path) : readFileSync(path, options);
-            }) as typeof readFileSync;
+            const readFile = {
+                readBytes: (path: string) => {
+                    if (path === join(base, 'outside.txt') || path === join(root, untrackedPath)) {
+                        forbiddenReads.push(path);
+                    }
+                    return readFileSync(path);
+                },
+                readText: (path: string) => readFileSync(path, 'utf8'),
+            };
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
 
@@ -942,6 +945,65 @@ describe('release inventory', () => {
                     `runtime: path-addressed digest path must be normalized and relative: ${unsafePath}`,
                     `runtime: path-addressed digest target is missing or untracked: ${untrackedPath}`,
                 ])
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not follow a tracked path-addressed digest symlink outside the repository', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-symlink-digest-'));
+        const root = join(base, 'repository');
+        const trackedPath = 'provider.ts';
+        const symlinkPath = 'public/legal/escaped.txt';
+        const outsidePath = join(base, 'outside.txt');
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath, symlinkPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${symlinkPath}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [],
+        };
+
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            mkdirSync(dirname(join(root, symlinkPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(outsidePath, 'outside legal bytes');
+            symlinkSync(outsidePath, join(root, symlinkPath));
+            const forbiddenReads: string[] = [];
+            const readFile = {
+                readBytes: (path: string) => {
+                    if (path === join(root, symlinkPath) || path === outsidePath) {
+                        forbiddenReads.push(path);
+                    }
+                    return readFileSync(path);
+                },
+                readText: (path: string) => readFileSync(path, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [trackedPath, symlinkPath], readFile);
+
+            expect(forbiddenReads).toEqual([]);
+            expect(changed.fileDigests[symlinkPath]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );
         } finally {
             rmSync(base, { recursive: true, force: true });
