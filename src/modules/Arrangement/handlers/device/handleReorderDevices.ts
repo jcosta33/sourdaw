@@ -99,7 +99,7 @@ function moveTopology(
 
 export const handleReorderDevices = createHandler<'reorderDevices'>({
     validate: (action, context) => resolveReorder(action, context) !== null,
-    execute: (action) => {
+    execute: (action, context) => {
         const resolution = resolveReorder(action);
         if (!resolution) {
             return { status: 'conflict' };
@@ -125,7 +125,12 @@ export const handleReorderDevices = createHandler<'reorderDevices'>({
             if (postCommitFailure) {
                 throw postCommitFailure;
             }
-            const result = applyDeviceChainRuntimeDelta({ before, after, operation: 'reorder-device' });
+            const result = applyDeviceChainRuntimeDelta({
+                before,
+                after,
+                operation: 'reorder-device',
+                batchContext: context,
+            });
             // A later action in this same commit removed the host track, so the
             // chain this reorder describes no longer exists in project truth and
             // the strip it would reorder is being torn down by that action.

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -42,6 +43,8 @@ const providerPlan = [
     { name: 'removeTrack', arguments: { trackId: 'track-muted-midi' } },
 ] as const;
 
+type ProviderCall = { name: string; arguments: Readonly<Record<string, unknown>> };
+
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
@@ -49,6 +52,13 @@ const runtimeMocks = vi.hoisted(() => {
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'workflow-test-revision' },
+            runtimeRevision: 1,
+        })),
+        notifyUser: vi.fn(),
         removeBusStrip: vi.fn(),
         removeTrackStrip: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
@@ -57,6 +67,7 @@ const runtimeMocks = vi.hoisted(() => {
         setTrackOutput: vi.fn(),
         setTrackPan: vi.fn(),
         setTrackSoloGate: vi.fn(),
+        wireSidechainRoutes: vi.fn(),
     };
 });
 
@@ -76,9 +87,19 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
 }));
 
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: runtimeMocks.notifyUser,
+}));
+
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
+    wireSidechainRoutes: runtimeMocks.wireSidechainRoutes,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     ensureTrackStrip: runtimeMocks.ensureTrackStrip,
+    initializeTrackStripFromSnapshot: runtimeMocks.initializeTrackStripFromSnapshot,
     removeBusStrip: runtimeMocks.removeBusStrip,
     removeTrackStrip: runtimeMocks.removeTrackStrip,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
@@ -184,31 +205,199 @@ function getHostedRequestBody(): string {
     return body;
 }
 
-function setProviderPlan(plan: readonly { name: string; arguments: Readonly<Record<string, unknown>> }[]): void {
-    runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(plan));
-    runtimeMocks.fetch.mockResolvedValue(
-        new Response(
-            JSON.stringify({
-                choices: [
-                    {
-                        finish_reason: 'tool_calls',
-                        message: {
-                            tool_calls: plan.map((call) => ({
-                                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                            })),
-                        },
-                    },
-                ],
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, names: readonly string[]): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set(
+        discovery.data.items.flatMap((item) =>
+            isRecord(item) && isRecord(item.function) && typeof item.function.name === 'string'
+                ? [item.function.name]
+                : []
         )
     );
+    for (const name of names) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+function getProviderProtectedTargetIds(): string[] {
+    return (trackStore.value?.tracks ?? [])
+        .filter(
+            (track) =>
+                track.kind === 'bus' ||
+                track.kind === 'folder' ||
+                ((track.kind === 'audio' || track.kind === 'midi') &&
+                    track.muted &&
+                    track.clips.length === 0 &&
+                    track.alternatives.flatMap((alternative) => alternative.clips).length > 0)
+        )
+        .map((track) => track.id);
+}
+
+function asCommandBatchProposal(
+    plan: readonly ProviderCall[],
+    protectedTargetIds: readonly string[] = ['bus-muted-empty', 'group-muted-empty']
+): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Delete exactly the muted empty ordinary tracks.',
+                    constraints: ['Preserve buses and groups.'],
+                    scope: {
+                        targetIds: plan.flatMap((call) =>
+                            typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+                        ),
+                        targetRanges: [],
+                        protectedTargetIds: [...protectedTargetIds],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: [...new Set(plan.map((call) => call.name))],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate muted, empty, ordinary-track identity before deletion.'],
+                    stoppingConditions: ['Stop if any target is nonempty, unmuted, a bus, or a group.'],
+                },
+            },
+        },
+    ];
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function getHostedUserMessage(body: string): string {
+    const request: unknown = JSON.parse(body);
+    const message =
+        isRecord(request) && Array.isArray(request.messages)
+            ? request.messages.find(
+                  (entry) => isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string'
+              )
+            : undefined;
+    if (!isRecord(message) || typeof message.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return message.content;
+}
+
+function setProviderPlan(plan: readonly ProviderCall[]): void {
+    const names = [...new Set(plan.map((call) => call.name))];
+    let webLlmTurn = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+        webLlmTurn += 1;
+        if (webLlmTurn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (webLlmTurn === 1) {
+            return Promise.resolve(
+                JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        assertDiscoveredCommandSchemas(userMessage, names);
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan, getProviderProtectedTargetIds())));
+    });
+    let hostedTurn = 0;
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        hostedTurn += 1;
+        if (hostedTurn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        if (hostedTurn === 1) {
+            return Promise.resolve(
+                toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), names);
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan, getProviderProtectedTargetIds())));
+    });
 }
 
 describe('delete muted empty tracks prompt workflow', () => {
     beforeEach(async () => {
-        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'workflow-test-revision' },
+            runtimeRevision: 1,
+        });
         runtimeMocks.removeTrackStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
         setProviderPlan(providerPlan);
@@ -227,6 +416,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        configureAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -275,7 +465,7 @@ describe('delete muted empty tracks prompt workflow', () => {
     it('compiles the exact app-owned target set into one guarded destructive confirmation', async () => {
         await sendChatMessage(PROMPT);
 
-        expect(generateWebLlmCompletion).toHaveBeenCalledOnce();
+        expect(generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         const request = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
         expect(request).toContain(PROMPT);
         expect(request).toContain('track-muted-audio');
@@ -400,6 +590,10 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(receipt?.content).toContain('Affected IDs: track-muted-midi');
         expect(receipt?.content).toContain('Protected unchanged: "Muted Bus" (bus-muted-empty)');
 
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
+        runtimeMocks.setTrackGain.mockClear();
+        runtimeMocks.wireSidechainRoutes.mockClear();
+
         await undo();
 
         expect(getTrack('track-muted-audio').muted).toBe(true);
@@ -407,8 +601,31 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(
             trackStore.value?.tracks.filter((track) => !protectedBefore?.some((item) => item.id === track.id))
         ).toHaveLength(2);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        const restoredTrackIds = runtimeMocks.initializeTrackStripFromSnapshot.mock.calls.map(([snapshot]) =>
+            isRecord(snapshot) && Array.isArray(snapshot.nodes) && isRecord(snapshot.nodes[0])
+                ? snapshot.nodes[0].id
+                : undefined
+        );
+        expect(restoredTrackIds).toEqual(['track-muted-midi', 'track-muted-audio']);
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                command: 'initialize-track-strip',
+                nodes: [expect.objectContaining({ id: 'track-muted-midi', devices: [] })],
+                output: { kind: 'output', sourceId: 'track-muted-midi', targetId: 'master' },
+            })
+        );
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                command: 'initialize-track-strip',
+                nodes: [expect.objectContaining({ id: 'track-muted-audio', devices: [] })],
+                output: { kind: 'output', sourceId: 'track-muted-audio', targetId: 'master' },
+            })
+        );
+        expect(runtimeMocks.setTrackGain).toHaveBeenCalledWith('track-muted-midi', 1);
+        expect(runtimeMocks.setTrackGain).toHaveBeenCalledWith('track-muted-audio', 1);
+        expect(runtimeMocks.wireSidechainRoutes).not.toHaveBeenCalled();
 
         await redo();
 
@@ -431,13 +648,36 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
-        runtimeMocks.ensureTrackStrip.mockClear();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
+        runtimeMocks.wireSidechainRoutes.mockClear();
 
         await undo();
 
         expect(trackStore.value).toEqual(beforeDeletion);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        const restoredSnapshots = runtimeMocks.initializeTrackStripFromSnapshot.mock.calls.map(
+            ([snapshot]) => snapshot
+        );
+        expect(
+            restoredSnapshots.map((snapshot) =>
+                isRecord(snapshot) && isRecord(snapshot.output) ? snapshot.output.sourceId : undefined
+            )
+        ).toEqual(['track-muted-midi', 'track-muted-audio', 'track-muted-audio']);
+        expect(restoredSnapshots[0]).toEqual(
+            expect.objectContaining({
+                nodes: [expect.objectContaining({ id: 'track-muted-midi' })],
+                output: { kind: 'output', sourceId: 'track-muted-midi', targetId: 'master' },
+            })
+        );
+        expect(restoredSnapshots.at(-1)).toEqual(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({ id: 'track-muted-audio' }),
+                    expect.objectContaining({ id: 'track-muted-midi' }),
+                ],
+                output: { kind: 'output', sourceId: 'track-muted-audio', targetId: 'track-muted-midi' },
+            })
+        );
+        expect(runtimeMocks.wireSidechainRoutes).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
     });

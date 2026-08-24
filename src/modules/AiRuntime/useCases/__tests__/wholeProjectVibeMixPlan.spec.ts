@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationHandlers, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
@@ -21,6 +25,8 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -51,6 +57,8 @@ const providerPlan = [
         },
     },
 ] as const;
+
+type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -87,16 +95,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    if (typeof schemas.availableCapabilities !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(schemas.availableCapabilities);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
 function createProviderPlanFromUserMessage(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context)) {
-        throw new TypeError('Expected object-shaped project context');
-    }
+    const context = getProviderContext(userMessage);
     const capability = context.wholeProjectVibeMixCapability;
     if (!isRecord(capability) || capability.actionType !== 'automateTrackGainRange') {
         throw new TypeError('Expected app-owned whole-project vibe-mix capability');
@@ -125,6 +150,164 @@ function createProviderPlanFromUserMessage(userMessage: string) {
             },
         },
     ];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchema(userMessage: string): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items) ||
+        !discovery.data.items.some(
+            (item) =>
+                isRecord(item) &&
+                isRecord(item.function) &&
+                item.function.name === 'automateTrackGainRange' &&
+                isRecord(item.function.parameters)
+        )
+    ) {
+        throw new TypeError('Expected disclosed automateTrackGainRange schema receipt');
+    }
+}
+
+function asCommandBatchProposal(userMessage: string, commands: readonly ProviderCall[]): ProviderCall[] {
+    const context = getProviderContext(userMessage);
+    const capability = context.wholeProjectVibeMixCapability;
+    if (
+        !isRecord(capability) ||
+        capability.baseRevision !== context.projectRevision ||
+        !isRecord(capability.targetSection) ||
+        typeof capability.targetSection.id !== 'string' ||
+        typeof capability.targetSection.startBeat !== 'number' ||
+        typeof capability.targetSection.endBeat !== 'number' ||
+        !Array.isArray(capability.exactTargetIds) ||
+        !capability.exactTargetIds.every((id) => typeof id === 'string') ||
+        !Array.isArray(capability.protectedObjectIds) ||
+        !capability.protectedObjectIds.every((id) => typeof id === 'string')
+    ) {
+        throw new TypeError('Expected complete revision-bound whole-project vibe-mix scope');
+    }
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands,
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Lift the exact rhythm-section buses only during Chorus Two.',
+                    constraints: ['Preserve lead vocals, locked clips, tempo map, master chain, routing, and devices.'],
+                    scope: {
+                        targetIds: capability.exactTargetIds,
+                        targetRanges: [
+                            {
+                                startBeat: capability.targetSection.startBeat,
+                                endBeat: capability.targetSection.endBeat,
+                            },
+                        ],
+                        protectedTargetIds: capability.protectedObjectIds,
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['automateTrackGainRange'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate exact bus, section, gain, and protected-object identities.'],
+                    stoppingConditions: ['Stop if the revision, target section, headroom, or protection set changes.'],
+                },
+            },
+        },
+    ];
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function installProviderFixtures(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan): void {
+    let webLlmAwaitingReceipt = false;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) => {
+        if (!webLlmAwaitingReceipt) {
+            webLlmAwaitingReceipt = true;
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['automateTrackGainRange'] },
+                    },
+                ])
+            );
+        }
+        webLlmAwaitingReceipt = false;
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(userMessage, plan)));
+    });
+    let hostedAwaitingReceipt = false;
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        if (!hostedAwaitingReceipt) {
+            hostedAwaitingReceipt = true;
+            return Promise.resolve(
+                toolCallsResponse([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['automateTrackGainRange'] },
+                    },
+                ])
+            );
+        }
+        hostedAwaitingReceipt = false;
+        const userMessage = getHostedUserMessage(init.body);
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(userMessage, plan)));
+    });
 }
 
 function getHostedUserMessage(requestBody: string): string {
@@ -184,18 +367,22 @@ function getConfirmationId(): string {
     );
 }
 
+function admitProviderAttempt() {
+    return { status: 'admitted' as const };
+}
+
 function getHostedRequestBody(): string {
-    const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
+    const body = runtimeMocks.fetch.mock.calls.at(-1)?.[1]?.body;
     if (typeof body !== 'string') {
-        throw new TypeError('Expected one hosted provider request body');
+        throw new TypeError('Expected final hosted provider planning request body');
     }
     return body;
 }
 
 function getWebLlmUserMessage(): string {
-    const userMessage: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1];
+    const userMessage: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls.at(-1)?.[1];
     if (typeof userMessage !== 'string') {
-        throw new TypeError('Expected one WebLLM user message');
+        throw new TypeError('Expected final WebLLM planning request');
     }
     return userMessage;
 }
@@ -243,32 +430,7 @@ describe('whole-project vibe-mix planning', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(JSON.stringify(createProviderPlanFromUserMessage(userMessage)))
-        );
-        runtimeMocks.fetch.mockImplementation((_input, init) => {
-            if (typeof init?.body !== 'string') {
-                throw new TypeError('Expected hosted provider request body');
-            }
-            const derivedPlan = createProviderPlanFromUserMessage(getHostedUserMessage(init.body));
-            return Promise.resolve(
-                new Response(
-                    JSON.stringify({
-                        choices: [
-                            {
-                                finish_reason: 'tool_calls',
-                                message: {
-                                    tool_calls: derivedPlan.map((call) => ({
-                                        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                    })),
-                                },
-                            },
-                        ],
-                    }),
-                    { status: 200, headers: { 'Content-Type': 'application/json' } }
-                )
-            );
-        });
+        installProviderFixtures();
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -291,6 +453,11 @@ describe('whole-project vibe-mix planning', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
         const drumBus = createTrack('bus-drums', 'Drum Bus', 'bus');
@@ -375,7 +542,10 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     it('decomposes EX-02 into a revision-bearing bounded plan with neighbors, roles, strategy, and accepted decisions', async () => {
-        const { result, projectRevision } = await planPromptActions({ prompt: PROMPT });
+        const { result, projectRevision } = await planPromptActions({
+            prompt: PROMPT,
+            onProviderAttempt: admitProviderAttempt,
+        });
         const plan = result.wholeProjectVibeMixPlan;
         if (!plan) {
             throw new Error('Expected one structured whole-project vibe-mix plan');
@@ -417,8 +587,8 @@ describe('whole-project vibe-mix planning', () => {
         expect(plan.acceptedDecisions).toContain('Preserve the tempo map.');
         expect(plan.acceptedDecisions).toContain('Preserve the master chain.');
         expect(plan.commandBatch).toEqual(result.actions);
-        expect(runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]).toContain('projectRevision');
-        expect(runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]).toContain('documentIdentityEpoch');
+        expect(getWebLlmUserMessage()).toContain('revision_and_selection');
+        expect(getWebLlmUserMessage()).toContain('documentIdentityEpoch');
     });
 
     it('selects the actual second chorus without counting a pre-chorus substring impostor', async () => {
@@ -430,7 +600,7 @@ describe('whole-project vibe-mix planning', () => {
             ],
         });
 
-        const { result } = await planPromptActions({ prompt: PROMPT });
+        const { result } = await planPromptActions({ prompt: PROMPT, onProviderAttempt: admitProviderAttempt });
 
         expect(result.wholeProjectVibeMixPlan?.sectionMap).toEqual({
             target: { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
@@ -440,27 +610,38 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     it('sends the provider the revision-bound app-owned candidate scope and bounded relative-gain capability', async () => {
-        const { projectRevision } = await planPromptActions({ prompt: PROMPT });
+        const { projectRevision } = await planPromptActions({
+            prompt: PROMPT,
+            onProviderAttempt: admitProviderAttempt,
+        });
         const userMessage = getWebLlmUserMessage();
         const systemPrompt = getWebLlmSystemPrompt();
+        const providerContext = getProviderContext(userMessage);
 
         expect(systemPrompt).toContain(
             'Each target ID must correspond to a target the user actually referenced by literal ID, unique exact name, or explicit selection.'
         );
-        expect(userMessage).toContain('"projectRevision"');
+        expect(userMessage).toContain('"revision"');
         expect(userMessage).toContain(projectRevision.replaceAll('"', '\\"'));
-        expect(userMessage).toContain('"wholeProjectVibeMixCapability"');
-        expect(userMessage).toContain(
-            '"targetSection":{"id":"section-chorus-two","name":"Chorus Two","startBeat":56,"endBeat":72}'
-        );
-        expect(userMessage).toContain('"exactTargetIds":["bus-drums","bus-bass"]');
-        expect(userMessage).toContain('"allowedRelativeGainDbValues":[1.5]');
-        expect(userMessage).toContain(
-            '"protectedObjectIds":["track-lead-vocal","clip-locked-lead-vocal","track-master","project:tempo-map"]'
-        );
-        expect(userMessage).toContain(
-            '"constraints":{"preserveRouting":true,"preserveDevices":true,"requireFreshConfirmation":true}'
-        );
+        expect(providerContext.projectRevision).toBe(projectRevision);
+        expect(providerContext.wholeProjectVibeMixCapability).toEqual({
+            schemaVersion: 1,
+            baseRevision: projectRevision,
+            actionType: 'automateTrackGainRange',
+            targetSection: { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
+            neighboringSections: {
+                previous: { id: 'section-bridge', name: 'Bridge', startBeat: 48, endBeat: 56 },
+                next: { id: 'section-outro', name: 'Outro', startBeat: 72, endBeat: 80 },
+            },
+            candidateImpactBuses: [
+                { id: 'bus-drums', name: 'Drum Bus', currentGain: 0.8 },
+                { id: 'bus-bass', name: 'Bass Bus', currentGain: 0.8 },
+            ],
+            exactTargetIds: ['bus-drums', 'bus-bass'],
+            allowedRelativeGainDbValues: [1.5],
+            protectedObjectIds: ['track-lead-vocal', 'clip-locked-lead-vocal', 'track-master', 'project:tempo-map'],
+            constraints: { preserveRouting: true, preserveDevices: true, requireFreshConfirmation: true },
+        });
     });
 
     it('confirms, atomically commits, receipts, and whole-group undoes and redoes only the section gain trajectory', async () => {
@@ -566,7 +747,8 @@ describe('whole-project vibe-mix planning', () => {
         expect(providerRequest).toContain(PROMPT);
         expect(providerRequest).toContain('bus-drums');
         expect(providerRequest).toContain('section-chorus-two');
-        expect(providerRequest).toContain('projectRevision');
+        expect(providerRequest).toContain('revision_and_selection');
+        expect(providerRequest).toContain('application-tool-loop');
         expect(providerRequest).toContain('wholeProjectVibeMixCapability');
         expect(providerRequest).toContain('allowedRelativeGainDbValues');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -605,7 +787,12 @@ describe('whole-project vibe-mix planning', () => {
             [{ ...providerPlan[0], arguments: { ...providerPlan[0].arguments, gainDb: 3 } }],
         ];
         for (const invalidPlan of invalidPlans) {
-            runtimeMocks.generateWebLlmCompletion.mockResolvedValueOnce(JSON.stringify(invalidPlan));
+            installProviderFixtures(() =>
+                invalidPlan.map((call) => ({
+                    name: call.name,
+                    arguments: { ...call.arguments },
+                }))
+            );
             await sendChatMessage(PROMPT);
             expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
             expect(getGainLanes()).toEqual([]);
@@ -632,7 +819,7 @@ describe('whole-project vibe-mix planning', () => {
         trackStore.set({
             ...trackStore.value!,
             tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'bus-drums' ? { ...track, gain: 0.95 } : track
+                track.id === 'bus-drums' ? { ...track, gain: FADER_MAX_GAIN / 10 ** (1.5 / 20) + 0.001 } : track
             ),
         });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });

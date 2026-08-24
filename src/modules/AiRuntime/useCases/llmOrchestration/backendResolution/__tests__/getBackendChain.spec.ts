@@ -50,7 +50,7 @@ describe('getBackendChain', () => {
         expect(getBackendChain()).toEqual([]);
     });
 
-    it('fails closed for an explicit WebLLM preference without WebGPU', () => {
+    it('does not fall back to available hosted AI for an explicit WebLLM preference without WebGPU', () => {
         mocks.preference.value = 'webllm';
 
         expect(getBackendChain()).toEqual([]);
