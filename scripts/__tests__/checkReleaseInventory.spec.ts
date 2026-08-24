@@ -800,7 +800,14 @@ describe('release inventory', () => {
 
     it('rejects non-canonical path-addressed digest paths before snapshotting them', () => {
         const value = inventory();
-        const paths = ['/outside-root.txt', 'public/legal/../outside.txt', 'public//legal/notice.txt'];
+        const paths = [
+            '/outside-root.txt',
+            'public/legal/../outside.txt',
+            'public//legal/notice.txt',
+            'C:\\outside.txt',
+            '\\\\server\\share\\notice.txt',
+            'public\\legal\\notice.txt',
+        ];
         value.surfaces[0]!.digests = paths.map((path) => `sha256:${fixtureDigest}:${path}`);
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-noncanonical-'));
 
@@ -808,9 +815,9 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'provider.ts'), 'provider');
             const changed = loadRepositorySnapshot(root, value, ['provider.ts']);
 
-            expect(changed.fileDigests).not.toEqual(
-                expect.objectContaining(Object.fromEntries(paths.map((path) => [path, expect.anything()])))
-            );
+            for (const path of paths) {
+                expect(changed.fileDigests[path]).toBeUndefined();
+            }
             expect(validateReleaseInventory(value, changed)).toEqual(
                 expect.arrayContaining(
                     paths.map((path) => `runtime: path-addressed digest path must be normalized and relative: ${path}`)

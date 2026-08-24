@@ -250,6 +250,10 @@ function isUriLikeDigestLabel(value: string): boolean {
     return /^[a-z][a-z0-9+.+-]*:/iu.test(value);
 }
 
+function isWindowsPathLikeDigestLabel(value: string): boolean {
+    return value.includes('\\') || win32.isAbsolute(value);
+}
+
 function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
     const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
     const sha256 = match?.[1];
@@ -259,7 +263,7 @@ function pathAddressedSha256(value: string): { path: string; sha256: string } | 
         path === undefined ||
         isSemanticSha256Label(path) ||
         isByteCountPrefixedRemoteArtifact(path) ||
-        isUriLikeDigestLabel(path)
+        (isUriLikeDigestLabel(path) && !isWindowsPathLikeDigestLabel(path))
     ) {
         return undefined;
     }
