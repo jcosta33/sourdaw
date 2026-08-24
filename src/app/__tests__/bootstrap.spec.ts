@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import type { ArrangementEventBus } from '#/modules/Arrangement/useCases/arrangementEventBus';
+import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
-    RuntimeGraphProjectRevisionValidator,
-    RuntimeGraphTopologyValidator,
-} from '#/modules/AudioEngine/models/RuntimeGraphDelta';
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
@@ -22,6 +22,9 @@ import type { NotificationEventBus } from '#/utils/Notification/notificationEven
 // in what order without depending on any module's internal action-type keys.
 
 type HandlerMapSentinel = { moduleId: string };
+type ArrangementEventBus = Parameters<typeof setArrangementEventBus>[0];
+type RuntimeGraphProjectRevisionValidator = Parameters<typeof configureRuntimeGraphProjectRevisionValidator>[0];
+type RuntimeGraphTopologyValidator = Parameters<typeof configureRuntimeGraphTopologyValidator>[0];
 
 /**
  * The one sink member this spec asserts on. The offline render's device chain
