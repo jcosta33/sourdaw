@@ -951,12 +951,12 @@ describe('release inventory', () => {
         }
     });
 
-    it('does not follow a tracked path-addressed digest symlink outside the repository', () => {
+    it('does not read a tracked scan-eligible path-addressed digest symlink outside the repository', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-symlink-digest-'));
         const root = join(base, 'repository');
         const trackedPath = 'provider.ts';
-        const symlinkPath = 'public/legal/escaped.txt';
-        const outsidePath = join(base, 'outside.txt');
+        const symlinkPath = 'public/legal/escaped.ts';
+        const outsidePath = join(base, 'outside.ts');
         const value: ReleaseInventory = {
             schemaVersion: 1,
             surfaces: [
@@ -985,7 +985,7 @@ describe('release inventory', () => {
             mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
             mkdirSync(dirname(join(root, symlinkPath)), { recursive: true });
             writeFileSync(join(root, trackedPath), 'provider');
-            writeFileSync(outsidePath, 'outside legal bytes');
+            writeFileSync(outsidePath, "export const escaped = 'https://outside.example';\n");
             symlinkSync(outsidePath, join(root, symlinkPath));
             const forbiddenReads: string[] = [];
             const readFile = {
@@ -995,7 +995,12 @@ describe('release inventory', () => {
                     }
                     return readFileSync(path);
                 },
-                readText: (path: string) => readFileSync(path, 'utf8'),
+                readText: (path: string) => {
+                    if (path === join(root, symlinkPath) || path === outsidePath) {
+                        forbiddenReads.push(path);
+                    }
+                    return readFileSync(path, 'utf8');
+                },
             };
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath, symlinkPath], readFile);
