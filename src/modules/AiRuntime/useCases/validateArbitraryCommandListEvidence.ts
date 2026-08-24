@@ -136,6 +136,12 @@ export function validateArbitraryCommandListEvidence(input: {
     const itemIds = new Set<string>();
     const resolvedTargetIds: string[] = [];
     const targetOverridesByCallIndex = new Map<number, readonly CompilerResolvedTargetOverride[]>();
+    const addTargetOverride = (commandIndex: number, override: CompilerResolvedTargetOverride): void => {
+        targetOverridesByCallIndex.set(commandIndex, [
+            ...(targetOverridesByCallIndex.get(commandIndex) ?? []),
+            override,
+        ]);
+    };
     let commandCursor = 0;
     for (const item of evidence.items) {
         if (
@@ -214,9 +220,11 @@ export function validateArbitraryCommandListEvidence(input: {
                         reason: 'Structured command compiler evidence target order is invalid.',
                     };
                 }
-                targetOverridesByCallIndex.set(commandIndex, [
-                    { argument: item.targetArgument, capability: item.targetCapability, stableId },
-                ]);
+                addTargetOverride(commandIndex, {
+                    argument: item.targetArgument,
+                    capability: item.targetCapability,
+                    stableId,
+                });
             }
         }
         const groundingRules = getExecutableAppActionGroundingRules(item.commandName);
@@ -263,6 +271,18 @@ export function validateArbitraryCommandListEvidence(input: {
                         status: 'rejected',
                         reason: 'Structured command compiler evidence target scope is invalid.',
                     };
+                }
+                if (targetRule.argument !== item.targetArgument && targetRule.cardinality !== 'many') {
+                    for (const command of matchingCommands) {
+                        const commandIndex = evidence.commands.indexOf(command, item.commandStart);
+                        if (commandIndex >= item.commandStart) {
+                            addTargetOverride(commandIndex, {
+                                argument: targetRule.argument,
+                                capability: targetRule.capability,
+                                stableId: targetId,
+                            });
+                        }
+                    }
                 }
                 if (!resolvedTargetIds.includes(targetId)) {
                     resolvedTargetIds.push(targetId);
