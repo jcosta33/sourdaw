@@ -89,6 +89,14 @@ function requireCanReapplyAfterDivergence(): NonNullable<typeof handleRestoreMid
     return canReapplyAfterDivergence;
 }
 
+function requireValidate(): NonNullable<typeof handleRestoreMidiClipNotes.validate> {
+    const validate = handleRestoreMidiClipNotes.validate;
+    if (validate === undefined) {
+        throw new Error('Expected restore validator');
+    }
+    return validate;
+}
+
 function arrangeCopyFixture(): CopyMidiArticulationsAction {
     const track = createTrack({
         id: trackId,
@@ -174,6 +182,7 @@ describe('handleRestoreMidiClipNotes', () => {
         expect(midiStoreSnapshot(targetClipId)).toEqual([targetNoteAfterCopy()]);
 
         const canReapplyAfterDivergence = requireCanReapplyAfterDivergence();
+        const validate = requireValidate();
         expect(canReapplyAfterDivergence(inverse)).toBe(true);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         expect(midiStoreSnapshot(targetClipId)).toEqual([targetNote()]);
@@ -188,7 +197,7 @@ describe('handleRestoreMidiClipNotes', () => {
         });
 
         expect(canReapplyAfterDivergence(inverse)).toBe(false);
-        expect(handleRestoreMidiClipNotes.validate(inverse, { actions: [inverse], actionIndex: 0 })).toBe(false);
+        expect(validate(inverse, { actions: [inverse], actionIndex: 0 })).toBe(false);
     });
 });
 
