@@ -26,6 +26,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -41,7 +42,14 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import {
+    createHostedWorkflowPlanningResponder,
+    createProviderWorkflowPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+    type ProviderPlanCall,
+    type ProviderScope,
+} from './providerToolPlanningFixture';
 
 const PROMPT =
     "Copy the bass processing from chorus one to chorus two while preserving chorus two's existing distortion automation.";
@@ -112,15 +120,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getProjectContextFromUserMessage(userMessage: string): Record<string, unknown> {
-    const match = /<project_context>\n([\s\S]+?)\n<\/project_context>/u.exec(userMessage);
-    if (!match?.[1]) {
-        throw new TypeError('Expected serialized project context');
-    }
-    const parsed: unknown = JSON.parse(match[1]);
-    if (!isRecord(parsed)) {
-        throw new TypeError('Expected project context object');
-    }
-    return parsed;
+    return decodeProviderPlanningFixtureContext(userMessage).capabilityData;
 }
 
 function createProviderPlanFromUserMessage(userMessage: string) {
@@ -155,49 +155,80 @@ function createProviderPlanFromUserMessage(userMessage: string) {
     });
 }
 
-function getHostedUserMessage(body: string): string {
-    const request: unknown = JSON.parse(body);
-    if (!isRecord(request) || !Array.isArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
+function getProviderScope(userMessage: string): ProviderScope {
+    const capability = decodeProviderPlanningFixtureContext(userMessage).capabilityData.bassProcessingCopyCapability;
+    if (
+        !isRecord(capability) ||
+        !isRecord(capability.targetSection) ||
+        !Array.isArray(capability.sourceProcessing) ||
+        !Array.isArray(capability.protectedObjectIds)
+    ) {
+        throw new TypeError('Expected complete EX-03 provider scope');
     }
-    const messages: unknown[] = request.messages;
-    const userMessage = messages.find(
-        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
-    );
-    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
+    const { id: sectionId } = capability.targetSection;
+    if (typeof sectionId !== 'string') {
+        throw new TypeError('Expected exact EX-03 target section');
     }
-    return userMessage.content;
+    const targetIds = capability.sourceProcessing.flatMap((entry) => {
+        if (!isRecord(entry) || typeof entry.layerId !== 'string' || !Array.isArray(entry.affectedTrackIds)) {
+            throw new TypeError('Expected exact EX-03 processing targets');
+        }
+        const affectedTrackIds = entry.affectedTrackIds.map((trackId) => {
+            if (typeof trackId !== 'string') {
+                throw new TypeError('Expected exact EX-03 affected track');
+            }
+            return trackId;
+        });
+        return [entry.layerId, ...affectedTrackIds];
+    });
+    const targetRanges = capability.sourceProcessing.map((entry) => {
+        if (!isRecord(entry) || !isRecord(entry.targetRegion)) {
+            throw new TypeError('Expected exact EX-03 target region');
+        }
+        const { startBeat, endBeat } = entry.targetRegion;
+        if (typeof startBeat !== 'number' || typeof endBeat !== 'number') {
+            throw new TypeError('Expected exact EX-03 target range');
+        }
+        return { startBeat, endBeat };
+    });
+    const protectedTargetIds = capability.protectedObjectIds.map((id) => {
+        if (typeof id !== 'string') {
+            throw new TypeError('Expected exact EX-03 protected ID');
+        }
+        return id;
+    });
+    return {
+        targetIds: [...new Set([...targetIds, sectionId])],
+        targetRanges,
+        protectedTargetIds,
+        protectedRanges: [],
+    };
 }
 
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'bass-processing-copy',
-            runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(getHostedUserMessage(init.body)))
-        );
+        const userMessage = decodeHostedProviderUserMessage(init);
         return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+            createHostedWorkflowPlanningResponder(
+                runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(userMessage)) as ProviderPlanCall[],
+                'bass-processing-copy',
+                getProviderScope
+            )(userMessage)
         );
     });
+}
+
+function useWebFixture(): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+        Promise.resolve(
+            createProviderWorkflowPlanningResponder(
+                runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(userMessage)) as ProviderPlanCall[],
+                'bass-processing-copy',
+                getProviderScope
+            )(userMessage)
+        )
+    );
 }
 
 function getProviderVisibleRegionPlan(
@@ -294,16 +325,7 @@ describe('bass-processing section copy workflow', () => {
         vi.spyOn(audioEngine, 'resetAdjustmentLayers').mockImplementation(() => undefined);
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'bass-processing-copy',
-                        runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(userMessage))
-                    )
-                )
-            )
-        );
+        useWebFixture();
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -324,6 +346,7 @@ describe('bass-processing section copy workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
@@ -427,6 +450,7 @@ describe('bass-processing section copy workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         adjustmentLayerStore.set({ layers: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
@@ -538,7 +562,7 @@ describe('bass-processing section copy workflow', () => {
             expect.arrayContaining(['track-lead-vocal', 'layer-vocal-reverb', 'auto-bass-distortion-drive'])
         );
 
-        await confirmPendingChatActions({ confirmationId });
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({ status: 'executed' });
 
         const committedLayers = adjustmentLayerStore.value?.layers ?? [];
         const eqRegions = committedLayers.find((layer) => layer.id === 'layer-bass-eq')?.regions ?? [];

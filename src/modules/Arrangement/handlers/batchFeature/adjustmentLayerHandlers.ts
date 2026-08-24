@@ -119,6 +119,9 @@ const addAdjustmentRegionHandler: ActionHandler<Extract<AppAction, { type: 'addA
 
 const removeAdjustmentRegionHandler: ActionHandler<Extract<AppAction, { type: 'removeAdjustmentRegion' }>> = {
     undoable: true,
+    canReapplyAfterDivergence: (action) =>
+        action.payload.expectedRegion !== undefined &&
+        (handleRemoveAdjustmentRegion.canReapplyAfterDivergence?.(action) ?? false),
     validate: (action, context) => {
         if (!action.payload.expectedRegion) {
             return context.actions.length === 1;
