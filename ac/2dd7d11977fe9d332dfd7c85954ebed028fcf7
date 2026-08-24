@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_7b6983a101fdf1 1-2,15,62-67
+  s_a40848e8f8cca9::t_f1554efc154394 68
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_7132c8d192dd74 2159-2168
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_4b6a2ecc6e7114 2241,2251-2253,2325,2333-2335
+  s_a40848e8f8cca9::t_936256688ed859 720,2043-2047
+  s_a40848e8f8cca9::t_8877240625b3c6 642-645,647-654,658,661,664-673,676-697,699,702,704-712,721,723-741,743-746,749,752-753,759-760,762,765
+  s_a40848e8f8cca9::t_d41ac107f20faf 698,716-719
+  s_a40848e8f8cca9::t_d9a3606452a327 2157,2159,2248,2250,2267,2269-2278,2332,2349,2351-2360
+  s_a40848e8f8cca9::t_86e45be272e5e2 641,722,763
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_60e130f271f846 18,147,157-166,1912,1927
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ac2dd7d11977fe9d332dfd7c85954ebed028fcf7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
