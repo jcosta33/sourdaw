@@ -1,0 +1,39 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_918a4db1a9fc1a 4380,4383-4455,4457-4458,4461,4693,4707
+  s_a40848e8f8cca9::t_773d68fb2962d1 4456,4459-4460
+  s_a40848e8f8cca9::t_9cbcbd5ef60692 4381
+  s_a40848e8f8cca9::t_1973383fbb5c9e 4382
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_5c0884567c3f4d 231,234-242,244,246
+  s_a40848e8f8cca9::t_d4ad8fbeffd61f 247-248,251-254
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_283cf9b0fe07a7 30,632-637
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_b58e433acac258 391,399,425-430,705,751-760
+  s_a40848e8f8cca9::t_531cafaa012faa 410
+  s_a40848e8f8cca9::t_8852a18e1a44c3 505,516-523
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_bda1251a7e11dc 235,249,512,670
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_d9d83a3f96bb5f 149,345
+src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts
+  s_a40848e8f8cca9::t_283cf9b0fe07a7 1-84
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_69b08f53f57616 550,566
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "8e357395706f4f658fcf22c01408c3d806932d22",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
