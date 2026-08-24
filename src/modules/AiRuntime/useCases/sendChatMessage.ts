@@ -5,6 +5,7 @@ import {
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -54,6 +55,7 @@ import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlan
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
@@ -234,6 +236,17 @@ function recordModelProviderUsage(
 
 function getProviderBudgetCategory(backend: RunnableAiBackend): string {
     return backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
+}
+
+function getReadyAssetIds(actions: readonly AppAction[]): string[] {
+    return actions.some(
+        (action) =>
+            action.type === 'importStemSet' &&
+            action.payload.stems.length > 0 &&
+            action.payload.stems.every((stem) => stem.audioBufferId.length > 0)
+    )
+        ? ['selected-stem-assets']
+        : [];
 }
 
 function recordApplicationToolOnlyPlan(input: {
@@ -514,6 +527,7 @@ export async function sendChatMessage(
                         providerProposal: result.providerProposal,
                         verifiedProviderProposalScope: result.verifiedProviderProposalScope,
                         requireProviderProposal: result.executionMode === 'atomic',
+                        readyAssetIds: getReadyAssetIds(result.actions),
                     });
                     if (plannedRun.status === 'needs-user-decision') {
                         createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -631,6 +645,7 @@ export async function sendChatMessage(
                     providerProposal: result.providerProposal,
                     verifiedProviderProposalScope: result.verifiedProviderProposalScope,
                     requireProviderProposal: result.executionMode === 'atomic',
+                    readyAssetIds: getReadyAssetIds(result.actions),
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();
@@ -838,6 +853,15 @@ export async function sendChatMessage(
                 if (compiledActionExecution.requiresConfirmation) {
                     const { agentApproval } = compiledActionExecution;
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
+                    const confirmationResourceLease = createStemImportConfirmationResourceLease(result.actions);
+                    if (confirmationResourceLease) {
+                        preparedStemImportResources.release({
+                            runId,
+                            stems: result.actions.flatMap((action) =>
+                                action.type === 'importStemSet' ? action.payload.stems : []
+                            ),
+                        });
+                    }
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
                         runId,
@@ -858,7 +882,7 @@ export async function sendChatMessage(
                         groupId: commandGroup.groupId,
                         groupLabel: commandGroup.groupLabel,
                         projectRevision,
-                        resourceLease: createStemImportConfirmationResourceLease(result.actions),
+                        resourceLease: confirmationResourceLease,
                     });
                     if (!confirmation) {
                         const reason = 'Prepared action resources exceed the live confirmation limit.';

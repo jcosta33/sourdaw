@@ -1,7 +1,7 @@
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -155,18 +155,42 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
     undoable: true,
 });
 
+type DiscardImportedStemSetAction = Extract<AppAction, { type: 'discardImportedStemSet' }>;
+
+function hasCompleteImportedStemGuards(action: DiscardImportedStemSetAction): boolean {
+    const expectedTrackIds = new Set([action.payload.folderId, ...action.payload.stemTrackIds]);
+    return (
+        expectedTrackIds.size === action.payload.stemTrackIds.length + 1 &&
+        action.payload.guards.length === expectedTrackIds.size &&
+        action.payload.guards.every(
+            (entry) =>
+                expectedTrackIds.has(entry.trackId) &&
+                typeof entry.generatedMidiStateGuard.entityJson === 'string' &&
+                typeof entry.generatedMidiStateGuard.midiByClipIdJson === 'string'
+        ) &&
+        new Set(action.payload.guards.map((entry) => entry.trackId)).size === expectedTrackIds.size
+    );
+}
+
+function canDiscardImportedStemSet(action: DiscardImportedStemSetAction): boolean {
+    if (!hasCompleteImportedStemGuards(action)) {
+        return false;
+    }
+    const allowedChildren = action.payload.stemTrackIds;
+    return action.payload.guards.every((entry) =>
+        isGeneratedMidiStateCurrent({
+            entityId: entry.trackId,
+            entityType: 'track',
+            guard: entry.generatedMidiStateGuard,
+            ...(entry.trackId === action.payload.folderId ? { allowedReferencingTrackIds: allowedChildren } : {}),
+        })
+    );
+}
+
 export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSet'>({
+    canReapplyAfterDivergence: hasCompleteImportedStemGuards,
     execute: (action) => {
-        const allowedChildren = action.payload.stemTrackIds;
-        const guardsValid = action.payload.guards.every((entry) =>
-            isGeneratedMidiStateCurrent({
-                entityId: entry.trackId,
-                entityType: 'track',
-                guard: entry.generatedMidiStateGuard,
-                ...(entry.trackId === action.payload.folderId ? { allowedReferencingTrackIds: allowedChildren } : {}),
-            })
-        );
-        if (!guardsValid) {
+        if (!canDiscardImportedStemSet(action)) {
             return { status: 'conflict' };
         }
 
@@ -198,4 +222,5 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
+    validate: canDiscardImportedStemSet,
 });

@@ -21,6 +21,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -33,6 +34,12 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    createHostedWorkflowPlanningResponder,
+    createProviderWorkflowPlanningResponder,
+    decodeHostedProviderUserMessage,
+    decodeProviderPlanningFixtureContext,
+} from './providerToolPlanningFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -50,6 +57,10 @@ const mocks = vi.hoisted(() => {
         decodeAudioFile: vi.fn(),
         detectTempo: vi.fn<() => number | null>(() => 120),
         ensureTrackStrip: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(() => ({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+        })),
         arrangementEventEmit: vi.fn(() => Promise.resolve()),
         executeBatchError: { value: null as Error | null },
         fetch: vi.fn<typeof fetch>(),
@@ -117,6 +128,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
     ensureTrackStrip: mocks.ensureTrackStrip,
+    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
     removeTrackStrip: mocks.removeTrackStrip,
     setTrackGain: mocks.setTrackGain,
@@ -201,18 +213,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function createProviderPlan(userMessage: string): ProviderCall[] {
-    const serializedContext = userMessage.match(/<project_context>\n([\s\S]*?)\n<\/project_context>/u)?.[1];
-    const context: unknown = JSON.parse(serializedContext ?? '{}');
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
-    const capability = context.stemImportCapability;
+    const context = decodeProviderPlanningFixtureContext(userMessage);
+    const capability = context.capabilityData.stemImportCapability;
     if (capability === undefined) {
         return [];
     }
     if (
         !isRecord(capability) ||
-        capability.baseRevision !== context.projectRevision ||
+        capability.baseRevision !== context.revision ||
         typeof capability.selectionId !== 'string' ||
         !Array.isArray(capability.stems)
     ) {
@@ -240,47 +248,66 @@ function createProviderPlan(userMessage: string): ProviderCall[] {
     ];
 }
 
-function getHostedUserMessage(body: string): string {
-    const request: unknown = JSON.parse(body);
-    if (!isRecord(request) || !Array.isArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
+const stemImportProviderScope = {
+    targetIds: [],
+    targetRanges: [],
+    protectedTargetIds: ['track-guide'],
+    protectedRanges: [],
+};
+
+function createStemImportPlanningResponse(userMessage: string, hosted: boolean): string | Response {
+    const basePlan = createProviderPlan(userMessage);
+    if (basePlan.length === 0) {
+        return JSON.stringify(withWorkflowCapabilitySelection('stem-import-starting-mix', []));
     }
-    const message = request.messages.find(
-        (entry) => isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string'
-    );
-    if (!isRecord(message) || typeof message.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
+    const plan = mocks.transformPlan.value(basePlan);
+    if (plan.length === 0) {
+        return JSON.stringify(withWorkflowCapabilitySelection('stem-import-starting-mix', []));
     }
-    return message.content;
+    return hosted
+        ? createHostedWorkflowPlanningResponder(plan, 'stem-import-starting-mix', stemImportProviderScope)(userMessage)
+        : createProviderWorkflowPlanningResponder(
+              plan,
+              'stem-import-starting-mix',
+              stemImportProviderScope
+          )(userMessage);
 }
 
 function useHostedFixture(): void {
     mocks.backend.value = 'cloud';
     mocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'stem-import-starting-mix',
-            mocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
-        );
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
+        const response = createStemImportPlanningResponse(decodeHostedProviderUserMessage(init), true);
+        if (!(response instanceof Response)) {
+            const calls = JSON.parse(response) as ProviderCall[];
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: calls.map((call) => ({
+                                        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                    })),
+                                },
                             },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                )
+            );
+        }
+        return Promise.resolve(response);
+    });
+}
+
+function useWebFixture(): void {
+    mocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) => {
+        const response = createStemImportPlanningResponse(userMessage, false);
+        if (typeof response !== 'string') {
+            throw new TypeError('Expected WebLLM stem-import fixture text');
+        }
+        return Promise.resolve(response);
     });
 }
 
@@ -331,6 +358,7 @@ describe('stem import and starting mix workflow', () => {
         }));
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: mocks.arrangementEventEmit });
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState, tempo: 100 });
@@ -351,20 +379,12 @@ describe('stem import and starting mix workflow', () => {
         mocks.stageLocalAsset.mockImplementation((_file, name) =>
             Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
         );
-        mocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'stem-import-starting-mix',
-                        mocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
-            )
-        );
+        useWebFixture();
     });
 
     afterEach(async () => {
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         await cloudSession.clear();
         clearAiHistory();
         clearUndoHistory();
@@ -464,7 +484,7 @@ describe('stem import and starting mix workflow', () => {
                 }),
             }),
         ]);
-        expect(mocks.fetch).toHaveBeenCalledTimes(2);
+        expect(mocks.fetch).toHaveBeenCalledTimes(3);
         await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
             status: 'executed',
         });
@@ -714,7 +734,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reconciles a transient live-strip projection failure after the atomic project commit', async () => {
-        mocks.ensureTrackStrip.mockImplementationOnce(() => {
+        mocks.initializeTrackStripFromSnapshot.mockImplementationOnce(() => {
             throw new Error('transient strip projection failure');
         });
         await sendChatMessage(PROMPT);
@@ -725,7 +745,7 @@ describe('stem import and starting mix workflow', () => {
         });
 
         expect(trackStore.value?.tracks).toHaveLength(8);
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(7);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(7);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
@@ -764,7 +784,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reports persistent live-strip projection failure as committed with a manual-repair warning', async () => {
-        mocks.ensureTrackStrip.mockImplementation(() => {
+        mocks.initializeTrackStripFromSnapshot.mockImplementation(() => {
             throw new Error('persistent strip projection failure');
         });
         await sendChatMessage(PROMPT);

@@ -519,6 +519,13 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
+                        ...(providerProposal === null ? {} : { providerProposal }),
+                        verifiedProviderProposalScope: {
+                            targetIds: [],
+                            targetRanges: [],
+                            protectedTargetIds: context.tracks.map((track) => track.id),
+                            protectedRanges: [],
+                        },
                     };
                 }
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
