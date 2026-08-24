@@ -1,0 +1,22 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_38a2418bf8cc09 1025-1057
+  s_27578aec2aab3b::t_47e2f6406726ea 1022-1024
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_e045a6fbec3b82 10,325-328,334-336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "95031e2bab9eaa0f75ca3f72f2d6dc0ff7b510d0",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
