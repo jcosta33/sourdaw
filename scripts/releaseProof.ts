@@ -670,7 +670,8 @@ function validateWebLlmLegalFiles(
         const packagedPath = contentsPath === undefined ? undefined : resolve(contentsPath, ...required.split('/'));
         const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
         const contentsMatch =
-            packagedPath === undefined || sha256ContainedRegularFile(contentsPath, packagedPath) === sourceDigest;
+            packagedPath === undefined ||
+            (contentsPath !== undefined && sha256ContainedRegularFile(contentsPath, packagedPath) === sourceDigest);
         if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest || !contentsMatch) {
             errors.push(`${label} WebLLM legal file ${required} is missing or drifted`);
         }
