@@ -415,6 +415,14 @@ function proof(fixture: Fixture): Record<string, unknown> {
     return JSON.parse(readFileSync(join(fixture.candidate, 'release-proof.json'), 'utf8')) as Record<string, unknown>;
 }
 
+function requiredFixturePath(record: Record<string, string>, field: string): string {
+    const path = record[field];
+    if (path === undefined) {
+        throw new Error(`release proof fixture is missing ${field}`);
+    }
+    return path;
+}
+
 function desktopProof(value: Record<string, unknown>): Record<string, unknown> {
     return value.desktop as Record<string, unknown>;
 }
@@ -790,7 +798,8 @@ describe('release proof', () => {
         const value = proof(fixture);
         const source = value.source as Record<string, string>;
         const web = value.web as Record<string, string>;
-        const manifest = JSON.parse(readFileSync(join(fixture.candidate, web.manifestPath), 'utf8')) as Record<
+        const webManifestPath = requiredFixturePath(web, 'manifestPath');
+        const manifest = JSON.parse(readFileSync(join(fixture.candidate, webManifestPath), 'utf8')) as Record<
             string,
             unknown
         >;
@@ -802,11 +811,11 @@ describe('release proof', () => {
             throw new Error('web fixture needs at least two contents members');
         }
         const referencedPaths = [
-            source.manifestPath,
-            source.archivePath,
-            source.commitPath,
-            web.manifestPath,
-            web.archivePath,
+            requiredFixturePath(source, 'manifestPath'),
+            requiredFixturePath(source, 'archivePath'),
+            requiredFixturePath(source, 'commitPath'),
+            webManifestPath,
+            requiredFixturePath(web, 'archivePath'),
         ];
         const budget = [...referencedPaths, `web/contents/${firstMember}`].reduce(
             (total, path) => total + readFileSync(join(fixture.candidate, path)).length,
@@ -846,14 +855,18 @@ describe('release proof', () => {
         const source = value.source as Record<string, string>;
         const web = value.web as Record<string, string>;
         const desktop = value.desktop as Record<string, string>;
-        const webManifest = JSON.parse(readFileSync(join(fixture.candidate, web.manifestPath), 'utf8')) as Record<
+        const webManifestPath = requiredFixturePath(web, 'manifestPath');
+        const ffmpegBuildPath = requiredFixturePath(desktop, 'ffmpegBuildPath');
+        const buildInputsPath = requiredFixturePath(desktop, 'buildInputsPath');
+        const webManifest = JSON.parse(readFileSync(join(fixture.candidate, webManifestPath), 'utf8')) as Record<
             string,
             unknown
         >;
         const webFiles = Object.keys(webManifest.files as Record<string, string>);
-        const buildManifest = JSON.parse(
-            readFileSync(join(fixture.candidate, desktop.ffmpegBuildPath), 'utf8')
-        ) as Record<string, unknown>;
+        const buildManifest = JSON.parse(readFileSync(join(fixture.candidate, ffmpegBuildPath), 'utf8')) as Record<
+            string,
+            unknown
+        >;
         const buildInputs = Object.keys(buildManifest.buildInputs as Record<string, string>).sort();
         const firstInput = buildInputs[0];
         const exhaustedInput = buildInputs[1];
@@ -861,27 +874,27 @@ describe('release proof', () => {
             throw new Error('build fixture needs at least two input members');
         }
         const referencedPaths = [
-            source.manifestPath,
-            source.archivePath,
-            source.commitPath,
-            web.manifestPath,
-            web.archivePath,
-            desktop.artifactPath,
-            desktop.contentsManifestPath,
-            desktop.runtimeManifestPath,
-            desktop.electronSourcePath,
-            desktop.electronCommitPath,
-            desktop.ffmpegSourcePath,
-            desktop.ffmpegCommitPath,
-            desktop.ffmpegBuildPath,
+            requiredFixturePath(source, 'manifestPath'),
+            requiredFixturePath(source, 'archivePath'),
+            requiredFixturePath(source, 'commitPath'),
+            webManifestPath,
+            requiredFixturePath(web, 'archivePath'),
+            requiredFixturePath(desktop, 'artifactPath'),
+            requiredFixturePath(desktop, 'contentsManifestPath'),
+            requiredFixturePath(desktop, 'runtimeManifestPath'),
+            requiredFixturePath(desktop, 'electronSourcePath'),
+            requiredFixturePath(desktop, 'electronCommitPath'),
+            requiredFixturePath(desktop, 'ffmpegSourcePath'),
+            requiredFixturePath(desktop, 'ffmpegCommitPath'),
+            ffmpegBuildPath,
             ...webFiles.map((path) => `web/contents/${path}`),
-            `${desktop.buildInputsPath}/${firstInput}`,
+            `${buildInputsPath}/${firstInput}`,
         ];
         const budget = referencedPaths.reduce(
             (total, path) => total + readFileSync(join(fixture.candidate, path)).length,
             0
         );
-        const exhaustedPath = join(fixture.candidate, desktop.buildInputsPath, exhaustedInput);
+        const exhaustedPath = join(fixture.candidate, buildInputsPath, exhaustedInput);
         let exhaustedDescriptor: number | undefined;
         let exhaustedReads = 0;
         const fileReader: ReleaseProofFileReader = {
