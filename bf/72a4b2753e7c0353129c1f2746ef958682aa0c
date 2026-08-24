@@ -1,0 +1,25 @@
+src/modules/CrdtDocument/useCases/crdtBranching/deleteDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_24bf08179e8a11 14,16-22,24-27,29-34,36,39,54,57-58,60-69,88-93
+src/modules/CrdtDocument/handlers/previewBranches/handleDeleteDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_24bf08179e8a11 3,13-14,20
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_35c66a35e28abc 34,52-58,162-165,169-172,175-179,183-187,200-228,235,237-241,335-339,360,425
+src/modules/CrdtDocument/useCases/crdtBranching/rollbackCreatedDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_24bf08179e8a11 7,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "bf72a4b2753e7c0353129c1f2746ef958682aa0c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
