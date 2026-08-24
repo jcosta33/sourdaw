@@ -643,25 +643,9 @@ jobs:
     # a pull request that legitimately skips every heavy leg still reports a
     # conclusion instead of sitting pending.
     #
-    # `unit` and `e2e` are deliberately absent. They run, and their results are
-    # visible on the pull request, but they do not decide the merge yet — a gate
-    # is only worth having if a red one means something, and each of these has a
-    # reason it does not yet. Each is promoted by one line here, and each should
-    # be, as soon as its reason expires. Red is a reason to fix the thing and
-    # then gate it, never a reason to leave it ungated.
-    #
-    # The unit suite fails 217 tests across 37 files on `main` today, none of
-    # them caused by any open pull request. Gating on it now would mean a red
-    # check that says "main was already broken" on every unrelated change, and
-    # would freeze the repository against a defect its author is not fixing.
-    # Promote it the moment `main` is green — it is deterministic, it is the
-    # feedback that replaces a local run, and it is the first of these four that
-    # should decide merges.
-    #
-    # The end-to-end suite passed 895 of 928 on its first execution. Some of the
-    # remainder download a model from a third-party host at run time and fail
-    # with `Failed to fetch` when that host is unreachable, which makes the suite
-    # non-deterministic as a gate rather than merely red. Promote it once those
+    # The deterministic unit shards participate in this required aggregate. The
+    # end-to-end suite remains visible but does not gate yet because some tests
+    # download a model from a third-party host at run time. Promote it once those
     # tests no longer reach the network and the suite is green.
     #
     # `codeql` and `secrets` were held out until each had completed a run, on
@@ -674,6 +658,7 @@ jobs:
       - static
       - lint
       - boundaries
+      - unit
       - dependency-review
       - build
       - rust

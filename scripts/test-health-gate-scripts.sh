@@ -185,6 +185,7 @@ function runWorkflowShell(label, body, env) {
 const events = workflow.on;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
+const unit = workflow.jobs?.unit;
 const gate = workflow.jobs?.gate;
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
@@ -196,12 +197,14 @@ const secretScanRun = secretScan?.run ?? '';
 const secretScanUses = secretScan?.uses ?? '';
 const secretsEnv = secrets?.env ?? {};
 const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
+const unitRun = stepNamed(unit, 'Run shard');
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
     'decide',
     'static',
     'lint',
     'boundaries',
+    'unit',
     'dependency-review',
     'build',
     'rust',
@@ -343,9 +346,13 @@ expect(
         gateNeeds.every((need, index) => need === expectedGateNeeds[index]),
     `Gate needs must stay exactly: ${expectedGateNeeds.join(', ')}`
 );
-expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
+expect(gateNeeds.includes('unit'), 'unit suite must remain in required Gate needs');
 expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
 expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+expect(
+    unitRun?.run === 'pnpm test:run --shard=${{ matrix.shard }}/4',
+    'unit shards must invoke Vitest with the explicit matrix shard'
+);
 
 const maliciousHelperMarker = `${process.env.TEST_TEMP_ROOT}/pr-owned-helper-invoked.log`;
 const workflowCommandLog = `${process.env.TEST_TEMP_ROOT}/workflow-secret-scan.log`;
