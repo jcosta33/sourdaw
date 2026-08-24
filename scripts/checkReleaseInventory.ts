@@ -237,14 +237,29 @@ export type ReleaseInventoryCheckReceipt = {
 };
 
 export type ReleaseInventoryCheckOptions = {
-    projectLicensePreflight?: (root: string) => void;
+    projectLicensePreflight?: ProjectLicensePreflight;
     readInventory?: (root: string) => ReleaseInventory;
     afterDdspValidation?: () => void;
 };
 
+type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
+
+const defaultProjectLicensePreflight: ProjectLicensePreflight = (root, inventoryContents) =>
+    checkProjectLicense(root, undefined, inventoryContents);
+
+function readReleaseInventoryContents(root: string): string {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const contents = readRepositoryRegularText(realpathSync(root), inventoryPath, repositorySnapshotFileReader);
+    if (contents === undefined) {
+        throw new Error(`release inventory cannot be read safely: ${inventoryPath}`);
+    }
+    return contents;
+}
+
 export function readReleaseInventory(root: string): ReleaseInventory {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    return parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
+    const contents = readReleaseInventoryContents(root);
+    return parseJsonWithUniqueKeys<ReleaseInventory>(contents, inventoryPath);
 }
 
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
@@ -338,12 +353,19 @@ function openRepositoryRegularFile(
         if (!beforeOpen.isFile()) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
+        if ((constants.O_NOFOLLOW ?? 0) === 0) {
+            throw new Error(`no-follow open is unavailable: ${absolutePath}`);
+        }
         fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
         const opened = fstatSync(fileDescriptor);
         if (!opened.isFile()) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
         if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        const afterOpen = lstatSync(absolutePath);
+        if (!afterOpen.isFile() || opened.dev !== afterOpen.dev || opened.ino !== afterOpen.ino) {
             throw new Error(`path changed while opening: ${absolutePath}`);
         }
         const realPath = realpathSync(absolutePath);
@@ -430,13 +452,19 @@ function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
 
 function trackedFilesSha256(root: string, files: readonly string[]): string {
     const hash = createHash('sha256');
+    const rootRealPath = realpathSync(root);
     for (const file of files) {
-        if (!existsSync(resolve(root, file))) {
+        const absolutePath = resolve(root, file);
+        if (!existsSync(absolutePath)) {
             throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
-        hash.update(readFileSync(resolve(root, file)));
+        try {
+            hash.update(readRepositoryRegularFile(rootRealPath, absolutePath, repositorySnapshotFileReader));
+        } catch {
+            throw new Error(`Grand Boule release source is unsafe: ${file}`);
+        }
         hash.update('\0');
     }
     return hash.digest('hex');
@@ -1958,7 +1986,7 @@ export function loadRepositorySnapshot(
             : externalReferences(contents).map((reference) => ({ file: path, ...reference }));
     });
     const snapshotPaths = sortedUnique([
-        ...REQUIRED_SNAPSHOT_PATHS,
+        ...REQUIRED_SNAPSHOT_PATHS.filter(isSafeTrackedPath),
         ...(inventory.snapshots ?? []).map((entry) => entry.path).filter(isSafeTrackedPath),
         ...(inventory.surfaces ?? []).flatMap((surface) =>
             surface.digests.flatMap((digest) => {
@@ -2005,19 +2033,32 @@ export function loadRepositorySnapshot(
 
 export function checkReleaseInventory(
     root: string,
-    options: ReleaseInventoryCheckOptions | ((root: string) => void) = {}
+    options: ReleaseInventoryCheckOptions | ProjectLicensePreflight = {},
+    injectedInventory?: ReleaseInventory
 ): ReleaseInventoryCheckReceipt {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const {
-        projectLicensePreflight = checkProjectLicense,
-        readInventory = readReleaseInventory,
+        projectLicensePreflight = defaultProjectLicensePreflight,
+        readInventory,
         afterDdspValidation,
     } = typeof options === 'function' ? { projectLicensePreflight: options } : options;
-    projectLicensePreflight(root);
-    const inventory = readInventory(root);
-    assertDdspReleaseInventory(root, inventory);
+    let inventoryContents: string;
+    let currentInventory: ReleaseInventory;
+    if (injectedInventory !== undefined) {
+        currentInventory = injectedInventory;
+        inventoryContents = JSON.stringify(injectedInventory);
+    } else if (readInventory !== undefined) {
+        currentInventory = readInventory(root);
+        inventoryContents = JSON.stringify(currentInventory);
+    } else {
+        inventoryContents = readReleaseInventoryContents(root);
+        currentInventory = parseJsonWithUniqueKeys<ReleaseInventory>(inventoryContents, inventoryPath);
+    }
+    projectLicensePreflight(root, inventoryContents);
+    assertDdspReleaseInventory(root, currentInventory);
     afterDdspValidation?.();
-    const snapshot = loadRepositorySnapshot(root, inventory);
-    const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
+    const snapshot = loadRepositorySnapshot(root, currentInventory);
+    const errors = validateReleaseInventory(currentInventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
@@ -2034,21 +2075,23 @@ export function checkReleaseInventory(
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
     assertGrandBouleMeasurementAdmission(root);
-    const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
+    const wasmSurface = currentInventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
     );
-    const projectLicenseSurface = inventory.surfaces.find((surface) => surface.id === 'project-license-distribution');
+    const projectLicenseSurface = currentInventory.surfaces.find(
+        (surface) => surface.id === 'project-license-distribution'
+    );
     validateSurface('project-license-distribution', () =>
         assertProjectLicenseDistributionReleaseInventory(root, projectLicenseSurface)
     );
-    const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
+    const grandBouleSurface = currentInventory.surfaces.find((surface) => surface.id === 'grand-boule');
     validateSurface('grand-boule', () => assertGrandBouleReleaseInventory(root, grandBouleSurface));
-    const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
+    const workletSurface = currentInventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
     validateSurface('audio-worklet-sources', () =>
         assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet')
     );
-    const adaptedMitSurface = inventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
+    const adaptedMitSurface = currentInventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
     validateSurface('mi-plaits-dsp-rs-adaptation', () =>
         assertSurfaceContract(
             adaptedMitSurface,
@@ -2056,11 +2099,11 @@ export function checkReleaseInventory(
             'mi-plaits-dsp-rs adaptation'
         )
     );
-    const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
+    const trademarkSurface = currentInventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     validateSurface('third-party-marks', () =>
         assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark')
     );
-    const ownerVisualAssetSurface = inventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
+    const ownerVisualAssetSurface = currentInventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
     validateSurface('owner-visual-assets', () =>
         assertSurfaceContract(
             ownerVisualAssetSurface,
@@ -2070,7 +2113,7 @@ export function checkReleaseInventory(
     );
     validatedSurfaceIds.push('ddsp-tfjs-runtime', 'ddsp-models');
     checkElectronRuntimeProvenance(root);
-    const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
+    const electronSurface = currentInventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
         if (JSON.stringify(electronSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
             throw new Error(`Electron release inventory ${field} does not match provenance`);
@@ -2079,7 +2122,7 @@ export function checkReleaseInventory(
     validatedSurfaceIds.push('desktop-shell');
     checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
-    const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
+    const levainSurface = currentInventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
     const levainContract = {
         sources: [levain.source.repository],
         revisions: [levain.source.revision],
@@ -2093,7 +2136,7 @@ export function checkReleaseInventory(
     }
     validatedSurfaceIds.push('levain-sample-bank');
     process.stdout.write(
-        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
+        `release inventory valid: ${String(currentInventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
     );
     return { validatedSurfaceIds };
 }
