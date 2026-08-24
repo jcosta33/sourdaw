@@ -20,6 +20,7 @@ import { gzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { readReleaseInventory, type ReleaseInventory } from '../checkReleaseInventory';
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from '../electronRuntimeContract';
 import {
     ELECTRON_FFMPEG_BUILD_INPUTS,
@@ -30,8 +31,6 @@ import {
     type ReleaseBuildRunner,
     validateReleaseProof,
 } from '../releaseProof';
-
-import type { ReleaseInventory } from '../checkReleaseInventory';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const WEBLLM_REQUIRED_LEGAL_FILES = webLlmRequiredLegalFiles(workspaceRoot);
@@ -388,7 +387,8 @@ function fixtureBuildRunner(fixture: Fixture): ReleaseBuildRunner {
 function assemble(
     fixture: Fixture,
     buildRunner: ReleaseBuildRunner = fixtureBuildRunner(fixture),
-    releaseGate: (root: string) => void = () => undefined
+    releaseGate: (root: string) => void = () => undefined,
+    releaseInventoryReader?: (root: string) => ReleaseInventory
 ): void {
     assembleReleaseProof(
         fixture.root,
@@ -397,7 +397,8 @@ function assemble(
         fixture.ffmpegSource,
         fixture.contract,
         buildRunner,
-        releaseGate
+        releaseGate,
+        releaseInventoryReader
     );
 }
 
@@ -884,16 +885,26 @@ describe('release proof', () => {
 
     it('runs the aggregate release gate before publication and removes the temporary candidate on failure', () => {
         const fixture = createFixture();
+        const capturedInventory = readReleaseInventory(fixture.root);
+        let inventoryReads = 0;
         let gated = false;
         const gate = (_root: string, releaseInventory?: ReleaseInventory): never => {
             gated = true;
             expect(git(fixture.root, ['rev-parse', 'HEAD'])).toBe(fixture.revision);
             expect(git(fixture.root, ['status', '--porcelain'])).toBe('');
-            expect(releaseInventory?.surfaces.map((surface) => surface.id)).toEqual(['webllm-qwen-artifacts']);
+            expect(releaseInventory).toBe(capturedInventory);
             throw new Error('aggregate release gate failed');
         };
-        expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate)).toThrow('aggregate release gate failed');
+        const inventoryReader = (root: string): ReleaseInventory => {
+            expect(root).toBe(fixture.root);
+            inventoryReads += 1;
+            return capturedInventory;
+        };
+        expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate, inventoryReader)).toThrow(
+            'aggregate release gate failed'
+        );
         expect(gated).toBe(true);
+        expect(inventoryReads).toBe(1);
         expect(existsSync(fixture.candidate)).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.tmp-'))).toBe(false);
     });

@@ -126,6 +126,7 @@ export type ReleaseProofOptions = {
     expectedRevision: string;
     runtimeContract?: ElectronRuntimeContract;
     releaseInventory?: ReleaseInventory;
+    releaseInventoryReader?: ReleaseInventoryReader;
 };
 
 type GitIdentity = {
@@ -136,6 +137,7 @@ type GitIdentity = {
 export type ReleaseBuildPhase = 'web' | 'desktop';
 export type ReleaseBuildRunner = (phase: ReleaseBuildPhase, root: string) => void;
 export type ReleaseGateRunner = (root: string, releaseInventory?: ReleaseInventory) => void;
+export type ReleaseInventoryReader = (root: string) => ReleaseInventory;
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -475,10 +477,10 @@ function validateWebLlmLegalFiles(
     }
     for (const required of requiredFiles) {
         const sourcePath = resolve(root, 'public', ...required.split('/'));
-        const packagedPath = contentsPath === undefined ? undefined : resolve(contentsPath, ...required.split('/'));
         const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
         const contentsMatch =
-            packagedPath === undefined || sha256ContainedRegularFile(contentsPath, packagedPath) === sourceDigest;
+            contentsPath === undefined ||
+            sha256ContainedRegularFile(contentsPath, resolve(contentsPath, ...required.split('/'))) === sourceDigest;
         if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest || !contentsMatch) {
             errors.push(`${label} WebLLM legal file ${required} is missing or drifted`);
         }
@@ -2132,7 +2134,8 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     const runtimeContract = options.runtimeContract ?? ELECTRON_RUNTIME_CONTRACT;
     let releaseInventory: ReleaseInventory | undefined;
     try {
-        releaseInventory = options.releaseInventory ?? readReleaseInventory(options.root);
+        releaseInventory =
+            options.releaseInventory ?? (options.releaseInventoryReader ?? readReleaseInventory)(options.root);
     } catch (error) {
         errors.push(error instanceof Error ? error.message : 'release inventory cannot be read safely');
     }
@@ -2415,11 +2418,12 @@ export function assembleReleaseProof(
     runtimeContract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT,
     buildRunner: ReleaseBuildRunner = runProjectBuild,
     releaseGate: ReleaseGateRunner = (gateRoot, releaseInventory) =>
-        checkReleaseInventory(gateRoot, undefined, releaseInventory)
+        checkReleaseInventory(gateRoot, undefined, releaseInventory),
+    releaseInventoryReader: ReleaseInventoryReader = readReleaseInventory
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
-    const releaseInventory = readReleaseInventory(root);
+    const releaseInventory = releaseInventoryReader(root);
     const sourceIdentity = verifyGitCheckout(
         root,
         execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' }).trim(),
@@ -2637,6 +2641,7 @@ export function assembleReleaseProof(
             expectedRevision: revision,
             runtimeContract,
             releaseInventory,
+            releaseInventoryReader,
         });
         if (errors.length > 0) {
             throw new Error(errors.join('\n'));
