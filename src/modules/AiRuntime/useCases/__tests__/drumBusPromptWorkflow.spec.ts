@@ -1515,7 +1515,24 @@ describe('drum bus prompt workflow', () => {
             'bus-drums',
         ]);
         expect([getTrack('track-parallel'), getTrack('track-bass')]).toEqual(unchangedBefore);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(4);
+        expect(runtimeMocks.applyRuntimeGraphDelta.mock.calls).toEqual(
+            ['track-kick', 'track-snare', 'track-hats', 'track-room'].map((trackId) => [
+                {
+                    schemaVersion: 1,
+                    command: 'set-track-output',
+                    correlation: {
+                        appRevision: expect.any(Number),
+                        projectRevision: expect.any(String),
+                    },
+                    nodes: [
+                        { id: trackId, kind: 'audio', devices: [] },
+                        { id: 'bus-drums', kind: 'bus', devices: [] },
+                    ],
+                    edges: [{ kind: 'output', sourceId: trackId, targetId: 'bus-drums' }],
+                    parameters: [],
+                },
+            ])
+        );
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );

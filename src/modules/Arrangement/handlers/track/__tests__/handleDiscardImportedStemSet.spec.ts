@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { createCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { createCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '../../../../CrdtDocument/useCases';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore, type Track } from '../../../stores/trackStore';
 import { ArrangementEventBus, setArrangementEventBus } from '../../../useCases/arrangementEventBus';
@@ -42,6 +42,15 @@ function liveTrackIds(): string[] {
     return trackStore.value?.tracks.map((track) => track.id) ?? [];
 }
 
+function validateDiscardImportedStemSet(action: Extract<AppAction, { type: 'discardImportedStemSet' }>): boolean {
+    const validate = handleDiscardImportedStemSet.validate;
+    if (validate === undefined) {
+        throw new Error('Expected discardImportedStemSet handler to define validation');
+    }
+    const context: HandlerValidationContext = { actions: [action], actionIndex: 0 };
+    return validate(action, context);
+}
+
 describe('handleDiscardImportedStemSet', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -62,7 +71,7 @@ describe('handleDiscardImportedStemSet', () => {
         trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
         const action = actionFor(tracks);
 
-        expect(handleDiscardImportedStemSet.validate(action, {})).toBe(true);
+        expect(validateDiscardImportedStemSet(action)).toBe(true);
         expect(handleDiscardImportedStemSet.canReapplyAfterDivergence?.(action)).toBe(true);
         expect(handleDiscardImportedStemSet.execute(action)).toMatchObject({ status: 'written' });
         expect(liveTrackIds()).toEqual([]);
@@ -103,7 +112,7 @@ describe('handleDiscardImportedStemSet', () => {
 
         invalidate(action);
 
-        expect(handleDiscardImportedStemSet.validate(action, {})).toBe(false);
+        expect(validateDiscardImportedStemSet(action)).toBe(false);
         expect(handleDiscardImportedStemSet.execute(action)).toEqual({ status: 'conflict' });
         expect(liveTrackIds()).toEqual(['folder-imported', 'track-kick', 'track-bass']);
     });

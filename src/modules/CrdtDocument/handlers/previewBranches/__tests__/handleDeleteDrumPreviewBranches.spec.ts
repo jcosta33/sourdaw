@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore, MAIN_BRANCH_ID, type BranchRecord } from '../../../stores/branchStore';
@@ -73,7 +73,12 @@ describe('deleteDrumPreviewBranches handler', () => {
         const action = createAction(candidates);
         const handler = createDeleteDrumPreviewBranchesHandler({ canMutateBranchMetadata: () => true });
 
-        expect(handler.validate(action, {})).toBe(true);
+        const validate = handler.validate;
+        if (validate === undefined) {
+            throw new Error('Expected deleteDrumPreviewBranches handler to define validation');
+        }
+        const context: HandlerValidationContext = { actions: [action], actionIndex: 0 };
+        expect(validate(action, context)).toBe(true);
         expect(handler.canReapplyAfterDivergence?.(action)).toBe(true);
         await expect(handler.execute(action)).resolves.toEqual({ status: 'written' });
         expect(branchStore.value).toEqual({
@@ -122,7 +127,12 @@ describe('deleteDrumPreviewBranches handler', () => {
 
         diverge(candidates);
 
-        expect(handler.validate(action, {})).toBe(false);
+        const validate = handler.validate;
+        if (validate === undefined) {
+            throw new Error('Expected deleteDrumPreviewBranches handler to define validation');
+        }
+        const context: HandlerValidationContext = { actions: [action], actionIndex: 0 };
+        expect(validate(action, context)).toBe(false);
         expect(handler.canReapplyAfterDivergence?.(action)).toBe(true);
         await expect(handler.execute(action)).resolves.toEqual({ status: 'conflict' });
         expect(branchStore.value?.branches.map(({ branchId }) => branchId)).toEqual([MAIN_BRANCH_ID, 'a', 'b', 'c']);

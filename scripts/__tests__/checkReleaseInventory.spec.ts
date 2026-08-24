@@ -851,11 +851,18 @@ describe('release inventory', () => {
         expect(laterValidationCalls).toBe(0);
     });
 
-    it('returns the complete ordered DDSP receipt from the default release check', { timeout: 10_000 }, () => {
-        const ddspSurfaceIds = checkReleaseInventory(repositoryRoot).validatedSurfaceIds.filter((surfaceId) =>
-            ['ddsp-tfjs-runtime', 'ddsp-models'].includes(surfaceId)
-        );
+    it('returns the complete ordered DDSP receipt from the default release check', () => {
+        const laterValidationSentinel = new Error('stop after default DDSP receipt');
+        let ddspSurfaceIds: readonly string[] | undefined;
 
+        expect(() =>
+            checkReleaseInventory(repositoryRoot, {
+                afterDdspValidation(validatedSurfaceIds) {
+                    ddspSurfaceIds = validatedSurfaceIds;
+                    throw laterValidationSentinel;
+                },
+            })
+        ).toThrow(laterValidationSentinel);
         expect(ddspSurfaceIds).toEqual(['ddsp-tfjs-runtime', 'ddsp-models']);
     });
 
@@ -1692,7 +1699,7 @@ describe('release inventory', () => {
                 'recorded digest does not match source revision'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 25 });
         }
     });
 

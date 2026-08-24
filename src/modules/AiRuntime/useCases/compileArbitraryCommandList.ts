@@ -272,9 +272,13 @@ function isIdempotentSetCommand(name: string): boolean {
 }
 
 function getTargetWriteIdentity(
+    commandName: string,
     targetRules: readonly { argument: string }[],
     arguments_: Readonly<Record<string, unknown>>
 ): string {
+    if (commandName === 'setTrackOutput') {
+        return JSON.stringify([['trackId', arguments_.trackId ?? null]]);
+    }
     return JSON.stringify(
         targetRules.map((targetRule) => [targetRule.argument, arguments_[targetRule.argument] ?? null])
     );
@@ -506,11 +510,15 @@ export function compileArbitraryCommandList(input: {
         if ('status' in resolved) {
             return resolved;
         }
+        const targetDependencyValue =
+            targetRule.dependsOn === undefined ? undefined : item.arguments[targetRule.dependsOn];
+        const targetDependencyId = typeof targetDependencyValue === 'string' ? targetDependencyValue : undefined;
         if (
             !resolved.stableIds.every((stableId) =>
                 isAgentReferenceCapabilityCandidate({
                     capability: targetRule.capability,
                     context: input.context,
+                    ...(targetDependencyId === undefined ? {} : { dependencyId: targetDependencyId }),
                     id: stableId,
                 })
             )
@@ -616,6 +624,7 @@ export function compileArbitraryCommandList(input: {
                 };
                 const commandKey = JSON.stringify(command);
                 const targetCommandKey = `${item.name}\u0000${getTargetWriteIdentity(
+                    item.name,
                     rules.targetRules,
                     command.arguments
                 )}`;

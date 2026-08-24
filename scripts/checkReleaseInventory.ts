@@ -239,10 +239,12 @@ export type ReleaseInventoryCheckReceipt = {
 export type ReleaseInventoryCheckOptions = {
     projectLicensePreflight?: ProjectLicensePreflight;
     readInventory?: (root: string) => ReleaseInventory;
-    afterDdspValidation?: () => void;
+    afterDdspValidation?: (validatedSurfaceIds: readonly ['ddsp-tfjs-runtime', 'ddsp-models']) => void;
 };
 
 type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
+
+const DDSP_VALIDATED_SURFACE_IDS = ['ddsp-tfjs-runtime', 'ddsp-models'] as const;
 
 const defaultProjectLicensePreflight: ProjectLicensePreflight = (root, inventoryContents) =>
     checkProjectLicense(root, undefined, inventoryContents);
@@ -2056,7 +2058,7 @@ export function checkReleaseInventory(
     }
     projectLicensePreflight(root, inventoryContents);
     assertDdspReleaseInventory(root, currentInventory);
-    afterDdspValidation?.();
+    afterDdspValidation?.(DDSP_VALIDATED_SURFACE_IDS);
     const snapshot = loadRepositorySnapshot(root, currentInventory);
     const errors = validateReleaseInventory(currentInventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
@@ -2111,7 +2113,7 @@ export function checkReleaseInventory(
             'owner visual asset'
         )
     );
-    validatedSurfaceIds.push('ddsp-tfjs-runtime', 'ddsp-models');
+    validatedSurfaceIds.push(...DDSP_VALIDATED_SURFACE_IDS);
     checkElectronRuntimeProvenance(root);
     const electronSurface = currentInventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

@@ -49,9 +49,6 @@ const ARRANGEMENT_ROOT = resolve(__dirname, '../..');
  */
 const UNCOVERED_UNDOABLE_HANDLERS = ['importStemSet'];
 
-/** `importStemSet`'s inverse, uncovered for the same reason and tracked with it. */
-const UNCOVERED_INVERSE_ACTIONS = ['discardImportedStemSet'];
-
 /**
  * The action types Arrangement sources name as an `inverseAction` or a `redoAction`,
  * read off the syntax tree.
@@ -391,6 +388,6 @@ describe('Arrangement undoable handlers audit', () => {
         // forward half of every pair. An inverse is the half that runs when a musician
         // is trying to get work back, and a dedicated one — `restoreTrackClipStates`,
         // `discardCreatedTracks` — is not `undoable` and so is invisible there.
-        expect(uncovered).toEqual([...UNCOVERED_INVERSE_ACTIONS].sort());
+        expect(uncovered).toEqual([]);
     });
 });

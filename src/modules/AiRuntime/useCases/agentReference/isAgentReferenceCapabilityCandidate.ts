@@ -30,6 +30,7 @@ const vcaMemberTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus'
 export function isAgentReferenceCapabilityCandidate(input: {
     capability: string;
     context: ProjectContext;
+    dependencyId?: string;
     id: string;
 }): boolean {
     const track = input.context.tracks.find((candidate) => candidate.id === input.id);
@@ -57,19 +58,28 @@ export function isAgentReferenceCapabilityCandidate(input: {
         }
     }
     if (input.capability === 'device') {
-        return input.context.tracks.some((candidate) => candidate.devices.some((device) => device.id === input.id));
+        const tracks =
+            input.dependencyId === undefined
+                ? input.context.tracks
+                : input.context.tracks.filter((candidate) => candidate.id === input.dependencyId);
+        return tracks.some((candidate) => candidate.devices.some((device) => device.id === input.id));
     }
     if (input.capability === 'sidechain-capable-device') {
-        return input.context.tracks.some((candidate) =>
+        const tracks =
+            input.dependencyId === undefined
+                ? input.context.tracks
+                : input.context.tracks.filter((candidate) => candidate.id === input.dependencyId);
+        return tracks.some((candidate) =>
             candidate.devices.some(
                 (device) => device.id === input.id && getSidechainTargetCapability(device.type) !== null
             )
         );
     }
     if (input.capability === 'device-parameter') {
-        return input.context.tracks.some((candidate) =>
-            candidate.devices.some((device) => (device.parameters ?? []).some((parameter) => parameter.id === input.id))
-        );
+        const devices = input.context.tracks.flatMap((candidate) => candidate.devices);
+        const ownerDevices =
+            input.dependencyId === undefined ? devices : devices.filter((device) => device.id === input.dependencyId);
+        return ownerDevices.some((device) => (device.parameters ?? []).some((parameter) => parameter.id === input.id));
     }
     if (input.capability === 'automation-lane') {
         return (input.context.automationLanes ?? []).some((lane) => lane.id === input.id);

@@ -71,6 +71,9 @@ export default defineConfig({
             // that has started the shell.
             'electron/out/**',
             '.agents/worktrees/**',
+            // The collaboration server owns its node:test suite through
+            // `pnpm --dir server test`; Vitest cannot execute it as a suite.
+            'server/**',
             'tests/e2e/**',
             '**/*.e2e.spec.*',
         ],

@@ -49,7 +49,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * `tests/e2e` is deliberately absent — those are Playwright specs, excluded by
  * `vite.config.ts` and run by `pnpm test:e2e <spec>`.
  */
-const collectableRoots = ['src', 'scripts', 'electron', 'server'] as const;
+const collectableRoots = ['src', 'scripts', 'electron'] as const;
 
 /** The directory the exclusion under test is responsible for. */
 const worktreeRoot = '.agents/worktrees';

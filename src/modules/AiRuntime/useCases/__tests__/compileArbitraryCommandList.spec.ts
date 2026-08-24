@@ -70,6 +70,62 @@ const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
     stoppingConditions: [],
 });
 
+function contextWithOwnedDeviceParameters() {
+    return {
+        ...context,
+        tracks: context.tracks.map((track) => {
+            if (track.id === 'track-kick') {
+                return {
+                    ...track,
+                    deviceCount: 1,
+                    devices: [
+                        {
+                            id: 'device-kick',
+                            name: 'Kick Compressor',
+                            type: 'builtin-compressor',
+                            bypassed: false,
+                            parameters: [
+                                {
+                                    id: 'parameter-kick-threshold',
+                                    name: 'Threshold',
+                                    type: 'float' as const,
+                                    value: -12,
+                                    minValue: -60,
+                                    maxValue: 0,
+                                    unit: 'dB',
+                                },
+                            ],
+                        },
+                    ],
+                };
+            }
+            return {
+                ...track,
+                deviceCount: 1,
+                devices: [
+                    {
+                        id: 'device-hat',
+                        name: 'Hat Compressor',
+                        type: 'builtin-compressor',
+                        bypassed: false,
+                        parameters: [
+                            {
+                                id: 'parameter-hat-threshold',
+                                name: 'Threshold',
+                                type: 'float' as const,
+                                value: -18,
+                                minValue: -60,
+                                maxValue: 0,
+                                unit: 'dB',
+                            },
+                        ],
+                    },
+                ],
+            };
+        }),
+    };
+}
+
 describe('compileArbitraryCommandList', () => {
     it('preserves explicit order and dependencies for non-targeted catalog commands', () => {
         const result = compileArbitraryCommandList({
@@ -161,16 +217,20 @@ describe('compileArbitraryCommandList', () => {
                 },
             ],
         });
-        if (accepted.status === 'accepted' && accepted.compilerEvidence !== undefined) {
-            expect(
-                validateArbitraryCommandListEvidence({
-                    evidence: accepted.compilerEvidence,
-                    calls: accepted.compilerEvidence.commands,
-                    context,
-                    revision: 'revision-1',
-                })
-            ).toMatchObject({ status: 'accepted' });
+        if (accepted.status !== 'accepted') {
+            throw new Error('Expected the valid command list to compile');
         }
+        if (accepted.compilerEvidence === undefined) {
+            throw new Error('Expected accepted command compilation to retain compiler evidence');
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: accepted.compilerEvidence,
+                calls: accepted.compilerEvidence.commands,
+                context,
+                revision: 'revision-1',
+            })
+        ).toMatchObject({ status: 'accepted' });
         expect(compile(undefined)).toMatchObject({
             status: 'rejected',
             reason: 'Batch-local target $drum-bus requires an earlier declared producer dependency.',
@@ -536,6 +596,147 @@ describe('compileArbitraryCommandList', () => {
         });
 
         expect(result.status).toBe('rejected');
+    });
+
+    it('rejects contradictory output writes to the same selected track', () => {
+        const routingContext = {
+            ...context,
+            tracks: [
+                ...context.tracks,
+                { ...context.tracks[0]!, id: 'bus-a', name: 'Bus A', kind: 'bus', devices: [] },
+                { ...context.tracks[0]!, id: 'bus-b', name: 'Bus B', kind: 'bus', devices: [] },
+            ],
+        };
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+
+        const result = compileArbitraryCommandList({
+            context: routingContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['bus-a', 'track-kick', 'bus-b']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                { id: 'route-a', name: 'setTrackOutput', arguments: { outputId: 'bus-a' }, selector },
+                                {
+                                    id: 'route-b',
+                                    name: 'setTrackOutput',
+                                    arguments: { outputId: 'bus-b' },
+                                    selector,
+                                    dependsOn: ['route-a'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for setTrackOutput on track-kick are not safely composable.',
+        });
+    });
+
+    it('rejects a device parameter that belongs to a different device during compilation', () => {
+        const deviceContext = contextWithOwnedDeviceParameters();
+        const result = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['device-kick', 'parameter-hat-threshold']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'set-kick-threshold',
+                                    name: 'setDeviceParameter',
+                                    arguments: { paramId: 'parameter-hat-threshold', value: -8 },
+                                    selector: {
+                                        targetArgument: 'deviceId',
+                                        entity: 'device',
+                                        where: { name: 'Kick Compressor' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Direct command target paramId is outside the command capability contract.',
+        });
+    });
+
+    it('rejects compiler evidence that swaps a device parameter to a different owner', () => {
+        const deviceContext = contextWithOwnedDeviceParameters();
+        const result = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['device-kick', 'parameter-kick-threshold']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'set-kick-threshold',
+                                    name: 'setDeviceParameter',
+                                    arguments: { paramId: 'parameter-kick-threshold', value: -8 },
+                                    selector: {
+                                        targetArgument: 'deviceId',
+                                        entity: 'device',
+                                        where: { name: 'Kick Compressor' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result.status).toBe('accepted');
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            throw new Error('Expected owned device parameter compilation evidence');
+        }
+        const calls = result.compilerEvidence.commands.map((command) => ({
+            ...command,
+            arguments:
+                command.name === 'setDeviceParameter'
+                    ? { ...command.arguments, paramId: 'parameter-hat-threshold' }
+                    : command.arguments,
+        }));
+
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: { ...result.compilerEvidence, commands: calls },
+                calls,
+                context: deviceContext,
+                revision: 'revision-1',
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Structured command compiler evidence target scope is invalid.',
+        });
     });
 
     it.each([

@@ -359,6 +359,11 @@ expect(
         gateReviewAdmission?.env?.REVIEW_STATE === '${{ github.event.review.state }}',
     'Gate must receive the triggering event and review state'
 );
+expect(gateReviewAdmission?.if === undefined, 'unapproved-review rejection must not be bypassed by a permissive step condition');
+expect(
+    gateReviewAdmission?.['continue-on-error'] === undefined,
+    'unapproved-review rejection must not be marked continue-on-error'
+);
 expect(
     runGateReviewAdmission('pull_request_review', 'approved') === 0,
     'approved pull_request_review events must retain the heavy Gate path'
