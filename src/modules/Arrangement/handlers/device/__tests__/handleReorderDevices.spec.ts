@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { createTrack } from '../../../models/Track';
+import { type Track } from '../../../models/Track';
 import { handleReorderDevices } from '../handleReorderDevices';
 
+type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type ReorderDevicesAction = Extract<AppAction, { type: 'reorderDevices' }>;
 
 const mocks = vi.hoisted(() => ({
@@ -71,7 +73,7 @@ const postReorderTopology = {
     ],
 };
 
-const addedDelayDevice = {
+const addedDelayDevice: Track['devices'][number] = {
     id: 'device-3',
     name: 'Delay',
     type: 'builtin-delay',
@@ -85,21 +87,25 @@ const addedDelayDevice = {
     },
 };
 
-function createBatchContext(action: ReorderDevicesAction): HandlerValidationContext {
+function createAddDeviceAction(): AddDeviceAction {
+    return {
+        type: 'addDevice',
+        payload: {
+            trackId: 'audio-1',
+            deviceType: 'builtin-delay',
+            deviceId: 'device-3',
+            afterDeviceId: 'device-1',
+        },
+    };
+}
+
+function createBatchContext(
+    addDeviceAction: AddDeviceAction,
+    reorderAction: ReorderDevicesAction
+): HandlerValidationContext {
     return {
         actionIndex: 1,
-        actions: [
-            {
-                type: 'addDevice',
-                payload: {
-                    trackId: 'audio-1',
-                    deviceType: 'builtin-delay',
-                    deviceId: 'device-3',
-                    afterDeviceId: 'device-1',
-                },
-            },
-            action,
-        ],
+        actions: [addDeviceAction, reorderAction],
     };
 }
 
@@ -123,10 +129,11 @@ describe('handleReorderDevices', () => {
 
     it('validates and executes against planned same-batch topology after an earlier same-track add', () => {
         const currentTrack = createAudioTrack();
-        const action = createReorderAction();
-        const batchContext = createBatchContext(action);
+        const addDeviceAction: AddDeviceAction = createAddDeviceAction();
+        const reorderAction: ReorderDevicesAction = createReorderAction();
+        const batchContext = createBatchContext(addDeviceAction, reorderAction);
         mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
-        const expectedBeforeTrack = {
+        const expectedBeforeTrack: Track = {
             ...currentTrack,
             devices: [
                 {
@@ -151,14 +158,16 @@ describe('handleReorderDevices', () => {
             devices: [addedDelayDevice, expectedBeforeTrack.devices[0]!, expectedBeforeTrack.devices[2]!],
         };
 
-        expect(handleReorderDevices.describe(action).inverseAction?.payload.expectedBefore).toEqual(
-            postReorderTopology
-        );
-        expect(handleReorderDevices.validate?.(action, batchContext)).toBe(true);
+        const inverseAction = handleReorderDevices.describe(reorderAction).inverseAction;
+        if (!inverseAction || inverseAction.type !== 'reorderDevices') {
+            throw new Error('Expected reorderDevices to describe an exact reorder inverse');
+        }
+        expect(inverseAction.payload.expectedBefore).toEqual(postReorderTopology);
+        expect(handleReorderDevices.validate?.(reorderAction, batchContext)).toBe(true);
 
         mocks.getTrackStoreState.mockReturnValue({ tracks: [expectedBeforeTrack] });
 
-        const result = handleReorderDevices.execute(action, batchContext);
+        const result = handleReorderDevices.execute(reorderAction, batchContext);
         expect(result).toMatchObject({ status: 'written' });
         if (!result || result instanceof Promise || result.status !== 'written' || !result.afterCommit) {
             throw new Error('Expected a written reorder result');
@@ -178,29 +187,31 @@ describe('handleReorderDevices', () => {
 
     it('rejects mismatched planned topology before any project write', () => {
         const currentTrack = createAudioTrack();
-        const action = createReorderAction();
-        const batchContext = createBatchContext(action);
+        const addDeviceAction: AddDeviceAction = createAddDeviceAction();
+        const reorderAction: ReorderDevicesAction = createReorderAction();
+        const batchContext = createBatchContext(addDeviceAction, reorderAction);
         mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
 
-        action.payload.expectedBefore = currentTopology;
-        expect(handleReorderDevices.validate?.(action, batchContext)).toBe(false);
-        expect(handleReorderDevices.execute(action, batchContext)).toEqual({ status: 'conflict' });
+        reorderAction.payload.expectedBefore = currentTopology;
+        expect(handleReorderDevices.validate?.(reorderAction, batchContext)).toBe(false);
+        expect(handleReorderDevices.execute(reorderAction, batchContext)).toEqual({ status: 'conflict' });
         expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
     });
 
     it('rejects nonunique before-topology proofs before any project write', () => {
         const currentTrack = createAudioTrack();
-        const action = createReorderAction();
-        const batchContext = createBatchContext(action);
+        const addDeviceAction: AddDeviceAction = createAddDeviceAction();
+        const reorderAction: ReorderDevicesAction = createReorderAction();
+        const batchContext = createBatchContext(addDeviceAction, reorderAction);
         mocks.getTrackStoreState.mockReturnValue({ tracks: [currentTrack] });
 
-        action.payload.expectedBefore = {
+        reorderAction.payload.expectedBefore = {
             ...preReorderTopology,
             devices: [...preReorderTopology.devices, preReorderTopology.devices[0]!],
         };
 
-        expect(handleReorderDevices.validate?.(action, batchContext)).toBe(false);
-        expect(handleReorderDevices.execute(action, batchContext)).toEqual({ status: 'conflict' });
+        expect(handleReorderDevices.validate?.(reorderAction, batchContext)).toBe(false);
+        expect(handleReorderDevices.execute(reorderAction, batchContext)).toEqual({ status: 'conflict' });
         expect(mocks.reorderDevicesInProject).not.toHaveBeenCalled();
     });
 });

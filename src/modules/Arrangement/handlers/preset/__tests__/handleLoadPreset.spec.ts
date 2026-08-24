@@ -8,6 +8,7 @@ import { type AppAction, type DeviceSnapshot, type HandlerValidationContext } fr
 
 import {
     type applyDeviceChainRuntimeDelta,
+    type ApplyDeviceChainRuntimeDeltaResult,
     type DeviceChainRuntimeDeltaDischarged,
     type DeviceChainRuntimeDeltaSuperseded,
 } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
@@ -454,7 +455,9 @@ describe('handleLoadPreset', () => {
         });
     });
 
-    it.each([
+    const runtimeFailureCases: ReadonlyArray<
+        readonly [label: string, runtimeResult: ApplyDeviceChainRuntimeDeltaResult, remediation: string]
+    > = [
         ['rejected', { acceptance: 'rejected', application: 'not-applied', reason: 'runtime revision stale' }, 'retry'],
         [
             'needs-reconcile',
@@ -468,7 +471,9 @@ describe('handleLoadPreset', () => {
             },
             'repair',
         ],
-    ])(
+    ];
+
+    it.each(runtimeFailureCases)(
         'does not return clean Command success after a %s runtime receipt',
         async (_label, runtimeResult, remediation) => {
             mocks.applyDeviceChainRuntimeDelta.mockReturnValue(runtimeResult);
