@@ -31,6 +31,8 @@ import {
     validateReleaseProof,
 } from '../releaseProof';
 
+import type { ReleaseInventory } from '../checkReleaseInventory';
+
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const WEBLLM_REQUIRED_LEGAL_FILES = webLlmRequiredLegalFiles(workspaceRoot);
 const WEBLLM_REQUIRED_SOURCE_LEGAL_FILES = WEBLLM_REQUIRED_LEGAL_FILES.map((path) => `public/${path}`);
@@ -626,6 +628,18 @@ describe('release proof', () => {
         expect(validate(fixture)).toMatch(/symbolic links are forbidden|file is missing/u);
     });
 
+    it('fails closed when the release inventory is replaced with an external symlink', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const inventory = join(fixture.root, 'release/open-source-inventory.json');
+        const outside = join(fixture.base, 'outside-open-source-inventory.json');
+        cpSync(inventory, outside);
+        rmSync(inventory);
+        symlinkSync(outside, inventory);
+
+        expect(validate(fixture)).toContain('release inventory cannot be read safely');
+    });
+
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
         const fixture = createFixture();
         assemble(fixture);
@@ -871,10 +885,11 @@ describe('release proof', () => {
     it('runs the aggregate release gate before publication and removes the temporary candidate on failure', () => {
         const fixture = createFixture();
         let gated = false;
-        const gate = (): never => {
+        const gate = (_root: string, releaseInventory?: ReleaseInventory): never => {
             gated = true;
             expect(git(fixture.root, ['rev-parse', 'HEAD'])).toBe(fixture.revision);
             expect(git(fixture.root, ['status', '--porcelain'])).toBe('');
+            expect(releaseInventory?.surfaces.map((surface) => surface.id)).toEqual(['webllm-qwen-artifacts']);
             throw new Error('aggregate release gate failed');
         };
         expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate)).toThrow('aggregate release gate failed');
