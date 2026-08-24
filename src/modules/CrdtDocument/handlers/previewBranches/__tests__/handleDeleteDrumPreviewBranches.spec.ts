@@ -134,6 +134,7 @@ describe('createDeleteDrumPreviewBranchesHandler', () => {
         const handler = createDeleteDrumPreviewBranchesHandler({ canMutateBranchMetadata: () => true });
 
         await expect(handler.execute(action)).resolves.toEqual({ status: 'written' });
+        expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
         expect(branchStore.value?.branches).toContainEqual(collaboratorRecord);
         expect(automergeRepository.hasDoc(collaboratorRootDocId)).toBe(true);
         expect(records.every(({ rootDocId }) => !automergeRepository.hasDoc(rootDocId))).toBe(true);
