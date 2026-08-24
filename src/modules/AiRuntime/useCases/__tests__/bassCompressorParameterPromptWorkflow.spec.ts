@@ -529,13 +529,12 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         });
         await sendChatMessage(PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls.at(-1)?.[1];
-        expect(providerRequest).toContain(PROMPT);
-        expect(providerRequest).toContain(COMPRESSOR_ID);
-        expect(providerRequest).toContain('comp-threshold');
-        expect(providerRequest).toContain('"unit":"dB"');
-        expect(providerRequest).toContain('"value":-24');
-        expect(providerRequest).toContain('"value":2');
+        const providerRequests = vi.mocked(generateWebLlmCompletion).mock.calls.map(([, userMessage]) => userMessage);
+        expect(providerRequests).toHaveLength(2);
+        expect(providerRequests[0]).toContain(PROMPT);
+        expect(providerRequests[0]).toContain('user_request:');
+        expect(providerRequests[1]).toContain('relevant_evidence:');
+        assertDiscoveredCommandSchema(providerRequests[1] ?? '');
 
         const confirmation = getConfirmation();
         expect(confirmation?.actions).toEqual([
@@ -683,9 +682,17 @@ describe('Bass DI compressor parameter prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        const body = runtimeMocks.fetch.mock.calls.at(-1)?.[1]?.body;
-        expect(typeof body).toBe('string');
-        expect(body).toContain('device-bass-di-compressor');
+        const providerRequests = runtimeMocks.fetch.mock.calls.map(([, init]) => {
+            if (typeof init?.body !== 'string') {
+                throw new TypeError('Expected hosted provider request body');
+            }
+            return getHostedUserMessage(init.body);
+        });
+        expect(providerRequests).toHaveLength(2);
+        expect(providerRequests[0]).toContain(PROMPT);
+        expect(providerRequests[0]).toContain('user_request:');
+        expect(providerRequests[1]).toContain('relevant_evidence:');
+        assertDiscoveredCommandSchema(providerRequests[1] ?? '');
         expect(getConfirmation()?.actions).toEqual(createGuardedActions());
 
         const confirmation = getConfirmation();

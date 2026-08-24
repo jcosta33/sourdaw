@@ -56,6 +56,20 @@ const PARAPHRASE =
     'Bring the first chorus bass-processing layers into the second chorus but keep its distortion automation untouched.';
 
 type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
+type ProviderPlanEntry = {
+    layerId: string;
+    startBeat: number;
+    endBeat: number;
+    blend: number;
+    fadeInBeats: number;
+    fadeOutBeats: number;
+};
+type BassProcessingCopyCapability = {
+    baseRevision: unknown;
+    actionType: 'addAdjustmentRegion';
+    exactPlan: ProviderPlanEntry[];
+    protectedObjectIds: string[];
+};
 
 const DEFAULT_PROTECTED_TARGET_IDS = ['track-lead-vocal', 'layer-vocal-reverb', 'auto-bass-distortion-drive'];
 
@@ -128,6 +142,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isProviderPlanEntry(value: unknown): value is ProviderPlanEntry {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats } = value;
+    return (
+        typeof layerId === 'string' &&
+        typeof startBeat === 'number' &&
+        typeof endBeat === 'number' &&
+        typeof blend === 'number' &&
+        typeof fadeInBeats === 'number' &&
+        typeof fadeOutBeats === 'number'
+    );
+}
+
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isBassProcessingCopyCapability(value: unknown): value is BassProcessingCopyCapability {
+    if (!isRecord(value)) {
+        return false;
+    }
+    return (
+        value.actionType === 'addAdjustmentRegion' &&
+        Array.isArray(value.exactPlan) &&
+        value.exactPlan.every(isProviderPlanEntry) &&
+        isStringArray(value.protectedObjectIds)
+    );
+}
+
 function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
     const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
     const payload = match?.groups?.payload;
@@ -154,15 +199,10 @@ function getProviderContext(userMessage: string): Record<string, unknown> {
     return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
 }
 
-function getBassProcessingCopyCapability(userMessage: string): Record<string, unknown> {
+function getBassProcessingCopyCapability(userMessage: string): BassProcessingCopyCapability {
     const context = getProviderContext(userMessage);
     const capability = context.bassProcessingCopyCapability;
-    if (
-        !isRecord(capability) ||
-        capability.baseRevision !== context.projectRevision ||
-        capability.actionType !== 'addAdjustmentRegion' ||
-        !Array.isArray(capability.exactPlan)
-    ) {
+    if (!isBassProcessingCopyCapability(capability) || capability.baseRevision !== context.projectRevision) {
         throw new TypeError('Expected revision-bound EX-03 capability');
     }
     return capability;
@@ -171,20 +211,7 @@ function getBassProcessingCopyCapability(userMessage: string): Record<string, un
 function createProviderPlanFromUserMessage(userMessage: string): ProviderPlanCall[] {
     const capability = getBassProcessingCopyCapability(userMessage);
     return capability.exactPlan.map((entry) => {
-        if (!isRecord(entry)) {
-            throw new TypeError('Expected EX-03 plan entry');
-        }
         const { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats } = entry;
-        if (
-            typeof layerId !== 'string' ||
-            typeof startBeat !== 'number' ||
-            typeof endBeat !== 'number' ||
-            typeof blend !== 'number' ||
-            typeof fadeInBeats !== 'number' ||
-            typeof fadeOutBeats !== 'number'
-        ) {
-            throw new TypeError('Expected complete EX-03 plan entry');
-        }
         return {
             name: 'addAdjustmentRegion',
             arguments: { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats },
@@ -193,11 +220,7 @@ function createProviderPlanFromUserMessage(userMessage: string): ProviderPlanCal
 }
 
 function getProtectedTargetIdsFromUserMessage(userMessage: string): string[] {
-    const protectedObjectIds = getBassProcessingCopyCapability(userMessage).protectedObjectIds;
-    if (!Array.isArray(protectedObjectIds) || protectedObjectIds.some((id) => typeof id !== 'string')) {
-        throw new TypeError('Expected complete EX-03 protected object IDs');
-    }
-    return protectedObjectIds.filter((id): id is string => typeof id === 'string');
+    return getBassProcessingCopyCapability(userMessage).protectedObjectIds;
 }
 
 function getHostedUserMessage(body: string): string {
@@ -366,11 +389,31 @@ function getBassProcessingCopyTargetRanges(
     return ranges;
 }
 
+function getBassProcessingCopyTargetIds(plan: readonly ProviderPlanCall[]): string[] {
+    const layersById = new Map((adjustmentLayerStore.value?.layers ?? []).map((layer) => [layer.id, layer]));
+    const targetIds = new Set<string>();
+    for (const call of plan) {
+        const layerId = call.arguments.layerId;
+        if (typeof layerId !== 'string') {
+            throw new TypeError('Expected EX-03 adjustment layer target');
+        }
+        const layer = layersById.get(layerId);
+        if (!layer) {
+            throw new TypeError(`Expected EX-03 adjustment layer ${layerId}`);
+        }
+        for (const trackId of layer.affectedTrackIds) {
+            targetIds.add(trackId);
+        }
+    }
+    return [...targetIds];
+}
+
 function asCommandBatchProposal(
     plan: readonly ProviderPlanCall[],
     protectedTargetIds: readonly string[],
     scopePlan: readonly ProviderPlanCall[]
 ): ProviderPlanCall[] {
+    const targetIds = getBassProcessingCopyTargetIds(scopePlan);
     const targetRanges = getBassProcessingCopyTargetRanges(scopePlan);
     return [
         {
@@ -382,7 +425,7 @@ function asCommandBatchProposal(
                     objective: 'Copy the exact Chorus One bass-processing regions into Chorus Two.',
                     constraints: ['Preserve Chorus Two distortion automation and every protected project object.'],
                     scope: {
-                        targetIds: [],
+                        targetIds,
                         targetRanges,
                         protectedTargetIds: [...protectedTargetIds],
                         protectedRanges: [],

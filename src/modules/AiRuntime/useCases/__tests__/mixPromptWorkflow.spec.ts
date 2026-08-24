@@ -25,6 +25,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -112,6 +113,11 @@ const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
+};
+
+const notificationEventBus = {
+    emit: vi.fn(() => Promise.resolve()),
+    on: vi.fn(() => () => undefined),
 };
 
 function createTrack(id: string, name: string): Track {
@@ -380,6 +386,7 @@ describe('mix prompt workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus(notificationEventBus);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const tracks = [
             createTrack('track-lead-vocal', 'Lead Vocal'),
@@ -580,6 +587,7 @@ describe('mix prompt workflow', () => {
         });
         runtimeMocks.mutes.set('track-room-mic', collaboratorMuted);
         const pastBeforeConflict = structuredClone(undoStore.value?.past);
+        notificationEventBus.emit.mockClear();
 
         await undo();
 
@@ -587,6 +595,10 @@ describe('mix prompt workflow', () => {
         expect(runtimeMocks.mutes.get('track-room-mic')).toBe(collaboratorMuted);
         expect(undoStore.value?.past).toEqual(pastBeforeConflict);
         expect(undoStore.value?.future).toEqual([]);
+        expect(notificationEventBus.emit).toHaveBeenCalledWith(
+            'ui.notify',
+            expect.objectContaining({ level: 'warning' })
+        );
 
         trackStore.set({
             ...trackStore.value!,

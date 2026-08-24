@@ -517,6 +517,7 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
+                        ...(providerProposal === null ? {} : { providerProposal }),
                     };
                 }
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({

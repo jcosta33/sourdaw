@@ -21,6 +21,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -43,6 +44,14 @@ const PROMPT =
     'Import stems, align them to project tempo, name and group them, classify likely instrument roles, and create a sensible starting mix.';
 const PARAPHRASE =
     'Bring in this stem set, tempo-align and organize it by likely instrument, then establish a practical initial balance.';
+const STEM_SOURCE_NAMES = [
+    'Kick_120.wav',
+    'Snare_120.wav',
+    'Bass_DI_120.wav',
+    'Guitar_L_120.wav',
+    'Guitar_R_120.wav',
+    'Lead_Vocal_120.wav',
+] as const;
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
@@ -53,12 +62,12 @@ const mocks = vi.hoisted(() => {
         stageLocalAsset: vi.fn<(file: File, name: string) => Promise<{ hash: string; leaseId: string }>>(),
         decodeAudioFile: vi.fn(),
         detectTempo: vi.fn<() => number | null>(() => 120),
-        ensureTrackStrip: vi.fn(),
         arrangementEventEmit: vi.fn(() => Promise.resolve()),
         executeBatchError: { value: null as Error | null },
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
+        projectTrackToLiveStrip: vi.fn(),
         promoteStagedAsset: vi.fn(),
         releaseStagedAsset: vi.fn(),
         releasePreviewAudioBuffer: vi.fn(),
@@ -116,10 +125,13 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({ detectTempo: mocks.detectTempo }));
 
+vi.mock('../../../Arrangement/useCases/projectTrackToLiveStrip', () => ({
+    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
-    ensureTrackStrip: mocks.ensureTrackStrip,
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
     removeTrackStrip: mocks.removeTrackStrip,
     setTrackGain: mocks.setTrackGain,
@@ -142,6 +154,26 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     pickFiles: mocks.pickFiles,
 }));
+
+const notificationEventBus = {
+    emit: vi.fn(() => Promise.resolve()),
+    on: vi.fn(() => () => undefined),
+};
+
+function expectPreparedStemResourcesReleased(timesPerStem: number): void {
+    const expectedAudioBufferIds = STEM_SOURCE_NAMES.flatMap((name) =>
+        Array.from({ length: timesPerStem }, () => `buffer-${name}`)
+    ).sort();
+    const expectedAssetLeaseIds = STEM_SOURCE_NAMES.flatMap((name) =>
+        Array.from({ length: timesPerStem }, () => `lease-${name}`)
+    ).sort();
+    expect(mocks.releasePreviewAudioBuffer.mock.calls.map(([audioBufferId]) => audioBufferId).sort()).toEqual(
+        expectedAudioBufferIds
+    );
+    expect(mocks.releaseStagedAsset.mock.calls.map(([assetLeaseId]) => assetLeaseId).sort()).toEqual(
+        expectedAssetLeaseIds
+    );
+}
 
 function createTrack(id: string, name: string): Track {
     return {
@@ -290,7 +322,49 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchema(userMessage: string): void {
+function hasApplicationToolReceiptContext(userMessage: string): boolean {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    return (
+        Array.isArray(evidence.receipts) &&
+        evidence.receipts.some(
+            (receipt) =>
+                isRecord(receipt) &&
+                receipt.id === 'application-tool-loop' &&
+                isRecord(receipt.summary) &&
+                receipt.summary.truncated === false &&
+                typeof receipt.summary.value === 'string'
+        )
+    );
+}
+
+function getExpectedCatalogCommandNames(finalCalls: readonly ProviderCall[]): string[] {
+    const names = finalCalls.flatMap((call) => {
+        if (call.name === 'selectWorkflowCapability') {
+            return [];
+        }
+        if (call.name !== 'command.batch.propose') {
+            return [call.name];
+        }
+        const commands = call.arguments.commands;
+        return Array.isArray(commands)
+            ? commands.flatMap((command) =>
+                  isRecord(command) && typeof command.name === 'string' ? [command.name] : []
+              )
+            : [];
+    });
+    return [...new Set(names)];
+}
+
+function catalogDiscoveryPlan(finalCalls: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: getExpectedCatalogCommandNames(finalCalls) },
+        },
+    ];
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderCall[]): void {
     const discovery = getApplicationToolReceipts(userMessage).find(
         (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
     );
@@ -303,16 +377,26 @@ function assertDiscoveredCommandSchema(userMessage: string): void {
         discovery.data.schemaVersion !== 1 ||
         discovery.data.category !== 'command' ||
         discovery.data.truncated !== false ||
-        !Array.isArray(discovery.data.items) ||
-        !discovery.data.items.some(
-            (item) =>
-                isRecord(item) &&
-                isRecord(item.function) &&
-                item.function.name === 'importStemSet' &&
-                isRecord(item.function.parameters)
-        )
+        !Array.isArray(discovery.data.items)
     ) {
-        throw new TypeError('Expected disclosed importStemSet schema receipt');
+        throw new TypeError('Expected successful command catalog discovery receipt');
+    }
+    const disclosedNames = new Set<string>();
+    for (const item of discovery.data.items) {
+        if (
+            !isRecord(item) ||
+            !isRecord(item.function) ||
+            typeof item.function.name !== 'string' ||
+            !isRecord(item.function.parameters)
+        ) {
+            continue;
+        }
+        disclosedNames.add(item.function.name);
+    }
+    for (const name of getExpectedCatalogCommandNames(finalCalls)) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
     }
 }
 
@@ -390,43 +474,36 @@ function getFinalStemImportCalls(
     );
 }
 
+function getProviderCallsForUserMessage(
+    userMessage: string,
+    transformPlan: (plan: ProviderCall[]) => ProviderCall[]
+): ProviderCall[] {
+    if (getProviderContext(userMessage).stemImportCapability === undefined) {
+        return withWorkflowCapabilitySelection('stem-import-starting-mix', []);
+    }
+    const finalCalls = getFinalStemImportCalls(userMessage, transformPlan);
+    if (!hasApplicationToolReceiptContext(userMessage)) {
+        return catalogDiscoveryPlan(finalCalls);
+    }
+    assertDiscoveredCommandSchemas(userMessage, finalCalls);
+    return finalCalls;
+}
+
 function createWebLlmResponder(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan) {
-    let awaitingReceipt = false;
     return (_systemPrompt: string, userMessage: string) => {
-        if (!awaitingReceipt) {
-            awaitingReceipt = true;
-            return Promise.resolve(
-                JSON.stringify([
-                    { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['importStemSet'] } },
-                ])
-            );
-        }
-        awaitingReceipt = false;
-        assertDiscoveredCommandSchema(userMessage);
-        return Promise.resolve(JSON.stringify(getFinalStemImportCalls(userMessage, transformPlan)));
+        return Promise.resolve(JSON.stringify(getProviderCallsForUserMessage(userMessage, transformPlan)));
     };
 }
 
 function createHostedResponder(
     transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan
 ): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
-    let awaitingReceipt = false;
     return (_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        if (!awaitingReceipt) {
-            awaitingReceipt = true;
-            return Promise.resolve(
-                toolCallsResponse([
-                    { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['importStemSet'] } },
-                ])
-            );
-        }
-        awaitingReceipt = false;
         const userMessage = getHostedUserMessage(init.body);
-        assertDiscoveredCommandSchema(userMessage);
-        return Promise.resolve(toolCallsResponse(getFinalStemImportCalls(userMessage, transformPlan)));
+        return Promise.resolve(toolCallsResponse(getProviderCallsForUserMessage(userMessage, transformPlan)));
     };
 }
 
@@ -497,18 +574,12 @@ describe('stem import and starting mix workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: mocks.arrangementEventEmit });
+        setNotificationEventBus(notificationEventBus);
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState, tempo: 100 });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
 
-        const files = [
-            'Kick_120.wav',
-            'Snare_120.wav',
-            'Bass_DI_120.wav',
-            'Guitar_L_120.wav',
-            'Guitar_R_120.wav',
-            'Lead_Vocal_120.wav',
-        ].map((name) => new File([name], name, { type: 'audio/wav' }));
+        const files = STEM_SOURCE_NAMES.map((name) => new File([name], name, { type: 'audio/wav' }));
         mocks.pickFiles.mockResolvedValue(files);
         mocks.decodeAudioFile.mockImplementation((file: File) =>
             Promise.resolve({ id: `buffer-${file.name}`, buffer: audioBuffer() })
@@ -621,7 +692,7 @@ describe('stem import and starting mix workflow', () => {
                 }),
             }),
         ]);
-        expect(mocks.fetch).toHaveBeenCalledTimes(4);
+        expect(mocks.fetch).toHaveBeenCalledTimes(3);
         await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
             status: 'executed',
         });
@@ -711,8 +782,7 @@ describe('stem import and starting mix workflow', () => {
         await sendChatMessage(PROMPT);
 
         expect(confirmationId()).toBe('');
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        expectPreparedStemResourcesReleased(1);
     });
 
     it('rejects an oversized selected stem before decode or provider planning', async () => {
@@ -773,8 +843,7 @@ describe('stem import and starting mix workflow', () => {
 
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        expectPreparedStemResourcesReleased(1);
     });
 
     it('releases preparation-owned resources when the user cancels the exact proposal', async () => {
@@ -786,8 +855,7 @@ describe('stem import and starting mix workflow', () => {
             status: 'cancelled',
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        expectPreparedStemResourcesReleased(2);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -803,8 +871,7 @@ describe('stem import and starting mix workflow', () => {
 
         expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        expectPreparedStemResourcesReleased(2);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -878,7 +945,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reconciles a transient live-strip projection failure after the atomic project commit', async () => {
-        mocks.ensureTrackStrip.mockImplementationOnce(() => {
+        mocks.projectTrackToLiveStrip.mockImplementationOnce(() => {
             throw new Error('transient strip projection failure');
         });
         await sendChatMessage(PROMPT);
@@ -889,7 +956,7 @@ describe('stem import and starting mix workflow', () => {
         });
 
         expect(trackStore.value?.tracks).toHaveLength(8);
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(7);
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(7);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
@@ -928,7 +995,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('reports persistent live-strip projection failure as committed with a manual-repair warning', async () => {
-        mocks.ensureTrackStrip.mockImplementation(() => {
+        mocks.projectTrackToLiveStrip.mockImplementation(() => {
             throw new Error('persistent strip projection failure');
         });
         await sendChatMessage(PROMPT);

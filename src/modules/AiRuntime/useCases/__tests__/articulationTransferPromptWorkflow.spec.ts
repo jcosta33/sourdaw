@@ -18,6 +18,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -170,11 +171,19 @@ function addSecondMidiAndAudioTracks(): void {
                     { id: 'brass-source', pitch: 48, startBeat: 2, duration: 1, velocity: 118 },
                     { articulation: 'marcato' }
                 ),
+                Object.assign(
+                    { id: 'brass-source-late', pitch: 55, startBeat: 6, duration: 1, velocity: 106 },
+                    { articulation: 'staccato' }
+                ),
             ],
             'brass-chorus-two': [
                 Object.assign(
                     { id: 'brass-target', pitch: 50, startBeat: 2, duration: 1, velocity: 68 },
                     { articulation: 'legato' }
+                ),
+                Object.assign(
+                    { id: 'brass-target-late', pitch: 57, startBeat: 6, duration: 1, velocity: 75 },
+                    { articulation: 'sustain' }
                 ),
             ],
         },
@@ -295,6 +304,7 @@ function getArticulationPlanScope(userMessage: string) {
         throw new TypeError('Expected complete revision-bound articulation-transfer scope');
     }
     const targetIds: string[] = [];
+    const targetRanges: Array<{ startBeat: number; endBeat: number }> = [];
     const protectedTargetIds = capability.protectedClipIds.flatMap((id) => (typeof id === 'string' ? [id] : []));
     for (const pair of capability.clipPairs) {
         if (
@@ -307,14 +317,33 @@ function getArticulationPlanScope(userMessage: string) {
             throw new TypeError('Expected exact articulation-transfer clip and note pairs');
         }
         targetIds.push(pair.trackId, pair.sourceClipId, pair.targetClipId);
+        const noteStarts: number[] = [];
         for (const notePair of pair.notePairs) {
-            if (!isRecord(notePair) || typeof notePair.targetNoteId !== 'string') {
-                throw new TypeError('Expected exact articulation-transfer target note');
+            if (
+                !isRecord(notePair) ||
+                typeof notePair.sourceNoteId !== 'string' ||
+                typeof notePair.targetNoteId !== 'string' ||
+                typeof notePair.relativeStartBeat !== 'number'
+            ) {
+                throw new TypeError('Expected exact articulation-transfer note-pair timing');
             }
+            noteStarts.push(notePair.relativeStartBeat);
         }
+        if (noteStarts.length === 0) {
+            throw new TypeError('Expected articulation-transfer note-pair timing');
+        }
+        targetRanges.push({
+            startBeat: Math.min(...noteStarts),
+            endBeat: Math.max(...noteStarts),
+        });
         protectedTargetIds.push(`${pair.targetClipId}:non-articulation`);
     }
-    return { targetIds: [...new Set(targetIds)], targetRanges: [], protectedTargetIds, protectedRanges: [] };
+    return {
+        targetIds: [...new Set(targetIds)],
+        targetRanges,
+        protectedTargetIds,
+        protectedRanges: [],
+    };
 }
 
 function asCommandBatchProposal(
@@ -445,6 +474,7 @@ function getConfirmationId(): string {
 describe('MF-03 articulation transfer prompt workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
@@ -481,7 +511,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             notesByClipId: {
                 'clip-chorus-one': [
                     Object.assign(
-                        { id: 'source-high', pitch: 67, startBeat: 0, duration: 1, velocity: 96 },
+                        { id: 'source-high', pitch: 67, startBeat: 4, duration: 1, velocity: 96 },
                         { articulation: 'marcato' }
                     ),
                     Object.assign(
@@ -495,7 +525,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                         { articulation: 'legato' }
                     ),
                     Object.assign(
-                        { id: 'target-high', pitch: 69, startBeat: 0, duration: 1, velocity: 84 },
+                        { id: 'target-high', pitch: 69, startBeat: 4, duration: 1, velocity: 84 },
                         { articulation: 'sustain' }
                     ),
                 ],
@@ -571,7 +601,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             {
                 id: 'target-high',
                 pitch: 69,
-                startBeat: 0,
+                startBeat: 4,
                 duration: 1,
                 velocity: 84,
                 articulation: 'marcato',
@@ -678,6 +708,14 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 duration: 1,
                 velocity: 68,
                 articulation: 'marcato',
+            },
+            {
+                id: 'brass-target-late',
+                pitch: 57,
+                startBeat: 6,
+                duration: 1,
+                velocity: 75,
+                articulation: 'staccato',
             },
         ]);
     });
@@ -871,10 +909,9 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ...state,
             notesByClipId: {
                 ...state.notesByClipId,
-                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) => ({
-                    ...note,
-                    articulation: 'sforzando',
-                })),
+                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) =>
+                    note.id === 'brass-source' ? { ...note, articulation: 'sforzando' } : note
+                ),
             },
         });
 
@@ -886,6 +923,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
+            'sustain',
         ]);
         expect(undoStore.value).toEqual(historyBeforeConflict);
 
@@ -894,10 +932,9 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ...conflictedState,
             notesByClipId: {
                 ...conflictedState.notesByClipId,
-                'brass-chorus-one': conflictedState.notesByClipId['brass-chorus-one']!.map((note) => ({
-                    ...note,
-                    articulation: 'marcato',
-                })),
+                'brass-chorus-one': conflictedState.notesByClipId['brass-chorus-one']!.map((note) =>
+                    note.id === 'brass-source' ? { ...note, articulation: 'marcato' } : note
+                ),
             },
         });
         await redo();
@@ -907,6 +944,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'marcato',
+            'staccato',
         ]);
     });
 
@@ -969,6 +1007,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'marcato',
+            'staccato',
         ]);
         expect(undoStore.value).toEqual(historyBeforeConflict);
 
@@ -980,6 +1019,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
+            'sustain',
         ]);
     });
 
@@ -1023,10 +1063,9 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ...state,
             notesByClipId: {
                 ...state.notesByClipId,
-                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) => ({
-                    ...note,
-                    articulation: 'sforzando',
-                })),
+                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) =>
+                    note.id === 'brass-source' ? { ...note, articulation: 'sforzando' } : note
+                ),
             },
         });
 
@@ -1038,6 +1077,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
+            'sustain',
         ]);
         expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
             status: 'failed',

@@ -47,7 +47,17 @@ const PROMPT = 'Lower every vocal send to the Hall by 3 dB only in verse two.';
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
-const providerPlan: ProviderCall[] = [
+type AutomateSendRangeProviderCall = {
+    name: 'automateSendRange';
+    arguments: {
+        trackIds: [string, string];
+        busId: string;
+        sectionName: string;
+        reductionDb: number;
+    };
+};
+
+const providerPlan: [AutomateSendRangeProviderCall] = [
     {
         name: 'automateSendRange',
         arguments: {
@@ -625,7 +635,7 @@ describe('verse Hall send automation workflow', () => {
 
     it('rejects provider enlargement beyond every track whose name and Hall send match vocal', async () => {
         runtimeMocks.generateWebLlmCompletion.mockImplementation(
-            createTurnTrackedWebLlmResponder(() => [
+            createTurnTrackedWebLlmResponder((): ProviderCall[] => [
                 {
                     ...providerPlan[0],
                     arguments: {

@@ -24,6 +24,7 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
+import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import { estimateCompiledProviderRequestTokenCeiling } from '../models/ModelProviderBudgetEstimate';
 import {
@@ -286,6 +287,33 @@ function getApplicationAssignedTargetIds(
     );
 }
 
+const SELECTED_STEM_ASSETS_READY_ID = 'selected-stem-assets';
+
+function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly ExecutableRuntimeAction[]): string[] {
+    const selectedStemAssetIds = actions.flatMap((action) =>
+        action.type === 'importStemSet' ? action.payload.stems.map((stem) => stem.audioBufferId) : []
+    );
+    if (selectedStemAssetIds.length === 0) {
+        return [];
+    }
+
+    const livePreparedStemAssetIds = new Set(
+        agentRunLifecycle
+            .get(runId)
+            ?.temporaryAssets.flatMap((asset) =>
+                asset.kind === 'import' && asset.status === 'live' ? [asset.assetId] : []
+            ) ?? []
+    );
+    if (
+        livePreparedStemAssetIds.size !== selectedStemAssetIds.length ||
+        selectedStemAssetIds.some((assetId) => !livePreparedStemAssetIds.has(assetId))
+    ) {
+        return [];
+    }
+
+    return [SELECTED_STEM_ASSETS_READY_ID];
+}
+
 export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
@@ -453,6 +481,7 @@ export async function sendChatMessage(
             }
 
             if (result.actions.length > 0) {
+                const readyAssetIds = getApplicationReadyAssetIdsForPlan(runId, result.actions);
                 // Manually inject messages for Fast-Path execution
                 const userMsgId = `msg-${crypto.randomUUID()}`;
                 appendChatMessage({
@@ -535,6 +564,7 @@ export async function sendChatMessage(
                         providerProposal: result.providerProposal,
                         requireProviderProposal: result.executionMode === 'atomic',
                         applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedPlannedBatch.envelope),
+                        readyAssetIds,
                     });
                     if (plannedRun.status === 'needs-user-decision') {
                         createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -656,6 +686,7 @@ export async function sendChatMessage(
                     providerProposal: result.providerProposal,
                     requireProviderProposal: result.executionMode === 'atomic',
                     applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedCommandBatch.envelope),
+                    readyAssetIds,
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();

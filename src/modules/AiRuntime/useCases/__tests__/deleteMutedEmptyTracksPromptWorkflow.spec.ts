@@ -51,6 +51,8 @@ const runtimeMocks = vi.hoisted(() => {
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        notifyUser: vi.fn(),
+        projectTrackToLiveStrip: vi.fn(),
         removeBusStrip: vi.fn(),
         removeTrackStrip: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
@@ -76,6 +78,14 @@ vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
 
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: runtimeMocks.notifyUser,
+}));
+
+vi.mock('../../../Arrangement/useCases/projectTrackToLiveStrip', () => ({
+    projectTrackToLiveStrip: runtimeMocks.projectTrackToLiveStrip,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -257,7 +267,24 @@ function assertDiscoveredCommandSchemas(userMessage: string, names: readonly str
     }
 }
 
-function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
+function getProviderProtectedTargetIds(): string[] {
+    return (trackStore.value?.tracks ?? [])
+        .filter(
+            (track) =>
+                track.kind === 'bus' ||
+                track.kind === 'folder' ||
+                ((track.kind === 'audio' || track.kind === 'midi') &&
+                    track.muted &&
+                    track.clips.length === 0 &&
+                    track.alternatives.flatMap((alternative) => alternative.clips).length > 0)
+        )
+        .map((track) => track.id);
+}
+
+function asCommandBatchProposal(
+    plan: readonly ProviderCall[],
+    protectedTargetIds: readonly string[] = ['bus-muted-empty', 'group-muted-empty']
+): ProviderCall[] {
     return [
         {
             name: 'command.batch.propose',
@@ -272,7 +299,7 @@ function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
                             typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
                         ),
                         targetRanges: [],
-                        protectedTargetIds: ['bus-muted-empty', 'group-muted-empty'],
+                        protectedTargetIds: [...protectedTargetIds],
                         protectedRanges: [],
                     },
                     capabilityIds: [...new Set(plan.map((call) => call.name))],
@@ -332,7 +359,7 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
             );
         }
         assertDiscoveredCommandSchemas(userMessage, names);
-        return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan)));
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan, getProviderProtectedTargetIds())));
     });
     let hostedTurn = 0;
     runtimeMocks.fetch.mockImplementation((_input, init) => {
@@ -349,13 +376,12 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
             );
         }
         assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), names);
-        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan)));
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan, getProviderProtectedTargetIds())));
     });
 }
 
 describe('delete muted empty tracks prompt workflow', () => {
     beforeEach(async () => {
-        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.removeTrackStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
@@ -375,6 +401,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        configureAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -423,7 +450,7 @@ describe('delete muted empty tracks prompt workflow', () => {
     it('compiles the exact app-owned target set into one guarded destructive confirmation', async () => {
         await sendChatMessage(PROMPT);
 
-        expect(generateWebLlmCompletion).toHaveBeenCalledOnce();
+        expect(generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         const request = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
         expect(request).toContain(PROMPT);
         expect(request).toContain('track-muted-audio');
@@ -555,8 +582,16 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(
             trackStore.value?.tracks.filter((track) => !protectedBefore?.some((item) => item.id === track.id))
         ).toHaveLength(2);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'track-muted-audio',
+            deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
+        });
+        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'track-muted-midi',
+            deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
+        });
 
         await redo();
 
@@ -579,13 +614,20 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
-        runtimeMocks.ensureTrackStrip.mockClear();
+        runtimeMocks.projectTrackToLiveStrip.mockClear();
 
         await undo();
 
         expect(trackStore.value).toEqual(beforeDeletion);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'track-muted-audio',
+            deferSidechainWiring: true,
+        });
+        expect(runtimeMocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'track-muted-midi',
+            deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
+        });
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
     });

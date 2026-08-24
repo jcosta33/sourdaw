@@ -8,7 +8,7 @@ import {
     type Clip,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -26,6 +26,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -429,6 +430,8 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({
             tracks: [
                 createTrack('track-chords', 'Chords', 'clip-chords'),

@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    getArrangementHandlers,
+    projectTrackToLiveStrip,
+    runtimeGraphTopology,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -153,6 +162,10 @@ function createCompoundActions(includeConflictingSend = false): ExecutableRuntim
         });
     }
     return actions;
+}
+
+function hasTrackId(payload: { trackId: string | null }): payload is { trackId: string } {
+    return typeof payload.trackId === 'string';
 }
 
 function createRepeatedMuteCompilerContext(): ProjectContext {
@@ -420,6 +433,10 @@ describe('confirmed compound bus actions', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
@@ -427,7 +444,14 @@ describe('confirmed compound bus actions', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
-        setArrangementEventBus({ emit: () => Promise.resolve() });
+        setArrangementEventBus({
+            emit: (event, payload) => {
+                if (event === 'track.added' && hasTrackId(payload)) {
+                    projectTrackToLiveStrip({ trackId: payload.trackId });
+                }
+                return Promise.resolve();
+            },
+        });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const vocals = createVocalsTrack();
         trackStore.set({ tracks: [vocals], selectedTrackId: vocals.id, ghostClips: [] });
@@ -476,7 +500,8 @@ describe('confirmed compound bus actions', () => {
 
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(BUS_ID, expect.any(String));
+        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.removeTrackStrip).toHaveBeenCalledWith(BUS_ID);
         expect(runtimeMocks.engineRemoveSend).toHaveBeenCalledWith('track-vocals', BUS_ID);
     });
 
@@ -547,7 +572,7 @@ describe('confirmed compound bus actions', () => {
 
     it('does not write a canonical repeated batch after its confirmation snapshot is stale', async () => {
         registerCanonicalMuteHandler();
-        const actions = compileRepeatedMuteActions();
+        const actions = await compileRepeatedMuteActions();
         propose(actions, 'confirmation-repeated-mute-stale');
         mutateCrdtDoc<Record<string, unknown>>({
             id: 'root',
