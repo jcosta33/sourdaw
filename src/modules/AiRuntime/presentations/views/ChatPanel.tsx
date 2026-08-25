@@ -14,11 +14,14 @@ import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from '../../models/Age
 import { type ChatMessage } from '../../models/Chat';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
+import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
+import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { AgentRunDecisionControls, type AgentRunDecisionControl } from '../components/AgentRunDecisionControls';
 import { ChatComposer } from '../components/ChatComposer';
@@ -263,6 +266,8 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         agentRunState.schemaVersion === 1
             ? agentRunControls.list().flatMap((run) => (run.decision === null ? [] : [run]))
             : [];
+    const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
+    const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
         chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
     );
@@ -325,12 +330,20 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         }
     };
 
+    const handleRecoverPendingEffects = (runId: string, batchId: string): void => {
+        void recoverAgentRunPendingEffects({ runId, batchId });
+    };
+
     if (!chatState) {
         return <></>;
     }
 
     let chatPanelContent;
-    if (chatState.messages.length === 0) {
+    if (
+        chatState.messages.length === 0 &&
+        pendingEffectContinuations.length === 0 &&
+        preparedStemManualRepairs.length === 0
+    ) {
         chatPanelContent = (
             <Stack align="center" justify="center" className="h-full text-center px-6 opacity-60">
                 <Bot className="size-8 mx-auto mb-3 text-muted-foreground" />
@@ -351,6 +364,83 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         onConfirmPendingActions={handleConfirmPendingActions}
                         onCancelPendingActions={handleCancelPendingActions}
                     />
+                ))}
+                {pendingEffectContinuations.map((continuation) => {
+                    const manualRepairRequired = continuation.recovery === 'manual-repair';
+                    const hasGenericEffect = continuation.effects.some(({ kind }) => kind === 'external-effect');
+                    const repairsCurrentRuntime = continuation.effects.some(
+                        ({ kind, remediation }) => kind === 'runtime-graph' && remediation === 'repair'
+                    );
+                    let actionLabel = 'Retry runtime effect';
+                    if (hasGenericEffect) {
+                        actionLabel = 'Reconcile pending effects';
+                    } else if (repairsCurrentRuntime) {
+                        actionLabel = 'Repair audio graph';
+                    }
+                    let recoveryDescription =
+                        'Retry only the receipt-bound runtime effect without replaying project actions.';
+                    if (manualRepairRequired) {
+                        recoveryDescription =
+                            'At least one external effect cannot be retried exactly. Inspect its retained details and repair it manually; the project mutation will not replay.';
+                    } else if (hasGenericEffect) {
+                        recoveryDescription =
+                            'Reconcile every receipt-bound external effect without replaying project actions.';
+                    } else if (repairsCurrentRuntime) {
+                        recoveryDescription =
+                            'Rebuild the audio graph from the current project without replaying project actions.';
+                    }
+                    return (
+                        <div
+                            key={`${continuation.runId}:${continuation.batchId}`}
+                            className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs"
+                        >
+                            <p className="font-medium text-foreground">Committed project change has pending effects</p>
+                            <p className="mt-1 text-muted-foreground">{recoveryDescription}</p>
+                            <ul
+                                className="mt-2 space-y-1 text-muted-foreground"
+                                aria-label={`Pending effects for batch ${continuation.batchId}`}
+                            >
+                                {continuation.effects.map((effect) => (
+                                    <li key={effect.commandId}>
+                                        <span className="font-medium text-foreground">{effect.operation}</span>
+                                        {`: ${effect.reason}`}
+                                    </li>
+                                ))}
+                            </ul>
+                            {continuation.lastError ? (
+                                <p className="mt-1 text-destructive">{continuation.lastError}</p>
+                            ) : null}
+                            {manualRepairRequired ? (
+                                <p className="mt-2 font-medium text-destructive">Manual repair required</p>
+                            ) : (
+                                <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    className="mt-2 h-7 gap-1.5 text-[11px]"
+                                    disabled={chatState.isGenerating}
+                                    aria-label={actionLabel}
+                                    onClick={() =>
+                                        handleRecoverPendingEffects(continuation.runId, continuation.batchId)
+                                    }
+                                >
+                                    <RotateCw className="size-3" />
+                                    {actionLabel}
+                                </Button>
+                            )}
+                        </div>
+                    );
+                })}
+                {preparedStemManualRepairs.map((recovery) => (
+                    <div
+                        key={`${recovery.runId}:${recovery.batchId}:prepared-stems`}
+                        className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs"
+                    >
+                        <p className="font-medium text-foreground">Prepared stem import requires manual repair</p>
+                        <p className="mt-1 text-muted-foreground">{recovery.reason}</p>
+                        <p className="mt-2 text-muted-foreground">
+                            Retained media: {recovery.audioBufferIds.join(', ')}
+                        </p>
+                    </div>
                 ))}
                 <div ref={messagesEndRef} className="h-2 w-full shrink-0" />
             </Stack>

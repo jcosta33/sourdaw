@@ -88,6 +88,7 @@ const initializationFailureResults = [
 describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         mocks.soloMode = 'sip';
         mocks.resolveToasterPadBinding.mockReturnValue(undefined);
         trackStore.set({ tracks: [], selectedTrackId: null });
@@ -173,6 +174,16 @@ describe('projectTrackToLiveStrip', () => {
         };
         activation.onLatencyMs?.(7.25);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 7.25);
+
+        vi.clearAllMocks();
+        mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
+        const onExternalPluginActivation = vi.fn();
+        projectTrackToLiveStrip({
+            trackId: track.id,
+            activateDormantExternalPlugins: true,
+            onExternalPluginActivation,
+        });
+        expect(onExternalPluginActivation).toHaveBeenCalledWith(expect.any(Promise));
     });
 
     it('keeps solo-safe and solo-bus upstream tracks audible while muting unrelated tracks', () => {

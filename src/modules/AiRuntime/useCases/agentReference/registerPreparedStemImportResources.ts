@@ -28,6 +28,7 @@ type PreparedStemImportRegistration = {
 };
 const registrations = new Map<string, PreparedStemImportRegistration>();
 type PreparedStemImportRecoveryResult = { status: 'discarded' | 'missing' | 'retained' | 'transferred' };
+type PreparedStemImportDiscardAuthority = 'generic-release' | 'verified-noncommit';
 const reconciliations = new Map<string, Promise<PreparedStemImportRecoveryResult>>();
 
 function key(runId: string, assetId: string): string {
@@ -47,17 +48,19 @@ function createRegistration(input: {
         stem: input.stem,
         recovery: input.recovery,
     };
-    registration.unregister = agentRunCancellation.registerTemporaryAssetCleanup({
-        runId: input.runId,
-        assetId: input.stem.audioBufferId,
-        cleanupOwner: CLEANUP_OWNER,
-        cleanup: () => {
-            if (registrations.get(registrationKey)?.protected) {
-                throw new Error('Prepared stem cleanup is deferred until command commit truth is reconciled.');
-            }
-            discardPreparedStemImportResources([input.stem]);
-        },
-    });
+    if (agentRunLifecycle.get(input.runId)) {
+        registration.unregister = agentRunCancellation.registerTemporaryAssetCleanup({
+            runId: input.runId,
+            assetId: input.stem.audioBufferId,
+            cleanupOwner: CLEANUP_OWNER,
+            cleanup: () => {
+                if (registrations.get(registrationKey)?.protected) {
+                    throw new Error('Prepared stem cleanup is deferred until command commit truth is reconciled.');
+                }
+                discardPreparedStemImportResources([input.stem]);
+            },
+        });
+    }
     return registration;
 }
 
@@ -85,19 +88,22 @@ function hydratePreparedStemImportResources(input: {
     recovery: AgentRunPreparedStemImportRecovery;
     commandBatch: Parameters<typeof getVersionedCommandBatchIdempotentReplay>[0];
 }): boolean {
-    const run = agentRunLifecycle.get(input.runId);
+    const persistedRecovery = agentRunLifecycle.getPreparedStemImportRecovery({
+        runId: input.runId,
+        batchId: input.recovery.batchId,
+    });
     if (
-        !run ||
-        input.recovery.resources.some(
-            (resource) =>
-                !run.temporaryAssets.some(
-                    (asset) =>
-                        asset.assetId === resource.audioBufferId &&
-                        asset.kind === 'import' &&
-                        asset.cleanupOwner === CLEANUP_OWNER &&
-                        asset.status !== 'released'
-                )
-        )
+        !persistedRecovery ||
+        persistedRecovery.serializedCommandBatch !== input.recovery.serializedCommandBatch ||
+        persistedRecovery.resources.length !== input.recovery.resources.length ||
+        persistedRecovery.resources.some((resource, index) => {
+            const candidate = input.recovery.resources[index];
+            return (
+                candidate === undefined ||
+                candidate.audioBufferId !== resource.audioBufferId ||
+                candidate.assetLeaseId !== resource.assetLeaseId
+            );
+        })
     ) {
         return false;
     }
@@ -148,7 +154,7 @@ function forgetSettledRecoveries(runId: string, batchIds: ReadonlySet<string>): 
         ) {
             continue;
         }
-        if (agentRunLifecycle.get(runId)?.preparedStemImports.some((recovery) => recovery.batchId === batchId)) {
+        if (agentRunLifecycle.getPreparedStemImportRecovery({ runId, batchId })) {
             agentRunLifecycle.forgetPreparedStemImportRecovery({ runId, batchId });
         }
     }
@@ -159,28 +165,15 @@ function protectPreparedStemImportResources(input: {
     stems: readonly PreparedStemImportResource[];
     recovery?: PreparedStemImportRecoveryBinding;
 }): void {
+    if (input.recovery && input.stems.length > 0) {
+        persistPreparedStemImportRecovery({ ...input, recovery: input.recovery });
+    }
     for (const stem of input.stems) {
         const registration = registrations.get(key(input.runId, stem.audioBufferId));
         if (registration) {
             registration.protected = true;
             if (input.recovery) {
                 registration.recovery = input.recovery;
-            }
-        }
-    }
-    if (input.recovery && input.stems.length > 0) {
-        try {
-            persistPreparedStemImportRecovery({ ...input, recovery: input.recovery });
-        } catch {
-            try {
-                agentRunLifecycle.requirePreparedStemManualRepair({
-                    runId: input.runId,
-                    assetIds: input.stems.map((stem) => stem.audioBufferId),
-                    batchIds: [input.recovery.batchId],
-                });
-            } catch {
-                // Protection remains authoritative in memory. A persistence outage must
-                // never turn post-commit cleanup into physical deletion.
             }
         }
     }
@@ -237,7 +230,7 @@ async function reconcilePreparedStemImportResourcesOnce(input: {
         retainPreparedStemImportResourcesForRecovery({ runId: input.runId, stems });
         return { status: 'retained' };
     }
-    await discardRegisteredPreparedStemImportResources({ runId: input.runId, stems });
+    await discardPreparedStemImportResourcesAfterVerifiedNoncommit({ runId: input.runId, stems });
     return { status: 'discarded' };
 }
 
@@ -278,43 +271,53 @@ function releasePreparedStemImportResources(input: {
         }
         registration.unregister();
         registrations.delete(registrationKey);
-        agentRunLifecycle.forgetTemporaryAsset({
-            runId: input.runId,
-            assetId: stem.audioBufferId,
-            cleanupOwner: CLEANUP_OWNER,
-        });
+        if (agentRunLifecycle.get(input.runId)) {
+            agentRunLifecycle.forgetTemporaryAsset({
+                runId: input.runId,
+                assetId: stem.audioBufferId,
+                cleanupOwner: CLEANUP_OWNER,
+            });
+        }
     }
     forgetSettledRecoveries(input.runId, settledBatchIds);
 }
 
-async function discardRegisteredPreparedStemImportResources(input: {
-    runId: string;
-    stems: readonly PreparedStemImportResource[];
-}): Promise<void> {
+async function discardPreparedStemImportResourcesWithAuthority(
+    input: {
+        runId: string;
+        stems: readonly PreparedStemImportResource[];
+    },
+    authority: PreparedStemImportDiscardAuthority
+): Promise<void> {
     const settledBatchIds = new Set<string>();
     for (const stem of input.stems) {
         const registrationKey = key(input.runId, stem.audioBufferId);
         const registration = registrations.get(registrationKey);
+        if (registration?.protected && authority === 'generic-release') {
+            continue;
+        }
         if (registration?.recovery) {
             settledBatchIds.add(registration.recovery.batchId);
         }
         const asset = agentRunLifecycle
             .get(input.runId)
             ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
-        if (!asset) {
-            registration?.unregister();
-            registrations.delete(registrationKey);
-            continue;
-        }
         if (registration?.protected) {
             discardPreparedStemImportResources([stem]);
             registration.unregister();
             registrations.delete(registrationKey);
-            agentRunLifecycle.forgetTemporaryAsset({
-                runId: input.runId,
-                assetId: stem.audioBufferId,
-                cleanupOwner: CLEANUP_OWNER,
-            });
+            if (agentRunLifecycle.get(input.runId)) {
+                agentRunLifecycle.forgetTemporaryAsset({
+                    runId: input.runId,
+                    assetId: stem.audioBufferId,
+                    cleanupOwner: CLEANUP_OWNER,
+                });
+            }
+            continue;
+        }
+        if (!asset) {
+            registration?.unregister();
+            registrations.delete(registrationKey);
             continue;
         }
         if (asset.status !== 'released') {
@@ -332,6 +335,20 @@ async function discardRegisteredPreparedStemImportResources(input: {
         }
     }
     forgetSettledRecoveries(input.runId, settledBatchIds);
+}
+
+function discardRegisteredPreparedStemImportResources(input: {
+    runId: string;
+    stems: readonly PreparedStemImportResource[];
+}): Promise<void> {
+    return discardPreparedStemImportResourcesWithAuthority(input, 'generic-release');
+}
+
+function discardPreparedStemImportResourcesAfterVerifiedNoncommit(input: {
+    runId: string;
+    stems: readonly PreparedStemImportResource[];
+}): Promise<void> {
+    return discardPreparedStemImportResourcesWithAuthority(input, 'verified-noncommit');
 }
 
 export const preparedStemImportResources = {
