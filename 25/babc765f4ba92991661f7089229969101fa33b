@@ -1,0 +1,24 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_46bfb843093b1f 611-631
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_a40848e8f8cca9::t_1a98a1a15b3570 214,221-222
+  s_a40848e8f8cca9::t_8b2964b840a9df 40,79-81
+  s_a40848e8f8cca9::t_1993ccae1cc3ae 215
+  s_a40848e8f8cca9::t_46bfb843093b1f 32,41-42,72,76-78,82,201-213,216-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "25babc765f4ba92991661f7089229969101fa33b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
