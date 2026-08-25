@@ -127,7 +127,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:f6c78ac5891e95105794a3d463af3e5ba7c98f657c6f2101cb859d13277abc52:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:0bad28098eb5fd190188a6d3a3c2eb36a110c53b0614e14b70ddd72ac60b5473:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:362b8480e9be35c45a075a17d01b1b957e1ba92a423fa6fef7fda72cf1fb7614:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
@@ -309,7 +309,7 @@
             "paths": ["Cargo.toml", "Cargo.lock", "crates/**"],
             "sources": ["Cargo.toml", "Cargo.lock"],
             "revisions": ["exact Cargo lock graph"],
-            "digests": ["sha256:f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5"],
+            "digests": ["sha256:bad8592c5c5d9104f7b79f57bf23564bfdf7ead00659e93c202d0a2a7662b34e"],
             "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
             "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
@@ -1272,7 +1272,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5"
+            "sha256": "bad8592c5c5d9104f7b79f57bf23564bfdf7ead00659e93c202d0a2a7662b34e"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1563,6 +1563,12 @@
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://api.github.com/app/installations/${slot}/access_tokens",
             "templateSha256": "76200d27ac9ab019dcfb19f05709725ad0be2d0093145bbb300ced8d3b1306ab"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/users/${slot}",
+            "templateSha256": "1f9fa25ac79d9ca6896d7b374ba392cc4aeabc57e1463a488bdf0c3100ca8dac"
         },
         {
             "surface": "project-source",
