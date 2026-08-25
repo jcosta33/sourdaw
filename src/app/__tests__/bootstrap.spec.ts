@@ -5,6 +5,7 @@ import type {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
+import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
@@ -25,6 +26,10 @@ type HandlerMapSentinel = { moduleId: string };
 type ArrangementEventBus = Parameters<typeof setArrangementEventBus>[0];
 type RuntimeGraphProjectRevisionValidator = Parameters<typeof configureRuntimeGraphProjectRevisionValidator>[0];
 type RuntimeGraphTopologyValidator = Parameters<typeof configureRuntimeGraphTopologyValidator>[0];
+type ProjectIdentityTransitionDependencies = Parameters<typeof setProjectIdentityTransitionDependencies>[0];
+type DurableAssetOwnerRecoveryAfterProjectLoad = NonNullable<
+    ProjectIdentityTransitionDependencies['resumeDurableAssetOwnerHandoffsAfterProjectLoad']
+>;
 
 /**
  * The one sink member this spec asserts on. The offline render's device chain
@@ -131,7 +136,8 @@ const {
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
-        setProjectIdentityTransitionDependenciesMock: vi.fn(),
+        setProjectIdentityTransitionDependenciesMock:
+            vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
             vi.fn<(validator: RuntimeGraphProjectRevisionValidator) => void>(),
         configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator) => void>(),
@@ -482,6 +488,19 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 // dependency bootstrap.ts pulls in is already mocked by the time it runs.
 import '../bootstrap';
 
+function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecoveryAfterProjectLoad {
+    const dependencyCall = setProjectIdentityTransitionDependenciesMock.mock.calls.at(0);
+    if (!dependencyCall) {
+        throw new Error('bootstrap never configured project identity transition dependencies');
+    }
+    const [dependencies] = dependencyCall;
+    const recovery = dependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad;
+    if (!recovery) {
+        throw new Error('bootstrap never configured durable asset owner recovery after project load');
+    }
+    return recovery;
+}
+
 describe('bootstrap', () => {
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
     // This list IS the assertion: every module bootstrap wires into the shared
@@ -560,22 +579,14 @@ describe('bootstrap', () => {
     });
 
     it('resumes durable owner handoffs only through the persisted-project load seam', async () => {
-        const dependencies = setProjectIdentityTransitionDependenciesMock.mock.calls[0]?.[0] as
-            | {
-                  resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
-                      ownerId: string;
-                      isCurrent: () => boolean;
-                      signal: AbortSignal;
-                  }) => Promise<void>;
-              }
-            | undefined;
+        const resumeDurableAssetOwnerHandoffsAfterProjectLoad = getDurableAssetOwnerRecoveryAfterProjectLoad();
         const authority = {
             ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             isCurrent: () => true,
             signal: new AbortController().signal,
         };
 
-        await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.(authority);
+        await resumeDurableAssetOwnerHandoffsAfterProjectLoad(authority);
 
         expect(getAssetTransferMock).toHaveBeenCalledOnce();
         expect(
@@ -588,18 +599,10 @@ describe('bootstrap', () => {
     });
 
     it('does not resolve or recover an asset owner after project-load authority is stale', async () => {
-        const dependencies = setProjectIdentityTransitionDependenciesMock.mock.calls[0]?.[0] as
-            | {
-                  resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
-                      ownerId: string;
-                      isCurrent: () => boolean;
-                      signal: AbortSignal;
-                  }) => Promise<void>;
-              }
-            | undefined;
+        const resumeDurableAssetOwnerHandoffsAfterProjectLoad = getDurableAssetOwnerRecoveryAfterProjectLoad();
         const callsBeforeStaleRecovery = getAssetTransferMock.mock.calls.length;
 
-        await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
+        await resumeDurableAssetOwnerHandoffsAfterProjectLoad({
             ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             isCurrent: () => false,
             signal: new AbortController().signal,
@@ -609,19 +612,11 @@ describe('bootstrap', () => {
     });
 
     it('fails closed when durable asset recovery is unavailable after a current project load', async () => {
-        const dependencies = setProjectIdentityTransitionDependenciesMock.mock.calls[0]?.[0] as
-            | {
-                  resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
-                      ownerId: string;
-                      isCurrent: () => boolean;
-                      signal: AbortSignal;
-                  }) => Promise<void>;
-              }
-            | undefined;
+        const resumeDurableAssetOwnerHandoffsAfterProjectLoad = getDurableAssetOwnerRecoveryAfterProjectLoad();
         getAssetTransferMock.mockReturnValueOnce(null);
 
         await expect(
-            dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
+            resumeDurableAssetOwnerHandoffsAfterProjectLoad({
                 ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
                 isCurrent: () => true,
                 signal: new AbortController().signal,
