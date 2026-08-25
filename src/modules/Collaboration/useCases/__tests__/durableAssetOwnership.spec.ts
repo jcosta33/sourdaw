@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
-import { createDurableAssetRepository } from '../../repositories/durableAssetRepository';
+import { createDurableAssetRepository, type DurableAssetCommitProof } from '../../repositories/durableAssetRepository';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer } from '../assetTransfer';
 import { configureDurableAssetCommitProof } from '../configureDurableAssetCommitProof';
@@ -25,6 +25,16 @@ function makePeerManager(): PeerConnectionManager {
 
 function makeCurrentRecoveryAuthority(ownerId: string) {
     return { ownerId, isCurrent: () => true, signal: new AbortController().signal };
+}
+
+function isExactCommitProof(candidate: DurableAssetCommitProof, expected: DurableAssetCommitProof): boolean {
+    return (
+        candidate.projectId === expected.projectId &&
+        candidate.idempotencyKey === expected.idempotencyKey &&
+        candidate.contentHash === expected.contentHash &&
+        candidate.runId === expected.runId &&
+        candidate.batchId === expected.batchId
+    );
 }
 
 describe('durable asset ownership lifecycle', () => {
@@ -653,7 +663,7 @@ describe('durable asset ownership lifecycle', () => {
         preparing.dispose();
 
         configureDurableAssetCommitProof({
-            getDisposition: (candidate) => (candidate.contentHash === proof.contentHash ? 'committed' : 'unknown'),
+            getDisposition: (candidate) => (isExactCommitProof(candidate, proof) ? 'committed' : 'unknown'),
         });
         const durableAssets = createDurableAssetRepository(projectOwner);
         const admitted = Promise.withResolvers<void>();
@@ -894,7 +904,7 @@ describe('durable asset ownership lifecycle', () => {
         transfer.dispose();
 
         configureDurableAssetCommitProof({
-            getDisposition: (candidate) => (candidate.contentHash === proof.contentHash ? 'committed' : 'unknown'),
+            getDisposition: (candidate) => (isExactCommitProof(candidate, proof) ? 'committed' : 'unknown'),
         });
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
         await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER));
@@ -930,8 +940,7 @@ describe('durable asset ownership lifecycle', () => {
         transfer.dispose();
 
         configureDurableAssetCommitProof({
-            getDisposition: (candidate) =>
-                candidate.contentHash === proof.contentHash ? 'terminal-noncommit' : 'unknown',
+            getDisposition: (candidate) => (isExactCommitProof(candidate, proof) ? 'terminal-noncommit' : 'unknown'),
         });
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
         await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER));
