@@ -48,7 +48,7 @@ pub struct AudioThreadHandle {
 ///
 /// Both ends of the shutdown exchange are dropped here, so `Drop` finds the
 /// channel disconnected on its first send and returns without waiting.
-#[cfg(test)]
+#[cfg(any(test, feature = "command-capture-fixture"))]
 pub(crate) fn detached_audio_thread_handle() -> AudioThreadHandle {
     let (shutdown_tx, _) = mpsc::channel();
     let (_, shutdown_complete_rx) = mpsc::channel();

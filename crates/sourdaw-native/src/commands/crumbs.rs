@@ -107,12 +107,45 @@ pub fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
 /// Managed state for crumbs instances.
 pub struct CrumbsState {
     pub instances: Arc<Mutex<HashMap<String, CrumbsInstanceData>>>,
+    #[cfg(test)]
+    before_engine_lock: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
 }
 
 impl Default for CrumbsState {
     fn default() -> Self {
         Self {
             instances: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(test)]
+            before_engine_lock: Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(test)]
+impl CrumbsState {
+    /// Rendezvous with one create immediately before it takes the engine mutex.
+    /// Test-only and per state, so parallel tests cannot observe each other.
+    fn observe_next_create_before_engine_lock(&self) -> std::sync::mpsc::Receiver<()> {
+        let (reached_tx, reached_rx) = std::sync::mpsc::sync_channel(0);
+        let previous = self
+            .before_engine_lock
+            .lock()
+            .expect("create observer lock should be available")
+            .replace(reached_tx);
+        assert!(previous.is_none(), "only one create observer may be armed");
+        reached_rx
+    }
+
+    fn notify_create_before_engine_lock(&self) {
+        let observer = self
+            .before_engine_lock
+            .lock()
+            .expect("create observer lock should be available")
+            .take();
+        if let Some(observer) = observer {
+            observer
+                .send(())
+                .expect("create observer receiver should remain alive");
         }
     }
 }
@@ -213,6 +246,15 @@ pub async fn create_crumbs(
         .instances
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+
+    // The map is also the ownership ledger for each runtime. Reject an
+    // existing id before allocating rings or registering anything engine-side;
+    // otherwise the insert below replaces the first ledger entry and strands
+    // its slot and bridge.
+    if instances.contains_key(&instance_id) {
+        return Err(format!("Crumbs instance '{instance_id}' already exists"));
+    }
+
     ensure_crumbs_capture_headroom(&instances)?;
 
     let (tx, rx) = rtrb::RingBuffer::new(128);
@@ -223,6 +265,9 @@ pub async fn create_crumbs(
     let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
     let metering = Arc::new(CrumbsMetering::default());
     let engine = CrumbsEngine::with_metering(sample_rate, metering.clone());
+
+    #[cfg(test)]
+    state.notify_create_before_engine_lock();
 
     // The engine guard is scoped to the registration alone — it is the
     // engine-wide mutex, not this instance's — while the instances guard
@@ -299,29 +344,34 @@ pub async fn destroy_crumbs(
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
 
-    if let Some(instance) = instances.remove(&instance_id) {
-        // Attempt the scheduler removal but never let its failure skip the
-        // bridge-handle cleanup — a stale ring would keep accepting blocks
-        // for a dead plugin (PR #564 review).
-        let removal_result = (|app_state: &&AppState| -> Result<(), String> {
-            let mut engine_guard = app_state
-                .engine
-                .lock()
-                .map_err(|e| format!("Failed to lock engine: {e}"))?;
-            if let Some(ref mut engine_handle) = *engine_guard {
-                engine_handle.remove_plugin(instance.engine_plugin_id)?;
-            }
-            Ok(())
-        })(&app_state);
+    let Some(engine_plugin_id) = instances
+        .get(&instance_id)
+        .map(|instance| instance.engine_plugin_id)
+    else {
+        return Ok(());
+    };
 
-        let mut feed = app_state
-            .audio_bridges
-            .lock()
-            .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-        feed.bridges.remove(&instance.engine_plugin_id);
+    // Keep both ownership ledgers intact until every fallible lock and the
+    // scheduler-removal admission succeed. A full command ring means the
+    // runtime is still live, so its map entry and bridge must remain reachable
+    // for retry. Lock order stays instances -> engine -> audio_bridges.
+    let mut engine_guard = app_state
+        .engine
+        .lock()
+        .map_err(|e| format!("Failed to lock engine: {e}"))?;
+    let mut feed = app_state
+        .audio_bridges
+        .lock()
+        .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
 
-        removal_result?;
+    if let Some(ref mut engine_handle) = *engine_guard {
+        engine_handle.remove_plugin(engine_plugin_id)?;
     }
+
+    // Once queued, scheduler retirement is inevitable. No fallible work may
+    // follow before command-side ownership is erased.
+    feed.bridges.remove(&engine_plugin_id);
+    instances.remove(&instance_id);
     Ok(())
 }
 
@@ -1027,6 +1077,360 @@ mod tests {
             .expect("crumbs state lock should be available");
         assert_eq!(instances.len(), CRUMBS_CAPTURE_RESERVE);
         assert!(!instances.contains_key("instance-overflow"));
+    }
+
+    /// A second create for the same UI/runtime id is refused while the
+    /// instances guard still owns the first entry. The original registration
+    /// survives unchanged, so the engine slot, effect-table ledger, bridge map,
+    /// and command-side map cannot grow or leak a runtime that destroy no
+    /// longer reaches.
+    #[test]
+    fn create_crumbs_refuses_a_duplicate_id_without_registering_another_runtime() {
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        {
+            *app_state
+                .engine
+                .lock()
+                .expect("engine lock should be available") = Some(engine);
+        }
+
+        let instance_id = "duplicate-crumbs";
+        crate::block_on_test(create_crumbs(
+            instance_id.to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect("the first create should register its runtime");
+
+        let original_engine_plugin_id = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .get(instance_id)
+            .expect("first create should retain its map entry")
+            .engine_plugin_id;
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
+            Ok(_) => panic!("the first engine command must register the crumbs slot and bridge"),
+            Err(_) => panic!("the first create must queue one engine registration command"),
+        };
+        assert_eq!(
+            registered_engine_plugin_id, original_engine_plugin_id,
+            "the map entry must own the engine id carried by the registration command"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "one successful create must queue exactly one engine registration command"
+        );
+        let bridge_count_after_first_create = app_state
+            .audio_bridges
+            .lock()
+            .expect("audio bridge lock should be available")
+            .bridges
+            .len();
+        assert_eq!(
+            bridge_count_after_first_create, 1,
+            "the first create must publish exactly one record bridge"
+        );
+
+        let refusal = crate::block_on_test(create_crumbs(
+            instance_id.to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect_err("a duplicate create must be refused");
+        assert_eq!(
+            refusal,
+            format!("Crumbs instance '{instance_id}' already exists")
+        );
+
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        assert_eq!(instances.len(), 1, "the duplicate must not grow the map");
+        assert_eq!(
+            instances
+                .get(instance_id)
+                .expect("the first entry must survive the refusal")
+                .engine_plugin_id,
+            original_engine_plugin_id,
+            "the duplicate must not overwrite the first runtime entry"
+        );
+        drop(instances);
+
+        assert!(
+            command_rx.pop().is_err(),
+            "the duplicate must not queue another engine/effect registration"
+        );
+        let feed = app_state
+            .audio_bridges
+            .lock()
+            .expect("audio bridge lock should be available");
+        assert_eq!(
+            feed.bridges.len(),
+            bridge_count_after_first_create,
+            "the duplicate must not publish another record bridge"
+        );
+        assert!(
+            feed.bridges.contains_key(&original_engine_plugin_id),
+            "the first record bridge must survive the refusal"
+        );
+        drop(feed);
+
+        crate::block_on_test(destroy_crumbs(instance_id.to_string(), &state, &app_state))
+            .expect("the original runtime must remain destroyable after the refusal");
+        let removed_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
+            Ok(_) => panic!("destroy must queue the bridged-plugin removal command"),
+            Err(_) => panic!("destroy must queue one engine removal command"),
+        };
+        assert_eq!(
+            removed_engine_plugin_id, registered_engine_plugin_id,
+            "destroy must remove the exact engine id registered by the original create"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "destroy must queue exactly one engine removal command"
+        );
+        assert!(
+            !state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .contains_key(instance_id),
+            "destroy must remove the original map entry"
+        );
+        assert!(
+            app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .is_empty(),
+            "destroy must remove the original record bridge"
+        );
+    }
+
+    /// A full scheduler command ring refuses destruction before either runtime
+    /// ownership ledger is changed. Once capacity is available, the retry must
+    /// queue the exact original retirement once and only then erase ownership.
+    #[test]
+    fn destroy_crumbs_keeps_the_runtime_owned_until_removal_is_admitted() {
+        const INSTANCE_ID: &str = "queue-full-destroy-crumbs";
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(1);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        crate::block_on_test(create_crumbs(
+            INSTANCE_ID.to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect("create should fill the one-command scheduler ring");
+
+        let original_engine_plugin_id = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .get(INSTANCE_ID)
+            .expect("create should publish the ownership entry")
+            .engine_plugin_id;
+
+        let refusal =
+            crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+                .expect_err("destroy must refuse while scheduler-removal admission is full");
+        assert_eq!(refusal, "Audio command queue full");
+        assert_eq!(
+            state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .get(INSTANCE_ID)
+                .expect("failed admission must preserve the ownership entry")
+                .engine_plugin_id,
+            original_engine_plugin_id
+        );
+        assert!(
+            app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .contains_key(&original_engine_plugin_id),
+            "failed admission must preserve the live runtime bridge"
+        );
+
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
+            Ok(_) => panic!("the retained command must be the original registration"),
+            Err(_) => panic!("create must have filled the one-command scheduler ring"),
+        };
+        assert_eq!(registered_engine_plugin_id, original_engine_plugin_id);
+        assert!(
+            command_rx.pop().is_err(),
+            "failed destroy must not queue a removal command"
+        );
+
+        crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("destroy should succeed after scheduler capacity is drained");
+
+        let removed_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
+            Ok(_) => panic!("retry must queue the bridged-plugin removal command"),
+            Err(_) => panic!("retry must queue one engine removal command"),
+        };
+        assert_eq!(
+            removed_engine_plugin_id, original_engine_plugin_id,
+            "retry must remove the exact runtime registered by create"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "retry must queue exactly one engine removal command"
+        );
+        assert!(
+            !state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .contains_key(INSTANCE_ID),
+            "ownership entry may disappear only after removal admission succeeds"
+        );
+        assert!(
+            !app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .contains_key(&original_engine_plugin_id),
+            "bridge may disappear only after removal admission succeeds"
+        );
+    }
+
+    /// The instances mutex is the create transaction boundary: while one
+    /// create is parked on engine registration, another create of the same id
+    /// cannot pass the identity check or register a second runtime.
+    #[test]
+    fn concurrent_duplicate_create_holds_the_instances_lock_through_registration() {
+        const INSTANCE_ID: &str = "concurrent-duplicate-crumbs";
+
+        let state = Arc::new(CrumbsState::default());
+        let app_state = Arc::new(AppState::default());
+        let first_reached_engine_lock = state.observe_next_create_before_engine_lock();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        // Park the first create at the engine lock. It must retain the
+        // instances lock while parked; that is the ownership invariant under
+        // test, observed directly with try_lock below.
+        let engine_guard = app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available");
+        let first_state = Arc::clone(&state);
+        let first_app_state = Arc::clone(&app_state);
+        let first_create = std::thread::spawn(move || {
+            crate::block_on_test(create_crumbs(
+                INSTANCE_ID.to_string(),
+                48_000.0,
+                &first_state,
+                &first_app_state,
+            ))
+        });
+        first_reached_engine_lock
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("first create should reach the engine lock within the bounded wait");
+        match state.instances.try_lock() {
+            Err(std::sync::TryLockError::WouldBlock) => {}
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                panic!("crumbs instances lock must not be poisoned")
+            }
+            Ok(_) => {
+                panic!("the first create must hold the instances lock while blocked on the engine")
+            }
+        }
+
+        let (second_started_tx, second_started_rx) = std::sync::mpsc::sync_channel(0);
+        let second_state = Arc::clone(&state);
+        let second_app_state = Arc::clone(&app_state);
+        let second_create = std::thread::spawn(move || {
+            second_started_tx
+                .send(())
+                .expect("second-create start receiver should remain alive");
+            crate::block_on_test(create_crumbs(
+                INSTANCE_ID.to_string(),
+                48_000.0,
+                &second_state,
+                &second_app_state,
+            ))
+        });
+        second_started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("second create should start within the bounded wait");
+
+        drop(engine_guard);
+
+        first_create
+            .join()
+            .expect("first create thread should not panic")
+            .expect("the lock-owning first create must succeed");
+        let second_refusal = second_create
+            .join()
+            .expect("second create thread should not panic")
+            .expect_err("the concurrent duplicate create must be refused");
+        assert_eq!(
+            second_refusal,
+            format!("Crumbs instance '{INSTANCE_ID}' already exists")
+        );
+
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
+            Ok(_) => panic!("the successful create must queue a bridged-plugin registration"),
+            Err(_) => panic!("the successful create must queue one engine registration command"),
+        };
+        assert!(
+            command_rx.pop().is_err(),
+            "the concurrent creates must queue exactly one engine registration command"
+        );
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        assert_eq!(instances.len(), 1);
+        assert_eq!(
+            instances
+                .get(INSTANCE_ID)
+                .expect("the successful create must own one map entry")
+                .engine_plugin_id,
+            registered_engine_plugin_id
+        );
+        drop(instances);
+        assert_eq!(
+            app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .len(),
+            1,
+            "the concurrent duplicate must not publish a second bridge"
+        );
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
@@ -22,6 +24,12 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { createTrack, type Track } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
@@ -38,6 +46,15 @@ type LegacyVcaState = {
     groups: ReturnType<typeof getVcaGroupsState>;
     memberships: Array<{ trackId: string; vcaGroupId: string | null }>;
 };
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
 
 function captureState(): LegacyVcaState {
     return {
@@ -127,12 +144,19 @@ async function expectRoundTrip(action: AppAction): Promise<void> {
 
 describe('legacy VCA action history', () => {
     beforeEach(() => {
+        Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         macroStore.set({ macros: [], recording: true, currentRecording: [] });
         sidechainStore.set({ routes: [] });
@@ -154,6 +178,8 @@ describe('legacy VCA action history', () => {
         resetActionReplayAuthority();
         clearUndoHistory();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
+        Container.clear();
         setVcaGroupsState([]);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
@@ -287,6 +313,9 @@ describe('legacy VCA action history', () => {
         expect(getVcaGroupsState().find((group) => group.id === 'vca-a')?.gain).toBe(1.25);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
+        expect(notifications).toEqual([
+            { message: 'Cannot redo "Set VCA Gain": project state has changed', level: 'warning' },
+        ]);
     });
 
     it.each([
