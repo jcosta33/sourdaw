@@ -1,0 +1,165 @@
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_830cd5e141b12e 17-18,24,269-270,333-336,342-346,368-443
+  s_a40848e8f8cca9::t_fafce0b0c5f36f 444
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_0a0a7888fa9bc1 17,24,46-49,112-113,336-568
+  s_a40848e8f8cca9::t_c7c886692f0da7 569
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_8759f214288734 932
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_2564abc3a1b1eb 81-82,130-131,263,422,579-584
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_8a556d2903b5ff 79,149,199
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_179bf187471d97 329-335,343-400,453,465-468
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_a40848e8f8cca9::t_ebf28ca182b9b5 3,5,27-44,129-207
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_3681dae9130218 20-22,24,35,38-39,42,112,134-313,751-781,1526-1529,1578,1652,1681-1776,1793-1796,1802-1813
+src/modules/AiRuntime/stores/index.ts
+  s_a40848e8f8cca9::t_4172f97e313499 25-30
+src/modules/AiRuntime/stores/selectAgentRunPendingEffectRecoveries.ts
+  s_a40848e8f8cca9::t_e19c4d2c68d584 1-48
+src/modules/AiRuntime/stores/selectPreparedStemImportManualRepairs.ts
+  s_a40848e8f8cca9::t_6a18759918a0c3 1-25
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_1c164580b7b343 4,8-20,35-93,96-97,335-863
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_bae4d46dc57717 9-11,16,20,23-24,26,37,56,60,68-110,119-120,180,210-212,726-732,937-1143
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_b9e35e6e63eec2 7-10,59,99,111,117-235
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_b12db978220bf1 3,6,50-54,56,97-115,170-176,182-191,193-196,450-507
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_59aa42a439ac30 462
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_72d8479c183aff 184-222
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_a40848e8f8cca9::t_bd8d6a5e5300ea 24,298-444
+src/modules/AiRuntime/useCases/__tests__/recordAgentRunReceiptSaga.spec.ts
+  s_a40848e8f8cca9::t_f06958842d6f33 1-310
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_2361521a38c343 16-22,26,29-53,55-94,98,163-189,191-231,233,235-239,241-353,385-387,426,490
+src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_79b8b7ecc6057d 31,51-63,91-94,96-106,157,168-170,233,274-280,285-291,296-298,309-320,340-353
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_e3aa0018c3b945 15-16,19,23,28,115-158,254,654-870,1007-1023,1026-1027,1030-1032,1043,1047,1049-1050,1052-1071,1074-1107,1114,1116,1118-1141,1143-1177,1388-1389,1397-1401
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_8bf22a2e91424a 22,28-33,35-37,41-44,48-79,82,90-95,97,101
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_7c4d36e48b8a30 48,62-75,81,97-115,191-193,238-257,658,660,665-668,805-811,856-859,870-883,961,984-986,1049-1051,1054-1058,1078-1083,1091,1102,1110,1112-1114,1124-1126,1151-1164,1186-1200
+src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_8e79f7b6e8ad62 1-23
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_30939e01d29c8c 14,91-97
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_e7a6ee37d80e08 94,342
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_f2b54e3a08fc8b 65-66
+src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_e945a7e375c8ad 1-46
+src/modules/AiRuntime/useCases/reconcilePreparedStemImportRecovery.ts
+  s_a40848e8f8cca9::t_06990097afde68 10
+src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_30bc653e72dc96 1-24
+src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_b1879710ef4259 1,6,9,23,27-50,57,155-196
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_a40848e8f8cca9::t_89380eddcb4927 1-109
+src/modules/AiRuntime/useCases/recoverPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_b6e0fc76f29744 7-11,14-16,33-44
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_f01f4706576fc9 141,151,1024,1067
+src/modules/AiRuntime/validators/hasSamePreparedStemImportRecovery.ts
+  s_a40848e8f8cca9::t_8f021c517d0bad 1-21
+src/modules/Arrangement/handlers/device/__tests__/handleAddDevice.spec.ts
+  s_a40848e8f8cca9::t_cab00a5f817733 170,231-246,248-251,253-309
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_a40848e8f8cca9::t_c4f27be70aba18 45,95,165-166,203-204,217-252
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPluginCommand.spec.ts
+  s_a40848e8f8cca9::t_2fabe5d535e1f5 181
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_6649123cf948a9 25-28,32-37,50-79,224,239-243,245,253-256,265-270,278-299,339
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_a40848e8f8cca9::t_37a232dca34a48 78,117,122-124,132
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_a40848e8f8cca9::t_ffb0660576291b 91,177-186
+src/modules/Arrangement/useCases/device/runtimeDeviceDeltaPostCommit.ts
+  s_a40848e8f8cca9::t_bd9c9cc86de8cf 26-31,44-49
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_a40848e8f8cca9::t_9628df0020f573 25,52,95,101
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_26f97cbdb44746 13,19,24,30,117-118,137-138,144,189-191,202,239,261,284-314,339-360,454,472-997
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_47e77b30f45c08 577-647
+src/modules/Command/useCases/__tests__/loadExternalPluginVersionedRecovery.spec.ts
+  s_a40848e8f8cca9::t_054e0bbacc9476 1-250
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_a40848e8f8cca9::t_11e671faa2f672 15,137-141,143,518-525,528,541-542,550-559,563-621
+src/modules/Command/useCases/commandRuntimeRepairPort.ts
+  s_a40848e8f8cca9::t_26a010bcd8f265 1-15
+src/modules/Command/useCases/createVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_0c15fab810cbc0 36-44,319-322,338
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_10a5d01842d3d4 17,45-56,61,94-98,112,140-213,360,706,881-890,961,980
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_016fa11023a4fb 10,26
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_1e1a3f63a81349 32-38,42-48,55-111,138-142,311,314,334-341,557-565,581-583,593-606,672-683
+src/modules/Command/useCases/getVersionedCommandBatchIdempotentReplay.ts
+  s_a40848e8f8cca9::t_77c12ce5881bb9 5,13-16,26-45
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_625f6dd9e5279e 11
+src/modules/Command/useCases/isAppActionCommittedError.ts
+  s_a40848e8f8cca9::t_9386b6e47d6200 3
+src/modules/Command/useCases/parseStoredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_d304fcbe4f1990 17-27,97-114,145,171-182,190-193
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_56b002e42250d9 6-7,15,26-31,45-52,56-57,62-112,114-193,195-199,201-202,204,207,211-240
+src/modules/PluginHost/useCases/index.ts
+  s_a40848e8f8cca9::t_e12e786df632e8 25
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_a40848e8f8cca9::t_22a6e31495f7bd 10,147-182,212-225
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_a40848e8f8cca9::t_3303672a6505b1 1-142
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_a40848e8f8cca9::t_45606deee9b202 9-14,18,71-80,82-117,130-131,134-140,149,165,169,173,180-181,183-194
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_a40848e8f8cca9::t_ec5cbeaa9655be 1-5,7-11,26-29
+src/modules/PluginHost/useCases/pluginLifecycle/externalPluginActivationTasks.ts
+  s_a40848e8f8cca9::t_2d5e84c9416ee4 1-6
+src/modules/PluginHost/useCases/pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild.ts
+  s_a40848e8f8cca9::t_c64af8737a7b42 1-36
+src/modules/PluginHost/useCases/pluginLifecycle/serializePluginLifecycle.ts
+  s_a40848e8f8cca9::t_1f90e55325eef0 1-5,7-87,93
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_a40848e8f8cca9::t_c4e12204726017 8,15-16
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_23195b7c9cc203 98-103,246-263
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  s_a40848e8f8cca9::t_8c39ed2c472856 1-128
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_a40848e8f8cca9::t_f2aa206d3b844d 20-26,59,62-66,79,81,85-87,89-97,106
+src/modules/Transport/useCases/index.ts
+  s_a40848e8f8cca9::t_8ccb50d7edef6c 5
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  s_a40848e8f8cca9::t_6dcd2d99d232e2 1-53
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_f6b14a2753d099 2264-2267,2272,2280-2281,2287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "1fde4e434006490b829611ce98b7e10584cdf39b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
