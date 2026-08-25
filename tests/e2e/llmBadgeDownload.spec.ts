@@ -8,7 +8,7 @@ import { launch_new_project, setupAdmittedWebLlmWorkspace, setupWorkspace } from
 // renders pre-download, reachable without WebGPU completing, so the panel
 // contract is assertable without downloading anything.
 test.describe('LlmStatusBadge — model download affordances', () => {
-    test('withholds download affordances when the local provider is not admitted', async ({ page }) => {
+    test('withholds download affordances when admitted WebLLM lacks runtime capability', async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -22,7 +22,11 @@ test.describe('LlmStatusBadge — model download affordances', () => {
         await page.getByTestId('toggle-preferences').click();
         const dialog = page.getByRole('dialog');
         await dialog.getByRole('button', { name: 'AI', exact: true }).click();
-        await expect(dialog.getByText('No local language model is admitted in this release.')).toBeVisible();
+        await expect(
+            dialog.getByText(
+                'Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts remotely.'
+            )
+        ).toBeVisible();
     });
 
     test('exposes download affordances when the local provider is admitted', async ({ page }) => {
