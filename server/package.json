@@ -5,7 +5,7 @@
     "scripts": {
         "dev": "tsx collab-server.ts",
         "build": "tsc",
-        "test": "vitest --config vitest.config.mjs run __tests__/collab-server.spec.ts",
+        "test": "tsx --test __tests__/*.spec.ts",
         "start": "node dist/collab-server.js"
     },
     "dependencies": {
@@ -14,7 +14,6 @@
     "devDependencies": {
         "@types/ws": "^8.18.1",
         "tsx": "^4.23.1",
-        "typescript": "^7.0.2",
-        "vitest": "^4.1.11"
+        "typescript": "^7.0.2"
     }
 }

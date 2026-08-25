@@ -1930,6 +1930,11 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             toaster: 3,
             crust: 2,
             levain: 1,
+            // `lim_ceiling` calls `clamped_param(value, MIN_CEILING_DB,
+            // MAX_CEILING_DB, …)`, a helper/named-constant shape this scanner
+            // does not derive. The other compared rows, `input_gain` and
+            // `output_gain`, delegate to `gain_from_db(value)`, putting their
+            // clamps another call away.
             proof: 0,
 
             // ── Leg 3 is blind for these four, each for a stated reason. ─────
