@@ -51,10 +51,17 @@ Hooks and **views** **do not** use `inject()`. They subscribe to stores via cont
 
 ---
 
-## What is still open
+## Error handling
 
-> [!NOTE]
-> **Error handling** — no single documented pattern for surfacing errors from use cases to callers; `Result`-style alignment with the native command boundary is a future direction.
+Use cases fail by throwing typed errors — classes extending `Error`, defined in the module's
+`errors/` folder or beside the code that raises them. Repositories translate I/O failures into
+typed errors at their boundary, so raw storage, network, and bridge failures never leak past the
+repository root. Presentation catches at the UI boundary and renders a structured failure state.
+Do not introduce `Result`-returning use cases; thrown typed errors are the contract.
+
+---
+
+## What is still open
 
 > [!NOTE]
 > **Internationalisation (i18n)** — not yet documented end-to-end.
