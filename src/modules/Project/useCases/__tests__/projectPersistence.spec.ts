@@ -10,7 +10,17 @@ import { saveProject } from '../projectPersistence/saveProject/saveProject';
 import type { ProjectStoreState } from '../../stores/projectStore';
 
 const mocks = vi.hoisted(() => ({
-    projectStoreValue: { value: { loading: false, dirty: false, name: 'Initial' } as unknown as ProjectStoreState },
+    projectStoreValue: {
+        value: {
+            dirty: false,
+            identityMigrationPending: false,
+            identityPersistencePending: false,
+            initialized: true,
+            loading: false,
+            name: 'Initial',
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+        } as unknown as ProjectStoreState,
+    },
     projectStoreSet: vi.fn<(...args: unknown[]) => void>(),
     createCrdtProject: vi.fn<() => void>(),
     getCrdtDoc: vi.fn(),
@@ -96,7 +106,11 @@ describe('Project Persistence Use Cases', () => {
         mocks.projectStoreValue.value = {
             loading: false,
             dirty: false,
+            identityMigrationPending: false,
+            identityPersistencePending: false,
+            initialized: true,
             name: 'Initial',
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
         } as unknown as ProjectStoreState;
         mocks.getCrdtDoc.mockReturnValue({
             tracks: {
