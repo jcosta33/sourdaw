@@ -1,4 +1,4 @@
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { parseVersionedCommandBatchEnvelope, requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -213,7 +213,10 @@ export async function submitAdmittedPromptRequest(
             projectRevision: planned.projectRevision,
             runId,
             mode: 'apply',
-            requiresConfirmation: planned.result.requiresConfirmation || input.requiresConfirmation === true,
+            requiresConfirmation:
+                requiresAppActionConfirmation(planned.result.actions) ||
+                planned.result.requiresConfirmation ||
+                input.requiresConfirmation === true,
         });
         const parsed = parseVersionedCommandBatchEnvelope(
             compiled.commandBatch.serialized,

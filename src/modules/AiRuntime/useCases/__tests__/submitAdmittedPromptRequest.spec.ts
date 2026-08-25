@@ -351,6 +351,45 @@ describe('submitAdmittedPromptRequest', () => {
         });
     });
 
+    it('requires approval for an authority-sensitive direct preset even when its metadata does not', async () => {
+        const routingAction: AppAction = {
+            type: 'setTrackOutput',
+            payload: { trackId: 'track-1', outputId: 'master' },
+        };
+
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Route track',
+            source: 'preset',
+            actions: [routingAction],
+            requiresConfirmation: false,
+        });
+
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [routingAction],
+                requiresConfirmation: true,
+            })
+        );
+        expect(result).toMatchObject({ status: 'awaiting-approval', runId: RUN_ID });
+    });
+
+    it('auto-executes a safe togglePlayback direct preset', async () => {
+        mocks.compileAgentActionExecution.mockReturnValue({
+            ...compiled,
+            agentApproval: null,
+            requiresConfirmation: false,
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Play', source: 'preset', actions: [action] })
+        ).resolves.toEqual({ status: 'committed', runId: RUN_ID });
+
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({ actions: [action], requiresConfirmation: false })
+        );
+        expect(mocks.executePromptActionGroup).toHaveBeenCalledOnce();
+    });
+
     it.each(['committed', 'executed', 'failed', 'cancelled', 'ambiguous', 'no-op'] as const)(
         'returns the exact %s command outcome through the admitted submission boundary',
         async (status) => {
