@@ -1,0 +1,38 @@
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_d3e22bd245c726 320-323,325-338,373-377
+  s_a40848e8f8cca9::t_59690c9f549a24 380-424
+  s_a40848e8f8cca9::t_a8e0fabb678399 324
+  s_a40848e8f8cca9::t_d37c43b17d17a4 378-379
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_3ff9378f55eab0 67-115
+  s_a40848e8f8cca9::t_bdfddff84a2b7e 116-119
+src/modules/AiRuntime/stores/index.ts
+  s_a40848e8f8cca9::t_3ff9378f55eab0 25-27
+src/modules/Command/useCases/__tests__/loadExternalPluginVersionedRecovery.spec.ts
+  s_a40848e8f8cca9::t_26e5de8b227833 3-12,51-52,59-69,87-89,120-124,128-134,240-243,245-246
+  s_a40848e8f8cca9::t_a8e0fabb678399 207-210
+  s_a40848e8f8cca9::t_1b0dae5de2193b 1-2,13-50,53-58,70-86,90-119,125-127,135-206,211-239,244,247-261
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPluginCommand.spec.ts
+  s_a40848e8f8cca9::t_59690c9f549a24 181
+src/modules/AiRuntime/stores/selectAgentRunPendingEffectRecoveries.ts
+  s_a40848e8f8cca9::t_a8e0fabb678399 36-38
+  s_a40848e8f8cca9::t_3ff9378f55eab0 1-35,39-48
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_3ff9378f55eab0 17,261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "8d58608a5c9e9d43b0755643b0746ca70e08d422",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
