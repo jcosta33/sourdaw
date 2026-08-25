@@ -5,6 +5,9 @@ import {
     constants,
     cpSync,
     existsSync,
+    fstatSync,
+    linkSync,
+    lstatSync,
     mkdirSync,
     mkdtempSync,
     openSync,
@@ -17,6 +20,7 @@ import {
     truncateSync,
     writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -585,6 +589,19 @@ describe('release proof', () => {
         expect(publicationInventory).toBe(observedInventory);
     });
 
+    it('fails closed when the release inventory manifest is a symlink', () => {
+        const fixture = createFixture();
+        const inventoryPath = join(fixture.root, 'release/open-source-inventory.json');
+        const outside = join(fixture.base, 'outside-open-source-inventory.json');
+        write(outside, readFileSync(inventoryPath));
+        rmSync(inventoryPath);
+        symlinkSync(outside, inventoryPath);
+        fixture.revision = commit(fixture.root, 'symlink release inventory');
+
+        expect(() => assemble(fixture)).toThrow('release inventory cannot be read safely');
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
     it('pins the WebLLM packaged legal path list', () => {
         expect(hashValue(JSON.stringify([...WEBLLM_REQUIRED_LEGAL_FILES].sort()))).toBe(
             WEBLLM_PACKAGED_PATH_LIST_DIGEST
@@ -1071,6 +1088,36 @@ describe('release proof', () => {
         rmSync(material);
         symlinkSync(outside, material);
         expect(validate(fixture)).toMatch(/symbolic links are forbidden|file is missing/u);
+    });
+
+    it('rejects a candidate file that has another hard link', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const proofPath = join(fixture.candidate, 'release-proof.json');
+        linkSync(proofPath, join(fixture.base, 'release-proof.alias.json'));
+
+        expect(validate(fixture)).toContain('release-proof.json: malformed JSON (JSON document cannot be read safely');
+    });
+
+    it('rejects a candidate file hard-linked while its descriptor opens', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const proofPath = join(fixture.candidate, 'release-proof.json');
+        const aliasPath = join(fixture.base, 'release-proof.raced.json');
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (path === proofPath) {
+                    linkSync(path, aliasPath);
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+        };
+
+        expect(validate(fixture, fileReader)).toContain(
+            'release-proof.json: malformed JSON (JSON document cannot be read safely'
+        );
     });
 
     it.each([
@@ -1605,16 +1652,91 @@ describe('release proof', () => {
         expect(existsSync(fixture.candidate)).toBe(false);
     });
 
+    it('executes the publisher only through an inherited verified descriptor', () => {
+        const fixture = createFixture();
+        let executionTarget: string | undefined;
+        const publisherPreparer: ReleaseProofPublisherPreparer = () =>
+            prepareAtomicDirectoryPublisher((executable) => {
+                executionTarget = executable;
+                return { status: 1, stderr: 'publisher blocked for inspection' };
+            });
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('atomic release proof publication failed');
+        expect(executionTarget).toBe('/dev/fd/3');
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('rejects and identity-safely cleans a published directory whose child bytes changed', () => {
+        const fixture = createFixture();
+        let invalidated = false;
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
+            publish(source, destination) {
+                renameSync(source, destination);
+                write(join(destination, 'release-proof.json'), '{}');
+            },
+            invalidate() {
+                invalidated = true;
+            },
+            dispose: () => undefined,
+        });
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('published directory bytes changed during publication');
+        expect(invalidated).toBe(true);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
     it('rejects and cleans a compiled helper replaced through the publisher process seam', () => {
         const fixture = createFixture();
         let helperRoot: string | undefined;
         const publisherPreparer: ReleaseProofPublisherPreparer = () =>
-            prepareAtomicDirectoryPublisher((executable) => {
-                helperRoot = dirname(executable);
+            prepareAtomicDirectoryPublisher((executable, source, destination, executableDescriptor) => {
+                expect(executable).toBe('/dev/fd/3');
+                const opened = fstatSync(executableDescriptor);
+                let helperPath: string | undefined;
+                for (const entry of readdirSync(tmpdir())) {
+                    if (!entry.startsWith('sourdaw-exclusive-rename-')) {
+                        continue;
+                    }
+                    const candidate = join(tmpdir(), entry, 'rename-exclusive');
+                    try {
+                        const metadata = lstatSync(candidate);
+                        if (metadata.dev === opened.dev && metadata.ino === opened.ino) {
+                            helperPath = candidate;
+                            break;
+                        }
+                    } catch {
+                        // A concurrent publisher may have already removed its private helper.
+                    }
+                }
+                if (helperPath === undefined) {
+                    throw new Error('compiled publisher helper path was not found');
+                }
+                helperRoot = dirname(helperPath);
                 chmodSync(helperRoot, 0o700);
-                renameSync(executable, `${executable}.captured`);
-                write(executable, 'replacement helper');
-                chmodSync(executable, 0o500);
+                renameSync(helperPath, `${helperPath}.captured`);
+                write(helperPath, 'replacement helper');
+                chmodSync(helperPath, 0o500);
+                renameSync(source, destination);
                 return { status: 0, stderr: '' };
             });
 

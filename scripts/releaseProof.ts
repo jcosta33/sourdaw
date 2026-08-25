@@ -178,7 +178,8 @@ export type ReleaseProofPublisherPreparer = () => ReleaseProofPublisher;
 export type ReleaseProofPublisherRunner = (
     executable: string,
     source: string,
-    destination: string
+    destination: string,
+    executableDescriptor: number
 ) => { status: number | null; error?: Error; stderr: string };
 
 const releaseProofFileReader: ReleaseProofFileReader = {
@@ -200,14 +201,11 @@ const ATOMIC_RENAME_HELPER_SOURCE = String.raw`
 #endif
 #endif
 
-int main(int argc, char **argv) {
-    if (argc != 3) {
-        return 64;
-    }
+int publish_exclusive(const char *source, const char *destination) {
 #if defined(__APPLE__)
-    int result = renamex_np(argv[1], argv[2], RENAME_EXCL);
+    int result = renamex_np(source, destination, RENAME_EXCL);
 #elif defined(__linux__)
-    int result = syscall(SYS_renameat2, AT_FDCWD, argv[1], AT_FDCWD, argv[2], RENAME_NOREPLACE);
+    int result = syscall(SYS_renameat2, AT_FDCWD, source, AT_FDCWD, destination, RENAME_NOREPLACE);
 #else
 #error unsupported release proof publication platform
 #endif
@@ -220,7 +218,20 @@ int main(int argc, char **argv) {
 }
 `;
 
+const ATOMIC_RENAME_HELPER_BRIDGE = String.raw`
+import ctypes
+import os
+import sys
+
+publisher = ctypes.CDLL(sys.argv[1])
+publisher.publish_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+publisher.publish_exclusive.restype = ctypes.c_int
+raise SystemExit(publisher.publish_exclusive(os.fsencode(sys.argv[2]), os.fsencode(sys.argv[3])))
+`;
+
 const ATOMIC_RENAME_HELPER_LIMIT = 4 * 1024 * 1024;
+const ATOMIC_RENAME_CHILD_DESCRIPTOR = 3;
+const ATOMIC_RENAME_DESCRIPTOR_PATH = `/dev/fd/${String(ATOMIC_RENAME_CHILD_DESCRIPTOR)}`;
 
 function sha256Descriptor(descriptor: number, size: number): string {
     const hash = createHash('sha256');
@@ -238,11 +249,16 @@ function sha256Descriptor(descriptor: number, size: number): string {
 }
 
 export function prepareAtomicDirectoryPublisher(
-    runner: ReleaseProofPublisherRunner = (executable, source, destination) => {
-        const result = spawnSync(executable, [source, destination], {
-            encoding: 'utf8',
-            env: { PATH: '/usr/bin:/bin' },
-        });
+    runner: ReleaseProofPublisherRunner = (executable, source, destination, executableDescriptor) => {
+        const result = spawnSync(
+            '/usr/bin/python3',
+            ['-I', '-S', '-c', ATOMIC_RENAME_HELPER_BRIDGE, executable, source, destination],
+            {
+                encoding: 'utf8',
+                env: { PATH: '/usr/bin:/bin' },
+                stdio: ['ignore', 'pipe', 'pipe', executableDescriptor],
+            }
+        );
         return {
             status: result.status,
             ...(result.error === undefined ? {} : { error: result.error }),
@@ -264,6 +280,7 @@ export function prepareAtomicDirectoryPublisher(
             '-x',
             'c',
             '-O2',
+            ...(process.platform === 'darwin' ? ['-dynamiclib'] : ['-shared', '-fPIC']),
             '-o',
             helperPath,
             '-',
@@ -350,8 +367,7 @@ export function prepareAtomicDirectoryPublisher(
         return {
             publish(source, destination) {
                 const pinnedDescriptor = verifyIdentity();
-                const published = runner(helperPath, source, destination);
-                void pinnedDescriptor;
+                const published = runner(ATOMIC_RENAME_DESCRIPTOR_PATH, source, destination, pinnedDescriptor);
                 verifyIdentity();
                 if (published.status === 17) {
                     throw new Error('release proof output appeared before atomic publication');
@@ -379,12 +395,55 @@ export function prepareAtomicDirectoryPublisher(
     }
 }
 
+type DirectoryIdentity = {
+    dev: number;
+    ino: number;
+};
+
+function directoryByteIdentity(directory: string): ReadonlyArray<readonly [string, string]> {
+    const label = 'published release proof';
+    const errors: string[] = [];
+    const paths = listFiles(directory, label, errors);
+    const identity: Array<readonly [string, string]> = [];
+    for (const path of paths) {
+        const digest = sha256ContainedRegularFile(
+            directory,
+            resolve(directory, ...path.split('/')),
+            RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes
+        );
+        if (digest === undefined) {
+            errors.push(`${label}: missing or unsafe ${path}`);
+        } else {
+            identity.push([path, digest]);
+        }
+    }
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+    return identity;
+}
+
+function removePublishedDirectoryIfIdentity(path: string, identity: DirectoryIdentity): void {
+    let current: ReturnType<typeof lstatSync>;
+    try {
+        current = lstatSync(path);
+    } catch {
+        // A missing or replaced destination is not the validated directory and must not be followed.
+        return;
+    }
+    if (current.isDirectory() && current.dev === identity.dev && current.ino === identity.ino) {
+        rmSync(path, { recursive: true, force: true });
+    }
+}
+
 function publishValidatedDirectory(publisher: ReleaseProofPublisher, source: string, destination: string): void {
     const sourceMetadata = lstatSync(source);
     if (!sourceMetadata.isDirectory()) {
         publisher.invalidate();
         throw new Error('release proof publication source is not a directory');
     }
+    const sourceIdentity = { dev: sourceMetadata.dev, ino: sourceMetadata.ino };
+    const sourceBytes = directoryByteIdentity(source);
     try {
         publisher.publish(source, destination);
         if (existsSync(source)) {
@@ -398,8 +457,16 @@ function publishValidatedDirectory(publisher: ReleaseProofPublisher, source: str
         ) {
             throw new Error('atomic release proof publisher did not publish the validated directory identity');
         }
+        const destinationBytes = directoryByteIdentity(destination);
+        if (!sameValue(destinationBytes, sourceBytes)) {
+            throw new Error('published directory bytes changed during publication');
+        }
     } catch (error) {
-        publisher.invalidate();
+        try {
+            removePublishedDirectoryIfIdentity(destination, sourceIdentity);
+        } finally {
+            publisher.invalidate();
+        }
         throw error;
     }
 }
@@ -460,7 +527,7 @@ function withContainedRegularFile<Result>(
         }
         const rootRealPath = realpathSync(root);
         const beforeOpen = lstatSync(path);
-        if (!beforeOpen.isFile()) {
+        if (!beforeOpen.isFile() || beforeOpen.nlink !== 1) {
             return undefined;
         }
         descriptor = (fileReader.open ?? openSync)(path, constants.O_RDONLY | noFollowFlag);
@@ -474,6 +541,9 @@ function withContainedRegularFile<Result>(
         if (
             !opened.isFile() ||
             !afterOpen.isFile() ||
+            opened.nlink !== 1 ||
+            afterOpen.nlink !== 1 ||
+            resolved.nlink !== 1 ||
             !isContained(rootRealPath, realPath) ||
             opened.dev !== beforeOpen.dev ||
             opened.ino !== beforeOpen.ino ||

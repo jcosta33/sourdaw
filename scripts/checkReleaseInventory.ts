@@ -348,19 +348,24 @@ function openRepositoryRegularFile(
             throw new Error(`no-follow open is unavailable: ${absolutePath}`);
         }
         const beforeOpen = lstatSync(absolutePath);
-        if (!beforeOpen.isFile()) {
+        if (!beforeOpen.isFile() || beforeOpen.nlink !== 1) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
         fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | noFollowFlag);
         const opened = fstatSync(fileDescriptor);
-        if (!opened.isFile()) {
+        if (!opened.isFile() || opened.nlink !== 1) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
         if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
             throw new Error(`path changed while opening: ${absolutePath}`);
         }
         const afterOpen = lstatSync(absolutePath);
-        if (!afterOpen.isFile() || opened.dev !== afterOpen.dev || opened.ino !== afterOpen.ino) {
+        if (
+            !afterOpen.isFile() ||
+            afterOpen.nlink !== 1 ||
+            opened.dev !== afterOpen.dev ||
+            opened.ino !== afterOpen.ino
+        ) {
             throw new Error(`path changed while opening: ${absolutePath}`);
         }
         const realPath = realpathSync(absolutePath);
@@ -368,7 +373,7 @@ function openRepositoryRegularFile(
             throw new Error(`path escapes repository root: ${absolutePath}`);
         }
         const resolved = statSync(realPath);
-        if (opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
+        if (resolved.nlink !== 1 || opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
             throw new Error(`path changed while opening: ${absolutePath}`);
         }
         return fileDescriptor;

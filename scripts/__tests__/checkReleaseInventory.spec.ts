@@ -1077,6 +1077,73 @@ describe('release inventory', () => {
         }
     });
 
+    it('does not read a tracked path-addressed digest file with another hard link', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-hard-link-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'contained legal bytes');
+            linkSync(filePath, join(base, 'contained.alias.txt'));
+
+            const changed = loadRepositorySnapshot(root, value, [path]);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read a tracked path-addressed digest file hard-linked while its descriptor opens', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-hard-link-race-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const aliasPath = join(base, 'contained.raced.txt');
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        let byteReads = 0;
+        let textReads = 0;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'contained legal bytes');
+            const readFile = {
+                open: (openPath: string, flags: number) => {
+                    const descriptor = openSync(openPath, flags);
+                    if (openPath === filePath) {
+                        linkSync(filePath, aliasPath);
+                    }
+                    return descriptor;
+                },
+                noFollowFlag: () => constants.O_NOFOLLOW,
+                readBytes: (fileDescriptor: number) => {
+                    byteReads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => {
+                    textReads += 1;
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(byteReads).toBe(0);
+            expect(textReads).toBe(0);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('rejects a contained symlink substituted between the precheck and open', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-symlink-swap-'));
         const root = join(base, 'repository');
@@ -1093,7 +1160,7 @@ describe('release inventory', () => {
         try {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, 'contained legal bytes');
-            linkSync(filePath, targetPath);
+            writeFileSync(targetPath, 'contained legal bytes');
             const readFile = {
                 open: (openPath: string, flags: number) => {
                     rmSync(filePath);
