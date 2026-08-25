@@ -416,6 +416,7 @@ describe('mix prompt workflow', () => {
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
         resetActionReplayAuthority();

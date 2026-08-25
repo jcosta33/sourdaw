@@ -37,9 +37,9 @@ function normalizeScope(value: unknown): AgentRunScope | null {
             isRecord(range) &&
             typeof range.startBeat === 'number' &&
             Number.isFinite(range.startBeat) &&
+            range.startBeat >= 0 &&
             typeof range.endBeat === 'number' &&
             Number.isFinite(range.endBeat) &&
-            range.startBeat >= 0 &&
             (allowPointRange ? range.endBeat >= range.startBeat : range.endBeat > range.startBeat)
                 ? { startBeat: range.startBeat, endBeat: range.endBeat }
                 : null
