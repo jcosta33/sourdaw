@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -15,6 +16,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -186,6 +188,59 @@ function validateDiscard(inverse: DiscardImportedStemSetAction): boolean | undef
     return handleDiscardImportedStemSet.validate?.(inverse, { actions: [inverse], actionIndex: 0 });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readAuthoritativeProjectTruth(): Record<'tracks' | 'midi' | 'automation', unknown> {
+    const document = getCrdtDoc<Record<string, unknown>>('root');
+    if (!document) {
+        throw new Error('Expected root CRDT document');
+    }
+    const parsed: unknown = JSON.parse(JSON.stringify(document));
+    if (!isRecord(parsed)) {
+        throw new Error('Expected serializable root CRDT document');
+    }
+    for (const slot of ['tracks', 'midi', 'automation'] as const) {
+        if (!Object.hasOwn(parsed, slot)) {
+            throw new Error(`Expected authoritative ${slot} slot`);
+        }
+    }
+    return {
+        tracks: parsed.tracks,
+        midi: parsed.midi,
+        automation: parsed.automation,
+    };
+}
+
+function expectSeededAuthoritativeProjectTruth(truth: Record<'tracks' | 'midi' | 'automation', unknown>): void {
+    expect(truth).toMatchObject({
+        tracks: {
+            tracks: [
+                {
+                    id: 'track-existing-midi',
+                    clips: [{ id: 'clip-existing-midi', trackId: 'track-existing-midi', type: 'midi' }],
+                },
+            ],
+        },
+        midi: {
+            notesByClipId: { 'clip-existing-midi': [{ id: 'note-existing-midi' }] },
+            ccByClipId: { 'clip-existing-midi': [{ id: 'cc-existing-midi' }] },
+            pitchBendByClipId: { 'clip-existing-midi': [{ id: 'bend-existing-midi' }] },
+        },
+        automation: {
+            lanes: [
+                {
+                    id: 'automation-existing-midi-volume',
+                    trackId: 'track-existing-midi',
+                    clipId: 'clip-existing-midi',
+                    points: [{ id: 'point-existing-midi' }],
+                },
+            ],
+        },
+    });
+}
+
 function seedUnrelatedProjectTruth(): void {
     const clip = ClipDummy.create({
         id: 'clip-existing-midi',
@@ -219,20 +274,26 @@ function seedUnrelatedProjectTruth(): void {
         ],
     };
 
-    trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
-    setMidiStoreState({
-        ...emptyMidiStoreState,
-        notesByClipId: {
-            [clip.id]: [{ id: 'note-existing-midi', pitch: 64, startBeat: 1, duration: 2, velocity: 96 }],
-        },
-        ccByClipId: {
-            [clip.id]: [{ id: 'cc-existing-midi', controller: 1, value: 0.5, beat: 1, channel: 0 }],
-        },
-        pitchBendByClipId: {
-            [clip.id]: [{ id: 'bend-existing-midi', value: 0.25, beat: 1, channel: 0 }],
-        },
+    const seedTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        setMidiStoreState({
+            ...emptyMidiStoreState,
+            notesByClipId: {
+                [clip.id]: [{ id: 'note-existing-midi', pitch: 64, startBeat: 1, duration: 2, velocity: 96 }],
+            },
+            ccByClipId: {
+                [clip.id]: [{ id: 'cc-existing-midi', controller: 1, value: 0.5, beat: 1, channel: 0 }],
+            },
+            pitchBendByClipId: {
+                [clip.id]: [{ id: 'bend-existing-midi', value: 0.25, beat: 1, channel: 0 }],
+            },
+        });
+        automationStore.set(automation);
     });
-    automationStore.set(automation);
+    if (seedTransaction.status !== 'returned') {
+        throw seedTransaction.error;
+    }
+    seedTransaction.commit();
 }
 
 describe('handleImportStemSet', () => {
@@ -272,10 +333,12 @@ describe('handleImportStemSet', () => {
     it('admits a guarded stem import into an atomic batch and undo executes the inverse exactly', async () => {
         seedUnrelatedProjectTruth();
         const preImportTruth = {
-            arrangement: structuredClone(requireTrackState()),
+            tracks: structuredClone(requireTrackState()),
             midi: structuredClone(requireMidiState()),
             automation: structuredClone(automationStore.value),
         };
+        const preImportDocumentTruth = readAuthoritativeProjectTruth();
+        expectSeededAuthoritativeProjectTruth(preImportDocumentTruth);
         const action = createStemImportAction();
         const preApplyInverse = describeImportInverse(action);
 
@@ -299,7 +362,8 @@ describe('handleImportStemSet', () => {
 
         await undo();
 
-        expect(requireTrackState()).toEqual(preImportTruth.arrangement);
+        expect(readAuthoritativeProjectTruth()).toEqual(preImportDocumentTruth);
+        expect(requireTrackState()).toEqual(preImportTruth.tracks);
         expect(requireMidiState()).toEqual(preImportTruth.midi);
         expect(automationStore.value).toEqual(preImportTruth.automation);
         expect(requireTrackState().tracks.map((track) => track.id)).not.toEqual(
