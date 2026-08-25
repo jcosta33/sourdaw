@@ -86,8 +86,9 @@ type ExportDialogMocks = {
 };
 
 const mocks = vi.hoisted((): ExportDialogMocks => {
-    const trackStore: TestStore<TestTrackStoreState> = {
+    const trackStore = {
         value: { tracks: [], selectedTrackId: null, ghostClips: [] },
+        subscribe: vi.fn(() => () => {}),
     };
     const transportStore: TestStore<TestTransportState> = {
         value: { loopStart: 0, loopEnd: 0 },

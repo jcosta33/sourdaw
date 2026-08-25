@@ -19,8 +19,9 @@ import { applyAutomation } from '../applyAutomation';
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    const trackStore: { value: typeof mod.trackStore.value } = {
+    const trackStore: { value: typeof mod.trackStore.value; subscribe: () => () => void } = {
         value: { tracks: [], selectedTrackId: null },
+        subscribe: vi.fn(() => () => {}),
     };
     return {
         ...mod,

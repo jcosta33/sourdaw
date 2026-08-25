@@ -28,7 +28,10 @@ type MockTrackStoreValue = {
 type UpdateDeviceParam = (trackId: string, deviceId: string, paramId: string, value: number) => void;
 
 const { mocks } = vi.hoisted(() => {
-    const trackStore: { value: MockTrackStoreValue } = { value: null };
+    const trackStore: { value: MockTrackStoreValue; subscribe: () => () => void } = {
+        value: null,
+        subscribe: vi.fn(() => () => {}),
+    };
     return { mocks: { updateDeviceParam: vi.fn<UpdateDeviceParam>(), trackStore } };
 });
 

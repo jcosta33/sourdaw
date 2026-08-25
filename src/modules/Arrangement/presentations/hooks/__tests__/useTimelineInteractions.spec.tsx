@@ -190,6 +190,7 @@ vi.mock('../../../stores/trackStore', () => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        subscribe: vi.fn(() => () => {}),
     },
 }));
 vi.mock('../../../useCases/clipSelection/toggleClipInSelection', () => ({

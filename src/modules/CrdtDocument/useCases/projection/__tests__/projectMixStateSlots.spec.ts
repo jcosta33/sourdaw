@@ -27,7 +27,7 @@ import { projectCrdtToStores } from '../projectProjection';
 // the real `projectCrdtToStores` are the two real stores under test.
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { hydrate: vi.fn() },
+    trackStore: { hydrate: vi.fn(), subscribe: vi.fn(() => () => {}) },
     markerStore: { hydrate: vi.fn() },
     takeLaneStore: { hydrate: vi.fn() },
     automationStore: { hydrate: vi.fn() },

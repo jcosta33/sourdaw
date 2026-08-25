@@ -16,6 +16,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         get value() {
             return mocks.trackStoreValue;
         },
+        subscribe: vi.fn(() => () => {}),
     },
 }));
 

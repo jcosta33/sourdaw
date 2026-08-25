@@ -45,7 +45,7 @@ vi.mock('../../../useCases/patternQueries/filterTemplates', () => ({
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: { value: { tracks: [], selectedTrackId: null } },
+    trackStore: { value: { tracks: [], selectedTrackId: null }, subscribe: vi.fn(() => () => {}) },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({

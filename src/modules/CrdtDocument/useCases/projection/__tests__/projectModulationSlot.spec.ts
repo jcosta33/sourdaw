@@ -14,7 +14,7 @@ import { projectCrdtToStores } from '../projectProjection';
 // projection is the real `modulationStore`.
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { hydrate: vi.fn() },
+    trackStore: { hydrate: vi.fn(), subscribe: vi.fn(() => () => {}) },
     automationStore: { hydrate: vi.fn() },
     transportStore: { hydrate: vi.fn() },
     tempoMapStore: { hydrate: vi.fn() },

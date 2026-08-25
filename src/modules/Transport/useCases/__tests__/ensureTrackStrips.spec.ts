@@ -45,6 +45,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        subscribe: vi.fn(() => () => {}),
     },
     resolveEligibleDeviceWriteTarget: (deviceId: string) => {
         const track = mocks.trackStoreValue.value?.tracks.find((candidate) =>
