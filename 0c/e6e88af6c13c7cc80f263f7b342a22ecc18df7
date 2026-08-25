@@ -1,0 +1,29 @@
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_be6167e9c6477c 2198
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_a0dd23f5ae10e1 4017-4041,4054,4058-4064,4626-4629
+  s_a40848e8f8cca9::t_be6167e9c6477c 4042-4053,4055-4057,4219
+src/modules/AiRuntime/useCases/__tests__/sidechainDeviceOwnership.spec.ts
+  s_a40848e8f8cca9::t_d9668c64441c7b 144
+  s_a40848e8f8cca9::t_84a7a318664be2 131,162,219
+  s_a40848e8f8cca9::t_f07d8abb6032eb 4,118-130,132-143,145-161,163-165,167-168,203-212,214,216,218,222-229
+  s_a40848e8f8cca9::t_be6167e9c6477c 166
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_be6167e9c6477c 4629
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "0ce6e88af6c13c7cc80f263f7b342a22ecc18df7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
