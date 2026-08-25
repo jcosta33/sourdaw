@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_e116df96c67d63 100,4080,4097,4114
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_69dfe9b57d234c 1,15,68-77
+  s_a40848e8f8cca9::t_457d374f9c99c1 2
+  s_a40848e8f8cca9::t_98e9617943872c 78-79
+src/modules/AiRuntime/useCases/agentReference/bridgeDrumRenderComparisonPlan.ts
+  s_a40848e8f8cca9::t_209904c3b0848d 21,115
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_69dfe9b57d234c 244
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_8aa6007637deca 703,741-746
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_8aa6007637deca 2103
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_e116df96c67d63 627-628,655,657-663
+src/modules/AiRuntime/useCases/agentReference/bridgeSharedVocalFxBusesPlan.ts
+  s_a40848e8f8cca9::t_209904c3b0848d 22,209-215
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_a40848e8f8cca9::t_209904c3b0848d 23,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "e3d4be820721beedd000cb89c3251e44a26fc234",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
