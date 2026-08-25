@@ -65,7 +65,8 @@ describe('command registry completeness', () => {
                     expect(new Set(identityArguments.map((rule) => rule.argument)).size).toBe(identityArguments.length);
                     for (const identityArgument of identityArguments) {
                         const providerSuppliesArgument =
-                            descriptor?.parameters.properties[identityArgument.argument] !== undefined;
+                            descriptor !== undefined &&
+                            Object.hasOwn(descriptor.parameters.properties, identityArgument.argument);
                         if (APPLICATION_MATERIALIZED_IDENTITY_ARGUMENTS.has(identityArgument.argument)) {
                             // Parent tracks derive from selected clip/device/lane context. Excluding
                             // them from provider schema prevents model-supplied scope expansion.
