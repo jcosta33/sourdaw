@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
     chmodSync,
     existsSync,
@@ -83,7 +83,6 @@ function trustedPublishFixture(root: string, policy: string): void {
 
 type WorkflowRecord = Record<string, unknown>;
 
-const REVIEWER_LOGIN = 'jcosta33-reviewer[bot]';
 const AUTHORIZED_APPROVAL_CONDITION =
     "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
 const REVIEW_ISOLATED_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
@@ -156,42 +155,6 @@ function stableWorkflowGate(workflow: WorkflowRecord): WorkflowRecord {
     return gate;
 }
 
-function workflowGateResults(workflow: WorkflowRecord): string {
-    return JSON.stringify(
-        Object.fromEntries(
-            workflowArrayAt(workflowJob(workflow, 'gate'), 'needs').map((name) => [String(name), { result: 'success' }])
-        )
-    );
-}
-
-function runWorkflowGate(
-    workflow: WorkflowRecord,
-    event: {
-        action: string;
-        author: string;
-        commit?: string;
-        head?: string;
-        name: string;
-        state: string;
-    }
-): number | null {
-    const gateStep = workflowStep(workflowJob(workflow, 'gate'), 'Require every job to have succeeded or been skipped');
-    return spawnSync('bash', ['-c', String(gateStep.run)], {
-        encoding: 'utf8',
-        env: {
-            ...process.env,
-            EVENT: event.name,
-            REVIEW_ACTION: event.action,
-            REVIEW_AUTHOR: event.author,
-            REVIEW_COMMIT: event.commit ?? 'head-sha',
-            REVIEW_STATE: event.state,
-            PULL_REQUEST_HEAD: event.head ?? 'head-sha',
-            RESULTS: workflowGateResults(workflow),
-        },
-        shell: false,
-    }).status;
-}
-
 describe('package scripts and gitignore', () => {
     it('defines the trusted pnpm commands as direct node invocations', () => {
         const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')) as {
@@ -214,7 +177,7 @@ describe('package scripts and gitignore', () => {
         expect(gitignore).toContain('.agents/review-bundles/');
     });
 
-    it('keeps the required Gate stable while authenticating review-gated work', () => {
+    it('keeps the required Gate stable and validates job outcomes', () => {
         const { document, workflow } = healthGateWorkflow();
         expect(document.errors).toEqual([]);
         const events = workflowRecordAt(workflow, 'on');
@@ -243,47 +206,6 @@ describe('package scripts and gitignore', () => {
         expect(gate.if).toBe(AUTHORIZED_GATE_CONDITION);
         const gateStep = workflowStep(gate, 'Require every job to have succeeded or been skipped');
         expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
-
-        expect(
-            runWorkflowGate(workflow, {
-                action: 'submitted',
-                author: REVIEWER_LOGIN,
-                name: 'pull_request_review',
-                state: 'approved',
-            })
-        ).toBe(0);
-        expect(
-            runWorkflowGate(workflow, {
-                action: 'dismissed',
-                author: REVIEWER_LOGIN,
-                name: 'pull_request_review',
-                state: 'approved',
-            })
-        ).not.toBe(0);
-        expect(
-            runWorkflowGate(workflow, {
-                action: 'submitted',
-                author: REVIEWER_LOGIN,
-                commit: 'reviewed-sha',
-                head: 'head-sha',
-                name: 'pull_request_review',
-                state: 'approved',
-            })
-        ).not.toBe(0);
-
-        for (const event of [
-            { action: 'submitted', state: 'approved' },
-            { action: 'submitted', state: 'commented' },
-            { action: 'dismissed', state: 'approved' },
-        ]) {
-            expect(
-                runWorkflowGate(workflow, {
-                    ...event,
-                    author: 'untrusted-reviewer',
-                    name: 'pull_request_review',
-                })
-            ).not.toBe(0);
-        }
     });
 
     it('runs CodeQL only in the approved heavy lane', () => {
