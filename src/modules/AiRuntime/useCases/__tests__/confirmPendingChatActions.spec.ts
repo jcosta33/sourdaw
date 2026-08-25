@@ -6,7 +6,7 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { type AgentSectionRenderArtifact } from '#/modules/AudioRendering/models/AgentSectionRenderArtifact';
+import { type getAgentSectionRenderArtifacts } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -54,6 +54,7 @@ import {
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type RenderProjectSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
+type AgentSectionRenderArtifact = ReturnType<typeof getAgentSectionRenderArtifacts>[number];
 
 type RenderRetryInput = {
     jobs: readonly RenderProjectSectionJobSnapshot[];

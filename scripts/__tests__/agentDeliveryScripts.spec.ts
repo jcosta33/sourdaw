@@ -85,22 +85,14 @@ type WorkflowRecord = Record<string, unknown>;
 
 const REVIEWER_LOGIN = 'jcosta33-reviewer[bot]';
 const AUTHORIZED_APPROVAL_CONDITION =
-    "github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')";
-const REVIEW_ISOLATED_CONCURRENCY_GROUP =
-    "health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}";
+    "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
+const REVIEW_ISOLATED_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
 const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
 const HEALTH_SUMMARY_NAME = 'Health summary';
 const LEGACY_REQUIRED_GATE_NAME =
     "${{ github.event_name == 'workflow_dispatch' && 'Manual health audit' || github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}";
-const AUTHORIZED_GATE_CONDITION =
-    "always() && (github.event_name != 'pull_request_review' || github.event.review.user.login == 'jcosta33-reviewer[bot]')";
-const CODEQL_CONDITION = "github.event_name == 'pull_request' || needs.decide.outputs.heavy == 'true'";
-const CODEQL_REVIEW_HEAD_CONDITION = "github.event_name == 'pull_request_review'";
-const CODEQL_NON_REVIEW_CONDITION = "github.event_name != 'pull_request_review'";
-const CODEQL_REVIEW_REPOSITORY = '${{ github.event.pull_request.head.repo.full_name }}';
-const CODEQL_REVIEW_HEAD = '${{ github.event.review.commit_id }}';
-const CODEQL_UPLOAD_MODE = "${{ github.event_name == 'pull_request_review' && 'never' || 'always' }}";
-const CODEQL_DATABASE_UPLOAD = "${{ github.event_name != 'pull_request_review' }}";
+const AUTHORIZED_GATE_CONDITION = 'always()';
+const CODEQL_CONDITION = "needs.decide.outputs.heavy == 'true'";
 
 function asWorkflowRecord(value: unknown, label: string): WorkflowRecord {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -228,7 +220,7 @@ describe('package scripts and gitignore', () => {
         const { document, workflow } = healthGateWorkflow();
         expect(document.errors).toEqual([]);
         const events = workflowRecordAt(workflow, 'on');
-        expect(workflowRecordAt(events, 'pull_request_review').types).toEqual(['submitted', 'dismissed']);
+        expect(workflowRecordAt(events, 'pull_request_review').types).toEqual(['submitted']);
 
         const concurrency = workflowRecordAt(workflow, 'concurrency');
         expect(concurrency.group).toBe(REVIEW_ISOLATED_CONCURRENCY_GROUP);
@@ -247,7 +239,7 @@ describe('package scripts and gitignore', () => {
         );
         expect(gate.if).toBe(AUTHORIZED_GATE_CONDITION);
         const gateStep = workflowStep(gate, 'Require every job to have succeeded or been skipped');
-        expect(workflowRecordAt(gateStep, 'env').REVIEW_AUTHOR).toBe('${{ github.event.review.user.login }}');
+        expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
 
         expect(
             runWorkflowGate(workflow, {
@@ -291,7 +283,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('keeps fork CodeQL review analysis read-only while pull-request analysis uploads findings', () => {
+    it('runs CodeQL only in the approved heavy lane', () => {
         const { workflow } = healthGateWorkflow();
         const events = workflowRecordAt(workflow, 'on');
         expect(Object.hasOwn(events, 'pull_request')).toBe(true);
@@ -304,20 +296,11 @@ describe('package scripts and gitignore', () => {
             'security-events': 'write',
             actions: 'read',
         });
-        const reviewCheckout = workflowStep(codeql, 'Checkout reviewed head');
-        expect(reviewCheckout.if).toBe(CODEQL_REVIEW_HEAD_CONDITION);
-        expect(workflowRecordAt(reviewCheckout, 'with')).toEqual({
-            repository: CODEQL_REVIEW_REPOSITORY,
-            ref: CODEQL_REVIEW_HEAD,
-        });
-        expect(workflowStep(codeql, 'Checkout').if).toBe(CODEQL_NON_REVIEW_CONDITION);
+        expect(Object.hasOwn(workflowStep(codeql, 'Checkout'), 'if')).toBe(false);
 
         const analyze = workflowStep(codeql, 'Analyse');
         expect(analyze.uses).toBe('github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef');
-        expect(workflowRecordAt(analyze, 'with')).toEqual({
-            upload: CODEQL_UPLOAD_MODE,
-            'upload-database': CODEQL_DATABASE_UPLOAD,
-        });
+        expect(Object.hasOwn(analyze, 'with')).toBe(false);
     });
 
     /**

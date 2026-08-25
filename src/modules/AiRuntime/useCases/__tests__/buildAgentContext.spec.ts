@@ -164,7 +164,7 @@ describe('buildAgentContext', () => {
         expect(built.evidence.included.validationFailures).toEqual({ total: 24, retained: 16, omitted: 8 });
     });
 
-    it('keeps ordinary imported receipt strings capped while producing valid bounded evidence JSON', () => {
+    it('keeps one receipt within the aggregate evidence budget while producing valid bounded evidence JSON', () => {
         const built = buildAgentContext({
             fixedPolicy: 'policy',
             prompt: 'adjust',
@@ -178,12 +178,12 @@ describe('buildAgentContext', () => {
         expect(relevantEvidence.receipts).toEqual([
             {
                 id: 'generic-receipt',
-                summary: { value: 'x'.repeat(512), truncated: true },
+                summary: { value: 'x'.repeat(600), truncated: false },
             },
         ]);
     });
 
-    it('gives application-owned receipt summaries the bounded aggregate evidence budget first', () => {
+    it('shares the bounded aggregate evidence budget fairly across retained receipts', () => {
         const built = buildAgentContext({
             fixedPolicy: 'policy',
             prompt: 'adjust',
@@ -204,10 +204,10 @@ describe('buildAgentContext', () => {
         const summaries = relevantEvidence.receipts.map((receipt) => receipt.summary);
         expect(summaries.reduce((length, summary) => length + summary.value.length, 0)).toBeLessThanOrEqual(8_192);
         expect(relevantEvidence.receipts).toEqual([
-            { id: 'generic-receipt', summary: { value: '', truncated: true } },
+            { id: 'generic-receipt', summary: { value: 'generic'.repeat(100), truncated: false } },
             {
                 id: 'application-receipt',
-                summary: { value: 'application'.repeat(800).slice(0, 8_192), truncated: true },
+                summary: { value: 'application'.repeat(800).slice(0, 4_096), truncated: true },
             },
         ]);
     });

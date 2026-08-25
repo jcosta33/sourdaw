@@ -26,13 +26,13 @@ use daw_dsp::grand_boule::voice::{
     PianoVoice, PianoVoiceStart, VoiceQuality as ProductionVoiceQuality,
 };
 use daw_dsp::grinder::engine::GrinderEngine;
+use retained_signal::Contract;
 use shadow::grand_boule::voice::{
     PianoVoice as ReferencePianoVoice, PianoVoiceStart as ReferencePianoVoiceStart,
     VoiceQuality as ReferenceVoiceQuality,
 };
 use shadow::grinder::engine::GrinderEngine as ReferenceGrinderEngine;
 use shadow::modal_string::ModalString as ReferenceModalString;
-use retained_signal::Contract;
 
 const SERIAL_CONTRACT: Contract = Contract {
     peak: 0.515_945_196_151_733_4,
@@ -383,5 +383,9 @@ fn modal_string_renders_identically_when_the_zeroed_prefix_is_skipped() {
     }
 
     assert_equivalent_renders(&optimized_render, &reference_render);
-    retained_signal::assert_matches_contract(&optimized_render, &MODAL_STRING_CONTRACT, "modal bass note");
+    retained_signal::assert_matches_contract(
+        &optimized_render,
+        &MODAL_STRING_CONTRACT,
+        "modal bass note",
+    );
 }

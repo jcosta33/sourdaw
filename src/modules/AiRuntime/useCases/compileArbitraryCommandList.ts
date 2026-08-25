@@ -11,7 +11,7 @@ const MAX_ITEMS = 16;
 const MAX_COMMANDS = 32;
 const MAX_REPEAT = 8;
 
-type Entity = 'track' | 'clip' | 'device' | 'automation-lane';
+type Entity = 'track' | 'clip' | 'device' | 'automation-lane' | 'adjustment-layer';
 
 type Candidate = {
     id: string;
@@ -128,7 +128,14 @@ function collectCandidates(context: ProjectContext): Candidate[] {
         trackId: lane.trackId,
         enabled: lane.enabled,
     }));
-    return [...tracks, ...clips, ...devices, ...lanes];
+    const adjustmentLayers = (context.adjustmentLayers ?? []).map((layer) => ({
+        id: layer.id,
+        entity: 'adjustment-layer' as const,
+        name: layer.name,
+        type: layer.effectType,
+        enabled: layer.enabled,
+    }));
+    return [...tracks, ...clips, ...devices, ...lanes, ...adjustmentLayers];
 }
 
 function containsForbiddenProviderAuthority(value: unknown): boolean {
@@ -176,7 +183,7 @@ function parseSelector(value: unknown):
     }
     if (
         !isSafeId(value.targetArgument) ||
-        !['track', 'clip', 'device', 'automation-lane'].includes(String(value.entity))
+        !['track', 'clip', 'device', 'automation-lane', 'adjustment-layer'].includes(String(value.entity))
     ) {
         return { status: 'rejected', reason: 'Bulk selector has an invalid target argument or entity.' };
     }
@@ -408,10 +415,11 @@ export function compileArbitraryCommandList(input: {
         if (!hasOnlyKeys(item, ['id', 'name', 'arguments', 'selector', 'repeat', 'dependsOn'])) {
             return { status: 'rejected', reason: 'Structured command item contains unsupported authority fields.' };
         }
-        if (!isSafeId(item.id) || !isSafeId(item.name) || !isRecord(item.arguments)) {
+        const argumentsRecord = item.arguments;
+        if (!isSafeId(item.id) || !isSafeId(item.name) || !isRecord(argumentsRecord)) {
             return { status: 'rejected', reason: 'Structured command item has an invalid command shape.' };
         }
-        if (containsForbiddenProviderAuthority(item.arguments)) {
+        if (containsForbiddenProviderAuthority(argumentsRecord)) {
             return { status: 'rejected', reason: 'Provider supplied application-owned authority or expected state.' };
         }
         const rules = getExecutableAppActionGroundingRules(item.name);
@@ -455,17 +463,19 @@ export function compileArbitraryCommandList(input: {
             let omittedCommandCount = 0;
             const representativeCommandIndexes: number[] = [];
             if (
-                rules.targetRules.some(
-                    (rule) =>
+                rules.targetRules.some((rule) => {
+                    const targetArgumentValue = argumentsRecord[rule.argument];
+                    return (
                         rule.cardinality === 'many' ||
-                        typeof item.arguments[rule.argument] !== 'string' ||
-                        !item.arguments[rule.argument].startsWith('$')
-                )
+                        typeof targetArgumentValue !== 'string' ||
+                        !targetArgumentValue.startsWith('$')
+                    );
+                })
             ) {
                 return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
-                const command = { name: item.name, arguments: { ...item.arguments } };
+                const command = { name: item.name, arguments: { ...argumentsRecord } };
                 const commandKey = getCanonicalCommandIdentity(command);
                 declaredCommandIdentities.push(commandKey);
                 const canonicalCommandIndex = canonicalCommandIndexes.get(commandKey);
@@ -511,7 +521,7 @@ export function compileArbitraryCommandList(input: {
                 reason: 'Bulk selector is incompatible with the discovered command target contract.',
             };
         }
-        if (selector.targetArgument in item.arguments) {
+        if (selector.targetArgument in argumentsRecord) {
             return { status: 'rejected', reason: 'Provider may not supply target IDs for a semantic bulk selector.' };
         }
         const resolved = resolveSelector({ candidates, selector, protectedTargetIds, itemId: item.id });
@@ -561,7 +571,7 @@ export function compileArbitraryCommandList(input: {
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = {
                     name: item.name,
-                    arguments: { ...item.arguments, [selector.targetArgument]: stableId },
+                    arguments: { ...argumentsRecord, [selector.targetArgument]: stableId },
                 };
                 const commandKey = getCanonicalCommandIdentity(command);
                 declaredCommandIdentities.push(commandKey);
