@@ -3,6 +3,9 @@ name = "scoring"
 version = "0.1.0"
 edition = "2021"
 description = "Scoring — reference-grade chromatic tuner for Sourdaw"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

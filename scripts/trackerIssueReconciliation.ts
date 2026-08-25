@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 
-import { AUTHOR_BOT_LOGIN, REQUIRED_REPOSITORY, isAuthorBotLogin } from './githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY, isAuthorBotNodeId } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
 export type TrackerIssueComment = {
     id: string;
     body: string;
+    authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
 };
@@ -65,10 +66,10 @@ export function assertBodyDigest(body: string, expected: string, number: number)
 
 export function reconcileTrackerIssue(
     input: ReconcileTrackerIssueInput,
-    authorLogin: string,
+    authorNodeId: string,
     port: ReconcileTrackerIssuePort
 ): string {
-    assertAuthorLogin(authorLogin);
+    assertAuthorNodeId(authorNodeId);
     return port.withMutationLease(() => {
         const before = port.inspect(input.issueNumber);
         assertBoundIssue(before, input.issueNumber);
@@ -84,10 +85,10 @@ export function reconcileTrackerIssue(
 
 export function completeTrackerIssue(
     issueNumber: number,
-    authorLogin: string,
+    authorNodeId: string,
     port: ReconcileTrackerIssuePort
 ): string {
-    assertAuthorLogin(authorLogin);
+    assertAuthorNodeId(authorNodeId);
     return port.withMutationLease(() => {
         const before = port.inspect(issueNumber);
         assertBoundIssue(before, issueNumber);
@@ -129,9 +130,9 @@ function replaceIssueBody(before: TrackerIssue, nextBody: string, port: Reconcil
     return log(`tracker-issue-updated:${before.number}`, port);
 }
 
-function assertAuthorLogin(authorLogin: string): void {
-    if (authorLogin !== AUTHOR_BOT_LOGIN) {
-        fail(`authenticated author login ${authorLogin} is not ${AUTHOR_BOT_LOGIN}`);
+function assertAuthorNodeId(authorNodeId: string): void {
+    if (!isAuthorBotNodeId(authorNodeId)) {
+        fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
     }
 }
 
@@ -316,7 +317,7 @@ function isCanonicalMarker(comment: TrackerIssueComment, body: string): boolean 
     return (
         comment.body === body &&
         comment.id !== '' &&
-        isAuthorBotLogin(comment.authorLogin) &&
+        isAuthorBotNodeId(comment.authorNodeId) &&
         comment.authorType === 'Bot'
     );
 }

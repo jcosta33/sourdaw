@@ -19,7 +19,7 @@ use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
     graph_progress_channel, BuiltinEffectType, GraphCommand, GraphProgressReader,
-    GraphProgressSnapshot, RetiredGraphObjects, EFFECT_TABLE_CAPACITY,
+    GraphProgressSnapshot, PluginCore, RetiredGraphObjects, EFFECT_TABLE_CAPACITY,
 };
 use std::sync::mpsc::Sender;
 use timeline::{
@@ -307,10 +307,24 @@ impl EngineHandle {
     /// side: the command that crosses the ring may not carry a heap allocation
     /// onto the audio thread (ADR 0020), so an unknown name is refused where
     /// it can be reported rather than counted on the callback after the fact.
+    ///
+    /// The instance itself is also built here, on the same contract as the
+    /// `Box<dyn NativePlugin>` that [`Self::add_plugin`] carries: the audio
+    /// thread that applies the command installs or retires it and never
+    /// constructs one (`KneadEngine::new` performs its heap allocations on
+    /// this thread instead). It is built against `self.sample_rate` — the
+    /// rate the stream that this handle commands actually opened at — and
+    /// that rate cannot be stale or missing: an `EngineHandle` exists only
+    /// after the stream build reported it, so there is no handle to call this
+    /// on before the negotiation, exactly as there is no handle to push an
+    /// `AddPlugin` onto before one exists.
     pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
         let plugin_type = BuiltinEffectType::from_name(plugin_type)
             .ok_or_else(|| format!("unknown built-in effect type '{plugin_type}'"))?;
-        self.push(GraphCommand::AddEffect(id, plugin_type))
+        self.push(GraphCommand::AddEffect(
+            id,
+            PluginCore::builtin(plugin_type, self.sample_rate),
+        ))
     }
 
     /// Update an effect parameter natively. The name resolves to a fixed-size
@@ -719,11 +733,18 @@ mod tests {
     };
     use crate::audio_bridge::create_audio_bridge;
     use crate::plugin_slot::NativePlugin;
-    use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand};
+    use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand, PluginCore};
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
     use rtrb::{Consumer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
+
+    /// The pre-built instance a detached-effect batch carries, built here on
+    /// the control side exactly as [`crate::EngineHandle::add_effect`] builds
+    /// its own — the rate below is the one the capture handle reports.
+    fn knead_instance() -> PluginCore {
+        PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
+    }
 
     /// Overwrites whatever it is handed, so a block it never touched is
     /// distinguishable from one it processed.
@@ -856,7 +877,8 @@ mod tests {
             "a refused name must not cross the ring"
         );
 
-        // The known names still do — as the addresses the scheduler applies.
+        // The known names still do — carrying the instance the control side
+        // built, for the scheduler to install rather than construct.
         engine
             .add_effect(7, "knead")
             .expect("knead is a built-in type");
@@ -865,7 +887,7 @@ mod tests {
             .expect("shift_semitones is a knead parameter");
         assert!(matches!(
             command_rx.pop(),
-            Ok(GraphCommand::AddEffect(id, BuiltinEffectType::Knead)) if id == 7
+            Ok(GraphCommand::AddEffect(id, PluginCore::Knead(_))) if id == 7
         ));
         assert!(matches!(
             command_rx.pop(),
@@ -1047,7 +1069,7 @@ mod tests {
         let refusal = engine
             .send_graph_batch(vec![GraphCommand::AddDetachedEffect(
                 2_000_000,
-                BuiltinEffectType::Knead,
+                knead_instance(),
             )])
             .expect_err("a batch that cannot fit the shared table must be refused");
         assert!(
@@ -1093,7 +1115,7 @@ mod tests {
 
         engine
             .send_graph_batch(vec![
-                GraphCommand::AddDetachedEffect(2_000_000, BuiltinEffectType::Knead),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
                 GraphCommand::RemoveTrackDeviceRetired {
                     track_id: 1,
                     effect_id: 0,
@@ -1108,7 +1130,7 @@ mod tests {
                     track_id: 1,
                     effect_id: 0,
                 },
-                GraphCommand::AddDetachedEffect(2_000_000, BuiltinEffectType::Knead),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
             ])
             .expect("retiring first frees the slot the registration needs");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);

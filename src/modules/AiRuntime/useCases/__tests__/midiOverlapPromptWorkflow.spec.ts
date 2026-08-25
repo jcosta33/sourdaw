@@ -8,6 +8,11 @@ import {
     type Clip,
     type Track,
 } from '#/modules/Arrangement/stores';
+import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -17,6 +22,7 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -25,6 +31,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -152,16 +159,34 @@ function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
 
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    const available = schemas.availableCapabilities;
+    if (typeof available !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(available);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
 function createProviderPlan(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
+    const context = getProviderContext(userMessage);
     const capability = context.midiOverlapTransformCapability;
     if (!isRecord(capability) || capability.baseRevision !== context.projectRevision) {
         throw new TypeError('Expected revision-bound EX-04 capability');
@@ -184,6 +209,200 @@ function createProviderPlan(userMessage: string) {
     });
 }
 
+function getCommandBatchScope(userMessage: string): {
+    targetIds: string[];
+    targetRanges: Array<{ startBeat: number; endBeat: number }>;
+    protectedTargetIds: string[];
+    protectedRanges: [];
+} {
+    const context = getProviderContext(userMessage);
+    const capability = context.midiOverlapTransformCapability;
+    if (!isRecord(capability) || !isRecord(capability.allowedAction) || !isUnknownArray(capability.selectedClips)) {
+        throw new TypeError('Expected complete EX-04 capability scope');
+    }
+    const exactClipIds = isUnknownArray(capability.allowedAction.exactClipIds)
+        ? capability.allowedAction.exactClipIds.filter((id): id is string => typeof id === 'string')
+        : [];
+    const exactClipIdSet = new Set(exactClipIds);
+    const targetIds: string[] = [];
+    for (const selectedClip of capability.selectedClips) {
+        if (
+            isRecord(selectedClip) &&
+            typeof selectedClip.trackId === 'string' &&
+            typeof selectedClip.clipId === 'string' &&
+            exactClipIdSet.has(selectedClip.clipId)
+        ) {
+            targetIds.push(selectedClip.trackId, selectedClip.clipId);
+        }
+    }
+    const targetRanges = exactClipIds.map((clipId) => {
+        const notes = midiStore.value?.notesByClipId[clipId] ?? [];
+        if (notes.length === 0) {
+            throw new TypeError(`Expected MIDI note range for ${clipId}`);
+        }
+        return {
+            startBeat: Math.min(...notes.map((note) => note.startBeat)),
+            endBeat: Math.max(...notes.map((note) => note.startBeat)),
+        };
+    });
+    const protectedTargetIds = isUnknownArray(capability.protectedClipIds)
+        ? capability.protectedClipIds.filter((id): id is string => typeof id === 'string')
+        : [];
+    return { targetIds, targetRanges, protectedTargetIds, protectedRanges: [] };
+}
+
+function asCommandBatchProposal(userMessage: string, plan: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Shorten only selected MIDI overlaps strictly below 30 ms.',
+                    constraints: ['Preserve every unselected clip and every overlap at or above 30 ms.'],
+                    scope: getCommandBatchScope(userMessage),
+                    capabilityIds: ['removeShortMidiOverlaps'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate the exact selected MIDI clip set and strict threshold.'],
+                    stoppingConditions: ['Stop if application validation fails.'],
+                },
+            },
+        },
+    ];
+}
+
+function getExpectedCatalogCommandNames(finalCalls: readonly ProviderCall[]): string[] {
+    const names = finalCalls.flatMap((call) => {
+        if (call.name === 'selectWorkflowCapability') {
+            return [];
+        }
+        if (call.name !== 'command.batch.propose' || !isUnknownArray(call.arguments.commands)) {
+            return [call.name];
+        }
+        return call.arguments.commands.flatMap((command) =>
+            isRecord(command) && typeof command.name === 'string' ? [command.name] : []
+        );
+    });
+    return [...new Set(names)];
+}
+
+function catalogDiscoveryPlan(finalCalls: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: getExpectedCatalogCommandNames(finalCalls) },
+        },
+    ];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!isUnknownArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const payload = summary.value.split('\n').at(-1);
+    const parsed: unknown = payload ? JSON.parse(payload) : null;
+    if (!isRecord(parsed) || !isUnknownArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderCall[]): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !isUnknownArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set<string>();
+    for (const item of discoveryReceipt.data.items) {
+        if (
+            isRecord(item) &&
+            isRecord(item.function) &&
+            typeof item.function.name === 'string' &&
+            isRecord(item.function.parameters)
+        ) {
+            disclosedNames.add(item.function.name);
+        }
+    }
+    for (const name of getExpectedCatalogCommandNames(finalCalls)) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+function createFinalProviderCalls(userMessage: string): ProviderCall[] {
+    const plan = runtimeMocks.transformPlan.value(createProviderPlan(userMessage));
+    return withWorkflowCapabilitySelection('midi-overlap-shortening', asCommandBatchProposal(userMessage, plan));
+}
+
+function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage: string) => Promise<string> {
+    let turn = 0;
+    return (_systemPrompt, userMessage) => {
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (turn === 1) {
+            const discoveryCalls = withWorkflowCapabilitySelection(
+                'midi-overlap-shortening',
+                asCommandBatchProposal(userMessage, createProviderPlan(userMessage))
+            );
+            return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(discoveryCalls)));
+        }
+        const finalCalls = createFinalProviderCalls(userMessage);
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        return Promise.resolve(JSON.stringify(finalCalls));
+    };
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
 function getHostedUserMessage(body: string): string {
     const request: unknown = JSON.parse(body);
     if (!isRecord(request) || !isUnknownArray(request.messages)) {
@@ -200,31 +419,26 @@ function getHostedUserMessage(body: string): string {
 
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
+    let turn = 0;
     runtimeMocks.fetch.mockImplementation((_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = withWorkflowCapabilitySelection(
-            'midi-overlap-shortening',
-            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
-        );
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        const userMessage = getHostedUserMessage(init.body);
+        if (turn === 1) {
+            const discoveryCalls = withWorkflowCapabilitySelection(
+                'midi-overlap-shortening',
+                asCommandBatchProposal(userMessage, createProviderPlan(userMessage))
+            );
+            return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(discoveryCalls)));
+        }
+        const finalCalls = createFinalProviderCalls(userMessage);
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        return Promise.resolve(toolCallsResponse(finalCalls));
     });
 }
 
@@ -249,16 +463,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'midi-overlap-shortening',
-                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
-            )
-        );
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -279,6 +484,11 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         trackStore.set({
             tracks: [
                 createTrack('track-piano', 'Piano', 'clip-piano'),
@@ -500,7 +710,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
             type: 'removeShortMidiOverlaps',
             payload: { clipId: 'clip-strings', maximumOverlapMs: 30 },
         });
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(1);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
     });
 
     it.each([

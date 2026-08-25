@@ -9,18 +9,17 @@
     "performanceCores": "8",
     "efficiencyCores": "4",
     "os": "macOS 26.6.2 (25G83)",
-    "gitSha": "45dc71e12fb0c505c5c970aaf46e2a9a43b9d92d",
+    "gitSha": "26a362bbc4a5b9a74d46dd713951eb9f411ded68",
     "gitBase": "40948238a3c62aeaa4bfb84fea2c781b43ca81b2",
     "workingTree": "clean",
     "takenAt": "2026-08-22T21:51:41.935Z"
   },
-  "sourceRevision": "45dc71e12fb0c505c5c970aaf46e2a9a43b9d92d",
+  "sourceRevision": "26a362bbc4a5b9a74d46dd713951eb9f411ded68",
   "sourceDigests": {
     "crates/daw-dsp/benches/quantum.rs": "0de57088cce2094f76dd9d3eb567552692bdc0146eddbc8b5e15c7c8d9b6b873",
     "crates/daw-dsp/benches/wasm/deviceRecipes.js": "0a93e3d48f15813c2185377551acbfd59e4d65a53dc142f72e61d72953d13ac1",
     "crates/daw-dsp/benches/wasm/quantumCostProcessor.js": "e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713",
-    "public/wasm/daw-dsp/daw_dsp_bg.wasm": "2546711eeaa323fe45d03a58c595d31c0fd9c1a7bfac3f7a826c357000cd76a7",
-    "public/wasm/manifest.json": "a105bd9a3329326902535f1e2ff29cc62852c6870e572ad4c0339b825f16c8a3"
+    "public/wasm/daw-dsp/daw_dsp_bg.wasm": "2546711eeaa323fe45d03a58c595d31c0fd9c1a7bfac3f7a826c357000cd76a7"
   },
   "browser": "151.0.7922.173",
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",

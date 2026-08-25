@@ -2,8 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, getPluginById, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import {
+    getArrangementHandlers,
+    getPluginById,
+    projectTrackToLiveStrip,
+    runtimeGraphTopology,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+    ensureBusStrip,
+    getDeviceChainTailSeconds,
+    removeBusStrip,
+    removeTrackStrip,
+} from '#/modules/AudioEngine/useCases';
 import {
     clearAgentSectionRenderArtifacts,
     getAgentSectionRenderArtifacts,
@@ -23,12 +36,16 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
+    captureUnownedProjectMutations,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -39,7 +56,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
-import { sendChatMessage } from '../sendChatMessage';
+import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -52,7 +69,49 @@ const PROMPT =
 const PARAPHRASE =
     'Consolidate the backing-vocal reverbs onto a filtered shared plate, automate the chorus sends and render each chorus, without changing the lead vocal.';
 
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
+
+function flushFixtureStorageOwner(key: string): void {
+    const storage = fixtureStorageOwners.get(`root:${key}`);
+    if (!storage) {
+        throw new Error(`Expected fixture-owned ${key} storage adapter`);
+    }
+    storage.flushPendingUnscopedWrite();
+}
+
+function settleFixtureProjectWrites(): void {
+    for (const key of ['tracks', 'markers', 'automation', 'transport']) {
+        flushFixtureStorageOwner(key);
+    }
+}
+
+function sendChatMessage(prompt: string) {
+    settleFixtureProjectWrites();
+    return sendChatMessageUseCase(prompt);
+}
+
 type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
+type AudioEngineUseCasesModule = typeof import('#/modules/AudioEngine/useCases');
+type RoutingUseCasesModule = typeof import('#/modules/Routing/useCases');
+type PendingActionConfirmation = NonNullable<ReturnType<typeof getPendingActionConfirmation>>;
+type PendingAction = PendingActionConfirmation['actions'][number];
+type AddDeviceAction = Extract<PendingAction, { type: 'addDevice' }>;
+type AddSendAction = Extract<PendingAction, { type: 'addSend' }>;
+type AutomateSendRangesAction = Extract<PendingAction, { type: 'automateSendRanges' }>;
+type CreateBusAction = Extract<PendingAction, { type: 'createBus' }>;
+type RenderProjectSectionsAction = Extract<PendingAction, { type: 'renderProjectSections' }>;
 type RenderOfflineMock = (options: {
     durationBeats: number;
     onWarning?: (message: string) => void;
@@ -116,17 +175,15 @@ const providerPlan = [
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
-        addDeviceToStrip: vi.fn(),
         backend,
         clearReportedLatency: vi.fn(),
         ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
-        getAllSidechainRoutes: vi.fn(() => []),
-        removeDeviceFromStrip: vi.fn(),
+        getAllSidechainRoutes: vi.fn<RoutingUseCasesModule['getAllSidechainRoutes']>(() => []),
         removeSend: vi.fn(),
         renderOffline: vi.fn<RenderOfflineMock>(),
-        resolveToasterPadBinding: vi.fn(() => null),
+        resolveToasterPadBinding: vi.fn<AudioEngineUseCasesModule['resolveToasterPadBinding']>(() => undefined),
         setSend: vi.fn(),
         setTrackGain: vi.fn(),
         setTrackMute: vi.fn(),
@@ -137,6 +194,88 @@ const runtimeMocks = vi.hoisted(() => {
         updateDeviceParam: vi.fn(),
         wireSidechainRoutes: vi.fn(),
     };
+});
+
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    const createNode = () => ({
+        connect: (dest: unknown) => dest,
+        disconnect: () => undefined,
+    });
+    function AudioContextWithStereoPanner(this: unknown, options?: AudioContextOptions) {
+        const base = new OriginalAudioContext(options);
+        return Object.assign(base, {
+            currentTime: 0,
+            createStereoPanner: () => ({
+                ...createNode(),
+                pan: createAudioParam(0),
+            }),
+            createBiquadFilter: () => ({
+                ...createNode(),
+                type: 'lowpass',
+                frequency: createAudioParam(350),
+                Q: createAudioParam(1),
+                gain: createAudioParam(0),
+                detune: createAudioParam(0),
+            }),
+            createDynamicsCompressor: () => ({
+                ...createNode(),
+                threshold: createAudioParam(-24),
+                knee: createAudioParam(30),
+                ratio: createAudioParam(12),
+                attack: createAudioParam(0.003),
+                release: createAudioParam(0.25),
+                reduction: 0,
+            }),
+            createDelay: () => ({ ...createNode(), delayTime: createAudioParam(0) }),
+            createConvolver: () => ({ ...createNode(), buffer: null, normalize: true }),
+            createBuffer: (channels: number, length: number, sampleRate: number) => {
+                const data = Array.from({ length: channels }, () => new Float32Array(length));
+                return {
+                    numberOfChannels: channels,
+                    length,
+                    sampleRate,
+                    duration: length / sampleRate,
+                    getChannelData: (channel: number) => data[channel]!,
+                };
+            },
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        value: AudioContextWithStereoPanner,
+        writable: true,
+    });
+});
+
+vi.hoisted(() => {
+    class AudioWorkletNodeWithClosablePort {
+        readonly parameters = new Map<string, AudioParam>();
+        readonly port = {
+            postMessage: (_message: unknown) => undefined,
+            onmessage: null,
+            close: () => undefined,
+        };
+
+        connect(destination: unknown): unknown {
+            return destination;
+        }
+
+        disconnect(): void {}
+    }
+    Object.defineProperty(globalThis, 'AudioWorkletNode', {
+        configurable: true,
+        value: AudioWorkletNodeWithClosablePort,
+        writable: true,
+    });
 });
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => [runtimeMocks.backend.value],
@@ -154,30 +293,48 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    addDeviceToStrip: runtimeMocks.addDeviceToStrip,
-    clearReportedLatency: runtimeMocks.clearReportedLatency,
-    ensureTrackStrip: runtimeMocks.ensureTrackStrip,
-    removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
-    renderOffline: runtimeMocks.renderOffline,
-    resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
-    setTrackGain: runtimeMocks.setTrackGain,
-    setTrackMute: runtimeMocks.setTrackMute,
-    setTrackOutput: runtimeMocks.setTrackOutput,
-    setTrackPan: runtimeMocks.setTrackPan,
-    setTrackSoloGate: runtimeMocks.setTrackSoloGate,
-    updateDeviceBypass: runtimeMocks.updateDeviceBypass,
-    updateDeviceParam: runtimeMocks.updateDeviceParam,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    runtimeMocks.clearReportedLatency.mockImplementation(original.clearReportedLatency);
+    runtimeMocks.ensureTrackStrip.mockImplementation(original.ensureTrackStrip);
+    runtimeMocks.setTrackGain.mockImplementation(original.setTrackGain);
+    runtimeMocks.setTrackMute.mockImplementation(original.setTrackMute);
+    runtimeMocks.setTrackOutput.mockImplementation(original.setTrackOutput);
+    runtimeMocks.setTrackPan.mockImplementation(original.setTrackPan);
+    runtimeMocks.setTrackSoloGate.mockImplementation(original.setTrackSoloGate);
+    runtimeMocks.updateDeviceBypass.mockImplementation(original.updateDeviceBypass);
+    runtimeMocks.updateDeviceParam.mockImplementation(original.updateDeviceParam);
+    runtimeMocks.resolveToasterPadBinding.mockImplementation(original.resolveToasterPadBinding);
+    return {
+        ...original,
+        clearReportedLatency: runtimeMocks.clearReportedLatency,
+        ensureTrackStrip: runtimeMocks.ensureTrackStrip,
+        renderOffline: runtimeMocks.renderOffline,
+        resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
+        setTrackGain: runtimeMocks.setTrackGain,
+        setTrackMute: runtimeMocks.setTrackMute,
+        setTrackOutput: runtimeMocks.setTrackOutput,
+        setTrackPan: runtimeMocks.setTrackPan,
+        setTrackSoloGate: runtimeMocks.setTrackSoloGate,
+        updateDeviceBypass: runtimeMocks.updateDeviceBypass,
+        updateDeviceParam: runtimeMocks.updateDeviceParam,
+    };
+});
 
-vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
-    getAllSidechainRoutes: runtimeMocks.getAllSidechainRoutes,
-    removeSend: runtimeMocks.removeSend,
-    setSend: runtimeMocks.setSend,
-    wireSidechainRoutes: runtimeMocks.wireSidechainRoutes,
-}));
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/Routing/useCases')>();
+    runtimeMocks.getAllSidechainRoutes.mockImplementation(original.getAllSidechainRoutes);
+    runtimeMocks.removeSend.mockImplementation(original.removeSend);
+    runtimeMocks.setSend.mockImplementation(original.setSend);
+    runtimeMocks.wireSidechainRoutes.mockImplementation(original.wireSidechainRoutes);
+    return {
+        ...original,
+        getAllSidechainRoutes: runtimeMocks.getAllSidechainRoutes,
+        removeSend: runtimeMocks.removeSend,
+        setSend: runtimeMocks.setSend,
+        wireSidechainRoutes: runtimeMocks.wireSidechainRoutes,
+    };
+});
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -193,16 +350,71 @@ function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
 
+function hasTrackKind(payload: { trackId: string | null } | { trackId: string; kind: string }): payload is {
+    trackId: string;
+    kind: string;
+} {
+    return typeof payload.trackId === 'string' && 'kind' in payload && typeof payload.kind === 'string';
+}
+
+function isAddSendAction(action: PendingAction): action is AddSendAction {
+    return action.type === 'addSend';
+}
+
+function isAddDeviceAction(action: PendingAction): action is AddDeviceAction {
+    return action.type === 'addDevice';
+}
+
+function isAutomateSendRangesAction(action: PendingAction): action is AutomateSendRangesAction {
+    return action.type === 'automateSendRanges';
+}
+
+function isCreateBusAction(action: PendingAction): action is CreateBusAction {
+    return action.type === 'createBus';
+}
+
+function isRenderProjectSectionsAction(action: PendingAction): action is RenderProjectSectionsAction {
+    return action.type === 'renderProjectSections';
+}
+
+/**
+ * `buildAgentContext` composes the planning message as labelled sections, each
+ * one line of JSON under a `section_name:` line. This reads one of them.
+ */
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+/**
+ * The application-owned capability data and the revision it is bound to, as the
+ * provider actually receives them: capabilities ride in `capability_schemas`
+ * under `availableCapabilities`, itself a serialized string, and the revision
+ * in `revision_and_selection`.
+ */
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    const available = schemas.availableCapabilities;
+    if (typeof available !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(available);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
 function createProviderPlanFromUserMessage(userMessage: string): ProviderPlanCall[] {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context in provider request');
-    }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
-        throw new TypeError('Expected revision-bound project context');
-    }
+    const context = getProviderContext(userMessage);
     const capability = context.backingVocalPlateCapability;
     if (
         !isRecord(capability) ||
@@ -246,34 +458,293 @@ function getHostedUserMessage(requestBody: string): string {
     return userMessage.content;
 }
 
-function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderPlanCall[]): void {
-    runtimeMocks.backend.value = 'cloud';
-    runtimeMocks.fetch.mockImplementation((_input, init) => {
+/**
+ * Reverb device types EX-01 is allowed to remove from a backing-vocal track.
+ * Mirrors `getBackingVocalPlatePromptScope`'s own list without importing it,
+ * so this fixture proves the round trip rather than sharing an implementation
+ * with the code it exercises.
+ */
+const REVERB_DEVICE_TYPES = new Set([
+    'builtin-reverb',
+    'builtin-convolution-reverb',
+    'dutch-oven',
+    'proof-chamber',
+    'faust-zita-rev1-reverb',
+    'faust-spring-reverb',
+]);
+
+/**
+ * The batch's two section-bearing calls (`automateSendRanges` and
+ * `renderProjectSections`) each get their sections' own beat bounds
+ * materialized onto their payload before compilation (ranges and render jobs
+ * respectively), so each contributes one application-computed target range
+ * spanning every section it names — not the per-section automation tail, the
+ * section's full extent. One range per such call, duplicates included.
+ */
+function getCallSectionIds(call: ProviderPlanCall): string[] {
+    if (call.name !== 'automateSendRanges' && call.name !== 'renderProjectSections') {
+        return [];
+    }
+    const sectionIds = call.arguments.sectionIds;
+    return isUnknownArray(sectionIds) ? sectionIds.filter((id): id is string => typeof id === 'string') : [];
+}
+
+function getPlanTargetRanges(plan: readonly ProviderPlanCall[]): Array<{ startBeat: number; endBeat: number }> {
+    const sectionsById = new Map((markerStore.value?.sections ?? []).map((section) => [section.id, section]));
+    return plan.flatMap((call) => {
+        const sectionIds = getCallSectionIds(call);
+        const sections = sectionIds.flatMap((id) => {
+            const section = sectionsById.get(id);
+            return section ? [section] : [];
+        });
+        if (sections.length === 0) {
+            return [];
+        }
+        return [
+            {
+                startBeat: Math.min(...sections.map((section) => section.startBeat)),
+                endBeat: Math.max(...sections.map((section) => section.endBeat)),
+            },
+        ];
+    });
+}
+
+/**
+ * `planAgentRun` checks the provider's declared `plan.scope` against the
+ * application's own computed scope (application-assigned bus/device ids
+ * excluded from both sides). A conforming provider must declare the
+ * pre-existing tracks and devices this batch actually touches: the backing-
+ * vocal tracks it sends from and the reverb devices it removes, plus the
+ * section span each section-bearing call resolves. Everything else
+ * pre-existing is protected — every other track, and every device on a track
+ * that isn't one of this batch's removed backing-vocal reverbs.
+ */
+function getExpectedCommandBatchScope(plan: readonly ProviderPlanCall[]): {
+    targetIds: string[];
+    targetRanges: Array<{ startBeat: number; endBeat: number }>;
+    protectedTargetIds: string[];
+    protectedRanges: [];
+} {
+    const backingVocalTrackIds = new Set(
+        plan.filter((call) => call.name === 'addSend').map((call) => String(call.arguments.trackId))
+    );
+    const removedDeviceIds = new Set(
+        plan.filter((call) => call.name === 'removeDevice').map((call) => String(call.arguments.deviceId))
+    );
+    const protectedTargetIds: string[] = [];
+    for (const track of trackStore.value?.tracks ?? []) {
+        if (!backingVocalTrackIds.has(track.id)) {
+            protectedTargetIds.push(track.id);
+        }
+        for (const device of track.devices) {
+            if (!backingVocalTrackIds.has(track.id) || !REVERB_DEVICE_TYPES.has(device.type)) {
+                protectedTargetIds.push(device.id);
+            }
+        }
+    }
+    return {
+        targetIds: [...backingVocalTrackIds, ...removedDeviceIds],
+        targetRanges: getPlanTargetRanges(plan),
+        protectedTargetIds,
+        protectedRanges: [],
+    };
+}
+
+/**
+ * The provider may no longer call domain actions directly: an ordered action
+ * batch is proposed through one `command.batch.propose` call whose `commands`
+ * carries the ordered domain calls. This wraps a fixture's plan the way a
+ * conforming provider response must.
+ */
+function asCommandBatchProposal(plan: readonly ProviderPlanCall[]): ProviderPlanCall[] {
+    const capabilityIds = [...new Set(plan.map((call) => call.name))];
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Execute the grounded command batch.',
+                    constraints: [],
+                    scope: getExpectedCommandBatchScope(plan),
+                    capabilityIds,
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate the grounded command batch.'],
+                    stoppingConditions: ['Stop if application validation fails.'],
+                },
+            },
+        },
+    ];
+}
+
+/**
+ * A `command.batch.propose` call is only accepted once its command names were
+ * disclosed by a prior `agent.catalog.discover` turn (`runApplicationOwnedToolLoop`
+ * mixes reads and terminal calls in separate turns). This derives the discovery
+ * request's `names` from a fixture's eventual final calls.
+ */
+function catalogDiscoveryPlan(finalCalls: readonly ProviderPlanCall[]): ProviderPlanCall[] {
+    const names = getExpectedCatalogCommandNames(finalCalls);
+    return [{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }];
+}
+
+function getExpectedCatalogCommandNames(finalCalls: readonly ProviderPlanCall[]): string[] {
+    const domainNames = finalCalls.flatMap((call) => {
+        if (call.name === 'selectWorkflowCapability') {
+            return [];
+        }
+        if (call.name === 'command.batch.propose') {
+            const commands = call.arguments.commands;
+            return Array.isArray(commands)
+                ? commands.flatMap((command) =>
+                      isRecord(command) && typeof command.name === 'string' ? [command.name] : []
+                  )
+                : [];
+        }
+        return [call.name];
+    });
+    return [...new Set(domainNames)];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!isUnknownArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find((receipt) => {
+        if (!isRecord(receipt) || receipt.id !== 'application-tool-loop' || !isRecord(receipt.summary)) {
+            return false;
+        }
+        return receipt.summary.truncated === false && typeof receipt.summary.value === 'string';
+    });
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const lines = summary.value.split('\n');
+    const payload = lines[lines.length - 1];
+    if (!payload) {
+        throw new TypeError('Expected serialized application tool receipt payload');
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed) || !isUnknownArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderPlanCall[]): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !isUnknownArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set<string>();
+    for (const item of discoveryReceipt.data.items) {
+        if (
+            !isRecord(item) ||
+            !isRecord(item.function) ||
+            typeof item.function.name !== 'string' ||
+            !isRecord(item.function.parameters)
+        ) {
+            continue;
+        }
+        disclosedNames.add(item.function.name);
+    }
+    for (const name of getExpectedCatalogCommandNames(finalCalls)) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+/**
+ * Wraps a WebLLM fixture so the first provider turn discovers the command
+ * catalog it needs and only the second turn returns the actual plan, matching
+ * the two-turn contract `runApplicationOwnedToolLoop` enforces.
+ */
+function createTurnTrackedWebLlmResponder(
+    buildFinalCalls: (userMessage: string) => ProviderPlanCall[]
+): (systemPrompt: string, userMessage: string) => Promise<string> {
+    let turn = 0;
+    return (_systemPrompt, userMessage) => {
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        const finalCalls = buildFinalCalls(userMessage);
+        if (turn === 1) {
+            return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
+        }
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        const response = finalCalls;
+        return Promise.resolve(JSON.stringify(response));
+    };
+}
+
+function toolCallsResponse(calls: readonly ProviderPlanCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+/** The hosted-provider equivalent of {@link createTurnTrackedWebLlmResponder}. */
+function createTurnTrackedHostedResponder(
+    buildFinalCalls: (userMessage: string) => ProviderPlanCall[]
+): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let turn = 0;
+    return (_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = withWorkflowCapabilitySelection(
-            'backing-vocal-plate',
-            createPlan(getHostedUserMessage(init.body))
-        );
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
-    });
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        const finalCalls = buildFinalCalls(getHostedUserMessage(init.body));
+        if (turn === 1) {
+            return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
+        }
+        assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), finalCalls);
+        return Promise.resolve(toolCallsResponse(finalCalls));
+    };
+}
+
+function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderPlanCall[]): void {
+    runtimeMocks.backend.value = 'cloud';
+    runtimeMocks.fetch.mockImplementation(
+        createTurnTrackedHostedResponder((userMessage) =>
+            withWorkflowCapabilitySelection('backing-vocal-plate', asCommandBatchProposal(createPlan(userMessage)))
+        )
+    );
 }
 
 function useHostedFixture(): void {
@@ -366,18 +837,43 @@ function getExpectedPlateTailSeconds(): number {
     }).seconds;
 }
 
+function projectFixtureTracksToLiveStrips(trackIds: readonly string[]): void {
+    for (const trackId of trackIds) {
+        const initialization = projectTrackToLiveStrip({ trackId });
+        if (!initialization || initialization.acceptance !== 'accepted' || initialization.application !== 'applied') {
+            throw new Error(
+                `Expected live strip initialization for ${trackId}: ${initialization?.reason ?? 'no runtime outcome'}`
+            );
+        }
+    }
+}
+
+function removeFixtureRuntimeStrips(tracks: readonly Track[]): void {
+    for (const track of tracks) {
+        if (track.kind === 'bus') {
+            removeBusStrip(track.id);
+        } else {
+            removeTrackStrip(track.id);
+        }
+    }
+}
+
+function rebuildFixtureRuntimeFromProject(): void {
+    const tracks = trackStore.value?.tracks ?? [];
+    removeFixtureRuntimeStrips(tracks);
+    projectFixtureTracksToLiveStrips(tracks.map((track) => track.id));
+}
+
 describe('backing-vocal plate workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'backing-vocal-plate',
-                        createProviderPlanFromUserMessage(userMessage)
-                    )
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(
+            createTurnTrackedWebLlmResponder((userMessage) =>
+                withWorkflowCapabilitySelection(
+                    'backing-vocal-plate',
+                    asCommandBatchProposal(createProviderPlanFromUserMessage(userMessage))
                 )
             )
         );
@@ -406,7 +902,23 @@ describe('backing-vocal plate workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();
-        setArrangementEventBus({ emit: () => Promise.resolve() });
+        setArrangementEventBus({
+            emit: (event, payload) => {
+                if (event === 'track.added' && hasTrackKind(payload)) {
+                    if (payload.kind === 'bus') {
+                        ensureBusStrip(payload.trackId);
+                    } else {
+                        runtimeMocks.ensureTrackStrip(payload.trackId);
+                    }
+                }
+                return Promise.resolve();
+            },
+        });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
         const leadVocal = createTrack('track-lead-vocal', 'Lead Vocal');
@@ -425,6 +937,8 @@ describe('backing-vocal plate workflow', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        flushFixtureStorageOwner('tracks');
+        projectFixtureTracksToLiveStrips([leadVocal, backingHigh, backingLow, spokenWord].map((track) => track.id));
         markerStore.set({
             markers: [],
             sections: [
@@ -445,6 +959,7 @@ describe('backing-vocal plate workflow', () => {
     });
 
     afterEach(async () => {
+        removeFixtureRuntimeStrips(trackStore.value?.tracks ?? []);
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -463,6 +978,24 @@ describe('backing-vocal plate workflow', () => {
         vi.unstubAllGlobals();
     });
 
+    it('settles the fixture-owned marker, automation, and transport writes before proposal capture', () => {
+        const unownedMutationBaseline = captureUnownedProjectMutations();
+        const documentBeforeFlush = getCrdtDoc<Record<string, unknown>>('root') ?? {};
+
+        expect(documentBeforeFlush).toHaveProperty('tracks');
+        expect(documentBeforeFlush).not.toHaveProperty('markers');
+        expect(documentBeforeFlush).not.toHaveProperty('automation');
+        expect(documentBeforeFlush).not.toHaveProperty('transport');
+
+        settleFixtureProjectWrites();
+
+        const documentAfterFlush = getCrdtDoc<Record<string, unknown>>('root') ?? {};
+        expect(documentAfterFlush).toHaveProperty('markers');
+        expect(documentAfterFlush).toHaveProperty('automation');
+        expect(documentAfterFlush).toHaveProperty('transport');
+        expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline + 3);
+    });
+
     it('routes a semantic paraphrase to the backing-vocal plate capability', async () => {
         await sendChatMessage(PARAPHRASE);
         expect(getConfirmationId()).not.toBe('');
@@ -471,6 +1004,7 @@ describe('backing-vocal plate workflow', () => {
     it('compiles EX-01 into one exact protected, dependency-ordered confirmation', async () => {
         await sendChatMessage(PROMPT);
 
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(createProviderPlanFromUserMessage(getWebLlmUserMessage())).toEqual(providerPlan);
         expect(confirmation?.actions.map((action) => action.type)).toEqual([
@@ -568,9 +1102,10 @@ describe('backing-vocal plate workflow', () => {
         await sendChatMessage(PROMPT);
 
         const confirmation = getPendingActionConfirmation(getConfirmationId());
-        expect(
-            confirmation?.actions.filter((action) => action.type === 'addSend').map((action) => action.payload.trackId)
-        ).toEqual(['track-bgv-high', 'track-bgv-low']);
+        expect(confirmation?.actions.filter(isAddSendAction).map((action) => action.payload.trackId)).toEqual([
+            'track-bgv-high',
+            'track-bgv-low',
+        ]);
     });
 
     it('fails closed when another vocal track has no unambiguous lead or backing role', async () => {
@@ -618,15 +1153,15 @@ describe('backing-vocal plate workflow', () => {
         },
     ])('rejects a provider plan with $name before confirmation or write', async ({ transform }) => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) => {
-            const plan = createProviderPlanFromUserMessage(userMessage).map((call) => ({
-                name: String(call.name),
-                arguments: { ...call.arguments },
-            }));
-            return Promise.resolve(
-                JSON.stringify(withWorkflowCapabilitySelection('backing-vocal-plate', transform(plan)))
-            );
-        });
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(
+            createTurnTrackedWebLlmResponder((userMessage) => {
+                const plan = createProviderPlanFromUserMessage(userMessage).map((call) => ({
+                    name: String(call.name),
+                    arguments: { ...call.arguments },
+                }));
+                return withWorkflowCapabilitySelection('backing-vocal-plate', asCommandBatchProposal(transform(plan)));
+            })
+        );
 
         await sendChatMessage(PROMPT);
 
@@ -680,6 +1215,7 @@ describe('backing-vocal plate workflow', () => {
 
         await sendChatMessage(PROMPT);
 
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         const requestBody = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
         if (typeof requestBody !== 'string') {
@@ -891,8 +1427,8 @@ describe('backing-vocal plate workflow', () => {
         if (!confirmation) {
             throw new Error('Expected EX-01 confirmation');
         }
-        const createBusAction = confirmation.actions.find((action) => action.type === 'createBus');
-        const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
+        const createBusAction = confirmation.actions.find(isCreateBusAction);
+        const renderAction = confirmation.actions.find(isRenderProjectSectionsAction);
         if (
             createBusAction?.type !== 'createBus' ||
             !createBusAction.payload.busId ||
@@ -929,11 +1465,13 @@ describe('backing-vocal plate workflow', () => {
         expect(automationStore.value?.lanes).toEqual([]);
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(11);
+        rebuildFixtureRuntimeFromProject();
 
         const frozenTracks = structuredClone(trackStore.value?.tracks ?? []).map((track) =>
             track.id === 'track-bgv-high' ? { ...track, frozen: true } : track
         );
         trackStore.set({ tracks: frozenTracks, selectedTrackId: null, ghostClips: [] });
+        rebuildFixtureRuntimeFromProject();
         const renderCallCountBeforeConflict = runtimeMocks.renderOffline.mock.calls.length;
 
         await redo();
@@ -951,6 +1489,7 @@ describe('backing-vocal plate workflow', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        rebuildFixtureRuntimeFromProject();
         await redo();
         expect(trackStore.value?.tracks.filter((track) => track.id === busId)).toHaveLength(1);
         expect(automationStore.value?.lanes).toHaveLength(2);
@@ -966,15 +1505,17 @@ describe('backing-vocal plate workflow', () => {
         if (!confirmation) {
             throw new Error('Expected EX-01 confirmation');
         }
-        const createBusAction = confirmation.actions.find((action) => action.type === 'createBus');
+        const createBusAction = confirmation.actions.find(isCreateBusAction);
         const filterAction = confirmation.actions.find(
-            (action) => action.type === 'addDevice' && action.payload.deviceType === 'builtin-filter'
+            (action): action is AddDeviceAction =>
+                isAddDeviceAction(action) && action.payload.deviceType === 'builtin-filter'
         );
         const plateAction = confirmation.actions.find(
-            (action) => action.type === 'addDevice' && action.payload.deviceType === 'dutch-oven'
+            (action): action is AddDeviceAction =>
+                isAddDeviceAction(action) && action.payload.deviceType === 'dutch-oven'
         );
-        const automationAction = confirmation.actions.find((action) => action.type === 'automateSendRanges');
-        const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
+        const automationAction = confirmation.actions.find(isAutomateSendRangesAction);
+        const renderAction = confirmation.actions.find(isRenderProjectSectionsAction);
         if (
             createBusAction?.type !== 'createBus' ||
             !createBusAction.payload.busId ||
@@ -1186,6 +1727,7 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(11);
+        rebuildFixtureRuntimeFromProject();
 
         await redo();
         const redoneTracks = trackStore.value?.tracks ?? [];

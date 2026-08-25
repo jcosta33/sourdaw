@@ -216,7 +216,7 @@ function toComment(value: unknown): TrackerIssueComment {
     const comment = value as {
         node_id?: unknown;
         body?: unknown;
-        user?: { login?: unknown; type?: unknown } | null;
+        user?: { node_id?: unknown; login?: unknown; type?: unknown } | null;
     };
     if (typeof comment.node_id !== 'string' || typeof comment.body !== 'string') {
         fail('invalid tracker issue comment');
@@ -224,6 +224,7 @@ function toComment(value: unknown): TrackerIssueComment {
     return {
         id: comment.node_id,
         body: comment.body,
+        authorNodeId: typeof comment.user?.node_id === 'string' ? comment.user.node_id : null,
         authorLogin: typeof comment.user?.login === 'string' ? comment.user.login : null,
         authorType: typeof comment.user?.type === 'string' ? comment.user.type : null,
     };
@@ -381,7 +382,7 @@ export async function runReconcileTrackerIssueCli(args: string[]): Promise<numbe
             const nextBody = applyExactBodyEdits(before.body, readBodyEdits(resolve(cwd, parsed.editsFile)));
             reconcileTrackerIssue(
                 { issueNumber: parsed.issueNumber, expectedBodySha256: parsed.expectedBodySha256, nextBody },
-                auth.minted.login,
+                auth.minted.actorNodeId,
                 port
             );
             return 0;
@@ -395,7 +396,7 @@ export async function runReconcileTrackerIssueCli(args: string[]): Promise<numbe
                 expectedBodySha256: parsed.expectedBodySha256,
                 replacementNumber: parsed.replacementNumber,
             },
-            auth.minted.login,
+            auth.minted.actorNodeId,
             port
         );
         return 0;

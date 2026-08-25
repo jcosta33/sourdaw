@@ -118,6 +118,15 @@ type AutomergeStorageOptions<TData> = {
     }) => TData | null;
 };
 
+/**
+ * An Automerge-backed adapter can force only its own rAF-deferred, unscoped
+ * write to settle. The method is bound to the adapter's private commit owner;
+ * callers cannot broaden it to another adapter or an open action transaction.
+ */
+export type AutomergeStorageAdapter<TData> = StorageAdapter<TData> & {
+    flushPendingUnscopedWrite(): void;
+};
+
 type AutomergeStorageWriteContext = {
     readonly commitOwner: object;
     readonly scoped: boolean;
@@ -147,6 +156,7 @@ type PendingAutomergeStorageWrite = {
     readonly didCommit: () => void;
     readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
+    readonly scoped: boolean;
     readonly snapshotTransaction: object | undefined;
     readonly prepare: () => PendingWritePreparation;
 };
@@ -221,8 +231,44 @@ let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
+type AutomergeStorageMutationProvenance = {
+    readonly owner: object | undefined;
+};
+let activeAutomergeStorageMutationProvenance: AutomergeStorageMutationProvenance | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
 const inboundSanitizersBySlot = new Map<string, (value: unknown) => unknown>();
+
+/**
+ * Exact storage transaction owner of the mutation currently reaching the
+ * repository, or `undefined` for an unscoped mutation.
+ *
+ * A storage flush carries the scope captured when its pending write was
+ * created, overriding whichever transaction happens to call the flush. With no
+ * pending-write provenance, direct repository mutations fall back to the
+ * ambient action transaction. This keeps delayed owned commits owned, foreign
+ * buffered writes foreign, and direct in-action document mutations attributed
+ * to the same exact owner as the action's adapter writes.
+ */
+export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
+    if (activeAutomergeStorageMutationProvenance) {
+        return activeAutomergeStorageMutationProvenance.owner;
+    }
+    return activeAutomergeStorageTransaction?.commitOwner;
+}
+
+export function isAutomergeStorageMutationOwned(): boolean {
+    return getCurrentAutomergeStorageMutationOwner() !== undefined;
+}
+
+function runWithAutomergeStorageMutationOwner<Result>(owner: object | undefined, callback: () => Result): Result {
+    const previousProvenance = activeAutomergeStorageMutationProvenance;
+    activeAutomergeStorageMutationProvenance = { owner };
+    try {
+        return callback();
+    } finally {
+        activeAutomergeStorageMutationProvenance = previousProvenance;
+    }
+}
 
 function getInboundSanitizerKey(docId: string, key: string): string {
     return `${docId}\u0000${key}`;
@@ -336,6 +382,7 @@ type AutomergeStorageCommitOutcome =
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
 function commitAutomergeStorageMutations(
     mutations: readonly AutomergeStorageMutationInput[],
+    owner: object | undefined,
     validateDocument?: AutomergeStorageDocumentValidator
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
@@ -355,31 +402,33 @@ function commitAutomergeStorageMutations(
     // control-flow analysis does not model the write through the callback and
     // narrows a local to `false` for the whole catch below.
     const application = { appliedChangeFn: false };
-    try {
-        port.mutateDoc({
-            docId: firstMutation.docId,
-            changedKeys,
-            changeFn: (doc) => {
-                for (const mutation of mutations) {
-                    mutation.changeFn(doc);
-                }
-                const validationFailure = validateDocument?.(doc) ?? null;
-                if (validationFailure) {
-                    throw new AutomergeStorageTransactionValidationError(validationFailure);
-                }
-                application.appliedChangeFn = true;
-            },
-            message,
-            snapshotTransaction: firstMutation.snapshotTransaction,
-        });
-    } catch (error) {
-        if (application.appliedChangeFn) {
-            return { status: 'ambiguous', error };
+    return runWithAutomergeStorageMutationOwner(owner, () => {
+        try {
+            port.mutateDoc({
+                docId: firstMutation.docId,
+                changedKeys,
+                changeFn: (doc) => {
+                    for (const mutation of mutations) {
+                        mutation.changeFn(doc);
+                    }
+                    const validationFailure = validateDocument?.(doc) ?? null;
+                    if (validationFailure) {
+                        throw new AutomergeStorageTransactionValidationError(validationFailure);
+                    }
+                    application.appliedChangeFn = true;
+                },
+                message,
+                snapshotTransaction: firstMutation.snapshotTransaction,
+            });
+        } catch (error) {
+            if (application.appliedChangeFn) {
+                return { status: 'ambiguous', error };
+            }
+            return { status: 'rolled-back', error };
         }
-        return { status: 'rolled-back', error };
-    }
 
-    return { status: 'committed' };
+        return { status: 'committed' };
+    });
 }
 
 /**
@@ -593,6 +642,10 @@ function flushMatchingAutomergeStorageWrites(
 
     for (const [docId, ownerGroups] of groups) {
         for (const writes of ownerGroups.values()) {
+            const firstWrite = writes[0];
+            if (!firstWrite) {
+                continue;
+            }
             const mutations: AutomergeStorageMutationInput[] = [];
             const abandonedWrites: PendingAutomergeStorageWrite[] = [];
             let preparationFailed = false;
@@ -648,7 +701,11 @@ function flushMatchingAutomergeStorageWrites(
                 continue;
             }
 
-            const outcome = commitAutomergeStorageMutations(mutations, documentValidators.get(docId));
+            const outcome = commitAutomergeStorageMutations(
+                mutations,
+                firstWrite.scoped ? firstWrite.commitOwner : undefined,
+                documentValidators.get(docId)
+            );
             if (documentValidators.has(docId)) {
                 validatedDocumentIds.add(docId);
             }
@@ -781,7 +838,7 @@ export const createAutomergeStorage = <TData>(
     docId: AutomergeStorageDocId,
     key: string,
     options?: AutomergeStorageOptions<TData>
-): StorageAdapter<TData> => {
+): AutomergeStorageAdapter<TData> => {
     const toCrdt = options?.toCrdt;
     const fromCrdt = options?.fromCrdt;
     const hydrateMissing = options?.hydrateMissing;
@@ -1120,6 +1177,7 @@ export const createAutomergeStorage = <TData>(
             didDefer: () => releasePendingWrite(getPending()),
             docId,
             prepare: () => preparePendingWrite(getPending()),
+            scoped: context.scoped,
             snapshotTransaction: context.snapshotTransaction,
         };
         pending = {
@@ -1170,7 +1228,18 @@ export const createAutomergeStorage = <TData>(
         }
     };
 
-    const adapter: StorageAdapter<TData> = {
+    const adapter: AutomergeStorageAdapter<TData> = {
+        flushPendingUnscopedWrite(): void {
+            const commitOwner = unscopedCommitOwner;
+            if (!commitOwner) {
+                return;
+            }
+            const pending = pendingWritesByOwner.get(commitOwner);
+            if (pending) {
+                flushAutomergeStorageWriteOwner(pending.write);
+            }
+        },
+
         registerInboundSanitizer(sanitize): void {
             inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), (value) =>
                 sanitize(fromCrdt ? fromCrdt(value as TData) : value)

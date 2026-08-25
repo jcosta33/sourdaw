@@ -1,22 +1,36 @@
 # Security Policy
 
-## Supported Versions
+## Supported source
 
-| Version | Supported          |
-| ------- | ------------------ |
-| `main`  | :white_check_mark: |
+There are no supported releases. Security reports against the current source on
+`main` are accepted.
 
----
+## Report a vulnerability
 
-## Reporting a Vulnerability
+GitHub Private Vulnerability Reporting is enabled for
+[`jcosta33/sourdaw`](https://github.com/jcosta33/sourdaw/security). Please use it
+for vulnerabilities and do not open a public issue first.
 
-The Sourdaw team takes the security and safety of native runtime execution, IPC boundaries, file parsing, and DSP isolation seriously.
+## Current bounds
 
-If you discover a security vulnerability (such as an IPC sandbox escape, buffer overflow in decoders, untrusted memory access, or malicious CLAP plugin execution path), **please do not open a public issue.**
+- CLAP discovery is split from hosting. The application may enumerate authorized
+  candidates, but plugin code and descriptors are read by a bounded child scan
+  process. Loaded CLAP plugins then run in the native application process. Scan
+  isolation is not hosting isolation.
+- VST® 3 is unsupported and is not a loadable plugin surface.
+- Sourdaw-owned audio callbacks avoid heap allocation, locks, and blocking IPC.
+  This discipline does not make claims about code inside a third-party plugin.
+- Guarded ZIP input is capped at 2 GiB, 10,000 entries, 255-byte paths, 512 MiB
+  per entry, 2 GiB total uncompressed data, and a 100:1 compression ratio. It
+  rejects nested archives, symlinks, encrypted entries, and unsupported ZIP
+  forms.
+- `.sdaw` decoding checks its magic, format version, declared document and data
+  lengths, and UTF-8 document IDs. The `.sdaw` format is not a general promise
+  that every possible resource exhaustion case is eliminated.
+- Desktop packaging uses ad-hoc signing. There is no distribution signing,
+  notarization, updater, or publish pipeline. The macOS app sandbox is disabled
+  for the current plugin-capable build.
 
-Instead, please report vulnerabilities via **GitHub Private Vulnerability Reporting** on the repository, or email the maintainers directly.
-
-### Security Guarantees & Bounds
-- **Native Plugin Isolation**: CLAP/VST3 third-party binaries execute in isolated helper processes bounded per ADR 0021.
-- **Audio Thread Safety**: Real-time audio threads never allocate, lock, or perform blocking I/O (ADR 0020).
-- **Archive & File Parsing**: Untrusted inputs (e.g. `.sdaw` archives, sample bundles, SMF files) enforce strict length and path sanitization limits.
+These are implementation bounds, not a guarantee that the surrounding platform,
+provider, operating system, or plugin is harmless. Report a bypass through the
+private channel above.

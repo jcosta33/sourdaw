@@ -1,0 +1,47 @@
+# Release Proof
+
+A release candidate is one external directory whose source, web, and macOS
+arm64 desktop artifacts carry the same full Git revision. Assemble it from a
+clean Sourdaw checkout and local Electron and FFmpeg Git checkouts at the revisions in
+`public/legal/ELECTRON-SOURCES.json`:
+
+```sh
+pnpm guard --profile extended --max-rss-mib 6144 --require-target -- \
+  pnpm release:proof:assemble -- \
+    --output <candidate-directory> \
+    --electron-source <electron-git-checkout> \
+    --ffmpeg-source <ffmpeg-git-checkout>
+```
+
+The assembler clears the ignored web output, runs `pnpm build`, and snapshots
+that result before clearing the ignored desktop outputs and running
+`pnpm desktop:build`. It accepts exactly one newly produced
+`Sourdaw-<version>-arm64-mac.zip` and derives its resource census,
+legal-file hashes, application layout, and arm64 executable identity by
+extracting the ZIP itself. It rechecks the Git revision and complete source
+cleanliness after each build, validates the candidate in a temporary sibling
+directory, and publishes the requested output directory only after every check
+passes.
+
+The candidate includes revision-rooted Sourdaw, Electron, and FFmpeg source
+archives from verified Git commits. Its adjacent FFmpeg build manifest and
+Electron build-input copies are generated from the pinned Electron commit and
+identify the macOS arm64 release target and `libffmpeg.dylib` output.
+
+Validate the complete candidate from the same Sourdaw revision:
+
+```sh
+pnpm guard --profile extended --max-rss-mib 6144 --require-target -- \
+  pnpm release:proof -- --candidate <candidate-directory>
+```
+
+Validation fails when any manifest is malformed or stale; an artifact,
+archive, commit object, source tree, build input, notice, or legal file is
+missing or changed; material is not adjacent to the desktop ZIP; the package
+layout or architecture is wrong; or source, web, and desktop evidence does not
+bind to the same revision. It also verifies the packaged Electron fuses,
+`libffmpeg.dylib`, and `app.asar` renderer against the exact installed runtime
+and renderer output used by the in-process desktop build. Unreferenced files
+also fail the candidate's closed file census. The aggregate release inventory,
+Electron provenance, LGPL provenance, and project-license gate runs for the
+same unchanged revision before the candidate directory is published.
