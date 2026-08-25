@@ -413,6 +413,46 @@ describe('useTimelineInteractions — gesture cancellation', () => {
         expect(cancelActiveTimelineGesture()).toBe(false);
     });
 
+    it('Escape cancels a mid-trim drag without committing or pushing history', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })])],
+        });
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.hitTestClipEdge.mockReturnValue({ edge: 'left' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'trim-start',
+        });
+        const { result } = renderInteractions();
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 200, clientY: 20 } as any);
+        });
+        // The trim preview is live during the drag.
+        expect(clipDragPreviewRef.current?.positions.get('c1')?.startBeat).toBe(2);
+
+        let cancelled = false;
+        act(() => {
+            cancelled = cancelActiveTimelineGesture();
+        });
+        expect(cancelled).toBe(true);
+
+        act(() => {
+            result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
+        });
+        expect(mocks.trimClipStart).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.clips[0]?.startBeat).toBe(0);
+    });
+
     it('a committed drag is not rewound by a later cancel', () => {
         setupMoveDrag();
         const { result } = renderInteractions();

@@ -13,8 +13,9 @@ describe('isClipDropCompatible', () => {
         expect(isClipDropCompatible('midi', 'audio')).toBe(false);
     });
 
-    it('leaves non-content track kinds to track eligibility', () => {
-        expect(isClipDropCompatible('audio', 'bus')).toBe(true);
-        expect(isClipDropCompatible('midi', 'folder')).toBe(true);
+    it('rejects non-content track kinds — bus, master, and folder tracks never take clip drops', () => {
+        expect(isClipDropCompatible('audio', 'bus')).toBe(false);
+        expect(isClipDropCompatible('midi', 'master')).toBe(false);
+        expect(isClipDropCompatible('audio', 'folder')).toBe(false);
     });
 });

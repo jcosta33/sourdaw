@@ -5,7 +5,6 @@ import { broadcastPresence } from '#/modules/Collaboration/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
-import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -80,7 +79,6 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
     const pointersRef = useRef<Map<number, PointerEvent>>(new Map());
-    const loopDragRef = useRef<{ startBeat: number } | null>(null);
     const autoDragRef = useRef<{
         laneId?: string;
         trackId: string;
@@ -180,8 +178,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             drawDragRef.current !== null ||
             autoDragRef.current !== null ||
             noteDragRef.current !== null ||
-            rubberBandRef.current !== null ||
-            loopDragRef.current !== null;
+            rubberBandRef.current !== null;
         if (!hadGesture) {
             return false;
         }
@@ -193,7 +190,6 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         autoDragRef.current = null;
         noteDragRef.current = null;
         rubberBandRef.current = null;
-        loopDragRef.current = null;
         inlineMidiNotePreviewRef.current = null;
         clipDragPreviewRef.current = null;
         previewDirtyFlag.value = true;
@@ -216,7 +212,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     useEffect(() => {
         const cancel = (): boolean => cancelGestureRef.current();
-        registerTimelineGestureCanceler(cancel);
+        const unregister = registerTimelineGestureCanceler(cancel);
         const handleBlur = (): void => {
             cancel();
         };
@@ -228,7 +224,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         window.addEventListener('blur', handleBlur);
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
-            registerTimelineGestureCanceler(null);
+            unregister();
             window.removeEventListener('blur', handleBlur);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
@@ -347,11 +343,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 toggleClipInSelection(clipHit.clipId);
             } else {
                 // Pointer-down on a member of a multi-selection must NOT
-                // collapse the selection — the press may become a drag of the
-                // whole group. Focus the clip now; if the pointer comes back
-                // up without a drag, collapse to it on mouse-up instead.
+                // collapse the selection — the press may become a drag (or an
+                // Alt+drag duplicate) of the whole group. Focus the clip now;
+                // if the pointer comes back up without a drag, collapse to it
+                // on mouse-up instead.
                 const selectedIds = clipSelectionStore.value?.selectedClipIds ?? [];
-                if (!event.altKey && selectedIds.length > 1 && selectedIds.includes(clipHit.clipId)) {
+                if (selectedIds.length > 1 && selectedIds.includes(clipHit.clipId)) {
                     selectClip(clipHit.clipId);
                     pendingCollapseClipIdRef.current = clipHit.clipId;
                 } else {
@@ -463,34 +460,15 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
         }
 
-        // Hover cursor (no active drag)
-        if (
-            !dragState &&
-            !loopDragRef.current &&
-            !autoDragRef.current &&
-            !drawDragRef.current &&
-            !rubberBandRef.current
-        ) {
+        // Hover cursor (no active drag). The loop-region drag lives in
+        // BeatRulerBar, not here.
+        if (!dragState && !autoDragRef.current && !drawDragRef.current && !rubberBandRef.current) {
             if (getActiveTool() === 'select') {
                 const edgeHit = hitTestClipEdge(x, y);
                 setHoverCursor(edgeHit && edgeHit.edge !== 'body' ? 'ew-resize' : null);
             } else {
                 setHoverCursor(null);
             }
-        }
-
-        if (loopDragRef.current) {
-            const currentBeat = getBeatFromX(x);
-            const { startBeat } = loopDragRef.current;
-            const loopStart = Math.min(startBeat, currentBeat);
-            const loopEnd = Math.max(startBeat, currentBeat);
-            if (loopEnd - loopStart > 0.25) {
-                setLoopRegion(Math.floor(loopStart), Math.ceil(loopEnd));
-                if (!getTransportState()?.isLooping) {
-                    toggleLoop();
-                }
-            }
-            return;
         }
 
         if (autoDragRef.current) {
@@ -729,11 +707,6 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             return;
         }
 
-        if (loopDragRef.current) {
-            loopDragRef.current = null;
-            return;
-        }
-
         if (autoDragRef.current) {
             commitInlineAutomationPaint(autoDragRef.current);
             autoDragRef.current = null;
@@ -878,13 +851,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (dragState) {
-            const {
-                startBeat: origStart,
-                endBeat: origEnd,
-                sourceTrackId: origTrackId,
-                clipId: dragClipId,
-                mode: dragMode,
-            } = dragState;
+            const { startBeat: origStart, endBeat: origEnd, clipId: dragClipId, mode: dragMode } = dragState;
 
             // Commit preview positions to the store in one batch, then clear the ref.
             const preview = clipDragPreviewRef.current;
@@ -897,14 +864,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             // A plain press on a multi-selection member that never became a
             // drag collapses the selection to that clip on release (the press
             // itself preserved the selection so the group could be dragged).
+            // "Never became a drag" is judged across EVERY previewed clip, not
+            // just the primary: a locked or drop-rejected primary never leaves
+            // its origin, but its followers may have real previewed moves —
+            // collapsing then would silently discard their commit and skip the
+            // rejection feedback.
             const pendingCollapse = pendingCollapseClipIdRef.current;
             pendingCollapseClipIdRef.current = null;
-            const dragMoved =
-                !!primaryPos &&
-                !!primaryOrig &&
-                (primaryPos.trackId !== primaryOrig.trackId ||
-                    !Object.is(primaryPos.startBeat, primaryOrig.startBeat) ||
-                    !Object.is(primaryPos.endBeat, primaryOrig.endBeat));
 
             // Surface a rejected drop (locked clip, incompatible track kind) at
             // drop time; rejected clips were held at their origin in the preview
@@ -913,7 +879,19 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             dropRejectedRef.current = { reason: null, clipIds: new Set<string>() };
             dragContextRef.current = null;
 
-            if (pendingCollapse && !dragMoved) {
+            const anyPreviewMoved =
+                !!preview &&
+                [...preview.positions.entries()].some(([clipId, pos]) => {
+                    const orig = preview.originals.get(clipId);
+                    return (
+                        !!orig &&
+                        (pos.trackId !== orig.trackId ||
+                            !Object.is(pos.startBeat, orig.startBeat) ||
+                            !Object.is(pos.endBeat, orig.endBeat))
+                    );
+                });
+
+            if (pendingCollapse && !anyPreviewMoved && !dropRejected.reason) {
                 selectClipWithFocus(pendingCollapse);
                 dragStateRef.current = null;
                 setDragState(null);
@@ -972,8 +950,17 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     }
                 } else if (dragMode === 'move') {
                     const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
-                    let usedRipple = false;
-                    let ripplePlan: ReturnType<typeof planRippleMove> = null;
+                    // Every ripple-moved clip gets its own plan; keeping only the
+                    // last one made undo restore just that clip's shifted
+                    // neighbors on a multi-clip ripple drag.
+                    const rippleMoves: {
+                        clipId: string;
+                        trackId: string;
+                        origStartBeat: number;
+                        origEndBeat: number;
+                        newStartBeat: number;
+                        plan: NonNullable<ReturnType<typeof planRippleMove>>;
+                    }[] = [];
                     // History is pushed only for clips whose write actually
                     // landed — a rejected or no-op move mints no entry.
                     const moved: {
@@ -999,7 +986,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                 const clip = track?.clips.find((context) => context.id === clipId);
                                 if (clip) {
                                     const duration = clip.endBeat - clip.startBeat;
-                                    ripplePlan = planRippleMove({
+                                    const ripplePlan = planRippleMove({
                                         trackId: pos.trackId,
                                         clipId,
                                         oldStartBeat: orig.startBeat,
@@ -1014,7 +1001,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                             clipDuration: duration,
                                             plan: ripplePlan,
                                         });
-                                        usedRipple = true;
+                                        rippleMoves.push({
+                                            clipId,
+                                            trackId: pos.trackId,
+                                            origStartBeat: orig.startBeat,
+                                            origEndBeat: orig.endBeat,
+                                            newStartBeat: pos.startBeat,
+                                            plan: ripplePlan,
+                                        });
                                         moved.push({
                                             clipId,
                                             fromTrackId: orig.trackId,
@@ -1040,10 +1034,10 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     }
 
                     if (moved.length > 0) {
-                        if (usedRipple && ripplePlan) {
-                            // Ripple move undo: restore clip and all shifted clips
-                            const savedPlan = ripplePlan;
-                            const savedDuration = origEnd - origStart;
+                        if (rippleMoves.length > 0) {
+                            // Ripple move undo: restore every moved clip and every
+                            // neighbor shifted by any clip's plan.
+                            const savedRippleMoves = rippleMoves;
                             const movedClips = moved;
                             pushUndoEntry(
                                 'Move clip (ripple)',
@@ -1052,71 +1046,77 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                     for (const movedClip of movedClips) {
                                         moveClip(movedClip.clipId, movedClip.fromTrackId, movedClip.fromStartBeat);
                                     }
-                                    // Restore ripple-shifted clips to original positions
+                                    // Restore ripple-shifted clips to original
+                                    // positions — merged across every clip's plan,
+                                    // keyed by clip id, across all tracks.
                                     const state2 = getTrackStoreState();
                                     if (state2) {
-                                        const allShifted = [
-                                            ...savedPlan.gapClosedClips,
-                                            ...savedPlan.destinationOpenedClips,
-                                        ];
-                                        const shiftMap = new Map(allShifted.map((state1) => [state1.clipId, state1]));
-                                        const updatedTracks = state2.tracks.map((time) => {
-                                            if (time.id !== origTrackId) {
-                                                return time;
+                                        type ShiftedClip =
+                                            (typeof savedRippleMoves)[number]['plan']['gapClosedClips'][number];
+                                        const shiftMap = new Map<string, ShiftedClip>();
+                                        for (const rippleMove of savedRippleMoves) {
+                                            const allShifted = [
+                                                ...rippleMove.plan.gapClosedClips,
+                                                ...rippleMove.plan.destinationOpenedClips,
+                                            ];
+                                            for (const shifted of allShifted) {
+                                                shiftMap.set(shifted.clipId, shifted);
                                             }
-                                            return {
-                                                ...time,
-                                                clips: time.clips.map((context) => {
-                                                    const orig2 = shiftMap.get(context.id);
-                                                    if (!orig2) {
-                                                        return context;
-                                                    }
-                                                    return {
-                                                        ...context,
-                                                        startBeat: orig2.origStartBeat,
-                                                        endBeat: orig2.origEndBeat,
-                                                    };
-                                                }),
-                                            };
-                                        });
+                                        }
+                                        const updatedTracks = state2.tracks.map((time) => ({
+                                            ...time,
+                                            clips: time.clips.map((context) => {
+                                                const orig2 = shiftMap.get(context.id);
+                                                if (!orig2) {
+                                                    return context;
+                                                }
+                                                return {
+                                                    ...context,
+                                                    startBeat: orig2.origStartBeat,
+                                                    endBeat: orig2.origEndBeat,
+                                                };
+                                            }),
+                                        }));
                                         setTrackState({ ...state2, tracks: updatedTracks });
                                     }
                                 },
                                 () => {
                                     const state2 = trackStore.value;
-                                    if (state2) {
-                                        const primaryMove = movedClips.find(
-                                            (movedClip) => movedClip.clipId === dragClipId
-                                        );
-                                        if (primaryMove) {
-                                            const track2 = state2.tracks.find(
-                                                (time) => time.id === primaryMove.toTrackId
-                                            );
-                                            const clip2 = track2?.clips.find((context) => context.id === dragClipId);
-                                            const dur = clip2 ? clip2.endBeat - clip2.startBeat : savedDuration;
-                                            const redoPlan = planRippleMove({
-                                                trackId: primaryMove.toTrackId,
-                                                clipId: dragClipId,
-                                                oldStartBeat: primaryMove.fromStartBeat,
-                                                newStartBeat: primaryMove.toStartBeat,
+                                    // Replay each ripple-moved clip with a fresh plan.
+                                    for (const rippleMove of savedRippleMoves) {
+                                        const track2 = state2?.tracks.find((time) => time.id === rippleMove.trackId);
+                                        const clip2 = track2?.clips.find((context) => context.id === rippleMove.clipId);
+                                        const dur = clip2
+                                            ? clip2.endBeat - clip2.startBeat
+                                            : rippleMove.origEndBeat - rippleMove.origStartBeat;
+                                        const redoPlan = state2
+                                            ? planRippleMove({
+                                                  trackId: rippleMove.trackId,
+                                                  clipId: rippleMove.clipId,
+                                                  oldStartBeat: rippleMove.origStartBeat,
+                                                  newStartBeat: rippleMove.newStartBeat,
+                                                  clipDuration: dur,
+                                              })
+                                            : null;
+                                        if (redoPlan) {
+                                            rippleMoveClip({
+                                                trackId: rippleMove.trackId,
+                                                clipId: rippleMove.clipId,
+                                                newStartBeat: rippleMove.newStartBeat,
                                                 clipDuration: dur,
+                                                plan: redoPlan,
                                             });
-                                            if (redoPlan) {
-                                                rippleMoveClip({
-                                                    trackId: primaryMove.toTrackId,
-                                                    clipId: dragClipId,
-                                                    newStartBeat: primaryMove.toStartBeat,
-                                                    clipDuration: dur,
-                                                    plan: redoPlan,
-                                                });
-                                            } else {
-                                                moveClip(dragClipId, primaryMove.toTrackId, primaryMove.toStartBeat);
-                                            }
+                                        } else {
+                                            moveClip(rippleMove.clipId, rippleMove.trackId, rippleMove.newStartBeat);
                                         }
                                     }
-                                    // Redo every non-primary moved clip.
+                                    // Redo every moved clip that took the plain path.
                                     for (const movedClip of movedClips) {
-                                        if (movedClip.clipId !== dragClipId) {
+                                        if (
+                                            !savedRippleMoves.some(
+                                                (rippleMove) => rippleMove.clipId === movedClip.clipId
+                                            )
+                                        ) {
                                             moveClip(movedClip.clipId, movedClip.toTrackId, movedClip.toStartBeat);
                                         }
                                     }

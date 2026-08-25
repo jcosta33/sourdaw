@@ -6,6 +6,7 @@ import { clipDragPreviewRef, previewDirtyFlag } from '../../../stores/clipDragPr
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
+import { moveClip } from '../../../useCases/clip/moveClip';
 import { useTimelineInteractions } from '../useTimelineInteractions';
 
 /**
@@ -631,6 +632,313 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(4);
             expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/[Ll]ock/), 'warning');
+        });
+    });
+
+    describe('review 1 — a rejected/locked primary must not turn a real group drag into a click', () => {
+        it('commits followers when the pressed clip is locked, notifies, and keeps the selection', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [
+                    makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4, locked: true }),
+                    makeClip({ id: 'c2', trackId: 't1', startBeat: 4, endBeat: 8 }),
+                ]),
+                makeTrack('t2', 'audio', []),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            clipSelectionStore.set({
+                selectedClipId: 'c1',
+                selectedClipIds: ['c1', 'c2'],
+                marqueeSelection: null,
+            });
+            mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockReturnValue({
+                clipId: 'c1',
+                sourceTrackId: 't1',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode: 'move',
+            });
+            mocks.getTrackAtY.mockReturnValue({ index: 1, id: 't2' });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 20);
+            mouseMove(result, 0, 120);
+            mouseUp(result, 0, 120);
+
+            // The locked primary stays; the unlocked follower commits.
+            expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
+            expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(4);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/[Ll]ock/), 'warning');
+            // A real drag happened: no click-collapse of the multi-selection.
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['c1', 'c2']);
+            expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+        });
+
+        it('commits followers when the pressed clip is kind-rejected, surfaces the reason, keeps the selection', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })]),
+                makeTrack('t2', 'midi', [
+                    makeClip({ id: 'c2', trackId: 't2', startBeat: 2, endBeat: 6, type: 'midi' }),
+                ]),
+                makeTrack('t3', 'midi', []),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            clipSelectionStore.set({
+                selectedClipId: 'c1',
+                selectedClipIds: ['c1', 'c2'],
+                marqueeSelection: null,
+            });
+            mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockReturnValue({
+                clipId: 'c1',
+                sourceTrackId: 't1',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode: 'move',
+            });
+            // Drag the group down one track: c1 (audio) onto t2 (midi) is
+            // rejected; c2 (midi) continues to t3 (midi).
+            mocks.getTrackAtY.mockReturnValue({ index: 1, id: 't2' });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 20);
+            mouseMove(result, 0, 120);
+            mouseUp(result, 0, 120);
+
+            expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
+            expect(clipOnTrack('t3', 'c2')?.startBeat).toBe(2);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/MIDI/i), 'warning');
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['c1', 'c2']);
+        });
+    });
+
+    describe('review 3 — non-content track drops are rejected at preview time', () => {
+        it.each(['folder', 'master', 'bus'] as const)(
+            'rejects a clip drop onto a %s track with cursor and drop-time feedback',
+            (kind) => {
+                const tracks = [
+                    makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })]),
+                    makeTrack('t2', kind, []),
+                ];
+                trackStore.set({ ...defaultTrackState, tracks });
+                mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+                mocks.beginClipDrag.mockReturnValue({
+                    clipId: 'c1',
+                    sourceTrackId: 't1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    offsetBeat: 0,
+                    mode: 'move',
+                });
+                mocks.getTrackAtY.mockReturnValue({ index: 1, id: 't2' });
+                mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+                const { result } = renderInteractions();
+
+                mouseDown(result, 0, 20);
+                mouseMove(result, 200, 120);
+
+                expect(canvas.style.cursor).toBe('not-allowed');
+
+                mouseUp(result, 200, 120);
+
+                expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
+                expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(0);
+                expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+                expect(mocks.notifyUser).toHaveBeenCalledWith(
+                    expect.stringMatching(/does not accept clips/i),
+                    'warning'
+                );
+            }
+        );
+    });
+
+    describe('review 4 — multi-clip ripple move undo', () => {
+        it('restores every moved clip and every neighbor shifted by any of the per-clip ripple plans', () => {
+            mocks.workspaceStoreValue.value = {
+                activeTool: 'select',
+                automationVisibility: 'hidden',
+                rippleEditing: true,
+            };
+            const tracks = [
+                makeTrack('t1', 'audio', [
+                    makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 2 }),
+                    makeClip({ id: 'c2', trackId: 't1', startBeat: 4, endBeat: 6 }),
+                    makeClip({ id: 'c3', trackId: 't1', startBeat: 8, endBeat: 10 }),
+                    makeClip({ id: 'c4', trackId: 't1', startBeat: 12, endBeat: 14 }),
+                ]),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            clipSelectionStore.set({
+                selectedClipId: 'c1',
+                selectedClipIds: ['c1', 'c2'],
+                marqueeSelection: null,
+            });
+            mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockReturnValue({
+                clipId: 'c1',
+                sourceTrackId: 't1',
+                startBeat: 0,
+                endBeat: 2,
+                offsetBeat: 0,
+                mode: 'move',
+            });
+            mocks.getTrackAtY.mockReturnValue({ index: 0, id: 't1' });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            // Each moved clip gets its own ripple plan shifting a distinct neighbor.
+            mocks.planRippleMove.mockImplementation(({ clipId }: { clipId: string }) => {
+                if (clipId === 'c1') {
+                    return {
+                        gapClosedClips: [{ clipId: 'c3', origStartBeat: 8, origEndBeat: 10 }],
+                        destinationOpenedClips: [],
+                    };
+                }
+                if (clipId === 'c2') {
+                    return {
+                        gapClosedClips: [{ clipId: 'c4', origStartBeat: 12, origEndBeat: 14 }],
+                        destinationOpenedClips: [],
+                    };
+                }
+                return null;
+            });
+            mocks.rippleMoveClip.mockImplementation(
+                (input: {
+                    trackId: string;
+                    clipId: string;
+                    newStartBeat: number;
+                    plan: { gapClosedClips: { clipId: string; origStartBeat: number }[] };
+                }) => {
+                    moveClip(input.clipId, input.trackId, input.newStartBeat);
+                    for (const shifted of input.plan.gapClosedClips) {
+                        moveClip(shifted.clipId, input.trackId, shifted.origStartBeat + 1);
+                    }
+                }
+            );
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 20);
+            mouseMove(result, 100, 20);
+            mouseUp(result, 100, 20);
+
+            expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(1);
+            expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(5);
+            expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(9);
+            expect(clipOnTrack('t1', 'c4')?.startBeat).toBe(13);
+
+            expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+            const [label, undoEntry, redoEntry] = mocks.pushUndoEntry.mock.calls[0]! as [
+                string,
+                () => void,
+                () => void,
+            ];
+            expect(label).toBe('Move clip (ripple)');
+
+            act(() => undoEntry());
+            // Both moved clips AND both ripple-shifted neighbors return.
+            expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
+            expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(4);
+            expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(8);
+            expect(clipOnTrack('t1', 'c4')?.startBeat).toBe(12);
+
+            act(() => redoEntry());
+            expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(1);
+            expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(5);
+            expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(9);
+            expect(clipOnTrack('t1', 'c4')?.startBeat).toBe(13);
+        });
+    });
+
+    describe('review 5 — duplicate-mode coverage', () => {
+        it('rejected Alt+drag duplicate onto an incompatible track creates no copy and no history', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })]),
+                makeTrack('t2', 'midi', []),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockImplementation((_x: number, _y: number, mode: string) => ({
+                clipId: 'c1',
+                sourceTrackId: 't1',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode,
+            }));
+            mocks.getTrackAtY.mockReturnValue({ index: 1, id: 't2' });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 20, { altKey: true });
+            mouseMove(result, 800, 120);
+            mouseUp(result, 800, 120);
+
+            expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.clips).toHaveLength(1);
+            expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(0);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/MIDI/i), 'warning');
+        });
+
+        it('multi-clip Alt+drag duplicate pushes one entry; undo removes exactly the pre-allocated copies', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })]),
+                makeTrack('t2', 'audio', [makeClip({ id: 'c2', trackId: 't2', startBeat: 2, endBeat: 6 })]),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            clipSelectionStore.set({
+                selectedClipId: 'c1',
+                selectedClipIds: ['c1', 'c2'],
+                marqueeSelection: null,
+            });
+            mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockImplementation((_x: number, _y: number, mode: string) => ({
+                clipId: 'c1',
+                sourceTrackId: 't1',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode,
+            }));
+            // Same-track drop, +2 beats: copies at c1→2 (t1) and c2→4 (t2).
+            mocks.getTrackAtY.mockReturnValue({ index: 0, id: 't1' });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 20, { altKey: true });
+            mouseMove(result, 200, 20);
+            mouseUp(result, 200, 20);
+
+            const t1Clips = trackStore.value?.tracks.find((track) => track.id === 't1')?.clips ?? [];
+            const t2Clips = trackStore.value?.tracks.find((track) => track.id === 't2')?.clips ?? [];
+            const copy1 = t1Clips.find((clip) => clip.id !== 'c1');
+            const copy2 = t2Clips.find((clip) => clip.id !== 'c2');
+            expect(copy1?.startBeat).toBe(2);
+            expect(copy2?.startBeat).toBe(4);
+
+            expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+            const [label, undoEntry, redoEntry] = mocks.pushUndoEntry.mock.calls[0]! as [
+                string,
+                () => void,
+                () => void,
+            ];
+            expect(label).toBe('Duplicate 2 clips');
+
+            act(() => undoEntry());
+            // Exactly the two copies go; both originals survive.
+            expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.clips).toHaveLength(1);
+            expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(1);
+            expect(clipOnTrack('t1', 'c1')).toBeDefined();
+            expect(clipOnTrack('t2', 'c2')).toBeDefined();
+
+            act(() => redoEntry());
+            expect(
+                trackStore.value?.tracks.find((track) => track.id === 't1')?.clips.find((clip) => clip.id === copy1!.id)
+            ).toMatchObject({ startBeat: 2 });
+            expect(
+                trackStore.value?.tracks.find((track) => track.id === 't2')?.clips.find((clip) => clip.id === copy2!.id)
+            ).toMatchObject({ startBeat: 4 });
         });
     });
 });

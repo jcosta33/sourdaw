@@ -1,8 +1,8 @@
 /**
- * Ephemeral registry slot for the currently mounted timeline gesture
- * canceler. `useTimelineInteractions` keeps it current via
- * `registerTimelineGestureCanceler`; the global Escape path (CommandInterface
- * `handleKeydown`) invokes it through `cancelActiveTimelineGesture`.
+ * Ephemeral registry of the currently mounted timeline gesture cancelers.
+ * `useTimelineInteractions` and `BeatRulerBar` keep their cancelers
+ * registered while mounted; the global Escape path (CommandInterface
+ * `handleKeydown`) invokes them through `cancelActiveTimelineGesture`.
  *
  * Gesture state is ephemeral UI, so this is a plain module ref (like
  * `clipDragPreviewRef`), not a store: cancelling never touches project truth
@@ -10,4 +10,4 @@
  */
 export type TimelineGestureCanceler = () => boolean;
 
-export const timelineGestureCancelerRef: { current: TimelineGestureCanceler | null } = { current: null };
+export const timelineGestureCancelerRef: { current: Set<TimelineGestureCanceler> } = { current: new Set() };
