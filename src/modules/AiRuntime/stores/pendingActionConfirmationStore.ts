@@ -153,7 +153,8 @@ type PendingActionResourceLease = {
     transfer?: () => void | Promise<void>;
 };
 
-type PendingActionResourceLeaseDisposition = 'pending' | 'discard' | 'retain';
+type PendingActionResourceLeaseDisposition = 'pending' | 'prepared' | 'discard' | 'retain';
+type PendingActionResourceReleaseAuthority = 'generic' | 'proven-noncommit';
 
 type PendingActionResourceLeaseEntry = {
     lease: PendingActionResourceLease;
@@ -248,9 +249,12 @@ function getPreparedResourceBytes(): number {
     return total;
 }
 
-async function releasePendingActionResourceLease(confirmationId: string): Promise<void> {
+async function releasePendingActionResourceLease(
+    confirmationId: string,
+    authority: PendingActionResourceReleaseAuthority = 'generic'
+): Promise<void> {
     const entry = pendingActionResourceLeases.get(confirmationId);
-    if (!entry || entry.disposition === 'retain') {
+    if (!entry || entry.disposition === 'retain' || (entry.disposition === 'prepared' && authority === 'generic')) {
         return;
     }
     entry.disposition = 'discard';
@@ -594,10 +598,10 @@ export async function commitPendingActionResourceLease(confirmationId: string): 
 
 export function protectPendingActionResourceLease(confirmationId: string): void {
     const entry = pendingActionResourceLeases.get(confirmationId);
-    if (!entry || entry.disposition === 'discard') {
+    if (!entry || entry.disposition === 'discard' || entry.disposition === 'retain') {
         return;
     }
-    entry.disposition = 'retain';
+    entry.disposition = 'prepared';
     entry.lease.protect?.();
 }
 
@@ -608,7 +612,7 @@ type SettlePendingActionResourceLeaseInput = {
 
 export async function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): Promise<void> {
     if (input.disposition === 'discard') {
-        await releasePendingActionResourceLease(input.confirmationId);
+        await releasePendingActionResourceLease(input.confirmationId, 'proven-noncommit');
         return;
     }
     const entry = pendingActionResourceLeases.get(input.confirmationId);

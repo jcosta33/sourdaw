@@ -475,6 +475,89 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
     });
 
+    it('releases commit-protected resources when the storage transaction proves noncommit', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-storage-failure', groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-storage-failure',
+            batchId: 'group-storage-failure',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+        const prepareForCommit = vi.fn().mockResolvedValue(undefined);
+        const protect = vi.fn();
+        const commit = vi.fn().mockResolvedValue(undefined);
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockResolvedValue(undefined);
+        const transfer = vi.fn().mockResolvedValue(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-storage-failure',
+            runId: 'confirmation-storage-failure',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-storage-failure',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+            resourceLease: { bytes: 1, prepareForCommit, protect, commit, release, retain, transfer },
+        });
+        configureAutomergeStoragePort({
+            getDoc: () => ({}),
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: () => {
+                throw new Error('storage commit rejected');
+            },
+        });
+
+        try {
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-storage-failure' })
+            ).resolves.toMatchObject({ status: 'failed', reason: 'storage commit rejected' });
+            expect(prepareForCommit).toHaveBeenCalledOnce();
+            expect(protect).toHaveBeenCalledOnce();
+            expect(commit).not.toHaveBeenCalled();
+            expect(retain).not.toHaveBeenCalled();
+            expect(transfer).not.toHaveBeenCalled();
+            expect(release).toHaveBeenCalledOnce();
+        } finally {
+            await settlePendingActionResourceLease({
+                confirmationId: 'confirmation-storage-failure',
+                disposition: 'retain',
+            });
+        }
+    });
+
     it.each([
         { outcome: 'verified-after-abort', createsTargets: true },
         { outcome: 'ambiguous', createsTargets: false },

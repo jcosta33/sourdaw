@@ -4,6 +4,7 @@ import {
     commitPendingActionResourceLease,
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
+    protectPendingActionResourceLease,
     proposePendingActionConfirmation,
     settlePendingActionResourceLease,
     settlePendingActionResourceLeaseBestEffort,
@@ -323,6 +324,34 @@ describe('pendingActionConfirmationStore', () => {
             })
         ).resolves.toBeUndefined();
         expect(release).toHaveBeenCalledTimes(2);
+    });
+
+    it('defers generic cleanup while commit is prepared but releases after proven noncommit', async () => {
+        const protect = vi.fn();
+        const release = vi.fn().mockResolvedValue(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-prepared-noncommit',
+            prompt: 'prepare resources before commit',
+            assistantMessageId: 'message-prepared-noncommit',
+            actions: [{ type: 'createBus', payload: { name: 'Prepared', busId: 'bus-prepared' } }],
+            actionLabels: ['Prepared'],
+            projectRevision: 'revision-prepared-noncommit',
+            resourceLease: { bytes: 1, protect, release },
+        });
+
+        protectPendingActionResourceLease('confirmation-prepared-noncommit');
+        clearPendingActionConfirmations();
+        await Promise.resolve();
+
+        expect(protect).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
+
+        await settlePendingActionResourceLease({
+            confirmationId: 'confirmation-prepared-noncommit',
+            disposition: 'discard',
+        });
+
+        expect(release).toHaveBeenCalledOnce();
     });
 
     it('hands a committed resource lease to its durable recovery owner before forgetting it', async () => {
