@@ -774,7 +774,7 @@ export function shellPort(
             return number;
         },
         updatePullRequest: (number, { body }) => {
-            ghRun(['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body]);
+            ghRun(updatePullRequestArgs(number, body));
         },
         log: (message) => {
             console.log(message);
@@ -850,6 +850,10 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
         '--json',
         'number,headRefName,isCrossRepository,title,body',
     ];
+}
+
+export function updatePullRequestArgs(number: number, body: string): string[] {
+    return ['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body];
 }
 
 export type OpenPullRequestRow = {

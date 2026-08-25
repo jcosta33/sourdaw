@@ -26,6 +26,7 @@ import {
 import { composePublishBody } from '../prContract.ts';
 import {
     existingOpenPullRequestArgs,
+    updatePullRequestArgs,
     issueExistsFromLookup,
     issueLookupArgs,
     laneIssueNumber,
@@ -161,9 +162,10 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`create:${branch}:${title}:${body.includes('Closes #12') ? 'closes' : 'missing'}`);
             return 88;
         },
-        updatePullRequest: (number, { body }) => {
-            bodies.push(body);
+        updatePullRequest: (number, input) => {
+            bodies.push(input.body);
             calls.push(`edit:${number}`);
+            calls.push(`editKeys:${[...Object.keys(input)].sort().join(',')}`);
         },
         // Logging is ordered against the mutating calls, so it shares their ledger.
         log: (message) => {
@@ -949,8 +951,36 @@ describe('lane publish', () => {
         publishLane(12, port);
 
         expect(calls).toContain('edit:41');
+        expect(calls).toContain('editKeys:body');
         expect(calls.some((call) => call.includes('feat(foo): a later commit'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('checks a later --summary against the existing GitHub title, not the newest commit subject', () => {
+        const { port, calls, bodies } = fakePort({
+            existing: 41,
+            existingTitle: DEFAULT_SUBJECT,
+            subject: 'feat(foo): a later commit',
+        });
+
+        publishLane(12, port, undefined, undefined, 'a later commit');
+
+        expect(calls).toContain('edit:41');
+        expect(bodies.at(-1)).toContain('### 🎯 What does this PR do?\na later commit');
+    });
+
+    it('refuses a later --summary that repeats the existing GitHub title', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            existingTitle: DEFAULT_SUBJECT,
+            subject: 'feat(foo): a later commit',
+        });
+
+        expect(() => publishLane(12, port, undefined, undefined, 'add identities')).toThrow(
+            /What section repeats the title/
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
 
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
@@ -1081,6 +1111,19 @@ describe('lane publish', () => {
             'number,headRefName,isCrossRepository,title,body',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
+    });
+
+    it('edits an existing pull request body without sending a title', () => {
+        expect(updatePullRequestArgs(41, 'body text')).toEqual([
+            'pr',
+            'edit',
+            '41',
+            '--repo',
+            'jcosta33/sourdaw',
+            '--body',
+            'body text',
+        ]);
+        expect(updatePullRequestArgs(41, 'body text')).not.toContain('--title');
     });
 
     describe('matchingOpenPullRequest', () => {
