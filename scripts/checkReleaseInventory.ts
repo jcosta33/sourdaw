@@ -506,6 +506,9 @@ function readBoundedRepositoryDescriptor(
         const readLength = Math.min(chunk.length, limit - position + 1, budget.remaining + 1);
         const bytesRead = (readFile.read ?? readSync)(file.descriptor, chunk, 0, readLength, position);
         if (bytesRead === 0) {
+            if (BigInt(position) !== file.opened.size) {
+                throw new Error(`unexpected early EOF while reading repository file descriptor`);
+            }
             break;
         }
         if (position + bytesRead > limit) {

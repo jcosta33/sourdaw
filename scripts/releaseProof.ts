@@ -174,7 +174,8 @@ export type ReleaseProofPublisher = {
         source: string,
         destination: string,
         identity: ReleaseProofPublicationIdentity,
-        files: readonly ReleaseProofPublicationFile[]
+        files: readonly ReleaseProofPublicationFile[],
+        entries?: readonly ReleaseProofOwnedEntry[]
     ) => ReleaseProofPublishedTree | undefined;
     invalidate: () => void;
     dispose: () => void;
@@ -202,6 +203,8 @@ export type ReleaseProofPublicationRequest = {
     destination: string;
     identity: ReleaseProofPublicationIdentity;
     files: readonly ReleaseProofPublicationFile[];
+    entries: readonly ReleaseProofOwnedEntry[];
+    parentIdentity: ReleaseProofPublicationIdentity;
 };
 
 export type ReleaseProofOwnedEntry = {
@@ -239,16 +242,24 @@ import json
 import os
 import stat
 import sys
-import tempfile
 
 source = os.fsencode(sys.argv[1])
 destination = os.fsencode(sys.argv[2])
 expected_dev = int(sys.argv[3])
 expected_ino = int(sys.argv[4])
-expected_files = {entry["path"]: entry for entry in json.load(sys.stdin)}
+expected_parent_dev = int(sys.argv[5])
+expected_parent_ino = int(sys.argv[6])
+payload = json.load(sys.stdin)
+expected_files = {entry["path"]: entry for entry in payload["files"]}
+expected_entries = {entry["path"]: entry for entry in payload["entries"]}
 directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 source_file_flags = os.O_RDONLY | os.O_NOFOLLOW
 destination_file_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+destination_parent = os.path.dirname(destination) or b"."
+destination_name = os.path.basename(destination)
+
+if not destination_name or b"/" in destination_name:
+    raise SystemExit(18)
 
 expected_directories = set()
 for path in expected_files:
@@ -257,6 +268,12 @@ for path in expected_files:
         raise SystemExit(18)
     for index in range(1, len(parts)):
         expected_directories.add("/".join(parts[:index]))
+for path, entry in expected_entries.items():
+    parts = path.split("/")
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        raise SystemExit(18)
+    if entry["kind"] == "directory":
+        expected_directories.add(path)
 
 def same_identity(metadata, expected):
     return str(metadata.st_dev) == expected["dev"] and str(metadata.st_ino) == expected["ino"]
@@ -275,6 +292,7 @@ observed_files = set()
 observed_directories = set()
 created_entries = {}
 staging = None
+staging_name = None
 staging_descriptor = None
 receipt_emitted = False
 
@@ -310,6 +328,32 @@ def fail(code):
             pass
     raise SystemExit(code)
 
+def path_matches(path, expected_dev, expected_ino):
+    try:
+        metadata = os.lstat(path)
+    except OSError:
+        return False
+    return metadata.st_dev == expected_dev and metadata.st_ino == expected_ino
+
+libc = ctypes.CDLL(None, use_errno=True)
+try:
+    if sys.platform == "darwin":
+        publish = libc.renameatx_np
+        publish.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        publish.restype = ctypes.c_int
+        exclusive_flag = 4
+    elif sys.platform.startswith("linux"):
+        publish = libc.renameat2
+        publish.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        publish.restype = ctypes.c_int
+        exclusive_flag = 1
+    else:
+        os.write(2, b"exclusive rename primitive unavailable on this platform\n")
+        raise SystemExit(69)
+except AttributeError as error:
+    os.write(2, ("exclusive rename primitive unavailable: " + str(error) + "\n").encode())
+    raise SystemExit(69)
+
 def write_all(descriptor, chunk):
     remaining = memoryview(chunk)
     while remaining:
@@ -325,12 +369,17 @@ def copy_tree(source_directory, destination_directory, prefix=""):
         if stat.S_ISDIR(before.st_mode):
             if relative not in expected_directories:
                 fail(18)
+            expected_directory = expected_entries.get(relative)
+            if expected_directory is not None and not same_identity(before, expected_directory):
+                fail(18)
             source_child = os.open(name, directory_flags, dir_fd=source_directory)
             os.mkdir(name, 0o700, dir_fd=destination_directory)
             destination_child = os.open(name, directory_flags, dir_fd=destination_directory)
             try:
                 opened = os.fstat(source_child)
                 if opened.st_dev != before.st_dev or opened.st_ino != before.st_ino:
+                    fail(18)
+                if expected_directory is not None and not same_identity(opened, expected_directory):
                     fail(18)
                 created_entries[relative] = owned_entry(relative, os.fstat(destination_child), "directory")
                 copy_tree(source_child, destination_child, relative)
@@ -374,16 +423,34 @@ def copy_tree(source_directory, destination_directory, prefix=""):
             fail(18)
         observed_files.add(relative)
 
+parent_descriptor = os.open(destination_parent, directory_flags)
 source_descriptor = os.open(source, directory_flags)
 try:
+    parent_metadata = os.fstat(parent_descriptor)
+    if (
+        parent_metadata.st_dev != expected_parent_dev
+        or parent_metadata.st_ino != expected_parent_ino
+        or not path_matches(destination_parent, expected_parent_dev, expected_parent_ino)
+    ):
+        raise SystemExit(19)
     source_metadata = os.fstat(source_descriptor)
-    if source_metadata.st_dev != expected_dev or source_metadata.st_ino != expected_ino:
+    if (
+        source_metadata.st_dev != expected_dev
+        or source_metadata.st_ino != expected_ino
+        or not path_matches(source, expected_dev, expected_ino)
+    ):
         raise SystemExit(18)
-    staging = tempfile.mkdtemp(
-        prefix=b"." + os.path.basename(destination) + b".publication-helper-",
-        dir=os.path.dirname(destination),
-    )
-    staging_descriptor = os.open(staging, directory_flags)
+    for _ in range(128):
+        staging_name = b"." + destination_name + b".publication-helper-" + os.urandom(16).hex().encode()
+        try:
+            os.mkdir(staging_name, 0o700, dir_fd=parent_descriptor)
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise OSError("could not allocate exclusive helper staging")
+    staging = os.path.join(destination_parent, staging_name)
+    staging_descriptor = os.open(staging_name, directory_flags, dir_fd=parent_descriptor)
     copy_tree(source_descriptor, staging_descriptor)
 except SystemExit:
     raise
@@ -394,47 +461,51 @@ finally:
     os.close(source_descriptor)
 if observed_files != set(expected_files) or observed_directories != expected_directories:
     fail(18)
+if not path_matches(source, expected_dev, expected_ino):
+    fail(18)
+if not path_matches(destination_parent, expected_parent_dev, expected_parent_ino):
+    fail(19)
 staging_metadata = os.fstat(staging_descriptor)
 os.close(staging_descriptor)
 staging_descriptor = None
-libc = ctypes.CDLL(None, use_errno=True)
-if sys.platform == "darwin":
-    publish = libc.renamex_np
-    publish.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-    publish.restype = ctypes.c_int
-    result = publish(staging, destination, 4)
-elif sys.platform.startswith("linux"):
-    publish = libc.renameat2
-    publish.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    publish.restype = ctypes.c_int
-    result = publish(-100, staging, -100, destination, 1)
-else:
-    fail(69)
+result = publish(parent_descriptor, staging_name, parent_descriptor, destination_name, exclusive_flag)
 if result == 0:
-    destination_metadata = os.lstat(destination)
-    if destination_metadata.st_dev != staging_metadata.st_dev or destination_metadata.st_ino != staging_metadata.st_ino:
+    destination_metadata = os.stat(destination_name, dir_fd=parent_descriptor, follow_symlinks=False)
+    if (
+        destination_metadata.st_dev != staging_metadata.st_dev
+        or destination_metadata.st_ino != staging_metadata.st_ino
+        or not path_matches(destination_parent, expected_parent_dev, expected_parent_ino)
+    ):
+        emit_receipt(destination, destination_metadata)
         raise SystemExit(19)
     emit_receipt(destination, destination_metadata)
+    os.close(parent_descriptor)
     raise SystemExit(0)
 failure = ctypes.get_errno()
 os.write(2, ("exclusive rename: " + os.strerror(failure) + "\n").encode())
 emit_receipt(staging, staging_metadata)
+os.close(parent_descriptor)
 raise SystemExit(17 if failure == errno.EEXIST else 1)
 `;
 
 const ATOMIC_RENAME_INTERPRETER = '/usr/bin/python3';
 
 const OWNED_PATH_REMOVER = String.raw`
+import ctypes
+import errno
 import json
 import os
 import stat
 import sys
 
-quarantine = os.fsencode(sys.argv[1])
-expected_root_dev = int(sys.argv[2])
-expected_root_ino = int(sys.argv[3])
-expected_payload_dev = int(sys.argv[4])
-expected_payload_ino = int(sys.argv[5])
+quarantine_parent_path = os.fsencode(sys.argv[1])
+quarantine_name = os.fsencode(sys.argv[2])
+expected_parent_dev = int(sys.argv[3])
+expected_parent_ino = int(sys.argv[4])
+expected_root_dev = int(sys.argv[5])
+expected_root_ino = int(sys.argv[6])
+expected_payload_dev = int(sys.argv[7])
+expected_payload_ino = int(sys.argv[8])
 expected_entries = {entry["path"]: entry for entry in json.load(sys.stdin)}
 directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 observed_entries = set()
@@ -444,6 +515,44 @@ def same_identity(metadata, expected_dev, expected_ino):
 
 def entry_kind(metadata):
     return "directory" if stat.S_ISDIR(metadata.st_mode) else "entry"
+
+def path_matches(path, expected_dev, expected_ino):
+    try:
+        metadata = os.lstat(path)
+    except OSError:
+        return False
+    return same_identity(metadata, expected_dev, expected_ino)
+
+libc = ctypes.CDLL(None, use_errno=True)
+try:
+    if sys.platform == "darwin":
+        exclusive_rename = libc.renameatx_np
+        exclusive_rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        exclusive_rename.restype = ctypes.c_int
+        exclusive_flag = 4
+    elif sys.platform.startswith("linux"):
+        exclusive_rename = libc.renameat2
+        exclusive_rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        exclusive_rename.restype = ctypes.c_int
+        exclusive_flag = 1
+    else:
+        raise SystemExit(69)
+except AttributeError:
+    raise SystemExit(69)
+
+def private_name():
+    return b".sourdaw-remove-" + os.urandom(16).hex().encode()
+
+def move_exclusive(parent, name):
+    encoded_name = os.fsencode(name)
+    for _ in range(128):
+        moved_name = private_name()
+        if exclusive_rename(parent, encoded_name, parent, moved_name, exclusive_flag) == 0:
+            return moved_name
+        failure = ctypes.get_errno()
+        if failure != errno.EEXIST:
+            raise SystemExit(20)
+    raise SystemExit(20)
 
 def inspect_directory(directory, prefix=""):
     for name in os.listdir(directory):
@@ -467,43 +576,50 @@ def inspect_directory(directory, prefix=""):
             finally:
                 os.close(child)
 
-def remove_entry(parent, name, relative, expected=None):
+def remove_entry(parent, name, relative, expected):
     before = os.stat(name, dir_fd=parent, follow_symlinks=False)
-    if expected is not None and not same_identity(before, expected[0], expected[1]):
+    expected_dev = int(expected["dev"])
+    expected_ino = int(expected["ino"])
+    expected_kind = expected["kind"]
+    if not same_identity(before, expected_dev, expected_ino) or entry_kind(before) != expected_kind:
         raise SystemExit(20)
     if stat.S_ISDIR(before.st_mode):
         child = os.open(name, directory_flags, dir_fd=parent)
         try:
             opened = os.fstat(child)
-            if not same_identity(opened, before.st_dev, before.st_ino):
+            if not same_identity(opened, expected_dev, expected_ino):
                 raise SystemExit(20)
             for child_name in os.listdir(child):
                 child_relative = child_name if relative == "" else relative + "/" + child_name
                 expected_child = expected_entries.get(child_relative)
                 if expected_child is None:
                     raise SystemExit(20)
-                remove_entry(
-                    child,
-                    child_name,
-                    child_relative,
-                    (int(expected_child["dev"]), int(expected_child["ino"])),
-                )
-            after = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            if not same_identity(after, opened.st_dev, opened.st_ino):
-                raise SystemExit(20)
-            os.rmdir(name, dir_fd=parent)
+                remove_entry(child, child_name, child_relative, expected_child)
         finally:
             os.close(child)
-        return
     after = os.stat(name, dir_fd=parent, follow_symlinks=False)
-    if not same_identity(after, before.st_dev, before.st_ino):
+    if not same_identity(after, expected_dev, expected_ino) or entry_kind(after) != expected_kind:
         raise SystemExit(20)
-    os.unlink(name, dir_fd=parent)
+    moved_name = move_exclusive(parent, name)
+    moved = os.stat(moved_name, dir_fd=parent, follow_symlinks=False)
+    if not same_identity(moved, expected_dev, expected_ino) or entry_kind(moved) != expected_kind:
+        os.write(2, b"replacement preserved under private quarantine name\n")
+        raise SystemExit(20)
+    if expected_kind == "directory":
+        os.rmdir(moved_name, dir_fd=parent)
+    else:
+        os.unlink(moved_name, dir_fd=parent)
 
-root = os.open(quarantine, directory_flags)
+parent = os.open(quarantine_parent_path, directory_flags)
+root = os.open(quarantine_name, directory_flags, dir_fd=parent)
 try:
+    opened_parent = os.fstat(parent)
     opened_root = os.fstat(root)
-    if not same_identity(opened_root, expected_root_dev, expected_root_ino):
+    if (
+        not same_identity(opened_parent, expected_parent_dev, expected_parent_ino)
+        or not path_matches(quarantine_parent_path, expected_parent_dev, expected_parent_ino)
+        or not same_identity(opened_root, expected_root_dev, expected_root_ino)
+    ):
         raise SystemExit(20)
     payload = os.stat(b"tree", dir_fd=root, follow_symlinks=False)
     if not same_identity(payload, expected_payload_dev, expected_payload_ino):
@@ -516,9 +632,28 @@ try:
             os.close(payload_descriptor)
     if observed_entries != set(expected_entries):
         raise SystemExit(20)
-    remove_entry(root, b"tree", "", (expected_payload_dev, expected_payload_ino))
+    remove_entry(
+        root,
+        b"tree",
+        "",
+        {"dev": str(expected_payload_dev), "ino": str(expected_payload_ino), "kind": entry_kind(payload)},
+    )
+    if (
+        not same_identity(os.fstat(root), expected_root_dev, expected_root_ino)
+        or not path_matches(quarantine_parent_path, expected_parent_dev, expected_parent_ino)
+    ):
+        raise SystemExit(20)
+    root_path_metadata = os.stat(quarantine_name, dir_fd=parent, follow_symlinks=False)
+    if not same_identity(root_path_metadata, expected_root_dev, expected_root_ino):
+        raise SystemExit(20)
+    moved_root_name = move_exclusive(parent, quarantine_name)
+    moved_root = os.stat(moved_root_name, dir_fd=parent, follow_symlinks=False)
+    if not same_identity(moved_root, expected_root_dev, expected_root_ino):
+        raise SystemExit(20)
+    os.rmdir(moved_root_name, dir_fd=parent)
 finally:
     os.close(root)
+    os.close(parent)
 `;
 
 type TrustedSystemInterpreterStats = {
@@ -644,19 +779,39 @@ export function prepareAtomicDirectoryPublisher(runner?: ReleaseProofPublisherRu
         valid = false;
     };
     return {
-        publish(source, destination, identity, files) {
+        publish(source, destination, identity, files, entries = []) {
             if (!valid) {
                 throw new Error('atomic release proof publisher is unavailable');
             }
-            const request = { source, destination, identity, files };
+            const parent = dirname(destination);
+            const parentIdentity = directoryIdentity(parent);
+            const request = {
+                source,
+                destination,
+                identity,
+                files,
+                entries,
+                parentIdentity: { dev: String(parentIdentity.dev), ino: String(parentIdentity.ino) },
+            };
             const published = publishRunner(request, () => {
                 const result = spawnSync(
                     interpreter,
-                    ['-I', '-S', '-c', ATOMIC_RENAME_HELPER, source, destination, identity.dev, identity.ino],
+                    [
+                        '-I',
+                        '-S',
+                        '-c',
+                        ATOMIC_RENAME_HELPER,
+                        source,
+                        destination,
+                        identity.dev,
+                        identity.ino,
+                        request.parentIdentity.dev,
+                        request.parentIdentity.ino,
+                    ],
                     {
                         encoding: 'utf8',
                         env: { PATH: '/usr/bin:/bin' },
-                        input: JSON.stringify(files),
+                        input: JSON.stringify({ entries, files }),
                     }
                 );
                 let stderr = result.stderr;
@@ -690,11 +845,15 @@ export function prepareAtomicDirectoryPublisher(runner?: ReleaseProofPublisherRu
                     stdout: result.stdout,
                 };
             });
+            const diagnostic = published.stderr.trim();
+            const diagnosticSuffix = diagnostic === '' ? '' : `: ${diagnostic}`;
             if (published.status === 17) {
-                throw new Error('release proof output appeared before atomic publication');
+                throw new Error(`release proof output appeared before atomic publication${diagnosticSuffix}`);
             }
             if (published.status === 18) {
-                throw new Error('release proof publication source changed before atomic publication');
+                throw new Error(
+                    `release proof publication source changed before atomic publication${diagnosticSuffix}`
+                );
             }
             if (published.status === 19) {
                 throw new Error('atomic release proof publisher moved an unexpected directory identity');
@@ -792,6 +951,7 @@ function removeOwnedPath(
     } catch {
         return { state: 'preserved', path };
     }
+    const quarantineParentIdentity = directoryIdentity(quarantineParent);
     const quarantineRoot = mkdtempSync(join(quarantineParent, `.${basename(path)}.cleanup-`));
     const quarantinePayload = join(quarantineRoot, 'tree');
     try {
@@ -829,7 +989,10 @@ function removeOwnedPath(
             '-S',
             '-c',
             OWNED_PATH_REMOVER,
-            quarantineRoot,
+            quarantineParent,
+            basename(quarantineRoot),
+            String(quarantineParentIdentity.dev),
+            String(quarantineParentIdentity.ino),
             String(quarantineIdentity.dev),
             String(quarantineIdentity.ino),
             String(identity.dev),
@@ -838,12 +1001,10 @@ function removeOwnedPath(
         { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, input: JSON.stringify(entries) }
     );
     if (removed.status !== 0) {
-        return { state: 'preserved', path: quarantinePayload };
+        return { state: 'preserved', path: existsSync(quarantinePayload) ? quarantinePayload : quarantineRoot };
     }
-    try {
-        rmdirSync(quarantineRoot);
-    } catch (error) {
-        throw new Error(`owned path cleanup left an unexpected quarantine at ${quarantineRoot}`, { cause: error });
+    if (existsSync(quarantineRoot)) {
+        return { state: 'preserved', path: quarantineRoot };
     }
     return { state: 'removed' };
 }
@@ -879,6 +1040,15 @@ function sameDirectoryBytes(left: readonly DirectoryByteEntry[], right: readonly
     ): Array<Pick<DirectoryByteEntry, 'digest' | 'path' | 'size'>> =>
         entries.map(({ digest, path, size }) => ({ digest, path, size }));
     return sameValue(bytes(left), bytes(right));
+}
+
+function sameDirectoryEntryShape(
+    left: readonly ReleaseProofOwnedEntry[],
+    right: readonly ReleaseProofOwnedEntry[]
+): boolean {
+    const shape = (entries: readonly ReleaseProofOwnedEntry[]): Array<Pick<ReleaseProofOwnedEntry, 'kind' | 'path'>> =>
+        entries.map(({ kind, path }) => ({ kind, path }));
+    return sameValue(shape(left), shape(right));
 }
 
 function directoryByteIdentity(
@@ -1027,7 +1197,8 @@ function publishValidatedDirectory(
                 dev: String(validatedSource.identity.dev),
                 ino: String(validatedSource.identity.ino),
             },
-            validatedSource.bytes
+            validatedSource.bytes,
+            validatedSource.entries
         );
         published = true;
         if (publication === undefined && existsSync(validatedSource.path)) {
@@ -1110,9 +1281,18 @@ function assertDirectorySnapshotUnchanged(
 
 function validatePublicationCandidate(
     options: ReleaseProofOptions,
-    fileReader: ReleaseProofFileReader
+    fileReader: ReleaseProofFileReader,
+    expectedIdentity: DirectoryIdentity,
+    expectedSource: ValidatedDirectorySnapshot
 ): ValidatedDirectorySnapshot {
     const before = validateDirectorySnapshot(options.candidate, fileReader, 'release proof publication candidate');
+    if (
+        !sameDirectoryIdentity(before.identity, expectedIdentity) ||
+        !sameDirectoryBytes(before.bytes, expectedSource.bytes) ||
+        !sameDirectoryEntryShape(before.entries, expectedSource.entries)
+    ) {
+        throw new Error('release proof publication snapshot differs from the pre-gate validated candidate');
+    }
     const errors = validateReleaseProof({ ...options, fileReader });
     let after: ValidatedDirectorySnapshot;
     try {
@@ -1666,51 +1846,45 @@ function listFiles(root: string, label: string, errors: string[], allowContained
 function snapshotCandidateTree(
     candidate: string,
     snapshot: string,
+    expectedSource: ValidatedDirectorySnapshot,
+    bindSnapshotIdentity: (identity: DirectoryIdentity) => void,
     fileReader: ReleaseProofFileReader = releaseProofFileReader
-): void {
+): ValidatedDirectorySnapshot {
     const label = 'release proof candidate snapshot';
-    const errors: string[] = [];
-    const paths = listFiles(candidate, label, errors);
-    if (errors.length > 0) {
-        throw new Error(errors.join('\n'));
+    const currentSource = validateDirectorySnapshot(candidate, fileReader, label);
+    if (
+        !sameDirectoryIdentity(currentSource.identity, expectedSource.identity) ||
+        !sameValue(currentSource.bytes, expectedSource.bytes) ||
+        !sameValue(currentSource.entries, expectedSource.entries)
+    ) {
+        throw new Error('release proof candidate changed before creating the publication snapshot');
     }
-    const budget = candidateSnapshotBudget(fileReader);
-    for (const path of paths) {
-        const source = resolve(candidate, ...path.split('/'));
-        const destination = resolve(snapshot, ...path.split('/'));
-        mkdirSync(dirname(destination), { recursive: true });
-        const copied = withContainedRegularFile(
+    const snapshotPublisher = prepareAtomicDirectoryPublisher();
+    try {
+        const publication = snapshotPublisher.publish(
             candidate,
-            source,
-            RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
-            (descriptor) => {
-                const output = openSync(destination, 'wx');
-                try {
-                    digestCandidateDescriptor(
-                        descriptor,
-                        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
-                        budget,
-                        fileReader,
-                        (bytes) => writeSync(output, bytes)
-                    );
-                    return true;
-                } finally {
-                    closeSync(output);
-                }
-            },
-            fileReader
+            snapshot,
+            { dev: String(expectedSource.identity.dev), ino: String(expectedSource.identity.ino) },
+            expectedSource.bytes,
+            expectedSource.entries
         );
-        if (copied !== true) {
-            throw new Error(`${label}: missing or unsafe ${path}`);
+        if (publication === undefined) {
+            throw new Error('release proof snapshot publisher returned no identity receipt');
         }
-    }
-    const snapshotErrors: string[] = [];
-    const snapshotPaths = listFiles(snapshot, label, snapshotErrors);
-    if (snapshotErrors.length > 0) {
-        throw new Error(snapshotErrors.join('\n'));
-    }
-    if (!sameValue(paths, snapshotPaths)) {
-        throw new Error('release proof candidate census changed while creating the publication snapshot');
+        const snapshotIdentity = internalDirectoryIdentity(publication.identity);
+        bindSnapshotIdentity(snapshotIdentity);
+        const copied = validateDirectorySnapshot(snapshot, fileReader, 'release proof publication snapshot');
+        if (
+            !sameDirectoryIdentity(copied.identity, snapshotIdentity) ||
+            !sameDirectoryBytes(copied.bytes, expectedSource.bytes) ||
+            !sameDirectoryEntryShape(copied.entries, expectedSource.entries) ||
+            !sameValue(copied.entries, publication.entries)
+        ) {
+            throw new Error('release proof publication snapshot differs from the pre-gate validated candidate');
+        }
+        return copied;
+    } finally {
+        snapshotPublisher.dispose();
     }
 }
 
@@ -4128,16 +4302,21 @@ export function assembleReleaseProof(
             },
         };
         writeJson(join(candidate, PROOF_FILE), proof);
+        const stagingOptions = {
+            root,
+            candidate,
+            expectedRevision: revision,
+            runtimeContract,
+            releaseInventory,
+        };
+        const defaultStagingErrors = validateReleaseProof(stagingOptions);
+        if (defaultStagingErrors.length > 0) {
+            throw new Error(defaultStagingErrors.join('\n'));
+        }
         if (validator !== validateReleaseProof) {
-            const customErrors = validator({
-                root,
-                candidate,
-                expectedRevision: revision,
-                runtimeContract,
-                releaseInventory,
-            });
-            if (customErrors.length > 0) {
-                throw new Error(customErrors.join('\n'));
+            const customStagingErrors = validator(stagingOptions);
+            if (customStagingErrors.length > 0) {
+                throw new Error(customStagingErrors.join('\n'));
             }
         }
         assertBuildState(root, revision);
@@ -4156,9 +4335,24 @@ export function assembleReleaseProof(
         );
         publisher = publisherPreparer();
         publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
-        publicationCandidateIdentity = directoryIdentity(publicationCandidate);
-        snapshotCandidateTree(candidate, publicationCandidate, publicationFileReader);
+        const publicationReservationIdentity = directoryIdentity(publicationCandidate);
+        assertOwnedPathCleanup(
+            removeOwnedPath(publicationCandidate, publicationReservationIdentity),
+            'release proof publication path reservation'
+        );
+        snapshotCandidateTree(
+            candidate,
+            publicationCandidate,
+            releaseGateCandidate,
+            (identity) => {
+                publicationCandidateIdentity = identity;
+            },
+            publicationFileReader
+        );
         assertOwnedPathCleanup(removeOwnedPath(candidate, candidateIdentity), 'release proof assembly candidate');
+        if (publicationCandidateIdentity === undefined) {
+            throw new Error('release proof publication snapshot returned no bound directory identity');
+        }
         const semanticCandidate = validatePublicationCandidate(
             {
                 root,
@@ -4167,7 +4361,9 @@ export function assembleReleaseProof(
                 runtimeContract,
                 releaseInventory,
             },
-            publicationFileReader
+            publicationFileReader,
+            publicationCandidateIdentity,
+            releaseGateCandidate
         );
         publishValidatedDirectory(publisher, semanticCandidate, output, publicationFileReader);
     } catch (error) {

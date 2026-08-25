@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import {
@@ -540,6 +540,22 @@ function refreshSourceArchiveHash(fixture: Fixture): string {
     source.manifestSha256 = hash(manifestPath);
     writeJson(join(fixture.candidate, 'release-proof.json'), value);
     return archive;
+}
+
+function embeddedPythonHelper(name: string): string {
+    const source = readFileSync(join(workspaceRoot, 'scripts/releaseProof.ts'), 'utf8');
+    const delimiter = String.fromCharCode(96);
+    const opening = `const ${name} = String.raw${delimiter}`;
+    const start = source.indexOf(opening);
+    if (start === -1) {
+        throw new Error(`missing embedded helper ${name}`);
+    }
+    const contentStart = start + opening.length;
+    const end = source.indexOf(`\n${delimiter};`, contentStart);
+    if (end === -1) {
+        throw new Error(`unterminated embedded helper ${name}`);
+    }
+    return source.slice(contentStart, end);
 }
 
 function oversizedTarHeader(size: number): Buffer {
@@ -1719,6 +1735,134 @@ describe('release proof', () => {
         }
     });
 
+    it.each(['file', 'empty directory'] as const)(
+        'preserves a raced replacement %s after the owned child identity check',
+        (kind) => {
+            const base = mkdtempSync(join(tmpdir(), 'sourdaw-owned-child-race-'));
+            fixtureRoots.push(base);
+            const parent = join(base, 'parent');
+            const quarantine = join(parent, 'quarantine');
+            const tree = join(quarantine, 'tree');
+            const target = join(tree, 'target');
+            mkdirSync(tree, { recursive: true });
+            if (kind === 'file') {
+                write(target, 'owned bytes');
+            } else {
+                mkdirSync(target);
+            }
+            const parentIdentity = lstatSync(parent, { bigint: true });
+            const quarantineIdentity = lstatSync(quarantine, { bigint: true });
+            const treeIdentity = lstatSync(tree, { bigint: true });
+            const targetIdentity = lstatSync(target, { bigint: true });
+            const manifest = [
+                {
+                    dev: String(targetIdentity.dev),
+                    ino: String(targetIdentity.ino),
+                    kind: kind === 'file' ? 'entry' : 'directory',
+                    path: 'target',
+                },
+            ];
+            const helper = embeddedPythonHelper('OWNED_PATH_REMOVER');
+            const seam = '    moved_name = move_exclusive(parent, name)';
+            expect(helper).toContain(seam);
+            const replacement =
+                kind === 'file'
+                    ? `        replacement = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent)
+        os.write(replacement, b"raced replacement")
+        os.close(replacement)`
+                    : '        os.mkdir(name, 0o700, dir_fd=parent)';
+            const racedHelper = helper.replace(
+                seam,
+                `    if relative == "target":
+        os.rename(name, os.fsencode(name) + b".owned", src_dir_fd=parent, dst_dir_fd=parent)
+${replacement}
+${seam}`
+            );
+
+            const result = spawnSync(
+                '/usr/bin/python3',
+                [
+                    '-I',
+                    '-S',
+                    '-c',
+                    racedHelper,
+                    parent,
+                    basename(quarantine),
+                    String(parentIdentity.dev),
+                    String(parentIdentity.ino),
+                    String(quarantineIdentity.dev),
+                    String(quarantineIdentity.ino),
+                    String(treeIdentity.dev),
+                    String(treeIdentity.ino),
+                ],
+                { encoding: 'utf8', input: JSON.stringify(manifest) }
+            );
+
+            expect(result.status).toBe(20);
+            expect(readdirSync(tree)).toContain('target.owned');
+            const privateReplacement = readdirSync(tree).find((name) => name.startsWith('.sourdaw-remove-'));
+            expect(privateReplacement).toBeDefined();
+            const preserved = join(tree, privateReplacement ?? '');
+            if (kind === 'file') {
+                expect(readFileSync(preserved, 'utf8')).toBe('raced replacement');
+            } else {
+                expect(lstatSync(preserved).isDirectory()).toBe(true);
+                expect(readdirSync(preserved)).toEqual([]);
+            }
+        }
+    );
+
+    it('preserves an empty raced quarantine-root replacement at final cleanup', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-owned-root-race-'));
+        fixtureRoots.push(base);
+        const parent = join(base, 'parent');
+        const quarantine = join(parent, 'quarantine');
+        const tree = join(quarantine, 'tree');
+        mkdirSync(tree, { recursive: true });
+        const parentIdentity = lstatSync(parent, { bigint: true });
+        const quarantineIdentity = lstatSync(quarantine, { bigint: true });
+        const treeIdentity = lstatSync(tree, { bigint: true });
+        const helper = embeddedPythonHelper('OWNED_PATH_REMOVER');
+        const seam = '    moved_root_name = move_exclusive(parent, quarantine_name)';
+        expect(helper).toContain(seam);
+        const racedHelper = helper.replace(
+            seam,
+            `    os.rename(
+        quarantine_name,
+        quarantine_name + b".owned",
+        src_dir_fd=parent,
+        dst_dir_fd=parent,
+    )
+    os.mkdir(quarantine_name, 0o700, dir_fd=parent)
+${seam}`
+        );
+
+        const result = spawnSync(
+            '/usr/bin/python3',
+            [
+                '-I',
+                '-S',
+                '-c',
+                racedHelper,
+                parent,
+                basename(quarantine),
+                String(parentIdentity.dev),
+                String(parentIdentity.ino),
+                String(quarantineIdentity.dev),
+                String(quarantineIdentity.ino),
+                String(treeIdentity.dev),
+                String(treeIdentity.ino),
+            ],
+            { encoding: 'utf8', input: '[]' }
+        );
+
+        expect(result.status).toBe(20);
+        expect(existsSync(`${quarantine}.owned`)).toBe(true);
+        const privateReplacement = readdirSync(parent).find((name) => name.startsWith('.sourdaw-remove-'));
+        expect(privateReplacement).toBeDefined();
+        expect(readdirSync(join(parent, privateReplacement ?? ''))).toEqual([]);
+    });
+
     it('deletes a normally owned failed candidate instead of leaking quarantine payloads', () => {
         const fixture = createFixture();
 
@@ -1777,6 +1921,115 @@ describe('release proof', () => {
             if (capturedSnapshot !== undefined) {
                 rmSync(capturedSnapshot, { recursive: true, force: true });
             }
+        }
+    });
+
+    it('runs default semantic validation before the release gate even when no custom validator is supplied', () => {
+        const fixture = createFixture();
+        let gated = false;
+        const runner: ReleaseBuildRunner = (phase) => {
+            if (phase === 'web') {
+                writeWebBuild(fixture);
+                write(join(fixture.root, 'dist/legal/DEPENDENCY-LICENSES.txt'), 'self-consistent invalid legal bytes');
+                return;
+            }
+            createDesktopZip(fixture, join(fixture.root, 'release/desktop'), fixture.desktopOptions);
+        };
+
+        expect(() =>
+            assemble(fixture, runner, () => {
+                gated = true;
+            })
+        ).toThrow('DEPENDENCY-LICENSES.txt');
+        expect(gated).toBe(false);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('rejects a self-consistent candidate rewrite after the gate but before immutable snapshot creation', () => {
+        const fixture = createFixture();
+        let mutableCandidate: string | undefined;
+        let rewriteFired = false;
+        const validator: ReleaseProofValidator = (options) => {
+            mutableCandidate = options.candidate;
+            return [];
+        };
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+            if (mutableCandidate === undefined) {
+                throw new Error('staging validator did not expose the candidate');
+            }
+            const contents = join(mutableCandidate, 'web/contents');
+            const app = join(contents, 'assets/app.js');
+            write(app, 'console.log("rewritten-after-gate");');
+            const manifestPath = join(contents, 'web-artifact-manifest.json');
+            const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { files: Record<string, string> };
+            manifest.files['assets/app.js'] = hash(app);
+            writeJson(manifestPath, manifest);
+            const archive = join(mutableCandidate, 'web/sourdaw-web.zip');
+            rmSync(archive);
+            execFileSync('zip', ['-X', '-q', archive, '-@'], {
+                cwd: contents,
+                input: `${listFixtureFiles(contents).join('\n')}\n`,
+            });
+            const proofPath = join(mutableCandidate, 'release-proof.json');
+            const value = JSON.parse(readFileSync(proofPath, 'utf8')) as {
+                web: { archiveSha256: string; manifestSha256: string };
+            };
+            value.web.manifestSha256 = hash(manifestPath);
+            value.web.archiveSha256 = hash(archive);
+            writeJson(proofPath, value);
+            rewriteFired = true;
+            return prepareAtomicDirectoryPublisher();
+        };
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                validator,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('release proof candidate changed before creating the publication snapshot');
+        expect(rewriteFired).toBe(true);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('rejects a whole-directory replacement of the immutable publication snapshot', () => {
+        const fixture = createFixture();
+        let swapFired = false;
+        let replacementRoot: string | undefined;
+        let capturedRoot: string | undefined;
+        const fileReader: ReleaseProofFileReader = {
+            open(path, flags) {
+                if (
+                    !swapFired &&
+                    basename(path) === 'release-proof.json' &&
+                    basename(dirname(path)).startsWith('.candidate.publication-')
+                ) {
+                    replacementRoot = dirname(path);
+                    capturedRoot = `${replacementRoot}.captured`;
+                    renameSync(replacementRoot, capturedRoot);
+                    cpSync(capturedRoot, replacementRoot, { recursive: true, preserveTimestamps: true });
+                    swapFired = true;
+                }
+                return openSync(path, flags);
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read: (descriptor, buffer, offset, length, position) =>
+                readSync(descriptor, buffer, offset, length, position),
+        };
+
+        expect(() =>
+            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, undefined, fileReader)
+        ).toThrow('release proof publication snapshot');
+        expect(swapFired).toBe(true);
+        expect(replacementRoot).toBeDefined();
+        expect(existsSync(replacementRoot ?? '')).toBe(true);
+        expect(existsSync(fixture.candidate)).toBe(false);
+        if (capturedRoot !== undefined) {
+            rmSync(capturedRoot, { recursive: true, force: true });
         }
     });
 
@@ -1950,6 +2203,117 @@ describe('release proof', () => {
         expect(readFileSync(join(fixture.candidate, 'marker'), 'utf8')).toBe(marker);
         expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.includes('.publication-helper-'))).toBe(false);
+    });
+
+    it('pins the destination parent identity before descriptor-relative publication', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-parent-race-'));
+        fixtureRoots.push(base);
+        const source = mkdtempSync(join(base, 'source-'));
+        const outputParent = join(base, 'output-parent');
+        const capturedParent = join(base, 'captured-output-parent');
+        const destination = join(outputParent, 'published');
+        mkdirSync(outputParent);
+        const file = join(source, 'proof');
+        write(file, 'validated bytes');
+        const sourceIdentity = lstatSync(source, { bigint: true });
+        const fileIdentity = lstatSync(file, { bigint: true });
+        let seamFired = false;
+        const publisher = prepareAtomicDirectoryPublisher((request, runTrustedPublisher) => {
+            expect(request.parentIdentity).toEqual({
+                dev: String(lstatSync(outputParent, { bigint: true }).dev),
+                ino: String(lstatSync(outputParent, { bigint: true }).ino),
+            });
+            renameSync(outputParent, capturedParent);
+            mkdirSync(outputParent);
+            seamFired = true;
+            return runTrustedPublisher();
+        });
+
+        try {
+            expect(() =>
+                publisher.publish(
+                    source,
+                    destination,
+                    { dev: String(sourceIdentity.dev), ino: String(sourceIdentity.ino) },
+                    [
+                        {
+                            ctimeNs: String(fileIdentity.ctimeNs),
+                            dev: String(fileIdentity.dev),
+                            digest: hash(file),
+                            ino: String(fileIdentity.ino),
+                            mtimeNs: String(fileIdentity.mtimeNs),
+                            path: 'proof',
+                            size: Number(fileIdentity.size),
+                        },
+                    ]
+                )
+            ).toThrow('moved an unexpected directory identity');
+            expect(seamFired).toBe(true);
+            expect(existsSync(destination)).toBe(false);
+            expect(readdirSync(outputParent).some((name) => name.includes('.publication-helper-'))).toBe(false);
+            expect(readdirSync(capturedParent).some((name) => name.includes('.publication-helper-'))).toBe(false);
+        } finally {
+            publisher.dispose();
+        }
+    });
+
+    it('preflights the platform no-replace primitive before helper staging can exist', () => {
+        const helper = embeddedPythonHelper('ATOMIC_RENAME_HELPER');
+        const linuxPreflight = helper.indexOf('publish = libc.renameat2');
+        const macPreflight = helper.indexOf('publish = libc.renameatx_np');
+        const stagingCreation = helper.indexOf('os.mkdir(staging_name');
+        expect(linuxPreflight).toBeGreaterThan(-1);
+        expect(macPreflight).toBeGreaterThan(-1);
+        expect(linuxPreflight).toBeLessThan(stagingCreation);
+        expect(macPreflight).toBeLessThan(stagingCreation);
+
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-symbol-preflight-'));
+        fixtureRoots.push(base);
+        const source = mkdtempSync(join(base, 'source-'));
+        const destination = join(base, 'published');
+        const sourceIdentity = lstatSync(source, { bigint: true });
+        const publisher = prepareAtomicDirectoryPublisher(() => ({
+            status: 69,
+            stderr: 'exclusive rename primitive unavailable: renameat2',
+        }));
+        try {
+            expect(() =>
+                publisher.publish(
+                    source,
+                    destination,
+                    {
+                        dev: String(sourceIdentity.dev),
+                        ino: String(sourceIdentity.ino),
+                    },
+                    []
+                )
+            ).toThrow('exclusive rename primitive unavailable: renameat2');
+            expect(readdirSync(base).some((name) => name.includes('.publication-helper-'))).toBe(false);
+        } finally {
+            publisher.dispose();
+        }
+    });
+
+    it.each([17, 18])('preserves helper cleanup diagnostics for publication status %i', (status) => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-helper-diagnostic-'));
+        fixtureRoots.push(base);
+        const source = mkdtempSync(join(base, 'source-'));
+        const sourceIdentity = lstatSync(source, { bigint: true });
+        const diagnostic = 'helper staging preserved at /private/quarantine/staging';
+        const publisher = prepareAtomicDirectoryPublisher(() => ({ status, stderr: diagnostic }));
+
+        try {
+            expect(() =>
+                publisher.publish(
+                    source,
+                    join(base, 'published'),
+                    { dev: String(sourceIdentity.dev), ino: String(sourceIdentity.ino) },
+                    []
+                )
+            ).toThrow(diagnostic);
+        } finally {
+            publisher.dispose();
+        }
     });
 
     it('uses the fixed system publisher even when PATH contains helper shims', () => {

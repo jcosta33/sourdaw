@@ -1152,6 +1152,38 @@ describe('release inventory', () => {
         }
     });
 
+    it('rejects an unexpected early EOF before accepting a repository descriptor snapshot', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-early-eof-'));
+        const root = join(base, 'repository');
+        const path = 'src/early-eof.ts';
+        const filePath = join(root, path);
+        const benignReference = 'https://benign.example/reference';
+        const contents = `export default '${benignReference}'; trailing-bytes\n`;
+        let reads = 0;
+        const reader: RepositorySnapshotFileReader = {
+            read(descriptor, buffer, offset, length, position) {
+                reads += 1;
+                if (reads > 1) {
+                    return 0;
+                }
+                return readSync(descriptor, buffer, offset, Math.min(length, contents.length - 4), position);
+            },
+        };
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, contents);
+
+            const snapshot = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], reader);
+
+            expect(reads).toBe(2);
+            expect(snapshot.externalReferences).not.toContain(benignReference);
+            expect(snapshot.externalReferences).toEqual([]);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('enforces one aggregate descriptor-read budget across repository text and digest reads', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-aggregate-budget-'));
         const root = join(base, 'repository');
