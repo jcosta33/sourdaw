@@ -6,6 +6,8 @@ import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null as TrackStoreState | null },
     ensureTrackStrip: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
     resolveEligibleDeviceWriteTarget: (deviceId: string) => {
         const track = mocks.trackStoreValue.value?.tracks.find((candidate) =>

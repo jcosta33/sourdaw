@@ -14,8 +14,6 @@ function canReapplyRestoreMidiClipNotesAfterDivergence(action: RestoreMidiClipNo
 }
 
 export const handleRestoreMidiClipNotes = createHandler<'restoreMidiClipNotes'>({
-    canReapplyAfterDivergence: (action) =>
-        action.payload.articulationReplayGuard !== undefined || action.payload.noteTransformReplayGuard !== undefined,
     execute: (action) => ({ status: restoreMidiClipNotes(action.payload) }),
     validate: (action) => getRestoreMidiClipNotesStatus(action.payload) !== 'conflict',
     canReapplyAfterDivergence: canReapplyRestoreMidiClipNotesAfterDivergence,

@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useTimelineInteractions } from '../useTimelineInteractions';
 
+type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
+
 // Massive mock list
 type MockStoreBox = { value: Record<string, unknown> };
 const mocks = vi.hoisted(
@@ -190,6 +192,7 @@ vi.mock('../../../stores/trackStore', () => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
 }));
 vi.mock('../../../useCases/clipSelection/toggleClipInSelection', () => ({

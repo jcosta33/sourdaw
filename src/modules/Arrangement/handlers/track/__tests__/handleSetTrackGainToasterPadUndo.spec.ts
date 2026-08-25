@@ -113,6 +113,9 @@ describe('handleSetTrackGain — undo across a clamped write', () => {
 
         expect(handleSetTrackGain.execute(asSetTrackGain(described?.inverseAction))).toEqual({ status: 'written' });
         expect(gainOf(PAD_CHILD_ID)).toBe(0.4);
+
+        expect(handleSetTrackGain.execute(asSetTrackGain(described?.redoAction))).toEqual({ status: 'written' });
+        expect(gainOf(PAD_CHILD_ID)).toBe(FADER_MAX_GAIN);
     });
 
     /**
