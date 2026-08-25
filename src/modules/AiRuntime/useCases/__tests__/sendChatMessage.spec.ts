@@ -147,7 +147,8 @@ function createProviderProposal(assetIds: string[]): AgentRunProviderProposal {
     };
 }
 
-function configureCommandPlanning(action: ExecutableRuntimeAction): void {
+function configureCommandPlanning(action: ExecutableRuntimeAction | readonly ExecutableRuntimeAction[]): void {
+    const actions = Array.isArray(action) ? action : [action];
     const scope = {
         targetIds: [],
         targetRanges: [],
@@ -155,13 +156,13 @@ function configureCommandPlanning(action: ExecutableRuntimeAction): void {
         protectedRanges: [],
     };
     const grants = {
-        allowedOperationPrefixes: [action.type],
-        create: true,
+        allowedOperationPrefixes: actions.map((item) => item.type),
+        create: actions.some((item) => item.type === 'addTrack' || item.type === 'createBus'),
         delete: false,
         routing: false,
         tempo: false,
         master: false,
-        file: action.type === 'importStemSet',
+        file: actions.some((item) => item.type === 'importStemSet'),
         audioUpload: false,
         remoteGeneration: false,
         autoCommit: false,
@@ -345,5 +346,36 @@ describe('sendChatMessage retained-provider selection', () => {
         );
         expect(getPlannedRun().plan?.capabilities).not.toContainEqual(expect.objectContaining({ source: 'asset' }));
         expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
+    });
+
+    it('passes compiler-produced createBus dependency and binding evidence into compiled batch construction', async () => {
+        const actions = [
+            { type: 'createBus', payload: { busId: 'bus-ai-drum', name: 'Drum Bus' } },
+            { type: 'setTrackGain', payload: { expectedGain: 1, gain: 0.8, trackId: 'bus-ai-drum' } },
+        ] satisfies ExecutableRuntimeAction[];
+        const actionCommandGraph = {
+            dependenciesByActionIndex: [[], [0]],
+            batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
+        };
+        configureCommandPlanning(actions);
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            projectRevision: 'revision-fixture',
+            result: {
+                actions,
+                actionCommandGraph,
+                rawText: 'compiler-produced binding graph',
+                requiresConfirmation: true,
+            },
+        });
+
+        await sendChatMessage('Create a Drum Bus, then set its gain to 0.8.', { mode: 'apply' });
+
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions,
+                actionCommandGraph,
+            })
+        );
     });
 });

@@ -88,9 +88,7 @@ const AUTHORIZED_APPROVAL_CONDITION =
     "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
 const REVIEW_ISOLATED_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
 const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
-const HEALTH_SUMMARY_NAME = 'Health summary';
-const LEGACY_REQUIRED_GATE_NAME =
-    "${{ github.event_name == 'workflow_dispatch' && 'Manual health audit' || github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && 'Ignored review' || 'Gate' }}";
+const REQUIRED_GATE_NAME = 'Gate';
 const AUTHORIZED_GATE_CONDITION = 'always()';
 const CODEQL_CONDITION = "needs.decide.outputs.heavy == 'true'";
 
@@ -138,7 +136,7 @@ function healthGateWorkflow(): { document: ReturnType<typeof parseDocument>; wor
     return { document, workflow: asWorkflowRecord(document.toJS(), 'workflow') };
 }
 
-function informationalWorkflowSummary(workflow: WorkflowRecord): WorkflowRecord {
+function stableWorkflowGate(workflow: WorkflowRecord): WorkflowRecord {
     for (const [jobId, value] of Object.entries(workflowRecordAt(workflow, 'jobs'))) {
         const name = asWorkflowRecord(value, jobId).name;
         if (typeof name !== 'string') {
@@ -147,15 +145,15 @@ function informationalWorkflowSummary(workflow: WorkflowRecord): WorkflowRecord 
         if (/\$\{\{\s*github\.(?:event|ref)/.test(name)) {
             throw new Error('workflow job check names must be event-independent');
         }
-        if (name === 'Gate' || /['"]Gate['"]/.test(name)) {
-            throw new Error('workflow-controlled jobs must never emit the required Gate check name');
+        if (jobId !== 'gate' && (name === REQUIRED_GATE_NAME || /['"]Gate['"]/.test(name))) {
+            throw new Error('only the gate job may emit the required Gate check name');
         }
     }
-    const summary = workflowJob(workflow, 'gate');
-    if (summary.name !== HEALTH_SUMMARY_NAME) {
-        throw new Error('workflow-controlled jobs must never emit the required Gate check name');
+    const gate = workflowJob(workflow, 'gate');
+    if (gate.name !== REQUIRED_GATE_NAME) {
+        throw new Error('the gate job must emit the required Gate check name');
     }
-    return summary;
+    return gate;
 }
 
 function workflowGateResults(workflow: WorkflowRecord): string {
@@ -216,7 +214,7 @@ describe('package scripts and gitignore', () => {
         expect(gitignore).toContain('.agents/review-bundles/');
     });
 
-    it('keeps the workflow summary informational while authenticating review-gated work', () => {
+    it('keeps the required Gate stable while authenticating review-gated work', () => {
         const { document, workflow } = healthGateWorkflow();
         expect(document.errors).toEqual([]);
         const events = workflowRecordAt(workflow, 'on');
@@ -227,15 +225,20 @@ describe('package scripts and gitignore', () => {
         expect(concurrency['cancel-in-progress']).toBe(AUTHORIZED_CANCELLATION_CONDITION);
         expect(workflowJob(workflow, 'decide').if).toBe(AUTHORIZED_APPROVAL_CONDITION);
 
-        const gate = informationalWorkflowSummary(workflow);
-        const legacyRequiredGate = structuredClone(workflow);
-        workflowJob(legacyRequiredGate, 'gate').name = LEGACY_REQUIRED_GATE_NAME;
-        expect(() => informationalWorkflowSummary(legacyRequiredGate)).toThrow(
+        const gate = stableWorkflowGate(workflow);
+        const eventDependentGate = structuredClone(workflow);
+        workflowJob(eventDependentGate, 'gate').name =
+            "${{ github.event_name == 'workflow_dispatch' && 'Gate' || 'Gate' }}";
+        expect(() => stableWorkflowGate(eventDependentGate)).toThrow(
             'workflow job check names must be event-independent'
         );
-        workflowJob(legacyRequiredGate, 'gate').name = 'Gate';
-        expect(() => informationalWorkflowSummary(legacyRequiredGate)).toThrow(
-            'workflow-controlled jobs must never emit the required Gate check name'
+        const renamedGate = structuredClone(workflow);
+        workflowJob(renamedGate, 'gate').name = 'Health summary';
+        expect(() => stableWorkflowGate(renamedGate)).toThrow('the gate job must emit the required Gate check name');
+        const duplicateGate = structuredClone(workflow);
+        workflowJob(duplicateGate, 'lint').name = REQUIRED_GATE_NAME;
+        expect(() => stableWorkflowGate(duplicateGate)).toThrow(
+            'only the gate job may emit the required Gate check name'
         );
         expect(gate.if).toBe(AUTHORIZED_GATE_CONDITION);
         const gateStep = workflowStep(gate, 'Require every job to have succeeded or been skipped');
