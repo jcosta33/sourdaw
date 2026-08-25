@@ -41,6 +41,63 @@ function written(): ProjectData {
     return vi.mocked(downloadProjectFile).mock.calls[0]?.[0] as ProjectData;
 }
 
+function seedSavableProject(createdAt: number): void {
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        createdAt,
+        dirty: true,
+        loading: false,
+        name: 'Repair Required',
+        projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+        updatedAt: createdAt,
+    });
+}
+
+function configurePassingProjectInspection(): void {
+    agentProjectInspectionPort.setProvider(() => ({
+        audioGraphValid: true,
+        projectInvariantsValid: true,
+        targetFingerprints: {},
+    }));
+}
+
+function replaceRootWithMalformedAdjustmentLayers(): void {
+    if (hasCrdtDoc('root')) {
+        removeCrdtDoc('root');
+    }
+    createCrdtDoc('root');
+    mutateCrdtDoc<Record<string, unknown>>({
+        id: 'root',
+        changeFn: (draft) => {
+            draft.adjustmentLayers = {
+                layers: [
+                    {
+                        id: 'layer-foreign',
+                        name: 'Foreign layer',
+                        effectType: 'eq',
+                        parameters: [
+                            {
+                                name: 'Low Gain',
+                                value: 0,
+                                min: -12,
+                                max: 12,
+                                unit: 'dB',
+                                futurePeerField: true,
+                            },
+                        ],
+                        affectedTrackIds: [],
+                        insertionIndex: 0,
+                        regions: [],
+                        enabled: true,
+                        mix: 0.5,
+                        color: '#ffffff',
+                    },
+                ],
+            };
+        },
+    });
+}
+
 describe('exportProjectFile round-trip shape', () => {
     beforeEach(() => {
         vi.mocked(downloadProjectFile).mockClear();
@@ -266,54 +323,9 @@ describe('exportProjectFile round-trip shape', () => {
         const createdAt = 1_700_000_000_000;
         const recentKey = `${NAMED_PROJECT_KEY_PREFIX}${createdAt}`;
         const indexedDb = installFakeIndexedDb();
-        projectStore.set({
-            ...structuredClone(defaultProjectStoreState),
-            createdAt,
-            dirty: true,
-            loading: false,
-            name: 'Repair Required',
-            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
-            updatedAt: createdAt,
-        });
-        agentProjectInspectionPort.setProvider(() => ({
-            audioGraphValid: true,
-            projectInvariantsValid: true,
-            targetFingerprints: {},
-        }));
-        if (hasCrdtDoc('root')) {
-            removeCrdtDoc('root');
-        }
-        createCrdtDoc('root');
-        mutateCrdtDoc<Record<string, unknown>>({
-            id: 'root',
-            changeFn: (draft) => {
-                draft.adjustmentLayers = {
-                    layers: [
-                        {
-                            id: 'layer-foreign',
-                            name: 'Foreign layer',
-                            effectType: 'eq',
-                            parameters: [
-                                {
-                                    name: 'Low Gain',
-                                    value: 0,
-                                    min: -12,
-                                    max: 12,
-                                    unit: 'dB',
-                                    futurePeerField: true,
-                                },
-                            ],
-                            affectedTrackIds: [],
-                            insertionIndex: 0,
-                            regions: [],
-                            enabled: true,
-                            mix: 0.5,
-                            color: '#ffffff',
-                        },
-                    ],
-                };
-            },
-        });
+        seedSavableProject(createdAt);
+        configurePassingProjectInspection();
+        replaceRootWithMalformedAdjustmentLayers();
 
         projectCrdtToStores();
 
