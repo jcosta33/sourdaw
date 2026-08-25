@@ -317,6 +317,25 @@ describe('ChatPanel', () => {
                               ],
                           },
                       ],
+                      pendingEffectRecoveryLedger: [
+                          {
+                              runId: 'run-repair',
+                              batchId: 'batch-repair',
+                              checkpoint: 'durable',
+                              effects: [
+                                  {
+                                      commandId: 'command-repair',
+                                      kind: 'runtime-graph',
+                                      operation: 'addDevice',
+                                      reason: 'The durable recovery ledger owns this repair.',
+                                      remediation: 'repair',
+                                      state: 'pending',
+                                  },
+                              ],
+                              recovery: 'reconcile-batch',
+                              lastError: 'The durable graph repair is ready.',
+                          },
+                      ],
                   }
                 : {
                       messages: [],
@@ -351,7 +370,58 @@ describe('ChatPanel', () => {
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-reconcile' })).toHaveTextContent(
             'renderProjectSections: The publication queue is unavailable.'
         );
-        expect(screen.getByText('The graph needs reconciliation.')).toBeInTheDocument();
+        expect(screen.getAllByRole('list', { name: 'Pending effects for batch batch-repair' })).toHaveLength(1);
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-repair' })).toHaveTextContent(
+            'addDevice: The durable recovery ledger owns this repair.'
+        );
+        expect(screen.getByText('The durable graph repair is ready.')).toBeInTheDocument();
+    });
+
+    it('renders recovery owned by an evicted run from the non-evictable ledger', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [],
+                      pendingEffectRecoveryLedger: [
+                          {
+                              runId: 'run-evicted',
+                              batchId: 'batch-evicted',
+                              checkpoint: 'durable',
+                              effects: [
+                                  {
+                                      commandId: 'command-evicted',
+                                      kind: 'runtime-graph',
+                                      operation: 'loadExternalPlugin',
+                                      reason: 'The native plugin host needs a graph rebuild.',
+                                      remediation: 'repair',
+                                      state: 'pending',
+                                  },
+                              ],
+                              recovery: 'reconcile-batch',
+                              lastError: null,
+                          },
+                      ],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        expect(screen.queryByText('The kitchen is quiet')).not.toBeInTheDocument();
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-evicted' })).toHaveTextContent(
+            'loadExternalPlugin: The native plugin host needs a graph rebuild.'
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledWith({
+            runId: 'run-evicted',
+            batchId: 'batch-evicted',
+        });
     });
 
     it('should have correct accessibility attributes', () => {

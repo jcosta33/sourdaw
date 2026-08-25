@@ -14,6 +14,7 @@ import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from '../../models/Age
 import { type ChatMessage } from '../../models/Chat';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
@@ -257,12 +258,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
-    const pendingEffectContinuations = (agentRunState?.runs ?? []).flatMap((run) =>
-        run.pendingEffectContinuations.map((continuation) => ({
-            ...continuation,
-            runId: run.runId,
-        }))
-    );
+    const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
         chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
     );

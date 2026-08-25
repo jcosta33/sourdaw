@@ -56,61 +56,67 @@ export async function reconcileProjectCommandBatchEffects(
     if ([...pendingCommandIds].some((commandId) => !committedCommandIds.has(commandId))) {
         return { status: 'failed', reason: 'Pending external effect does not belong to a committed command' };
     }
-    let workspace;
-    try {
-        workspace = commandBatchPreviewPort.createRecovery(input.envelope.baseRevision);
-    } catch (error) {
-        return { status: 'failed', reason: `Idempotency recovery workspace failed: ${failureReason(error)}` };
-    }
-    if (!workspace) {
-        return { status: 'failed', reason: 'Idempotency recovery workspace is unavailable' };
-    }
-
     const actions = input.envelope.commands.map(
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
-    const exactReconciliations = new Map<string, HandlerAfterCommit>();
-    try {
-        for (const [actionIndex, action] of actions.entries()) {
-            const command = input.envelope.commands[actionIndex]!;
-            if (!committedCommandIds.has(command.commandId)) {
-                continue;
-            }
-            const handler = getCommandHandler(action);
-            if (!handler || handler.executionKind === 'runtime' || handler.previewExecution !== 'isolated-project') {
-                return { status: 'failed', reason: `Action cannot be recovered from project truth: ${action.type}` };
-            }
-            const previewHandler: PreviewActionHandler = handler;
-            const result = workspace.scope(() =>
-                previewHandler.execute(action, {
-                    actions,
-                    actionIndex,
-                    executionMode: 'isolated-preview',
-                })
-            );
-            if (result?.status === 'conflict' || result?.status === 'no-write') {
-                return { status: 'failed', reason: `Action recovery conflicts with its base snapshot: ${action.type}` };
-            }
-            const pendingEffect = pendingEffectByCommandId.get(command.commandId);
-            if (
-                pendingEffect &&
-                !(pendingEffect.kind === 'runtime-graph' && pendingEffect.remediation === 'repair') &&
-                result?.afterAmbiguousCommit
-            ) {
-                exactReconciliations.set(command.commandId, result.afterAmbiguousCommit);
-            }
-        }
-    } catch (error) {
-        return { status: 'failed', reason: `Idempotency recovery preparation failed: ${failureReason(error)}` };
-    } finally {
-        workspace.release();
-    }
-
     const runtimeRepairCommandIds = new Set(
         receipt.pendingEffects.flatMap((effect) =>
             effect.kind === 'runtime-graph' && effect.remediation === 'repair' ? [effect.commandId] : []
         )
     );
+    const exactReconciliations = new Map<string, HandlerAfterCommit>();
+    if (receipt.pendingEffects.some((effect) => !runtimeRepairCommandIds.has(effect.commandId))) {
+        let workspace;
+        try {
+            workspace = commandBatchPreviewPort.createRecovery(input.envelope.baseRevision);
+        } catch (error) {
+            return { status: 'failed', reason: `Idempotency recovery workspace failed: ${failureReason(error)}` };
+        }
+        if (!workspace) {
+            return { status: 'failed', reason: 'Idempotency recovery workspace is unavailable' };
+        }
+        try {
+            for (const [actionIndex, action] of actions.entries()) {
+                const command = input.envelope.commands[actionIndex]!;
+                if (!committedCommandIds.has(command.commandId) || runtimeRepairCommandIds.has(command.commandId)) {
+                    continue;
+                }
+                const handler = getCommandHandler(action);
+                if (
+                    !handler ||
+                    handler.executionKind === 'runtime' ||
+                    handler.previewExecution !== 'isolated-project'
+                ) {
+                    return {
+                        status: 'failed',
+                        reason: `Action cannot be recovered from project truth: ${action.type}`,
+                    };
+                }
+                const previewHandler: PreviewActionHandler = handler;
+                const result = workspace.scope(() =>
+                    previewHandler.execute(action, {
+                        actions,
+                        actionIndex,
+                        executionMode: 'isolated-preview',
+                    })
+                );
+                if (result?.status === 'conflict' || result?.status === 'no-write') {
+                    return {
+                        status: 'failed',
+                        reason: `Action recovery conflicts with its base snapshot: ${action.type}`,
+                    };
+                }
+                const pendingEffect = pendingEffectByCommandId.get(command.commandId);
+                if (pendingEffect && result?.afterAmbiguousCommit) {
+                    exactReconciliations.set(command.commandId, result.afterAmbiguousCommit);
+                }
+            }
+        } catch (error) {
+            return { status: 'failed', reason: `Idempotency recovery preparation failed: ${failureReason(error)}` };
+        } finally {
+            workspace.release();
+        }
+    }
 
     for (const effect of receipt.pendingEffects) {
         if (runtimeRepairCommandIds.has(effect.commandId)) {
