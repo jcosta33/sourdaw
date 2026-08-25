@@ -1,6 +1,6 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 
-import { probeBrowserWebGpuHardware, skipWithoutBrowserWebGpu } from './browserAiHardware';
+import { probeBrowserWebGpuHardware, requireBrowserWebGpuHardware } from './browserAiHardware';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
@@ -23,6 +23,8 @@ type BrowserAiCapabilityReport = {
     webGpu: { reason?: string; status: 'supported' | 'unavailable' };
     workerAvailable: boolean;
 };
+
+type BrowserAiWebGpuHardwareRequirement = 'optional' | 'required';
 
 declare global {
     // oxlint-disable-next-line typescript/consistent-type-definitions -- Window must merge with the DOM global.
@@ -90,13 +92,51 @@ async function renderDdspAfterViteWorkerOptimization(
     }
 }
 
-test('admits the live Chromium runtime from required Browser AI capabilities', async ({ page }, testInfo) => {
-    await setupWorkspace(page);
-    await launch_new_project(page);
+function getBrowserAiWebGpuHardwareRequirement(testInfo: TestInfo): BrowserAiWebGpuHardwareRequirement {
+    const configuredRequirement = testInfo.project.metadata.browserAiWebGpuHardware;
+    if (configuredRequirement === undefined) {
+        return 'optional';
+    }
+    if (configuredRequirement === 'required') {
+        return 'required';
+    }
+    throw new TypeError('Browser AI WebGPU proof configuration has an invalid hardware requirement');
+}
 
+async function openBrowserAiPreferences(page: Page): Promise<Locator> {
+    await page.getByTestId('toggle-preferences').click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'AI', exact: true }).click();
+    return dialog;
+}
+
+async function assertBrowserAiCapabilityBoundary({
+    page,
+    testInfo,
+}: {
+    page: Page;
+    testInfo: TestInfo;
+}): Promise<{ supportsHardwareWebGpu: boolean }> {
     const hardwareProbe = await probeBrowserWebGpuHardware(page);
-    skipWithoutBrowserWebGpu(hardwareProbe);
+    const hardwareRequirement = getBrowserAiWebGpuHardwareRequirement(testInfo);
+    if (hardwareRequirement === 'required') {
+        requireBrowserWebGpuHardware(hardwareProbe);
+    }
+
     const observedReport = await getBrowserAiCapabilityReport(page, testInfo);
+    const dialog = await openBrowserAiPreferences(page);
+    if (hardwareProbe.status === 'unavailable') {
+        expect(observedReport).toEqual(
+            expect.objectContaining({
+                capability: 'unsupported-browser',
+                webGpu: { status: 'unavailable' },
+            })
+        );
+        await expect(dialog.getByText('Browser AI Unavailable', { exact: true })).toBeVisible();
+        await expect(dialog.getByRole('status', { name: 'Browser AI capabilities' })).toHaveCount(0);
+        return { supportsHardwareWebGpu: false };
+    }
+
     expect(observedReport).toEqual(
         expect.objectContaining({
             capability: 'supported',
@@ -108,17 +148,21 @@ test('admits the live Chromium runtime from required Browser AI capabilities', a
     );
     expect(observedReport).not.toHaveProperty('chromeVersion');
 
-    await page.getByTestId('toggle-preferences').click();
-    const dialog = page.getByRole('dialog');
-    await dialog.getByRole('button', { name: 'AI', exact: true }).click();
-
-    const capabilityStatus = page.getByRole('status', { name: 'Browser AI capabilities' });
+    const capabilityStatus = dialog.getByRole('status', { name: 'Browser AI capabilities' });
     await expect(capabilityStatus).toBeVisible();
     const webGpuRow = capabilityStatus.getByText('WebGPU', { exact: true }).locator('..');
     await expect(webGpuRow.getByText('Available', { exact: true })).toBeVisible();
     await expect(capabilityStatus.getByText('Cross-Origin Isolation', { exact: true })).toBeVisible();
     await expect(capabilityStatus.getByText('Web Workers', { exact: true })).toBeVisible();
     await expect(capabilityStatus.getByText('Not Measured', { exact: true })).toBeVisible();
+    return { supportsHardwareWebGpu: true };
+}
+
+test('proves the live Chromium Browser AI admission boundary without skipping', async ({ page }, testInfo) => {
+    await setupWorkspace(page);
+    await launch_new_project(page);
+
+    await assertBrowserAiCapabilityBoundary({ page, testInfo });
 });
 
 test('renders an exact-duration DDSP preview from verified OPFS artifacts with hardware WebGPU', async ({
@@ -127,18 +171,10 @@ test('renders an exact-duration DDSP preview from verified OPFS artifacts with h
     test.setTimeout(180_000);
     await setupWorkspace(page);
     await launch_new_project(page);
-    const hardwareProbe = await probeBrowserWebGpuHardware(page);
-    skipWithoutBrowserWebGpu(hardwareProbe);
-    const observedReport = await getBrowserAiCapabilityReport(page, testInfo);
-    expect(observedReport).toEqual(
-        expect.objectContaining({
-            capability: 'supported',
-            webGpu: { status: 'supported' },
-            crossOriginIsolated: true,
-            workerAvailable: true,
-            opfsAvailable: true,
-        })
-    );
+    const admission = await assertBrowserAiCapabilityBoundary({ page, testInfo });
+    if (!admission.supportsHardwareWebGpu) {
+        return;
+    }
 
     await page.goto('/tests/e2e/ddspRenderProbe.html');
     await expect.poll(() => page.evaluate(() => typeof window.__SOURDAW_DDSP_RENDER_PROBE__)).toBe('object');

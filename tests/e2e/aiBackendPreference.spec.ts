@@ -17,7 +17,7 @@ test.describe('Preferences — AI execution backend', () => {
         await launch_new_project(page);
     });
 
-    test('browser exposes admitted Browser WebLLM alongside the automatic backend', async ({ page }) => {
+    test('browser persists an explicit Browser WebLLM preference', async ({ page }) => {
         const dialog = page.getByRole('dialog');
         await openPreferencesAi(page);
 
@@ -31,5 +31,14 @@ test.describe('Preferences — AI execution backend', () => {
                 'Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts remotely.'
             )
         ).toBeVisible();
+
+        await backend.selectOption('webllm');
+        await expect(backend).toHaveValue('webllm');
+
+        await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+
+        await openPreferencesAi(page);
+        await expect(dialog.getByRole('combobox', { name: 'AI execution backend' })).toHaveValue('webllm');
     });
 });

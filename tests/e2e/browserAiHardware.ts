@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
 
-import { test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 export type BrowserWebGpuHardwareProbe =
     | { status: 'supported' }
@@ -60,7 +60,9 @@ export async function probeBrowserWebGpuHardware(page: Page): Promise<BrowserWeb
     });
 }
 
-export function skipWithoutBrowserWebGpu(probe: BrowserWebGpuHardwareProbe): void {
-    const reason = probe.status === 'unavailable' ? probe.reason : 'adapter available';
-    test.skip(probe.status === 'unavailable', `requires hardware WebGPU (${reason})`);
+export function requireBrowserWebGpuHardware(probe: BrowserWebGpuHardwareProbe): void {
+    if (probe.status === 'supported') {
+        return;
+    }
+    throw new Error(`This Browser AI proof requires hardware WebGPU (${probe.reason})`);
 }
