@@ -25,7 +25,16 @@ export {
 export type { TimelineViewState } from './timelineViewStore';
 
 export { trackStore, defaultTrackState, sanitizeTrackSnapshot } from './trackStore';
-export type { TrackStoreState, Track, Device, DeviceStateChunk, DeviceStateValue, Clip } from './trackStore';
+export type {
+    TrackStoreState,
+    Track,
+    Device,
+    DeviceStateChunk,
+    DeviceStateValue,
+    Clip,
+    ClipKneadState,
+    ClipKneadBlob,
+} from './trackStore';
 export { persistDeviceParam } from './persistDeviceParam';
 export { clampDeviceParamWrite } from './clampDeviceParamWrite';
 export { resolveEligibleDeviceWriteTarget } from './resolveEligibleDeviceWriteTarget';

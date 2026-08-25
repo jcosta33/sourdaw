@@ -3,6 +3,7 @@ import { updateClipInStore } from '#/modules/Arrangement/stores';
 import { type KneadClipState } from '../stores/kneadStore';
 
 import { applyKneadClipState } from './applyKneadClipState';
+import { projectClipKneadState } from './projectClipKneadState';
 
 /**
  * The user-edit path: publish to the Knead store and author the result onto the
@@ -11,6 +12,9 @@ import { applyKneadClipState } from './applyKneadClipState';
  * the only route by which a clip gains persisted Knead state — state a musician
  * chose. Derived writers (automatic analysis) belong on
  * `updateTransientClipKneadState`.
+ *
+ * The clip carries only the shape `ClipKneadState` declares; the store state is
+ * projected down before the write (see `projectClipKneadState`).
  */
 export function updateClipKneadState(clipId: string, updater: (state: KneadClipState) => KneadClipState): void {
     const nextKneadState = applyKneadClipState(clipId, updater);
@@ -18,5 +22,5 @@ export function updateClipKneadState(clipId: string, updater: (state: KneadClipS
         return;
     }
 
-    updateClipInStore(clipId, (c) => ({ ...c, kneadState: nextKneadState }));
+    updateClipInStore(clipId, (c) => ({ ...c, kneadState: projectClipKneadState(nextKneadState) }));
 }
