@@ -2,6 +2,8 @@ import { updateClipInStore } from '#/modules/Arrangement/stores';
 
 import { kneadStore } from '../stores/kneadStore';
 
+import { projectClipKneadState } from './projectClipKneadState';
+
 /**
  * Drop everything the pitch analysis produced for a clip: the raw contour and the
  * editable blobs derived from it. Called when the analysis no longer describes the
@@ -47,8 +49,9 @@ export function clearClipPitchAnalysis(clipId: string): void {
     // Blobs live in two places: the Knead store and the clip's own `kneadState` on
     // the track store, which is what persistence and collaboration read. Clearing
     // only the Knead store would let `hydrateKneadFromTrackStore` put them straight
-    // back on the next load.
+    // back on the next load. The store-shaped state is projected onto the declared
+    // clip shape (#2571), same as every persisting Knead write.
     if (clearedClipState && clearedClipState !== clipState) {
-        updateClipInStore(clipId, (clip) => ({ ...clip, kneadState: clearedClipState }));
+        updateClipInStore(clipId, (clip) => ({ ...clip, kneadState: projectClipKneadState(clearedClipState) }));
     }
 }
