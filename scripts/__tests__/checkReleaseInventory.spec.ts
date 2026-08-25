@@ -48,6 +48,7 @@ import {
     ddspModelsReleaseInventoryContract,
     ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
+    GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS,
     GRAND_BOULE_RELEASE_REGISTRY,
     grandBouleReleaseInventoryContract,
     loadRepositorySnapshot,
@@ -1592,6 +1593,40 @@ describe('release inventory', () => {
             }
         } finally {
             rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('excludes only the known Grand Boule provider-policy symlinks from tracked digests', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-'));
+        const root = join(base, 'repository');
+        const outside = join(base, 'outside.md');
+        writeGrandBouleReleaseFixture(root);
+        writeFileSync(outside, 'provider policy');
+
+        try {
+            const projectState = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+                ({ digestLabel }) => digestLabel === 'grand-boule-project-state'
+            );
+            expect(projectState?.excludedPaths).toEqual(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS);
+            expect(projectState?.gitPathspecs).toEqual(
+                expect.arrayContaining(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`))
+            );
+
+            const baseline = grandBouleReleaseInventoryContract(root).digests;
+            for (const path of GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS) {
+                symlinkSync(outside, join(root, path));
+                execFileSync('git', ['add', path], { cwd: root });
+            }
+            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(baseline);
+
+            const unexpected = 'src/modules/GrandBoule/unexpected-policy.md';
+            symlinkSync(outside, join(root, unexpected));
+            execFileSync('git', ['add', unexpected], { cwd: root });
+            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+                `Grand Boule release source is unsafe: ${unexpected}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
         }
     });
 

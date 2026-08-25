@@ -1156,9 +1156,18 @@ export function assertProjectLicenseDistributionReleaseInventory(
 
 type GrandBouleReleaseBoundary = {
     paths: readonly string[];
+    excludedPaths?: readonly string[];
     gitPathspecs: readonly string[];
     digestLabel: string;
 };
+
+export const GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS = [
+    'src/modules/GrandBoule/CLAUDE.md',
+    'src/modules/GrandBoule/CODEX.md',
+    'src/modules/GrandBoule/GEMINI.md',
+    'src/modules/GrandBoule/KIMI.md',
+    'src/modules/GrandBoule/ZCODE.md',
+] as const;
 
 export const GRAND_BOULE_RELEASE_REGISTRY = {
     kind: 'project-source',
@@ -1238,8 +1247,10 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
+            excludedPaths: GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS,
             gitPathspecs: [
                 'src/modules/GrandBoule',
+                ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
