@@ -19,6 +19,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -444,10 +445,12 @@ describe('delete muted empty tracks prompt workflow', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -976,15 +979,14 @@ describe('delete muted empty tracks prompt workflow', () => {
         trackStore.set({ ...state, tracks: [...state.tracks, collaboratorTrack] });
         const beforeUndo = structuredClone(trackStore.value?.tracks);
         const historyBeforeUndo = structuredClone(undoStore.value);
-        runtimeMocks.ensureTrackStrip.mockClear();
+        runtimeMocks.initializeTrackStripFromSnapshot.mockClear();
 
         await undo();
 
         expect(getTrack('track-muted-audio')).toEqual(collaboratorTrack);
         expect(trackStore.value?.tracks.some((track) => track.id === 'track-muted-midi')).toBe(false);
         expect(trackStore.value?.tracks).toEqual(beforeUndo);
-        expect(runtimeMocks.ensureTrackStrip).not.toHaveBeenCalled();
-        expect(runtimeMocks.ensureTrackStrip).not.toHaveBeenCalledWith('track-muted-audio');
+        expect(runtimeMocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         expect(undoStore.value).toEqual(historyBeforeUndo);
     });
 });

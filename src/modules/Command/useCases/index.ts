@@ -8,6 +8,7 @@ export { commandProjectRevisionPort } from './commandProjectRevisionPort';
 export { commandProjectDivergencePort } from './commandProjectDivergencePort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
+export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';

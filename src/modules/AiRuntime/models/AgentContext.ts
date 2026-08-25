@@ -24,6 +24,7 @@ export type AgentContextProjectSnapshot = {
     timeSignature: [number, number];
     selectedTrack: { id: string; digest: string } | null;
     selectableTargets: Array<{ id: string; digest: string }>;
+    sections?: Array<{ id: string; digest: string }>;
     targetCount: number;
     truncated: boolean;
 };

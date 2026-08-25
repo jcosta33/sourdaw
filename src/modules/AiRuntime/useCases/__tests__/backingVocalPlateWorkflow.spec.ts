@@ -955,10 +955,12 @@ describe('backing-vocal plate workflow', () => {
             timeSignatureNumerator: 4,
             timeSignatureDenominator: 4,
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         removeFixtureRuntimeStrips(trackStore.value?.tracks ?? []);
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
