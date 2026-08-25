@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_a40848e8f8cca9::t_e7ac8d12b0ce2c 1,216-219
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_a40848e8f8cca9::t_42d1141cae094c 354-392
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_e7ac8d12b0ce2c 222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b7f010e3c2283fa297edb9f2d9179825cd836fa7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
