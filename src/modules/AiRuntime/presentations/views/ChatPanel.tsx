@@ -15,6 +15,7 @@ import { type ChatMessage } from '../../models/Chat';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
+import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
@@ -259,6 +260,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
+    const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
         chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
     );
@@ -307,7 +309,11 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     }
 
     let chatPanelContent;
-    if (chatState.messages.length === 0 && pendingEffectContinuations.length === 0) {
+    if (
+        chatState.messages.length === 0 &&
+        pendingEffectContinuations.length === 0 &&
+        preparedStemManualRepairs.length === 0
+    ) {
         chatPanelContent = (
             <Stack align="center" justify="center" className="h-full text-center px-6 opacity-60">
                 <Bot className="size-8 mx-auto mb-3 text-muted-foreground" />
@@ -394,6 +400,18 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         </div>
                     );
                 })}
+                {preparedStemManualRepairs.map((recovery) => (
+                    <div
+                        key={`${recovery.runId}:${recovery.batchId}:prepared-stems`}
+                        className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs"
+                    >
+                        <p className="font-medium text-foreground">Prepared stem import requires manual repair</p>
+                        <p className="mt-1 text-muted-foreground">{recovery.reason}</p>
+                        <p className="mt-2 text-muted-foreground">
+                            Retained media: {recovery.audioBufferIds.join(', ')}
+                        </p>
+                    </div>
+                ))}
                 <div ref={messagesEndRef} className="h-2 w-full shrink-0" />
             </Stack>
         );

@@ -424,6 +424,46 @@ describe('ChatPanel', () => {
         });
     });
 
+    it('surfaces retained prepared media when an evicted run requires manual repair', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [],
+                      preparedStemImportRecoveryLedger: [
+                          {
+                              schemaVersion: 1,
+                              runId: 'run-evicted-stems',
+                              batchId: 'batch-evicted-stems',
+                              serializedCommandBatch: 'invalid retained batch',
+                              resources: [
+                                  {
+                                      audioBufferId: 'buffer-evicted-stems',
+                                      assetLeaseId: 'lease-evicted-stems',
+                                  },
+                              ],
+                              status: 'manual-repair',
+                              lastError: 'The retained command proof is invalid. Keep the staged media for inspection.',
+                              manualRepairRequiredAt: 500,
+                          },
+                      ],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        expect(screen.queryByText('The kitchen is quiet')).not.toBeInTheDocument();
+        expect(screen.getByText('Prepared stem import requires manual repair')).toBeInTheDocument();
+        expect(screen.getByText('Retained media: buffer-evicted-stems')).toBeInTheDocument();
+        expect(screen.getByText(/retained command proof is invalid/i)).toBeInTheDocument();
+    });
+
     it('should have correct accessibility attributes', () => {
         render(<ChatPanel />);
         const panel = screen.getByText('AI Chat').closest('[class*="flex-col"]');

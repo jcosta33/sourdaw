@@ -16,6 +16,7 @@ import {
     type AgentRunPendingEffectRecovery,
     type AgentRunPhase,
     type AgentRunPreparedStemImportRecovery,
+    type AgentRunPreparedStemImportRecoveryCapsule,
     type AgentRunProviderUsage,
     type AgentRunSagaStep,
     type AgentRunScope,
@@ -24,6 +25,7 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
+import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 
@@ -123,6 +125,28 @@ function withPendingEffectRecoveryLedger(
         return withoutLedger;
     }
     return { ...state, pendingEffectRecoveryLedger };
+}
+
+function getPreparedStemImportRecoveryLedger(state: AgentRunState): AgentRunPreparedStemImportRecoveryCapsule[] {
+    return state.preparedStemImportRecoveryLedger ?? [];
+}
+
+function withPreparedStemImportRecoveryLedger(
+    state: AgentRunState,
+    preparedStemImportRecoveryLedger: AgentRunPreparedStemImportRecoveryCapsule[]
+): AgentRunState {
+    if (preparedStemImportRecoveryLedger.length === 0) {
+        const { preparedStemImportRecoveryLedger: _removed, ...withoutLedger } = state;
+        return withoutLedger;
+    }
+    return { ...state, preparedStemImportRecoveryLedger };
+}
+
+function isPreparedStemImportRecovery(
+    recovery: Pick<AgentRunPreparedStemImportRecoveryCapsule, 'runId' | 'batchId'>,
+    input: { runId: string; batchId: string }
+): boolean {
+    return recovery.runId === input.runId && recovery.batchId === input.batchId;
 }
 
 function isPendingEffectRecovery(
@@ -976,18 +1000,32 @@ function recordAgentRunPreparedStemImportRecovery(input: {
     runId: string;
     recovery: AgentRunPreparedStemImportRecovery;
     recordedAt?: number;
-}): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
-        const resourceIds = new Set(input.recovery.resources.map((resource) => resource.audioBufferId));
+}): AgentRun | null {
+    const recordedAt = input.recordedAt ?? Date.now();
+    const state = readAgentRunState();
+    const recovery = structuredClone(input.recovery);
+    const existingRecovery = getPreparedStemImportRecoveryLedger(state).find((candidate) =>
+        isPreparedStemImportRecovery(candidate, { runId: input.runId, batchId: recovery.batchId })
+    );
+    const index = state.runs.findIndex((run) => run.runId === input.runId);
+    if (index < 0 && (!existingRecovery || !hasSamePreparedStemImportRecovery(existingRecovery, recovery))) {
+        throw new Error(`Unknown agent run prepared-stem recovery: ${input.runId}:${input.recovery.batchId}`);
+    }
+    const nextRun = (() => {
+        if (index < 0) {
+            return null;
+        }
+        const run = state.runs[index]!;
+        const resourceIds = new Set(recovery.resources.map((resource) => resource.audioBufferId));
         const otherRecoveryResourceIds = new Set(
             run.preparedStemImports
-                .filter((recovery) => recovery.batchId !== input.recovery.batchId)
-                .flatMap((recovery) => recovery.resources.map((resource) => resource.audioBufferId))
+                .filter((candidate) => candidate.batchId !== recovery.batchId)
+                .flatMap((candidate) => candidate.resources.map((resource) => resource.audioBufferId))
         );
         if (
-            resourceIds.size !== input.recovery.resources.length ||
-            input.recovery.resources.some((resource) => otherRecoveryResourceIds.has(resource.audioBufferId)) ||
-            input.recovery.resources.some(
+            resourceIds.size !== recovery.resources.length ||
+            recovery.resources.some((resource) => otherRecoveryResourceIds.has(resource.audioBufferId)) ||
+            recovery.resources.some(
                 (resource) =>
                     !run.temporaryAssets.some(
                         (asset) =>
@@ -998,61 +1036,141 @@ function recordAgentRunPreparedStemImportRecovery(input: {
                     )
             )
         ) {
-            throw new Error(`Prepared stem recovery does not match live run assets: ${input.recovery.batchId}`);
+            throw new Error(`Prepared stem recovery does not match live run assets: ${recovery.batchId}`);
         }
         return {
             ...run,
+            updatedAt: recordedAt,
             preparedStemImports: [
-                ...run.preparedStemImports.filter((recovery) => recovery.batchId !== input.recovery.batchId),
-                structuredClone(input.recovery),
+                ...run.preparedStemImports.filter((candidate) => candidate.batchId !== recovery.batchId),
+                recovery,
             ],
-        };
-    });
+        } satisfies AgentRun;
+    })();
+    const preparedStemImportRecoveryLedger = [
+        ...getPreparedStemImportRecoveryLedger(state).filter(
+            (candidate) => !isPreparedStemImportRecovery(candidate, { runId: input.runId, batchId: recovery.batchId })
+        ),
+        {
+            ...structuredClone(recovery),
+            runId: input.runId,
+            status: existingRecovery?.status ?? ('pending' as const),
+            lastError: existingRecovery?.lastError ?? null,
+            manualRepairRequiredAt: existingRecovery?.manualRepairRequiredAt ?? null,
+        },
+    ];
+    const runs = [...state.runs];
+    if (nextRun) {
+        runs[index] = nextRun;
+    }
+    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    return nextRun ? structuredClone(nextRun) : null;
 }
 
-function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchId: string }): AgentRun {
-    return updateAgentRun(input.runId, Date.now(), (run) => ({
-        ...run,
-        preparedStemImports: run.preparedStemImports.filter((recovery) => recovery.batchId !== input.batchId),
-    }));
+function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchId: string }): AgentRun | null {
+    const state = readAgentRunState();
+    const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).filter(
+        (candidate) => !isPreparedStemImportRecovery(candidate, input)
+    );
+    const index = state.runs.findIndex((run) => run.runId === input.runId);
+    if (index < 0) {
+        if (preparedStemImportRecoveryLedger.length === getPreparedStemImportRecoveryLedger(state).length) {
+            return null;
+        }
+        persistAgentRunState(withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger));
+        return null;
+    }
+    const next = {
+        ...state.runs[index]!,
+        updatedAt: Date.now(),
+        preparedStemImports: state.runs[index]!.preparedStemImports.filter(
+            (recovery) => recovery.batchId !== input.batchId
+        ),
+    } satisfies AgentRun;
+    const runs = [...state.runs];
+    runs[index] = next;
+    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    return structuredClone(next);
+}
+
+function getAgentRunPreparedStemImportRecovery(input: {
+    runId: string;
+    batchId: string;
+}): AgentRunPreparedStemImportRecoveryCapsule | null {
+    const recovery = getPreparedStemImportRecoveryLedger(readAgentRunState()).find((candidate) =>
+        isPreparedStemImportRecovery(candidate, input)
+    );
+    return recovery ? structuredClone(recovery) : null;
 }
 
 function requireAgentRunPreparedStemManualRepair(input: {
     runId: string;
     assetIds: string[];
     batchIds: string[];
+    reason?: string;
     requiredAt?: number;
-}): AgentRun {
+}): AgentRun | null {
     const requiredAt = input.requiredAt ?? Date.now();
-    return updateAgentRun(input.runId, requiredAt, (run) => {
-        if (run.errors.some((error) => error.code === 'prepared-stem-recovery-metadata-missing')) {
-            return run;
+    const reason =
+        input.reason ??
+        'Prepared stem cleanup identity is unavailable. Keep the staged media retained and inspect it manually.';
+    const state = readAgentRunState();
+    const matchingBatchIds = new Set(input.batchIds);
+    const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).map((recovery) =>
+        recovery.runId === input.runId && matchingBatchIds.has(recovery.batchId)
+            ? {
+                  ...recovery,
+                  status: 'manual-repair' as const,
+                  lastError: reason,
+                  manualRepairRequiredAt: requiredAt,
+              }
+            : recovery
+    );
+    const index = state.runs.findIndex((run) => run.runId === input.runId);
+    if (index < 0) {
+        if (
+            input.batchIds.length === 0 ||
+            preparedStemImportRecoveryLedger.every(
+                (recovery) => recovery.runId !== input.runId || !matchingBatchIds.has(recovery.batchId)
+            )
+        ) {
+            throw new Error(`Unknown agent run prepared-stem recovery: ${input.runId}`);
         }
-        return {
-            ...run,
-            errors: [
-                ...run.errors,
-                {
-                    ...normalizeAgentFailure({
-                        category: 'asset',
-                        source: 'restart-recovery',
-                        occurredAt: requiredAt,
-                        related: { workIds: input.batchIds, artifactIds: input.assetIds },
-                        retry: 'never',
-                        compensation: 'manual-repair',
-                        knownDomain: true,
-                    }),
-                    code: 'prepared-stem-recovery-metadata-missing',
-                },
-            ],
-            manualResume: {
-                required: true,
-                reason: 'Prepared stem cleanup identity is unavailable. Keep the staged media retained and inspect it manually.',
-                workIds: [...new Set([...run.manualResume.workIds, ...input.batchIds])],
-                requiredAt,
-            },
-        };
-    });
+        persistAgentRunState(withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger));
+        return null;
+    }
+    const run = state.runs[index]!;
+    const next = run.errors.some((error) => error.code === 'prepared-stem-recovery-metadata-missing')
+        ? { ...run, updatedAt: requiredAt }
+        : {
+              ...run,
+              updatedAt: requiredAt,
+              errors: [
+                  ...run.errors,
+                  {
+                      ...normalizeAgentFailure({
+                          category: 'asset',
+                          source: 'restart-recovery',
+                          occurredAt: requiredAt,
+                          related: { workIds: input.batchIds, artifactIds: input.assetIds },
+                          retry: 'never',
+                          compensation: 'manual-repair',
+                          knownDomain: true,
+                      }),
+                      code: 'prepared-stem-recovery-metadata-missing',
+                  },
+              ],
+              manualResume: {
+                  required: true,
+                  reason,
+                  workIds: [...new Set([...run.manualResume.workIds, ...input.batchIds])],
+                  requiredAt,
+              },
+          };
+    const runs = [...state.runs];
+    runs[index] = next;
+    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    return structuredClone(next);
 }
 
 function releaseAgentRunTemporaryAsset(input: {
@@ -1264,6 +1382,7 @@ export const agentRunLifecycle = {
     create: createAgentRun,
     get: getAgentRun,
     getPendingEffectRecovery: getAgentRunPendingEffectRecovery,
+    getPreparedStemImportRecovery: getAgentRunPreparedStemImportRecovery,
     forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
     forgetPreparedStemImportRecovery: forgetAgentRunPreparedStemImportRecovery,
     recordArtifact: recordAgentRunArtifact,

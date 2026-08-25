@@ -326,6 +326,13 @@ export type AgentRunPreparedStemImportRecovery = {
     }>;
 };
 
+export type AgentRunPreparedStemImportRecoveryCapsule = AgentRunPreparedStemImportRecovery & {
+    runId: string;
+    status: 'pending' | 'manual-repair';
+    lastError: string | null;
+    manualRepairRequiredAt: number | null;
+};
+
 export type AgentRunManualResume = {
     required: boolean;
     reason: string | null;
@@ -457,4 +464,6 @@ export type AgentRunState = {
     runs: AgentRun[];
     /** Capacity-admitted recovery capabilities are retained independently of evictable run history. */
     pendingEffectRecoveryLedger?: AgentRunPendingEffectRecovery[];
+    /** Prepared media cleanup authority is retained independently of evictable run history. */
+    preparedStemImportRecoveryLedger?: AgentRunPreparedStemImportRecoveryCapsule[];
 };

@@ -13,6 +13,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({ releaseStagedAsset: mocks.releaseStagedAsset }),
 }));
 
+import { persistAgentRunState, readAgentRunState } from '../../../stores/agentRunStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunCancellation } from '../../cancelAgentRun';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
@@ -89,6 +90,84 @@ describe('prepared stem import resource cleanup', () => {
         expect(() => preparedStemImportResources.register({ runId: 'stem-discarded', stems })).not.toThrow();
         preparedStemImportResources.release({ runId: 'stem-discarded', stems });
         expect(agentRunLifecycle.get('stem-discarded')?.temporaryAssets).toEqual([]);
+    });
+
+    it('refuses protection at durable capacity before resources become commit-protected', async () => {
+        const admittedRecoveries = Array.from({ length: 256 }, (_, index) => ({
+            schemaVersion: 1 as const,
+            runId: `evicted-capacity-run-${String(index)}`,
+            batchId: `evicted-capacity-batch-${String(index)}`,
+            serializedCommandBatch: `evicted-capacity-proof-${String(index)}`,
+            resources: [
+                {
+                    audioBufferId: `evicted-capacity-buffer-${String(index)}`,
+                    assetLeaseId: `evicted-capacity-lease-${String(index)}`,
+                },
+            ],
+            status: 'pending' as const,
+            lastError: null,
+            manualRepairRequiredAt: null,
+        }));
+        persistAgentRunState({
+            schemaVersion: 1,
+            runs: [],
+            preparedStemImportRecoveryLedger: admittedRecoveries,
+        });
+        const runId = 'stem-capacity-refusal';
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems });
+
+        expect(() =>
+            preparedStemImportResources.protect({
+                runId,
+                stems,
+                recovery: {
+                    batchId: 'batch-capacity-refusal',
+                    commandBatch: {
+                        authority: {
+                            projectId: 'project-capacity-refusal',
+                            baseRevision: 'revision-capacity-refusal',
+                            scope: {
+                                targetIds: [],
+                                targetRanges: [],
+                                protectedTargetIds: [],
+                                protectedRanges: [],
+                            },
+                            grants: {
+                                allowedOperationPrefixes: ['importStemSet'],
+                                create: true,
+                                delete: false,
+                                routing: false,
+                                tempo: false,
+                                master: false,
+                                file: true,
+                                audioUpload: true,
+                                remoteGeneration: false,
+                                autoCommit: false,
+                            },
+                            budgets: {
+                                maxCommands: 1,
+                                maxCreatedTracks: 1,
+                                maxDeletedObjects: 0,
+                                maxAffectedTracks: 1,
+                                maxAffectedClips: 1,
+                                maxAutomationPoints: 0,
+                                maxImportedAssets: 1,
+                                maxRenderJobs: 0,
+                            },
+                        },
+                        serialized: 'serialized-capacity-refusal',
+                    },
+                },
+            })
+        ).toThrow('Agent run prepared-stem recovery ledger reached its persistent capacity');
+
+        await preparedStemImportResources.discard({ runId, stems });
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledExactlyOnceWith('staged-asset-1');
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger).toEqual(admittedRecoveries);
     });
 
     it.each(['discard', 'transfer'] as const)(
@@ -176,6 +255,9 @@ describe('prepared stem import resource cleanup', () => {
                     resources: [{ audioBufferId: 'decoded-buffer-1', assetLeaseId: 'staged-asset-1' }],
                 },
             ]);
+            expect(readAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+                expect.objectContaining({ runId, batchId, status: 'pending' }),
+            ]);
             mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
                 schemaVersion: 1,
                 runId,
@@ -214,6 +296,7 @@ describe('prepared stem import resource cleanup', () => {
             expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(physicalDeletes);
             expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
             expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+            expect(readAgentRunState().preparedStemImportRecoveryLedger).toBeUndefined();
         }
     );
 
@@ -277,5 +360,6 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.releaseStagedAsset).toHaveBeenCalledOnce();
         expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
         expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger).toBeUndefined();
     });
 });

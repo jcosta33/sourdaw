@@ -21,6 +21,7 @@ import {
     type AgentRunPendingEffectContinuation,
     type AgentRunPendingEffectRecovery,
     type AgentRunPreparedStemImportRecovery,
+    type AgentRunPreparedStemImportRecoveryCapsule,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
@@ -31,9 +32,11 @@ import {
     type AgentRunWorkLease,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 const MAX_RUNS = 50;
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
+const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
 const MAX_COLLECTION_LENGTH = 256;
 const MAX_TEXT_LENGTH = 128 * 1024;
 const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
@@ -743,6 +746,37 @@ function readPreparedStemImportRecoveries(value: unknown): AgentRunPreparedStemI
         recoveries.push(recovery);
     }
     return recoveries;
+}
+
+function readPreparedStemImportRecoveryCapsule(value: unknown): AgentRunPreparedStemImportRecoveryCapsule | null {
+    const recovery = readPreparedStemImportRecovery(value);
+    if (!recovery || !isRecord(value)) {
+        return null;
+    }
+    const runId = readString(value.runId);
+    const lastError = readNullableString(value.lastError);
+    const manualRepairRequiredAt = readNullableTimestamp(value.manualRepairRequiredAt);
+    if (
+        runId === null ||
+        lastError === undefined ||
+        manualRepairRequiredAt === undefined ||
+        (value.status !== 'pending' && value.status !== 'manual-repair') ||
+        (value.status === 'pending' && (lastError !== null || manualRepairRequiredAt !== null)) ||
+        (value.status === 'manual-repair' && (lastError === null || manualRepairRequiredAt === null))
+    ) {
+        return null;
+    }
+    return {
+        ...recovery,
+        runId,
+        status: value.status,
+        lastError,
+        manualRepairRequiredAt,
+    };
+}
+
+function preparedStemImportRecoveryIdentity(runId: string, batchId: string): string {
+    return `${runId}\u0000${batchId}`;
 }
 
 function readWorkLease(value: unknown): AgentRunWorkLease | null {
@@ -1658,9 +1692,75 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
     if (pendingEffectRecoveryLedger.length > MAX_PENDING_EFFECT_RECOVERIES) {
         return createEmptyAgentRunState();
     }
-    return pendingEffectRecoveryLedger.length > 0
-        ? { schemaVersion: AGENT_RUN_SCHEMA_VERSION, runs, pendingEffectRecoveryLedger }
-        : { schemaVersion: AGENT_RUN_SCHEMA_VERSION, runs };
+    const explicitPreparedStemRecoveries =
+        value.preparedStemImportRecoveryLedger === undefined
+            ? []
+            : readCollection(value.preparedStemImportRecoveryLedger, readPreparedStemImportRecoveryCapsule);
+    if (
+        explicitPreparedStemRecoveries === null ||
+        explicitPreparedStemRecoveries.length > MAX_PREPARED_STEM_IMPORT_RECOVERIES
+    ) {
+        return createEmptyAgentRunState();
+    }
+    const preparedRecoveryById = new Map<string, AgentRunPreparedStemImportRecoveryCapsule>();
+    const preparedRecoveryByResourceId = new Map<string, string>();
+    for (const recovery of explicitPreparedStemRecoveries) {
+        const id = preparedStemImportRecoveryIdentity(recovery.runId, recovery.batchId);
+        if (preparedRecoveryById.has(id)) {
+            return createEmptyAgentRunState();
+        }
+        for (const resource of recovery.resources) {
+            if (preparedRecoveryByResourceId.has(resource.audioBufferId)) {
+                return createEmptyAgentRunState();
+            }
+            preparedRecoveryByResourceId.set(resource.audioBufferId, id);
+        }
+        preparedRecoveryById.set(id, recovery);
+    }
+    for (const run of runs) {
+        const runRecoveryIds = new Set<string>();
+        for (const recovery of run.preparedStemImports) {
+            const id = preparedStemImportRecoveryIdentity(run.runId, recovery.batchId);
+            const explicitRecovery = preparedRecoveryById.get(id);
+            if (explicitRecovery && !hasSamePreparedStemImportRecovery(explicitRecovery, recovery)) {
+                return createEmptyAgentRunState();
+            }
+            if (!explicitRecovery) {
+                for (const resource of recovery.resources) {
+                    const existingOwner = preparedRecoveryByResourceId.get(resource.audioBufferId);
+                    if (existingOwner && existingOwner !== id) {
+                        return createEmptyAgentRunState();
+                    }
+                    preparedRecoveryByResourceId.set(resource.audioBufferId, id);
+                }
+                preparedRecoveryById.set(id, {
+                    ...structuredClone(recovery),
+                    runId: run.runId,
+                    status: 'pending',
+                    lastError: null,
+                    manualRepairRequiredAt: null,
+                });
+            }
+            runRecoveryIds.add(id);
+        }
+        if (
+            [...preparedRecoveryById.keys()].some(
+                (id) => id.startsWith(`${run.runId}\u0000`) && !runRecoveryIds.has(id)
+            )
+        ) {
+            return createEmptyAgentRunState();
+        }
+    }
+    const preparedStemImportRecoveryLedger = [...preparedRecoveryById.values()];
+    if (preparedStemImportRecoveryLedger.length > MAX_PREPARED_STEM_IMPORT_RECOVERIES) {
+        return createEmptyAgentRunState();
+    }
+    return {
+        schemaVersion: AGENT_RUN_SCHEMA_VERSION,
+        runs,
+        ...(pendingEffectRecoveryLedger.length > 0 ? { pendingEffectRecoveryLedger } : {}),
+        ...(preparedStemImportRecoveryLedger.length > 0 ? { preparedStemImportRecoveryLedger } : {}),
+    };
 }
 
 export const agentRunStore = createStore<AgentRunState>({
@@ -1677,6 +1777,10 @@ export function readAgentRunState(): AgentRunState {
 }
 
 export function persistAgentRunState(state: AgentRunState): void {
+    const requestedPreparedStemRecoveries = state.preparedStemImportRecoveryLedger ?? [];
+    if (requestedPreparedStemRecoveries.length > MAX_PREPARED_STEM_IMPORT_RECOVERIES) {
+        throw new Error('Agent run prepared-stem recovery ledger reached its persistent capacity');
+    }
     const boundedState = { ...state, runs: state.runs.slice(-MAX_RUNS) };
     const sanitizedState = sanitizeAgentRunState(boundedState);
     if (sanitizedState.runs.length !== boundedState.runs.length) {
@@ -1686,6 +1790,13 @@ export function persistAgentRunState(state: AgentRunState): void {
     const sanitizedRecoveries = sanitizedState.pendingEffectRecoveryLedger ?? [];
     if (requestedRecoveries.length > 0 && sanitizedRecoveries.length !== requestedRecoveries.length) {
         throw new Error('Agent run pending-effect recovery ledger reached its persistent capacity');
+    }
+    const sanitizedPreparedStemRecoveries = sanitizedState.preparedStemImportRecoveryLedger ?? [];
+    if (
+        requestedPreparedStemRecoveries.length > 0 &&
+        sanitizedPreparedStemRecoveries.length !== requestedPreparedStemRecoveries.length
+    ) {
+        throw new Error('Agent run prepared-stem recovery ledger contains invalid or duplicate recovery capsules');
     }
     if (!agentRunStore.trySet(sanitizedState)) {
         throw new Error('Agent run state could not be persisted locally');
