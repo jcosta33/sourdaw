@@ -6,6 +6,7 @@ import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
+import { getApplicationWorkflowScope } from './getApplicationWorkflowScope';
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
@@ -25,19 +26,17 @@ export function composeVerifiedProviderProposalScope(input: {
     context: ProjectContext;
     prompt: string;
     workflowCapabilityId: WorkflowCapabilityId | undefined;
-    workflowScope: AgentRunScope | undefined;
 }): AgentRunScope | undefined {
+    const workflowScope = getApplicationWorkflowScope(input);
+    if (workflowScope !== undefined) {
+        return workflowScope;
+    }
     const applicationProtectedTargetIds = getApplicationProtectedObjects({
         actions: input.actions,
         context: input.context,
         prompt: input.prompt,
         workflowCapabilityId: input.workflowCapabilityId,
     }).map((object) => object.id);
-    if (input.workflowScope !== undefined) {
-        const scope = structuredClone(input.workflowScope);
-        scope.protectedTargetIds = uniqueIds([...applicationProtectedTargetIds, ...scope.protectedTargetIds]);
-        return scope;
-    }
     const resolvedTargetIds = input.compilerEvidence?.providerKnownTargetIds;
     if (resolvedTargetIds === undefined) {
         return undefined;

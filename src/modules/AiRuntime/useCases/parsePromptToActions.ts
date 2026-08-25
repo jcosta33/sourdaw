@@ -683,7 +683,6 @@ export const parsePromptToActions = inject({ logger })(
                         context,
                         prompt,
                         workflowCapabilityId,
-                        workflowScope: bridged.verifiedProviderProposalScope,
                     });
                     let effectiveProviderProposal = providerProposal;
                     if (effectiveProviderProposal !== null && verifiedProviderProposalScope !== undefined) {

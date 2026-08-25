@@ -650,6 +650,7 @@ describe('parsePromptToActions', () => {
         const context = createDrumRoutingContext();
         const prompt =
             'Route every drum track except the parallel-compression return into the Drum Bus, and keep Bass DI unchanged.';
+        let bridgeReturnedScopeAuthority: boolean | undefined;
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 { name: 'selectWorkflowCapability', arguments: { capabilityId: 'drum-routing' } },
@@ -659,13 +660,18 @@ describe('parsePromptToActions', () => {
                 { name: 'setTrackOutput', arguments: { trackId: 'track-room', outputId: 'bus-drums' } },
             ])
         );
-        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        mockBridgeGroundedLlmToolCalls.mockImplementation((input) => {
+            const bridged = actualBridge.bridgeGroundedLlmToolCalls(input);
+            bridgeReturnedScopeAuthority = Object.hasOwn(bridged, 'verifiedProviderProposalScope');
+            return bridged;
+        });
 
         const result = await parsePromptToActions(prompt, context, undefined, 'revision-workflow-protections');
         const workflowTargetIds = ['bus-drums', 'track-kick', 'track-snare', 'track-hats', 'track-room'];
         const protectedTargetIds = ['track-bass', 'track-parallel'];
 
         expect(result.rejectionReason).toBeUndefined();
+        expect(bridgeReturnedScopeAuthority).toBe(false);
         expect(result.providerProposal?.scope).toEqual({
             targetIds: workflowTargetIds,
             targetRanges: [],
