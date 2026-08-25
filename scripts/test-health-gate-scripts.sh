@@ -342,16 +342,16 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
-expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(gate?.name === 'Gate', 'stable Gate summary job name must stay exact');
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
         gateNeeds.every((need, index) => need === expectedGateNeeds[index]),
     `Gate needs must stay exactly: ${expectedGateNeeds.join(', ')}`
 );
-expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
-expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
-expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+expect(!gateNeeds.includes('unit'), 'unit suite must remain outside informational Gate summary dependencies');
+expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside informational Gate summary dependencies');
+expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside informational Gate summary dependencies');
 
 const maliciousHelperMarker = `${process.env.TEST_TEMP_ROOT}/pr-owned-helper-invoked.log`;
 const workflowCommandLog = `${process.env.TEST_TEMP_ROOT}/workflow-secret-scan.log`;
