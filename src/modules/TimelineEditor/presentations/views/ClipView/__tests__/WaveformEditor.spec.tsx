@@ -150,6 +150,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
             return { tracks: [] };
         },
         getSnapshot: () => ({ tracks: [] }),
+        subscribe: vi.fn<typeof trackStore.subscribe>((_callback) => () => {}),
         subscribeReact: vi.fn(() => () => {}),
     },
     defaultTrackState: { tracks: [] },

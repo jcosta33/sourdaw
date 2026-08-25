@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useTimelineFileDrop } from '../useTimelineFileDrop';
 
+type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
+
 const mocks = vi.hoisted(() => ({
     hitTestTrack: vi.fn(),
     trackStoreValue: { value: { tracks: [], selectedTrackId: null } },
@@ -29,7 +31,7 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
-        subscribe: vi.fn(() => () => undefined),
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
 }));
 

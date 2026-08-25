@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
 
@@ -21,7 +23,7 @@ const mocks = vi.hoisted(() => ({
     })),
     trackStore: {
         value: { tracks: [{ id: 'track-1', devices: [{ id: 'device-1', type: 'crust' }] }] },
-        subscribe: vi.fn(() => () => undefined),
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
 }));
 const { updateDeviceParam, persistDeviceParam } = mocks;

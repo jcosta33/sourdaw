@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 const mocks = vi.hoisted(() => {
     const callOrder: string[] = [];
     const trackStoreValue: {
@@ -110,7 +112,10 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return {
         ...actual,
-        trackStore: { __kind: 'track', subscribe: vi.fn(() => () => undefined) },
+        trackStore: {
+            __kind: 'track',
+            subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
+        },
         defaultTrackState: { tracks: [], selectedTrackId: null },
         warpStates: mocks.warpStates,
         getWarpState: (clipId: string) =>

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 const mocks = vi.hoisted(() => {
     const trackStoreValue: unknown = null;
     return { selectAllClipsInArrangement: vi.fn(), trackStoreValue };
@@ -17,6 +19,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         get value() {
             return mocks.trackStoreValue;
         },
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
 }));
 

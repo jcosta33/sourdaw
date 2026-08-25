@@ -10,6 +10,8 @@ import {
 
 import { projectCrdtToStores } from '../projectProjection';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 // Reproduction for the CRDT half of survey item #3, the same defect shape as
 // `projectModulationSlot.spec.ts`. A file open restores VCA masters and clip
 // gain envelopes (`buildProjectData` / `hydrateModuleStoresFromProjectData`),
@@ -27,7 +29,7 @@ import { projectCrdtToStores } from '../projectProjection';
 // the real `projectCrdtToStores` are the two real stores under test.
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { hydrate: vi.fn(), subscribe: vi.fn(() => () => undefined) },
+    trackStore: { hydrate: vi.fn(), subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}) },
     markerStore: { hydrate: vi.fn() },
     takeLaneStore: { hydrate: vi.fn() },
     automationStore: { hydrate: vi.fn() },

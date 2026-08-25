@@ -5,6 +5,8 @@ import { modulationStore, type ModulationStoreState } from '#/modules/Automation
 
 import { projectCrdtToStores } from '../projectProjection';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 // Audit CC-4 reproduction. `modulationStore` persists to the CRDT root doc slot
 // `modulation`, but `projectCrdtToStores` must also read it back — otherwise the
 // slot is a write-only truth cell: every modulator/mapping the user configures
@@ -14,7 +16,7 @@ import { projectCrdtToStores } from '../projectProjection';
 // projection is the real `modulationStore`.
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { hydrate: vi.fn(), subscribe: vi.fn(() => () => undefined) },
+    trackStore: { hydrate: vi.fn(), subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}) },
     automationStore: { hydrate: vi.fn() },
     transportStore: { hydrate: vi.fn() },
     tempoMapStore: { hydrate: vi.fn() },

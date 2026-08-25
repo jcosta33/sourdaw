@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 /**
  * F2: modulation is the *last* writer to a device parameter in a scheduler tick,
  * so it decides what the DSP actually holds.
@@ -28,9 +30,9 @@ type MockTrackStoreValue = {
 type UpdateDeviceParam = (trackId: string, deviceId: string, paramId: string, value: number) => void;
 
 const { mocks } = vi.hoisted(() => {
-    const trackStore: { value: MockTrackStoreValue; subscribe: () => () => undefined } = {
+    const trackStore: { value: MockTrackStoreValue; subscribe: TrackStoreSubscribe } = {
         value: null,
-        subscribe: vi.fn(() => () => undefined),
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     };
     return { mocks: { updateDeviceParam: vi.fn<UpdateDeviceParam>(), trackStore } };
 });
