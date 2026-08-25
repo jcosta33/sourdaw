@@ -41,10 +41,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: health-gates-${{ github.event.pull_request.number || github.ref }}
-  # Pull-request runs and approved reviews supersede older work for that PR.
-  # Other review states skip validation and remain non-cancelling, as do
-  # scheduled and dispatched runs against main.
+  # Pull-request runs and approved reviews share the PR-number group. Every
+  # other event gets a run-id group, so it replaces neither validation nor
+  # another non-validating run.
+  group: health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}
 
 env:
@@ -696,8 +696,9 @@ jobs:
     # the previous end-to-end job broken in this file for months. Both have now
     # passed, so both gate.
     # `!cancelled()` still evaluates failed or skipped dependencies for a live
-    # run, while allowing a superseded run to cancel Gate instead of queueing it.
-    if: ${{ !cancelled() }}
+    # run. The review predicate prevents an intentionally skipped review run
+    # from reporting a successful Gate from all-skipped dependencies.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}
     needs:
       - decide
       - static

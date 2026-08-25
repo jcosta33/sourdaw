@@ -232,6 +232,16 @@ function expectShardFailureWarning(step, slug, suite, shard) {
     );
 }
 
+function evaluateHealthGateEventPolicy({ eventName, reviewState, pullRequestNumber, runId }) {
+    const validatesPullRequest =
+        eventName === 'pull_request' || (eventName === 'pull_request_review' && reviewState === 'approved');
+    return {
+        group: `health-gates-${validatesPullRequest ? pullRequestNumber : runId}`,
+        cancelInProgress: validatesPullRequest,
+        gateEligible: eventName !== 'pull_request_review' || reviewState === 'approved',
+    };
+}
+
 const events = workflow.on;
 const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
@@ -278,10 +288,29 @@ expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_
 expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
 expect(
+    concurrency?.group ===
+        "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}",
+    'only pull_request and approved reviews may share a PR-number concurrency group'
+);
+expect(
     concurrency?.['cancel-in-progress'] ===
         "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
     'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
 );
+const eventPolicyCases = [
+    ['pull_request', { eventName: 'pull_request', pullRequestNumber: '2798', runId: '1001' }, ['health-gates-2798', true, true]],
+    ['approved review', { eventName: 'pull_request_review', reviewState: 'approved', pullRequestNumber: '2798', runId: '1002' }, ['health-gates-2798', true, true]],
+    ['commented review', { eventName: 'pull_request_review', reviewState: 'commented', pullRequestNumber: '2798', runId: '1003' }, ['health-gates-1003', false, false]],
+    ['changes requested review', { eventName: 'pull_request_review', reviewState: 'changes_requested', pullRequestNumber: '2798', runId: '1004' }, ['health-gates-1004', false, false]],
+    ['schedule', { eventName: 'schedule', runId: '1005' }, ['health-gates-1005', false, true]],
+    ['workflow dispatch', { eventName: 'workflow_dispatch', runId: '1006' }, ['health-gates-1006', false, true]],
+];
+for (const [label, input, [group, cancelInProgress, gateEligible]] of eventPolicyCases) {
+    expect(
+        JSON.stringify(evaluateHealthGateEventPolicy(input)) === JSON.stringify({ group, cancelInProgress, gateEligible }),
+        `${label} must keep its exact concurrency and Gate policy`
+    );
+}
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
     'decide must run the heavy path only for approved pull_request_review submissions'
@@ -437,7 +466,11 @@ expect(
 expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
-expect(gate?.if === '${{ !cancelled() }}', 'Gate must not remain queued after concurrency cancellation');
+expect(
+    gate?.if ===
+        "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
+    'Gate must cancel with superseded runs and must not report success for non-approved reviews'
+);
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
