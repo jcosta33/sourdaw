@@ -3459,7 +3459,6 @@ function validateDesktopArchiveContents(
 }
 
 function validateBuildMaterial(
-    snapshotRoot: string,
     desktop: JsonRecord,
     runtimeContract: ElectronRuntimeContract,
     paths: {
@@ -3749,7 +3748,6 @@ function validateDesktop(
         errors.push('desktop material contract identity drifted');
     }
     return validateBuildMaterial(
-        snapshotRoot,
         desktop,
         runtimeContract,
         { electronArchive, electronCommit, ffmpegArchive, ffmpegCommit, buildManifest, buildInputs },
