@@ -300,6 +300,7 @@ describe('redo', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second, third], future: [] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('notes-entry');
+        expect(notifications).toEqual([]);
     });
 
     it('delegates a manual action group to batch-owned macro recording', async () => {

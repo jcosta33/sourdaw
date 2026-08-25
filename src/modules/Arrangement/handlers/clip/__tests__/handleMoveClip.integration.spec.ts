@@ -191,6 +191,8 @@ describe('handleMoveClip atomic integration', () => {
             payload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 16 },
         };
         await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
+        expect(notifications).toEqual([]);
+
         const movedLane = automationStore.value!.lanes[0]!;
         automationStore.set({
             lanes: [{ ...movedLane, points: [{ ...movedLane.points[0]!, value: 0.9 }, movedLane.points[1]!] }],

@@ -316,12 +316,14 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(currentNotes()).toEqual(before);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
+        expect(notifications).toEqual([]);
 
         await redo();
 
         expect(currentNotes()).toEqual(transformed);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
+        expect(notifications).toEqual([]);
     });
 
     it('keeps a stale redo entry and preserves edits made after undo', async () => {
