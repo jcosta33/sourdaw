@@ -12,7 +12,7 @@
  * verification was running seventeen other lanes' code, which is how one lane ends
  * up reporting another lane's failing spec as its own.
  *
- * How it can fail (ADR 0015). Three independent verdicts, none of them vacuous:
+ * How it can fail (ADR 0015). Independent verdicts, none of them vacuous:
  *
  *  1. **Absence, with the subject planted.** The check writes a real spec file into
  *     a throwaway directory under `.agents/worktrees/` before collecting, so the
@@ -20,14 +20,21 @@
  *     have caught. A clean clone has no worktrees; without the fixture this
  *     assertion would pass by having nothing to look at, which is the blind shape
  *     ADR 0015 rule 4 names.
- *  2. **Presence, from an independent source.** The collected set is compared for
+ *  2. **Server ownership parity.** One recursive walk finds every server spec while
+ *     a separate direct-directory enumeration mirrors the exact glob in the server
+ *     package's `node:test` command. Both populations must be non-empty and exactly
+ *     equal, so a nested or differently placed spec cannot become ungated.
+ *  3. **Owned absence, from an independent source.** Once parity establishes the
+ *     dedicated server gate's complete population, root Vitest must collect none
+ *     of it.
+ *  4. **Presence, from an independent source.** The collected set is compared for
  *     exact equality against a filesystem walk of the collectable roots below. The
  *     two sides are sourced differently — vitest's glob resolution versus a plain
  *     directory walk — so neither can launder the other (rule 3). This side is what
  *     reds if an over-broad exclusion, or a `--dir` / `include` allowlist, silently
  *     drops specs that used to run: `scripts/__tests__/` holds four of them and
  *     lives outside `src`.
- *  3. **Registry, not list.** `collectableRoots` is the enumeration. A spec added
+ *  5. **Registry, not list.** `collectableRoots` is the enumeration. A spec added
  *     anywhere inside a declared root is covered automatically; a new root is a
  *     deliberate edit here, and until it is made the equality fails loudly rather
  *     than the specs silently not running.
@@ -36,7 +43,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,9 +54,17 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * the equality check enumerates; it is not a sample.
  *
  * `tests/e2e` is deliberately absent — those are Playwright specs, excluded by
- * `vite.config.ts` and run by `pnpm test:e2e <spec>`.
+ * `vite.config.ts` and run by `pnpm test:e2e <spec>`. `server` is also absent:
+ * those specs use `node:test` and are owned by `pnpm health:server:full`.
  */
-const collectableRoots = ['src', 'scripts', 'electron', 'server'] as const;
+const collectableRoots = ['src', 'scripts', 'electron'] as const;
+
+/** Specs owned by the dedicated server test gate, not root Vitest. */
+const serverRoot = 'server';
+
+/** Exact server runner contract from `server/package.json`. */
+const serverTestCommand = 'tsx --test __tests__/*.spec.ts';
+const serverTestDirectory = `${serverRoot}/__tests__`;
 
 /** The directory the exclusion under test is responsible for. */
 const worktreeRoot = '.agents/worktrees';
@@ -106,12 +121,34 @@ function walkForSpecs(absoluteDirectory: string, found: string[]): void {
     }
 }
 
-function enumerateExpectedSpecs(): string[] {
+function enumerateSpecs(roots: readonly string[]): string[] {
     const found: string[] = [];
-    for (const root of collectableRoots) {
+    for (const root of roots) {
         walkForSpecs(join(repoRoot, root), found);
     }
     return found.sort();
+}
+
+function enumerateServerRunnerSpecs(): { command: unknown; specs: string[] } {
+    const packageMetadata = JSON.parse(readFileSync(join(repoRoot, serverRoot, 'package.json'), 'utf8')) as {
+        scripts?: { test?: unknown };
+    };
+    const command = packageMetadata.scripts?.test;
+    if (command !== serverTestCommand) {
+        return { command, specs: [] };
+    }
+
+    let entries;
+    try {
+        entries = readdirSync(join(repoRoot, serverTestDirectory), { withFileTypes: true });
+    } catch {
+        return { command, specs: [] };
+    }
+    const specs = entries
+        .filter((entry) => entry.isFile() && !entry.name.startsWith('.') && entry.name.endsWith('.spec.ts'))
+        .map((entry) => `${serverTestDirectory}/${entry.name}`)
+        .sort();
+    return { command, specs };
 }
 
 type PlantedFixture = {
@@ -185,8 +222,10 @@ function main(): number {
     }
 
     const collectedSet = new Set(collected);
-    const expected = enumerateExpectedSpecs();
+    const expected = enumerateSpecs(collectableRoots);
     const expectedSet = new Set(expected);
+    const serverSpecs = enumerateSpecs([serverRoot]);
+    const serverRunner = enumerateServerRunnerSpecs();
 
     // 1. Absence, with the subject planted.
     const collectedWorktreeSpecs = collected.filter((path) => path.startsWith(`${worktreeRoot}/`));
@@ -202,7 +241,55 @@ function main(): number {
         );
     }
 
-    // 2. Presence, from an independent source.
+    // 2. Exact ownership parity between every server spec and the actual npm test glob.
+    const serverSpecSet = new Set(serverSpecs);
+    const serverRunnerSpecSet = new Set(serverRunner.specs);
+    const serverSpecsOutsideRunner = serverSpecs.filter((path) => !serverRunnerSpecSet.has(path));
+    const runnerSpecsOutsideServer = serverRunner.specs.filter((path) => !serverSpecSet.has(path));
+    if (serverRunner.command !== serverTestCommand) {
+        failures.push(
+            `  ✗ server/package.json test command must remain ${JSON.stringify(serverTestCommand)}; received ${JSON.stringify(serverRunner.command)}.`
+        );
+    }
+    if (serverSpecs.length === 0) {
+        failures.push(`  ✗ no spec files exist under ${serverRoot}/; server ownership parity would be vacuous.`);
+    }
+    if (serverRunner.specs.length === 0) {
+        failures.push(
+            `  ✗ ${serverTestDirectory}/*.spec.ts matched no direct files; the dedicated server gate would be vacuous.`
+        );
+    }
+    if (serverSpecsOutsideRunner.length > 0 || runnerSpecsOutsideServer.length > 0) {
+        const details = ['  ✗ recursively enumerated server specs do not exactly match the dedicated npm test glob.'];
+        if (serverSpecsOutsideRunner.length > 0) {
+            details.push('    Server specs not matched by the npm test glob:', formatSample(serverSpecsOutsideRunner));
+        }
+        if (runnerSpecsOutsideServer.length > 0) {
+            details.push(
+                '    npm test glob entries missing from the recursive server population:',
+                formatSample(runnerSpecsOutsideServer)
+            );
+        }
+        failures.push(details.join('\n'));
+    } else if (serverSpecs.length > 0 && serverRunner.specs.length > 0) {
+        console.log(`  ✓ all ${serverSpecs.length} server specs are owned by the exact npm test glob`);
+    }
+
+    // 3. Owned absence, from an independently enumerated, non-empty population.
+    const collectedServerSpecs = serverSpecs.filter((path) => collectedSet.has(path));
+    if (serverSpecs.length > 0 && collectedServerSpecs.length === 0) {
+        console.log(`  ✓ none of the ${serverSpecs.length} spec files under ${serverRoot}/ were collected`);
+    } else if (collectedServerSpecs.length > 0) {
+        failures.push(
+            [
+                `  ✗ the root run collected ${collectedServerSpecs.length} spec(s) owned by ${serverRoot}/.`,
+                '    These node:test specs belong to pnpm health:server:full.',
+                formatSample(collectedServerSpecs),
+            ].join('\n')
+        );
+    }
+
+    // 4. Presence, from an independent source.
     const missing = expected.filter((path) => !collectedSet.has(path));
     const unexpected = collected.filter((path) => !expectedSet.has(path));
 

@@ -11,6 +11,7 @@ export type AgentReferenceCapability =
     | 'device-host-track'
     | 'device'
     | 'device-parameter'
+    | 'adjustment-layer'
     | 'vca-group'
     | 'vca-member-track'
     | 'automation-lane'
@@ -27,6 +28,7 @@ const vcaMemberTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus'
 export function isAgentReferenceCapabilityCandidate(input: {
     capability: string;
     context: ProjectContext;
+    dependencyId?: string;
     id: string;
 }): boolean {
     const track = input.context.tracks.find((candidate) => candidate.id === input.id);
@@ -54,12 +56,23 @@ export function isAgentReferenceCapabilityCandidate(input: {
         }
     }
     if (input.capability === 'device') {
-        return input.context.tracks.some((candidate) => candidate.devices.some((device) => device.id === input.id));
+        return input.context.tracks.some(
+            (candidate) =>
+                (input.dependencyId === undefined || candidate.id === input.dependencyId) &&
+                candidate.devices.some((device) => device.id === input.id)
+        );
     }
     if (input.capability === 'device-parameter') {
         return input.context.tracks.some((candidate) =>
-            candidate.devices.some((device) => (device.parameters ?? []).some((parameter) => parameter.id === input.id))
+            candidate.devices.some(
+                (device) =>
+                    (input.dependencyId === undefined || device.id === input.dependencyId) &&
+                    (device.parameters ?? []).some((parameter) => parameter.id === input.id)
+            )
         );
+    }
+    if (input.capability === 'adjustment-layer') {
+        return (input.context.adjustmentLayers ?? []).some((layer) => layer.id === input.id);
     }
     if (input.capability === 'automation-lane') {
         return (input.context.automationLanes ?? []).some((lane) => lane.id === input.id);

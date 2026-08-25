@@ -21,6 +21,7 @@ export function createFreshProjectMetadata(input: CreateFreshProjectMetadataInpu
         dirty: false,
         loading: input.loading,
         identityMigrationPending: false,
+        identityPersistencePending: false,
         keyRoot: input.keyRoot ?? 0,
         scaleName: input.scaleName ?? 'chromatic',
         tuning: {

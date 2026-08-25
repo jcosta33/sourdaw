@@ -1,6 +1,11 @@
 import { getHandlerByType } from '../stores/handlerRegistry';
 
-import { executableAppActionDescriptorByType, type ExecutableAppActionType } from './executableAppActionRegistry';
+import {
+    executableAppActionDescriptorByType,
+    executableAppActionMutationIdempotenceByType,
+    executableAppActionMutationIdentityRulesByType,
+    type ExecutableAppActionType,
+} from './executableAppActionRegistry';
 import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
 import { getExecutableCommandConfirmation } from './getExecutableCommandConfirmation';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
@@ -31,6 +36,8 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         selectionPhrases: 'selectionPhrases' in descriptor ? descriptor.selectionPhrases : [],
         directionalIntent: 'directionalIntent' in descriptor ? descriptor.directionalIntent : undefined,
         targetChecks: descriptor.targetRules,
+        mutationIdempotent: executableAppActionMutationIdempotenceByType[actionType],
+        mutationIdentityRules: executableAppActionMutationIdentityRulesByType[actionType],
         capabilityChecks: descriptor.targetRules.map(({ argument, capability }) => ({ argument, capability })),
         valueRules: 'valueRules' in descriptor ? descriptor.valueRules : [],
         risk: descriptor.risk,
