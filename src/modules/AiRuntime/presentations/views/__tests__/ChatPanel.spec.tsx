@@ -273,6 +273,10 @@ describe('ChatPanel', () => {
             alternativeId: 'keep-tempo',
         });
         expect(await screen.findByText('Started replacement agent run resumed-run.')).toBeInTheDocument();
+        const status = screen.getByRole('status');
+        expect(status).toHaveAttribute('aria-live', 'polite');
+        expect(status).toHaveAttribute('aria-atomic', 'true');
+        expect(status).toHaveFocus();
     });
 
     it('replaces the provisional resume status with the public rejection reason', async () => {
@@ -297,6 +301,10 @@ describe('ChatPanel', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Select Keep the current tempo' }));
 
         expect(await screen.findByText('The pending decision is unavailable or already consumed.')).toBeInTheDocument();
+        const status = screen.getByRole('status');
+        expect(status).toHaveAttribute('aria-live', 'polite');
+        expect(status).toHaveAttribute('aria-atomic', 'true');
+        expect(status).toHaveFocus();
     });
 
     it('keeps unavailable decisions visible but disabled with their public rejection reason', () => {
