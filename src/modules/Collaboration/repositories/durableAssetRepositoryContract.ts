@@ -37,6 +37,10 @@ export type DurableAssetCommitProof = {
     runId: string;
     batchId: string;
 };
+export type DurableAssetRecoveryFence = {
+    readonly isCurrent: () => boolean;
+    readonly signal: AbortSignal;
+};
 export type PrepareDurableAssetPromotionRecoveryResult =
     { status: 'prepared'; recoveryId: string; ownerId: string } | DurableAssetFailure;
 export type CompleteDurableAssetPromotionRecoveryResult =
@@ -92,7 +96,7 @@ export type DurableAssetRepository = {
     prepareOwnerRebind: (nextOwnerId: string) => Promise<PrepareDurableAssetOwnerHandoffResult>;
     abortOwnerRebind: (nextOwnerId: string) => Promise<AbortDurableAssetOwnerHandoffResult>;
     commitOwnerRebind: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
-    resumeOwnerRebinds: (shouldContinue?: () => boolean) => Promise<ResumeDurableAssetOwnerHandoffsResult>;
+    resumeOwnerRebinds: (fence?: DurableAssetRecoveryFence) => Promise<ResumeDurableAssetOwnerHandoffsResult>;
     preparePromotionRecovery: (
         recoveryId: string,
         bindings: readonly StagedAssetBinding[],
@@ -114,7 +118,7 @@ export type DurableAssetRepository = {
         protectedRecoveryIds?: ReadonlySet<string>,
         isCommitProven?: (proof: DurableAssetCommitProof) => boolean,
         protectDefaultReleaseClaims?: boolean,
-        shouldContinue?: () => boolean
+        fence?: DurableAssetRecoveryFence
     ) => Promise<ResumeDurableAssetRecoveriesResult>;
     subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };

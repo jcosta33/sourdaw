@@ -15,6 +15,10 @@ type DatabaseState = {
     active: Set<FakeTransaction>;
     pending: FakeTransaction[];
 };
+type FakeCommitGate = {
+    reached: () => void;
+    resume: Promise<void>;
+};
 
 function cloneRecord(value: StoredRecord): StoredRecord {
     const cloned = structuredClone(value);
@@ -56,6 +60,7 @@ class FakeTransaction {
     private readonly operations: Array<() => void> = [];
     private readonly localStores = new Map<string, Map<string, StoredRecord>>();
     private readonly localIndexes = new Map<string, Map<string, IndexDefinition>>();
+    private waitingForCommitGate = false;
     private upgradeBody: (() => void) | null = null;
     private completeInternal: (() => void) | null = null;
     private abortInternal: (() => void) | null = null;
@@ -65,7 +70,8 @@ class FakeTransaction {
         private storeNames: string[],
         readonly mode: IDBTransactionMode,
         private readonly onFullScan: () => void,
-        private readonly failOnComplete = false
+        private readonly failOnComplete = false,
+        private commitGate?: FakeCommitGate
     ) {}
 
     conflictsWith(other: FakeTransaction): boolean {
@@ -173,7 +179,7 @@ class FakeTransaction {
     }
 
     private flush(): void {
-        if (!this.active || this.settled) {
+        if (!this.active || this.settled || this.waitingForCommitGate) {
             return;
         }
         for (const operation of this.operations.splice(0)) {
@@ -188,6 +194,16 @@ class FakeTransaction {
                     this.flush();
                 } else if (this.failOnComplete) {
                     this.abort();
+                } else if (this.commitGate) {
+                    const gate = this.commitGate;
+                    this.waitingForCommitGate = true;
+                    gate.reached();
+                    void gate.resume.then(() => {
+                        if (this.active && !this.settled) {
+                            this.waitingForCommitGate = false;
+                            this.commit();
+                        }
+                    });
                 } else {
                     this.commit();
                 }
@@ -355,6 +371,7 @@ class FakeDatabase {
     constructor(
         private readonly state: DatabaseState,
         private readonly shouldFailReadwrite: () => boolean,
+        private readonly takeReadwriteCommitGate: () => FakeCommitGate | undefined,
         private readonly onFullScan: () => void
     ) {}
 
@@ -376,7 +393,8 @@ class FakeDatabase {
             storeNames,
             mode,
             this.onFullScan,
-            mode === 'readwrite' && this.shouldFailReadwrite()
+            mode === 'readwrite' && this.shouldFailReadwrite(),
+            mode === 'readwrite' ? this.takeReadwriteCommitGate() : undefined
         );
         this.state.pending.push(transaction);
         queueMicrotask(() => schedule(this.state));
@@ -395,6 +413,7 @@ export type FakeDurableAssetIndexedDb = {
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
     countRecords: (store: 'assets' | 'leases' | 'ownerHandoffs' | 'promotionRecoveries') => number;
     failNextReadwriteTransactions: (count: number) => void;
+    pauseNextReadwriteCommit: () => { reached: Promise<void>; resume: () => void };
     getFullScanCount: () => number;
 };
 
@@ -403,6 +422,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
     const databases = new Map<string, DatabaseState>();
     let fullScanCount = 0;
     let failedReadwriteTransactions = 0;
+    const readwriteCommitGates: FakeCommitGate[] = [];
 
     function shouldFailReadwrite(): boolean {
         if (failedReadwriteTransactions === 0) {
@@ -425,9 +445,14 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 };
                 databases.set(name, state);
             }
-            const database = new FakeDatabase(state, shouldFailReadwrite, () => {
-                fullScanCount += 1;
-            });
+            const database = new FakeDatabase(
+                state,
+                shouldFailReadwrite,
+                () => readwriteCommitGates.shift(),
+                () => {
+                    fullScanCount += 1;
+                }
+            );
             const version = requestedVersion ?? Math.max(1, state.version);
             const request = {
                 result: database,
@@ -483,6 +508,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
             }
             fullScanCount = 0;
             failedReadwriteTransactions = 0;
+            readwriteCommitGates.length = 0;
         },
         deleteAsset: (hash) => {
             durableStore('assets')?.delete(hash);
@@ -541,6 +567,17 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
         countRecords: (store) => durableStore(store)?.size ?? 0,
         failNextReadwriteTransactions: (count) => {
             failedReadwriteTransactions = count;
+        },
+        pauseNextReadwriteCommit: () => {
+            const reached = Promise.withResolvers<void>();
+            const resume = Promise.withResolvers<void>();
+            readwriteCommitGates.push({ reached: reached.resolve, resume: resume.promise });
+            return {
+                reached: reached.promise,
+                resume: () => {
+                    resume.resolve();
+                },
+            };
         },
         getFullScanCount: () => fullScanCount,
     };

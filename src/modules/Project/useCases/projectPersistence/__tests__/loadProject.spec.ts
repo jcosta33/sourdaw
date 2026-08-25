@@ -44,7 +44,7 @@ const mocks = vi.hoisted(() => ({
     resetModuleStores: vi.fn(),
     readLegacyChordTrackMigration: vi.fn(),
     resumeDurableAssetOwnerHandoffsAfterProjectLoad: vi.fn(
-        (_authority: { ownerId: string; isCurrent: () => boolean }) => Promise.resolve()
+        (_authority: { ownerId: string; isCurrent: () => boolean; signal: AbortSignal }) => Promise.resolve()
     ),
     stopActiveAutoSave: vi.fn(),
     setAutoSaveHandle: vi.fn(),
@@ -139,6 +139,7 @@ describe('loadProject', () => {
         const recoveryAuthority = mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad.mock.calls[0]?.[0];
         expect(recoveryAuthority?.ownerId).toBe(CANONICAL_PROJECT_ID);
         expect(recoveryAuthority?.isCurrent()).toBe(true);
+        expect(recoveryAuthority?.signal.aborted).toBe(false);
     });
 
     it('lands on the launch screen without creating a document when persistence is empty', async () => {
@@ -292,7 +293,7 @@ describe('loadProject', () => {
 
     it('invalidates owner recovery authority when a newer project transition supersedes the loaded identity', async () => {
         const recoveryGate = Promise.withResolvers<void>();
-        let recoveryAuthority: { ownerId: string; isCurrent: () => boolean } | undefined;
+        let recoveryAuthority: { ownerId: string; isCurrent: () => boolean; signal: AbortSignal } | undefined;
         mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad.mockImplementationOnce((authority) => {
             recoveryAuthority = authority;
             return recoveryGate.promise;
@@ -305,6 +306,7 @@ describe('loadProject', () => {
         newerLoad.activate();
 
         expect(recoveryAuthority?.isCurrent()).toBe(false);
+        expect(recoveryAuthority?.signal.aborted).toBe(true);
         recoveryGate.resolve();
         await expect(loading).resolves.toBe(false);
     });

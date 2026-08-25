@@ -4,6 +4,7 @@ type ProjectIdentityTransitionDependencies = {
     resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
         ownerId: string;
         isCurrent: () => boolean;
+        signal: AbortSignal;
     }) => Promise<void>;
 };
 

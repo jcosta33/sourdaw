@@ -13,8 +13,10 @@ import {
 } from './durableAssetIndexedDb';
 import { createDurableAssetReceiptRetention } from './durableAssetReceiptRetention';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
+import { createDurableAssetRecoveryFenceGuard } from './durableAssetRecoveryFence';
 import {
     type DurableAssetFailure,
+    type DurableAssetRecoveryFence,
     type ReleasedStagedAsset,
     type ReleaseStagedAssetsResult,
     type StagedAssetBinding,
@@ -27,9 +29,9 @@ async function releaseStagedAssetSet(
     ownerId: string,
     bindings: readonly StagedAssetBinding[],
     cleanupRecoveryId?: string,
-    shouldContinue?: () => boolean
+    fence?: DurableAssetRecoveryFence
 ): Promise<ReleaseStagedAssetsResult> {
-    const recoveryIsCurrent = shouldContinue ?? (() => true);
+    const recovery = createDurableAssetRecoveryFenceGuard(fence);
     const uniqueBindings = new Map<string, StagedAssetBinding>();
     for (const binding of bindings) {
         const existing = uniqueBindings.get(binding.leaseId);
@@ -151,6 +153,12 @@ async function releaseStagedAssetSet(
         return { status: 'failed', reason };
     }
 
+    async function cancel(): Promise<DurableAssetFailure> {
+        recovery.abort(transaction);
+        await completion.catch(() => undefined);
+        return { status: 'failed', reason: 'owner-handoff-conflict' };
+    }
+
     const releases: ReleasedStagedAsset[] = [];
     const nextAssets = new Map<string, AssetRecord | undefined>();
     const nextLeases = new Map<string, LeaseRecord>();
@@ -210,9 +218,10 @@ async function releaseStagedAssetSet(
         });
     }
 
+    recovery.bind(transaction, completion);
     for (const [hash, asset] of nextAssets) {
-        if (!recoveryIsCurrent()) {
-            return fail('owner-handoff-conflict');
+        if (!recovery.isCurrent()) {
+            return cancel();
         }
         if (asset) {
             assetStore.put(asset);
@@ -221,25 +230,32 @@ async function releaseStagedAssetSet(
         }
     }
     for (const lease of nextLeases.values()) {
-        if (!recoveryIsCurrent()) {
-            return fail('owner-handoff-conflict');
+        if (!recovery.isCurrent()) {
+            return cancel();
         }
         leaseStore.put(lease);
     }
     if (cleanupRecoveryId !== undefined) {
-        if (!recoveryIsCurrent()) {
-            return fail('owner-handoff-conflict');
+        if (!recovery.isCurrent()) {
+            return cancel();
         }
         promotionStore.delete(cleanupRecoveryId);
     }
     for (const recoveryId of defaultCleanupRecoveryIds) {
-        if (!recoveryIsCurrent()) {
-            return fail('owner-handoff-conflict');
+        if (!recovery.isCurrent()) {
+            return cancel();
         }
         promotionStore.delete(recoveryId);
     }
-    await completion;
-    if (shouldContinue === undefined) {
+    try {
+        await completion;
+    } catch (error) {
+        if (!recovery.isCurrent()) {
+            return { status: 'failed', reason: 'owner-handoff-conflict' };
+        }
+        throw error;
+    }
+    if (fence === undefined) {
         await receipts.compactTerminalLeaseReceipts(ownerId);
     }
     for (const release of releases) {
@@ -265,9 +281,9 @@ export function createDurableAssetOwnershipLifecycle(ownerId: string) {
         releaseStagedAssets(
             bindings: readonly StagedAssetBinding[],
             cleanupRecoveryId?: string,
-            shouldContinue?: () => boolean
+            fence?: DurableAssetRecoveryFence
         ) {
-            return releaseStagedAssetSet(ownerId, bindings, cleanupRecoveryId, shouldContinue);
+            return releaseStagedAssetSet(ownerId, bindings, cleanupRecoveryId, fence);
         },
 
         async releaseOwnedAsset(hash: string) {

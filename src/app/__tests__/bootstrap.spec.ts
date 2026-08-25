@@ -565,12 +565,14 @@ describe('bootstrap', () => {
                   resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
                       ownerId: string;
                       isCurrent: () => boolean;
+                      signal: AbortSignal;
                   }) => Promise<void>;
               }
             | undefined;
         const authority = {
             ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             isCurrent: () => true,
+            signal: new AbortController().signal,
         };
 
         await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.(authority);
@@ -581,6 +583,7 @@ describe('bootstrap', () => {
         ).toHaveBeenCalledExactlyOnceWith({
             ownerId: authority.ownerId,
             isCurrent: expect.any(Function),
+            signal: authority.signal,
         });
     });
 
@@ -590,6 +593,7 @@ describe('bootstrap', () => {
                   resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
                       ownerId: string;
                       isCurrent: () => boolean;
+                      signal: AbortSignal;
                   }) => Promise<void>;
               }
             | undefined;
@@ -598,6 +602,7 @@ describe('bootstrap', () => {
         await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
             ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             isCurrent: () => false,
+            signal: new AbortController().signal,
         });
 
         expect(getAssetTransferMock).toHaveBeenCalledTimes(callsBeforeStaleRecovery);

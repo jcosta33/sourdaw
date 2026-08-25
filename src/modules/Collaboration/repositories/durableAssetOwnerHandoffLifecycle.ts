@@ -18,7 +18,8 @@ import {
     type PromotionRecoveryRecord,
 } from './durableAssetIndexedDb';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
-import { type RebindDurableAssetOwnerResult } from './durableAssetRepositoryContract';
+import { createDurableAssetRecoveryFenceGuard } from './durableAssetRecoveryFence';
+import { type DurableAssetRecoveryFence, type RebindDurableAssetOwnerResult } from './durableAssetRepositoryContract';
 
 const records = createDurableAssetRecordAccess();
 type OwnerRebindAttemptResult = RebindDurableAssetOwnerResult | { status: 'cancelled'; ownerId: string };
@@ -32,8 +33,9 @@ function haveSameStringSet(left: readonly string[], right: readonly string[]): b
 async function commitOwnerRebind(
     previousOwnerId: string,
     nextOwnerId: string,
-    shouldContinue: () => boolean = () => true
+    fence?: DurableAssetRecoveryFence
 ): Promise<OwnerRebindAttemptResult> {
+    const fenceGuard = createDurableAssetRecoveryFenceGuard(fence);
     if (nextOwnerId === previousOwnerId) {
         const database = await records.openDurableAssetDatabase();
         const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readwrite');
@@ -51,14 +53,22 @@ async function commitOwnerRebind(
                 await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'owner-handoff-conflict' };
             }
-            if (!shouldContinue()) {
-                transaction.abort();
+            fenceGuard.bind(transaction, completion);
+            if (!fenceGuard.isCurrent()) {
+                fenceGuard.abort(transaction);
                 await completion.catch(() => undefined);
                 return { status: 'cancelled', ownerId: nextOwnerId };
             }
             store.delete(previousOwnerId);
         }
-        await completion;
+        try {
+            await completion;
+        } catch (error) {
+            if (!fenceGuard.isCurrent()) {
+                return { status: 'cancelled', ownerId: nextOwnerId };
+            }
+            throw error;
+        }
         return { status: 'rebound', previousOwnerId, ownerId: nextOwnerId, reboundHashes: [] };
     }
     const database = await records.openDurableAssetDatabase();
@@ -118,8 +128,9 @@ async function commitOwnerRebind(
         // Queue deletion inside this same transaction before any later awaits
         // can leave an otherwise empty handoff transaction inactive. A later
         // validation failure aborts and rolls this mutation back atomically.
-        if (!shouldContinue()) {
-            transaction.abort();
+        fenceGuard.bind(transaction, completion);
+        if (!fenceGuard.isCurrent()) {
+            fenceGuard.abort(transaction);
             await completion.catch(() => undefined);
             return { status: 'cancelled', ownerId: nextOwnerId };
         }
@@ -135,8 +146,8 @@ async function commitOwnerRebind(
         await completion.catch(() => undefined);
         return { status: 'failed', reason: 'owner-handoff-conflict' };
     }
-    if (!shouldContinue()) {
-        transaction.abort();
+    if (!fenceGuard.isCurrent()) {
+        fenceGuard.abort(transaction);
         await completion.catch(() => undefined);
         return { status: 'cancelled', ownerId: nextOwnerId };
     }
@@ -147,8 +158,8 @@ async function commitOwnerRebind(
         epoch: authorityEpoch + 1,
     } satisfies OwnerAuthorityRecord);
     if (nextAuthority === undefined) {
-        if (!shouldContinue()) {
-            transaction.abort();
+        if (!fenceGuard.isCurrent()) {
+            fenceGuard.abort(transaction);
             await completion.catch(() => undefined);
             return { status: 'cancelled', ownerId: nextOwnerId };
         }
@@ -169,8 +180,8 @@ async function commitOwnerRebind(
             await completion.catch(() => undefined);
             return { status: 'failed', reason: 'corrupt-record' };
         }
-        if (!shouldContinue()) {
-            transaction.abort();
+        if (!fenceGuard.isCurrent()) {
+            fenceGuard.abort(transaction);
             await completion.catch(() => undefined);
             return { status: 'cancelled', ownerId: nextOwnerId };
         }
@@ -264,8 +275,8 @@ async function commitOwnerRebind(
                   lease.ownerId === previousOwnerId ? { ...lease, ownerId: nextOwnerId } : lease
               )
             : asset.activeLeases;
-        if (!shouldContinue()) {
-            transaction.abort();
+        if (!fenceGuard.isCurrent()) {
+            fenceGuard.abort(transaction);
             await completion.catch(() => undefined);
             return { status: 'cancelled', ownerId: nextOwnerId };
         }
@@ -280,15 +291,22 @@ async function commitOwnerRebind(
     }
     for (const lease of leaseValues as LeaseRecord[]) {
         if (lease.ownerId === previousOwnerId) {
-            if (!shouldContinue()) {
-                transaction.abort();
+            if (!fenceGuard.isCurrent()) {
+                fenceGuard.abort(transaction);
                 await completion.catch(() => undefined);
                 return { status: 'cancelled', ownerId: nextOwnerId };
             }
             leaseStore.put({ ...lease, ownerId: nextOwnerId } satisfies LeaseRecord);
         }
     }
-    await completion;
+    try {
+        await completion;
+    } catch (error) {
+        if (!fenceGuard.isCurrent()) {
+            return { status: 'cancelled', ownerId: nextOwnerId };
+        }
+        throw error;
+    }
     for (const hash of reboundHashes) {
         records.notifyInvalidation({ hash, ownerId: previousOwnerId });
     }
@@ -386,7 +404,8 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
             return { status: 'aborted' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
         },
 
-        async resumeOwnerRebinds(shouldContinue: () => boolean = () => true) {
+        async resumeOwnerRebinds(fence?: DurableAssetRecoveryFence) {
+            const fenceGuard = createDurableAssetRecoveryFenceGuard(fence);
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readonly');
             const completion = records.awaitTransaction(transaction);
@@ -396,12 +415,12 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
             if (values.some((value) => !records.isOwnerHandoffRecord(value))) {
                 return { status: 'failed' as const, reason: 'corrupt-record' as const };
             }
-            if (!shouldContinue()) {
+            if (!fenceGuard.isCurrent()) {
                 return { status: 'cancelled' as const, ownerId };
             }
             const reboundHashes = new Set<string>();
             for (const handoff of values as OwnerHandoffRecord[]) {
-                const result = await commitOwnerRebind(handoff.previousOwnerId, ownerId, shouldContinue);
+                const result = await commitOwnerRebind(handoff.previousOwnerId, ownerId, fence);
                 if (result.status === 'cancelled') {
                     return result;
                 }

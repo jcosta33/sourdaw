@@ -291,7 +291,8 @@ setTimeOperationDependencies({
 setProjectIdentityTransitionDependencies({
     leaveCollaborationSession: leaveSession,
     resumeDurableAssetOwnerHandoffsAfterProjectLoad: async (authority) => {
-        const isCurrentOwner = () => authority.isCurrent() && getDurableProjectOwnerId() === authority.ownerId;
+        const isCurrentOwner = () =>
+            !authority.signal.aborted && authority.isCurrent() && getDurableProjectOwnerId() === authority.ownerId;
         if (!isCurrentOwner()) {
             return;
         }
@@ -305,6 +306,7 @@ setProjectIdentityTransitionDependencies({
         await assetTransfer.resumeDurableOwnerRebindsAfterProjectLoad({
             ownerId: authority.ownerId,
             isCurrent: isCurrentOwner,
+            signal: authority.signal,
         });
     },
 });

@@ -11,6 +11,7 @@ export type {
     AbortDurableAssetOwnerHandoffResult,
     DurableAsset,
     DurableAssetCommitProof,
+    DurableAssetRecoveryFence,
     DurableAssetFailure,
     DurableAssetRepository,
     CancelDurableAssetPromotionRecoveryResult,

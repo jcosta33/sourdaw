@@ -8,9 +8,11 @@ import {
     type PromotionRecoveryRecord,
 } from './durableAssetIndexedDb';
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
+import { createDurableAssetRecoveryFenceGuard } from './durableAssetRecoveryFence';
 import {
     type DurableAssetFailure,
     type DurableAssetCommitProof,
+    type DurableAssetRecoveryFence,
     type PromoteStagedAssetResult,
     type ReleaseStagedAssetsResult,
     type ReopenDurableAssetResult,
@@ -75,13 +77,13 @@ export function createDurableAssetPromotionRecoveryLifecycle(
     promoteStagedAsset: (
         leaseId: string,
         expectedHash: string,
-        shouldContinue?: () => boolean
+        fence?: DurableAssetRecoveryFence
     ) => Promise<PromoteStagedAssetResult>,
     reopenDurableAsset: (hash: string) => Promise<ReopenDurableAssetResult>,
     releaseStagedAssets: (
         bindings: readonly StagedAssetBinding[],
         cleanupRecoveryId?: string,
-        shouldContinue?: () => boolean
+        fence?: DurableAssetRecoveryFence
     ) => Promise<ReleaseStagedAssetsResult>
 ) {
     async function readRecovery(recoveryId: string): Promise<PromotionRecoveryRecord | DurableAssetFailure | null> {
@@ -104,8 +106,9 @@ export function createDurableAssetPromotionRecoveryLifecycle(
 
     async function deleteRecovery(
         recoveryId: string,
-        shouldContinue: () => boolean = () => true
+        fence?: DurableAssetRecoveryFence
     ): Promise<DurableAssetFailure | null> {
+        const recovery = createDurableAssetRecoveryFenceGuard(fence);
         const database = await records.openDurableAssetDatabase();
         const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readwrite');
         const completion = records.awaitTransaction(transaction);
@@ -116,22 +119,31 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             await completion.catch(() => undefined);
             return { status: 'failed', reason: 'corrupt-record' };
         }
-        if (!shouldContinue()) {
-            transaction.abort();
+        recovery.bind(transaction, completion);
+        if (!recovery.isCurrent()) {
+            recovery.abort(transaction);
             await completion.catch(() => undefined);
             return { status: 'failed', reason: 'owner-handoff-conflict' };
         }
         store.delete(recoveryId);
-        await completion;
+        try {
+            await completion;
+        } catch (error) {
+            if (!recovery.isCurrent()) {
+                return { status: 'failed', reason: 'owner-handoff-conflict' };
+            }
+            throw error;
+        }
         return null;
     }
 
-    async function completeRecord(record: PromotionRecoveryRecord, shouldContinue: () => boolean = () => true) {
-        if (!shouldContinue()) {
+    async function completeRecord(record: PromotionRecoveryRecord, fence?: DurableAssetRecoveryFence) {
+        const recovery = createDurableAssetRecoveryFenceGuard(fence);
+        if (!recovery.isCurrent()) {
             return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
         }
         if (getRecoveryDisposition(record) === 'release') {
-            const released = await releaseStagedAssets(record.bindings, record.recoveryId, shouldContinue);
+            const released = await releaseStagedAssets(record.bindings, record.recoveryId, fence);
             if (released.status === 'failed') {
                 return released;
             }
@@ -144,10 +156,10 @@ export function createDurableAssetPromotionRecoveryLifecycle(
         }
         const promotedHashes = new Set<string>();
         for (const binding of record.bindings) {
-            if (!shouldContinue()) {
+            if (!recovery.isCurrent()) {
                 return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
             }
-            const promoted = await promoteStagedAsset(binding.leaseId, binding.expectedHash, shouldContinue);
+            const promoted = await promoteStagedAsset(binding.leaseId, binding.expectedHash, fence);
             if (promoted.status === 'failed') {
                 if (promoted.reason !== 'unknown-lease') {
                     return promoted;
@@ -159,7 +171,7 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             }
             promotedHashes.add(binding.expectedHash);
         }
-        const deletionFailure = await deleteRecovery(record.recoveryId, shouldContinue);
+        const deletionFailure = await deleteRecovery(record.recoveryId, fence);
         if (deletionFailure) {
             return deletionFailure;
         }
@@ -428,8 +440,9 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             protectedRecoveryIds: ReadonlySet<string> = new Set(),
             isCommitProven: (proof: DurableAssetCommitProof) => boolean = () => false,
             protectDefaultReleaseClaims = false,
-            shouldContinue: () => boolean = () => true
+            fence?: DurableAssetRecoveryFence
         ) {
+            const recoveryFence = createDurableAssetRecoveryFenceGuard(fence);
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readonly');
             const completion = records.awaitTransaction(transaction);
@@ -444,7 +457,7 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             }
             const promotedHashes = new Set<string>();
             for (const recovery of values as PromotionRecoveryRecord[]) {
-                if (!shouldContinue()) {
+                if (!recoveryFence.isCurrent()) {
                     return { status: 'cancelled' as const, ownerId };
                 }
                 if (protectedRecoveryIds.has(recovery.recoveryId)) {
@@ -458,8 +471,8 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                         continue;
                     }
                 }
-                const completed = await completeRecord(recovery, shouldContinue);
-                if (!shouldContinue()) {
+                const completed = await completeRecord(recovery, fence);
+                if (!recoveryFence.isCurrent()) {
                     return { status: 'cancelled' as const, ownerId };
                 }
                 if (completed.status === 'failed') {

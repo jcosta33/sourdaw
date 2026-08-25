@@ -122,6 +122,7 @@ export async function loadProject(): Promise<boolean> {
     await projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
         ownerId: durableOwnerId,
         isCurrent: () => transaction.isCurrent() && getDurableProjectOwnerId() === durableOwnerId,
+        signal: transaction.signal,
     });
 
     if (!transaction.isCurrent()) {

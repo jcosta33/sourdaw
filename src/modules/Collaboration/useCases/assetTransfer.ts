@@ -21,6 +21,7 @@ import {
     DEFAULT_STAGE_RECOVERY_PREFIX,
     type DurableAssetRepository,
     type DurableAssetCommitProof,
+    type DurableAssetRecoveryFence,
     type PromoteStagedAssetResult,
     type RebindDurableAssetOwnerResult,
     type ReleaseOwnedAssetResult,
@@ -138,6 +139,7 @@ type AssetTransferDurabilityOptions = {
 type DurableOwnerRecoveryAuthority = {
     readonly ownerId: string;
     readonly isCurrent: () => boolean;
+    readonly signal: AbortSignal;
 };
 
 type DurableAssetStageOptions = {
@@ -257,15 +259,6 @@ export class AssetTransfer {
             }
             if (event.ownerId === undefined || event.ownerId === this.ownerId) {
                 this.durableAssetCache.delete(event.hash);
-            }
-        });
-        // Promotion/cleanup recovery is safe for every live owner. Owner
-        // handoff recovery is different: its journal is written before the
-        // adopting CRDT root is persisted, so only the explicit cold-load path
-        // may consume it.
-        void this.runOwnerOperation(async () => undefined).catch((error: unknown) => {
-            if (!this.disposed) {
-                logger.error(new Error('Durable asset startup recovery failed', { cause: error }));
             }
         });
     }
@@ -704,6 +697,7 @@ export class AssetTransfer {
         try {
             await this.runOwnerOperation(async () => undefined, {
                 resumeOwnerRebinds: true,
+                resumeRecoveries: true,
                 recoveryAuthority: authority,
             });
         } catch (error) {
@@ -730,8 +724,12 @@ export class AssetTransfer {
             return (async () => {
                 const recoveryIsAuthorized = () =>
                     !options.recoveryAuthority ||
-                    (options.recoveryAuthority.ownerId === this.ownerId && options.recoveryAuthority.isCurrent());
-                const recoveryFence = options.recoveryAuthority ? recoveryIsAuthorized : undefined;
+                    (!options.recoveryAuthority.signal.aborted &&
+                        options.recoveryAuthority.ownerId === this.ownerId &&
+                        options.recoveryAuthority.isCurrent());
+                const recoveryFence: DurableAssetRecoveryFence | undefined = options.recoveryAuthority
+                    ? { isCurrent: recoveryIsAuthorized, signal: options.recoveryAuthority.signal }
+                    : undefined;
                 if (options.resumeOwnerRebinds && this.ownerRecoveryPending && recoveryIsAuthorized()) {
                     const recovery = await this.durableAssets.resumeOwnerRebinds(recoveryFence);
                     if (recovery.status === 'failed') {
@@ -745,7 +743,7 @@ export class AssetTransfer {
                     }
                     this.ownerRecoveryPending = false;
                 }
-                if (options.resumeRecoveries !== false && recoveryIsAuthorized()) {
+                if (options.resumeRecoveries && recoveryIsAuthorized()) {
                     const protectedRecoveryIds = new Set([
                         ...this.protectedStageRecoveryIds,
                         ...getLiveStageRecoveries(this.ownerId),
