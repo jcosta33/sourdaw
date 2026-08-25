@@ -6,7 +6,6 @@ Tuner device panel UI and real-time pitch telemetry ingestion (detected note, ce
 
 - `stores`: `tunerStore`, `updateTunerTelemetry`.
 - `presentations/views`: `TunerPanel`.
-- `models`: `A4Reference`, `TunerState`, `DEFAULT_TUNER_STATE`, `DisplayMode`.
 
 ## Key Subsystems
 

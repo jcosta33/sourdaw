@@ -9,7 +9,6 @@ Playback lifecycle and control (play, stop, seek, record, overdub), playhead pos
     - **Tempo & Time Signature Mapping**: `setTempo`, `setTimeSignature`, `addTempoChange`, `removeTempoChange`, `updateTempoChange`, `replaceTempoMap`, `resolveTempoAtBeat`, `shiftTimelineMapsAfterBeat`, `deleteTimelineMapsTimeRange`, `prepareTimelineMapStateRestore`, `prepareTimelineMapTimeOperation`, `detectProjectTempo`, `adjustTempoPoint`, `addTimeSignatureChange`, `removeTimeSignatureChange`, `replaceTimeSignatureMap`, `getTimeSignatureAtBeat`.
     - **Projections & Master Level**: `createMusicalPositionProjector`, `createSamplePositionProjector`, `projectPpqEndpoints`, `secondsBetweenBeats`, `setMasterGain`, `replaceMasterGain`, `ensureTrackStrips`, `getSchedulerTimingDiagnostics`, `reconcileVcaGroupRuntimeGain`, `reconcileVcaRuntimeGain`, `setStopPlaybackCallback`, `restoreTransportSnapshot`, `restoreTimelineMapSnapshot`, `getTransportHandlers`, `getTransportState`, `getTempoMapState`, `resolveTempoFieldState`, `updateTransportState`, `defaultTransportState`.
 - `stores`: `transportStore` (`TransportState`, `MIN_TEMPO`, `MAX_TEMPO`), `tempoMapStore` (`TempoMapStoreState`, `MIN_TEMPO_MAP_TEMPO`), `timeSignatureMapStore` (`TimeSignatureMapStoreState`), `playheadPositionRef`.
-- `models`: `TransportState`, `TempoMap`, `TimeSignatureMap`, `TempoMappingTypes`.
 - Handlers: `getTransportHandlers`.
 
 ## Key Subsystems

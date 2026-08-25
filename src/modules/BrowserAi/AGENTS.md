@@ -7,7 +7,7 @@ Client-side neural audio inference (DDSP instrument synthesis, Kokoro TTS, DiffS
 - `useCases`: `initBrowserAi`, `downloadModel`, `removeModel`, `downloadDdspInstrument`, `removeDdspInstrument`, `isDdspInstrumentId`, `getDdspPhraseId`, `markDdspPhraseStale`, `invalidateDdspPhraseIfSourceChanged`, `recordDdspPhraseSource`, `renderDdspInstrument`, `renderKokoroTts`, `renderDiffSingerPhrase`, `cancelRender`, `detectCapabilities`, `initRaveModels`, `isRaveModelPresent`, `KOKORO_MODEL_ENTRY`, `getRaveHandlers`.
 - `stores`: `capabilityStore`, `modelRegistryStore`, `renderQueueStore`.
 - `presentations/views`: `ModelManagerPanel`, `CapabilityReportPanel`, `KokoroVoiceSelector`, `AiRenderClipPreview`.
-- `events`: `ModelDownloadProgressEvent`.
+- `events`: None.
 - Handlers: `getRaveHandlers`.
 
 ## Key Subsystems
