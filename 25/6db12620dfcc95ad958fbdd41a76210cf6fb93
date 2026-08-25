@@ -1,0 +1,20 @@
+tests/e2e/midiScaleRootTestId.spec.ts
+  s_a40848e8f8cca9::t_83aec3d503888c 60-62
+  s_a40848e8f8cca9::t_b4166815255f97 48-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "256db12620dfcc95ad958fbdd41a76210cf6fb93",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
