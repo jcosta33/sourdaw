@@ -577,10 +577,10 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(confirmation?.approvalSnapshot.actionLabels).toEqual([exactSemanticDiff]);
         expect(confirmation?.affectedIds).toEqual([
             'track-strings',
-            'clip-chorus-one',
-            'clip-chorus-two',
             'target-low',
             'target-high',
+            'clip-chorus-one',
+            'clip-chorus-two',
         ]);
         expect(confirmation?.risk).toEqual({
             level: 'broad-reversible',
@@ -615,7 +615,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                     actionType: 'copyMidiArticulations',
                     label: exactSemanticDiff,
                     executionKind: 'project',
-                    affectedIds: ['track-strings', 'clip-chorus-one', 'clip-chorus-two', 'target-low', 'target-high'],
+                    affectedIds: ['track-strings', 'target-low', 'target-high', 'clip-chorus-one', 'clip-chorus-two'],
                     outcome: 'committed',
                 },
             ],
@@ -625,7 +625,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         );
         expect(receipt?.content).toContain(exactSemanticDiff);
         expect(receipt?.content).toContain(
-            'Affected IDs: track-strings, clip-chorus-one, clip-chorus-two, target-low, target-high'
+            'Affected IDs: track-strings, target-low, target-high, clip-chorus-one, clip-chorus-two'
         );
 
         await undo();

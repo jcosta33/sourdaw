@@ -229,7 +229,15 @@ export function validateArbitraryCommandListEvidence(input: {
                 (commandIndex) =>
                     !Number.isSafeInteger(commandIndex) ||
                     commandIndex < 0 ||
-                    commandIndex >= item.commandStart + item.commandCount
+                    commandIndex >= evidence.commands.length ||
+                    commandIndex >= item.commandStart + item.commandCount ||
+                    (commandIndex < item.commandStart &&
+                        !evidence.items.some(
+                            (candidate) =>
+                                commandIndex >= candidate.commandStart &&
+                                commandIndex < candidate.commandStart + candidate.commandCount &&
+                                evidenceDependsTransitivelyOn(item.itemId, candidate.itemId, itemsById)
+                        ))
             ) ||
             item.declaredCommandIdentities.some(
                 (identity, index) =>

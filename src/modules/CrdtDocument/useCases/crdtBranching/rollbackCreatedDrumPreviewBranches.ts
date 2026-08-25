@@ -4,7 +4,7 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore } from '../../stores/branchStore';
 
 import { branchDocumentTransitionFence } from './branchDocumentTransitionFence';
-import { drumPreviewBranchDeletion } from './deleteDrumPreviewBranches';
+import { deleteDrumPreviewBranches } from './deleteDrumPreviewBranches';
 
 type DeleteDrumPreviewBranchesAction = Extract<AppAction, { type: 'deleteDrumPreviewBranches' }>;
 
@@ -17,7 +17,7 @@ export async function rollbackCreatedDrumPreviewBranches(action: DeleteDrumPrevi
         if (!hasCreatedRecord && !hasCreatedDocument) {
             return;
         }
-        if (await drumPreviewBranchDeletion.execute(action)) {
+        if (await deleteDrumPreviewBranches(action)) {
             return;
         }
         throw new Error('Drum preview branch rollback conflicted; manual repair is required');

@@ -23,6 +23,8 @@ type PlanAgentRunInput = {
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
     providerProposal?: AgentRunProviderProposal;
+    /** Compiler-verified provider scope before canonical actions add application-owned identities. */
+    verifiedProviderProposalScope?: AgentRunScope;
     /**
      * Target ids this batch mints for objects that do not exist yet. The application assigns them
      * after the provider has already answered, so no proposal can name them and they are excluded
@@ -163,11 +165,12 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
         return { status: 'rejected', reason: 'Provider proposed an unsupported application capability.' };
     }
     const applicationAssignedTargetIds = new Set(input.applicationAssignedTargetIds ?? []);
+    const expectedProviderScope = input.verifiedProviderProposalScope ?? input.scope;
     if (
         input.providerProposal?.scope &&
         !sameScope(
             getProviderKnowableScope(input.providerProposal.scope, applicationAssignedTargetIds),
-            getProviderKnowableScope(input.scope, applicationAssignedTargetIds)
+            getProviderKnowableScope(expectedProviderScope, applicationAssignedTargetIds)
         )
     ) {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };

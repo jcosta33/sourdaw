@@ -32,7 +32,7 @@ describe('handleRemoveDevice', () => {
             payload: { deviceId: 'd1' },
         });
 
-        expect(mocks.prepareRemoveDevice).toHaveBeenCalledWith('d1');
+        expect(mocks.prepareRemoveDevice).toHaveBeenCalledWith('d1', undefined);
         expect(result).toEqual(expected);
     });
 

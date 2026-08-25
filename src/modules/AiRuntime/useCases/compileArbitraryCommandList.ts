@@ -34,18 +34,29 @@ export type ArbitraryCommandListSelectorEvidence = {
     preconditions: Array<{ stableId: string; fingerprint: string }>;
 };
 
+export type ArbitraryCommandListDirectTargetEvidence = {
+    argument: string;
+    capability: string;
+    cardinality: 'one' | 'many';
+    stableIds: string[];
+};
+
 type CompiledItemEvidence = {
     canonicalStableIds: string[];
+    declaredCommandIdentities: string[];
     itemId: string;
     commandName: string;
     dependsOn: string[];
     declaredCommandCount: number;
     omittedCommandCount: number;
+    representativeCommandIndexes: number[];
     stableIds: string[];
     commandStart: number;
     commandCount: number;
     targetArgument?: string;
     targetCapability?: string;
+    targetCardinality?: 'many';
+    directTargets?: ArbitraryCommandListDirectTargetEvidence[];
 };
 
 export type ArbitraryCommandListEvidence = {
@@ -390,7 +401,7 @@ export function compileArbitraryCommandList(input: {
     const orderedTargetIds: string[] = [];
     const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
     const targetCommandArguments = new Map<string, string>();
-    const canonicalCommandKeys = new Set<string>();
+    const canonicalCommandIndexes = new Map<string, number>();
 
     for (const [index, item] of items.entries()) {
         const commandStart = commands.length;
@@ -440,18 +451,32 @@ export function compileArbitraryCommandList(input: {
             }
         }
         if (item.selector === undefined) {
+            const declaredCommandIdentities: string[] = [];
             let omittedCommandCount = 0;
-            if (rules.targetRules.length > 0) {
+            const representativeCommandIndexes: number[] = [];
+            if (
+                rules.targetRules.some(
+                    (rule) =>
+                        rule.cardinality === 'many' ||
+                        typeof item.arguments[rule.argument] !== 'string' ||
+                        !item.arguments[rule.argument].startsWith('$')
+                )
+            ) {
                 return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
                 const command = { name: item.name, arguments: { ...item.arguments } };
                 const commandKey = getCanonicalCommandIdentity(command);
-                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                declaredCommandIdentities.push(commandKey);
+                const canonicalCommandIndex = canonicalCommandIndexes.get(commandKey);
+                if (isIdempotentSetCommand(item.name) && canonicalCommandIndex !== undefined) {
                     omittedCommandCount += 1;
+                    representativeCommandIndexes.push(canonicalCommandIndex);
                     continue;
                 }
-                canonicalCommandKeys.add(commandKey);
+                const commandIndex = commands.length;
+                canonicalCommandIndexes.set(commandKey, commandIndex);
+                representativeCommandIndexes.push(commandIndex);
                 commands.push(command);
             }
             if (commands.length > MAX_COMMANDS) {
@@ -462,11 +487,13 @@ export function compileArbitraryCommandList(input: {
             }
             compiledItems.push({
                 canonicalStableIds: [],
+                declaredCommandIdentities,
                 itemId: item.id,
                 commandName: item.name,
                 dependsOn,
                 declaredCommandCount: repeat,
                 omittedCommandCount,
+                representativeCommandIndexes,
                 stableIds: [],
                 commandStart,
                 commandCount: commands.length - commandStart,
@@ -518,7 +545,9 @@ export function compileArbitraryCommandList(input: {
             };
         }
         const canonicalStableIds: string[] = [];
+        const declaredCommandIdentities: string[] = [];
         let omittedCommandCount = 0;
+        const representativeCommandIndexes: number[] = [];
         for (const stableId of resolved.stableIds) {
             const isDestructive = /^remove|^delete/u.test(item.name);
             const previousWrite = targetWrites.get(stableId);
@@ -535,6 +564,7 @@ export function compileArbitraryCommandList(input: {
                     arguments: { ...item.arguments, [selector.targetArgument]: stableId },
                 };
                 const commandKey = getCanonicalCommandIdentity(command);
+                declaredCommandIdentities.push(commandKey);
                 const targetCommandKey = getTargetWriteIdentity(item.name, rules.targetRules, command.arguments);
                 const priorArguments = targetCommandArguments.get(targetCommandKey);
                 if (priorArguments !== undefined && priorArguments !== commandKey) {
@@ -544,11 +574,15 @@ export function compileArbitraryCommandList(input: {
                     };
                 }
                 targetCommandArguments.set(targetCommandKey, commandKey);
-                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                const canonicalCommandIndex = canonicalCommandIndexes.get(commandKey);
+                if (isIdempotentSetCommand(item.name) && canonicalCommandIndex !== undefined) {
                     omittedCommandCount += 1;
+                    representativeCommandIndexes.push(canonicalCommandIndex);
                     continue;
                 }
-                canonicalCommandKeys.add(commandKey);
+                const commandIndex = commands.length;
+                canonicalCommandIndexes.set(commandKey, commandIndex);
+                representativeCommandIndexes.push(commandIndex);
                 canonicalStableIds.push(stableId);
                 commands.push(command);
             }
@@ -558,11 +592,13 @@ export function compileArbitraryCommandList(input: {
         }
         compiledItems.push({
             canonicalStableIds,
+            declaredCommandIdentities,
             itemId: item.id,
             commandName: item.name,
             dependsOn,
             declaredCommandCount: resolved.stableIds.length * repeat,
             omittedCommandCount,
+            representativeCommandIndexes,
             stableIds: [...resolved.stableIds],
             commandStart,
             commandCount: commands.length - commandStart,

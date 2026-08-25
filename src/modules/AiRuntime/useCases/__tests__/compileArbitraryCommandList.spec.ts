@@ -217,6 +217,14 @@ describe('compileArbitraryCommandList', () => {
                 omittedCommandCount: 1,
             }),
         ]);
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence!,
+                calls: result.compilerEvidence!.commands,
+                context,
+                revision: 'revision-1',
+            }).status
+        ).toBe('accepted');
     });
 
     it('canonicalizes idempotent parameter writes with reversed argument key order', () => {
@@ -662,6 +670,14 @@ describe('compileArbitraryCommandList', () => {
         if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
             return;
         }
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context,
+                revision: 'revision-1',
+            }).status
+        ).toBe('accepted');
         expect(
             validateArbitraryCommandListEvidence({
                 evidence: result.compilerEvidence,

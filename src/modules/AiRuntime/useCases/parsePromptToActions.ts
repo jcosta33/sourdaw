@@ -620,14 +620,20 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    const verifiedProviderProposalScope =
+                        bridged.verifiedProviderProposalScope ?? compiledList.compilerEvidence?.proposalScope;
                     return {
                         actions: guarded.actions,
+                        ...(bridged.actionCommandGraph === undefined
+                            ? {}
+                            : { actionCommandGraph: bridged.actionCommandGraph }),
                         rawText: prompt,
                         requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
+                        ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
                     };
                 }
 
