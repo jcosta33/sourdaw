@@ -21,6 +21,17 @@ vi.mock('#/modules/AiRuntime/stores/chatStore', () => ({
     stopGenerating: vi.fn(),
 }));
 
+vi.mock('../../../stores/agentRunStore', () => ({
+    agentRunStore: { kind: 'agent-runs' },
+}));
+
+vi.mock('../../../useCases/getAgentRunControlProjection', () => ({
+    agentRunControls: {
+        list: vi.fn(),
+        resumeDecision: vi.fn(),
+    },
+}));
+
 vi.mock('#/modules/AiRuntime/useCases/sendChatMessage', () => ({
     sendChatMessage: vi.fn(),
 }));
@@ -98,16 +109,30 @@ const { cancelPendingChatActions } = await import('../../../useCases/cancelPendi
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
     await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
+const { agentRunStore } = await import('../../../stores/agentRunStore');
+const { agentRunControls } = await import('../../../useCases/getAgentRunControlProjection');
+
+const chatState = {
+    messages: [],
+    isGenerating: false,
+    chatMode: 'chat',
+    enableReasoning: false,
+};
 
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         Element.prototype.scrollIntoView = vi.fn();
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
-            messages: [],
-            isGenerating: false,
-            chatMode: 'chat',
-            enableReasoning: false,
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store: unknown) =>
+            store === agentRunStore ? { schemaVersion: 1, runs: [] } : chatState
+        );
+        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([]);
+        (agentRunControls.resumeDecision as ReturnType<typeof vi.fn>).mockResolvedValue({
+            status: 'resumed',
+            sourceRunId: 'decision-run',
+            runId: 'resumed-run',
+            decisionId: 'decision-1',
+            selectedAlternativeId: 'keep-tempo',
         });
         (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(true);
     });
@@ -218,6 +243,58 @@ describe('ChatPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry missing section renders' }));
         expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
+    });
+
+    it('renders a pending decision in the production chat workspace and resumes only after explicit activation', async () => {
+        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([
+            {
+                runId: 'decision-run',
+                allowedActions: { resume: true },
+                resumeRejectionReason: null,
+                decision: {
+                    reason: 'Choose the bounded interpretation before the run can continue.',
+                    alternatives: [{ id: 'keep-tempo', label: 'Keep the current tempo', changesAuthority: false }],
+                },
+            },
+        ]);
+
+        render(<ChatPanel />);
+
+        expect(screen.getByText('Choose the bounded interpretation before the run can continue.')).toBeInTheDocument();
+        const choice = screen.getByRole('button', { name: 'Select Keep the current tempo' });
+        expect(choice).toHaveAttribute('type', 'button');
+        expect(choice).toHaveFocus();
+        expect(agentRunControls.resumeDecision).not.toHaveBeenCalled();
+
+        fireEvent.click(choice);
+
+        expect(agentRunControls.resumeDecision).toHaveBeenCalledWith({
+            runId: 'decision-run',
+            alternativeId: 'keep-tempo',
+        });
+        expect(await screen.findByRole('status')).toHaveTextContent('Resuming with Keep the current tempo.');
+    });
+
+    it('keeps unavailable decisions visible but disabled with their public rejection reason', () => {
+        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([
+            {
+                runId: 'stale-run',
+                allowedActions: { resume: false },
+                resumeRejectionReason: 'The project revision changed while the decision was pending.',
+                decision: {
+                    reason: 'Choose a tempo before continuing.',
+                    alternatives: [{ id: 'keep-tempo', label: 'Keep the current tempo', changesAuthority: false }],
+                },
+            },
+        ]);
+
+        render(<ChatPanel />);
+
+        const choice = screen.getByRole('button', { name: 'Select Keep the current tempo' });
+        expect(choice).toBeDisabled();
+        expect(choice).toHaveAccessibleDescription(
+            /Unavailable: The project revision changed while the decision was pending\./
+        );
     });
 
     it('should have correct accessibility attributes', () => {
