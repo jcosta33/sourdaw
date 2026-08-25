@@ -713,7 +713,10 @@ impl IdSlotIndex {
             node_index = child;
         }
         let node = &mut self.nodes[node_index];
-        debug_assert!(node.slot_plus_one != 0, "repointing an id the index does not hold");
+        debug_assert!(
+            node.slot_plus_one != 0,
+            "repointing an id the index does not hold"
+        );
         if node.slot_plus_one != 0 {
             node.slot_plus_one = slot as u32 + 1;
         }
@@ -760,7 +763,10 @@ impl IdSlotIndex {
             self.nodes[node_index] = RadixNode::default();
             return node_index;
         }
-        debug_assert!(self.nodes.len() < self.nodes.capacity(), "radix reservation exhausted");
+        debug_assert!(
+            self.nodes.len() < self.nodes.capacity(),
+            "radix reservation exhausted"
+        );
         let node_index = self.nodes.len();
         self.nodes.push(RadixNode::default());
         node_index
@@ -795,7 +801,10 @@ impl SlotWorkSet {
         if self.positions[slot] != 0 {
             return;
         }
-        debug_assert!(self.slots.len() < self.slots.capacity(), "work set exhausted");
+        debug_assert!(
+            self.slots.len() < self.slots.capacity(),
+            "work set exhausted"
+        );
         self.slots.push(slot);
         self.positions[slot] = self.slots.len() as u32;
     }
@@ -1124,6 +1133,7 @@ pub struct AudioScheduler {
 struct RtWorkCounters {
     parameter_table_visits: usize,
     master_table_visits: usize,
+    pending_midi_work_visits: usize,
 }
 
 impl AudioScheduler {
@@ -2090,6 +2100,10 @@ impl AudioScheduler {
         let mut index = 0;
         while index < self.pending_midi_work.slots.len() {
             let slot = self.pending_midi_work.slots[index];
+            #[cfg(test)]
+            {
+                self.rt_work.pending_midi_work_visits += 1;
+            }
             if self.effects[slot].pending_midi.is_empty() {
                 self.pending_midi_work.remove(slot);
             } else {
@@ -2113,7 +2127,10 @@ impl AudioScheduler {
         let mut work_index = 0;
         while work_index < self.parameter_work.slots.len() {
             let slot = self.parameter_work.slots[work_index];
-            debug_assert!(slot < self.effects.len(), "parameter work points beyond the effect table");
+            debug_assert!(
+                slot < self.effects.len(),
+                "parameter work points beyond the effect table"
+            );
             #[cfg(test)]
             {
                 visits += 1;
@@ -2325,6 +2342,10 @@ impl AudioScheduler {
         let mut pending_index = 0;
         while pending_index < self.pending_midi_work.slots.len() {
             let slot = self.pending_midi_work.slots[pending_index];
+            #[cfg(test)]
+            {
+                self.rt_work.pending_midi_work_visits += 1;
+            }
             let effect = &mut self.effects[slot];
             let bridged = self.bridge_index.lookup(effect.id).is_some();
             if !bridged && effect.placement == EffectPlacement::Detached {
@@ -2627,34 +2648,63 @@ mod tests {
     }
 
     #[test]
-    fn id_slot_index_deletion_stays_within_the_fixed_radix_budget_for_adversarial_ids() {
+    fn id_slot_index_deletion_prunes_shared_radix_paths_without_losing_survivors() {
         let mut index = IdSlotIndex::reserved(256);
-        let mut ids = Vec::with_capacity(256);
-        for id in 0..1_000_000usize {
-            let legacy_home =
-                ((id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> (64 - 9)) as usize;
-            if legacy_home == 0 {
-                ids.push(id);
-                if ids.len() == 256 {
-                    break;
-                }
-            }
-        }
-        assert_eq!(
-            ids.len(),
-            256,
-            "the legacy-collision population must be complete"
-        );
+        let shared_prefix = usize::MAX << 8;
+        let ids: Vec<_> = (0..128).map(|suffix| shared_prefix | suffix).collect();
         for (slot, id) in ids.iter().copied().enumerate() {
-            assert!(index.insert(id, slot));
+            assert!(index.insert(id, slot + 1_000));
         }
+        let allocated = index.nodes.len();
 
-        assert_eq!(index.delete(ids[0]), Some(0));
+        for ordinal in (0..64).step_by(2) {
+            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        }
+        for ordinal in 64..128 {
+            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        }
         assert!(
             index.last_delete_steps <= 2 * usize::BITS as usize,
-            "deletion must be bounded independently of an adversarial collision population; observed {} steps",
+            "deletion must stay within the fixed radix walk; observed {} steps",
             index.last_delete_steps
         );
+
+        for (ordinal, id) in ids.iter().copied().enumerate() {
+            let expected = if (ordinal < 64 && ordinal % 2 == 0) || ordinal >= 64 {
+                None
+            } else {
+                Some(ordinal + 1_000)
+            };
+            assert_eq!(
+                index.lookup(id),
+                expected,
+                "shared-prefix id {id:#x} must retain its own mapping across churn"
+            );
+        }
+
+        // Refill a fully removed shared-prefix branch. This would grow the node
+        // store if deletion left dead paths behind; it also makes every
+        // surviving mapping contend with reused radix nodes.
+        for ordinal in 64..128 {
+            assert!(index.insert(ids[ordinal], ordinal + 1_000));
+        }
+        assert_eq!(
+            index.nodes.len(),
+            allocated,
+            "pruned shared-prefix paths must be reused instead of growing under churn"
+        );
+        for (ordinal, id) in ids.into_iter().enumerate() {
+            let expected = if ordinal < 64 && ordinal % 2 == 0 {
+                None
+            } else {
+                Some(ordinal + 1_000)
+            };
+            assert_eq!(
+                index.lookup(id),
+                expected,
+                "removed ids must stay absent and every survivor must retain its original slot"
+            );
+        }
     }
 
     #[test]
@@ -2728,6 +2778,7 @@ mod tests {
             RtWorkCounters {
                 parameter_table_visits: 1,
                 master_table_visits: 1,
+                pending_midi_work_visits: 0,
             }
         );
 
@@ -2738,9 +2789,63 @@ mod tests {
             RtWorkCounters {
                 parameter_table_visits: 0,
                 master_table_visits: 1,
+                pending_midi_work_visits: 0,
             },
             "an empty parameter queue must leave the compact work set"
         );
+    }
+
+    #[test]
+    fn sparse_pending_midi_cleanup_visits_only_its_work_set() {
+        let population = 1_024;
+        let (mut command_tx, command_rx) = RingBuffer::new(population + 8);
+        let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        for id in 0..population {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in 0..population {
+            scheduler.place_effect(id, EffectPlacement::Detached);
+        }
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                population - 1,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        scheduler.reset_rt_work_counters();
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters {
+                pending_midi_work_visits: 2,
+                ..RtWorkCounters::default()
+            },
+            "one pending detached event needs one empty check and one cleanup visit, never a table walk"
+        );
+        assert!(scheduler.effects[population - 1].pending_midi.is_empty());
+        assert_eq!(scheduler.pending_midi_work.positions[population - 1], 0);
     }
 
     #[test]
@@ -2763,7 +2868,9 @@ mod tests {
                 }) as Box<dyn NativePlugin>,
             ),
         ] {
-            command_tx.push(GraphCommand::AddPlugin(id, plugin)).unwrap();
+            command_tx
+                .push(GraphCommand::AddPlugin(id, plugin))
+                .unwrap();
         }
         command_tx
             .push(GraphCommand::AddPluginWithBridge(
@@ -2787,22 +2894,94 @@ mod tests {
         left[0] = 1.0;
         right[0] = 1.0;
         scheduler.process_block(&mut left, &mut right, 1);
-        assert_eq!(left, [17.0], "release appends after existing master members");
+        assert_eq!(
+            left,
+            [17.0],
+            "release appends after existing master members"
+        );
 
-        command_tx.push(GraphCommand::RemovePluginWithBridge(30)).unwrap();
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(30))
+            .unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
         scheduler.process_block(&mut left, &mut right, 1);
-        assert_eq!(left, [3.0], "swap-moving id 10 must preserve its list position");
+        assert_eq!(
+            left,
+            [3.0],
+            "swap-moving id 10 must preserve its list position"
+        );
 
-        command_tx.push(GraphCommand::RemovePluginWithBridge(20)).unwrap();
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(20))
+            .unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
         scheduler.process_block(&mut left, &mut right, 1);
-        assert_eq!(left, [3.0], "removing a bridged member must not disturb id 10");
-        assert_eq!(scheduler.master_work.head, 1, "the remaining master member is id 10");
+        assert_eq!(
+            left,
+            [3.0],
+            "removing a bridged member must not disturb id 10"
+        );
+        assert_eq!(
+            scheduler.master_work.head, 1,
+            "the remaining master member is id 10"
+        );
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                40,
+                Box::new(AffinePlugin {
+                    factor: 7.0,
+                    offset: 4.0,
+                }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [25.0], "id 40 is the tail after id 10");
+
+        // Remove the tail itself, then render the complete surviving chain.
+        // Adding another effect must reuse that vacated table and link slot
+        // without leaving a stale tail endpoint behind.
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(40))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [3.0], "only id 10 survives the tail removal");
+        assert_eq!(scheduler.master_work.head, 1);
+        assert_eq!(scheduler.master_work.tail, 1);
+        assert_eq!(scheduler.master_work.links[0].next, 0);
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                50,
+                Box::new(AffinePlugin {
+                    factor: 4.0,
+                    offset: 2.0,
+                }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [14.0], "the reused tail slot appends after id 10");
+        assert_eq!(scheduler.master_work.head, 1);
+        assert_eq!(scheduler.master_work.tail, 2);
+        assert_eq!(scheduler.master_work.links[0].previous, 0);
+        assert_eq!(scheduler.master_work.links[0].next, 2);
+        assert!(scheduler.master_work.links[0].member);
+        assert_eq!(scheduler.master_work.links[1].previous, 1);
+        assert_eq!(scheduler.master_work.links[1].next, 0);
+        assert!(scheduler.master_work.links[1].member);
     }
 
     fn reclaim_on_background_thread(retired: RetiredGraphObjects) -> thread::ThreadId {
@@ -3485,7 +3664,15 @@ mod tests {
         assert!(index.insert(usize::MAX - 1, 1));
         assert_eq!(index.lookup(usize::MAX - 1), Some(1));
         assert_eq!(index.nodes.len(), allocated, "pruned nodes must be reused");
-        assert!(!index.insert(usize::MAX - 1, 3), "a duplicate cannot alias a slot");
+        assert!(
+            !index.insert(usize::MAX - 1, 3),
+            "a duplicate cannot alias a slot"
+        );
+        assert_eq!(
+            index.lookup(usize::MAX - 1),
+            Some(1),
+            "a rejected duplicate must leave the original slot mapping intact"
+        );
     }
 
     #[test]
@@ -3909,21 +4096,26 @@ mod tests {
         static ALLOCATOR: AllocDisabler = AllocDisabler;
 
         #[test]
-        fn work_indexes_process_and_relocate_without_allocating() {
+        fn swap_removed_tail_relocates_both_work_sets_before_they_process_without_allocating() {
             let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let received_event_count = Arc::new(AtomicUsize::new(0));
+            let received_channel_sum = Arc::new(AtomicUsize::new(0));
             command_tx
                 .push(GraphCommand::AddEffect(1, knead_instance()))
                 .unwrap();
             command_tx
                 .push(GraphCommand::AddPlugin(
                     2,
-                    Box::new(FakeNativePlugin { value: 0.0 }),
+                    Box::new(MidiRecordingPlugin {
+                        received_event_count: Arc::clone(&received_event_count),
+                        received_channel_sum: Arc::clone(&received_channel_sum),
+                    }),
                 ))
                 .unwrap();
             scheduler.update_graph();
             command_tx
                 .push(GraphCommand::AutomateDeviceParam {
-                    effect_id: 1,
+                    effect_id: 2,
                     param: DeviceParam::ShiftSemitones,
                     value: 3.0,
                     at_frame: 0,
@@ -3945,19 +4137,39 @@ mod tests {
                     },
                 ))
                 .unwrap();
-            scheduler.update_graph();
-            let mut left = [0.0; 4];
-            let mut right = [0.0; 4];
-
             assert_no_alloc(|| {
-                scheduler.process_block(&mut left, &mut right, 4);
+                scheduler.update_graph();
             });
 
+            // Remove the front while the tail is in both compact work sets.
+            // Neither queue may be consumed before swap-remove relocates it.
             command_tx.push(GraphCommand::RemovePlugin(1)).unwrap();
             assert_no_alloc(|| {
                 scheduler.update_graph();
             });
             assert_eq!(scheduler.effect_index.lookup(2), Some(0));
+            assert_eq!(scheduler.effects[0].id, 2);
+            assert_eq!(scheduler.parameter_work.positions[0], 1);
+            assert_eq!(scheduler.pending_midi_work.positions[0], 1);
+            assert_eq!(scheduler.parameter_work.positions[1], 0);
+            assert_eq!(scheduler.pending_midi_work.positions[1], 0);
+
+            let mut left = [0.0; 4];
+            let mut right = [0.0; 4];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, 4);
+            });
+            assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+            assert_eq!(received_channel_sum.load(Ordering::Relaxed), 0);
+            assert_eq!(
+                scheduler
+                    .midi_rt_diagnostics
+                    .snapshot()
+                    .unmapped_set_param_calls,
+                1
+            );
+            assert_eq!(scheduler.parameter_work.positions[0], 0);
+            assert_eq!(scheduler.pending_midi_work.positions[0], 0);
         }
 
         #[test]

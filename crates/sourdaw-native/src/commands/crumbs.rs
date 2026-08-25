@@ -107,12 +107,45 @@ pub fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
 /// Managed state for crumbs instances.
 pub struct CrumbsState {
     pub instances: Arc<Mutex<HashMap<String, CrumbsInstanceData>>>,
+    #[cfg(test)]
+    before_engine_lock: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
 }
 
 impl Default for CrumbsState {
     fn default() -> Self {
         Self {
             instances: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(test)]
+            before_engine_lock: Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(test)]
+impl CrumbsState {
+    /// Rendezvous with one create immediately before it takes the engine mutex.
+    /// Test-only and per state, so parallel tests cannot observe each other.
+    fn observe_next_create_before_engine_lock(&self) -> std::sync::mpsc::Receiver<()> {
+        let (reached_tx, reached_rx) = std::sync::mpsc::sync_channel(0);
+        let previous = self
+            .before_engine_lock
+            .lock()
+            .expect("create observer lock should be available")
+            .replace(reached_tx);
+        assert!(previous.is_none(), "only one create observer may be armed");
+        reached_rx
+    }
+
+    fn notify_create_before_engine_lock(&self) {
+        let observer = self
+            .before_engine_lock
+            .lock()
+            .expect("create observer lock should be available")
+            .take();
+        if let Some(observer) = observer {
+            observer
+                .send(())
+                .expect("create observer receiver should remain alive");
         }
     }
 }
@@ -232,6 +265,9 @@ pub async fn create_crumbs(
     let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
     let metering = Arc::new(CrumbsMetering::default());
     let engine = CrumbsEngine::with_metering(sample_rate, metering.clone());
+
+    #[cfg(test)]
+    state.notify_create_before_engine_lock();
 
     // The engine guard is scoped to the registration alone — it is the
     // engine-wide mutex, not this instance's — while the instances guard
@@ -1047,9 +1083,9 @@ mod tests {
     fn create_crumbs_refuses_a_duplicate_id_without_registering_another_runtime() {
         let state = CrumbsState::default();
         let app_state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
         {
-            let engine = daw_engine::EngineHandle::new()
-                .expect("duplicate-create test requires a runnable native output device");
             *app_state
                 .engine
                 .lock()
@@ -1072,23 +1108,25 @@ mod tests {
             .get(instance_id)
             .expect("first create should retain its map entry")
             .engine_plugin_id;
-        let effect_count_after_first_create = app_state
-            .engine
-            .lock()
-            .expect("engine lock should be available")
-            .as_ref()
-            .expect("test engine should remain running")
-            .registered_effect_count();
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
+            Ok(_) => panic!("the first engine command must register the crumbs slot and bridge"),
+            Err(_) => panic!("the first create must queue one engine registration command"),
+        };
+        assert_eq!(
+            registered_engine_plugin_id, original_engine_plugin_id,
+            "the map entry must own the engine id carried by the registration command"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "one successful create must queue exactly one engine registration command"
+        );
         let bridge_count_after_first_create = app_state
             .audio_bridges
             .lock()
             .expect("audio bridge lock should be available")
             .bridges
             .len();
-        assert_eq!(
-            effect_count_after_first_create, 1,
-            "the first create must occupy exactly one engine slot and effect-table entry"
-        );
         assert_eq!(
             bridge_count_after_first_create, 1,
             "the first create must publish exactly one record bridge"
@@ -1121,16 +1159,9 @@ mod tests {
         );
         drop(instances);
 
-        assert_eq!(
-            app_state
-                .engine
-                .lock()
-                .expect("engine lock should be available")
-                .as_ref()
-                .expect("test engine should remain running")
-                .registered_effect_count(),
-            effect_count_after_first_create,
-            "the duplicate must not register another engine slot or effect-table entry"
+        assert!(
+            command_rx.pop().is_err(),
+            "the duplicate must not queue another engine/effect registration"
         );
         let feed = app_state
             .audio_bridges
@@ -1149,6 +1180,19 @@ mod tests {
 
         crate::block_on_test(destroy_crumbs(instance_id.to_string(), &state, &app_state))
             .expect("the original runtime must remain destroyable after the refusal");
+        let removed_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
+            Ok(_) => panic!("destroy must queue the bridged-plugin removal command"),
+            Err(_) => panic!("destroy must queue one engine removal command"),
+        };
+        assert_eq!(
+            removed_engine_plugin_id, registered_engine_plugin_id,
+            "destroy must remove the exact engine id registered by the original create"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "destroy must queue exactly one engine removal command"
+        );
         assert!(
             !state
                 .instances
@@ -1156,17 +1200,6 @@ mod tests {
                 .expect("crumbs state lock should be available")
                 .contains_key(instance_id),
             "destroy must remove the original map entry"
-        );
-        assert_eq!(
-            app_state
-                .engine
-                .lock()
-                .expect("engine lock should be available")
-                .as_ref()
-                .expect("test engine should remain running")
-                .registered_effect_count(),
-            0,
-            "destroy must retire the original engine slot"
         );
         assert!(
             app_state
@@ -1176,6 +1209,120 @@ mod tests {
                 .bridges
                 .is_empty(),
             "destroy must remove the original record bridge"
+        );
+    }
+
+    /// The instances mutex is the create transaction boundary: while one
+    /// create is parked on engine registration, another create of the same id
+    /// cannot pass the identity check or register a second runtime.
+    #[test]
+    fn concurrent_duplicate_create_holds_the_instances_lock_through_registration() {
+        const INSTANCE_ID: &str = "concurrent-duplicate-crumbs";
+
+        let state = Arc::new(CrumbsState::default());
+        let app_state = Arc::new(AppState::default());
+        let first_reached_engine_lock = state.observe_next_create_before_engine_lock();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        // Park the first create at the engine lock. It must retain the
+        // instances lock while parked; that is the ownership invariant under
+        // test, observed directly with try_lock below.
+        let engine_guard = app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available");
+        let first_state = Arc::clone(&state);
+        let first_app_state = Arc::clone(&app_state);
+        let first_create = std::thread::spawn(move || {
+            crate::block_on_test(create_crumbs(
+                INSTANCE_ID.to_string(),
+                48_000.0,
+                &first_state,
+                &first_app_state,
+            ))
+        });
+        first_reached_engine_lock
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("first create should reach the engine lock within the bounded wait");
+        match state.instances.try_lock() {
+            Err(std::sync::TryLockError::WouldBlock) => {}
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                panic!("crumbs instances lock must not be poisoned")
+            }
+            Ok(_) => {
+                panic!("the first create must hold the instances lock while blocked on the engine")
+            }
+        }
+
+        let (second_started_tx, second_started_rx) = std::sync::mpsc::sync_channel(0);
+        let second_state = Arc::clone(&state);
+        let second_app_state = Arc::clone(&app_state);
+        let second_create = std::thread::spawn(move || {
+            second_started_tx
+                .send(())
+                .expect("second-create start receiver should remain alive");
+            crate::block_on_test(create_crumbs(
+                INSTANCE_ID.to_string(),
+                48_000.0,
+                &second_state,
+                &second_app_state,
+            ))
+        });
+        second_started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("second create should start within the bounded wait");
+
+        drop(engine_guard);
+
+        first_create
+            .join()
+            .expect("first create thread should not panic")
+            .expect("the lock-owning first create must succeed");
+        let second_refusal = second_create
+            .join()
+            .expect("second create thread should not panic")
+            .expect_err("the concurrent duplicate create must be refused");
+        assert_eq!(
+            second_refusal,
+            format!("Crumbs instance '{INSTANCE_ID}' already exists")
+        );
+
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
+            Ok(_) => panic!("the successful create must queue a bridged-plugin registration"),
+            Err(_) => panic!("the successful create must queue one engine registration command"),
+        };
+        assert!(
+            command_rx.pop().is_err(),
+            "the concurrent creates must queue exactly one engine registration command"
+        );
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        assert_eq!(instances.len(), 1);
+        assert_eq!(
+            instances
+                .get(INSTANCE_ID)
+                .expect("the successful create must own one map entry")
+                .engine_plugin_id,
+            registered_engine_plugin_id
+        );
+        drop(instances);
+        assert_eq!(
+            app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .len(),
+            1,
+            "the concurrent duplicate must not publish a second bridge"
         );
     }
 

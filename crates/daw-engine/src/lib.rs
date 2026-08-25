@@ -692,8 +692,8 @@ fn effect_table_full_error() -> String {
 /// it needs a real output device — and it is also the only part a command test
 /// does not exercise: a command's whole journey is the ring between this handle
 /// and [`scheduler::AudioScheduler`], which a test can drive directly.
-#[cfg(test)]
-fn engine_handle_for_command_capture(
+#[cfg(any(test, feature = "command-capture-fixture"))]
+pub fn engine_handle_for_command_capture(
     capacity: usize,
 ) -> (
     EngineHandle,
