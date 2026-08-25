@@ -1,0 +1,34 @@
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_a40848e8f8cca9::t_666150205463fe 586
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_a40848e8f8cca9::t_ad2657fe7abd3e 167,181,186,207,210
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_a40848e8f8cca9::t_c9d8fec21d319f 29,386-390
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_316c6f7d49f850 564,687
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_316c6f7d49f850 9,57
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_666150205463fe 88-89,94-95,223,242,286,299,303
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_a34d1b3ebd85df 14,131-138,186
+  s_a40848e8f8cca9::t_316c6f7d49f850 418-419,422
+  s_a40848e8f8cca9::t_e8fa4ec49ac95f 467-468,470-472
+  s_a40848e8f8cca9::t_1bfcf7bc02e288 466,473,478,524,574
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "ec00e2c3c897cd7dc7423e2af9752a9c4d4f95d9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
