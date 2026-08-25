@@ -608,6 +608,27 @@ describe('bootstrap', () => {
         expect(getAssetTransferMock).toHaveBeenCalledTimes(callsBeforeStaleRecovery);
     });
 
+    it('fails closed when durable asset recovery is unavailable after a current project load', async () => {
+        const dependencies = setProjectIdentityTransitionDependenciesMock.mock.calls[0]?.[0] as
+            | {
+                  resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
+                      ownerId: string;
+                      isCurrent: () => boolean;
+                      signal: AbortSignal;
+                  }) => Promise<void>;
+              }
+            | undefined;
+        getAssetTransferMock.mockReturnValueOnce(null);
+
+        await expect(
+            dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
+                ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+                isCurrent: () => true,
+                signal: new AbortController().signal,
+            })
+        ).rejects.toThrow('Durable asset owner recovery is unavailable after project load');
+    });
+
     it('binds durable asset admission to the Command commit proof', () => {
         expect(configureDurableAssetCommitProofMock).toHaveBeenCalledExactlyOnceWith({
             isProven: isVersionedCommandBatchCommitProvenMock,
