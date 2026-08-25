@@ -1,0 +1,29 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_185abfa880b609 189,210
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_a40848e8f8cca9::t_0aec6c5853d7bb 29-37,44-45
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_a40848e8f8cca9::t_0aec6c5853d7bb 13-23,109-111,113
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_a40848e8f8cca9::t_185abfa880b609 149,155-156
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_a40848e8f8cca9::t_185abfa880b609 74,165,242,252,288,347,354
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_a40848e8f8cca9::t_185abfa880b609 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "e24f845df4b90a58b13dbc62ebd0370394f03675",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
