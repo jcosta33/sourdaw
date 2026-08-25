@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_4b4ee775af6af4 121,1059-1062,1064-1071,1077,1084,1086-1092,1099,1101-1107,1198,1200-1205,1211,1218,1220-1226,1233,1235-1239
+  s_a40848e8f8cca9::t_17013faf6696e1 1240-1241,1255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c46b1ca1a9ec849a4ba38149b5fbc0674db9cf6f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
