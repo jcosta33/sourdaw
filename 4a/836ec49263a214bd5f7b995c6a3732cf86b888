@@ -1,0 +1,43 @@
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_f7ffb7452d40c9 166,169-179
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_8f7050fd2dca9c 471-488,497,513,600-603,605-608,610-618,620-622,624-632,634-636,638-643
+  s_a40848e8f8cca9::t_0414fb8e202ef9 604,609,619,623,633,637,696-737
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_f7ffb7452d40c9 632-637,668-691,695-697
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  s_a40848e8f8cca9::t_f7ffb7452d40c9 17-20,23-24
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_a40848e8f8cca9::t_8f7050fd2dca9c 45,95,165-166,203-204,217-247
+  s_0a3429e31e555d::t_b0e644520656d4 248-249
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  s_a40848e8f8cca9::t_8f7050fd2dca9c 117-127
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_8f7050fd2dca9c 614-647
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_a40848e8f8cca9::t_f7ffb7452d40c9 78,117,122-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "4a836ec49263a214bd5f7b995c6a3732cf86b888",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
