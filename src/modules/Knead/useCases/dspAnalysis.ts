@@ -1,6 +1,6 @@
 import { type NoteBlob } from '../stores/kneadStore';
 
-import { updateClipKneadState } from './updateClipKneadState';
+import { updateTransientClipKneadState } from './updateTransientClipKneadState';
 
 /**
  * Parses raw analysis frames from the Rust/WASM engine and converts them
@@ -138,5 +138,9 @@ export function ingestDspAnalysis(
 
     finalizeBlob();
 
-    updateClipKneadState(clipId, (state) => ({ ...state, blobs }));
+    // These blobs are derived from the clip's audio, not chosen by the musician,
+    // so they take the transient path: Knead store only, never the clip's
+    // persisted `kneadState`. Analysis fires the moment a clip is selected in
+    // pitch mode; persisting here would author project state nobody chose (#2557).
+    updateTransientClipKneadState(clipId, (state) => ({ ...state, blobs }));
 }
