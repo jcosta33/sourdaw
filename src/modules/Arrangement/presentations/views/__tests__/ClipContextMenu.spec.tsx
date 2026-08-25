@@ -250,6 +250,7 @@ describe('ClipContextMenu', () => {
         expect(subscriber).toHaveBeenCalledWith(selected);
         expect(reactSubscriber).toHaveBeenCalledOnce();
         expect(trackStore.getSnapshot()).toBe(selected);
+        expect(trackStore.value).toBe(selected);
 
         unsubscribe();
         unsubscribeReact();
@@ -257,6 +258,7 @@ describe('ClipContextMenu', () => {
         expect(subscriber).toHaveBeenCalledOnce();
         expect(reactSubscriber).toHaveBeenCalledOnce();
         expect(trackStore.getSnapshot()).toBe(previous);
+        expect(trackStore.value).toBe(previous);
     });
 
     it('should render without crashing', () => {

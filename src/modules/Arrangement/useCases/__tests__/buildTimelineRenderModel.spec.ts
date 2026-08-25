@@ -108,6 +108,35 @@ vi.mock('../../stores/activeRecordingRef', async (importOriginal) => {
 });
 
 describe('buildTimelineRenderModel', () => {
+    it('keeps the shared track fixture reactive through both read channels', async () => {
+        const [{ trackStore: definingTrackStore }, { trackStore: barrelTrackStore }] = await Promise.all([
+            import('../../stores/trackStore'),
+            import('#/modules/Arrangement/stores'),
+        ]);
+        const previous = definingTrackStore.value;
+        const subscriber = vi.fn();
+        const reactSubscriber = vi.fn();
+        const unsubscribe = definingTrackStore.subscribe(subscriber);
+        const unsubscribeReact = definingTrackStore.subscribeReact(reactSubscriber);
+        const next: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+
+        expect(barrelTrackStore).toBe(definingTrackStore);
+        definingTrackStore.set(next);
+        expect(subscriber).toHaveBeenCalledOnce();
+        expect(subscriber).toHaveBeenCalledWith(next);
+        expect(reactSubscriber).toHaveBeenCalledOnce();
+        expect(definingTrackStore.getSnapshot()).toBe(next);
+        expect(definingTrackStore.value).toBe(next);
+
+        unsubscribe();
+        unsubscribeReact();
+        definingTrackStore.set(previous);
+        expect(subscriber).toHaveBeenCalledOnce();
+        expect(reactSubscriber).toHaveBeenCalledOnce();
+        expect(definingTrackStore.getSnapshot()).toBe(previous);
+        expect(definingTrackStore.value).toBe(previous);
+    });
+
     it('returns a model with tracks from the injected track store', () => {
         trackStoreMock.value = {
             tracks: [
