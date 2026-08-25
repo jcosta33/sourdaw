@@ -1,0 +1,25 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_a40848e8f8cca9::t_8365627bc902fa 3-4,22-27,34-42,51,59-64,106-107,194-195,211-217
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  s_a40848e8f8cca9::t_340c41f949fc47 1-10,19-27,95-101,133-137,303,387-388
+src/modules/Command/useCases/redo.ts
+  s_a40848e8f8cca9::t_6a51423422bd3a 1-2,21-24,175-176,195-196
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  s_a40848e8f8cca9::t_aff3a6a8558f46 3-4,9-14,28-36,279,283-288,296-297,319,326,329-330,335-336,344,347,349-354,357-358,370,373,375-380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "f0f9574b0ae09edffe85e8552608222c140f61fc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
