@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
+import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+    type initializeTrackStripFromSnapshot,
+} from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
@@ -38,10 +43,6 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -59,9 +60,27 @@ const STEM_SOURCE_NAMES = [
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
+
 const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
+    const availableAssetHashes = new Set<string>();
+    const availableAudioBufferIds = new Set<string>();
     return {
+        availableAssetHashes,
+        availableAudioBufferIds,
         backend,
         stageLocalAsset: vi.fn<(file: File, name: string) => Promise<{ hash: string; leaseId: string }>>(),
         decodeAudioFile: vi.fn(),
@@ -70,6 +89,8 @@ const mocks = vi.hoisted(() => {
         executeBatchError: { value: null as Error | null },
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
+        hasAsset: vi.fn((assetHash: string) => availableAssetHashes.has(assetHash)),
+        hasAudioBuffer: vi.fn((audioBufferId: string) => availableAudioBufferIds.has(audioBufferId)),
         initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
             acceptance: 'accepted',
             application: 'applied',
@@ -86,6 +107,14 @@ const mocks = vi.hoisted(() => {
         setTrackOutput: vi.fn(),
         setTrackPan: vi.fn(),
         setTrackSoloGate: vi.fn(),
+    };
+});
+
+vi.mock('#/modules/AudioEngine/stores', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/AudioEngine/stores')>();
+    return {
+        ...original,
+        audioBufferCache: { ...original.audioBufferCache, has: mocks.hasAudioBuffer },
     };
 });
 
@@ -132,7 +161,10 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases', () => ({ detectTempo: mocks.detectTempo }));
+vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>()),
+    detectTempo: mocks.detectTempo,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -150,6 +182,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
     getAssetTransfer: () => ({
+        hasAsset: mocks.hasAsset,
         stageLocalAsset: mocks.stageLocalAsset,
         promoteStagedAsset: mocks.promoteStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,
@@ -166,19 +199,41 @@ const notificationEventBus = {
     on: vi.fn(() => () => undefined),
 };
 
-function expectPreparedStemResourcesReleased(timesPerStem: number): void {
-    const expectedAudioBufferIds = STEM_SOURCE_NAMES.flatMap((name) =>
-        Array.from({ length: timesPerStem }, () => `buffer-${name}`)
-    ).sort();
-    const expectedAssetLeaseIds = STEM_SOURCE_NAMES.flatMap((name) =>
-        Array.from({ length: timesPerStem }, () => `lease-${name}`)
-    ).sort();
-    expect(mocks.releasePreviewAudioBuffer.mock.calls.map(([audioBufferId]) => audioBufferId).sort()).toEqual(
-        expectedAudioBufferIds
+function expectPreparedStemResourcesReleased(): void {
+    for (const sourceName of STEM_SOURCE_NAMES) {
+        const audioBufferId = `buffer-${sourceName}`;
+        const assetLeaseId = `lease-${sourceName}`;
+        expect(mocks.releasePreviewAudioBuffer.mock.calls.filter(([id]) => id === audioBufferId)).toHaveLength(1);
+        expect(mocks.releaseStagedAsset.mock.calls.filter(([id]) => id === assetLeaseId)).toHaveLength(1);
+    }
+}
+
+function expectPreparedStemLifecyclePending(runId: string): void {
+    const run = agentRunLifecycle.get(runId);
+    expect(
+        run?.temporaryAssets.map(({ assetId, cleanupOwner, kind, status }) => ({
+            assetId,
+            cleanupOwner,
+            kind,
+            status,
+        }))
+    ).toEqual(
+        STEM_SOURCE_NAMES.map((sourceName) => ({
+            assetId: `buffer-${sourceName}`,
+            cleanupOwner: 'stem-import-preparation',
+            kind: 'import',
+            status: 'live',
+        }))
     );
-    expect(mocks.releaseStagedAsset.mock.calls.map(([assetLeaseId]) => assetLeaseId).sort()).toEqual(
-        expectedAssetLeaseIds
+    expect([...mocks.availableAudioBufferIds].sort()).toEqual(
+        STEM_SOURCE_NAMES.map((sourceName) => `buffer-${sourceName}`).sort()
     );
+    expect([...mocks.availableAssetHashes].sort()).toEqual(
+        STEM_SOURCE_NAMES.map((sourceName) => `hash-${sourceName}`).sort()
+    );
+    expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
 }
 
 function expectPreparedStemLifecycleSettled(runId: string): void {
@@ -186,7 +241,7 @@ function expectPreparedStemLifecycleSettled(runId: string): void {
     expect(mocks.stageLocalAsset.mock.calls.map(([file, name]: [File, string]) => [file.name, name])).toEqual(
         STEM_SOURCE_NAMES.map((name) => [name, name])
     );
-    expectPreparedStemResourcesReleased(1);
+    expectPreparedStemResourcesReleased();
     expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
     expect(agentRunLifecycle.get(runId)).toMatchObject({ temporaryAssets: [], preparedStemImports: [] });
 }
@@ -245,6 +300,14 @@ function expectCollaboratorProjectState(state: ReturnType<typeof captureCollabor
     expect(getCrdtDoc('root')).toEqual(state.document);
     expect(trackStore.value).toEqual(state.tracks);
     expect(transportStore.value).toEqual(state.transport);
+}
+
+function flushTrackFixtureProjectWrite(): void {
+    const storage = fixtureStorageOwners.get('root:tracks');
+    if (!storage) {
+        throw new Error('Expected fixture-owned tracks storage adapter');
+    }
+    storage.flushPendingUnscopedWrite();
 }
 
 function createTrack(id: string, name: string): Track {
@@ -600,8 +663,9 @@ function useHostedFixture(): void {
 
 describe('stem import and starting mix workflow', () => {
     beforeEach(async () => {
-        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
+        mocks.availableAssetHashes.clear();
+        mocks.availableAudioBufferIds.clear();
         mocks.initializeTrackStripFromSnapshot.mockReturnValue({
             acceptance: 'accepted',
             application: 'applied',
@@ -632,50 +696,50 @@ describe('stem import and starting mix workflow', () => {
             markReverted: () => ({ status: 'unavailable' as const }),
             clear: () => undefined,
         });
-        commandBatchPreflightPort.setProvider(({ assetReferences, targetIds }) => ({
-            audioGraphValid: true,
-            availableAssetHashes: assetReferences.flatMap((reference) =>
-                reference.assetHash ? [reference.assetHash] : []
-            ),
-            availableAudioBufferIds: assetReferences.flatMap((reference) =>
-                reference.audioBufferId ? [reference.audioBufferId] : []
-            ),
-            lockedRanges: [],
-            projectId: captureProjectRevision(),
-            projectInvariantsValid: true,
-            targetFingerprints: Object.fromEntries(
-                targetIds
-                    .filter((targetId) => JSON.stringify(trackStore.value).includes(targetId))
-                    .map((targetId) => [targetId, targetId])
-            ),
-        }));
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: mocks.arrangementEventEmit });
         setNotificationEventBus(notificationEventBus);
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
+        flushTrackFixtureProjectWrite();
         transportStore.set({ ...defaultTransportState, tempo: 100 });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
 
         const files = STEM_SOURCE_NAMES.map((name) => new File([name], name, { type: 'audio/wav' }));
         mocks.pickFiles.mockResolvedValue(files);
-        mocks.decodeAudioFile.mockImplementation((file: File) =>
-            Promise.resolve({ id: `buffer-${file.name}`, buffer: audioBuffer() })
-        );
-        mocks.stageLocalAsset.mockImplementation((_file, name) =>
-            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
-        );
+        mocks.decodeAudioFile.mockImplementation((file: File) => {
+            const id = `buffer-${file.name}`;
+            mocks.availableAudioBufferIds.add(id);
+            return Promise.resolve({ id, buffer: audioBuffer() });
+        });
+        mocks.stageLocalAsset.mockImplementation((_file, name) => {
+            const hash = `hash-${name}`;
+            mocks.availableAssetHashes.add(hash);
+            return Promise.resolve({ hash, leaseId: `lease-${name}` });
+        });
+        mocks.releasePreviewAudioBuffer.mockImplementation((audioBufferId: string) => {
+            mocks.availableAudioBufferIds.delete(audioBufferId);
+        });
+        mocks.releaseStagedAsset.mockImplementation((assetLeaseId: string) => {
+            mocks.availableAssetHashes.delete(assetLeaseId.replace(/^lease-/, 'hash-'));
+        });
         mocks.generateWebLlmCompletion.mockImplementation(createWebLlmResponder());
     });
 
     afterEach(async () => {
-        resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         await cloudSession.clear();
         clearAiHistory();
         clearUndoHistory();
         resetActionReplayAuthority();
         commandBatchPreflightPort.setProvider(null);
+        configureRuntimeGraphProjectRevisionValidator(null);
+        configureRuntimeGraphTopologyValidator(null);
         clearHandlerRegistry();
         collaborationStore.set({
             isEnabled: false,
@@ -872,7 +936,7 @@ describe('stem import and starting mix workflow', () => {
         await sendChatMessage(PROMPT);
 
         expect(confirmationId()).toBe('');
-        expectPreparedStemResourcesReleased(1);
+        expectPreparedStemResourcesReleased();
     });
 
     it('rejects an oversized selected stem before decode or provider planning', async () => {
@@ -933,19 +997,22 @@ describe('stem import and starting mix workflow', () => {
 
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        expectPreparedStemResourcesReleased(1);
+        expectPreparedStemResourcesReleased();
     });
 
     it('releases preparation-owned resources when the user cancels the exact proposal', async () => {
         await seedUndoHistory();
         setNontrivialCollaborationState();
-        await sendChatMessage(PROMPT);
-        const confirmation = getPendingActionConfirmation(confirmationId());
-        expect(confirmation, JSON.stringify(chatStore.value?.messages)).not.toBeNull();
-        expect(undoStore.value?.past).toHaveLength(1);
-        expect(undoStore.value?.future).toHaveLength(1);
         const seededState = captureCollaboratorProjectState();
         const seededUndoState = structuredClone(undoStore.value);
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(confirmationId());
+        expect(confirmation, JSON.stringify(chatStore.value?.messages)).not.toBeNull();
+        expectCollaboratorProjectState(seededState);
+        expect(undoStore.value).toEqual(seededUndoState);
+        expectPreparedStemLifecyclePending(confirmation!.runId);
 
         await expect(cancelPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
             status: 'cancelled',
@@ -958,17 +1025,21 @@ describe('stem import and starting mix workflow', () => {
     it('invalidates a stale proposal and cleans resources without touching the collaborator edit', async () => {
         await seedUndoHistory();
         setNontrivialCollaborationState();
+        const seededState = captureCollaboratorProjectState();
+        const seededUndoState = structuredClone(undoStore.value);
+
         await sendChatMessage(PROMPT);
+
         const confirmation = getPendingActionConfirmation(confirmationId());
         expect(confirmation, JSON.stringify(chatStore.value?.messages)).not.toBeNull();
-        expect(undoStore.value?.past).toHaveLength(1);
-        expect(undoStore.value?.future).toHaveLength(1);
+        expectCollaboratorProjectState(seededState);
+        expect(undoStore.value).toEqual(seededUndoState);
+        expectPreparedStemLifecyclePending(confirmation!.runId);
         await executeAppAction(
             { type: 'addTrack', payload: { id: 'track-collaborator', name: 'Collaborator', kind: 'audio' } },
             { skipUndo: true }
         );
         const collaboratorState = captureCollaboratorProjectState();
-        const seededUndoState = structuredClone(undoStore.value);
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });
 

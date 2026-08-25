@@ -5,14 +5,17 @@ import {
     captureCommandBatchPreflightState,
 } from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import * as aiRuntimeUseCases from '#/modules/AiRuntime/useCases';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import * as audioEngineUseCases from '#/modules/AudioEngine/useCases';
 import {
     clearAgentSectionRenderArtifacts,
     getAgentSectionRenderArtifacts,
     getAudioRenderingHandlers,
 } from '#/modules/AudioRendering/useCases';
+import * as collaborationUseCases from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -23,6 +26,7 @@ import {
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
+import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     captureProjectRevision,
     captureUnownedProjectMutations,
@@ -1168,17 +1172,34 @@ describe('drum bus prompt workflow', () => {
                 tracks: [...structuredClone(rawTracks.tracks), historicalMaster],
             },
         };
-        const historicalInspection = captureAgentProjectInspectionState({
-            projectDocument: suppliedDocument,
-            targetIds: ['master'],
-        });
+        const ambientFailure = () => {
+            throw new Error('document inspection touched ambient preflight state');
+        };
+        const ambientSpies = [
+            vi.spyOn(aiRuntimeUseCases, 'getProjectContext').mockImplementation(ambientFailure),
+            vi.spyOn(audioBufferCache, 'has').mockImplementation(ambientFailure),
+            vi.spyOn(collaborationUseCases, 'getAssetTransfer').mockImplementation(ambientFailure),
+            vi.spyOn(crdtDocumentUseCases, 'captureProjectRevision').mockImplementation(ambientFailure),
+        ];
+        let historicalInspection: ReturnType<typeof captureAgentProjectInspectionState>;
+        let repeatedInspection: ReturnType<typeof captureAgentProjectInspectionState>;
+        try {
+            historicalInspection = captureAgentProjectInspectionState({
+                projectDocument: suppliedDocument,
+                targetIds: ['master'],
+            });
 
-        const liveMaster = { ...createTrack('master', 'Ambient Live Master', 'master'), gain: 0.19 };
-        trackStore.set({ tracks: [liveMaster], selectedTrackId: null, ghostClips: [] });
-        const repeatedInspection = captureAgentProjectInspectionState({
-            projectDocument: suppliedDocument,
-            targetIds: ['master'],
-        });
+            const liveMaster = { ...createTrack('master', 'Ambient Live Master', 'master'), gain: 0.19 };
+            trackStore.set({ tracks: [liveMaster], selectedTrackId: null, ghostClips: [] });
+            repeatedInspection = captureAgentProjectInspectionState({
+                projectDocument: suppliedDocument,
+                targetIds: ['master'],
+            });
+        } finally {
+            for (const spy of ambientSpies) {
+                spy.mockRestore();
+            }
+        }
 
         expect(repeatedInspection).toEqual(historicalInspection);
         expect(historicalInspection.audioGraphValid).toBe(true);

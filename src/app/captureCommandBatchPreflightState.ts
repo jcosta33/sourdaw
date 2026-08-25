@@ -9,7 +9,6 @@ import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/C
 
 type CaptureCommandBatchPreflightStateInput = {
     assetReferences: readonly { assetHash?: string; audioBufferId?: string }[];
-    includeLiveProjectContext?: boolean;
     projectDocument?: Readonly<Record<string, unknown>>;
     targetIds: readonly string[];
 };
@@ -147,6 +146,21 @@ function combineTargetFingerprints(input: {
             return document === undefined ? [] : [[targetId, document]];
         })
     );
+}
+
+function addSystemTargetFingerprints(
+    targetFingerprints: Record<string, string>,
+    targetIds: readonly string[]
+): Record<string, string> {
+    const fingerprints = { ...targetFingerprints };
+    const targets = new Set(targetIds);
+    if (targets.has('master') && fingerprints.master === undefined) {
+        fingerprints.master = 'system-output:master';
+    }
+    if (targets.has('hw_out')) {
+        fingerprints.hw_out = 'system-output:hw_out';
+    }
+    return fingerprints;
 }
 
 function isValidOptionalField(
@@ -415,33 +429,39 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
     };
 }
 
-export function captureCommandBatchPreflightState(input: CaptureCommandBatchPreflightStateInput) {
-    const context =
-        input.includeLiveProjectContext === false || agentProjectRepairStateStore.value ? null : getProjectContext();
-    const targetIds = new Set(input.targetIds);
-    const projectDoc = input.projectDocument ?? getCrdtDoc(DOC_PREFIX_ROOT);
+function captureProjectDocumentInspectionState(input: CaptureAgentProjectInspectionStateInput) {
     const allIds = new Set<string>();
     const duplicateIds = new Set<string>();
-    const duplicateScanVisited = new WeakSet<object>();
-    findDuplicateIds(projectDoc, allIds, duplicateIds, duplicateScanVisited);
-    const documentTargetFingerprints = captureCommandTargetFingerprints({
-        document: projectDoc,
+    findDuplicateIds(input.projectDocument, allIds, duplicateIds, new WeakSet<object>());
+    const inspection = inspectStagedProjectDocument(input.projectDocument);
+    return {
+        audioGraphValid: inspection.audioGraphValid,
+        projectInvariantsValid: duplicateIds.size === 0 && inspection.projectInvariantsValid,
+        targetFingerprints: captureCommandTargetFingerprints({
+            document: input.projectDocument,
+            targetIds: input.targetIds,
+        }),
+    };
+}
+
+export function captureCommandBatchPreflightState(input: CaptureCommandBatchPreflightStateInput) {
+    const context = agentProjectRepairStateStore.value ? null : getProjectContext();
+    const projectDoc = input.projectDocument ?? getCrdtDoc(DOC_PREFIX_ROOT);
+    const documentInspection = captureProjectDocumentInspectionState({
+        projectDocument: projectDoc,
         targetIds: input.targetIds,
     });
     const advertisedTargetFingerprints = context
         ? captureCommandTargetFingerprints({ document: { projectContext: context }, targetIds: input.targetIds })
         : {};
-    const targetFingerprints = combineTargetFingerprints({
-        advertised: advertisedTargetFingerprints,
-        document: documentTargetFingerprints,
-        targetIds: input.targetIds,
-    });
-    if (targetIds.has('master') && targetFingerprints.master === undefined) {
-        targetFingerprints.master = 'system-output:master';
-    }
-    if (targetIds.has('hw_out')) {
-        targetFingerprints.hw_out = 'system-output:hw_out';
-    }
+    const targetFingerprints = addSystemTargetFingerprints(
+        combineTargetFingerprints({
+            advertised: advertisedTargetFingerprints,
+            document: documentInspection.targetFingerprints,
+            targetIds: input.targetIds,
+        }),
+        input.targetIds
+    );
     const tracks = (context?.tracks ?? []).map((track) => ({
         devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
         id: track.id,
@@ -469,11 +489,14 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             input.assetReferences.flatMap((reference) => (reference.audioBufferId ? [reference.audioBufferId] : []))
         ),
     ];
-    const stagedInspection = input.projectDocument ? inspectStagedProjectDocument(input.projectDocument) : null;
+    let authoritativeProjectInvariantsValid = true;
+    if (!input.projectDocument) {
+        authoritativeProjectInvariantsValid = context ? projectInvariantsAreValid(context) : false;
+    }
 
     return {
         audioGraphValid:
-            stagedInspection?.audioGraphValid ??
+            (input.projectDocument ? documentInspection.audioGraphValid : undefined) ??
             compileAudioGraphTopology({ tracks, sidechainRoutes }).status === 'compiled',
         availableAssetHashes: assetHashes.filter(
             (assetHash) => currentClipAssetHashes.has(assetHash) || assetTransfer?.hasAsset(assetHash) === true
@@ -483,23 +506,16 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             lock.scope.kind === 'range' ? [{ startBeat: lock.scope.startBeat, endBeat: lock.scope.endBeat }] : []
         ),
         projectId: captureProjectRevision(),
-        projectInvariantsValid:
-            duplicateIds.size === 0 &&
-            (stagedInspection?.projectInvariantsValid ?? (context ? projectInvariantsAreValid(context) : false)),
+        projectInvariantsValid: documentInspection.projectInvariantsValid && authoritativeProjectInvariantsValid,
         targetFingerprints,
     };
 }
 
 export function captureAgentProjectInspectionState(input: CaptureAgentProjectInspectionStateInput) {
-    const inspection = captureCommandBatchPreflightState({
-        assetReferences: [],
-        includeLiveProjectContext: false,
-        projectDocument: input.projectDocument,
-        targetIds: input.targetIds,
-    });
+    const inspection = captureProjectDocumentInspectionState(input);
     return {
         audioGraphValid: inspection.audioGraphValid,
         projectInvariantsValid: inspection.projectInvariantsValid,
-        targetFingerprints: inspection.targetFingerprints,
+        targetFingerprints: addSystemTargetFingerprints(inspection.targetFingerprints, input.targetIds),
     };
 }
