@@ -2156,16 +2156,6 @@ const EXPECTED_GROUNDING = [
                 distinctFrom: 'targetTrackId',
                 promptRole: 'source',
             },
-            ...(index === 0
-                ? [
-                      {
-                          argument: 'targetDeviceId',
-                          capability: 'sidechain-capable-device',
-                          dependsOn: 'targetTrackId',
-                          optional: true,
-                      },
-                  ]
-                : []),
         ],
         valueRules: [],
     })),

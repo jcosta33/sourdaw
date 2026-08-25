@@ -17,6 +17,8 @@ import { getCommandHandler } from '../getCommandHandler';
 import { getExecutableCommandRegistrations } from '../getExecutableCommandRegistrations';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 
+const APPLICATION_MATERIALIZED_IDENTITY_ARGUMENTS = new Set(['parentTrackIds']);
+
 describe('command registry completeness', () => {
     beforeEach(() => {
         clearHandlerRegistry();
@@ -62,7 +64,15 @@ describe('command registry completeness', () => {
                 for (const identityArguments of identityArgumentGroups) {
                     expect(new Set(identityArguments.map((rule) => rule.argument)).size).toBe(identityArguments.length);
                     for (const identityArgument of identityArguments) {
-                        expect(descriptor?.parameters.properties).toHaveProperty(identityArgument.argument);
+                        const providerSuppliesArgument =
+                            descriptor?.parameters.properties[identityArgument.argument] !== undefined;
+                        if (APPLICATION_MATERIALIZED_IDENTITY_ARGUMENTS.has(identityArgument.argument)) {
+                            // Parent tracks derive from selected clip/device/lane context. Excluding
+                            // them from provider schema prevents model-supplied scope expansion.
+                            expect(providerSuppliesArgument).toBe(false);
+                        } else {
+                            expect(providerSuppliesArgument).toBe(true);
+                        }
                     }
                 }
             }

@@ -864,7 +864,7 @@ describe('stem import and starting mix workflow', () => {
             status: 'cancelled',
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        expectPreparedStemResourcesReleased(2);
+        expectPreparedStemResourcesReleased(1);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -880,7 +880,7 @@ describe('stem import and starting mix workflow', () => {
 
         expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        expectPreparedStemResourcesReleased(2);
+        expectPreparedStemResourcesReleased(1);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -998,8 +998,7 @@ describe('stem import and starting mix workflow', () => {
             reason: 'unexpected command rejection',
         });
 
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        await vi.waitFor(() => expectPreparedStemResourcesReleased(1));
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
 

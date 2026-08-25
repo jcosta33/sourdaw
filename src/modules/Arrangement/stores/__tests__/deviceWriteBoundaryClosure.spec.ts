@@ -489,13 +489,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // versioned Command executor, not a hydration path.
         'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 4,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
-        // Count provenance: command-palette execution now owns immutable batch
-        // compilation and approval policy in this use case rather than its React
-        // caller. The three hits name compiler metadata only.
-        'src/modules/AiRuntime/useCases/executePromptActionGroup.ts': 3,
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
-        'src/modules/AiRuntime/useCases/index.ts': 2,
+        // App-owned prompt admission centralizes the compiler references; the
+        // execution group and public barrel no longer retain duplicate paths.
+        'src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts': 3,
         // Count provenance: was 3, measured 5 — `compileAgentActionExecution`
         // import plus two calls, and `providerProtocol.compileRequest` once.
         // Command-envelope / provider-request compilers; no device hydration.
