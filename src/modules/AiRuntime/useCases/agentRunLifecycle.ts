@@ -513,7 +513,10 @@ function reconcileAgentRunBudgetAttempt(input: {
                           ...run.budgets,
                           consumed: {
                               ...run.budgets.consumed,
-                              [previous.category]: Math.max(0, (run.budgets.consumed[previous.category] ?? 0) + consumedDelta),
+                              [previous.category]: Math.max(
+                                  0,
+                                  (run.budgets.consumed[previous.category] ?? 0) + consumedDelta
+                              ),
                           },
                       },
         };
