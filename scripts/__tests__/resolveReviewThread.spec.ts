@@ -252,6 +252,8 @@ describe('review thread resolution', () => {
             'addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId})'
         );
         expect(source).toContain('resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId})');
+        expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
+        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(3);
     });
     it.each([
         [
@@ -413,7 +415,7 @@ describe('review thread resolution', () => {
     });
     it('refuses the wrong actor with zero mutations', () => {
         const { port, calls } = fakePort();
-        expect(() => resolveReviewThread(42, threadId, head, 'other[bot]', port)).toThrow(/author/i);
+        expect(() => resolveReviewThread(42, threadId, head, REVIEWER_BOT_NODE_ID, port)).toThrow(/author/i);
         expect(calls).toEqual([]);
     });
     it('runs reply, resolve, and final inspection in order', () => {

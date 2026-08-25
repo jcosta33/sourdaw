@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -98,7 +98,11 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                         {
                                             state: 'APPROVED',
                                             submittedAt: '2026-08-19T00:00:00Z',
-                                            author: { id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+                                            author: {
+                                                id: REVIEWER_BOT_NODE_ID,
+                                                login: 'renamed-reviewer[bot]',
+                                                __typename: 'Bot',
+                                            },
                                             commit: { oid: 'head' },
                                         },
                                     ],
@@ -359,6 +363,12 @@ function deliverPullRequest(
 }
 
 describe('pull-request delivery', () => {
+    it('queries bot review author IDs through a Bot fragment', () => {
+        const source = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
+        expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
+        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(1);
+    });
+
     it('completes the canonical Closes issue only after merge and dependent retargeting', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
@@ -826,7 +836,11 @@ describe('delivery shell boundary', () => {
                                             {
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
-                                                author: { id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+                                                author: {
+                                                    id: REVIEWER_BOT_NODE_ID,
+                                                    login: 'renamed-reviewer[bot]',
+                                                    __typename: 'Bot',
+                                                },
                                                 commit: { oid: 'head' },
                                             },
                                         ],
@@ -1043,7 +1057,11 @@ describe('delivery shell boundary', () => {
                                             {
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
-                                                author: { id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer' },
+                                                author: {
+                                                    id: REVIEWER_BOT_NODE_ID,
+                                                    login: 'renamed-reviewer',
+                                                    __typename: 'Bot',
+                                                },
                                                 commit: { oid: 'head' },
                                             },
                                         ],
@@ -1081,7 +1099,11 @@ describe('delivery shell boundary', () => {
                                             {
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
-                                                author: { id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+                                                author: {
+                                                    id: REVIEWER_BOT_NODE_ID,
+                                                    login: 'renamed-reviewer[bot]',
+                                                    __typename: 'Bot',
+                                                },
                                                 commit: { oid: 'other-head' },
                                             },
                                         ],

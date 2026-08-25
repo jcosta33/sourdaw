@@ -545,7 +545,7 @@ function inspectThreadComments(
     const comments: ReviewComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{id login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `threadId=${threadId}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -620,7 +620,7 @@ function toReviewComment(value: unknown): ReviewComment {
 function mutationReply(threadId: string, gh: Gh): ReviewReply {
     const clientMutationId = replyClientMutationId(threadId);
     const query =
-        'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{id login __typename}}}}';
+        'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}}}}}';
     const response = graphql(
         gh,
         query,
@@ -705,7 +705,7 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
 export function deleteReply(replyId: string, gh: Gh): void {
     const response = graphql(
         gh,
-        'mutation($replyId:ID!,$clientMutationId:String!){deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReviewComment{id body author{id login __typename}}}}',
+        'mutation($replyId:ID!,$clientMutationId:String!){deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReviewComment{id body author{login __typename ... on Bot{id}}}}}',
         ['-F', `replyId=${replyId}`, '-f', `clientMutationId=${replyId}`],
         'delete review reply'
     ) as {

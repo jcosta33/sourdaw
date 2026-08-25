@@ -520,7 +520,7 @@ export function shellPort(
                 `PR #${number}`
             ),
         reviewState: (number, expectedHead) => {
-            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{id login} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
+            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{
                 data?: {
                     repository?: {
@@ -529,7 +529,7 @@ export function shellPort(
                                 nodes: Array<{
                                     state: string;
                                     submittedAt?: string | null;
-                                    author: { id: string; login: string } | null;
+                                    author: { id?: string; login: string; __typename: string } | null;
                                     commit: { oid: string } | null;
                                 }>;
                                 pageInfo: { hasPreviousPage: boolean };
@@ -569,7 +569,8 @@ export function shellPort(
                     candidate.state !== 'DISMISSED' &&
                     candidate.state !== 'PENDING' &&
                     candidate.commit?.oid === expectedHead &&
-                    isReviewerBotNodeId(candidate.author?.id)
+                    candidate.author?.__typename === 'Bot' &&
+                    isReviewerBotNodeId(candidate.author.id)
             );
             onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
             return {

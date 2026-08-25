@@ -504,7 +504,7 @@ export function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] 
     const comments: IssueComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){id ... on PullRequest{${connection}{nodes{id fullDatabaseId body author{id login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){id ... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `subjectId=${subjectId}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -564,7 +564,7 @@ function toIssueComment(value: unknown): IssueComment {
 }
 function addComment(subjectId: string, body: string, clientMutationId: string, gh: Gh): AddedIssueCommentReceipt {
     const query =
-        'mutation($subjectId:ID!,$body:String!,$clientMutationId:String!){addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId}){clientMutationId commentEdge{node{id fullDatabaseId body author{id login __typename}}}}}';
+        'mutation($subjectId:ID!,$body:String!,$clientMutationId:String!){addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId}){clientMutationId commentEdge{node{id fullDatabaseId body author{login __typename ... on Bot{id}}}}}}';
     const response = graphql(
         gh,
         query,

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import {
     inspectIssueComments,
     parseSupersedePullRequestArgs,
@@ -224,6 +224,8 @@ describe('pull-request supersession', () => {
         expect(source).toContain(
             'closePullRequest(input:{pullRequestId:$pullRequestId,clientMutationId:$clientMutationId})'
         );
+        expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
+        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(2);
     });
     it.each([
         ['missing', { data: { deleteIssueComment: { clientMutationId: null } } }],
@@ -334,11 +336,11 @@ describe('pull-request supersession', () => {
         }
     });
     it.each([
-        ['wrong actor', 'other[bot]', {}],
+        ['wrong actor', REVIEWER_BOT_NODE_ID, {}],
         ['replacement open', AUTHOR_BOT_NODE_ID, { replacementState: 'OPEN' }],
-    ])('refuses %s without mutations', (_name, login, input) => {
+    ])('refuses %s without mutations', (_name, nodeId, input) => {
         const { port, calls } = fakePort(input);
-        expect(() => supersedePullRequest(2244, head, 2246, login, port)).toThrow();
+        expect(() => supersedePullRequest(2244, head, 2246, nodeId, port)).toThrow();
         expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
     });
     it('comments, reinspects, closes, and verifies', () => {
