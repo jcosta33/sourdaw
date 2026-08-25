@@ -10,6 +10,7 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { commandBatchIdempotencyStore } from '../../stores/commandBatchIdempotencyStore';
 import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
@@ -278,6 +279,37 @@ describe('command batch idempotency', () => {
         });
         expect(mutationCount).toBe(0);
         expect(runtimeEffectCount).toBe(0);
+    });
+
+    it('preserves a fresh approved batch revision while replay is probed without durable idempotency', async () => {
+        commandBatchIdempotencyPort.setRepository(null);
+        const batch = compileBatch();
+        const proposalRevision = commandProjectRevisionPort.capture();
+        const hydrateLedger = vi.spyOn(commandBatchIdempotencyStore, 'hydrate');
+
+        await expect(
+            getVersionedCommandBatchIdempotentReplay({
+                authority: batch.authority,
+                serialized: batch.serialized,
+            })
+        ).resolves.toBeNull();
+
+        expect(commandProjectRevisionPort.capture()).toBe(proposalRevision);
+        expect(mutationCount).toBe(0);
+        expect(hydrateLedger).not.toHaveBeenCalled();
+        expect(projectDocument).not.toHaveProperty('commandBatchIdempotency');
+
+        await expect(
+            executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(mutationCount).toBe(1);
+        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
+        expect(runtimeEffectCount).toBe(1);
     });
 
     it('returns the prior verified receipt for an exact retry without repeating project or runtime effects', async () => {
