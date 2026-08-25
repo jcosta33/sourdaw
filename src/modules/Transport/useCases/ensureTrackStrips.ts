@@ -17,6 +17,13 @@ function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['trac
     );
 }
 
+export type EnsureTrackStripsResult =
+    | {
+          status: 'ready';
+          externalPluginActivations: Promise<{ status: 'active' } | { status: 'failed'; reason: string }>[];
+      }
+    | { status: 'failed'; reason: string };
+
 /** Initializes output owners before their sources without publishing empty strips first. */
 function orderLiveTracksForInitialization<TTrack extends { id: string; outputId: string }>(
     liveTracks: readonly TTrack[]
@@ -49,11 +56,14 @@ function orderLiveTracksForInitialization<TTrack extends { id: string; outputId:
     return ordered;
 }
 
-export function ensureTrackStrips(): void {
+export function ensureTrackStrips(input?: { collectExternalPluginActivations?: boolean }): EnsureTrackStripsResult {
     applySoloLogic({ resetSavedGains: true, applyActions: false });
     const tracks = trackStore.value?.tracks;
-    if (!tracks || hasAmbiguousBusOwner(tracks)) {
-        return;
+    if (!tracks) {
+        return { status: 'failed', reason: 'Project tracks are unavailable' };
+    }
+    if (hasAmbiguousBusOwner(tracks)) {
+        return { status: 'failed', reason: 'The project has an ambiguous bus owner' };
     }
     const busTracks = tracks.filter((track) => track.kind === 'bus');
     const liveTracks = tracks.filter(shouldCreateLiveTrackStrip);
@@ -66,12 +76,25 @@ export function ensureTrackStrips(): void {
         setBusGain(bus.id, bus.gain);
     }
 
+    const externalPluginActivations: Promise<{ status: 'active' } | { status: 'failed'; reason: string }>[] = [];
     for (const track of orderLiveTracksForInitialization(liveTracks)) {
-        projectTrackToLiveStrip({
+        const outcome = projectTrackToLiveStrip({
             trackId: track.id,
             deferSidechainWiring: true,
             activateDormantExternalPlugins: true,
+            ...(input?.collectExternalPluginActivations
+                ? { onExternalPluginActivation: (activation) => externalPluginActivations.push(activation) }
+                : {}),
         });
+        if (
+            input?.collectExternalPluginActivations &&
+            (outcome?.acceptance !== 'accepted' || outcome.application !== 'applied')
+        ) {
+            return {
+                status: 'failed',
+                reason: outcome?.reason ?? `Track strip initialization did not produce an outcome for ${track.id}`,
+            };
+        }
     }
 
     // Re-wire persisted sidechain routes now that every track/bus strip and its
@@ -80,4 +103,5 @@ export function ensureTrackStrips(): void {
     // so the compression is silently absent. The engine ignores routes whose
     // target strip/device is missing, so this must run after the loop above.
     wireSidechainRoutes();
+    return { status: 'ready', externalPluginActivations };
 }

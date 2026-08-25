@@ -24,7 +24,7 @@ function getReceiptDisposition(serializedReceipt: string, proof: VersionedComman
             return 'unknown';
         }
         const outcome = (receipt as Record<string, unknown>).outcome;
-        if (outcome === 'committed' || outcome === 'committed-with-warning') {
+        if (outcome === 'committed' || outcome === 'committed-with-warning' || outcome === 'partially-committed') {
             return 'committed';
         }
         if (

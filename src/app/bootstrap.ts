@@ -84,6 +84,7 @@ import {
     commandProjectDivergencePort,
     getVersionedCommandBatchCommitDisposition,
     commandTrackDefaultsPort,
+    commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
@@ -154,6 +155,7 @@ import {
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
     stopPlayback,
+    repairRuntimeGraphFromProject,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
@@ -203,6 +205,7 @@ agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
 commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
+commandRuntimeRepairPort.setProvider(repairRuntimeGraphFromProject);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>

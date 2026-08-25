@@ -21,6 +21,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { persistAgentRunState, readAgentRunState } from '../../stores/agentRunStore';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
@@ -316,6 +317,153 @@ describe('prompt stem import recovery', () => {
         expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('retains exact prepared-stem recovery after ordinary run history evicts its owner', async () => {
+        const submission = await submitAdmittedPromptRequest({
+            prompt: 'Import the selected stems',
+            source: 'prompt-bar',
+            actions: [stemAction],
+            requiresConfirmation: true,
+        });
+        if (submission.status !== 'awaiting-approval') {
+            throw new TypeError(`Expected approval preview, received ${submission.status}`);
+        }
+        const runId = submission.runId;
+        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
+        mocks.executionOverride = 'ambiguous-before-commit';
+        mocks.replayOverride = 'missing';
+
+        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        const batchId = agentRunLifecycle.get(runId)?.preparedStemImports[0]?.batchId;
+        if (!batchId) {
+            throw new TypeError('Expected the exact prepared-stem recovery batch');
+        }
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-stem-run-${String(index)}`,
+                request: `Later run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-revision-${String(index)}`,
+                createdAt: 1_000 + index,
+            });
+        }
+        expect(agentRunLifecycle.get(runId)).toBeNull();
+        expect(readAgentRunState()).toMatchObject({
+            preparedStemImportRecoveryLedger: [
+                {
+                    runId,
+                    batchId,
+                    serializedCommandBatch: expect.any(String),
+                    resources: [
+                        {
+                            audioBufferId: 'buffer-prompt-recovery',
+                            assetLeaseId: 'lease-prompt-recovery',
+                        },
+                    ],
+                },
+            ],
+        });
+
+        vi.resetModules();
+        mocks.replayOverride = 'failed';
+        const { recoverInterruptedAgentRuns } = await import('../agentRunRecovery');
+        const { readAgentRunState: readReloadedAgentRunState } = await import('../../stores/agentRunStore');
+
+        await recoverInterruptedAgentRuns({ recoveredAt: 550 });
+        await recoverInterruptedAgentRuns({ recoveredAt: 551 });
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-prompt-recovery');
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledOnce();
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledWith('lease-prompt-recovery');
+        expect(readReloadedAgentRunState()).not.toHaveProperty('preparedStemImportRecoveryLedger');
+    });
+
+    it('surfaces manual repair without deleting retained media when an evicted capsule is invalid', async () => {
+        const submission = await submitAdmittedPromptRequest({
+            prompt: 'Import the selected stems',
+            source: 'prompt-bar',
+            actions: [stemAction],
+            requiresConfirmation: true,
+        });
+        if (submission.status !== 'awaiting-approval') {
+            throw new TypeError(`Expected approval preview, received ${submission.status}`);
+        }
+        const runId = submission.runId;
+        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
+        mocks.executionOverride = 'ambiguous-before-commit';
+        mocks.replayOverride = 'missing';
+
+        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-manual-run-${String(index)}`,
+                request: `Later manual run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-manual-revision-${String(index)}`,
+                createdAt: 2_000 + index,
+            });
+        }
+        const evictedState = readAgentRunState();
+        const capsule = evictedState.preparedStemImportRecoveryLedger?.[0];
+        if (!capsule) {
+            throw new TypeError('Expected an independently retained prepared-stem capsule');
+        }
+        persistAgentRunState({
+            ...evictedState,
+            preparedStemImportRecoveryLedger: [
+                {
+                    ...capsule,
+                    serializedCommandBatch: 'invalid retained command proof',
+                },
+            ],
+        });
+
+        vi.resetModules();
+        const { recoverInterruptedAgentRuns } = await import('../agentRunRecovery');
+        const { readAgentRunState: readReloadedAgentRunState } = await import('../../stores/agentRunStore');
+
+        await recoverInterruptedAgentRuns({ recoveredAt: 575 });
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(readReloadedAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+            expect.objectContaining({
+                runId,
+                batchId: capsule.batchId,
+                status: 'manual-repair',
+                lastError: expect.stringContaining('Keep the staged media retained'),
+                resources: [
+                    {
+                        audioBufferId: 'buffer-prompt-recovery',
+                        assetLeaseId: 'lease-prompt-recovery',
+                    },
+                ],
+            }),
+        ]);
+
+        const firstReloadedCapsule = readReloadedAgentRunState().preparedStemImportRecoveryLedger?.[0];
+        if (!firstReloadedCapsule) {
+            throw new TypeError('Expected the manual-repair capsule after first recovery');
+        }
+        vi.resetModules();
+        const { recoverInterruptedAgentRuns: recoverAfterSecondReload } = await import('../agentRunRecovery');
+        const { readAgentRunState: readSecondReloadedAgentRunState } = await import('../../stores/agentRunStore');
+
+        await recoverAfterSecondReload({ recoveredAt: 576 });
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(readSecondReloadedAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+            expect.objectContaining({
+                runId: firstReloadedCapsule.runId,
+                batchId: firstReloadedCapsule.batchId,
+                serializedCommandBatch: firstReloadedCapsule.serializedCommandBatch,
+                status: 'manual-repair',
+                resources: firstReloadedCapsule.resources,
+            }),
+        ]);
     });
 
     it('fails closed after reload when a legacy prepared stem asset has no recovery metadata', async () => {

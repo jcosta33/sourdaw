@@ -1,10 +1,12 @@
-import { type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+import { type compileVersionedCommandBatchEnvelope, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { createAgentSagaStep } from './createAgentSagaStep';
+import { recordAgentRunPendingEffectContinuation } from './recordAgentRunPendingEffectContinuation';
 
 type VerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type CommandBatch = Pick<ReturnType<typeof compileVersionedCommandBatchEnvelope>, 'authority' | 'serialized'>;
 
 function getAgentRunReceiptIdentity(receipt: VerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
@@ -18,16 +20,41 @@ export function recordAgentRunReceiptSaga(input: {
     revertGroupId?: string;
     committedRevision?: string;
     completesRun?: boolean;
+    commandBatch?: CommandBatch;
 }): { effectsPending: boolean } {
     const receiptIdentity = getAgentRunReceiptIdentity(input.receipt);
     const recordedAt = Date.now();
+    const pendingEffects = input.receipt.pendingEffects;
+    const pendingEffectCommandIds = new Set(pendingEffects.map(({ commandId }) => commandId));
+    const pendingEffectStepIds = new Set(
+        pendingEffects.map(({ commandId }) => `effect:${input.receipt.batchId}:${commandId}`)
+    );
+    const completesRun = pendingEffects.length > 0 ? false : input.completesRun;
+    for (const step of agentRunLifecycle.get(input.runId)?.saga.steps ?? []) {
+        if (
+            step.owner === 'external-effect' &&
+            step.workId === input.receipt.batchId &&
+            !pendingEffectStepIds.has(step.stepId) &&
+            ![...pendingEffectCommandIds].some((commandId) => step.stepId.endsWith(`:${commandId}`))
+        ) {
+            agentRunLifecycle.recordSagaStep({
+                runId: input.runId,
+                step: {
+                    ...step,
+                    receiptIdentity,
+                    state: 'committed',
+                    updatedAt: recordedAt,
+                },
+            });
+        }
+    }
     agentRunLifecycle.recordCommittedWork({
         runId: input.runId,
         workId: input.receipt.batchId,
         receiptIdentity,
         ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
         ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
-        ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
+        ...(completesRun !== undefined ? { completesRun } : {}),
         renderJobIds: input.receipt.links.render.map((link) => link.jobId),
         analysisIds: input.receipt.links.analysis.map((link) => link.analysisId),
     });
@@ -123,6 +150,48 @@ export function recordAgentRunReceiptSaga(input: {
                 updatedAt: recordedAt,
                 compensationAvailable: false,
             }),
+        });
+    }
+    for (const [index, effect] of pendingEffects.entries()) {
+        agentRunLifecycle.recordSagaStep({
+            runId: input.runId,
+            step: createAgentSagaStep({
+                stepId: `effect:${input.receipt.batchId}:${effect.commandId}`,
+                order:
+                    input.receipt.links.render.length +
+                    input.receipt.links.analysis.length +
+                    uncompensatedRenderJobIds.length +
+                    (importedStems.length > 0 ? 1 : 0) +
+                    index +
+                    1,
+                owner: 'external-effect',
+                workId: input.receipt.batchId,
+                receiptIdentity,
+                state: 'external-pending',
+                relatedArtifactIds: [],
+                updatedAt: recordedAt,
+                compensationAvailable: false,
+            }),
+        });
+    }
+    if (pendingEffects.length > 0 && input.commandBatch) {
+        recordAgentRunPendingEffectContinuation({
+            runId: input.runId,
+            recordedAt,
+            receipt: input.receipt,
+            commandBatch: input.commandBatch,
+        });
+    } else if (
+        pendingEffects.length === 0 &&
+        agentRunLifecycle
+            .get(input.runId)
+            ?.pendingEffectContinuations.some(({ batchId }) => batchId === input.receipt.batchId)
+    ) {
+        agentRunLifecycle.completePendingEffectContinuation({
+            runId: input.runId,
+            batchId: input.receipt.batchId,
+            receiptIdentity,
+            completedAt: recordedAt,
         });
     }
     return { effectsPending: input.receipt.outcome === 'partially-committed' };
