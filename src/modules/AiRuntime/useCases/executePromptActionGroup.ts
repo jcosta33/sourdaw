@@ -91,6 +91,7 @@ function recordCommittedCommandWarningSafe(input: {
     runId: string;
     receipt: Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt'];
     actions: readonly AppAction[];
+    commandBatch: Parameters<typeof recordAgentRunReceiptSaga>[0]['commandBatch'];
     committedRevision?: string;
     completesRun: boolean;
 }): string | null {
@@ -338,6 +339,7 @@ export async function executePromptActionGroup(
             runId: input.runId,
             receipt: execution.receipt,
             actions: input.actions,
+            commandBatch,
             ...(execution.status === 'committed' ? { committedRevision: captureProjectRevision() } : {}),
             completesRun: leaseSettlement.accepted,
         });

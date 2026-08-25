@@ -78,6 +78,8 @@ const {
     configureRuntimeGraphTopologyValidatorMock,
     runtimeGraphTopologyMock,
     setNotificationEventBusMock,
+    commandRuntimeRepairPortMock,
+    repairRuntimeGraphFromProjectMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -125,6 +127,8 @@ const {
             matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
         },
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
+        commandRuntimeRepairPortMock: { setProvider: vi.fn() },
+        repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
     };
 });
 
@@ -256,6 +260,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     commandProjectRevisionPort: { setProvider: noop },
     commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
+    commandRuntimeRepairPort: commandRuntimeRepairPortMock,
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
     captureCommandTargetFingerprints: noop,
@@ -414,6 +419,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     setStopPlaybackCallback: noop,
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
+    repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
 }));
 
 vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: noop }));
@@ -568,6 +574,12 @@ describe('bootstrap', () => {
         expect(setVcaRuntimeProjectionDependenciesMock).toHaveBeenCalledExactlyOnceWith({
             reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
         });
+    });
+
+    it('wires command recovery to the awaited runtime graph repair owner', () => {
+        expect(commandRuntimeRepairPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
+            repairRuntimeGraphFromProjectMock
+        );
     });
 
     it('wires Automation lane ranges to Arrangement descriptor truth', () => {
