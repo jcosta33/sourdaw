@@ -12,7 +12,7 @@ type LaunchFromTemplateInput = {
 };
 
 type SetupWorkspaceOptions = {
-    e2eWebLlmAdmission?: boolean;
+    webGpuApiPresent?: boolean;
     localStorage?: Array<{ name: string; value: string }>;
 };
 
@@ -31,7 +31,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     const alphaDismissed = superjsonStringify(true);
 
     await page.addInitScript(
-        ({ alphaDismissed, e2eWebLlmAdmission, localStorage }) => {
+        ({ alphaDismissed, localStorage, webGpuApiPresent }) => {
             window.localStorage.clear();
             window.localStorage.setItem('wd:onboarding-completed', '1');
             window.localStorage.setItem('sourdaw-alpha-notice-dismissed', alphaDismissed);
@@ -39,8 +39,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
             for (const entry of localStorage) {
                 window.localStorage.setItem(entry.name, entry.value);
             }
-            if (e2eWebLlmAdmission) {
-                Reflect.set(window, '__SOURDAW_E2E_WEBLLM_ADMITTED__', true);
+            if (webGpuApiPresent) {
                 if (!('gpu' in navigator)) {
                     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {} });
                 }
@@ -48,7 +47,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
         },
         {
             alphaDismissed,
-            e2eWebLlmAdmission: options.e2eWebLlmAdmission ?? false,
+            webGpuApiPresent: options.webGpuApiPresent ?? false,
             localStorage: options.localStorage ?? [],
         }
     );
@@ -58,11 +57,12 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
 }
 
 /**
- * Starts the app with the E2E-only local provider fixture admitted. The test
- * mode gate in modelReleaseAdmission keeps this unavailable in product builds.
+ * Starts the app with the WebGPU API-present UI precondition. This creates only
+ * the `navigator.gpu` surface when Chromium does not expose it; it does not
+ * provide a WebGPU adapter or bypass production admission checks.
  */
-export async function setupAdmittedWebLlmWorkspace(page: Page): Promise<void> {
-    await setupWorkspace(page, { e2eWebLlmAdmission: true });
+export async function setupWebGpuApiPresentWorkspace(page: Page): Promise<void> {
+    await setupWorkspace(page, { webGpuApiPresent: true });
 }
 
 async function get_launch_overlay_state(page: Page): Promise<LaunchOverlayState> {

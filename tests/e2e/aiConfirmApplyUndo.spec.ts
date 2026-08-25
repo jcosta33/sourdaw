@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-import { launch_new_project, setupAdmittedWebLlmWorkspace } from './e2eUtils';
+import { launch_new_project, setupWebGpuApiPresentWorkspace } from './e2eUtils';
 
 function trackArmButtons(page: Page) {
     return page
@@ -20,7 +20,7 @@ async function openChatPanel(page: Page): Promise<void> {
 test.describe('AI prompt → Confirm → apply → undo/redo', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
-        await setupAdmittedWebLlmWorkspace(page);
+        await setupWebGpuApiPresentWorkspace(page);
         await launch_new_project(page);
         await openChatPanel(page);
     });

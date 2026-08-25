@@ -1,14 +1,14 @@
 import { test, expect } from '@playwright/test';
 
-import { launch_new_project, setupAdmittedWebLlmWorkspace, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWebGpuApiPresentWorkspace, setupWorkspace } from './e2eUtils';
 
-// The LlmStatusBadge's model-onboarding affordances (#1954 WebLLM artifact
-// admission) have no E2E: the download button's per-model label and the
-// verification blurb are the first AI touch for browser users. The button
-// renders pre-download, reachable without WebGPU completing, so the panel
-// contract is assertable without downloading anything.
+// The LlmStatusBadge's model-onboarding affordances have no E2E: the download
+// button's per-model label and the verification blurb are the first AI touch
+// for browser users. This test establishes only the WebGPU API-present UI
+// precondition and asserts the pre-download onboarding interface; it does not
+// assert a usable adapter, runtime capability, provider admission, or download.
 test.describe('LlmStatusBadge — model download affordances', () => {
-    test('withholds download affordances when admitted WebLLM lacks runtime capability', async ({ page }) => {
+    test('withholds download affordances when the WebGPU API is unavailable', async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -29,9 +29,9 @@ test.describe('LlmStatusBadge — model download affordances', () => {
         ).toBeVisible();
     });
 
-    test('exposes download affordances when the local provider is admitted', async ({ page }) => {
+    test('shows model onboarding and download affordances when the WebGPU API is present', async ({ page }) => {
         test.setTimeout(120000);
-        await setupAdmittedWebLlmWorkspace(page);
+        await setupWebGpuApiPresentWorkspace(page);
         await launch_new_project(page);
 
         await page.getByRole('button', { name: 'Load AI' }).first().click();
