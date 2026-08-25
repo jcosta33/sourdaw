@@ -193,6 +193,23 @@ function assertJobGraph(candidate: UnknownRecord): void {
     }
 }
 
+function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
+    const unitCheckout = stepNamed(jobAt(candidate, 'unit'), 'Checkout');
+    if (recordAt(unitCheckout, 'with')['fetch-depth'] !== 0) {
+        throw new Error('unit must retain complete history for immutable measurement provenance');
+    }
+    for (const jobName of ['lint', 'boundaries']) {
+        const checkout = stepNamed(jobAt(candidate, jobName), 'Checkout');
+        const checkoutOptions = checkout.with;
+        if (
+            checkoutOptions !== undefined &&
+            asRecord(checkoutOptions, `${jobName} checkout options`)['fetch-depth'] === 0
+        ) {
+            throw new Error(`${jobName} must not fetch complete history`);
+        }
+    }
+}
+
 function gateResults(
     candidate: UnknownRecord,
     result: JobResult,
@@ -337,6 +354,22 @@ describe('health gates workflow contract', () => {
         const prematureE2eGate = asRecord(structuredClone(workflow), 'premature e2e gate workflow');
         arrayAt(jobAt(prematureE2eGate, 'gate'), 'needs').push('e2e');
         expect(() => assertJobGraph(prematureE2eGate)).toThrow('e2e is currently non-gating');
+    });
+
+    it('fetches immutable measurement provenance history only in the unit matrix', () => {
+        expect(() => assertUnitProvenanceHistory(workflow)).not.toThrow();
+
+        const shallowUnit = asRecord(structuredClone(workflow), 'shallow unit workflow');
+        delete recordAt(stepNamed(jobAt(shallowUnit, 'unit'), 'Checkout'), 'with')['fetch-depth'];
+        expect(() => assertUnitProvenanceHistory(shallowUnit)).toThrow(
+            'unit must retain complete history for immutable measurement provenance'
+        );
+
+        for (const jobName of ['lint', 'boundaries']) {
+            const broadened = asRecord(structuredClone(workflow), `${jobName} full-history workflow`);
+            stepNamed(jobAt(broadened, jobName), 'Checkout').with = { 'fetch-depth': 0 };
+            expect(() => assertUnitProvenanceHistory(broadened)).toThrow(`${jobName} must not fetch complete history`);
+        }
     });
 
     it('requires every gate dependency to have succeeded or been skipped', () => {
