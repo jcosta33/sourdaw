@@ -1197,7 +1197,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('reads scanned text from its opened file when the path swaps to an outside symlink', () => {
+    it('does not admit scanned text when the path swaps to an outside symlink during read', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-swap-'));
         const root = join(base, 'repository');
         const path = 'public/legal/safe.ts';
@@ -1225,7 +1225,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('reads path-addressed digest bytes from its opened file when the path swaps to an outside symlink', () => {
+    it('does not admit path-addressed digest bytes when the path swaps to an outside symlink during read', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-byte-swap-'));
         const root = join(base, 'repository');
         const path = 'public/legal/safe.txt';
@@ -1251,7 +1251,78 @@ describe('release inventory', () => {
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
 
-            expect(changed.fileDigests[path]).toBe(sha256(safeContents));
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not admit path-addressed digest bytes when the file gains a hard link during read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-byte-read-link-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.txt';
+        const filePath = join(root, path);
+        const aliasPath = join(base, 'safe-read.alias.txt');
+        const safeContents = 'inside legal bytes';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${sha256(safeContents)}:${path}`];
+        let linked = false;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, safeContents);
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    if (!linked) {
+                        linkSync(filePath, aliasPath);
+                        linked = true;
+                    }
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(linked).toBe(true);
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not admit scanned text when the file gains a hard link during read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-read-link-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.ts';
+        const filePath = join(root, path);
+        const aliasPath = join(base, 'safe-read.alias.ts');
+        let linked = false;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, "export const source = 'https://inside.test';\n");
+            const readFile = {
+                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
+                readText: (fileDescriptor: number) => {
+                    if (!linked) {
+                        linkSync(filePath, aliasPath);
+                        linked = true;
+                    }
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], readFile);
+
+            expect(changed.externalReferences).toEqual([]);
+            expect(linked).toBe(true);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }

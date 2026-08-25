@@ -13,6 +13,7 @@ import {
     readdirSync,
     realpathSync,
     statSync,
+    type BigIntStats,
 } from 'node:fs';
 import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -239,6 +240,10 @@ export type ReleaseInventoryCheckReceipt = {
 };
 
 type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
+type OpenRepositoryRegularFile = {
+    descriptor: number;
+    opened: BigIntStats;
+};
 
 function readReleaseInventoryContents(root: string): string {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
@@ -335,11 +340,40 @@ function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
     );
 }
 
+function sameRepositoryFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
+    return left.dev === right.dev && left.ino === right.ino;
+}
+
+function pathMatchesOpenedRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    opened: BigIntStats
+): boolean {
+    if (!opened.isFile() || opened.nlink !== 1n) {
+        return false;
+    }
+    const pathMetadata = lstatSync(absolutePath, { bigint: true });
+    if (
+        !pathMetadata.isFile() ||
+        pathMetadata.nlink !== 1n ||
+        pathMetadata.size !== opened.size ||
+        !sameRepositoryFileIdentity(pathMetadata, opened)
+    ) {
+        return false;
+    }
+    const realPath = realpathSync(absolutePath);
+    if (pathEscapesRoot(rootRealPath, realPath)) {
+        return false;
+    }
+    const resolved = statSync(realPath, { bigint: true });
+    return resolved.nlink === 1n && resolved.size === opened.size && sameRepositoryFileIdentity(resolved, opened);
+}
+
 function openRepositoryRegularFile(
     rootRealPath: string,
     absolutePath: string,
     readFile: RepositorySnapshotFileReader
-): number {
+): OpenRepositoryRegularFile {
     let fileDescriptor: number | undefined;
     try {
         const noFollowFlag =
@@ -347,36 +381,22 @@ function openRepositoryRegularFile(
         if (typeof noFollowFlag !== 'number' || noFollowFlag === 0) {
             throw new Error(`no-follow open is unavailable: ${absolutePath}`);
         }
-        const beforeOpen = lstatSync(absolutePath);
-        if (!beforeOpen.isFile() || beforeOpen.nlink !== 1) {
+        const beforeOpen = lstatSync(absolutePath, { bigint: true });
+        if (!beforeOpen.isFile() || beforeOpen.nlink !== 1n) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
         fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | noFollowFlag);
-        const opened = fstatSync(fileDescriptor);
-        if (!opened.isFile() || opened.nlink !== 1) {
+        const opened = fstatSync(fileDescriptor, { bigint: true });
+        if (!opened.isFile() || opened.nlink !== 1n) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
-        if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
-            throw new Error(`path changed while opening: ${absolutePath}`);
-        }
-        const afterOpen = lstatSync(absolutePath);
         if (
-            !afterOpen.isFile() ||
-            afterOpen.nlink !== 1 ||
-            opened.dev !== afterOpen.dev ||
-            opened.ino !== afterOpen.ino
+            !sameRepositoryFileIdentity(opened, beforeOpen) ||
+            !pathMatchesOpenedRepositoryRegularFile(rootRealPath, absolutePath, opened)
         ) {
             throw new Error(`path changed while opening: ${absolutePath}`);
         }
-        const realPath = realpathSync(absolutePath);
-        if (pathEscapesRoot(rootRealPath, realPath)) {
-            throw new Error(`path escapes repository root: ${absolutePath}`);
-        }
-        const resolved = statSync(realPath);
-        if (resolved.nlink !== 1 || opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
-            throw new Error(`path changed while opening: ${absolutePath}`);
-        }
-        return fileDescriptor;
+        return { descriptor: fileDescriptor, opened };
     } catch (error) {
         if (fileDescriptor !== undefined) {
             closeSync(fileDescriptor);
@@ -385,16 +405,33 @@ function openRepositoryRegularFile(
     }
 }
 
+function assertRepositoryRegularFileUnchanged(
+    rootRealPath: string,
+    absolutePath: string,
+    opened: BigIntStats,
+    descriptor: number
+): void {
+    const closed = fstatSync(descriptor, { bigint: true });
+    if (
+        !sameRepositoryFileIdentity(closed, opened) ||
+        !pathMatchesOpenedRepositoryRegularFile(rootRealPath, absolutePath, closed)
+    ) {
+        throw new Error(`path changed while reading: ${absolutePath}`);
+    }
+}
+
 function readRepositoryRegularFile(
     rootRealPath: string,
     absolutePath: string,
     readFile: RepositorySnapshotFileReader
 ): Buffer {
-    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    const file = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
     try {
-        return readFile.readBytes(fileDescriptor);
+        const contents = readFile.readBytes(file.descriptor);
+        assertRepositoryRegularFileUnchanged(rootRealPath, absolutePath, file.opened, file.descriptor);
+        return contents;
     } finally {
-        closeSync(fileDescriptor);
+        closeSync(file.descriptor);
     }
 }
 
@@ -403,16 +440,20 @@ function readRepositoryRegularText(
     absolutePath: string,
     readFile: RepositorySnapshotFileReader
 ): string | undefined {
-    let fileDescriptor: number;
+    let file: OpenRepositoryRegularFile;
     try {
-        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+        file = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
     } catch {
         return undefined;
     }
     try {
-        return readFile.readText(fileDescriptor);
+        const contents = readFile.readText(file.descriptor);
+        assertRepositoryRegularFileUnchanged(rootRealPath, absolutePath, file.opened, file.descriptor);
+        return contents;
+    } catch {
+        return undefined;
     } finally {
-        closeSync(fileDescriptor);
+        closeSync(file.descriptor);
     }
 }
 
