@@ -599,7 +599,7 @@ export class AssetTransfer {
                     return current;
                 }
                 for (const source of this.durableOwnerHandoffSources.values()) {
-                    const incoming = await source.resumeOwnerRebinds();
+                    const incoming = await source.resumeOwnerRebinds(undefined, rebindLiveStageRecoveries);
                     if (incoming.status === 'failed') {
                         await rollbackCreated();
                         return incoming;
@@ -731,12 +731,12 @@ export class AssetTransfer {
                     ? { isCurrent: recoveryIsAuthorized, signal: options.recoveryAuthority.signal }
                     : undefined;
                 if (options.resumeOwnerRebinds && this.ownerRecoveryPending && recoveryIsAuthorized()) {
-                    const recovery = await this.durableAssets.resumeOwnerRebinds(recoveryFence);
+                    const recovery = await this.durableAssets.resumeOwnerRebinds(
+                        recoveryFence,
+                        rebindLiveStageRecoveries
+                    );
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);
-                    }
-                    for (const previousOwnerId of recovery.previousOwnerIds) {
-                        rebindLiveStageRecoveries(previousOwnerId, recovery.ownerId);
                     }
                     if (recovery.status === 'cancelled' || !recoveryIsAuthorized()) {
                         throw new DurableOwnerRecoveryCancelled();

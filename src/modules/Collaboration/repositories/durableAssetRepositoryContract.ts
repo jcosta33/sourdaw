@@ -96,7 +96,10 @@ export type DurableAssetRepository = {
     prepareOwnerRebind: (nextOwnerId: string) => Promise<PrepareDurableAssetOwnerHandoffResult>;
     abortOwnerRebind: (nextOwnerId: string) => Promise<AbortDurableAssetOwnerHandoffResult>;
     commitOwnerRebind: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
-    resumeOwnerRebinds: (fence?: DurableAssetRecoveryFence) => Promise<ResumeDurableAssetOwnerHandoffsResult>;
+    resumeOwnerRebinds: (
+        fence?: DurableAssetRecoveryFence,
+        onOwnerRebound?: (previousOwnerId: string, ownerId: string) => void
+    ) => Promise<ResumeDurableAssetOwnerHandoffsResult>;
     preparePromotionRecovery: (
         recoveryId: string,
         bindings: readonly StagedAssetBinding[],

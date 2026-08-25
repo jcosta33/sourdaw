@@ -404,7 +404,10 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
             return { status: 'aborted' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
         },
 
-        async resumeOwnerRebinds(fence?: DurableAssetRecoveryFence) {
+        async resumeOwnerRebinds(
+            fence?: DurableAssetRecoveryFence,
+            onOwnerRebound?: (previousOwnerId: string, ownerId: string) => void
+        ) {
             const fenceGuard = createDurableAssetRecoveryFenceGuard(fence);
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readonly');
@@ -433,6 +436,7 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                 if (result.status === 'failed') {
                     return result;
                 }
+                onOwnerRebound?.(result.previousOwnerId, result.ownerId);
                 previousOwnerIds.push(result.previousOwnerId);
                 for (const hash of result.reboundHashes) {
                     reboundHashes.add(hash);

@@ -485,6 +485,85 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('retains a live staged lease when a later owner handoff recovery fails after the first commit', async () => {
+        const firstOwner = 'collaboration-join:partial-owner-failure-first';
+        const secondOwner = 'collaboration-join:partial-owner-failure-second';
+        const projectOwner = 'project:partial-owner-failure';
+        const firstJoining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, firstOwner);
+        const staged = await firstJoining.stageDurableAsset(
+            new Blob(['partial-owner-failure-original']),
+            'partial-owner-failure.wav',
+            'asset-stage-partial-owner-failure',
+            { protectAcrossTransfer: true }
+        );
+        await firstJoining.prepareDurableOwnerRebind(projectOwner);
+        firstJoining.dispose();
+
+        const secondJoining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, secondOwner);
+        const laterStaged = await secondJoining.stageDurableAsset(
+            new Blob(['later-owner-failure-original']),
+            'later-owner-failure.wav',
+            'asset-stage-later-owner-failure'
+        );
+        await secondJoining.prepareDurableOwnerRebind(projectOwner);
+        secondJoining.dispose();
+
+        durableAssetIndexedDb.unlinkLeaseFromAsset(laterStaged.leaseId, laterStaged.hash);
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
+
+        await expect(
+            recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(projectOwner))
+        ).rejects.toThrow('Durable asset owner recovery failed: corrupt-record');
+        durableAssetIndexedDb.restoreLeaseAssetBacklink(laterStaged.leaseId, laterStaged.hash);
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(projectOwner));
+
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        await recreated.releaseDurableStagedAsset(staged.leaseId, staged.hash);
+        recreated.dispose();
+    });
+
+    it('retains a live staged lease when a later owner handoff recovery throws before retry', async () => {
+        const firstOwner = 'collaboration-join:partial-owner-throw-first';
+        const secondOwner = 'collaboration-join:partial-owner-throw-second';
+        const projectOwner = 'project:partial-owner-throw';
+        const firstJoining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, firstOwner);
+        const staged = await firstJoining.stageDurableAsset(
+            new Blob(['partial-owner-throw-original']),
+            'partial-owner-throw.wav',
+            'asset-stage-partial-owner-throw',
+            { protectAcrossTransfer: true }
+        );
+        await firstJoining.prepareDurableOwnerRebind(projectOwner);
+        firstJoining.dispose();
+
+        const secondJoining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, secondOwner);
+        await secondJoining.stageDurableAsset(
+            new Blob(['later-owner-throw-original']),
+            'later-owner-throw.wav',
+            'asset-stage-later-owner-throw'
+        );
+        await secondJoining.prepareDurableOwnerRebind(projectOwner);
+        secondJoining.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
+        durableAssetIndexedDb.failReadwriteTransactionAfter(1);
+
+        await expect(
+            recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(projectOwner))
+        ).rejects.toThrow('The transaction was aborted');
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(projectOwner));
+
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        await recreated.releaseDurableStagedAsset(staged.leaseId, staged.hash);
+        recreated.dispose();
+    });
+
     it('does not consume admitted staged-asset recovery after the loaded project authority is superseded', async () => {
         const projectOwner = 'project:superseded-staged-recovery';
         const durableAssets = createDurableAssetRepository(projectOwner);
@@ -986,9 +1065,9 @@ describe('durable asset ownership lifecycle', () => {
         const staged = await sourceA.stageDurableAsset(
             new Blob(['chained-owner-handoff'], { type: 'audio/wav' }),
             'chained-owner-handoff.wav',
-            'asset-stage-chained-owner-handoff'
+            'asset-stage-chained-owner-handoff',
+            { protectAcrossTransfer: true }
         );
-        await sourceA.promoteDurableStagedAsset(staged.leaseId, staged.hash);
         await createDurableAssetRepository(ownerA).prepareOwnerRebind(ownerB);
         sourceA.dispose();
 
@@ -1007,13 +1086,20 @@ describe('durable asset ownership lifecycle', () => {
         });
         joining.dispose();
 
-        await expect(createDurableAssetRepository(ownerC).reopenDurableAsset(staged.hash)).resolves.toMatchObject({
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, ownerC);
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(ownerC));
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
             status: 'opened',
+            leaseState: 'staged',
         });
-        await expect(createDurableAssetRepository(ownerA).reopenDurableAsset(staged.hash)).resolves.toEqual({
+        await expect(
+            createDurableAssetRepository(ownerA).reopenStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toEqual({
             status: 'failed',
-            reason: 'asset-not-owned',
+            reason: 'lease-owner-mismatch',
         });
+        await recreated.releaseDurableStagedAsset(staged.leaseId, staged.hash);
+        recreated.dispose();
     });
 
     it('rolls back newly prepared owners when a later handoff source conflicts', async () => {

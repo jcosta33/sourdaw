@@ -411,8 +411,10 @@ export type FakeDurableAssetIndexedDb = {
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     seedOwnerHandoff: (input: { previousOwnerId: string; nextOwnerId: string }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
+    restoreLeaseAssetBacklink: (leaseId: string, hash: string) => void;
     countRecords: (store: 'assets' | 'leases' | 'ownerHandoffs' | 'promotionRecoveries') => number;
     failNextReadwriteTransactions: (count: number) => void;
+    failReadwriteTransactionAfter: (successfulTransactions: number) => void;
     pauseNextReadwriteCommit: () => { reached: Promise<void>; resume: () => void };
     getFullScanCount: () => number;
 };
@@ -422,13 +424,22 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
     const databases = new Map<string, DatabaseState>();
     let fullScanCount = 0;
     let failedReadwriteTransactions = 0;
+    let readwriteTransactionsUntilFailure: number | undefined;
     const readwriteCommitGates: FakeCommitGate[] = [];
 
     function shouldFailReadwrite(): boolean {
-        if (failedReadwriteTransactions === 0) {
+        if (failedReadwriteTransactions > 0) {
+            failedReadwriteTransactions -= 1;
+            return true;
+        }
+        if (readwriteTransactionsUntilFailure === undefined) {
             return false;
         }
-        failedReadwriteTransactions -= 1;
+        if (readwriteTransactionsUntilFailure > 0) {
+            readwriteTransactionsUntilFailure -= 1;
+            return false;
+        }
+        readwriteTransactionsUntilFailure = undefined;
         return true;
     }
 
@@ -508,6 +519,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
             }
             fullScanCount = 0;
             failedReadwriteTransactions = 0;
+            readwriteTransactionsUntilFailure = undefined;
             readwriteCommitGates.length = 0;
         },
         deleteAsset: (hash) => {
@@ -564,9 +576,33 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 });
             }
         },
+        restoreLeaseAssetBacklink: (leaseId, hash) => {
+            const assetStore = durableStore('assets');
+            const lease = durableStore('leases')?.get(leaseId);
+            const asset = assetStore?.get(hash);
+            if (!lease || !asset || typeof lease.ownerId !== 'string') {
+                return;
+            }
+            const activeLeases = Array.isArray(asset.activeLeases)
+                ? [
+                      ...asset.activeLeases.filter(
+                          (value) => typeof value !== 'object' || value === null || value.leaseId !== leaseId
+                      ),
+                      { leaseId, ownerId: lease.ownerId },
+                  ]
+                : [{ leaseId, ownerId: lease.ownerId }];
+            assetStore?.set(hash, {
+                ...asset,
+                activeLeases,
+                leaseOwnerIds: [...new Set(activeLeases.map((value) => value.ownerId))],
+            });
+        },
         countRecords: (store) => durableStore(store)?.size ?? 0,
         failNextReadwriteTransactions: (count) => {
             failedReadwriteTransactions = count;
+        },
+        failReadwriteTransactionAfter: (successfulTransactions) => {
+            readwriteTransactionsUntilFailure = successfulTransactions;
         },
         pauseNextReadwriteCommit: () => {
             const reached = Promise.withResolvers<void>();
