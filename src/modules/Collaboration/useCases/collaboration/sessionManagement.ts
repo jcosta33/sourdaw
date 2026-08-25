@@ -553,19 +553,17 @@ function initializeSessionRuntime(
                 }
                 return {
                     commit: async () => {
-                        await queueAssetOwnershipTask(async () => {
-                            let failureReason = 'unknown';
-                            for (let attempt = 0; attempt < 3; attempt += 1) {
-                                try {
-                                    await prepared.commit();
-                                    return;
-                                } catch (error) {
-                                    failureReason = error instanceof Error ? error.message : 'unexpected failure';
-                                }
-                                await Promise.resolve();
+                        let failureReason = 'unknown';
+                        for (let attempt = 0; attempt < 3; attempt += 1) {
+                            try {
+                                await prepared.commit();
+                                return;
+                            } catch (error) {
+                                failureReason = error instanceof Error ? error.message : 'unexpected failure';
                             }
-                            throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
-                        });
+                            await Promise.resolve();
+                        }
+                        throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
                     },
                     abort: prepared.abort,
                 };

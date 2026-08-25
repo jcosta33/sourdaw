@@ -76,9 +76,10 @@ function haveSameCommitProof(
     left: DurableAssetCommitProof | undefined,
     right: DurableAssetCommitProof | undefined
 ): boolean {
+    if (left === undefined || right === undefined) {
+        return left === right;
+    }
     return (
-        left !== undefined &&
-        right !== undefined &&
         left.projectId === right.projectId &&
         left.idempotencyKey === right.idempotencyKey &&
         left.contentHash === right.contentHash &&
@@ -343,7 +344,8 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                 recovery.recoveryId === recoveryId &&
                 recovery.ownerId === ownerId &&
                 getRecoveryDisposition(recovery) === disposition &&
-                haveSameBindings(recovery.bindings, normalized);
+                haveSameBindings(recovery.bindings, normalized) &&
+                (disposition !== 'promote' || haveSameCommitProof(recovery.commitProof, commitProof));
             if (sameClaim) {
                 if (disposition === 'promote' && getPromotionState(recovery) === 'committed') {
                     promotionState = 'committed';

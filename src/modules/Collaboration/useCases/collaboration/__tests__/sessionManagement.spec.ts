@@ -735,6 +735,45 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(assetTransfer.commitDurableOwnerRebind).toHaveBeenCalledTimes(3);
             expect(assetTransfer.commitDurableOwnerRebind).toHaveBeenNthCalledWith(3, 'project:retry-authoritative');
         });
+
+        it('commits a prepared persisted handoff after teardown detaches its transfer', async () => {
+            sessionRuntimePrimitives.initialize('collaboration-join:attempt-teardown', {
+                rebindToSynchronizedOwner: true,
+            });
+            collaborationStore.set(
+                makeState({
+                    isEnabled: true,
+                    isHost: false,
+                    peers: [
+                        {
+                            id: 'host-peer',
+                            name: 'Host',
+                            color: '#000',
+                            isHost: true,
+                            isConnected: true,
+                            lastSeen: 1,
+                            latencyMs: null,
+                        },
+                    ],
+                })
+            );
+            const assetTransfer = latestAssetTransfer();
+            const transition = await latestAutomergeSync().hooks.prepareSyncPersistence?.({
+                peerId: 'host-peer',
+                docId: 'root',
+                projectId: 'project:teardown-authoritative',
+                rootHeads: ['persisted-head'],
+                senderIsHost: true,
+            });
+
+            sessionRuntimePrimitives.cleanup();
+            await transition?.commit();
+
+            expect(assetTransfer.dispose).toHaveBeenCalledOnce();
+            expect(assetTransfer.commitDurableOwnerRebind).toHaveBeenCalledExactlyOnceWith(
+                'project:teardown-authoritative'
+            );
+        });
     });
 
     describe('cleanup()', () => {

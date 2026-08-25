@@ -278,6 +278,65 @@ describe('AutomergeSync', () => {
         expect(order.slice(-4)).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
     });
 
+    it('finishes a persisted owner handoff after session teardown before reopening the authoritative asset', async () => {
+        const previousOwnerId = 'project:teardown-source';
+        const nextOwnerId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const peer = makePeerManager() as unknown as PeerConnectionManager;
+        const transfer = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            previousOwnerId
+        );
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['teardown-after-persistence']),
+            'teardown-after-persistence.wav',
+            'asset-stage-teardown-after-persistence'
+        );
+        await transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash);
+        let sync!: AutomergeSync;
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            sync.stop();
+            transfer.dispose();
+        });
+        sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async ({ projectId }) => {
+                const transition = await transfer.prepareDurableOwnerRebind(projectId!);
+                if (transition.status === 'failed') {
+                    throw new Error(transition.reason);
+                }
+                return { commit: transition.commit, abort: transition.abort };
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: nextOwnerId };
+            draft.peerProbe = 'persisted-before-session-teardown';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        const authoritativeOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            nextOwnerId
+        );
+        await expect(authoritativeOwner.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        authoritativeOwner.dispose();
+    });
+
     it('adopts the settled owner from an authoritative converged root without rewriting project state', async () => {
         const canonical = change(seedAmDoc(), (draft) => {
             draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };

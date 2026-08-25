@@ -919,6 +919,52 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('keeps the original promotion commit proof immutable across restart', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['immutable-project-commit-proof'], { type: 'audio/wav' }),
+            'immutable-project-commit-proof.wav',
+            'asset-stage-immutable-project-commit-proof'
+        );
+        const originalProof = {
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:immutable-project-commit-proof',
+            contentHash: `sha256:${'e'.repeat(64)}`,
+            runId: 'run-immutable-project-commit-proof',
+            batchId: 'batch-immutable-project-commit-proof',
+        };
+        const substitutedProof = {
+            ...originalProof,
+            contentHash: `sha256:${'f'.repeat(64)}`,
+        };
+        const recoveryId = 'stem-promotion:immutable-project-commit-proof';
+        const bindings = [{ leaseId: staged.leaseId, expectedHash: staged.hash }];
+
+        await expect(
+            transfer.prepareDurablePromotionRecovery(recoveryId, bindings, originalProof)
+        ).resolves.toMatchObject({ status: 'prepared' });
+        await expect(transfer.prepareDurablePromotionRecovery(recoveryId, bindings, substitutedProof)).resolves.toEqual(
+            { status: 'failed', reason: 'owner-handoff-conflict' }
+        );
+        await expect(transfer.prepareDurablePromotionRecovery(recoveryId, bindings)).resolves.toEqual({
+            status: 'failed',
+            reason: 'owner-handoff-conflict',
+        });
+        transfer.dispose();
+
+        configureDurableAssetCommitProof({
+            getDisposition: (candidate) => (isExactCommitProof(candidate, originalProof) ? 'committed' : 'unknown'),
+        });
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER));
+
+        await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
+        recreated.dispose();
+    });
+
     it('releases a prepared promotion from exact terminal non-commit proof after process death', async () => {
         const staged = await transfer.stageDurableAsset(
             new Blob(['project-terminal-noncommit'], { type: 'audio/wav' }),

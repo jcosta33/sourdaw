@@ -626,7 +626,7 @@ export class AssetTransfer {
                         return;
                     }
                     settled = 'committing';
-                    const committed = await this.commitDurableOwnerRebind(nextOwnerId);
+                    const committed = await this.commitDurableOwnerRebindTransaction(nextOwnerId, true);
                     if (committed.status === 'failed') {
                         throw new Error(`Durable asset owner rebind failed: ${committed.reason}`);
                     }
@@ -648,48 +648,58 @@ export class AssetTransfer {
 
     /** Commit a journaled handoff after CRDT persistence has adopted the project owner. */
     async commitDurableOwnerRebind(nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
-        return this.runOwnerOperation(async (durableAssets) => {
-            const previousOwnerId = this.ownerId;
-            const reboundHashes = new Set<string>();
-            for (const source of [durableAssets, ...this.durableOwnerHandoffSources.values()]) {
-                const result = await source.commitOwnerRebind(nextOwnerId);
-                if (result.status === 'failed') {
-                    return result;
+        return this.commitDurableOwnerRebindTransaction(nextOwnerId, false);
+    }
+
+    private commitDurableOwnerRebindTransaction(
+        nextOwnerId: string,
+        allowDisposed: boolean
+    ): Promise<RebindDurableAssetOwnerResult> {
+        return this.runOwnerOperation(
+            async (durableAssets) => {
+                const previousOwnerId = this.ownerId;
+                const reboundHashes = new Set<string>();
+                for (const source of [durableAssets, ...this.durableOwnerHandoffSources.values()]) {
+                    const result = await source.commitOwnerRebind(nextOwnerId);
+                    if (result.status === 'failed') {
+                        return result;
+                    }
+                    rebindLiveStageRecoveries(result.previousOwnerId, nextOwnerId);
+                    for (const hash of result.reboundHashes) {
+                        reboundHashes.add(hash);
+                    }
                 }
-                rebindLiveStageRecoveries(result.previousOwnerId, nextOwnerId);
-                for (const hash of result.reboundHashes) {
-                    reboundHashes.add(hash);
+                if (this.disposed) {
+                    return {
+                        status: 'rebound',
+                        previousOwnerId,
+                        ownerId: nextOwnerId,
+                        reboundHashes: [...reboundHashes],
+                    };
                 }
-            }
-            if (this.disposed) {
+                this.unsubscribeInvalidation?.();
+                this.ownerId = nextOwnerId;
+                this.durableAssets = createDurableAssetRepository(nextOwnerId);
+                this.durableOwnerHandoffSources.clear();
+                this.ownerRecoveryPending = true;
+                this.durableStagingReady = true;
+                this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
+                    if (this.disposed) {
+                        return;
+                    }
+                    if (event.ownerId === undefined || event.ownerId === this.ownerId) {
+                        this.durableAssetCache.delete(event.hash);
+                    }
+                });
                 return {
                     status: 'rebound',
                     previousOwnerId,
                     ownerId: nextOwnerId,
                     reboundHashes: [...reboundHashes],
                 };
-            }
-            this.unsubscribeInvalidation?.();
-            this.ownerId = nextOwnerId;
-            this.durableAssets = createDurableAssetRepository(nextOwnerId);
-            this.durableOwnerHandoffSources.clear();
-            this.ownerRecoveryPending = true;
-            this.durableStagingReady = true;
-            this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
-                if (this.disposed) {
-                    return;
-                }
-                if (event.ownerId === undefined || event.ownerId === this.ownerId) {
-                    this.durableAssetCache.delete(event.hash);
-                }
-            });
-            return {
-                status: 'rebound',
-                previousOwnerId,
-                ownerId: nextOwnerId,
-                reboundHashes: [...reboundHashes],
-            };
-        });
+            },
+            { allowDisposed }
+        );
     }
 
     /** Resume target-keyed owner handoffs only while the exact persisted project load stays authoritative. */
@@ -710,6 +720,7 @@ export class AssetTransfer {
     private runOwnerOperation<Result>(
         operation: (durableAssets: DurableAssetRepository) => Promise<Result>,
         options: {
+            allowDisposed?: boolean;
             resumeOwnerRebinds?: boolean;
             resumeRecoveries?: boolean;
             recoveryAuthority?: DurableOwnerRecoveryAuthority;
@@ -718,7 +729,7 @@ export class AssetTransfer {
         const transferPredecessor = this.ownerOperationTail;
         const task = runDurableOwnerOperation(async () => {
             await transferPredecessor;
-            if (this.disposed) {
+            if (this.disposed && !options.allowDisposed) {
                 throw new Error('AssetTransfer is disposed');
             }
             return (async () => {
