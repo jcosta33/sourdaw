@@ -395,7 +395,7 @@ const nightlyReportEnv = {
     GH_ISSUE_LOG: nightlyIssueLog,
     PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
     RESULTS: '{"static":{"result":"failure"},"lint":{"result":"success"}}',
-    RUN_URL: 'https://github.com/jcosta33/sourdaw/actions/runs/123',
+    RUN_URL: 'nightly-run-123',
 };
 writeFileSync(nightlyIssueLog, '');
 runWorkflowShell('nightly report existing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'existing' });
