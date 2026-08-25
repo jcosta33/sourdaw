@@ -1100,12 +1100,19 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
-        // The retirement below has to be one the callback would really apply:
-        // `RemoveTrackDeviceRetired` frees a slot only when the strip it names
-        // holds the effect it names, so effect 0 is spliced onto a track
-        // first. Naming a track that was never added would leave the ordering
-        // assertion watching the ledger agree with itself.
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
+        // The retirement below has to be one the callback would really apply,
+        // on both ends: `RemoveTrackDeviceRetired` frees a slot only when the
+        // strip it names holds the effect it names, and the effect has to be
+        // one the table really holds — the cheap fill's hosted ids never join
+        // a chain, so a retirement naming one of them would free nothing on
+        // the callback while the ledger still decremented, and the ordering
+        // assertion would bless a stream the callback refuses. Effect 0 is
+        // registered for real, then spliced onto a track, so the retirement
+        // is genuine on both ends.
+        engine
+            .add_plugin_with_id(0, Box::new(OverwritingPlugin))
+            .expect("the last slot takes the spliced effect");
         engine.add_track(1).expect("the track registers");
         engine
             .insert_track_device(

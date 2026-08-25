@@ -174,12 +174,14 @@ pub struct LoopPointDetectionResult {
 /// bound, and it is enforced here, control-side, where the refusal reaches the
 /// panel instead of dying as a counter on the audio callback that leaves
 /// armed recording capturing silence with nothing saying why.
-fn ensure_crumbs_capture_headroom(state: &CrumbsState) -> Result<(), String> {
-    let instances = state
-        .instances
-        .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
-
+///
+/// Takes the map `create_crumbs` already holds: the check and the insert stay
+/// inside that one critical section, so a create that parked mid-registration
+/// cannot let a concurrent create read the same live count and slip past the
+/// ceiling.
+fn ensure_crumbs_capture_headroom(
+    instances: &HashMap<String, CrumbsInstanceData>,
+) -> Result<(), String> {
     if instances.len() >= CRUMBS_CAPTURE_RESERVE {
         return Err(format!(
             "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
@@ -195,11 +197,20 @@ pub async fn create_crumbs(
     state: &CrumbsState,
     app_state: &AppState,
 ) -> Result<(), String> {
-    // Checked and released before the engine lock is taken: the instances
-    // lock must never be held while waiting on the engine lock, because
-    // `destroy_crumbs` takes them in the opposite order and the re-point
-    // overlap is exactly a concurrent create/destroy pair.
-    ensure_crumbs_capture_headroom(state)?;
+    // The instances lock is taken first and held through the engine
+    // registration to the insert at the bottom, so the headroom decision and
+    // the insert are one critical section — a count-then-act split here is
+    // what let two concurrent creates both observe the same live count and
+    // both register against a ceiling with one slot left. Every path holding
+    // two of these locks takes them instances -> engine -> audio_bridges;
+    // `destroy_crumbs` already held exactly that order, so this hold cannot
+    // invert against it — including across the re-point's concurrent
+    // create/destroy pair.
+    let mut instances = state
+        .instances
+        .lock()
+        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+    ensure_crumbs_capture_headroom(&instances)?;
 
     let (tx, rx) = rtrb::RingBuffer::new(128);
     // Commit-handoff rings (ledger #568): the engine hands committed takes
@@ -210,9 +221,9 @@ pub async fn create_crumbs(
     let metering = Arc::new(CrumbsMetering::default());
     let engine = CrumbsEngine::with_metering(sample_rate, metering.clone());
 
-    // Scoped so the engine and bridge-feed guards release before the
-    // instances lock below, on the same ordering law as the headroom check
-    // above.
+    // The engine guard is scoped to the registration alone — it is the
+    // engine-wide mutex, not this instance's — while the instances guard
+    // above spans the whole create, per the ordering law stated there.
     let engine_plugin_id = {
         let mut engine_guard = app_state
             .engine
@@ -257,11 +268,6 @@ pub async fn create_crumbs(
             return Err("Native engine not running".to_string());
         }
     };
-
-    let mut instances = state
-        .instances
-        .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
 
     instances.insert(
         instance_id,
@@ -921,11 +927,19 @@ mod tests {
     /// overlap is two — but a stray create (a double init, a retry racing a
     /// slow destroy) must refuse where the panel can report it, not as a
     /// capture-slot refusal on the callback that leaves recording armed and
-    /// capturing silence with nothing saying why.
+    /// capturing silence with nothing saying why. The decision is exercised
+    /// exactly as `create_crumbs` applies it: against the map under the lock
+    /// it holds across registration.
     #[test]
     fn a_create_past_the_crumbs_capture_ceiling_is_refused_with_the_limit_named() {
         let state = CrumbsState::default();
-        assert!(ensure_crumbs_capture_headroom(&state).is_ok());
+        {
+            let instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            assert!(ensure_crumbs_capture_headroom(&instances).is_ok());
+        }
 
         {
             let mut instances = state
@@ -938,8 +952,14 @@ mod tests {
             }
         }
 
-        let refusal = ensure_crumbs_capture_headroom(&state)
-            .expect_err("a session at the capture ceiling must refuse another instance");
+        let refusal = {
+            let instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            ensure_crumbs_capture_headroom(&instances)
+                .expect_err("a session at the capture ceiling must refuse another instance")
+        };
         assert_eq!(
             refusal,
             format!(
@@ -953,7 +973,13 @@ mod tests {
             .lock()
             .expect("crumbs state lock should be available")
             .remove("instance-0");
-        assert!(ensure_crumbs_capture_headroom(&state).is_ok());
+        {
+            let instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            assert!(ensure_crumbs_capture_headroom(&instances).is_ok());
+        }
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData
