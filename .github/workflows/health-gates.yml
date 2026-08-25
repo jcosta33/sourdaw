@@ -455,6 +455,38 @@ jobs:
           path: blob-report/
           retention-days: 7
 
+  browser-ai-webgpu:
+    name: Browser AI WebGPU admission
+    needs: decide
+    # The default Chromium matrix must prove the unsupported boundary on hosts
+    # without hardware WebGPU. This focused leg owns the complementary positive
+    # proof and therefore fails, rather than skips, when macOS cannot provide a
+    # core non-fallback adapter.
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium
+
+      - name: Run Browser AI WebGPU admission
+        run: pnpm test:e2e:browser-ai-webgpu-admission
+
   e2e-report:
     name: End-to-end report
     needs: e2e
@@ -619,7 +651,8 @@ jobs:
     # nightly is the only thing that observes what path filters and the approval
     # gate skip, so its failures have to arrive somewhere a person looks.
     if: ${{ failure() && github.event_name == 'schedule' }}
-    needs: [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, codeql, secrets]
+    needs:
+      [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, browser-ai-webgpu, codeql, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -653,12 +686,11 @@ jobs:
     # It runs whatever happened upstream, so a pull request that legitimately
     # skips every heavy leg still reports a conclusion instead of sitting pending.
     #
-    # `unit` and `e2e` are deliberately absent. They run, and their results are
-    # visible on the pull request, but they do not decide this summary yet. The
-    # test pins the current non-gating job list, not a claimed future admission
-    # policy. Promotion updates both that list and this `needs` list; it is not
-    # a one-line switch. Red is a reason to fix the thing and then promote it,
-    # never a reason to leave it ungated.
+    # The full `unit` and general `e2e` jobs are deliberately absent. They run,
+    # and their results are visible on the pull request, but they do not decide
+    # this summary yet. The focused Browser AI hardware proof below is separate:
+    # its deterministic positive admission boundary does gate. The test pins the
+    # current non-gating job list, not a claimed future admission policy.
     #
     # The unit suite has an existing-main baseline failure. Gating on it now
     # would mean a red check that says "main was already broken" on every
@@ -685,6 +717,7 @@ jobs:
       - rust
       - native-macos
       - native-windows
+      - browser-ai-webgpu
       - codeql
       - secrets
     runs-on: ubuntu-latest

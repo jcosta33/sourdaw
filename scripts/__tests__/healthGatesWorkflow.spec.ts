@@ -32,6 +32,11 @@ const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
+const BROWSER_AI_WEBGPU_JOB = 'browser-ai-webgpu';
+const BROWSER_AI_WEBGPU_JOB_NAME = 'Browser AI WebGPU admission';
+const BROWSER_AI_WEBGPU_CONDITION = "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'";
+const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
+const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
 const CURRENT_NON_GATING_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
@@ -210,6 +215,28 @@ function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
     }
 }
 
+function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, BROWSER_AI_WEBGPU_JOB);
+    if (job.name !== BROWSER_AI_WEBGPU_JOB_NAME) {
+        throw new Error('Browser AI WebGPU job must retain its stable name');
+    }
+    if (job.needs !== 'decide' || job.if !== BROWSER_AI_WEBGPU_CONDITION) {
+        throw new Error('Browser AI WebGPU job must retain its heavy E2E scope condition');
+    }
+    if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
+        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+    }
+    if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
+        throw new Error('Browser AI WebGPU job must install Chromium directly');
+    }
+    if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
+        throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
+    }
+    if (!arrayAt(jobAt(candidate, 'gate'), 'needs').includes(BROWSER_AI_WEBGPU_JOB)) {
+        throw new Error('gate must depend on the Browser AI WebGPU job');
+    }
+}
+
 function gateResults(
     candidate: UnknownRecord,
     result: JobResult,
@@ -370,6 +397,38 @@ describe('health gates workflow contract', () => {
             stepNamed(jobAt(broadened, jobName), 'Checkout').with = { 'fetch-depth': 0 };
             expect(() => assertUnitProvenanceHistory(broadened)).toThrow(`${jobName} must not fetch complete history`);
         }
+    });
+
+    it('gates the dedicated Browser AI WebGPU proof on a standard macOS runner', () => {
+        expect(() => assertBrowserAiWebGpuJob(workflow)).not.toThrow();
+
+        for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
+            const premiumRunner = asRecord(structuredClone(workflow), `${runner} Browser AI workflow`);
+            jobAt(premiumRunner, BROWSER_AI_WEBGPU_JOB)['runs-on'] = runner;
+            expect(() => assertBrowserAiWebGpuJob(premiumRunner)).toThrow(
+                'Browser AI WebGPU job must use the standard macos-14 runner'
+            );
+        }
+
+        const fastLane = asRecord(structuredClone(workflow), 'fast-lane Browser AI workflow');
+        jobAt(fastLane, BROWSER_AI_WEBGPU_JOB).if = "needs.decide.outputs.e2e == 'true'";
+        expect(() => assertBrowserAiWebGpuJob(fastLane)).toThrow(
+            'Browser AI WebGPU job must retain its heavy E2E scope condition'
+        );
+
+        const defaultMatrix = asRecord(structuredClone(workflow), 'default-matrix Browser AI workflow');
+        stepNamed(jobAt(defaultMatrix, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission').run =
+            'pnpm test:e2e tests/e2e/browserAiWebGpuAdmission.spec.ts';
+        expect(() => assertBrowserAiWebGpuJob(defaultMatrix)).toThrow(
+            'Browser AI WebGPU job must run the dedicated hardware command'
+        );
+
+        const disconnectedGate = asRecord(structuredClone(workflow), 'disconnected Browser AI workflow');
+        const gateNeeds = arrayAt(jobAt(disconnectedGate, 'gate'), 'needs');
+        gateNeeds.splice(gateNeeds.indexOf(BROWSER_AI_WEBGPU_JOB), 1);
+        expect(() => assertBrowserAiWebGpuJob(disconnectedGate)).toThrow(
+            'gate must depend on the Browser AI WebGPU job'
+        );
     });
 
     it('requires every gate dependency to have succeeded or been skipped', () => {
