@@ -375,8 +375,15 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
-expect(unit?.['continue-on-error'] === true, 'unit suite report must remain nonblocking');
-expect(e2e?.['continue-on-error'] === true, 'end-to-end suite report must remain nonblocking');
+const pullRequestReportAllowance = "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
+expect(
+    unit?.['continue-on-error'] === pullRequestReportAllowance,
+    'unit suite report must remain blocking for schedule and workflow_dispatch'
+);
+expect(
+    e2e?.['continue-on-error'] === pullRequestReportAllowance,
+    'end-to-end suite report must remain blocking for schedule and workflow_dispatch'
+);
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
 expect(
     Array.isArray(gateNeeds) &&
@@ -388,13 +395,20 @@ expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gat
 expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
 expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
+expect(
+    nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&
+        nightlyReportRun.includes('gh issue comment "$existing" --repo "$GITHUB_REPOSITORY"') &&
+        nightlyReportRun.includes('gh issue create --repo "$GITHUB_REPOSITORY"'),
+    'every nightly reporter issue operation must target $GITHUB_REPOSITORY'
+);
 
 const maliciousHelperMarker = `${process.env.TEST_TEMP_ROOT}/pr-owned-helper-invoked.log`;
 const workflowCommandLog = `${process.env.TEST_TEMP_ROOT}/workflow-secret-scan.log`;
 writeFileSync(workflowCommandLog, '');
 const nightlyIssueLog = `${process.env.TEST_TEMP_ROOT}/nightly-issue.log`;
+const fixtureRepository = `fixture-owner-${process.pid}/fixture-repository`;
 const nightlyReportEnv = {
-    GITHUB_REPOSITORY: 'jcosta33/sourdaw',
+    GITHUB_REPOSITORY: fixtureRepository,
     GH_ISSUE_LOG: nightlyIssueLog,
     PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
     RESULTS: '{"static":{"result":"failure"},"lint":{"result":"success"}}',
@@ -403,14 +417,14 @@ const nightlyReportEnv = {
 writeFileSync(nightlyIssueLog, '');
 runWorkflowShell('nightly report existing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'existing' });
 const existingIssueCommands = readFileSync(nightlyIssueLog, 'utf8').trim().split('\n');
-expect(existingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes('--repo jcosta33/sourdaw')), 'existing path must list issues in the repository');
-expect(existingIssueCommands.some((command) => command.startsWith('issue comment 42 ') && command.includes('--repo jcosta33/sourdaw')), 'existing path must comment on the existing issue in the repository');
+expect(existingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes(`--repo ${fixtureRepository}`)), 'existing path must list issues in the repository');
+expect(existingIssueCommands.some((command) => command.startsWith('issue comment 42 ') && command.includes(`--repo ${fixtureRepository}`)), 'existing path must comment on the existing issue in the repository');
 expect(!existingIssueCommands.some((command) => command.startsWith('issue create ')), 'existing path must not create an issue');
 writeFileSync(nightlyIssueLog, '');
 runWorkflowShell('nightly report missing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'none' });
 const missingIssueCommands = readFileSync(nightlyIssueLog, 'utf8').trim().split('\n');
-expect(missingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes('--repo jcosta33/sourdaw')), 'missing path must list issues in the repository');
-expect(missingIssueCommands.some((command) => command.startsWith('issue create ') && command.includes('--repo jcosta33/sourdaw')), 'missing path must create an issue in the repository');
+expect(missingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes(`--repo ${fixtureRepository}`)), 'missing path must list issues in the repository');
+expect(missingIssueCommands.some((command) => command.startsWith('issue create ') && command.includes(`--repo ${fixtureRepository}`)), 'missing path must create an issue in the repository');
 expect(!missingIssueCommands.some((command) => command.startsWith('issue comment ')), 'missing path must not comment on an issue');
 const workflowShellEnv = {
     GITHUB_WORKSPACE: process.env.TEST_TEMP_ROOT,
