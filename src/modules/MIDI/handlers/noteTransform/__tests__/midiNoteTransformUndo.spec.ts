@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { type MidiNote } from '../../../models/MidiNote';
 import { midiStore } from '../../../stores/midiStore';
@@ -16,6 +23,15 @@ import { handleRetrogradeNotes } from '../handleRetrogradeNotes';
 import { handleScaleAllVelocities } from '../handleScaleAllVelocities';
 import { handleSetAllVelocities } from '../handleSetAllVelocities';
 import { handleTransposeNotes } from '../handleTransposeNotes';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
 
 const CLIP_ID = 'clip-1';
 
@@ -262,6 +278,12 @@ describe('MIDI note transforms through AppAction execution', () => {
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         registerHandlerMap(getMidiNoteTransformHandlers());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -269,6 +291,7 @@ describe('MIDI note transforms through AppAction execution', () => {
     afterEach(() => {
         clearUndoHistory();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
         configureAutomergeStoragePort(null);
     });
 
@@ -318,6 +341,9 @@ describe('MIDI note transforms through AppAction execution', () => {
 
         expect(currentNotes()).toContainEqual(laterNote);
         expect(undoStore.value?.past).toHaveLength(1);
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Transpose +7 semitones": project state has changed', level: 'warning' },
+        ]);
         expect(undoStore.value?.future).toHaveLength(0);
     });
 
