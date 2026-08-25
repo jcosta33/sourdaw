@@ -140,6 +140,31 @@ describe('compilePlannedActionCommandBatch', () => {
         expect(result.commandBatch.approvalBinding).toBeUndefined();
     });
 
+    it.each([-1, 0.5, 1])(
+        'rejects an invalid batch-local producer index %s at the batch owner',
+        (producerActionIndex) => {
+            expect(() =>
+                compilePlannedActionCommandBatch({
+                    actions: [{ type: 'clearSolos' }],
+                    actionCommandGraph: {
+                        dependenciesByActionIndex: [[]],
+                        batchLocalBindings: [
+                            { bindingId: '$fixture', producerActionIndex, producerArgument: 'trackId' },
+                        ],
+                    },
+                    actionLabels: ['Clear solos'],
+                    autoCommit: false,
+                    context: baseContext,
+                    group: { groupId: 'group-invalid-binding', groupLabel: 'Invalid binding' },
+                    intent: 'Reject the invalid binding',
+                    mode: 'preview',
+                    projectRevision: 'revision-1',
+                    runId: 'run-invalid-binding',
+                })
+            ).toThrow('Action command graph contains an invalid batch-local producer');
+        }
+    );
+
     it('binds whole-lane automation transforms to the current lane size and owners', () => {
         const result = compile([{ type: 'thinAutomation', payload: { laneId: 'lane-1', tolerance: 0.05 } }], {
             ...baseContext,

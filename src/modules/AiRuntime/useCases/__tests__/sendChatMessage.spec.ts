@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
+import { type ProjectContext } from '../../models/ProjectContext';
+import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { type planPromptActions } from '../planPromptActions';
 import { sendChatMessage } from '../sendChatMessage';
 
@@ -19,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     compileAgentActionExecution: vi.fn(),
     describeAgentRiskApproval: vi.fn(),
     describePendingActionConfirmation: vi.fn(),
+    executePlannedActions: vi.fn(),
     executeVersionedCommandBatchEnvelope: vi.fn(),
     generateGroupId: vi.fn(),
     getActiveModelId: vi.fn(),
@@ -88,9 +94,156 @@ vi.mock('../describePendingActionConfirmation', () => ({
     describePendingActionConfirmation: mocks.describePendingActionConfirmation,
 }));
 
+vi.mock('../executePlannedActions', () => ({
+    executePlannedActions: mocks.executePlannedActions,
+}));
+
 vi.mock('../planPromptActions', () => ({
     planPromptActions: mocks.planPromptActions,
 }));
+
+const commandGraphContext: ProjectContext = {
+    tempo: 120,
+    timeSignature: [4, 4],
+    isPlaying: false,
+    isRecording: false,
+    isLooping: false,
+    loopStart: 0,
+    loopEnd: 16,
+    punchInEnabled: false,
+    punchInBeat: 0,
+    punchOutBeat: 16,
+    metronomeEnabled: false,
+    metronomeVolume: 0.5,
+    masterGain: 0.8,
+    tracks: [
+        {
+            id: 'track-kick',
+            name: 'Kick',
+            kind: 'audio',
+            muted: false,
+            soloed: false,
+            soloSafe: false,
+            armed: false,
+            gain: 1,
+            pan: 0,
+            automationMode: 'read',
+            clipCount: 1,
+            deviceCount: 0,
+            clips: [
+                {
+                    id: 'clip-kick',
+                    name: 'Kick clip',
+                    type: 'audio',
+                    startBeat: 0,
+                    endBeat: 4,
+                    noteCount: 0,
+                },
+            ],
+            devices: [],
+            sends: [],
+        },
+    ],
+    selectedTrackId: null,
+    selectedClipId: null,
+    selectedClipIds: [],
+    activeView: 'arrange',
+    playheadPosition: 0,
+};
+
+function createCommandGraphForwardingFixture() {
+    const prompt = 'Create a Drum Bus, set its gain, then remove the Kick track.';
+    const providerProposal = {
+        semantic: { classification: 'simple' as const, uncertainty: [] },
+        objective: 'Create a Drum Bus and remove the Kick track.',
+        constraints: [],
+        scope: {
+            targetIds: ['track-kick'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        },
+        capabilityIds: [],
+        assetIds: [],
+        alternatives: [],
+        validationStrategy: ['Validate the command dependency graph.'],
+        stoppingConditions: ['Stop if the project revision changes.'],
+    } satisfies AgentRunProviderProposal;
+    const compiled = compileArbitraryCommandList({
+        context: commandGraphContext,
+        revision: 'revision-fixture',
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: providerProposal,
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'create-drum-bus',
+                                name: 'createBus',
+                                arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                            },
+                            {
+                                id: 'gain-drum-bus',
+                                name: 'setTrackGain',
+                                arguments: { trackId: '$drum-bus', gain: 0.8 },
+                                dependsOn: ['create-drum-bus'],
+                            },
+                            {
+                                id: 'remove-kick',
+                                name: 'removeTrack',
+                                arguments: {},
+                                selector: {
+                                    targetArgument: 'trackId',
+                                    entity: 'track',
+                                    where: { name: 'Kick' },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ],
+    });
+    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+        throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+    }
+    const bridged = bridgeGroundedLlmToolCalls({
+        calls: compiled.compilerEvidence.commands,
+        compilerEvidence: compiled.compilerEvidence,
+        context: commandGraphContext,
+        projectRevision: 'revision-fixture',
+        prompt,
+    });
+    if (bridged.rejections.length > 0 || bridged.actionCommandGraph === undefined) {
+        throw new Error(bridged.rejections[0]?.reason ?? 'Expected a compiler-produced action command graph');
+    }
+    const identified = materializeBatchLocalActionIdentities(bridged.actions, bridged.batchLocalActionIdentities ?? []);
+    if (identified.status !== 'accepted') {
+        throw new Error(identified.reason);
+    }
+    const guarded = materializeActionStateGuards(identified.actions, commandGraphContext);
+    if (guarded.status !== 'accepted') {
+        throw new Error(guarded.reason);
+    }
+    const createdBus = guarded.actions.find((action) => action.type === 'createBus');
+    if (createdBus?.type !== 'createBus') {
+        throw new Error('Expected the compiler graph to retain its batch-local bus producer');
+    }
+    return {
+        actions: guarded.actions,
+        actionCommandGraph: bridged.actionCommandGraph,
+        providerKnownTargetIds: compiled.compilerEvidence.providerKnownTargetIds,
+        providerProposal,
+        prompt,
+        fullTargetIds: [createdBus.payload.busId, 'track-kick', 'clip-kick'],
+    };
+}
+
+const commandGraphFixture = createCommandGraphForwardingFixture();
 
 function createStemImportAction(audioBufferId: string): ExecutableRuntimeAction {
     return {
@@ -226,6 +379,77 @@ function configurePromptPlanning(
     });
 }
 
+function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 'plan') {
+    const requiresConfirmation = branch === 'confirmation';
+    const scope = {
+        targetIds: [...commandGraphFixture.fullTargetIds],
+        targetRanges: [],
+        protectedTargetIds: [],
+        protectedRanges: [],
+    };
+    const grants = {
+        allowedOperationPrefixes: ['createBus', 'setTrackGain', 'removeTrack'],
+        create: true,
+        delete: true,
+        routing: false,
+        tempo: false,
+        master: false,
+        file: false,
+        audioUpload: false,
+        remoteGeneration: false,
+        autoCommit: false,
+    };
+    const commandBatch = { serialized: '{}', authority: { scope, grants } };
+    mocks.describePendingActionConfirmation.mockReturnValue({
+        actionLabels: ['Create Drum Bus', 'Set Drum Bus gain', 'Remove Kick'],
+        affectedIds: [...commandGraphFixture.fullTargetIds],
+        protectedUnchanged: [],
+        content: 'Fixture graph confirmation',
+    });
+    mocks.compileAgentActionExecution.mockReturnValue({
+        commandEnvelopes: ['command-create-bus', 'command-gain-bus', 'command-remove-kick'],
+        commandBatch,
+        agentApproval: { policy: { risk: requiresConfirmation ? 'confirm' : 'low', reasons: [] } },
+        requiresConfirmation,
+    });
+    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+        status: 'valid',
+        envelope: {
+            batchId: 'batch-graph',
+            commands: [
+                { commandId: 'command-create-bus' },
+                { commandId: 'command-gain-bus' },
+                { commandId: 'command-remove-kick' },
+            ],
+            idempotencyKey: 'batch-graph-idempotency',
+            preconditions: [],
+            scope,
+        },
+    });
+    mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
+    mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
+        const runId = input.streamIdentity?.runId;
+        if (runId === undefined) {
+            throw new Error('Expected sendChatMessage to admit the planning run first.');
+        }
+        plannedRunId = runId;
+        return {
+            context: commandGraphContext,
+            result: {
+                actions: commandGraphFixture.actions,
+                actionCommandGraph: commandGraphFixture.actionCommandGraph,
+                rawText: 'compiler-produced graph fixture',
+                requiresConfirmation,
+                executionMode: 'atomic' as const,
+                providerKnownTargetIds: commandGraphFixture.providerKnownTargetIds,
+                providerProposal: commandGraphFixture.providerProposal,
+            },
+            projectRevision: 'revision-fixture',
+        };
+    });
+    return commandBatch;
+}
+
 function getPlannedRun() {
     if (plannedRunId === null) {
         throw new Error('Expected the planning fixture to capture a run id.');
@@ -345,5 +569,56 @@ describe('sendChatMessage retained-provider selection', () => {
         );
         expect(getPlannedRun().plan?.capabilities).not.toContainEqual(expect.objectContaining({ source: 'asset' }));
         expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
+    });
+
+    it('forwards a compiler-produced graph and provider-known scope through immediate application', async () => {
+        const commandBatch = configureCommandGraphForwarding('immediate');
+
+        await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
+
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({ actionCommandGraph: commandGraphFixture.actionCommandGraph })
+        );
+        expect(mocks.executePlannedActions).toHaveBeenCalledWith(expect.objectContaining({ commandBatch }));
+        expect(getPlannedRun()).toMatchObject({
+            scope: { targetIds: commandGraphFixture.fullTargetIds },
+            plan: { scope: { targetIds: commandGraphFixture.fullTargetIds } },
+        });
+    });
+
+    it('forwards a compiler-produced graph and provider-known scope into pending confirmation', async () => {
+        const commandBatch = configureCommandGraphForwarding('confirmation');
+
+        await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
+
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({ actionCommandGraph: commandGraphFixture.actionCommandGraph })
+        );
+        expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledWith(
+            expect.objectContaining({ commandBatch, actions: commandGraphFixture.actions })
+        );
+        expect(getPlannedRun()).toMatchObject({
+            phase: 'waiting-for-approval',
+            scope: { targetIds: commandGraphFixture.fullTargetIds },
+        });
+    });
+
+    it('forwards a compiler-produced graph and provider-known scope through plan-only execution', async () => {
+        configureCommandGraphForwarding('plan');
+
+        await sendChatMessage(commandGraphFixture.prompt, { mode: 'plan' });
+
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCommandGraph: commandGraphFixture.actionCommandGraph,
+                mode: 'apply',
+            })
+        );
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        expect(getPlannedRun()).toMatchObject({
+            phase: 'completed',
+            scope: { targetIds: commandGraphFixture.fullTargetIds },
+            plan: { scope: { targetIds: commandGraphFixture.fullTargetIds } },
+        });
     });
 });
