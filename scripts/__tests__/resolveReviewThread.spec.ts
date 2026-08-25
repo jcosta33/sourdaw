@@ -254,6 +254,7 @@ describe('review thread resolution', () => {
         expect(source).toContain('resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId})');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(3);
+        expect(source.match(/resolvedBy\{id login __typename\}/g)).toHaveLength(2);
     });
     it.each([
         [
