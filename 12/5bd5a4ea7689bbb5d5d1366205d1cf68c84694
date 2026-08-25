@@ -1,0 +1,61 @@
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_4d2e5052eeb76b 9-10,50
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_4d2e5052eeb76b 130,312,1275,1566-1571
+public/legal/DEPENDENCY-LICENSES.txt
+  s_a40848e8f8cca9::t_5680eef82de1bd 9
+src/modules/AiGeneration/presentations/views/__tests__/PatternBrowser.spec.tsx
+  s_a40848e8f8cca9::t_d804c58bb98286 6-7,50-53
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_a40848e8f8cca9::t_edad7956ebb7db 3-4,22-27,34-42,51,59-64,106-107,194-195,211-217
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_a40848e8f8cca9::t_ed627b30c5075a 6-7,34
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_a40848e8f8cca9::t_821c5672615eb5 6-7,195
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_a40848e8f8cca9::t_1b22ccabfbecf8 12-13,47-50,80,95,97
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_b4dff1c47b5dd0 3-4,33-36
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  s_a40848e8f8cca9::t_54b3771247cc01 1-10,19-27,95-101,133-137,303,387-388
+src/modules/Command/useCases/redo.ts
+  s_a40848e8f8cca9::t_3626bd0578643e 1-2,21-24,175-176,195-196
+src/modules/CommandInterface/useCases/__tests__/selectAllClips.spec.ts
+  s_a40848e8f8cca9::t_9dc6471d9300c4 3-4,21
+src/modules/CrdtDocument/useCases/projection/__tests__/projectMixStateSlots.spec.ts
+  s_a40848e8f8cca9::t_a355c19a9cf166 13-14,32
+src/modules/CrdtDocument/useCases/projection/__tests__/projectModulationSlot.spec.ts
+  s_a40848e8f8cca9::t_fcea3569515280 8-9,19
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_a40848e8f8cca9::t_d32fe8fd59c8d4 5-6,26
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_a40848e8f8cca9::t_49c04a254a74bf 4-5,115-118
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  s_a40848e8f8cca9::t_117d7751e03b5f 3-4,9-14,28-36,279,283-288,296-297,319,326,329-330,335-336,344,347,349-354,357-358,370,373,375-380
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_a40848e8f8cca9::t_f602721ef61980 152
+src/modules/Transport/useCases/scheduling/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_296529ebbce417 14-17
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_188a43f8c4f5b3 22,24
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_a40848e8f8cca9::t_f26b839dd1c86c 13,15
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_0dc5ce781e4e7f 35,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "125bd5a4ea7689bbb5d5d1366205d1cf68c84694",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
