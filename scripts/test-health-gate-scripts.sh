@@ -133,6 +133,36 @@ GITLEAKS
 chmod +x "$extract_dir/gitleaks"
 SH
 chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
+cat > "$fake_bin/gh" <<'SH'
+#!/bin/sh
+set -eu
+
+printf '%s' "$*" | tr '\n' ' ' >> "$GH_ISSUE_LOG"
+printf '\n' >> "$GH_ISSUE_LOG"
+repo=
+expect_repo=false
+for argument in "$@"; do
+    if [ "$expect_repo" = true ]; then
+        repo=$argument
+        expect_repo=false
+    elif [ "$argument" = --repo ]; then
+        expect_repo=true
+    fi
+done
+if [ "$repo" != "$GITHUB_REPOSITORY" ]; then
+    printf 'gh issue command must pass --repo %s\n' "$GITHUB_REPOSITORY" >&2
+    exit 24
+fi
+
+case "${GH_ISSUE_MODE}:${1:-}:${2:-}" in
+    existing:issue:list) printf '42\n' ;;
+    existing:issue:comment) ;;
+    none:issue:list) ;;
+    none:issue:create) ;;
+    *) exit 23 ;;
+esac
+SH
+chmod +x "$fake_bin/gh"
 
 WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" node --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
@@ -187,6 +217,7 @@ const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
 const gate = workflow.jobs?.gate;
+const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
@@ -198,6 +229,7 @@ const secretScanUses = secretScan?.uses ?? '';
 const secretsEnv = secrets?.env ?? {};
 const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
 const unitRun = stepNamed(unit, 'Run shard')?.run ?? '';
+const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
     'decide',
@@ -352,10 +384,31 @@ expect(
 expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
 expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
 expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
 
 const maliciousHelperMarker = `${process.env.TEST_TEMP_ROOT}/pr-owned-helper-invoked.log`;
 const workflowCommandLog = `${process.env.TEST_TEMP_ROOT}/workflow-secret-scan.log`;
 writeFileSync(workflowCommandLog, '');
+const nightlyIssueLog = `${process.env.TEST_TEMP_ROOT}/nightly-issue.log`;
+const nightlyReportEnv = {
+    GITHUB_REPOSITORY: 'jcosta33/sourdaw',
+    GH_ISSUE_LOG: nightlyIssueLog,
+    PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
+    RESULTS: '{"static":{"result":"failure"},"lint":{"result":"success"}}',
+    RUN_URL: 'https://github.com/jcosta33/sourdaw/actions/runs/123',
+};
+writeFileSync(nightlyIssueLog, '');
+runWorkflowShell('nightly report existing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'existing' });
+const existingIssueCommands = readFileSync(nightlyIssueLog, 'utf8').trim().split('\n');
+expect(existingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes('--repo jcosta33/sourdaw')), 'existing path must list issues in the repository');
+expect(existingIssueCommands.some((command) => command.startsWith('issue comment 42 ') && command.includes('--repo jcosta33/sourdaw')), 'existing path must comment on the existing issue in the repository');
+expect(!existingIssueCommands.some((command) => command.startsWith('issue create ')), 'existing path must not create an issue');
+writeFileSync(nightlyIssueLog, '');
+runWorkflowShell('nightly report missing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'none' });
+const missingIssueCommands = readFileSync(nightlyIssueLog, 'utf8').trim().split('\n');
+expect(missingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes('--repo jcosta33/sourdaw')), 'missing path must list issues in the repository');
+expect(missingIssueCommands.some((command) => command.startsWith('issue create ') && command.includes('--repo jcosta33/sourdaw')), 'missing path must create an issue in the repository');
+expect(!missingIssueCommands.some((command) => command.startsWith('issue comment ')), 'missing path must not comment on an issue');
 const workflowShellEnv = {
     GITHUB_WORKSPACE: process.env.TEST_TEMP_ROOT,
     RUNNER_TEMP: `${process.env.TEST_TEMP_ROOT}/workflow-runner`,

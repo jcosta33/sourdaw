@@ -629,12 +629,12 @@ jobs:
           title="ci(nightly): health gates red on main"
           body=$(printf 'The nightly run against `main` failed.\n\nFailing jobs: %s\n\n%s\n' \
             "$failed" "$RUN_URL")
-          existing=$(gh issue list --state open --search "$title in:title" \
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" \
             --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
-            gh issue create --title "$title" --body "$body" --label bug --label status:ready
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --label bug --label status:ready
           fi
 
   gate:
