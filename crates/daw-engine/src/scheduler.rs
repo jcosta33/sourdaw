@@ -615,200 +615,307 @@ pub const EFFECT_TABLE_CAPACITY: usize =
 pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize =
     HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
 
-/// One bucket of an [`IdSlotIndex`]: the id it holds and the table slot that
-/// id names, with a zero slot marking the bucket empty.
-#[derive(Clone, Copy)]
-struct IndexBucket {
-    id: u64,
-    /// The named slot plus one, so `0` can mark the bucket empty.
+/// One node of [`IdSlotIndex`]'s fixed-depth binary radix trie. Child and slot
+/// handles are one-based, keeping zero available as the empty sentinel.
+#[derive(Clone, Copy, Default)]
+struct RadixNode {
+    children: [u32; 2],
     slot_plus_one: u32,
+    next_free: u32,
 }
 
-impl IndexBucket {
-    const EMPTY: Self = Self {
-        id: 0,
-        slot_plus_one: 0,
-    };
-}
-
-/// A fixed-capacity open-addressed map from an id to the slot holding it,
-/// built for the audio callback. One instance resolves effect ids into the
-/// effect table, another plugin ids into the bridge table.
+/// A fixed-preallocated id-to-slot trie for callback lookup and mutation.
 ///
-/// Every per-id resolution on the callback goes through one of these. A
-/// linear scan of the effect table is a strided walk over ~5.9 KiB entries —
-/// one cache line per comparison — which was noise at a table of 128 and is
-/// deadline-fatal at the populations the derived capacity exists to admit:
-/// the render path alone resolves once per chain entry per callback, and a
-/// project-sized batch resolves once per registering command.
-///
-/// ADR 0020 contract: the bucket array is reserved once at scheduler
-/// construction, on the control thread, at twice the owning table's capacity
-/// rounded up to a power of two — the load factor never exceeds one half, so
-/// probe runs stay a handful of buckets. Inserting, removing, and looking up
-/// only read and write plain array cells: no allocation, no lock, no block.
-/// Deletion backward-shifts its cluster (Knuth's Algorithm R) instead of
-/// leaving a tombstone, so probe lengths cannot ratchet upward no matter how
-/// many remove/re-register cycles a session performs.
+/// Every operation follows at most `usize::BITS` id bits. Nodes are allocated
+/// only from storage reserved before the callback starts; deletion prunes dead
+/// suffixes into a free list, so churn reuses nodes rather than consuming the
+/// reservation. This makes lookup, insert, and set-slot bounded by one radix
+/// walk and delete by a lookup plus a reverse pruning walk.
 struct IdSlotIndex {
-    buckets: Vec<IndexBucket>,
-    /// `buckets.len() - 1`; the length is always a power of two.
-    mask: usize,
+    nodes: Vec<RadixNode>,
+    free_head: u32,
+    #[cfg(test)]
+    last_delete_steps: usize,
 }
 
 impl IdSlotIndex {
-    /// Reserve the bucket array for a table that never holds more than
-    /// `population` entries. Called once, off the callback.
     fn reserved(population: usize) -> Self {
-        // Twice the rounded-up population caps the load factor at one half;
-        // the floor keeps a one- or two-entry table from reserving a
-        // degenerate two- or four-bucket array.
-        let buckets = (population.next_power_of_two() * 2).max(8);
+        let node_capacity = 1 + population * usize::BITS as usize;
+        let mut nodes = Vec::with_capacity(node_capacity);
+        nodes.push(RadixNode::default());
         Self {
-            buckets: vec![IndexBucket::EMPTY; buckets],
-            mask: buckets - 1,
+            nodes,
+            free_head: 0,
+            #[cfg(test)]
+            last_delete_steps: 0,
         }
     }
 
-    /// The bucket an id hashes from. Fibonacci hashing: the multiplication
-    /// spreads sequential ids — both live allocators mint runs of them —
-    /// across the whole array, which a raw `id & mask` would cluster.
     #[inline]
-    fn home(&self, id: usize) -> usize {
-        let bits = self.mask.count_ones();
-        (((id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> (64 - bits)) as usize
+    fn bit_at(id: usize, depth: u32) -> usize {
+        ((id >> (usize::BITS - 1 - depth)) & 1) as usize
     }
 
-    /// Resolve `id` to its slot, or `None` when nothing holds it.
+    #[inline]
+    fn child_index(node: &RadixNode, bit: usize) -> Option<usize> {
+        let child = node.children[bit];
+        if child == 0 {
+            None
+        } else {
+            Some(child as usize - 1)
+        }
+    }
+
     #[inline]
     fn lookup(&self, id: usize) -> Option<usize> {
-        let mut bucket = self.home(id);
-        loop {
-            let entry = self.buckets[bucket];
-            if entry.slot_plus_one == 0 {
-                return None;
-            }
-            if entry.id == id as u64 {
-                return Some(entry.slot_one_based());
-            }
-            bucket = (bucket + 1) & self.mask;
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            let bit = Self::bit_at(id, depth);
+            node_index = Self::child_index(&self.nodes[node_index], bit)?;
+        }
+        let slot_plus_one = self.nodes[node_index].slot_plus_one;
+        if slot_plus_one == 0 {
+            None
+        } else {
+            Some(slot_plus_one as usize - 1)
         }
     }
 
-    /// Map `id` to `slot`. Returns `false` when `id` is already mapped — the
-    /// caller's collision check decides what that means. Never called past
-    /// the owning table's capacity: the array is sized for that population,
-    /// so an empty bucket always exists.
     fn insert(&mut self, id: usize, slot: usize) -> bool {
-        let mut bucket = self.home(id);
-        loop {
-            let entry = self.buckets[bucket];
-            if entry.slot_plus_one == 0 {
-                self.buckets[bucket] = IndexBucket {
-                    id: id as u64,
-                    slot_plus_one: slot as u32 + 1,
-                };
-                return true;
-            }
-            if entry.id == id as u64 {
-                return false;
-            }
-            bucket = (bucket + 1) & self.mask;
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            let bit = Self::bit_at(id, depth);
+            let child = self.nodes[node_index].children[bit];
+            node_index = if child == 0 {
+                let child_index = self.take_node();
+                self.nodes[node_index].children[bit] = child_index as u32 + 1;
+                child_index
+            } else {
+                child as usize - 1
+            };
         }
+        let node = &mut self.nodes[node_index];
+        if node.slot_plus_one != 0 {
+            return false;
+        }
+        node.slot_plus_one = slot as u32 + 1;
+        true
     }
 
-    /// Repoint an already-mapped id at the slot its entry now occupies, after
-    /// a swap-remove moved the table's tail into a vacated slot.
     fn set_slot(&mut self, id: usize, slot: usize) {
-        let mut bucket = self.home(id);
-        loop {
-            let entry = self.buckets[bucket];
-            if entry.slot_plus_one == 0 {
-                // Unreachable while the callers' invariants hold — a repoint
-                // only ever names an id the index holds. Terminating here
-                // anyway keeps a breached invariant bounded on the audio
-                // callback: no repoint, no spin, with the debug assert as the
-                // loud debug-mode signal.
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            let bit = Self::bit_at(id, depth);
+            let Some(child) = Self::child_index(&self.nodes[node_index], bit) else {
                 debug_assert!(false, "repointing an id the index does not hold");
                 return;
-            }
-            if entry.id == id as u64 {
-                self.buckets[bucket].slot_plus_one = slot as u32 + 1;
-                return;
-            }
-            bucket = (bucket + 1) & self.mask;
+            };
+            node_index = child;
+        }
+        let node = &mut self.nodes[node_index];
+        debug_assert!(
+            node.slot_plus_one != 0,
+            "repointing an id the index does not hold"
+        );
+        if node.slot_plus_one != 0 {
+            node.slot_plus_one = slot as u32 + 1;
         }
     }
 
-    /// Unmap `id` and return the slot it named. The cluster past the vacated
-    /// bucket is backward-shifted — each entry whose probe path crossed the
-    /// hole moves back into it — so no tombstone remains and later searches
-    /// never walk past a hole that once held the key they seek.
     fn delete(&mut self, id: usize) -> Option<usize> {
-        let mut hole = self.home(id);
-        let slot = loop {
-            let entry = self.buckets[hole];
-            if entry.slot_plus_one == 0 {
-                return None;
-            }
-            if entry.id == id as u64 {
-                break entry.slot_one_based();
-            }
-            hole = (hole + 1) & self.mask;
-        };
-        self.shift_cluster_after(hole);
-        Some(slot)
-    }
-
-    /// The bucket an id currently occupies, or `None` when unmapped. Test
-    /// visibility only: pinning the backward-shift law needs to observe
-    /// bucket positions, which the slot-returning API deliberately hides.
-    #[cfg(test)]
-    fn bucket_of(&self, id: usize) -> Option<usize> {
-        let mut bucket = self.home(id);
-        loop {
-            let entry = self.buckets[bucket];
-            if entry.slot_plus_one == 0 {
-                return None;
-            }
-            if entry.id == id as u64 {
-                return Some(bucket);
-            }
-            bucket = (bucket + 1) & self.mask;
+        let mut path = [0usize; usize::BITS as usize];
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            path[depth as usize] = node_index;
+            let bit = Self::bit_at(id, depth);
+            node_index = Self::child_index(&self.nodes[node_index], bit)?;
         }
-    }
+        let slot_plus_one = self.nodes[node_index].slot_plus_one;
+        if slot_plus_one == 0 {
+            return None;
+        }
+        self.nodes[node_index].slot_plus_one = 0;
 
-    /// Knuth's Algorithm R: walk the occupied buckets past `hole`, moving
-    /// each entry back into the hole when the hole lies on that entry's probe
-    /// path, and clear the bucket the walk ends on.
-    fn shift_cluster_after(&mut self, mut hole: usize) {
-        let mut candidate = hole;
-        loop {
-            candidate = (candidate + 1) & self.mask;
-            let entry = self.buckets[candidate];
-            if entry.slot_plus_one == 0 {
+        let mut steps = usize::BITS as usize;
+        for depth in (0..usize::BITS).rev() {
+            let child = node_index;
+            if self.nodes[child].slot_plus_one != 0 || self.nodes[child].children != [0, 0] {
                 break;
             }
-            // The entry moves exactly when the hole sits on its probe path:
-            // at or after its home and before the bucket it occupies now —
-            // including the hole being its home, where leaving it empty would
-            // end the probe for that entry early.
-            let probe_from = |from: usize| candidate.wrapping_sub(from) & self.mask;
-            let home = self.home(entry.id as usize);
-            if probe_from(home) >= probe_from(hole) {
-                self.buckets[hole] = entry;
-                hole = candidate;
-            }
+            let parent = path[depth as usize];
+            let bit = Self::bit_at(id, depth);
+            self.nodes[parent].children[bit] = 0;
+            self.release_node(child);
+            node_index = parent;
+            steps += 1;
         }
-        self.buckets[hole] = IndexBucket::EMPTY;
+        #[cfg(test)]
+        {
+            self.last_delete_steps = steps;
+        }
+        Some(slot_plus_one as usize - 1)
+    }
+
+    fn take_node(&mut self) -> usize {
+        if self.free_head != 0 {
+            let node_index = self.free_head as usize - 1;
+            self.free_head = self.nodes[node_index].next_free;
+            self.nodes[node_index] = RadixNode::default();
+            return node_index;
+        }
+        debug_assert!(
+            self.nodes.len() < self.nodes.capacity(),
+            "radix reservation exhausted"
+        );
+        let node_index = self.nodes.len();
+        self.nodes.push(RadixNode::default());
+        node_index
+    }
+
+    fn release_node(&mut self, node_index: usize) {
+        self.nodes[node_index] = RadixNode {
+            next_free: self.free_head,
+            ..RadixNode::default()
+        };
+        self.free_head = node_index as u32 + 1;
     }
 }
 
-impl IndexBucket {
-    /// The table slot this bucket names. Only meaningful on a non-empty
-    /// bucket.
-    fn slot_one_based(&self) -> usize {
-        self.slot_plus_one as usize - 1
+/// A fixed-capacity unordered slot set with O(1) insertion, removal, and
+/// swap-remove relocation. It is used only for work whose ordering is not
+/// observable: parameter queues and pending-MIDI cleanup.
+struct SlotWorkSet {
+    slots: Vec<usize>,
+    positions: Vec<u32>,
+}
+
+impl SlotWorkSet {
+    fn reserved(capacity: usize) -> Self {
+        Self {
+            slots: Vec::with_capacity(capacity),
+            positions: vec![0; capacity],
+        }
+    }
+
+    fn insert(&mut self, slot: usize) {
+        if self.positions[slot] != 0 {
+            return;
+        }
+        debug_assert!(
+            self.slots.len() < self.slots.capacity(),
+            "work set exhausted"
+        );
+        self.slots.push(slot);
+        self.positions[slot] = self.slots.len() as u32;
+    }
+
+    fn remove(&mut self, slot: usize) {
+        let position = self.positions[slot];
+        if position == 0 {
+            return;
+        }
+        let index = position as usize - 1;
+        let moved = self.slots.pop().expect("work-set position names a slot");
+        if index < self.slots.len() {
+            self.slots[index] = moved;
+            self.positions[moved] = index as u32 + 1;
+        }
+        self.positions[slot] = 0;
+    }
+
+    fn move_slot(&mut self, from: usize, to: usize) {
+        if from == to || self.positions[from] == 0 {
+            return;
+        }
+        let position = self.positions[from];
+        self.slots[position as usize - 1] = to;
+        self.positions[to] = position;
+        self.positions[from] = 0;
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct MasterLink {
+    previous: u32,
+    next: u32,
+    member: bool,
+}
+
+/// An intrusive, slot-addressed master insert chain. Its links live beside the
+/// table rather than in effects, so an effect swap only repairs constant-size
+/// link endpoints and never changes audible insertion order.
+struct MasterWorkList {
+    links: Vec<MasterLink>,
+    head: u32,
+    tail: u32,
+}
+
+impl MasterWorkList {
+    fn reserved(capacity: usize) -> Self {
+        Self {
+            links: vec![MasterLink::default(); capacity],
+            head: 0,
+            tail: 0,
+        }
+    }
+
+    fn append(&mut self, slot: usize) {
+        if self.links[slot].member {
+            return;
+        }
+        let handle = slot as u32 + 1;
+        self.links[slot] = MasterLink {
+            previous: self.tail,
+            next: 0,
+            member: true,
+        };
+        if self.tail == 0 {
+            self.head = handle;
+        } else {
+            self.links[self.tail as usize - 1].next = handle;
+        }
+        self.tail = handle;
+    }
+
+    fn remove(&mut self, slot: usize) {
+        let link = self.links[slot];
+        if !link.member {
+            return;
+        }
+        if link.previous == 0 {
+            self.head = link.next;
+        } else {
+            self.links[link.previous as usize - 1].next = link.next;
+        }
+        if link.next == 0 {
+            self.tail = link.previous;
+        } else {
+            self.links[link.next as usize - 1].previous = link.previous;
+        }
+        self.links[slot] = MasterLink::default();
+    }
+
+    fn move_slot(&mut self, from: usize, to: usize) {
+        if from == to {
+            return;
+        }
+        let link = self.links[from];
+        self.links[from] = MasterLink::default();
+        if !link.member {
+            return;
+        }
+        let handle = to as u32 + 1;
+        self.links[to] = link;
+        if link.previous == 0 {
+            self.head = handle;
+        } else {
+            self.links[link.previous as usize - 1].next = handle;
+        }
+        if link.next == 0 {
+            self.tail = handle;
+        } else {
+            self.links[link.next as usize - 1].previous = handle;
+        }
     }
 }
 
@@ -984,6 +1091,12 @@ pub struct AudioScheduler {
     /// callback. Maintained only by the registration and removal arms; see
     /// [`IdSlotIndex`] for the capacity and allocation contract.
     effect_index: IdSlotIndex,
+    /// Slots whose fixed parameter queues are non-empty.
+    parameter_work: SlotWorkSet,
+    /// Slots that may need detached-MIDI cleanup without walking the table.
+    pending_midi_work: SlotWorkSet,
+    /// The explicit, deterministic order of master insert processing.
+    master_work: MasterWorkList,
     audio_bridges: Vec<PluginAudioBridge>,
     /// Plugin id → slot into `audio_bridges`, on the same contract as
     /// `effect_index`.
@@ -1011,6 +1124,16 @@ pub struct AudioScheduler {
     /// Fenced batches applied whole, for [`GraphProgressSnapshot`].
     batches_applied: u64,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    #[cfg(test)]
+    rt_work: RtWorkCounters,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct RtWorkCounters {
+    parameter_table_visits: usize,
+    master_table_visits: usize,
+    pending_midi_work_visits: usize,
 }
 
 impl AudioScheduler {
@@ -1055,6 +1178,9 @@ impl AudioScheduler {
         Self {
             effects: Vec::with_capacity(EFFECT_TABLE_CAPACITY),
             effect_index: IdSlotIndex::reserved(EFFECT_TABLE_CAPACITY),
+            parameter_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
             audio_bridges: Vec::with_capacity(AUDIO_BRIDGE_TABLE_CAPACITY),
             bridge_index: IdSlotIndex::reserved(AUDIO_BRIDGE_TABLE_CAPACITY),
             timeline: TimelineGraph::new(),
@@ -1074,6 +1200,8 @@ impl AudioScheduler {
             timeline_rt_diagnostics_tx,
             batches_applied: 0,
             graph_progress_tx,
+            #[cfg(test)]
+            rt_work: RtWorkCounters::default(),
         }
     }
 
@@ -1118,6 +1246,16 @@ impl AudioScheduler {
     #[cfg(test)]
     pub(crate) fn effect_table_len(&self) -> usize {
         self.effects.len()
+    }
+
+    #[cfg(test)]
+    fn reset_rt_work_counters(&mut self) {
+        self.rt_work = RtWorkCounters::default();
+    }
+
+    #[cfg(test)]
+    fn rt_work_counters(&self) -> RtWorkCounters {
+        self.rt_work
     }
 
     /// Absolute frame of the next block's first sample.
@@ -1334,6 +1472,7 @@ impl AudioScheduler {
                     if let Some(slot) = self.effect_index.lookup(id) {
                         if let Some(effect) = self.effects.get_mut(slot) {
                             effect.enqueue_midi(event, &mut self.midi_rt_diagnostics);
+                            self.pending_midi_work.insert(slot);
                         }
                     }
                     None
@@ -1385,7 +1524,7 @@ impl AudioScheduler {
                         for entry in track.device_chain() {
                             if let Some(slot) = self.effect_index.lookup(entry.effect_id) {
                                 if self.effects[slot].placement == placed_on {
-                                    self.effects[slot].placement = EffectPlacement::Detached;
+                                    self.place_effect(entry.effect_id, EffectPlacement::Detached);
                                 }
                             }
                         }
@@ -1500,7 +1639,7 @@ impl AudioScheduler {
                         for entry in bus.device_chain() {
                             if let Some(slot) = self.effect_index.lookup(entry.effect_id) {
                                 if self.effects[slot].placement == placed_on {
-                                    self.effects[slot].placement = EffectPlacement::Detached;
+                                    self.place_effect(entry.effect_id, EffectPlacement::Detached);
                                 }
                             }
                         }
@@ -1553,6 +1692,8 @@ impl AudioScheduler {
                                     at_frame,
                                 }) {
                                     self.timeline.record_automation_queue_overflow();
+                                } else {
+                                    self.parameter_work.insert(slot);
                                 }
                             }
                         }
@@ -1626,12 +1767,16 @@ impl AudioScheduler {
     fn push_effect(&mut self, effect: ActiveEffect) {
         let slot = self.effects.len();
         let id = effect.id;
+        let placement = effect.placement;
         self.effects.push(effect);
         let inserted = self.effect_index.insert(id, slot);
         debug_assert!(
             inserted,
             "push_effect is only reached after the collision check refused the id"
         );
+        if placement == EffectPlacement::MasterChain {
+            self.master_work.append(slot);
+        }
     }
 
     /// Append a bridge and map its plugin id at the slot it took, on the same
@@ -1684,8 +1829,18 @@ impl AudioScheduler {
 
     /// Record where an effect now runs, after a chain has accepted it.
     fn place_effect(&mut self, effect_id: usize, placement: EffectPlacement) {
-        if let Some(effect) = self.effect_mut(effect_id) {
-            effect.placement = placement;
+        if let Some(slot) = self.effect_index.lookup(effect_id) {
+            let prior = self.effects[slot].placement;
+            if prior == placement {
+                return;
+            }
+            if prior == EffectPlacement::MasterChain {
+                self.master_work.remove(slot);
+            }
+            self.effects[slot].placement = placement;
+            if placement == EffectPlacement::MasterChain {
+                self.master_work.append(slot);
+            }
         }
     }
 
@@ -1697,7 +1852,7 @@ impl AudioScheduler {
             return;
         };
         if self.effects[slot].placement == held_by {
-            self.effects[slot].placement = EffectPlacement::MasterChain;
+            self.place_effect(effect_id, EffectPlacement::MasterChain);
         }
     }
 
@@ -1715,12 +1870,19 @@ impl AudioScheduler {
     /// states its order contract on itself.
     fn remove_effect(&mut self, id: usize) -> Option<ActiveEffect> {
         let slot = self.effect_index.delete(id)?;
+        let old_tail = self.effects.len() - 1;
+        self.parameter_work.remove(slot);
+        self.pending_midi_work.remove(slot);
+        self.master_work.remove(slot);
         let removed = self.effects.swap_remove(slot);
         // The swap moved the table's tail into `slot` unless the removed
         // entry was itself the tail; that entry's mapping still points at the
         // tail position, so repoint it before anyone resolves the id.
         if let Some(moved) = self.effects.get(slot) {
             self.effect_index.set_slot(moved.id, slot);
+            self.parameter_work.move_slot(old_tail, slot);
+            self.pending_midi_work.move_slot(old_tail, slot);
+            self.master_work.move_slot(old_tail, slot);
         }
         Some(removed)
     }
@@ -1931,6 +2093,23 @@ impl AudioScheduler {
             diagnostics.record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
             diagnostics.record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
         }
+        self.remove_empty_pending_midi_work();
+    }
+
+    fn remove_empty_pending_midi_work(&mut self) {
+        let mut index = 0;
+        while index < self.pending_midi_work.slots.len() {
+            let slot = self.pending_midi_work.slots[index];
+            #[cfg(test)]
+            {
+                self.rt_work.pending_midi_work_visits += 1;
+            }
+            if self.effects[slot].pending_midi.is_empty() {
+                self.pending_midi_work.remove(slot);
+            } else {
+                index += 1;
+            }
+        }
     }
 
     /// Land every time-stamped device-parameter change the block has reached.
@@ -1943,7 +2122,20 @@ impl AudioScheduler {
         }
 
         let last_frame = block_start + (frames - 1) as u64;
-        for effect in &mut self.effects {
+        #[cfg(test)]
+        let mut visits = 0;
+        let mut work_index = 0;
+        while work_index < self.parameter_work.slots.len() {
+            let slot = self.parameter_work.slots[work_index];
+            debug_assert!(
+                slot < self.effects.len(),
+                "parameter work points beyond the effect table"
+            );
+            #[cfg(test)]
+            {
+                visits += 1;
+            }
+            let effect = &mut self.effects[slot];
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match &mut effect.instance {
                     PluginCore::Knead(engine) => {
@@ -1956,6 +2148,15 @@ impl AudioScheduler {
                     }
                 }
             }
+            if effect.pending_params.is_empty() {
+                self.parameter_work.remove(slot);
+            } else {
+                work_index += 1;
+            }
+        }
+        #[cfg(test)]
+        {
+            self.rt_work.parameter_table_visits += visits;
         }
     }
 
@@ -2032,15 +2233,20 @@ impl AudioScheduler {
         self.apply_due_device_params(block_start, frames);
         self.render_timeline(block_start, frames, left, right);
 
-        // This loop is the one iteration over the effect table whose
-        // processing order is the table's slot order. Every chain carries its
-        // own explicit order — its entries name effect ids in sequence — and
-        // no product path places more than one unbridged effect on the master
-        // insert chain at once (the graph registers devices detached and
-        // splices them into strips; hosted plugins and crumbs slots arrive
-        // bridged), so nothing observes slot order today. It stays
-        // deterministic for any given table state.
-        for effect in &mut self.effects {
+        // The master list carries insertion order explicitly. It is independent
+        // of the effect table's swap-remove slots, so a teardown cannot change
+        // the order in which surviving master inserts process.
+        #[cfg(test)]
+        let mut master_visits = 0;
+        let mut master = self.master_work.head;
+        while master != 0 {
+            let slot = master as usize - 1;
+            master = self.master_work.links[slot].next;
+            #[cfg(test)]
+            {
+                master_visits += 1;
+            }
+            let effect = &mut self.effects[slot];
             // A bridged plugin is driven by `process_audio_bridges` above, from
             // real worklet audio. This standalone chain runs over zeroed
             // scratch, so processing a bridged plugin here would push phantom
@@ -2125,6 +2331,33 @@ impl AudioScheduler {
                     }
                 }
             }
+        }
+
+        // The master list intentionally contains only master members. Detached
+        // effects still need their unbridged MIDI discarded, but following the
+        // compact pending set keeps that cleanup proportional to queued events
+        // rather than the table's capacity. Bridged effects stay untouched:
+        // their bridge owns the unfed/bypassed retention decision.
+        self.remove_empty_pending_midi_work();
+        let mut pending_index = 0;
+        while pending_index < self.pending_midi_work.slots.len() {
+            let slot = self.pending_midi_work.slots[pending_index];
+            #[cfg(test)]
+            {
+                self.rt_work.pending_midi_work_visits += 1;
+            }
+            let effect = &mut self.effects[slot];
+            let bridged = self.bridge_index.lookup(effect.id).is_some();
+            if !bridged && effect.placement == EffectPlacement::Detached {
+                effect.pending_midi.clear();
+                self.pending_midi_work.remove(slot);
+            } else {
+                pending_index += 1;
+            }
+        }
+        #[cfg(test)]
+        {
+            self.rt_work.master_table_visits += master_visits;
         }
 
         self.timeline
@@ -2275,6 +2508,11 @@ mod tests {
         panic_on_drop: bool,
     }
 
+    struct AffinePlugin {
+        factor: f32,
+        offset: f32,
+    }
+
     fn drop_tracking_plugin(
         dropped_tx: &mpsc::Sender<thread::ThreadId>,
         panic_on_drop: bool,
@@ -2343,6 +2581,27 @@ mod tests {
         }
     }
 
+    impl NativePlugin for AffinePlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for sample in 0..num_samples {
+                left[sample] = left[sample] * self.factor + self.offset;
+                right[sample] = right[sample] * self.factor + self.offset;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "affine-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
     impl NativePlugin for MidiRecordingPlugin {
         fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
 
@@ -2386,6 +2645,343 @@ mod tests {
         let (retired_tx, retired_rx) = RingBuffer::new(16);
         let scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
         (command_tx, scheduler, retired_rx)
+    }
+
+    #[test]
+    fn id_slot_index_deletion_prunes_shared_radix_paths_without_losing_survivors() {
+        let mut index = IdSlotIndex::reserved(256);
+        let shared_prefix = usize::MAX << 8;
+        let ids: Vec<_> = (0..128).map(|suffix| shared_prefix | suffix).collect();
+        for (slot, id) in ids.iter().copied().enumerate() {
+            assert!(index.insert(id, slot + 1_000));
+        }
+        let allocated = index.nodes.len();
+
+        for ordinal in (0..64).step_by(2) {
+            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        }
+        for ordinal in 64..128 {
+            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        }
+        assert!(
+            index.last_delete_steps <= 2 * usize::BITS as usize,
+            "deletion must stay within the fixed radix walk; observed {} steps",
+            index.last_delete_steps
+        );
+
+        for (ordinal, id) in ids.iter().copied().enumerate() {
+            let expected = if (ordinal < 64 && ordinal % 2 == 0) || ordinal >= 64 {
+                None
+            } else {
+                Some(ordinal + 1_000)
+            };
+            assert_eq!(
+                index.lookup(id),
+                expected,
+                "shared-prefix id {id:#x} must retain its own mapping across churn"
+            );
+        }
+
+        // Refill a fully removed shared-prefix branch. This would grow the node
+        // store if deletion left dead paths behind; it also makes every
+        // surviving mapping contend with reused radix nodes.
+        for ordinal in 64..128 {
+            assert!(index.insert(ids[ordinal], ordinal + 1_000));
+        }
+        assert_eq!(
+            index.nodes.len(),
+            allocated,
+            "pruned shared-prefix paths must be reused instead of growing under churn"
+        );
+        for (ordinal, id) in ids.into_iter().enumerate() {
+            let expected = if ordinal < 64 && ordinal % 2 == 0 {
+                None
+            } else {
+                Some(ordinal + 1_000)
+            };
+            assert_eq!(
+                index.lookup(id),
+                expected,
+                "removed ids must stay absent and every survivor must retain its original slot"
+            );
+        }
+    }
+
+    #[test]
+    fn sparse_process_block_visits_only_active_parameter_and_master_work() {
+        let population = 1_024;
+        let (mut command_tx, command_rx) = RingBuffer::new(population + 8);
+        let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        for id in 0..population {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in 0..population {
+            scheduler.place_effect(id, EffectPlacement::Detached);
+        }
+
+        scheduler.reset_rt_work_counters();
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters::default(),
+            "an idle table must not become callback work"
+        );
+    }
+
+    #[test]
+    fn sparse_device_parameter_work_visits_only_the_queued_effect_and_releases_its_slot() {
+        let population = 1_024;
+        let (mut command_tx, command_rx) = RingBuffer::new(population + 8);
+        let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        command_tx
+            .push(GraphCommand::AddEffect(0, knead_instance()))
+            .unwrap();
+        for id in 1..population {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in 1..population {
+            scheduler.place_effect(id, EffectPlacement::Detached);
+        }
+        command_tx
+            .push(GraphCommand::AutomateDeviceParam {
+                effect_id: 0,
+                param: DeviceParam::ShiftSemitones,
+                value: 7.0,
+                at_frame: 0,
+            })
+            .unwrap();
+        scheduler.update_graph();
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.reset_rt_work_counters();
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters {
+                parameter_table_visits: 1,
+                master_table_visits: 1,
+                pending_midi_work_visits: 0,
+            }
+        );
+
+        scheduler.reset_rt_work_counters();
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters {
+                parameter_table_visits: 0,
+                master_table_visits: 1,
+                pending_midi_work_visits: 0,
+            },
+            "an empty parameter queue must leave the compact work set"
+        );
+    }
+
+    #[test]
+    fn sparse_pending_midi_cleanup_visits_only_its_work_set() {
+        let population = 1_024;
+        let (mut command_tx, command_rx) = RingBuffer::new(population + 8);
+        let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        for id in 0..population {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in 0..population {
+            scheduler.place_effect(id, EffectPlacement::Detached);
+        }
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                population - 1,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        scheduler.reset_rt_work_counters();
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters {
+                pending_midi_work_visits: 2,
+                ..RtWorkCounters::default()
+            },
+            "one pending detached event needs one empty check and one cleanup visit, never a table walk"
+        );
+        assert!(scheduler.effects[population - 1].pending_midi.is_empty());
+        assert_eq!(scheduler.pending_midi_work.positions[population - 1], 0);
+    }
+
+    #[test]
+    fn master_work_preserves_explicit_order_across_place_release_bridge_remove_and_slot_move() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(20);
+        for (id, plugin) in [
+            (
+                10,
+                Box::new(AffinePlugin {
+                    factor: 2.0,
+                    offset: 1.0,
+                }) as Box<dyn NativePlugin>,
+            ),
+            (
+                30,
+                Box::new(AffinePlugin {
+                    factor: 5.0,
+                    offset: 3.0,
+                }) as Box<dyn NativePlugin>,
+            ),
+        ] {
+            command_tx
+                .push(GraphCommand::AddPlugin(id, plugin))
+                .unwrap();
+        }
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                20,
+                Box::new(AffinePlugin {
+                    factor: 11.0,
+                    offset: 7.0,
+                }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        let mut left = [1.0; 1];
+        let mut right = [1.0; 1];
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [18.0]);
+
+        scheduler.place_effect(10, EffectPlacement::Track(1));
+        scheduler.release_effect(10, EffectPlacement::Track(1));
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(
+            left,
+            [17.0],
+            "release appends after existing master members"
+        );
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(30))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(
+            left,
+            [3.0],
+            "swap-moving id 10 must preserve its list position"
+        );
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(20))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(
+            left,
+            [3.0],
+            "removing a bridged member must not disturb id 10"
+        );
+        assert_eq!(
+            scheduler.master_work.head, 1,
+            "the remaining master member is id 10"
+        );
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                40,
+                Box::new(AffinePlugin {
+                    factor: 7.0,
+                    offset: 4.0,
+                }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [25.0], "id 40 is the tail after id 10");
+
+        // Remove the tail itself, then render the complete surviving chain.
+        // Adding another effect must reuse that vacated table and link slot
+        // without leaving a stale tail endpoint behind.
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(40))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [3.0], "only id 10 survives the tail removal");
+        assert_eq!(scheduler.master_work.head, 1);
+        assert_eq!(scheduler.master_work.tail, 1);
+        assert_eq!(scheduler.master_work.links[0].next, 0);
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                50,
+                Box::new(AffinePlugin {
+                    factor: 4.0,
+                    offset: 2.0,
+                }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [14.0], "the reused tail slot appends after id 10");
+        assert_eq!(scheduler.master_work.head, 1);
+        assert_eq!(scheduler.master_work.tail, 2);
+        assert_eq!(scheduler.master_work.links[0].previous, 0);
+        assert_eq!(scheduler.master_work.links[0].next, 2);
+        assert!(scheduler.master_work.links[0].member);
+        assert_eq!(scheduler.master_work.links[1].previous, 1);
+        assert_eq!(scheduler.master_work.links[1].next, 0);
+        assert!(scheduler.master_work.links[1].member);
     }
 
     fn reclaim_on_background_thread(retired: RetiredGraphObjects) -> thread::ThreadId {
@@ -3051,194 +3647,32 @@ mod tests {
         assert_eq!(scheduler.effect_index.lookup(31), Some(0));
     }
 
-    /// Deletion backward-shifts its cluster, so churn — the remove/re-register
-    /// cycles a long session performs — must never lose a live id, resurrect a
-    /// removed one, or point a live id at a slot holding something else.
-    /// Deterministic structure check over a population with real churn: every
-    /// surviving id resolves to the slot that actually holds it, with nothing
-    /// timed.
-    /// Backward-shift deletion is only observable through a home-bucket
-    /// collision: within any single sequential id run, Fibonacci hashing
-    /// never puts two ids in one bucket, so a delete that left a hole
-    /// instead of shifting keeps every existing test green — and strands a
-    /// displaced live id in the mixed-id populations real sessions hold
-    /// (plugin-reserve ids, graph ids, crumbs ids). This test derives a
-    /// colliding pair from the index's own hash and mask — so it cannot rot
-    /// when the capacity changes — inserts both, deletes the first-inserted
-    /// (the one sitting in the shared home bucket), and requires the
-    /// displaced survivor to keep resolving at the slot that really holds
-    /// it. A hole-leaving delete fails here: probing the survivor stops at
-    /// the empty home bucket.
     #[test]
-    fn a_delete_through_a_shared_home_bucket_keeps_the_displaced_id_resolvable() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-
-        // Smallest pair of distinct ids sharing a home bucket. Pigeonhole
-        // guarantees one within mask+1 ids; the derivation reads the live
-        // hash and mask rather than restating the constant.
-        let mut first_at_bucket = vec![usize::MAX; scheduler.effect_index.mask + 1];
-        let mut pair = None;
-        for id in 1usize.. {
-            let home = scheduler.effect_index.home(id);
-            if first_at_bucket[home] != usize::MAX {
-                pair = Some((first_at_bucket[home], id));
-                break;
-            }
-            first_at_bucket[home] = id;
+    fn radix_deletion_prunes_and_reuses_nodes_without_stale_aliases() {
+        let mut index = IdSlotIndex::reserved(4);
+        for (slot, id) in [0usize, usize::MAX, 1 << (usize::BITS - 1), 17]
+            .into_iter()
+            .enumerate()
+        {
+            assert!(index.insert(id, slot));
         }
-        let (first, second) =
-            pair.expect("a table of this many buckets collides within mask+1 ids");
-        assert_eq!(
-            scheduler.effect_index.home(first),
-            scheduler.effect_index.home(second),
-            "the derived pair must genuinely share a home bucket"
-        );
-        assert_ne!(first, second);
-
-        for id in [first, second] {
-            command_tx
-                .push(GraphCommand::AddPlugin(
-                    id,
-                    Box::new(FakeNativePlugin { value: 0.0 }),
-                ))
-                .unwrap();
-            scheduler.update_graph();
-        }
-        // The first insert took the shared home bucket; the second probed one
-        // past it. That probe step is the load-bearing part: removing the
-        // home occupant must shift the survivor back, or its lookup ends at
-        // an empty bucket.
-        let home = scheduler.effect_index.home(first);
-        assert_eq!(
-            scheduler.effect_index.bucket_of(first),
-            Some(home),
-            "an insert into an empty index lands in its home bucket"
+        let allocated = index.nodes.len();
+        assert_eq!(index.delete(usize::MAX), Some(1));
+        assert_eq!(index.lookup(usize::MAX), None);
+        assert_eq!(index.lookup(0), Some(0));
+        assert_eq!(index.lookup(1 << (usize::BITS - 1)), Some(2));
+        assert!(index.insert(usize::MAX - 1, 1));
+        assert_eq!(index.lookup(usize::MAX - 1), Some(1));
+        assert_eq!(index.nodes.len(), allocated, "pruned nodes must be reused");
+        assert!(
+            !index.insert(usize::MAX - 1, 3),
+            "a duplicate cannot alias a slot"
         );
         assert_eq!(
-            scheduler.effect_index.bucket_of(second),
-            Some((home + 1) & scheduler.effect_index.mask),
-            "the second insert must sit one probe past the shared home"
+            index.lookup(usize::MAX - 1),
+            Some(1),
+            "a rejected duplicate must leave the original slot mapping intact"
         );
-
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(first))
-            .unwrap();
-        scheduler.update_graph();
-
-        assert_eq!(
-            scheduler.effect_index.bucket_of(second),
-            Some(home),
-            "the backward shift must move the displaced survivor into the vacated home"
-        );
-        let survivor_slot = scheduler
-            .effect_index
-            .lookup(second)
-            .expect("the survivor must resolve after the home occupant's removal");
-        assert_eq!(
-            scheduler.effects[survivor_slot].id, second,
-            "the slot the index names must actually hold the survivor"
-        );
-        assert_eq!(scheduler.effect_index.lookup(first), None);
-        assert_eq!(scheduler.effects.len(), 1);
-    }
-
-    /// The shift's false arm — a candidate whose probe path did NOT cross the
-    /// hole must stay put — is as load-bearing as the moving arm, and no
-    /// single-home cluster ever executes it: every candidate there shares the
-    /// hole's home and always moves. This test builds a mixed cluster, the
-    /// shape real sessions produce by mixing id populations: two ids sharing
-    /// home bucket b, plus an id whose own home is b+1. Deleting through b
-    /// walks one candidate of each kind — the mover (shared home b, sitting
-    /// at b+2) and the stayer (home b+1, sitting at b+1, whose path never
-    /// crossed b) — and requires each to do its own thing. The cluster is
-    /// derived from the index's own hash and mask, so the test cannot rot
-    /// when the capacity changes.
-    #[test]
-    fn a_delete_through_a_mixed_cluster_moves_only_the_entries_whose_probe_path_crossed_the_hole() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-
-        // Scan ids into their home buckets, then find a bucket holding two
-        // ids whose neighbour bucket holds one: that is the mixed cluster.
-        let mask = scheduler.effect_index.mask;
-        let bucket_count = mask + 1;
-        let mut ids_per_bucket: Vec<Vec<usize>> = vec![Vec::new(); bucket_count];
-        for id in 1..=(bucket_count * 4) {
-            ids_per_bucket[scheduler.effect_index.home(id)].push(id);
-        }
-        let mut chosen = None;
-        for bucket in 0..bucket_count {
-            let adjacent = (bucket + 1) & mask;
-            if let (Some(mover_home_sharer), Some(displaced), Some(stayer)) = (
-                ids_per_bucket[bucket].first().copied(),
-                ids_per_bucket[bucket].get(1).copied(),
-                ids_per_bucket[adjacent].first().copied(),
-            ) {
-                chosen = Some((mover_home_sharer, displaced, stayer));
-                break;
-            }
-        }
-        let (shared_a, shared_b, native_neighbor) = chosen.expect(
-            "four rounds of ids over the buckets hold a shared home next to an occupied neighbour",
-        );
-        let home = scheduler.effect_index.home(shared_a);
-        assert_eq!(scheduler.effect_index.home(shared_b), home);
-        assert_eq!(
-            scheduler.effect_index.home(native_neighbor),
-            (home + 1) & mask
-        );
-
-        // Insertion lays the cluster out as [home]=shared_a,
-        // [home+1]=native_neighbor (its own home, taken first), and
-        // [home+2]=shared_b (displaced past both by its shared home).
-        for id in [shared_a, native_neighbor, shared_b] {
-            command_tx
-                .push(GraphCommand::AddPlugin(
-                    id,
-                    Box::new(FakeNativePlugin { value: 0.0 }),
-                ))
-                .unwrap();
-            scheduler.update_graph();
-        }
-        let after_home = (home + 1) & mask;
-        let past_neighbor = (home + 2) & mask;
-        assert_eq!(scheduler.effect_index.bucket_of(shared_a), Some(home));
-        assert_eq!(
-            scheduler.effect_index.bucket_of(native_neighbor),
-            Some(after_home)
-        );
-        assert_eq!(
-            scheduler.effect_index.bucket_of(shared_b),
-            Some(past_neighbor)
-        );
-
-        // Delete the shared-home occupant: the hole at `home` is crossed by
-        // shared_b's probe path (it must move back) and not by
-        // native_neighbor's (it never probed past its own home, so moving it
-        // would strand it behind its home).
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(shared_a))
-            .unwrap();
-        scheduler.update_graph();
-
-        assert_eq!(
-            scheduler.effect_index.bucket_of(native_neighbor),
-            Some(after_home),
-            "the neighbour at its own home must stay exactly where it is"
-        );
-        assert_eq!(
-            scheduler.effect_index.bucket_of(shared_b),
-            Some(home),
-            "the displaced sharer must move into the vacated home"
-        );
-        for survivor in [native_neighbor, shared_b] {
-            let slot = scheduler
-                .effect_index
-                .lookup(survivor)
-                .expect("every survivor must resolve through the shifted cluster");
-            assert_eq!(scheduler.effects[slot].id, survivor);
-        }
-        assert_eq!(scheduler.effect_index.lookup(shared_a), None);
-        assert_eq!(scheduler.effects.len(), 2);
     }
 
     #[test]
@@ -3660,6 +4094,83 @@ mod tests {
 
         #[global_allocator]
         static ALLOCATOR: AllocDisabler = AllocDisabler;
+
+        #[test]
+        fn swap_removed_tail_relocates_both_work_sets_before_they_process_without_allocating() {
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let received_event_count = Arc::new(AtomicUsize::new(0));
+            let received_channel_sum = Arc::new(AtomicUsize::new(0));
+            command_tx
+                .push(GraphCommand::AddEffect(1, knead_instance()))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    2,
+                    Box::new(MidiRecordingPlugin {
+                        received_event_count: Arc::clone(&received_event_count),
+                        received_channel_sum: Arc::clone(&received_channel_sum),
+                    }),
+                ))
+                .unwrap();
+            scheduler.update_graph();
+            command_tx
+                .push(GraphCommand::AutomateDeviceParam {
+                    effect_id: 2,
+                    param: DeviceParam::ShiftSemitones,
+                    value: 3.0,
+                    at_frame: 0,
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SendMidiNote(
+                    2,
+                    MidiNoteEvent {
+                        note: 60,
+                        velocity: 100,
+                        channel: 0,
+                        is_note_on: true,
+                        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                        project_probability_seed: 0,
+                        clip_id_hash: 0,
+                        event_id_hash: 0,
+                        absolute_occurrence_index: 0,
+                    },
+                ))
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // Remove the front while the tail is in both compact work sets.
+            // Neither queue may be consumed before swap-remove relocates it.
+            command_tx.push(GraphCommand::RemovePlugin(1)).unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+            assert_eq!(scheduler.effect_index.lookup(2), Some(0));
+            assert_eq!(scheduler.effects[0].id, 2);
+            assert_eq!(scheduler.parameter_work.positions[0], 1);
+            assert_eq!(scheduler.pending_midi_work.positions[0], 1);
+            assert_eq!(scheduler.parameter_work.positions[1], 0);
+            assert_eq!(scheduler.pending_midi_work.positions[1], 0);
+
+            let mut left = [0.0; 4];
+            let mut right = [0.0; 4];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, 4);
+            });
+            assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+            assert_eq!(received_channel_sum.load(Ordering::Relaxed), 0);
+            assert_eq!(
+                scheduler
+                    .midi_rt_diagnostics
+                    .snapshot()
+                    .unmapped_set_param_calls,
+                1
+            );
+            assert_eq!(scheduler.parameter_work.positions[0], 0);
+            assert_eq!(scheduler.pending_midi_work.positions[0], 0);
+        }
 
         #[test]
         fn add_effect_and_add_detached_effect_install_the_carried_instance_without_allocating() {
