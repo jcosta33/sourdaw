@@ -2,8 +2,19 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { extname, relative, resolve } from 'node:path';
+import {
+    closeSync,
+    constants,
+    existsSync,
+    fstatSync,
+    lstatSync,
+    openSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    statSync,
+} from 'node:fs';
+import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
@@ -12,6 +23,9 @@ import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserA
 import { checkElectronRuntimeProvenance, electronReleaseInventoryContract } from './checkElectronRuntimeProvenance.ts';
 import { checkLevainProvenance } from './checkLevainProvenance.ts';
 import { checkLgplRuntimeProvenance } from './checkLgplRuntimeProvenance.ts';
+import { checkProjectLicense } from './checkProjectLicense.ts';
+import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
+import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 export const RETENTION_CLASSES = [
@@ -68,6 +82,25 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const TRADEMARK_NOTICE_PATH = 'public/legal/TRADEMARKS.md';
+export const ADAPTED_MIT_SOURCE_PATH = 'crates/daw-dsp/src/toaster/engines/kick_808.rs';
+export const ADAPTED_MIT_LICENSE_PATH = 'public/legal/MI-PLAITS-DSP-RS-MIT.txt';
+export const ADAPTED_ORIGINAL_MIT_LICENSE_PATH = 'public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt';
+export const ADAPTED_MIT_NOTICE_PATH = 'public/legal/THIRD-PARTY-NOTICES.md';
+export const ADAPTED_MIT_COMMIT = '6d3f7a5b84b25ec45d66c9f6be7109474690d795';
+export const ADAPTED_ORIGINAL_COMMIT = '99432f2bf443219b3eb77e65e1a18583faad422e';
+export const ADAPTED_ORIGINAL_SOURCE_PATH = 'plaits/dsp/drums/analog_bass_drum.h';
+export const ADAPTED_ORIGINAL_SOURCE_SHA256 = '46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea';
+export const ADAPTED_MIT_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs';
+export const ADAPTED_MIT_LICENSE_PROOF_PATH = 'release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt';
+export const ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mutable-instruments-analog_bass_drum.h';
+export const ADAPTED_MIT_UPSTREAM_SOURCE_SHA256 = 'f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949';
+export const ADAPTED_MIT_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
+
+const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
+    'pnpm-lock.yaml': ['javascript-dependencies'],
+    'server/package-lock.json': ['javascript-dependencies', 'collaboration-server'],
+    'Cargo.lock': ['rust-dependencies'],
+};
 
 export const OWNER_VISUAL_ASSET_PATHS = [
     'public/favicon.ico',
@@ -187,9 +220,38 @@ export type RepositorySnapshot = {
     markPaths: Record<string, string[]>;
 };
 
+export type RepositorySnapshotFileReader = {
+    open?: (path: string, flags: number) => number;
+    readBytes(fileDescriptor: number): Buffer;
+    readText(fileDescriptor: number): string;
+};
+
+const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
+    open: (path, flags) => openSync(path, flags),
+    readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
+    readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
+};
+
 export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
+
+type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
+
+function readReleaseInventoryContents(root: string): string {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const contents = readRepositoryRegularText(realpathSync(root), inventoryPath, repositorySnapshotFileReader);
+    if (contents === undefined) {
+        throw new Error(`release inventory cannot be read safely: ${inventoryPath}`);
+    }
+    return contents;
+}
+
+export function readReleaseInventory(root: string): ReleaseInventory {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const contents = readReleaseInventoryContents(root);
+    return parseJsonWithUniqueKeys<ReleaseInventory>(contents, inventoryPath);
+}
 
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
 const markExtensions = new Set([...scannedExtensions, '.css', '.html', '.md', '.toml', '.txt', '.yaml', '.yml']);
@@ -209,6 +271,140 @@ function sortedUnique(values: string[]): string[] {
 
 function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function isSemanticSha256Label(value: string): boolean {
+    return value.startsWith('@');
+}
+
+function isByteCountPrefixedRemoteArtifact(value: string): boolean {
+    return /^(?:bytes:)?[0-9]+:/u.test(value);
+}
+
+function isUriLikeDigestLabel(value: string): boolean {
+    return /^[a-z][a-z0-9+.+-]*:/iu.test(value);
+}
+
+function isWindowsPathLikeDigestLabel(value: string): boolean {
+    return value.includes('\\') || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value);
+}
+
+function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
+    const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
+    const sha256 = match?.[1];
+    const path = match?.[2];
+    if (
+        sha256 === undefined ||
+        path === undefined ||
+        isSemanticSha256Label(path) ||
+        isByteCountPrefixedRemoteArtifact(path) ||
+        (isUriLikeDigestLabel(path) && !isWindowsPathLikeDigestLabel(path))
+    ) {
+        return undefined;
+    }
+    return { path, sha256 };
+}
+
+function isCanonicalPathAddress(path: string): boolean {
+    return (
+        !path.includes('\\') &&
+        !path.includes('\0') &&
+        !/^[A-Za-z]:/u.test(path) &&
+        !posix.isAbsolute(path) &&
+        !win32.isAbsolute(path) &&
+        path !== '.' &&
+        path !== '..' &&
+        !path.startsWith('../') &&
+        !path.includes('/../') &&
+        !path.endsWith('/..') &&
+        !path.endsWith('/') &&
+        posix.normalize(path) === path
+    );
+}
+
+function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
+    const relativePath = relative(rootRealPath, realPath);
+    return (
+        relativePath === '..' ||
+        relativePath.startsWith('../') ||
+        relativePath.startsWith('..\\') ||
+        posix.isAbsolute(relativePath) ||
+        win32.isAbsolute(relativePath)
+    );
+}
+
+function openRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): number {
+    let fileDescriptor: number | undefined;
+    try {
+        const beforeOpen = lstatSync(absolutePath);
+        if (!beforeOpen.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        if ((constants.O_NOFOLLOW ?? 0) === 0) {
+            throw new Error(`no-follow open is unavailable: ${absolutePath}`);
+        }
+        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const opened = fstatSync(fileDescriptor);
+        if (!opened.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        const afterOpen = lstatSync(absolutePath);
+        if (!afterOpen.isFile() || opened.dev !== afterOpen.dev || opened.ino !== afterOpen.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        const realPath = realpathSync(absolutePath);
+        if (pathEscapesRoot(rootRealPath, realPath)) {
+            throw new Error(`path escapes repository root: ${absolutePath}`);
+        }
+        const resolved = statSync(realPath);
+        if (opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        return fileDescriptor;
+    } catch (error) {
+        if (fileDescriptor !== undefined) {
+            closeSync(fileDescriptor);
+        }
+        throw error;
+    }
+}
+
+function readRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): Buffer {
+    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    try {
+        return readFile.readBytes(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
+}
+
+function readRepositoryRegularText(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): string | undefined {
+    let fileDescriptor: number;
+    try {
+        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    } catch {
+        return undefined;
+    }
+    try {
+        return readFile.readText(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
 }
 
 function directorySha256(root: string, directory: string): string {
@@ -247,13 +443,19 @@ function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
 
 function trackedFilesSha256(root: string, files: readonly string[]): string {
     const hash = createHash('sha256');
+    const rootRealPath = realpathSync(root);
     for (const file of files) {
-        if (!existsSync(resolve(root, file))) {
+        const absolutePath = resolve(root, file);
+        if (!existsSync(absolutePath)) {
             throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
-        hash.update(readFileSync(resolve(root, file)));
+        try {
+            hash.update(readRepositoryRegularFile(rootRealPath, absolutePath, repositorySnapshotFileReader));
+        } catch {
+            throw new Error(`Grand Boule release source is unsafe: ${file}`);
+        }
         hash.update('\0');
     }
     return hash.digest('hex');
@@ -452,7 +654,10 @@ function assertExactArtifactCensus(label: string, actual: string[], expected: st
 }
 
 function readWasmManifest(root: string): WasmManifest {
-    return JSON.parse(readFileSync(resolve(root, WASM_MANIFEST_PATH), 'utf8')) as WasmManifest;
+    return parseJsonWithUniqueKeys<WasmManifest>(
+        readFileSync(resolve(root, WASM_MANIFEST_PATH), 'utf8'),
+        WASM_MANIFEST_PATH
+    );
 }
 
 function isMirrorSourceOnly(path: string): boolean {
@@ -531,23 +736,23 @@ export function assertGrandBouleRustWasmBoundary(root: string): void {
 }
 
 export const GRAND_BOULE_RUST_SOURCE_ADMISSION = {
-    'attack_sampler.rs': 'project-authored implementation',
+    'attack_sampler.rs': 'owner-admitted project implementation',
     'coupled_strings.rs':
-        'project-authored aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
-    'duplex.rs': 'project-authored implementation using standard duplex-string acoustics',
-    'engine.rs': 'project-authored orchestration and product voicing',
-    'hammer.rs': 'project-authored implementation of the cited Stulov scientific relation',
-    'longitudinal.rs': 'project-authored implementation using standard longitudinal-mode physics',
-    'mechanical_noise.rs': 'project-authored implementation informed by cited mechanical-transient observations',
-    'midi2.rs': 'project-authored implementation of public MIDI protocol facts',
-    'mod.rs': 'project-authored host and WASM boundary',
-    'parameters.rs': 'project-authored curves retaining cited Russell and Rossing measurement anchors',
-    'pedals.rs': 'project-authored implementation using standard piano mechanics',
-    'radiation.rs': 'project-authored radiation and microphone model',
-    'soundboard.rs': 'project-authored finite body kernels and processing',
-    'string.rs': 'project-authored modal coefficient implementation from standard string equations',
-    'sympathetic.rs': 'project-authored sympathetic-resonance implementation',
-    'voice.rs': 'project-authored voice lifecycle and coefficient composition',
+        'owner-admitted aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
+    'duplex.rs': 'owner-admitted implementation using standard duplex-string acoustics',
+    'engine.rs': 'owner-admitted orchestration and product voicing',
+    'hammer.rs': 'owner-admitted implementation of the cited Stulov scientific relation',
+    'longitudinal.rs': 'owner-admitted implementation using standard longitudinal-mode physics',
+    'mechanical_noise.rs': 'owner-admitted implementation informed by cited mechanical-transient observations',
+    'midi2.rs': 'owner-admitted implementation of public MIDI protocol facts',
+    'mod.rs': 'owner-admitted host and WASM boundary',
+    'parameters.rs': 'owner-admitted curves retaining cited Russell and Rossing measurement anchors',
+    'pedals.rs': 'owner-admitted implementation using standard piano mechanics',
+    'radiation.rs': 'owner-admitted radiation and microphone model',
+    'soundboard.rs': 'owner-admitted finite body kernels and processing',
+    'string.rs': 'owner-admitted modal coefficient implementation from standard string equations',
+    'sympathetic.rs': 'owner-admitted sympathetic-resonance implementation',
+    'voice.rs': 'owner-admitted voice lifecycle and coefficient composition',
 } as const;
 
 export function assertGrandBouleRustSourceAdmission(root: string): void {
@@ -757,7 +962,6 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'crates/daw-dsp/benches/wasm/deviceRecipes.js',
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-    'public/wasm/manifest.json',
 ] as const;
 
 export function assertGrandBouleMeasurementAdmission(root: string): void {
@@ -789,11 +993,18 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         try {
             sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
         } catch {
-            throw new Error(`Grand Boule measurement source revision cannot provide ${path}`);
+            throw new Error(`Grand Boule measurement source revision ${revision} cannot provide ${path}`);
         }
-        const expected = createHash('sha256').update(sourceAtRevision).digest('hex');
-        if (data.sourceDigests?.[path] !== expected) {
-            throw new Error(`Grand Boule measurement source digest drifted for ${path}`);
+        const recordedDigest = data.sourceDigests![path]!;
+        const revisionDigest = createHash('sha256').update(sourceAtRevision).digest('hex');
+        if (recordedDigest !== revisionDigest) {
+            throw new Error(`Grand Boule measurement recorded digest does not match source revision for ${path}`);
+        }
+        const currentDigest = createHash('sha256')
+            .update(readFileSync(resolve(root, path)))
+            .digest('hex');
+        if (recordedDigest !== currentDigest) {
+            throw new Error(`Grand Boule measurement current source digest drifted for ${path}`);
         }
     }
     const rows = data.rows?.filter((row) => row.id === 'grand_boule') ?? [];
@@ -839,8 +1050,108 @@ export function audioWorkletReleaseInventoryContract(root: string): SurfaceContr
         sources: [...AUDIO_WORKLET_SOURCES],
         revisions: ['not-applicable:direct-project-source'],
         digests: AUDIO_WORKLET_SOURCES.map((path) => `sha256:${fileSha256(resolve(root, path))}:${path}`),
-        licenses: ['pending:OS-10-project-grant'],
+        licenses: ['Apache-2.0'],
     };
+}
+
+export function adaptedMitSourceReleaseInventoryContract(root: string): SurfaceContract {
+    assertAdaptedMitSourceProofs(root);
+    return {
+        kind: 'adapted-source',
+        paths: [
+            ADAPTED_MIT_SOURCE_PATH,
+            ADAPTED_MIT_UPSTREAM_PROOF_PATH,
+            ADAPTED_MIT_LICENSE_PROOF_PATH,
+            ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH,
+            ADAPTED_MIT_LICENSE_PATH,
+            ADAPTED_ORIGINAL_MIT_LICENSE_PATH,
+            ADAPTED_MIT_NOTICE_PATH,
+        ],
+        sources: [
+            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:src/drums/analog_bass_drum.rs`,
+            `git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`,
+            `git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
+            ADAPTED_MIT_SOURCE_PATH,
+        ],
+        revisions: [ADAPTED_MIT_COMMIT, ADAPTED_ORIGINAL_COMMIT],
+        digests: [
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_SOURCE_PATH))}:${ADAPTED_MIT_SOURCE_PATH}`,
+            `sha256:${ADAPTED_MIT_UPSTREAM_SOURCE_SHA256}:${ADAPTED_MIT_UPSTREAM_PROOF_PATH}`,
+            `sha256:${ADAPTED_MIT_LICENSE_SHA256}:git:github.com/sourcebox/mi-plaits-dsp-rs@${ADAPTED_MIT_COMMIT}:LICENSE.txt`,
+            `sha256:${ADAPTED_MIT_LICENSE_SHA256}:${ADAPTED_MIT_LICENSE_PROOF_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH))}:${ADAPTED_MIT_LICENSE_PATH}`,
+            `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:git:github.com/pichenettes/eurorack@${ADAPTED_ORIGINAL_COMMIT}:${ADAPTED_ORIGINAL_SOURCE_PATH}`,
+            `sha256:${ADAPTED_ORIGINAL_SOURCE_SHA256}:${ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_ORIGINAL_MIT_LICENSE_PATH))}:${ADAPTED_ORIGINAL_MIT_LICENSE_PATH}`,
+            `sha256:${fileSha256(resolve(root, ADAPTED_MIT_NOTICE_PATH))}:${ADAPTED_MIT_NOTICE_PATH}`,
+        ],
+        licenses: ['MIT'],
+    };
+}
+
+export function assertAdaptedMitSourceProofs(root: string): void {
+    for (const [path, expected] of [
+        [ADAPTED_MIT_UPSTREAM_PROOF_PATH, ADAPTED_MIT_UPSTREAM_SOURCE_SHA256],
+        [ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH, ADAPTED_ORIGINAL_SOURCE_SHA256],
+    ] as const) {
+        if (fileSha256(resolve(root, path)) !== expected) {
+            throw new Error(`${path}: pinned upstream source proof drifted`);
+        }
+    }
+    if (fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PROOF_PATH)) !== ADAPTED_MIT_LICENSE_SHA256) {
+        throw new Error(`${ADAPTED_MIT_LICENSE_PROOF_PATH}: pinned upstream license proof drifted`);
+    }
+    if (fileSha256(resolve(root, ADAPTED_MIT_LICENSE_PATH)) !== ADAPTED_MIT_LICENSE_SHA256) {
+        throw new Error(`${ADAPTED_MIT_LICENSE_PATH}: distributed upstream license drifted`);
+    }
+}
+
+export function projectLicenseDistributionReleaseInventoryContract(root: string): SurfaceContract {
+    const paths = [
+        '.gitattributes',
+        'LICENSE',
+        'NOTICE',
+        'public/legal/Apache-2.0.txt',
+        DEPENDENCY_LICENSE_REPORT_PATH,
+        'public/legal/SOURDAW-NOTICE.txt',
+        'public/legal/THIRD-PARTY-NOTICES.md',
+        'package.json',
+        'server/LICENSE',
+        'server/NOTICE',
+        'server/THIRD-PARTY-NOTICES.md',
+        'server/package.json',
+        'Cargo.toml',
+        'crates/**',
+        'release/dependency-license-proofs.json',
+        'release/dependency-license-proofs/**',
+        'release/spdx-license-texts/**',
+        'release/upstream-proofs/**',
+        'scripts/dependencyLicenseReport.ts',
+    ];
+    return {
+        kind: 'distribution',
+        paths,
+        sources: paths,
+        revisions: ['current tracked project license and pinned dependency evidence'],
+        digests: [
+            `sha256:${fileSha256(resolve(root, 'LICENSE'))}:LICENSE`,
+            `sha256:${fileSha256(resolve(root, 'NOTICE'))}:NOTICE`,
+            `sha256:${fileSha256(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH))}:${DEPENDENCY_LICENSE_REPORT_PATH}`,
+            `sha256:${fileSha256(resolve(root, 'release/dependency-license-proofs.json'))}:release/dependency-license-proofs.json`,
+        ],
+        licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
+    };
+}
+
+export function assertProjectLicenseDistributionReleaseInventory(
+    root: string,
+    surface: Partial<ReleaseSurface> | undefined
+): void {
+    assertSurfaceContract(
+        surface,
+        projectLicenseDistributionReleaseInventoryContract(root),
+        'project license distribution'
+    );
 }
 
 type GrandBouleReleaseBoundary = {
@@ -1022,7 +1333,7 @@ export function grandBouleReleaseInventoryContract(
             ({ gitPathspecs, digestLabel }) =>
                 `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs)}:${digestLabel}`
         ),
-        licenses: ['pending:OS-10-project-grant'],
+        licenses: ['Apache-2.0'],
         productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
     };
 }
@@ -1059,7 +1370,7 @@ export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceC
             `tree-sha256:${directorySha256(root, 'public/logo-parts')}:public/logo-parts`,
             `tree-sha256:${directorySha256(root, 'build/icons')}:build/icons`,
         ],
-        licenses: ['owner-created:pending-OS-10-project-license'],
+        licenses: ['Apache-2.0'],
     };
 }
 
@@ -1184,7 +1495,7 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
             ...packages.map(([id, entry]) => `${id} ${entry.crateSourceHash}`),
         ],
         digests: [`sha256:${fileSha256(resolve(root, 'public/wasm/manifest.json'))}:public/wasm/manifest.json`],
-        licenses: ['pending:OS-10-project-grant', 'pending:OS-10-Cargo-dependency-notices'],
+        licenses: ['Apache-2.0', `per-package terms:${DEPENDENCY_LICENSE_REPORT_PATH}`],
     };
 }
 
@@ -1209,6 +1520,9 @@ export function assertGrandBouleReleaseInventory(root: string, surface: Partial<
 }
 
 function isScannedSource(path: string): boolean {
+    if (path === DEPENDENCY_LICENSE_REPORT_PATH) {
+        return false;
+    }
     if (!['crates/', 'electron/', 'public/', 'scripts/', 'server/', 'src/'].some((root) => path.startsWith(root))) {
         return false;
     }
@@ -1222,6 +1536,9 @@ function isScannedSource(path: string): boolean {
 }
 
 function isMarkSource(path: string): boolean {
+    if (path === DEPENDENCY_LICENSE_REPORT_PATH) {
+        return false;
+    }
     if (
         !['README.md', 'index.html'].includes(path) &&
         !['docs/', 'public/', 'src/'].some((root) => path.startsWith(root))
@@ -1403,6 +1720,7 @@ export function validateReleaseInventory(
     requiredComponentPaths: Readonly<Record<string, readonly string[]>> = {}
 ): string[] {
     const errors: Array<string | undefined> = [];
+    const trackedFiles = new Set(snapshot.releaseFiles);
     if (inventory.schemaVersion !== 1) {
         errors.push('schemaVersion must be 1');
     }
@@ -1421,6 +1739,9 @@ export function validateReleaseInventory(
     for (const surface of inventory.surfaces) {
         if (!RETENTION_CLASSES.includes(surface.retention)) {
             errors.push(`${surface.id}: invalid retention class ${String(surface.retention)}`);
+        }
+        if (surface.retention === 'keep' && surface.licenses.some((license) => license.startsWith('unverified:'))) {
+            errors.push(`${surface.id}: keep surfaces cannot carry unverified rights`);
         }
         for (const [field, values] of Object.entries({
             owner: [surface.owner],
@@ -1441,6 +1762,31 @@ export function validateReleaseInventory(
         for (const path of surface.paths) {
             if (!snapshot.releaseFiles.some((trackedPath) => pathMatches(path, trackedPath))) {
                 errors.push(`${surface.id}: path is not tracked: ${path}`);
+            }
+        }
+        for (const digest of surface.digests) {
+            const addressed = pathAddressedSha256(digest);
+            if (addressed === undefined) {
+                continue;
+            }
+            if (!isCanonicalPathAddress(addressed.path)) {
+                errors.push(
+                    `${surface.id}: path-addressed digest path must be normalized and relative: ${addressed.path}`
+                );
+            } else if (!trackedFiles.has(addressed.path) || snapshot.fileDigests[addressed.path] === 'missing') {
+                errors.push(`${surface.id}: path-addressed digest target is missing or untracked: ${addressed.path}`);
+            } else if (snapshot.fileDigests[addressed.path] !== addressed.sha256) {
+                errors.push(`${surface.id}: path-addressed digest drifted: ${addressed.path}`);
+            }
+        }
+    }
+
+    for (const [path, surfaceIdsForSnapshot] of Object.entries(SNAPSHOT_DIGEST_SURFACES)) {
+        const expected = `sha256:${snapshot.fileDigests[path] ?? 'missing'}`;
+        for (const surfaceId of surfaceIdsForSnapshot) {
+            const surface = inventory.surfaces.find((candidate) => candidate.id === surfaceId);
+            if (surface !== undefined && !surface.digests.includes(expected)) {
+                errors.push(`${surfaceId}: digest must match ${path} snapshot (${expected})`);
             }
         }
     }
@@ -1591,30 +1937,47 @@ export function validateReleaseInventory(
 
 export function loadRepositorySnapshot(
     root: string,
-    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'>,
-    trackedFiles?: string[]
+    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'> & Partial<Pick<ReleaseInventory, 'surfaces'>>,
+    trackedFiles?: string[],
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
 ): RepositorySnapshot {
+    const rootRealPath = realpathSync(root);
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+    const isSafeTrackedPath = (path: string): boolean =>
+        isCanonicalPathAddress(path) &&
+        trackedFilesInWorktree.includes(path) &&
+        !pathEscapesRoot(rootRealPath, resolve(rootRealPath, path));
     const files = trackedFilesInWorktree.filter((path) => existsSync(resolve(root, path)));
     const contents = new Map<string, string>();
-    const readText = (path: string): string => {
+    const readText = (path: string): string | undefined => {
         const cached = contents.get(path);
         if (cached !== undefined) {
             return cached;
         }
-        const value = readFileSync(resolve(root, path), 'utf8');
-        contents.set(path, value);
+        const value = readRepositoryRegularText(rootRealPath, resolve(root, path), readFile);
+        if (value !== undefined) {
+            contents.set(path, value);
+        }
         return value;
     };
     const scannedFiles = files.filter(isScannedSource);
     const markFiles = files.filter(isMarkSource);
-    const discoveredReferences = scannedFiles.flatMap((path) =>
-        externalReferences(readText(path)).map((reference) => ({ file: path, ...reference }))
-    );
+    const discoveredReferences = scannedFiles.flatMap((path) => {
+        const contents = readText(path);
+        return contents === undefined
+            ? []
+            : externalReferences(contents).map((reference) => ({ file: path, ...reference }));
+    });
     const snapshotPaths = sortedUnique([
-        ...REQUIRED_SNAPSHOT_PATHS,
-        ...(inventory.snapshots ?? []).map((entry) => entry.path),
+        ...REQUIRED_SNAPSHOT_PATHS.filter(isSafeTrackedPath),
+        ...(inventory.snapshots ?? []).map((entry) => entry.path).filter(isSafeTrackedPath),
+        ...(inventory.surfaces ?? []).flatMap((surface) =>
+            surface.digests.flatMap((digest) => {
+                const addressed = pathAddressedSha256(digest);
+                return addressed === undefined || !isSafeTrackedPath(addressed.path) ? [] : [addressed.path];
+            })
+        ),
     ]);
     const fileDigests = Object.fromEntries(
         snapshotPaths.map((path) => {
@@ -1622,7 +1985,7 @@ export function loadRepositorySnapshot(
                 return [
                     path,
                     createHash('sha256')
-                        .update(readFileSync(resolve(root, path)))
+                        .update(readRepositoryRegularFile(rootRealPath, resolve(root, path), readFile))
                         .digest('hex'),
                 ];
             } catch {
@@ -1633,7 +1996,12 @@ export function loadRepositorySnapshot(
     const markPaths = Object.fromEntries(
         (inventory.marks ?? []).map((mark) => [
             mark.value,
-            markFiles.filter((path) => containsMark(readText(path), mark.value)).sort(),
+            markFiles
+                .filter((path) => {
+                    const contents = readText(path);
+                    return contents !== undefined && containsMark(contents, mark.value);
+                })
+                .sort(),
         ])
     );
     return {
@@ -1647,11 +2015,18 @@ export function loadRepositorySnapshot(
     };
 }
 
-export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceipt {
+export function checkReleaseInventory(
+    root: string,
+    projectLicensePreflight: ProjectLicensePreflight = (preflightRoot, inventoryContents) =>
+        checkProjectLicense(preflightRoot, undefined, inventoryContents),
+    inventory?: ReleaseInventory
+): ReleaseInventoryCheckReceipt {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
-    const snapshot = loadRepositorySnapshot(root, inventory);
-    const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
+    const inventoryContents = inventory === undefined ? readReleaseInventoryContents(root) : JSON.stringify(inventory);
+    const currentInventory = inventory ?? parseJsonWithUniqueKeys<ReleaseInventory>(inventoryContents, inventoryPath);
+    projectLicensePreflight(root, inventoryContents);
+    const snapshot = loadRepositorySnapshot(root, currentInventory);
+    const errors = validateReleaseInventory(currentInventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
@@ -1668,21 +2043,35 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
     assertGrandBouleMeasurementAdmission(root);
-    const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
+    const wasmSurface = currentInventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
     );
-    const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
+    const projectLicenseSurface = currentInventory.surfaces.find(
+        (surface) => surface.id === 'project-license-distribution'
+    );
+    validateSurface('project-license-distribution', () =>
+        assertProjectLicenseDistributionReleaseInventory(root, projectLicenseSurface)
+    );
+    const grandBouleSurface = currentInventory.surfaces.find((surface) => surface.id === 'grand-boule');
     validateSurface('grand-boule', () => assertGrandBouleReleaseInventory(root, grandBouleSurface));
-    const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
+    const workletSurface = currentInventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
     validateSurface('audio-worklet-sources', () =>
         assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet')
     );
-    const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
+    const adaptedMitSurface = currentInventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
+    validateSurface('mi-plaits-dsp-rs-adaptation', () =>
+        assertSurfaceContract(
+            adaptedMitSurface,
+            adaptedMitSourceReleaseInventoryContract(root),
+            'mi-plaits-dsp-rs adaptation'
+        )
+    );
+    const trademarkSurface = currentInventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     validateSurface('third-party-marks', () =>
         assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark')
     );
-    const ownerVisualAssetSurface = inventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
+    const ownerVisualAssetSurface = currentInventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
     validateSurface('owner-visual-assets', () =>
         assertSurfaceContract(
             ownerVisualAssetSurface,
@@ -1690,7 +2079,7 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
             'owner visual asset'
         )
     );
-    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    const ddspTfjsRuntimeSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
     validateSurface('ddsp-tfjs-runtime', () =>
         assertSurfaceContract(
             ddspTfjsRuntimeSurface,
@@ -1698,10 +2087,10 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
             'DDSP TF.js runtime'
         )
     );
-    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    const ddspModelsSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-models');
     validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
     checkElectronRuntimeProvenance(root);
-    const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
+    const electronSurface = currentInventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
         if (JSON.stringify(electronSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
             throw new Error(`Electron release inventory ${field} does not match provenance`);
@@ -1710,12 +2099,12 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
     validatedSurfaceIds.push('desktop-shell');
     checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
-    const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
+    const levainSurface = currentInventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
     const levainContract = {
         sources: [levain.source.repository],
         revisions: [levain.source.revision],
         digests: [`git-tree:${levain.source.tree}`, 'file-level:public/samples/levain/provenance.tsv'],
-        licenses: [levain.source.license, 'pending:OS-10-project-license'],
+        licenses: [levain.source.license, 'Apache-2.0'],
     };
     for (const [field, expected] of Object.entries(levainContract)) {
         if (JSON.stringify(levainSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
@@ -1724,7 +2113,7 @@ export function checkReleaseInventory(root: string): ReleaseInventoryCheckReceip
     }
     validatedSurfaceIds.push('levain-sample-bank');
     process.stdout.write(
-        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
+        `release inventory valid: ${String(currentInventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
     );
     return { validatedSurfaceIds };
 }

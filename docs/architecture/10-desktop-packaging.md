@@ -1,97 +1,25 @@
 # Desktop Packaging
 
-The Electron shell ships as a signed application bundle built by electron-builder from
-`electron-builder.yml`. This document states the contracts that layout has to satisfy — what the
-shell assumes about where things are, and what a Windows build has to do before it can produce a
-working installer.
+Desktop packaging is an Electron shell around the browser build and the Rust
+native addon. The package layout must leave the renderer in the archive and the
+native addon and sample library as real files beside it.
 
-It complements:
+## Current status
 
-- `Rust Backend Architecture` — the native crate that becomes the packaged addon
-- `electron/` — the shell whose path resolution the layout has to match
+- `pnpm desktop:build` is configured for a local macOS arm64 DMG and ZIP.
+- `identity: '-'` is ad-hoc signing. It is not distribution signing.
+- There is no updater, notarization flow, signing identity, or publish pipeline.
+- Windows x64 NSIS configuration exists, but it is not shippable until the native
+  addon is built for Windows and included in the package.
+- ASIO is not supported. The Windows configuration does not enable it.
 
----
+## Runtime boundaries
 
-## 1. The packaged layout is a contract with the shell
+The renderer is packaged in `app.asar`. Native `.node` and linked library files
+are unpacked because they must be loaded from the filesystem. Samples are shipped
+as resources outside the archive for the same reason.
 
-`electron/protocol.ts` and `electron/native.ts` resolve their inputs by path, branching on
-`app.isPackaged`. Packaging is therefore not free to arrange the bundle however it likes:
-
-| What           | Where, packaged                   | Read by                  |
-| -------------- | --------------------------------- | ------------------------ |
-| Renderer build | `app.asar/dist`                   | `resolveContentRoots`    |
-| Sample library | `<Resources>/samples`             | `resolveContentRoots`    |
-| Native addon   | `<Resources>/sourdaw-native.node` | `resolveNativeAddonPath` |
-
-Two of those are outside the archive on purpose. The sample loader hands the audio backend real
-filesystem paths, and a `.node` addon cannot be `dlopen`ed from inside an asar. Anything else that
-has to be a real file on disk — a dylib the addon links against, a future prebuilt module — belongs
-in `asarUnpack` or `extraResources` for the same reason, and the rule is that it is listed
-explicitly rather than discovered, so adding one is a deliberate act.
-
-The addon artifact is built by the packaging chain itself: `desktop:build` and `desktop:dev` run
-`scripts/buildNativeAddon.ts`, which cargo-builds `sourdaw-native` for the host target with the
-`napi-addon` feature, copies the cdylib to `crates/sourdaw-native/sourdaw-native.node`, and fails
-the build when no artifact exists — a package can no longer ship an empty native surface silently.
-`extraResources` still globs that directory rather than the step's output, so a package run that
-bypasses the chain can carry a stale artifact, and a cross-target build must overwrite the host
-artifact with one built for `win.target.arch` (§4).
-
-The sample library ships exactly once. Vite copies `public/samples/**` into `dist/`, so
-`desktop:build` deletes `dist/samples` before packaging and the asar excludes it regardless. A
-build that ships both is not wrong so much as a gigabyte heavier for nothing.
-
-## 2. Fuses are part of the security boundary
-
-The shell's runtime hardening — sandboxed renderer, context isolation, permission policy, the
-`app://` scheme — is all code, and all of it runs _after_ Electron has decided what to execute.
-The fuses decide that earlier question, and they live in bytes patched into the shipped binary.
-`scripts/flipElectronFuses.ts` sets them in electron-builder's `afterPack` hook and then re-reads
-the wire off disk; a build whose fuses did not take fails there rather than shipping.
-
-Two ordering facts hold the arrangement together. The flip has to happen before signing, because
-patching a signed macOS binary invalidates the signature and Apple silicon refuses to launch the
-result. And `EnableEmbeddedAsarIntegrityValidation` is only worth anything alongside
-`OnlyLoadAppFromAsar` and a signature: the archive's hash lives in `Info.plist`, which the code
-signature seals. Ad-hoc signing (`identity: '-'`) carries no identity, so it anchors nothing
-against a deliberate local attacker — who can tamper, recompute the hash, and re-sign ad-hoc — but
-it does make the chain detect corruption and any tampering that does not re-sign, where an unsigned
-bundle would leave the integrity fuse checking a hash anyone can edit.
-
-## 3. Hardened runtime entitlements
-
-`build/entitlements.mac.plist` is the macOS entitlement set. Two entries are load bearing beyond
-the obvious: `com.apple.security.cs.allow-jit`, without which V8 and the WebAssembly tiering
-compiler cannot obtain executable memory under the hardened runtime, and
-`com.apple.security.cs.disable-library-validation`, without which neither an ad-hoc signed bundle
-nor an unsigned third-party CLAP plugin loads.
-
-## 4. Windows: the addon must be cross-compiled first
-
-The Windows target in `electron-builder.yml` is configuration, not a build that has been run. The
-JavaScript half is platform-independent; the blocker is `crates/sourdaw-native`, which compiles to
-`sourdaw-native.node` and pulls in C and C++ dependencies (`whisper-rs`, `rusb`, the CLAP host).
-Building it for `x86_64-pc-windows-msvc` from macOS or Linux is
-[cargo-xwin](https://github.com/rust-cross/cargo-xwin)'s job: it downloads the Microsoft CRT and
-Windows SDK headers and drives `clang-cl` and `lld-link` in their place.
-
-The contract a Windows build has to satisfy:
-
-- The addon is built for `x86_64-pc-windows-msvc` — matching `win.target.arch` — with the crate's
-  `napi-addon` feature on, and the resulting artifact is renamed to `sourdaw-native.node` before
-  packaging. `extraResources` copies `crates/sourdaw-native/*.node`; a wrongly named or
-  wrongly-targeted artifact packages silently and fails at `require` time on the user's machine.
-- The Metal backend is macOS-only. `whisper-rs`'s feature set is a per-target decision, and a
-  Windows build that inherits the macOS features does not link.
-- The audio backend is WASAPI only: cpal's ASIO feature stays off. This is a recorded decision,
-  not a default — no ASIO (Steinberg's proprietary SDK agreement is declined); low latency comes
-  from IAudioClient3 shared mode with WASAPI Exclusive as an opt-in
-  ([ADR 0027](../../.agents/decisions/0027-windows-device-layer-iaudioclient3.md)). A Windows
-  build that enables cpal's ASIO feature would be reversing that decision implicitly.
-- Accepting Microsoft's SDK licence (`--accept-xwin-license` or `XWIN_ACCEPT_LICENSE`) is a
-  licensing act, not a build flag. It belongs in a deliberate, recorded decision rather than in a
-  script that runs on someone else's machine.
-
-Until an addon built that way exists, the Windows installer produced by this configuration is a
-shell with no native surface — which the shell survives, reporting the missing addon at startup,
-but which is not a shippable product.
+The macOS entitlement set enables hardened-runtime JIT and third-party native
+library loading, and disables the App Sandbox for the current plugin-capable
+build. Those settings describe this local package; they are not a claim of
+distribution hardening.

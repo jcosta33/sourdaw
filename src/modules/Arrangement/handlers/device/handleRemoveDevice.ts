@@ -29,7 +29,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
             action.payload.expectedDeviceIds.every((deviceId, index) => currentDeviceIds[index] === deviceId)
         );
     },
-    execute: (alpha) => {
+    execute: (alpha, context) => {
         if (alpha.payload.expectedTrackId || alpha.payload.expectedDeviceIds) {
             const owners = (getTrackStoreState()?.tracks ?? []).filter((track) =>
                 track.devices.some((device) => device.id === alpha.payload.deviceId)
@@ -46,7 +46,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
                 return { status: 'conflict' };
             }
         }
-        const result = prepareRemoveDevice(alpha.payload.deviceId);
+        const result = prepareRemoveDevice(alpha.payload.deviceId, context);
         if (result === 'conflict') {
             return { status: 'conflict' };
         }

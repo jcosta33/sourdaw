@@ -56,11 +56,17 @@ export async function switchArrangement(id: string): Promise<void> {
         currentState?.activeArrangementId !== sourceArrangementId ||
         !currentTarget
     ) {
+        preparedBuffers?.cancel();
         return;
     }
 
     // A shutdown failure aborts the switch before target buffers or state are published.
-    await stopPlayback();
+    try {
+        await stopPlayback();
+    } catch (error) {
+        preparedBuffers.cancel();
+        throw error;
+    }
 
     const currentStateAfterStop = arrangementStore.value;
     const currentTargetAfterStop = currentStateAfterStop?.arrangements.find((arrangement) => arrangement.id === id);
@@ -70,6 +76,7 @@ export async function switchArrangement(id: string): Promise<void> {
         currentStateAfterStop?.activeArrangementId !== sourceArrangementId ||
         !currentTargetAfterStop
     ) {
+        preparedBuffers.cancel();
         return;
     }
 
