@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn(),
     panicYeastRuntime: vi.fn(() => Promise.resolve()),
     resetAudioGraph: vi.fn(),
+    resetExternalPluginRuntimeForGraphRebuild: vi.fn(() => Promise.resolve()),
     resetMidiState: vi.fn(),
     startPlayheadScheduler: vi.fn(),
     stopAllScheduled: vi.fn(),
@@ -20,6 +21,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAllScheduled: mocks.stopAllScheduled,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mocks.resetMidiState }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    resetExternalPluginRuntimeForGraphRebuild: mocks.resetExternalPluginRuntimeForGraphRebuild,
+}));
 vi.mock('../../repositories/transport/getTransportState', () => ({
     getTransportState: mocks.getTransportState,
 }));
@@ -66,6 +70,9 @@ describe('repairRuntimeGraphFromProject', () => {
         expect(mocks.stopAllScheduled.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.resetAudioGraph.mock.invocationCallOrder[0]!
         );
+        expect(mocks.resetExternalPluginRuntimeForGraphRebuild.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.resetAudioGraph.mock.invocationCallOrder[0]!
+        );
         expect(mocks.ensureTrackStrips).toHaveBeenCalledWith({ collectExternalPluginActivations: true });
         expect(mocks.startPlayheadScheduler).not.toHaveBeenCalled();
 
@@ -80,20 +87,31 @@ describe('repairRuntimeGraphFromProject', () => {
         expect(playheadPositionRef.current).toBe(8.5);
     });
 
-    it('leaves playback coherently paused when a required plugin remains unsettled', async () => {
+    it('leaves playback coherently paused when a required plugin reattachment fails', async () => {
         mocks.ensureTrackStrips.mockReturnValue({
             status: 'ready',
             externalPluginActivations: [
-                Promise.resolve({ status: 'failed', reason: 'compressor state restore failed' }),
+                Promise.resolve({ status: 'failed', stage: 'attach', reason: 'compressor native reattachment failed' }),
             ],
         });
 
         await expect(repairRuntimeGraphFromProject()).rejects.toThrow(
-            'Runtime graph repair failed: compressor state restore failed'
+            'Runtime graph repair failed: compressor native reattachment failed'
         );
 
+        expect(mocks.resetExternalPluginRuntimeForGraphRebuild).toHaveBeenCalledOnce();
         expect(mocks.updateTransportState).toHaveBeenCalledOnce();
         expect(mocks.updateTransportState).toHaveBeenCalledWith({ isPlaying: false, playheadPosition: 8.5 });
+        expect(mocks.startPlayheadScheduler).not.toHaveBeenCalled();
+    });
+
+    it('does not tear down the audio graph when external plugin teardown fails', async () => {
+        mocks.resetExternalPluginRuntimeForGraphRebuild.mockRejectedValueOnce(new Error('native unload failed'));
+
+        await expect(repairRuntimeGraphFromProject()).rejects.toThrow('native unload failed');
+
+        expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
+        expect(mocks.ensureTrackStrips).not.toHaveBeenCalled();
         expect(mocks.startPlayheadScheduler).not.toHaveBeenCalled();
     });
 });

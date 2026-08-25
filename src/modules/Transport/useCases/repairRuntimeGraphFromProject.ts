@@ -1,5 +1,6 @@
 import { resetAudioGraph, stopAllScheduled } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
+import { resetExternalPluginRuntimeForGraphRebuild } from '#/modules/PluginHost/useCases';
 
 import { getTransportState } from '../repositories/transport/getTransportState';
 import { updateTransportState } from '../repositories/transport/updateTransportState';
@@ -27,6 +28,7 @@ export async function repairRuntimeGraphFromProject(): Promise<void> {
         await panicYeastRuntime();
     }
 
+    await resetExternalPluginRuntimeForGraphRebuild();
     resetAudioGraph();
     const rebuild = ensureTrackStrips({ collectExternalPluginActivations: true });
     if (rebuild.status === 'failed') {

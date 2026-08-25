@@ -1,3 +1,8 @@
+import {
+    defaultExternalPluginActivationState,
+    externalPluginActivationStore,
+} from '../../stores/externalPluginActivationStore';
+
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
     externalPluginActivationEpoch,
@@ -21,4 +26,5 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginActivationEpoch.current += 1;
     externalPluginActivationTasks.clear();
     externalPluginActivationOutcomes.clear();
+    externalPluginActivationStore.set(defaultExternalPluginActivationState);
 }

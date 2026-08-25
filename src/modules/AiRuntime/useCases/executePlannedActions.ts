@@ -9,8 +9,10 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 
+import { agentRunLifecycle } from './agentRunLifecycle';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
+import { recordAgentRunPendingEffectContinuation } from './recordAgentRunPendingEffectContinuation';
 import { recordAiActionGroup } from './recordAiActionGroup';
 
 type CommandBatchInput =
@@ -86,6 +88,16 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         requireCompensation: input.executionMode === 'atomic',
         shouldExecute,
         signal: input.signal,
+        onProjectCommitCheckpoint: ({ receipt }: { receipt: VerifiedBatchReceipt }) => {
+            if (!agentRunLifecycle.get(receipt.runId)) {
+                return;
+            }
+            recordAgentRunPendingEffectContinuation({
+                runId: receipt.runId,
+                receipt,
+                commandBatch: input.commandBatch,
+            });
+        },
     };
     const batchResult = await executeVersionedCommandBatchEnvelope({
         ...input.commandBatch,

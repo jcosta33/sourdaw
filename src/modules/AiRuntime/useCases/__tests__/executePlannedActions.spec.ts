@@ -4,6 +4,9 @@ import { logger } from '#/infra/logger/appLogger';
 import { executeAppActionBatch, executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
+import { agentRunWorkLease } from '../agentRunWorkLease';
 import { executePlannedActions } from '../executePlannedActions';
 import { notifyAiChange } from '../notifyAiChange';
 import { recordAiActionGroup } from '../recordAiActionGroup';
@@ -52,7 +55,7 @@ const commandBatch = {
             maxRenderJobs: 0,
         },
     },
-    serialized: '{}',
+    serialized: '{"batch":"exact-auto-commit"}',
 } as const;
 
 type ReplayOutcome =
@@ -104,9 +107,86 @@ function idempotentReplayResult(outcome: ReplayOutcome, errors: string[] = []) {
 describe('executePlannedActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        agentRunLifecycle.clear();
         vi.mocked(recordAiActionGroup).mockReset();
         vi.mocked(notifyAiChange).mockReset();
         vi.mocked(captureProjectRevision).mockReturnValue('revision-1');
+    });
+
+    it('retains the exact pending-effect batch across a crash at the auto-commit checkpoint and restart', async () => {
+        const receipt = {
+            ...idempotentReplayResult('partially-committed').receipt,
+            outcome: 'partially-committed' as const,
+            pendingEffects: [
+                {
+                    commandId: 'command-1',
+                    kind: 'runtime-graph' as const,
+                    operation: 'addDevice' as const,
+                    reason: 'runtime graph repair interrupted',
+                    remediation: 'repair' as const,
+                    state: 'pending' as const,
+                },
+            ],
+        };
+        agentRunLifecycle.create({
+            runId: receipt.runId,
+            request: 'Add a compressor',
+            mode: 'apply',
+            createdRevision: 'revision-1',
+            createdAt: 100,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: receipt.runId,
+            phase: 'planning',
+            revision: 'revision-1',
+            transitionedAt: 101,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: receipt.runId,
+            phase: 'executing',
+            revision: 'revision-1',
+            transitionedAt: 102,
+        });
+        expect(
+            agentRunWorkLease.claim({
+                runId: receipt.runId,
+                workId: receipt.batchId,
+                ownerKind: 'command',
+                cleanupOwner: 'command-executor',
+                idempotencyKey: receipt.batchId,
+                receiptIdentity: `command:${receipt.runId}:${receipt.batchId}`,
+                idempotent: true,
+                retriable: false,
+                claimedAt: 103,
+            }).status
+        ).toBe('claimed');
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
+            options?.onProjectCommitCheckpoint?.({ receipt });
+            throw new Error('simulated crash after durable project checkpoint');
+        });
+
+        await expect(
+            executePlannedActions({
+                commandBatch,
+                prompt: 'Add a compressor',
+                actions: [action],
+                projectRevision: 'revision-1',
+            })
+        ).rejects.toThrow('simulated crash after durable project checkpoint');
+
+        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: [receipt.runId] });
+        expect(agentRunLifecycle.get(receipt.runId)).toMatchObject({
+            phase: 'partially-completed',
+            manualResume: { required: false },
+            pendingEffectContinuations: [
+                {
+                    batchId: receipt.batchId,
+                    effects: receipt.pendingEffects,
+                    serializedBatch: commandBatch.serialized,
+                },
+            ],
+            workLeases: [expect.objectContaining({ workId: receipt.batchId, terminalState: 'orphaned' })],
+        });
     });
 
     it('rejects legacy execution instead of dispatching an unbound action batch', async () => {
