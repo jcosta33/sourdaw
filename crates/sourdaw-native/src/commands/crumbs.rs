@@ -213,6 +213,15 @@ pub async fn create_crumbs(
         .instances
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+
+    // The map is also the ownership ledger for each runtime. Reject an
+    // existing id before allocating rings or registering anything engine-side;
+    // otherwise the insert below replaces the first ledger entry and strands
+    // its slot and bridge.
+    if instances.contains_key(&instance_id) {
+        return Err(format!("Crumbs instance '{instance_id}' already exists"));
+    }
+
     ensure_crumbs_capture_headroom(&instances)?;
 
     let (tx, rx) = rtrb::RingBuffer::new(128);
@@ -1027,6 +1036,147 @@ mod tests {
             .expect("crumbs state lock should be available");
         assert_eq!(instances.len(), CRUMBS_CAPTURE_RESERVE);
         assert!(!instances.contains_key("instance-overflow"));
+    }
+
+    /// A second create for the same UI/runtime id is refused while the
+    /// instances guard still owns the first entry. The original registration
+    /// survives unchanged, so the engine slot, effect-table ledger, bridge map,
+    /// and command-side map cannot grow or leak a runtime that destroy no
+    /// longer reaches.
+    #[test]
+    fn create_crumbs_refuses_a_duplicate_id_without_registering_another_runtime() {
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        {
+            let engine = daw_engine::EngineHandle::new()
+                .expect("duplicate-create test requires a runnable native output device");
+            *app_state
+                .engine
+                .lock()
+                .expect("engine lock should be available") = Some(engine);
+        }
+
+        let instance_id = "duplicate-crumbs";
+        crate::block_on_test(create_crumbs(
+            instance_id.to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect("the first create should register its runtime");
+
+        let original_engine_plugin_id = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .get(instance_id)
+            .expect("first create should retain its map entry")
+            .engine_plugin_id;
+        let effect_count_after_first_create = app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available")
+            .as_ref()
+            .expect("test engine should remain running")
+            .registered_effect_count();
+        let bridge_count_after_first_create = app_state
+            .audio_bridges
+            .lock()
+            .expect("audio bridge lock should be available")
+            .bridges
+            .len();
+        assert_eq!(
+            effect_count_after_first_create, 1,
+            "the first create must occupy exactly one engine slot and effect-table entry"
+        );
+        assert_eq!(
+            bridge_count_after_first_create, 1,
+            "the first create must publish exactly one record bridge"
+        );
+
+        let refusal = crate::block_on_test(create_crumbs(
+            instance_id.to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect_err("a duplicate create must be refused");
+        assert_eq!(
+            refusal,
+            format!("Crumbs instance '{instance_id}' already exists")
+        );
+
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        assert_eq!(instances.len(), 1, "the duplicate must not grow the map");
+        assert_eq!(
+            instances
+                .get(instance_id)
+                .expect("the first entry must survive the refusal")
+                .engine_plugin_id,
+            original_engine_plugin_id,
+            "the duplicate must not overwrite the first runtime entry"
+        );
+        drop(instances);
+
+        assert_eq!(
+            app_state
+                .engine
+                .lock()
+                .expect("engine lock should be available")
+                .as_ref()
+                .expect("test engine should remain running")
+                .registered_effect_count(),
+            effect_count_after_first_create,
+            "the duplicate must not register another engine slot or effect-table entry"
+        );
+        let feed = app_state
+            .audio_bridges
+            .lock()
+            .expect("audio bridge lock should be available");
+        assert_eq!(
+            feed.bridges.len(),
+            bridge_count_after_first_create,
+            "the duplicate must not publish another record bridge"
+        );
+        assert!(
+            feed.bridges.contains_key(&original_engine_plugin_id),
+            "the first record bridge must survive the refusal"
+        );
+        drop(feed);
+
+        crate::block_on_test(destroy_crumbs(instance_id.to_string(), &state, &app_state))
+            .expect("the original runtime must remain destroyable after the refusal");
+        assert!(
+            !state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .contains_key(instance_id),
+            "destroy must remove the original map entry"
+        );
+        assert_eq!(
+            app_state
+                .engine
+                .lock()
+                .expect("engine lock should be available")
+                .as_ref()
+                .expect("test engine should remain running")
+                .registered_effect_count(),
+            0,
+            "destroy must retire the original engine slot"
+        );
+        assert!(
+            app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .is_empty(),
+            "destroy must remove the original record bridge"
+        );
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData
