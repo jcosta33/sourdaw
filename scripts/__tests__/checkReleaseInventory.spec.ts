@@ -1361,6 +1361,7 @@ describe('release inventory', () => {
             const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], readFile);
 
             expect(changed.externalReferences).toEqual([]);
+            expect(swapped).toBe(true);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
