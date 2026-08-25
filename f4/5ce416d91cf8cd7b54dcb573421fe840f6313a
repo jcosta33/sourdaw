@@ -1,0 +1,44 @@
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_8331120a1b1ac0 189,203,679,884
+src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts
+  s_a40848e8f8cca9::t_e46aaacee1d62f 1-64
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_63fe4befb260b1 10,285,287-288,290-291
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_a91fbccde8ad3c 430,432,473-478
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_f6f1abf27bc04c 608,695
+  s_a40848e8f8cca9::t_5189f496821f43 3189,3200-3207,4153,4161,4173,4187-4188
+  s_a40848e8f8cca9::t_e1931402a07518 4204,4261-4264
+  s_a40848e8f8cca9::t_410d40c33ea1b9 3064,3072,3083,3098-3103
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_b95e1c3fbcebfd 33,680-714
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_e75667fbc13abb 199,546
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_a40848e8f8cca9::t_e46aaacee1d62f 1-141
+src/modules/AiRuntime/useCases/agentReference/getBulkDeviceInsertionTrackScope.ts
+  s_a40848e8f8cca9::t_bc40b3fe654244 10-13,30-31,35-49,52
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_678dba75b960a4 4543-4624,4889,4906
+  s_a40848e8f8cca9::t_bc40b3fe654244 8,101,3583-3584,3651,3655,3659-3672
+  s_a40848e8f8cca9::t_a6b0ee463db431 3673-3674
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_0523395ca3cd0b 885,901-912
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "f45ce416d91cf8cd7b54dcb573421fe840f6313a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
