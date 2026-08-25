@@ -65,7 +65,8 @@ entire value, and a reviewer shown prior findings anchors to them.
 Assign one independent stance per material risk. Expect about three on a typical PR; never add a
 stance to meet that number or omit one to stay near it. The recurring surfaces are correctness,
 module boundaries and contracts, real-time audio safety, project integrity and undo, security and
-platform boundaries, and test validity.
+platform boundaries, code craft and readability (naming quality, local complexity, nesting,
+semantic clarity, conformance to `docs/07-conventions.md`), and test validity.
 
 Tier each reviewer by the criticality of its stance, not the size of the diff: economy for narrow
 low-risk checks, standard for behavioral and integration risk, the strongest tier for real-time
@@ -181,6 +182,23 @@ Run `pnpm deps:validate` after cross-module changes. Full rules:
 [TypeScript modules](./docs/architecture/03-typescript-module.md),
 [Rust backend](./docs/architecture/02-rust-backend.md), and
 [conventions](./docs/07-conventions.md).
+
+## Code craft
+
+Universal rules, wherever code is written:
+
+- Simplest construct that expresses the intent. Conventional, framework-agnostic
+  patterns over JavaScriptisms.
+- Functional by default: pure functions, immutable data, composition over classes and
+  mutation.
+- Guard clauses and early returns over nesting; the happy path reads top to bottom.
+- Break code down semantically: small functions named for the one thing they do. A block
+  that needs a comment to be understood gets extracted and named instead.
+- Comment only what cannot be made self-explanatory — the why, or non-obvious mechanics.
+  A comment narrating what simple code does is a smell.
+- Clever code is a defect even when it works.
+
+Detail: [conventions](./docs/07-conventions.md).
 
 ## Worktrees
 
@@ -361,8 +379,8 @@ Request changes when this head must not merge, and post every blocking comment w
 summary is a short pointer to those comments, not a report.
 
 Approve when the change improves the system, even if it is not perfect. Do not approve a change that
-makes it worse. Style-guide violations block; personal style does not. Leave the approval empty or
-write one sentence about the code.
+makes it worse. Style-guide and code-craft violations block; personal style does not. Leave the
+approval empty or write one sentence about the code.
 
 Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
 refuses to merge while one is unresolved, and `review:resolve` clears a thread only by replying

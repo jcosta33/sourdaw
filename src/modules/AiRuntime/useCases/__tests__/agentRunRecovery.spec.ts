@@ -1,10 +1,23 @@
 import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readAgentRunState } from '../../stores/agentRunStore';
+import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { createAgentSagaStep } from '../createAgentSagaStep';
+import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
+
+const commandRecoveryMocks = vi.hoisted(() => ({
+    executeVersionedCommandBatchEnvelope: vi.fn(),
+    getVersionedCommandBatchIdempotentReplay: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeVersionedCommandBatchEnvelope: commandRecoveryMocks.executeVersionedCommandBatchEnvelope,
+    getVersionedCommandBatchIdempotentReplay: commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay,
+}));
 
 const {
     clear: clearAgentRuns,
@@ -19,8 +32,69 @@ const {
 } = agentRunLifecycle;
 const { claim: claimAgentRunWorkLease } = agentRunWorkLease;
 
+function createContinuationAuthority() {
+    return {
+        projectId: 'project-runtime-recovery',
+        baseRevision: 'heads-runtime-base',
+        scope: {
+            targetIds: ['track-runtime'],
+            targetRanges: [{ startBeat: 8, endBeat: 8 }],
+            protectedTargetIds: ['master'],
+            protectedRanges: [],
+        },
+        grants: {
+            allowedOperationPrefixes: ['setTrackGain'],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: true,
+        },
+        budgets: {
+            maxCommands: 2,
+            maxCreatedTracks: 0,
+            maxDeletedObjects: 0,
+            maxAffectedTracks: 1,
+            maxAffectedClips: 0,
+            maxAutomationPoints: 0,
+            maxImportedAssets: 0,
+            maxRenderJobs: 0,
+        },
+    };
+}
+
+type RecoveryPendingEffect = {
+    commandId: string;
+    operation: string;
+    reason: string;
+    state: 'pending';
+} & (
+    | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
+    | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+);
+
+function createPendingEffectRecoveryReceipt(input: {
+    batchId: string;
+    pendingEffects: readonly RecoveryPendingEffect[];
+    outcome: 'partially-committed' | 'committed';
+}) {
+    return {
+        schemaVersion: 1,
+        runId: 'run-persisted-runtime-effects',
+        batchId: input.batchId,
+        outcome: input.outcome,
+        pendingEffects: input.outcome === 'partially-committed' ? [...input.pendingEffects] : [],
+    };
+}
+
 describe('agent run recovery', () => {
     beforeEach(() => {
+        commandRecoveryMocks.executeVersionedCommandBatchEnvelope.mockReset();
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockReset();
         clearAgentRuns();
     });
 
@@ -143,7 +217,7 @@ describe('agent run recovery', () => {
             }).status
         ).toBe('claimed');
 
-        const recovered = recoverInterruptedAgentRuns({ recoveredAt: 200 });
+        const recovered = await recoverInterruptedAgentRuns({ recoveredAt: 200 });
 
         expect(recovered).toEqual({ recoveredRunIds: ['run-recovery'] });
         expect(getAgentRun('run-recovery')).toMatchObject({
@@ -239,7 +313,7 @@ describe('agent run recovery', () => {
         });
     });
 
-    it('leaves terminal runs unchanged during restart recovery', () => {
+    it('leaves terminal runs unchanged during restart recovery', async () => {
         createAgentRun({
             runId: 'run-complete',
             request: 'Explain the bridge.',
@@ -254,8 +328,537 @@ describe('agent run recovery', () => {
             committedAt: 110,
         });
 
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: [] });
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({ recoveredRunIds: [] });
         expect(getAgentRun('run-complete')?.phase).toBe('completed');
+    });
+
+    it('rejects cross-kind pending-effect remediations during hydration', () => {
+        createAgentRun({
+            runId: 'run-invalid-effect-kind',
+            request: 'Reject a pending effect whose remediation belongs to another effect kind.',
+            mode: 'apply',
+            createdRevision: 'heads-invalid-effect-kind',
+            createdAt: 100,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-invalid-effect-kind',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-invalid-effect-kind',
+                effects: [
+                    {
+                        commandId: 'command-invalid-effect-kind',
+                        kind: 'runtime-graph',
+                        operation: 'setTrackGain',
+                        reason: 'runtime graph revision is stale',
+                        remediation: 'retry',
+                        state: 'pending',
+                    },
+                ],
+                lastError: null,
+                receiptIdentity: '1:run-invalid-effect-kind:batch-invalid-effect-kind:partially-committed',
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"invalid-effect-kind"}',
+            },
+            recordedAt: 101,
+        });
+
+        const persistedState = readAgentRunState();
+        const persistedRun = persistedState.runs[0];
+        const continuation = persistedRun?.pendingEffectContinuations[0];
+        const effect = continuation?.effects[0];
+        if (persistedRun === undefined || continuation === undefined || effect === undefined) {
+            throw new Error('Expected the persisted AgentRun fixture to contain its pending effect continuation');
+        }
+        const crossKindState: unknown = {
+            ...persistedState,
+            runs: [
+                {
+                    ...persistedRun,
+                    pendingEffectContinuations: [
+                        {
+                            ...continuation,
+                            effects: [{ ...effect, kind: 'runtime-graph', remediation: 'manual-repair' }],
+                            recovery: 'manual-repair',
+                        },
+                    ],
+                },
+            ],
+        };
+
+        expect(sanitizeAgentRunState(crossKindState)).toEqual({
+            schemaVersion: persistedState.schemaVersion,
+            runs: [],
+            pendingEffectRecoveryLedger: persistedState.pendingEffectRecoveryLedger,
+        });
+    });
+
+    it('keeps an unresolved recovery capsule after ordinary run history evicts its owner', async () => {
+        createAgentRun({
+            runId: 'run-retained-recovery',
+            request: 'Repair the retained runtime graph.',
+            mode: 'apply',
+            createdRevision: 'heads-retained',
+            createdAt: 1,
+        });
+        const pendingEffect = {
+            commandId: 'command-retained-recovery',
+            kind: 'runtime-graph' as const,
+            operation: 'setTrackGain',
+            reason: 'runtime graph repair interrupted',
+            remediation: 'repair' as const,
+            state: 'pending' as const,
+        };
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-retained-recovery',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-retained-recovery',
+                effects: [pendingEffect],
+                lastError: null,
+                receiptIdentity: '1:run-retained-recovery:batch-retained-recovery:partially-committed',
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"retained-recovery"}',
+            },
+            recordedAt: 2,
+        });
+        for (let index = 0; index < 50; index += 1) {
+            createAgentRun({
+                runId: `run-history-${String(index)}`,
+                request: `Ordinary retained history ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `heads-history-${String(index)}`,
+                createdAt: 10 + index,
+            });
+        }
+        expect(getAgentRun('run-retained-recovery')).toBeNull();
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue({
+            schemaVersion: 1,
+            runId: 'run-retained-recovery',
+            batchId: 'batch-retained-recovery',
+            outcome: 'committed',
+            pendingEffects: [],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-retained-recovery',
+                batchId: 'batch-retained-recovery',
+            })
+        ).resolves.toEqual({ status: 'recovered' });
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledWith({
+            authority: createContinuationAuthority(),
+            serialized: '{"batch":"retained-recovery"}',
+        });
+    });
+
+    it('prunes a prepared capsule when project truth proves its checkpoint never committed', async () => {
+        createAgentRun({
+            runId: 'run-aborted-recovery',
+            request: 'Do not retain recovery for an aborted project write.',
+            mode: 'apply',
+            createdRevision: 'heads-aborted',
+            createdAt: 1,
+        });
+        agentRunLifecycle.preparePendingEffectContinuation({
+            runId: 'run-aborted-recovery',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-aborted-recovery',
+                effects: [
+                    {
+                        commandId: 'command-aborted-recovery',
+                        kind: 'runtime-graph',
+                        operation: 'setTrackGain',
+                        reason: 'runtime graph repair interrupted',
+                        remediation: 'repair',
+                        state: 'pending',
+                    },
+                ],
+                lastError: null,
+                receiptIdentity: '1:run-aborted-recovery:batch-aborted-recovery:partially-committed',
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"aborted-recovery"}',
+            },
+        });
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(null);
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-aborted-recovery',
+                batchId: 'batch-aborted-recovery',
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'The durable project checkpoint for this pending-effect continuation is unavailable.',
+        });
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+    });
+
+    it('hydrates generic-only, mixed, and manual pending-effect continuations after restart', async () => {
+        createAgentRun({
+            runId: 'run-persisted-runtime-effects',
+            request: 'Recover the persisted runtime follow-up effects.',
+            mode: 'apply',
+            createdRevision: 'heads-runtime-base',
+            createdAt: 100,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: 'run-persisted-runtime-effects',
+            phase: 'planning',
+            revision: 'heads-runtime-base',
+            transitionedAt: 101,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: 'run-persisted-runtime-effects',
+            phase: 'executing',
+            revision: 'heads-runtime-base',
+            transitionedAt: 102,
+        });
+
+        const continuationAuthority = createContinuationAuthority();
+        const continuations = [
+            {
+                batchId: 'batch-generic-effect',
+                effects: [
+                    {
+                        commandId: 'command-generic-effect',
+                        kind: 'external-effect' as const,
+                        operation: 'setTrackGain',
+                        reason: 'publication queue unavailable',
+                        remediation: 'reconcile' as const,
+                        state: 'pending' as const,
+                    },
+                ],
+                recovery: 'reconcile-batch' as const,
+                serializedBatch: '{"batch":"generic-effect"}',
+            },
+            {
+                batchId: 'batch-mixed-effects',
+                effects: [
+                    {
+                        commandId: 'command-repair-runtime',
+                        kind: 'runtime-graph' as const,
+                        operation: 'setTrackGain',
+                        reason: 'runtime graph revision is stale',
+                        remediation: 'repair' as const,
+                        state: 'pending' as const,
+                    },
+                    {
+                        commandId: 'command-reconcile-generic',
+                        kind: 'external-effect' as const,
+                        operation: 'setTrackPan',
+                        reason: 'publication queue unavailable',
+                        remediation: 'reconcile' as const,
+                        state: 'pending' as const,
+                    },
+                ],
+                recovery: 'reconcile-batch' as const,
+                serializedBatch: '{"batch":"mixed-effects"}',
+            },
+            {
+                batchId: 'batch-manual-effect',
+                effects: [
+                    {
+                        commandId: 'command-manual-effect',
+                        kind: 'external-effect' as const,
+                        operation: 'renderProjectSections',
+                        reason: 'the external renderer cannot prove an exact retry',
+                        remediation: 'manual-repair' as const,
+                        state: 'pending' as const,
+                    },
+                ],
+                recovery: 'manual-repair' as const,
+                serializedBatch: '{"batch":"manual-effect"}',
+            },
+        ];
+        for (const [index, continuation] of continuations.entries()) {
+            const partialReceiptIdentity = `1:run-persisted-runtime-effects:${continuation.batchId}:partially-committed`;
+            agentRunLifecycle.recordBatch({
+                runId: 'run-persisted-runtime-effects',
+                batch: {
+                    batchId: continuation.batchId,
+                    commandIds: continuation.effects.map(({ commandId }) => commandId),
+                    status: 'committed',
+                    receiptIdentity: partialReceiptIdentity,
+                },
+                recordedAt: 105 + index,
+            });
+            agentRunLifecycle.recordCommittedWork({
+                runId: 'run-persisted-runtime-effects',
+                workId: continuation.batchId,
+                receiptIdentity: partialReceiptIdentity,
+                completesRun: false,
+                committedAt: 106 + index,
+            });
+            for (const [effectIndex, effect] of continuation.effects.entries()) {
+                agentRunLifecycle.recordSagaStep({
+                    runId: 'run-persisted-runtime-effects',
+                    step: createAgentSagaStep({
+                        stepId: `effect:${continuation.batchId}:${effect.commandId}`,
+                        order: index * 2 + effectIndex,
+                        owner: 'external-effect',
+                        workId: continuation.batchId,
+                        receiptIdentity: partialReceiptIdentity,
+                        state: 'external-pending',
+                        relatedArtifactIds: [],
+                        updatedAt: 110 + index,
+                        compensationAvailable: false,
+                    }),
+                });
+            }
+            agentRunLifecycle.recordPendingEffectContinuation({
+                runId: 'run-persisted-runtime-effects',
+                continuation: {
+                    authority: structuredClone(continuationAuthority),
+                    batchId: continuation.batchId,
+                    effects: structuredClone(continuation.effects),
+                    lastError: null,
+                    recovery: continuation.recovery,
+                    receiptIdentity: partialReceiptIdentity,
+                    serializedBatch: continuation.serializedBatch,
+                },
+                recordedAt: 120 + index,
+            });
+        }
+
+        const persistedBytes = window.localStorage.getItem('sourdaw-agent-runs');
+        expect(persistedBytes).toContain('"pendingEffectContinuations"');
+        expect(persistedBytes).toContain('"kind":"external-effect"');
+        expect(persistedBytes).toContain('"kind":"runtime-graph"');
+        expect(persistedBytes).toContain('"recovery":"reconcile-batch"');
+        expect(persistedBytes).toContain('"startBeat":8');
+        expect(persistedBytes).toContain('"endBeat":8');
+
+        vi.resetModules();
+
+        const replayBySerializedBatch = new Map(
+            continuations.map((continuation) => [
+                continuation.serializedBatch,
+                createPendingEffectRecoveryReceipt({
+                    batchId: continuation.batchId,
+                    pendingEffects: continuation.effects,
+                    outcome: 'partially-committed',
+                }),
+            ])
+        );
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockImplementation(
+            async ({ serialized }: { serialized: string }) => replayBySerializedBatch.get(serialized) ?? null
+        );
+        commandRecoveryMocks.executeVersionedCommandBatchEnvelope.mockImplementation(
+            async ({ serialized }: { serialized: string }) => {
+                const pendingReceipt = replayBySerializedBatch.get(serialized);
+                if (pendingReceipt === undefined) {
+                    return { status: 'rejected' as const, reason: 'unknown test batch', actions: [] };
+                }
+                return {
+                    status: 'idempotent-replay' as const,
+                    actions: [],
+                    receipt: createPendingEffectRecoveryReceipt({
+                        batchId: pendingReceipt.batchId,
+                        pendingEffects: [],
+                        outcome: 'committed',
+                    }),
+                };
+            }
+        );
+
+        const { agentRunLifecycle: hydratedAgentRunLifecycle } = await import('../agentRunLifecycle');
+        const { recoverInterruptedAgentRuns: recoverHydratedAgentRuns } = await import('../agentRunRecovery');
+        const { recoverAgentRunPendingEffects } = await import('../recoverAgentRunPendingEffects');
+
+        await expect(recoverHydratedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
+            recoveredRunIds: ['run-persisted-runtime-effects'],
+        });
+        expect(hydratedAgentRunLifecycle.get('run-persisted-runtime-effects')).toMatchObject({
+            phase: 'partially-completed',
+            manualResume: { required: false, workIds: [] },
+            pendingEffectContinuations: [
+                {
+                    batchId: 'batch-generic-effect',
+                    effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' })],
+                    recovery: 'reconcile-batch',
+                    serializedBatch: '{"batch":"generic-effect"}',
+                    authority: {
+                        projectId: 'project-runtime-recovery',
+                        scope: { targetRanges: [{ startBeat: 8, endBeat: 8 }] },
+                        budgets: { maxCommands: 2, maxAffectedTracks: 1 },
+                    },
+                    lastError: null,
+                },
+                {
+                    batchId: 'batch-mixed-effects',
+                    effects: [
+                        expect.objectContaining({ kind: 'runtime-graph', remediation: 'repair' }),
+                        expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' }),
+                    ],
+                    recovery: 'reconcile-batch',
+                    serializedBatch: '{"batch":"mixed-effects"}',
+                },
+                {
+                    batchId: 'batch-manual-effect',
+                    effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'manual-repair' })],
+                    recovery: 'manual-repair',
+                    serializedBatch: '{"batch":"manual-effect"}',
+                },
+            ],
+            batches: expect.arrayContaining([
+                expect.objectContaining({
+                    batchId: 'batch-generic-effect',
+                    status: 'committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-mixed-effects',
+                    status: 'committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            receipts: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            committedWork: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ workId: 'batch-generic-effect', state: 'external-pending' }),
+                    expect.objectContaining({ workId: 'batch-mixed-effects', state: 'external-pending' }),
+                    expect.objectContaining({ workId: 'batch-manual-effect', state: 'external-pending' }),
+                ]),
+            },
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-persisted-runtime-effects',
+                batchId: 'batch-generic-effect',
+            })
+        ).resolves.toEqual({ status: 'recovered' });
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-persisted-runtime-effects',
+                batchId: 'batch-mixed-effects',
+            })
+        ).resolves.toEqual({ status: 'recovered' });
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-persisted-runtime-effects',
+                batchId: 'batch-manual-effect',
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'At least one retained external effect requires manual repair and cannot be retried exactly.',
+        });
+
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledTimes(3);
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledTimes(2);
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenNthCalledWith(1, {
+            authority: continuationAuthority,
+            serialized: '{"batch":"generic-effect"}',
+        });
+        expect(commandRecoveryMocks.executeVersionedCommandBatchEnvelope).toHaveBeenNthCalledWith(2, {
+            authority: continuationAuthority,
+            serialized: '{"batch":"mixed-effects"}',
+        });
+        expect(hydratedAgentRunLifecycle.get('run-persisted-runtime-effects')).toMatchObject({
+            phase: 'partially-completed',
+            manualResume: { required: false, workIds: [] },
+            pendingEffectContinuations: [
+                {
+                    batchId: 'batch-manual-effect',
+                    recovery: 'manual-repair',
+                    lastError:
+                        'At least one retained external effect requires manual repair and cannot be retried exactly.',
+                },
+            ],
+            batches: expect.arrayContaining([
+                expect.objectContaining({
+                    batchId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            receipts: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            committedWork: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({
+                        workId: 'batch-generic-effect',
+                        receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                        state: 'committed',
+                    }),
+                    expect.objectContaining({
+                        workId: 'batch-mixed-effects',
+                        receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                        state: 'committed',
+                    }),
+                    expect.objectContaining({
+                        workId: 'batch-manual-effect',
+                        state: 'external-pending',
+                    }),
+                ]),
+            },
+        });
     });
 
     it('hydrates retired local-provider evidence without restoring an executable route', async () => {
@@ -380,7 +983,7 @@ describe('agent run recovery', () => {
         ).toThrow('Agent run state could not be persisted locally');
     });
 
-    it('orphans live work and schedules asset cleanup for an already-paused run after restart', () => {
+    it('orphans live work and schedules asset cleanup for an already-paused run after restart', async () => {
         createAgentRun({
             runId: 'run-paused-with-live-work',
             request: 'Resume the analysis after approval.',
@@ -421,7 +1024,7 @@ describe('agent run recovery', () => {
             requiredAt: 104,
         });
 
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
             recoveredRunIds: ['run-paused-with-live-work'],
         });
         expect(getAgentRun('run-paused-with-live-work')).toMatchObject({

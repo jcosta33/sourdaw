@@ -5,6 +5,8 @@ import { audioEngine } from '../repositories/createWebAudioEngine';
  * Binds project freshness at composition time without giving AudioEngine a
  * dependency on the CRDT document or its stores.
  */
-export function configureRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator): void {
+export function configureRuntimeGraphProjectRevisionValidator(
+    validator: RuntimeGraphProjectRevisionValidator | null
+): void {
     audioEngine.setRuntimeGraphProjectRevisionValidator(validator);
 }

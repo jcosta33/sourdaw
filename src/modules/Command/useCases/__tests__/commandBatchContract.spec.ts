@@ -624,6 +624,7 @@ describe('command batch contract', () => {
 
     it('dispatches one admitted commit batch as one compensated command group', async () => {
         const executionOrder: string[] = [];
+        const controller = new AbortController();
         const trackValues = {
             'track-guitar': { gain: 1, pan: 0 },
             'track-vocal': { gain: 1, pan: 0 },
@@ -638,7 +639,17 @@ describe('command batch contract', () => {
                     }
                     executionOrder.push('gain');
                     track.gain = action.payload.gain;
-                    return { status: 'written' };
+                    const reconcilePostCommit = async () => {
+                        executionOrder.push('post-commit');
+                        controller.abort();
+                        await Promise.resolve();
+                        executionOrder.push('post-commit-finished');
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: reconcilePostCommit,
+                        afterAmbiguousCommit: reconcilePostCommit,
+                    };
                 },
                 describe: (action) => ({
                     label: 'Set gain',
@@ -706,6 +717,8 @@ describe('command batch contract', () => {
             authority: authority(input),
             confirmed: true,
             serialized: JSON.stringify(input),
+            options: { signal: controller.signal },
+            onProjectCommitPrepared: () => executionOrder.push('commit-prepared'),
         });
         if (result.status === 'rejected') {
             throw new Error(result.reason);
@@ -715,7 +728,7 @@ describe('command batch contract', () => {
             status: 'committed',
             actions: [{ action: { type: 'setTrackGain' } }, { action: { type: 'setTrackPan' } }],
         });
-        expect(executionOrder).toEqual(['gain', 'pan']);
+        expect(executionOrder).toEqual(['gain', 'pan', 'commit-prepared', 'post-commit', 'post-commit-finished']);
         expect(trackValues).toEqual({
             'track-guitar': { gain: 1, pan: -0.2 },
             'track-vocal': { gain: 0.8, pan: 0 },

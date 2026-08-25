@@ -314,11 +314,88 @@ export type AgentRunTemporaryAsset = {
     createdAt: number;
 };
 
+export const AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION = 1 as const;
+
+export type AgentRunPreparedStemImportRecovery = {
+    schemaVersion: typeof AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION;
+    batchId: string;
+    serializedCommandBatch: string;
+    resources: Array<{
+        audioBufferId: string;
+        assetLeaseId: string | null;
+    }>;
+};
+
+export type AgentRunPreparedStemImportRecoveryCapsule = AgentRunPreparedStemImportRecovery & {
+    runId: string;
+    status: 'pending' | 'manual-repair';
+    lastError: string | null;
+    manualRepairRequiredAt: number | null;
+};
+
 export type AgentRunManualResume = {
     required: boolean;
     reason: string | null;
     workIds: string[];
     requiredAt: number | null;
+};
+
+export type AgentRunCommandBatchAuthority = {
+    projectId: string;
+    baseRevision: string;
+    scope: {
+        targetIds: readonly string[];
+        targetRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+        protectedTargetIds: readonly string[];
+        protectedRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+    };
+    grants: {
+        allowedOperationPrefixes: readonly string[];
+        create: boolean;
+        delete: boolean;
+        routing: boolean;
+        tempo: boolean;
+        master: boolean;
+        file: boolean;
+        audioUpload: boolean;
+        remoteGeneration: boolean;
+        autoCommit: boolean;
+    };
+    budgets: {
+        maxCommands: number;
+        maxCreatedTracks: number;
+        maxDeletedObjects: number;
+        maxAffectedTracks: number;
+        maxAffectedClips: number;
+        maxAutomationPoints: number;
+        maxImportedAssets: number;
+        maxRenderJobs: number;
+    };
+};
+
+export type AgentRunPendingEffect = {
+    commandId: string;
+    operation: string;
+    reason: string;
+    state: 'pending';
+} & (
+    | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
+    | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+);
+
+export type AgentRunPendingEffectContinuation = {
+    batchId: string;
+    effects: AgentRunPendingEffect[];
+    receiptIdentity: string;
+    recovery: 'reconcile-batch' | 'manual-repair';
+    serializedBatch: string;
+    authority: AgentRunCommandBatchAuthority;
+    lastError: string | null;
+};
+
+export type AgentRunPendingEffectRecovery = AgentRunPendingEffectContinuation & {
+    runId: string;
+    checkpoint: 'prepared' | 'durable';
 };
 
 export type AgentRunWorkOwnerKind = 'provider' | 'command' | 'render' | 'analysis' | 'cleanup';
@@ -373,6 +450,8 @@ export type AgentRun = {
     committedWork: AgentRunCommittedWork[];
     retriableWork: AgentRunRetriableWork[];
     temporaryAssets: AgentRunTemporaryAsset[];
+    pendingEffectContinuations: AgentRunPendingEffectContinuation[];
+    preparedStemImports: AgentRunPreparedStemImportRecovery[];
     manualResume: AgentRunManualResume;
     workLeases: AgentRunWorkLease[];
     contextEvidence: AgentContextEvidence | null;
@@ -383,4 +462,8 @@ export type AgentRun = {
 export type AgentRunState = {
     schemaVersion: typeof AGENT_RUN_SCHEMA_VERSION;
     runs: AgentRun[];
+    /** Capacity-admitted recovery capabilities are retained independently of evictable run history. */
+    pendingEffectRecoveryLedger?: AgentRunPendingEffectRecovery[];
+    /** Prepared media cleanup authority is retained independently of evictable run history. */
+    preparedStemImportRecoveryLedger?: AgentRunPreparedStemImportRecoveryCapsule[];
 };

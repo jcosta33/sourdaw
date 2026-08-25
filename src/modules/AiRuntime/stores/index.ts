@@ -22,3 +22,9 @@ export type { VoiceStatus } from './voiceStatusStore';
 
 export { voiceInputAvailabilityStore } from './voiceInputAvailabilityStore';
 export type { VoiceInputAvailability } from './voiceInputAvailabilityStore';
+
+export { selectAgentRunPendingEffectRecoveries } from './selectAgentRunPendingEffectRecoveries';
+export type { AgentRunPendingEffectRecoveryProjection } from './selectAgentRunPendingEffectRecoveries';
+
+export { selectPreparedStemImportManualRepairs } from './selectPreparedStemImportManualRepairs';
+export type { PreparedStemImportManualRepairProjection } from './selectPreparedStemImportManualRepairs';

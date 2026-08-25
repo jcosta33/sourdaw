@@ -46,6 +46,9 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'setDeviceParameter' && action.payload.expectedTrackId) {
         affectedIds.add(action.payload.expectedTrackId);
     }
+    for (const targetId of getAppActionStaticAuthority(action)) {
+        affectedIds.add(targetId);
+    }
     if (action.type === 'createBus' && action.payload.busId) {
         affectedIds.add(action.payload.busId);
     }
@@ -108,9 +111,6 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
         for (const change of changes ?? []) {
             affectedIds.add(change.targetNoteId);
         }
-    }
-    for (const targetId of getAppActionStaticAuthority(action)) {
-        affectedIds.add(targetId);
     }
     return [...affectedIds];
 }

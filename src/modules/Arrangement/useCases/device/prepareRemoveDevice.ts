@@ -104,7 +104,11 @@ export function prepareRemoveDevice(
         if (isProjectOnlyFolder) {
             return;
         }
-        if (!deviceRemovalFinalized) {
+        const currentTrack = getTrackState()?.tracks.find((candidate) => candidate.id === track.id);
+        if (!currentTrack) {
+            deviceRemovalFinalized = true;
+            stripRemovalFinalized = true;
+        } else if (!deviceRemovalFinalized) {
             try {
                 const result = applyDeviceChainRuntimeDelta({
                     before: beforeTrack,

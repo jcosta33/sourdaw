@@ -24,6 +24,7 @@ import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistory
 import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
+    protectPendingActionResourceLease,
     recordPendingActionExecution,
     refreshPendingActionConfirmationApproval,
     replacePendingActionExecutions,
@@ -35,7 +36,6 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
-import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
@@ -45,7 +45,9 @@ import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
+import { prepareAgentRunPendingEffectContinuation } from './prepareAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
+import { recoverPreparedStemImportResources } from './recoverPreparedStemImportResources';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ConfirmPendingChatActionsInput = {
@@ -57,11 +59,26 @@ type ApprovalDivergence = Extract<
     { status: 'ready' | 'conflicted' }
 >['divergence'];
 
+type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type PendingEffect = CommandVerifiedBatchReceipt['pendingEffects'][number];
+type CommittedEffectFailureResult = {
+    status: 'failed';
+    durableCommit: true;
+    reason: string;
+    effects: PendingEffect[];
+    continuation: {
+        authority: 'authoritative-collaboration-host';
+        idempotency: 'project-checkpoint';
+        kind: 'reconcile-exact-batch' | 'manual-repair';
+    };
+};
+
 type ConfirmPendingChatActionsResult =
     | { status: 'missing' }
     | { status: 'not_pending'; currentStatus: ChatActionConfirmationStatus }
     | { status: 'busy' }
     | { status: 'executed' }
+    | CommittedEffectFailureResult
     | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence }
     | {
           status: 'reapproval_required';
@@ -72,12 +89,29 @@ type ConfirmPendingChatActionsResult =
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
 
-type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
-
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 const AGENT_RUN_STALE_COMPLETION_WARNING =
     'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
+
+function createCommittedEffectFailureResult(
+    receipt: CommandVerifiedBatchReceipt,
+    reason = receipt.warnings[0] ?? receipt.modelSummary
+): CommittedEffectFailureResult {
+    return {
+        status: 'failed',
+        durableCommit: true,
+        reason,
+        effects: [...receipt.pendingEffects],
+        continuation: {
+            authority: 'authoritative-collaboration-host',
+            idempotency: 'project-checkpoint',
+            kind: receipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
+                ? 'manual-repair'
+                : 'reconcile-exact-batch',
+        },
+    };
+}
 
 function getVerifiedReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
@@ -154,17 +188,14 @@ function recordTrackedAgentRunReceipt(
             runId: confirmation.runId,
             receipt,
             actions: confirmation.actions,
+            ...(confirmation.approvalSnapshot.commandBatch
+                ? { commandBatch: confirmation.approvalSnapshot.commandBatch }
+                : {}),
             ...(input?.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             ...(input?.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
             committedRevision: captureProjectRevision(),
         });
         effectsPending = recorded.effectsPending;
-        const importedStems = confirmation.actions.flatMap((action) =>
-            action.type === 'importStemSet' ? action.payload.stems : []
-        );
-        if (importedStems.length > 0) {
-            preparedStemImportResources.release({ runId: confirmation.runId, stems: importedStems });
-        }
     });
     return { warning, effectsPending };
 }
@@ -198,12 +229,32 @@ function settleTrackedAgentRunWorkLease(
     }
 }
 
-function settleVerifiedBatchReplay(
+async function settleVerifiedBatchReplay(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     recoveredExternalEffects = false,
     leaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null }
-): ConfirmPendingChatActionsResult {
+): Promise<ConfirmPendingChatActionsResult> {
+    if (receipt.outcome === 'partially-committed' && receipt.pendingEffects.length > 0) {
+        const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
+            ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
+            completesRun: false,
+        });
+        const reason = receipt.warnings[0] ?? receipt.modelSummary;
+        const persistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: [reason, persistenceWarning].filter(Boolean).join(' '),
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: [reason, persistenceWarning].filter(Boolean).join(' '),
+            content: `The project change is durably committed, but at least one external effect remains pending: ${reason}. Use the retained reconciliation action on the authoritative collaboration host, or follow the retained manual-repair guidance; the project mutation will not replay.${persistenceWarning ? ` ${persistenceWarning}` : ''}`,
+        });
+        return createCommittedEffectFailureResult(receipt, reason);
+    }
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
         const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
@@ -211,7 +262,7 @@ function settleVerifiedBatchReplay(
             completesRun: leaseSettlement.accepted,
         });
         const runPersistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'transfer' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'executed',
@@ -242,7 +293,7 @@ function settleVerifiedBatchReplay(
             });
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -270,6 +321,9 @@ function settleVerifiedBatchReplay(
         confirmationId: confirmation.id,
         disposition: replay.status === 'ambiguous' ? 'retain' : 'discard',
     });
+    if (replay.status === 'ambiguous') {
+        await recoverPreparedStemImportResources({ runId: confirmation.runId });
+    }
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'failed',
@@ -558,10 +612,12 @@ async function retryCommittedSectionRenders(
         return { status: 'failed', reason };
     } finally {
         if (renderRetryBudget?.reservation.status === 'reserved') {
+            const remainingJobs = getIncompleteSectionRenderJobs(confirmation);
+            const completedJobsCount = Math.max(0, followUp.jobs.length - (remainingJobs?.missingJobIds.length ?? 0));
             agentRunLifecycle.reconcileBudgetAttempt({
                 runId: confirmation.runId,
                 attemptId: renderRetryBudget.attemptId,
-                consumed: followUp.jobs.length,
+                consumed: completedJobsCount,
                 mode: 'final',
                 provenance: 'versioned-estimate',
             });
@@ -599,14 +655,17 @@ export async function confirmPendingChatActions(
     }
 
     const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
-    let hasPriorVerifiedBatchReceipt = false;
+    let priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null;
     if (approvedCommandBatch) {
-        const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+        priorVerifiedBatchReceipt = await getVersionedCommandBatchIdempotentReplay({
             authority: approvedCommandBatch.authority,
             serialized: approvedCommandBatch.serialized,
         });
-        hasPriorVerifiedBatchReceipt = priorReceipt !== null;
     }
+    const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
+    const recoveringPendingEffects =
+        priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
+        priorVerifiedBatchReceipt.pendingEffects.length > 0;
 
     if (!hasPriorVerifiedBatchReceipt && captureProjectRevision() !== confirmation.projectRevision) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
@@ -743,6 +802,13 @@ export async function confirmPendingChatActions(
             ...group,
             signal: aborter.signal,
             source: 'prompt' as const,
+            onProjectCommitCheckpoint: ({ receipt }: { receipt: CommandVerifiedBatchReceipt }) => {
+                return prepareAgentRunPendingEffectContinuation({
+                    runId: confirmation.runId,
+                    receipt,
+                    commandBatch,
+                });
+            },
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
                 if (!isConfirmationExecutionAuthorized(isProjectMutationAuthorized, aborter.signal)) {
@@ -780,13 +846,17 @@ export async function confirmPendingChatActions(
             authority: commandBatch.authority,
             ...(approvalBinding ? { approvalBinding } : {}),
             serialized: commandBatch.serialized,
+            onProjectCommitPrepared: () => protectPendingActionResourceLease(confirmation.id),
             options: executionOptions,
         });
         const failedBeforeCommit =
             versionedResult.status === 'rejected' ||
             versionedResult.status === 'conflicted' ||
             versionedResult.status === 'failed';
-        if (versionedResult.status === 'cancelled' || (failedBeforeCommit && !isProjectMutationAuthorized())) {
+        if (
+            (!recoveringPendingEffects && versionedResult.status === 'cancelled') ||
+            (!recoveringPendingEffects && failedBeforeCommit && !isProjectMutationAuthorized())
+        ) {
             cancellationTriggeredByInvalidation = !aborter.signal.aborted;
             await agentRunCancellation.cancel({ runId: confirmation.runId, reason: versionedResult.reason });
         }
@@ -797,6 +867,20 @@ export async function confirmPendingChatActions(
         batchResult = versionedResult;
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        if (recoveringPendingEffects && priorVerifiedBatchReceipt) {
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: 'failed',
+                error: reason,
+            });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'failed',
+                error: reason,
+                content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
+            });
+            settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+            return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, reason);
+        }
         let canUpdateTrackedRun = true;
         if (trackedWorkLease) {
             canUpdateTrackedRun = settleTrackedAgentRunWorkLease(trackedWorkLease, 'failed').accepted;
@@ -829,7 +913,19 @@ export async function confirmPendingChatActions(
 
     const budgetPersistenceWarning = commandBudget
         ? updateTrackedAgentRun(confirmation, () => {
-              agentWorkBudget.reconcileCommandWork({ runId: confirmation.runId, ...commandBudget });
+              const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation);
+              const actualRenderJobs = incompleteSectionRenders
+                  ? Math.max(
+                        0,
+                        (commandBatch.authority.budgets.maxRenderJobs ?? 0) -
+                            incompleteSectionRenders.missingJobIds.length
+                    )
+                  : undefined;
+              agentWorkBudget.reconcileCommandWork({
+                  runId: confirmation.runId,
+                  ...commandBudget,
+                  ...(actualRenderJobs !== undefined ? { actualRenderJobs } : {}),
+              });
           })
         : null;
 
@@ -862,7 +958,7 @@ export async function confirmPendingChatActions(
 
     const batchFailedBeforeCommit =
         batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
-    if (batchFailedBeforeCommit && !isProjectMutationAuthorized()) {
+    if (!recoveringPendingEffects && batchFailedBeforeCommit && !isProjectMutationAuthorized()) {
         return invalidatePendingConfirmation(confirmation);
     }
 
@@ -885,6 +981,9 @@ export async function confirmPendingChatActions(
             ...(executionKind === 'project' ? { revertGroupId: group.groupId } : {}),
             completesRun: trackedLeaseSettlement.accepted,
         });
+        const effectsPending =
+            batchResult.receipt.outcome === 'partially-committed' && batchResult.receipt.pendingEffects.length > 0;
+        const effectsPendingReason = batchResult.receipt.warnings[0] ?? batchResult.receipt.modelSummary;
         const runPersistenceWarning = [
             receiptPersistenceWarning.warning,
             trackedLeaseSettlement.warning,
@@ -892,7 +991,7 @@ export async function confirmPendingChatActions(
         ]
             .filter(Boolean)
             .join(' ');
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'transfer' });
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {
@@ -947,10 +1046,16 @@ export async function confirmPendingChatActions(
             };
             pushAiActionGroup(historyGroup);
             notifyAiChange(
-                `Confirmed: ${confirmation.prompt}`,
+                effectsPending
+                    ? `Committed with pending external effects: ${confirmation.prompt}`
+                    : `Confirmed: ${confirmation.prompt}`,
                 executedLabels.map((entry) => entry.actionType)
             );
-            updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: effectsPending ? 'failed' : 'executed',
+                ...(effectsPending ? { error: warning } : {}),
+            });
             const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation);
             if (incompleteSectionRenders && batchResult.status === 'committed-with-warning') {
                 updatePendingActionFollowUp({
@@ -970,6 +1075,12 @@ export async function confirmPendingChatActions(
                     content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not replay the confirmed project actions. Retry missing renders below; only receipt-bound missing artifacts will run.`;
                 }
             }
+            if (effectsPending) {
+                const manualRepairRequired = batchResult.receipt.pendingEffects.some(
+                    ({ remediation }) => remediation === 'manual-repair'
+                );
+                content = `The project change is durably committed:\n\n${executionReceipt}\n\nAt least one external effect remains pending: ${effectsPendingReason}. ${manualRepairRequired ? 'Use the retained manual-repair guidance' : 'Use the retained pending-effect reconciliation action on the authoritative collaboration host'}; the project mutation will not replay.`;
+            }
             if (batchResult.status === 'executed-with-warning') {
                 content = `Executed after confirmation:\n\n${executionReceipt}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
             }
@@ -977,7 +1088,7 @@ export async function confirmPendingChatActions(
                 content = `${content}\n\n${runPersistenceWarning}`;
             }
             updateChatMessage(confirmation.assistantMessageId, {
-                pendingActionConfirmationStatus: 'executed',
+                pendingActionConfirmationStatus: effectsPending ? 'failed' : 'executed',
                 pendingActionFollowUpStatus: incompleteSectionRenders ? 'retryable' : undefined,
                 error: warning,
                 content,
@@ -988,7 +1099,7 @@ export async function confirmPendingChatActions(
             try {
                 updatePendingActionConfirmationStatus({
                     confirmationId: confirmation.id,
-                    status: 'executed',
+                    status: effectsPending ? 'failed' : 'executed',
                     error: warning,
                 });
                 let executionDescription = 'project change committed';
@@ -996,9 +1107,11 @@ export async function confirmPendingChatActions(
                     executionDescription = 'runtime command executed';
                 }
                 updateChatMessage(confirmation.assistantMessageId, {
-                    pendingActionConfirmationStatus: 'executed',
+                    pendingActionConfirmationStatus: effectsPending ? 'failed' : 'executed',
                     error: warning,
-                    content: `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.\n\n${executionReceipt}`,
+                    content: effectsPending
+                        ? `The project change is durably committed and external effects remain pending, but reporting also failed: ${warning}. Use the retained reconciliation or manual-repair guidance.\n\n${executionReceipt}`
+                        : `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.\n\n${executionReceipt}`,
                 });
             } catch (reportingError) {
                 logger.error(
@@ -1007,6 +1120,9 @@ export async function confirmPendingChatActions(
                     })
                 );
             }
+        }
+        if (effectsPending) {
+            return createCommittedEffectFailureResult(batchResult.receipt, effectsPendingReason);
         }
         return { status: 'executed' };
     }
@@ -1022,7 +1138,7 @@ export async function confirmPendingChatActions(
             }
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -1032,6 +1148,20 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'ambiguous') {
+        if (recoveringPendingEffects && priorVerifiedBatchReceipt) {
+            settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+            updatePendingActionConfirmationStatus({
+                confirmationId: confirmation.id,
+                status: 'failed',
+                error: batchResult.reason,
+            });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'failed',
+                error: batchResult.reason,
+                content: `The project change remains durably committed, but pending-effect reconciliation is still incomplete: ${batchResult.reason}`,
+            });
+            return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, batchResult.reason);
+        }
         recordTrackedAgentRunFailure(confirmation, {
             category: 'conflict',
             retriable: false,
@@ -1039,6 +1169,7 @@ export async function confirmPendingChatActions(
             compensation: 'manual-repair',
         });
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await recoverPreparedStemImportResources({ runId: confirmation.runId });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
@@ -1050,6 +1181,21 @@ export async function confirmPendingChatActions(
             content: `The confirmed command stopped after an uncertain partial commit: ${batchResult.reason}. Do not retry it; inspect the project first.`,
         });
         return { status: 'failed', reason: batchResult.reason };
+    }
+
+    if (recoveringPendingEffects && priorVerifiedBatchReceipt) {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: batchResult.reason,
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: batchResult.reason,
+            content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${batchResult.reason}`,
+        });
+        return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, batchResult.reason);
     }
 
     updatePendingActionConfirmationStatus({

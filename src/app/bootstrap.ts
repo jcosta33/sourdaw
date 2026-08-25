@@ -76,6 +76,7 @@ import {
     commandProjectRevisionPort,
     commandProjectDivergencePort,
     commandTrackDefaultsPort,
+    commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
@@ -145,6 +146,7 @@ import {
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
     stopPlayback,
+    repairRuntimeGraphFromProject,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
@@ -194,6 +196,7 @@ agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
 commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
+commandRuntimeRepairPort.setProvider(repairRuntimeGraphFromProject);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>
@@ -205,11 +208,9 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
-try {
-    recoverInterruptedAgentRuns();
-} catch (error) {
+void recoverInterruptedAgentRuns().catch((error: unknown) => {
     logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
-}
+});
 const createOfflineYeastProcessor = () =>
     createOfflineYeastMidiProcessor({
         resolveMusicalPosition: createMusicalPositionProjector(),

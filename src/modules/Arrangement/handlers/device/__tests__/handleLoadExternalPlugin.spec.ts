@@ -42,6 +42,7 @@ describe('handleLoadExternalPlugin', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.findSupportedPlugin.mockReturnValue({ id: 'plugin-1', name: 'Compressor', category: 'Effect' });
+        mocks.activateExternalPlugin.mockResolvedValue({ status: 'active' });
     });
 
     it('reports a write when the external device is added to a provided track', async () => {
@@ -91,7 +92,7 @@ describe('handleLoadExternalPlugin', () => {
         if (!result || result.status !== 'written' || !result.afterCommit) {
             throw new Error('Expected a deferred external-plugin runtime effect');
         }
-        result.afterCommit();
+        await result.afterCommit();
 
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith({
             before,
@@ -161,8 +162,8 @@ describe('handleLoadExternalPlugin', () => {
             if (!result || result.status !== 'written' || !result.afterCommit) {
                 throw new Error('Expected a deferred external-plugin runtime effect');
             }
-            result.afterCommit();
-            result.afterAmbiguousCommit?.();
+            await result.afterCommit();
+            await result.afterAmbiguousCommit?.();
 
             expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
             expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
@@ -199,8 +200,8 @@ describe('handleLoadExternalPlugin', () => {
         if (!result || result.status !== 'written' || !result.afterCommit) {
             throw new Error('Expected a deferred external-plugin runtime effect');
         }
-        result.afterCommit();
-        result.afterAmbiguousCommit?.();
+        await result.afterCommit();
+        await result.afterAmbiguousCommit?.();
 
         expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
         expect(mocks.activateExternalPlugin).toHaveBeenCalledOnce();
@@ -211,6 +212,42 @@ describe('handleLoadExternalPlugin', () => {
         expect(activation?.onLatencyMs).toEqual(expect.any(Function));
         activation?.onLatencyMs?.(9);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 9);
+    });
+
+    it('classifies a retained native attach failure for whole-graph repair', async () => {
+        const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
+        const device = {
+            id: 'device-1',
+            name: 'Compressor',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
+            externalPluginId: 'plugin-1',
+            externalInstanceId: 'instance-1',
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [before] })
+            .mockReturnValue({ tracks: [{ ...before, devices: [device] }] });
+        mocks.addExternalDevice.mockReturnValue(device);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
+        mocks.activateExternalPlugin.mockResolvedValue({
+            status: 'failed',
+            stage: 'attach',
+            reason: 'native engine unavailable',
+        });
+
+        const result = await handleLoadExternalPlugin.execute({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'plugin-1', trackId: 'audio-1' },
+        });
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Expected a deferred external-plugin runtime effect');
+        }
+
+        await expect(result.afterCommit()).rejects.toThrow('native engine unavailable');
+        await expect(result.afterAmbiguousCommit?.()).rejects.toThrow('native engine unavailable');
+        expect(result.postCommitEffect).toEqual({ kind: 'runtime-graph', remediation: 'repair' });
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledTimes(2);
     });
 
     it('reports no-write when a provided dormant VCA rejects the device', async () => {

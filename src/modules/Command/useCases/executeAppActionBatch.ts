@@ -14,6 +14,7 @@ import {
     type HandlerAfterCommit,
     type HandlerDescribeResult,
     type HandlerExecutionResult,
+    type HandlerPostCommitEffect,
 } from '#/utils/handlerContract';
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
@@ -41,10 +42,23 @@ type ExecutedBatchAction = {
     receipt?: VersionedCommandReceipt;
 };
 
+type PendingPostCommitEffectBase = {
+    commandId: string;
+    operation: AppAction['type'];
+    reason: string;
+    state: 'pending';
+};
+export type PendingPostCommitEffect = PendingPostCommitEffectBase &
+    (
+        | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
+        | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+    );
+
 type BatchWarningDetail = {
     kind: 'semantic-cleanup' | 'observer' | 'history' | 'external-effect';
     message: string;
     commandId?: string;
+    pendingEffect?: PendingPostCommitEffect;
 };
 
 type ExecuteAppActionBatchResult =
@@ -77,7 +91,11 @@ type ExecuteAppActionBatchOptions = ExecuteOptions & {
     preExecutionValidation?: () => string | null;
     prepareValidation?: () => CommandBatchValidationPreparation;
     requireCompensation?: boolean;
-    onProjectCommitPrepared?: (result: { status: 'committed'; actions: readonly ExecutedBatchAction[] }) => void;
+    onProjectCommitPrepared?: (result: {
+        status: 'committed';
+        actions: readonly ExecutedBatchAction[];
+        pendingEffects: readonly PendingPostCommitEffect[];
+    }) => void;
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
 
@@ -91,6 +109,7 @@ type PreparedBatchAction = {
     afterAbort: HandlerAfterCommit | null;
     afterCommit: HandlerAfterCommit | null;
     afterAmbiguousCommit: HandlerAfterCommit | null;
+    postCommitEffect: HandlerPostCommitEffect | null;
     requiresAbortCompensation: boolean;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
@@ -116,6 +135,80 @@ class AppActionBatchApprovalError extends Error {
 
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getPendingPostCommitEffect(
+    prepared: PreparedBatchAction,
+    error: unknown,
+    canReconcile: boolean
+): PendingPostCommitEffect {
+    const declared = isRecord(error) && isRecord(error.pendingEffect) ? error.pendingEffect : null;
+    if (
+        declared?.kind === 'runtime-graph' &&
+        declared.state === 'pending' &&
+        typeof declared.reason === 'string' &&
+        declared.reason.trim().length > 0 &&
+        (declared.remediation === 'retry' || declared.remediation === 'repair')
+    ) {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: declared.kind,
+            operation: prepared.action.type,
+            reason: declared.reason,
+            remediation: declared.remediation,
+            state: declared.state,
+        };
+    }
+    if (prepared.postCommitEffect?.kind === 'runtime-graph') {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: 'runtime-graph',
+            operation: prepared.action.type,
+            reason: failureReason(error),
+            remediation: prepared.postCommitEffect.remediation,
+            state: 'pending',
+        };
+    }
+    if (prepared.postCommitEffect?.kind === 'external-effect') {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: 'external-effect',
+            operation: prepared.action.type,
+            reason: failureReason(error),
+            remediation: prepared.postCommitEffect.remediation,
+            state: 'pending',
+        };
+    }
+    return {
+        commandId: prepared.envelope.commandId,
+        kind: 'external-effect',
+        operation: prepared.action.type,
+        reason: failureReason(error),
+        remediation: canReconcile ? 'reconcile' : 'manual-repair',
+        state: 'pending',
+    };
+}
+
+function getPreparedPendingPostCommitEffect(prepared: PreparedBatchAction): PendingPostCommitEffect {
+    const base = {
+        commandId: prepared.envelope.commandId,
+        operation: prepared.action.type,
+        reason: 'Post-commit effect has not completed',
+        state: 'pending' as const,
+    };
+    if (prepared.postCommitEffect?.kind === 'runtime-graph') {
+        return { ...base, kind: 'runtime-graph', remediation: prepared.postCommitEffect.remediation };
+    }
+    return {
+        ...base,
+        kind: 'external-effect',
+        remediation:
+            prepared.postCommitEffect?.remediation ?? (prepared.afterAmbiguousCommit ? 'reconcile' : 'manual-repair'),
+    };
 }
 
 function createExecutedBatchAction(prepared: PreparedBatchAction): ExecutedBatchAction {
@@ -264,6 +357,7 @@ async function executePreparedBatch(
         }
         prepared.afterCommit = result?.afterCommit ?? null;
         prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
+        prepared.postCommitEffect = result?.postCommitEffect ?? null;
         executedActions.push(prepared);
     }
     assertExecutionAuthorized(shouldExecute);
@@ -609,6 +703,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     afterAbort: null,
                     afterCommit: null,
                     afterAmbiguousCommit: null,
+                    postCommitEffect: null,
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
                     description,
@@ -783,9 +878,16 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
 
             try {
-                storageTransaction.scope(() =>
-                    options?.onProjectCommitPrepared?.({ status: 'committed', actions: executedBatchActions })
-                );
+                storageTransaction.scope(() => {
+                    const pendingEffects = executedActions.flatMap((executed): PendingPostCommitEffect[] =>
+                        executed.afterCommit ? [getPreparedPendingPostCommitEffect(executed)] : []
+                    );
+                    options?.onProjectCommitPrepared?.({
+                        status: 'committed',
+                        actions: executedBatchActions,
+                        pendingEffects,
+                    });
+                });
                 storageTransaction.commit();
             } catch (error) {
                 const cleanupWarning = clearBatchSemanticContext();
@@ -856,6 +958,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                             kind: 'external-effect',
                             message: warning,
                             commandId: executed.envelope.commandId,
+                            pendingEffect: getPendingPostCommitEffect(executed, effectError, false),
                         });
                         continue;
                     }
@@ -874,6 +977,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                             kind: 'external-effect',
                             message: warning,
                             commandId: executed.envelope.commandId,
+                            pendingEffect: getPendingPostCommitEffect(executed, effectError, true),
                         });
                     }
                 }

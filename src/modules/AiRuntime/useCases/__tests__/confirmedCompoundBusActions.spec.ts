@@ -514,7 +514,6 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
         expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
         expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
         expect(getPendingActionConfirmation('confirmation-conflict')?.status).toBe('failed');
