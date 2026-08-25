@@ -3,6 +3,8 @@ import { join, relative } from 'node:path';
 
 import {
     type ArrowFunction,
+    type CallExpression,
+    type Expression,
     type FunctionDeclaration,
     type FunctionExpression,
     type Node,
@@ -10,14 +12,25 @@ import {
     ScriptTarget,
     createSourceFile,
     forEachChild,
+    isArrayLiteralExpression,
     isArrowFunction,
+    isAsExpression,
     isBlock,
     isCallExpression,
+    isComputedPropertyName,
+    isConditionalExpression,
     isFunctionDeclaration,
     isFunctionExpression,
     isIdentifier,
+    isNonNullExpression,
+    isObjectLiteralExpression,
+    isParenthesizedExpression,
+    isPropertyAssignment,
     isPropertyAccessExpression,
+    isReturnStatement,
+    isSatisfiesExpression,
     isShorthandPropertyAssignment,
+    isStringLiteral,
     isVariableDeclaration,
 } from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -1053,14 +1066,13 @@ function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): Loc
     return null;
 }
 
-function isDeviceDataMutationCall(node: Node): boolean {
-    if (!isCallExpression(node)) {
-        return false;
-    }
-    if (isIdentifier(node.expression)) {
-        return node.expression.text === 'updateTrack';
-    }
+function isUpdateTrackCall(node: Node): node is CallExpression {
+    return isCallExpression(node) && isIdentifier(node.expression) && node.expression.text === 'updateTrack';
+}
+
+function isTrackStoreSetCall(node: Node): node is CallExpression {
     return (
+        isCallExpression(node) &&
         isPropertyAccessExpression(node.expression) &&
         isIdentifier(node.expression.expression) &&
         node.expression.expression.text === 'trackStore' &&
@@ -1068,7 +1080,44 @@ function isDeviceDataMutationCall(node: Node): boolean {
     );
 }
 
-function countDeviceDataShorthandWrites(file: ProductionSource): number {
+function unwrapStateExpression(expression: Expression): Expression {
+    if (
+        isParenthesizedExpression(expression) ||
+        isAsExpression(expression) ||
+        isSatisfiesExpression(expression) ||
+        isNonNullExpression(expression)
+    ) {
+        return unwrapStateExpression(expression.expression);
+    }
+    return expression;
+}
+
+function returnedStateExpressions(updater: LocalUpdater): Expression[] {
+    if (!isBlock(updater.body)) {
+        return [updater.body];
+    }
+
+    const expressions: Expression[] = [];
+    const visit = (node: Node): void => {
+        if (
+            node !== updater.body &&
+            (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node))
+        ) {
+            return;
+        }
+        if (isReturnStatement(node)) {
+            if (node.expression) {
+                expressions.push(node.expression);
+            }
+            return;
+        }
+        forEachChild(node, visit);
+    };
+    visit(updater.body);
+    return expressions;
+}
+
+function countDeviceDataAstWrites(file: ProductionSource): number {
     const sourceFile = createSourceFile(
         file.path,
         file.source,
@@ -1078,26 +1127,72 @@ function countDeviceDataShorthandWrites(file: ProductionSource): number {
     );
     const scopeByNode = indexLocalUpdaters(sourceFile);
     const writes = new Set<Node>();
-    // A shorthand property is counted only beneath an owning project mutation.
-    // Object binding patterns such as `const { devices } = track` are different
-    // syntax nodes, while read-only object projections outside these calls never
-    // enter `collectWrites` at all.
-    const collectWrites = (node: Node): void => {
-        if (isShorthandPropertyAssignment(node) && DEVICE_DATA_PROPERTIES.has(node.name.text)) {
-            writes.add(node);
+
+    const collectStateExpression = (candidate: Expression): void => {
+        const expression = unwrapStateExpression(candidate);
+        if (isObjectLiteralExpression(expression)) {
+            for (const property of expression.properties) {
+                if (isShorthandPropertyAssignment(property) && DEVICE_DATA_PROPERTIES.has(property.name.text)) {
+                    writes.add(property);
+                    continue;
+                }
+                if (!isPropertyAssignment(property)) {
+                    continue;
+                }
+                if (
+                    isComputedPropertyName(property.name) &&
+                    isStringLiteral(property.name.expression) &&
+                    DEVICE_DATA_PROPERTIES.has(property.name.expression.text)
+                ) {
+                    writes.add(property);
+                }
+                collectStateExpression(property.initializer);
+            }
+            return;
         }
-        forEachChild(node, collectWrites);
-    };
-    const visit = (node: Node): void => {
-        if (isDeviceDataMutationCall(node) && isCallExpression(node)) {
-            for (const argument of node.arguments) {
-                collectWrites(argument);
-                if (isIdentifier(argument)) {
-                    const updater = resolveLocalUpdater(argument.text, scopeByNode.get(node));
-                    if (updater?.body) {
-                        collectWrites(updater.body);
+        if (isArrayLiteralExpression(expression)) {
+            for (const element of expression.elements) {
+                collectStateExpression(element);
+            }
+            return;
+        }
+        if (isConditionalExpression(expression)) {
+            collectStateExpression(expression.whenTrue);
+            collectStateExpression(expression.whenFalse);
+            return;
+        }
+        if (isCallExpression(expression)) {
+            for (const argument of expression.arguments) {
+                if (isArrowFunction(argument) || isFunctionExpression(argument)) {
+                    for (const returned of returnedStateExpressions(argument)) {
+                        collectStateExpression(returned);
                     }
                 }
+            }
+        }
+    };
+
+    const collectUpdater = (updater: LocalUpdater): void => {
+        for (const expression of returnedStateExpressions(updater)) {
+            collectStateExpression(expression);
+        }
+    };
+
+    const visit = (node: Node): void => {
+        if (isUpdateTrackCall(node)) {
+            const updaterArgument = node.arguments[1];
+            if (updaterArgument && (isArrowFunction(updaterArgument) || isFunctionExpression(updaterArgument))) {
+                collectUpdater(updaterArgument);
+            } else if (updaterArgument && isIdentifier(updaterArgument)) {
+                const updater = resolveLocalUpdater(updaterArgument.text, scopeByNode.get(node));
+                if (updater) {
+                    collectUpdater(updater);
+                }
+            }
+        } else if (isTrackStoreSetCall(node)) {
+            const stateArgument = node.arguments[0];
+            if (stateArgument) {
+                collectStateExpression(stateArgument);
             }
         }
         forEachChild(node, visit);
@@ -1112,9 +1207,9 @@ function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByP
         includes: includeAllPaths,
     });
     for (const file of files) {
-        const shorthandWrites = countDeviceDataShorthandWrites(file);
-        if (shorthandWrites > 0) {
-            result[file.path] = (result[file.path] ?? 0) + shorthandWrites;
+        const astWrites = countDeviceDataAstWrites(file);
+        if (astWrites > 0) {
+            result[file.path] = (result[file.path] ?? 0) + astWrites;
         }
     }
     return result;
@@ -1177,22 +1272,40 @@ describe('device write boundary closure', () => {
 
     it('does not classify read-only destructuring or projection as a shorthand write', () => {
         expect(
-            countDeviceDataShorthandWrites({
+            countDeviceDataAstWrites({
                 path: 'src/modules/Arrangement/readDeviceData.ts',
                 source: 'const { devices, parameterValues } = track; const snapshot = { devices, parameterValues };',
             })
         ).toBe(0);
     });
 
+    it('does not classify a discarded projection inside an updater as a device-data write', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/discardedDeviceProjection.ts',
+                source: 'const devices = []; const parameterValues = {}; updateTrack("track", (current) => { const snapshot = { devices, parameterValues }; void snapshot; return current; });',
+            })
+        ).toBe(0);
+    });
+
+    it('does not classify a discarded projection inside trackStore.set as a device-data write', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/discardedSetProjection.ts',
+                source: 'trackStore.set({ ...state, tracks: state.tracks.map((track) => { const devices = track.devices; const parameterValues = devices[0]?.parameterValues; const snapshot = { devices, parameterValues }; void snapshot; return track; }) });',
+            })
+        ).toBe(0);
+    });
+
     it('resolves only the nearest local updater declaration', () => {
         expect(
-            countDeviceDataShorthandWrites({
+            countDeviceDataAstWrites({
                 path: 'src/modules/Arrangement/localUpdater.ts',
                 source: 'const devices = []; function replace(current) { return { ...current, devices }; } updateTrack("track", replace);',
             })
         ).toBe(1);
         expect(
-            countDeviceDataShorthandWrites({
+            countDeviceDataAstWrites({
                 path: 'src/modules/Arrangement/shadowedUpdater.ts',
                 source: 'const devices = []; const replace = (current) => ({ ...current, devices }); { const replace = (current) => ({ ...current }); updateTrack("track", replace); }',
             })
@@ -1244,6 +1357,16 @@ describe('device write boundary closure', () => {
             name: 'an extracted direct devices writer',
             path: 'src/modules/Arrangement/newExtractedDeviceWriter.ts',
             source: 'const devices = []; const replace = (current) => ({ ...current, devices }); updateTrack("track", replace);',
+        },
+        {
+            name: 'a direct trackStore.set shorthand writer',
+            path: 'src/modules/Arrangement/newSetDeviceWriter.ts',
+            source: 'const devices = []; trackStore.set({ ...state, devices });',
+        },
+        {
+            name: 'a computed devices writer',
+            path: 'src/modules/Arrangement/newComputedDeviceWriter.ts',
+            source: 'const devices = []; updateTrack("track", (current) => ({ ...current, ["devices"]: devices }));',
         },
         {
             name: 'a direct parameterValues writer',
