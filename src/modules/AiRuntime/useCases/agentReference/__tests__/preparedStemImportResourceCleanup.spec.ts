@@ -14,13 +14,7 @@ const mocks = vi.hoisted(() => ({
     releasePreviewAudioBuffer: vi.fn(),
     releaseStagedAsset: vi.fn(),
     transitionDurablePromotionRecoveryToCleanup: vi.fn().mockResolvedValue({ status: 'prepared' }),
-    getVersionedCommandBatchCommitProof: vi.fn().mockResolvedValue({
-        projectId: 'project:test',
-        idempotencyKey: 'command:test',
-        contentHash: `sha256:${'a'.repeat(64)}`,
-        runId: 'run:test',
-        batchId: 'batch:test',
-    }),
+    getVersionedCommandBatchCommitProof: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -119,10 +113,21 @@ const commitProofCommandBatch = {
     serialized: 'serialized',
 } satisfies Parameters<typeof getVersionedCommandBatchCommitProof>[0];
 
+const expectedDurableCommitProof = Object.freeze({
+    projectId: 'project:test',
+    idempotencyKey: 'command:test',
+    contentHash: `sha256:${'a'.repeat(64)}`,
+    runId: 'run:test',
+    batchId: 'batch:test',
+}) satisfies Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
+
 describe('prepared stem import resource cleanup', () => {
     beforeEach(() => {
         agentRunLifecycle.clear();
         vi.clearAllMocks();
+        mocks.getVersionedCommandBatchCommitProof.mockImplementation(async () => ({
+            ...expectedDurableCommitProof,
+        }));
     });
 
     it('deletes decoded audio and journals staged cleanup through the registered production owner', async () => {
@@ -200,7 +205,7 @@ describe('prepared stem import resource cleanup', () => {
         expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
             'stem-promotion:receipt-bound',
             [{ leaseId: 'staged-asset-1', expectedHash: 'hash-staged-asset-1' }],
-            await mocks.getVersionedCommandBatchCommitProof.mock.results[0]?.value
+            expectedDurableCommitProof
         );
         expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound');
         expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith('stem-promotion:receipt-bound');

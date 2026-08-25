@@ -62,6 +62,13 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
 const RUN_ID = 'prompt-run-1';
 const BATCH_ID = 'batch-1';
 const IDEMPOTENCY_KEY = 'batch-key-1';
+const expectedDurableCommitProof = Object.freeze({
+    projectId: 'project:test',
+    idempotencyKey: IDEMPOTENCY_KEY,
+    contentHash: `sha256:${'a'.repeat(64)}`,
+    runId: RUN_ID,
+    batchId: BATCH_ID,
+}) satisfies Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
 const action = { type: 'togglePlayback' } satisfies AppAction;
 const stemAction = {
     type: 'importStemSet',
@@ -193,13 +200,9 @@ describe('executePromptActionGroup', () => {
         agentRunLifecycle.clear();
         mocks.projectRevision.value = 'revision-2';
         mocks.issueApprovalBinding.mockReturnValue({ token: 'exact-approval' });
-        mocks.getVersionedCommandBatchCommitProof.mockResolvedValue({
-            projectId: 'project:test',
-            idempotencyKey: IDEMPOTENCY_KEY,
-            contentHash: `sha256:${'a'.repeat(64)}`,
-            runId: RUN_ID,
-            batchId: BATCH_ID,
-        });
+        mocks.getVersionedCommandBatchCommitProof.mockImplementation(async () => ({
+            ...expectedDurableCommitProof,
+        }));
         mocks.prepareDurablePromotionRecovery.mockResolvedValue({ status: 'prepared' });
         mocks.commitDurablePromotionRecovery.mockResolvedValue({ status: 'committed' });
         mocks.completeDurablePromotionRecovery.mockResolvedValue({ status: 'completed' });
@@ -264,7 +267,7 @@ describe('executePromptActionGroup', () => {
             expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
                 `stem-promotion:${RUN_ID}:${BATCH_ID}`,
                 [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }],
-                await mocks.getVersionedCommandBatchCommitProof.mock.results[0]?.value
+                expectedDurableCommitProof
             );
             expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
                 `stem-promotion:${RUN_ID}:${BATCH_ID}`
