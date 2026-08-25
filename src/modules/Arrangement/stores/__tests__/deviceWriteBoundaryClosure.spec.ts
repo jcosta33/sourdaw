@@ -1,6 +1,17 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import {
+    type Node,
+    ScriptKind,
+    ScriptTarget,
+    createSourceFile,
+    forEachChild,
+    isCallExpression,
+    isIdentifier,
+    isPropertyAccessExpression,
+    isShorthandPropertyAssignment,
+} from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 type CountByPath = Readonly<Record<string, number>>;
@@ -754,7 +765,9 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
         'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
-        'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
+        // The explicit nested `parameterValues:` replacement and the shorthand
+        // `devices` returned from the owning trackStore mutation.
+        'src/modules/Arrangement/stores/persistDeviceParam.ts': 2,
         'src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts': 1,
         'src/modules/Arrangement/stores/trackStore.ts': 2,
         // Count provenance: new file entry, measured 1 — `devices:` in the
@@ -771,37 +784,15 @@ const DEVICE_DATA_COUNTS = {
         // prepareRemoveDevice is the Arrangement-owned compiler for the
         // registered remove handler.
         'src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts': 2,
-        // Count provenance: 0 -> 1, measured. New sink from `c7d271e15`
-        // ("make device lifecycle executable"), which added `restoreDevice` as
-        // the compensating action for `removeDevice`'s undo and did not update
-        // this census. The single hit is `parameterValues: { ...snapshot }` — it
-        // rebuilds a Device from a DeviceSnapshot and writes through
-        // `updateTrack` inside a handler, i.e. inside an executeAppAction
-        // transaction, the same shape as `addDevice` and `removeDevice` above.
-        // Not a param-write path, so correctly absent from GUARDED_EXECUTABLE_PATHS
-        // as its siblings are; not in RUNTIME_ACTION_TYPES, so not AI-reachable.
-        //
-        // The file's actual store write is `return { ...current, devices };` —
-        // shorthand, no colon — which this census's pattern cannot see, so the
-        // measured 1 undercounts the writes in this file by one. Recorded as the
-        // measurement it is rather than rounded up to what the file does.
-        //
-        // Which means this census did not really catch `restoreDevice`: it caught
-        // the unrelated `parameterValues:` on line 37. A file that writes devices
-        // only in shorthand scores 0 and is never asked for. One already exists —
-        // `useCases/device/reorderDevices.ts` writes `return { ...time, devices };`
-        // and appears nowhere in this census, unclassified and fully live. Widening
-        // the pattern would surface that file and about nine more that are
-        // undercounted the same way, each needing a human verdict, so it is not
-        // being done in a commit whose job is getting main green. Written down here
-        // rather than left to be rediscovered.
-        'src/modules/Arrangement/useCases/device/restoreDevice.ts': 1,
-        'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
-        // Count provenance: measured 1 after presence-aware deletion introduced
-        // a local `parameterValues` copy and returned it with property shorthand.
-        // The remaining `devices:` hit is the same guarded CRDT-backed write;
-        // shorthand is outside this census pattern, as documented above.
-        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 1,
+        // Device reconstruction plus the shorthand `devices` returned from
+        // updateTrack. The registered restore handler owns the transaction.
+        'src/modules/Arrangement/useCases/device/restoreDevice.ts': 2,
+        // Explicit device-chain replacement plus the shorthand parameter map
+        // returned from its nested updateTrack callback.
+        'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 2,
+        // Explicit device-chain replacement plus presence-aware shorthand
+        // parameterValues, both inside the owning updateTrack mutation.
+        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
         // Count provenance: PH-3 (#730) — setExternalPluginState maps track
         // devices to store the captured native-plugin state chunk; the single
         // `devices:` is the reviewed CRDT-backed write through executeAppAction.
@@ -1001,6 +992,68 @@ function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDef
     return result;
 }
 
+const DEVICE_DATA_PROPERTIES = new Set(['devices', 'parameterValues']);
+
+function isDeviceDataMutationCall(node: Node): boolean {
+    if (!isCallExpression(node)) {
+        return false;
+    }
+    if (isIdentifier(node.expression)) {
+        return node.expression.text === 'updateTrack';
+    }
+    return (
+        isPropertyAccessExpression(node.expression) &&
+        isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === 'trackStore' &&
+        node.expression.name.text === 'set'
+    );
+}
+
+function countDeviceDataShorthandWrites(file: ProductionSource): number {
+    const sourceFile = createSourceFile(
+        file.path,
+        file.source,
+        ScriptTarget.Latest,
+        true,
+        file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
+    );
+    const writes = new Set<Node>();
+    // A shorthand property is counted only beneath an owning project mutation.
+    // Object binding patterns such as `const { devices } = track` are different
+    // syntax nodes, while read-only object projections outside these calls never
+    // enter `collectWrites` at all.
+    const collectWrites = (node: Node): void => {
+        if (isShorthandPropertyAssignment(node) && DEVICE_DATA_PROPERTIES.has(node.name.text)) {
+            writes.add(node);
+        }
+        forEachChild(node, collectWrites);
+    };
+    const visit = (node: Node): void => {
+        if (isDeviceDataMutationCall(node) && isCallExpression(node)) {
+            for (const argument of node.arguments) {
+                collectWrites(argument);
+            }
+        }
+        forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return writes.size;
+}
+
+function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
+    const result = countByPath(files, {
+        pattern: /\b(?:parameterValues|devices)\s*:/g,
+        includes: includeAllPaths,
+    });
+    for (const file of files) {
+        const shorthandWrites = countDeviceDataShorthandWrites(file);
+        if (shorthandWrites > 0) {
+            result[file.path] = (result[file.path] ?? 0) + shorthandWrites;
+        }
+    }
+    return result;
+}
+
 function sortedEntries(counts: CountByPath): Array<[string, number]> {
     return Object.entries(counts).sort(([left], [right]) => left.localeCompare(right));
 }
@@ -1039,14 +1092,7 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
     const projectDataFiles = files.filter(
         (file) => file.path.startsWith('src/modules/Arrangement/') || file.path.startsWith('src/modules/Project/')
     );
-    assertCounts(
-        'device-data',
-        countByPath(projectDataFiles, {
-            pattern: /\b(?:parameterValues|devices)\s*:/g,
-            includes: includeAllPaths,
-        }),
-        classifiedDeviceDataCounts()
-    );
+    assertCounts('device-data', countDeviceDataByPath(projectDataFiles), classifiedDeviceDataCounts());
 
     const sourceByPath = new Map(files.map((file) => [file.path, file.source]));
     for (const path of GUARDED_EXECUTABLE_PATHS) {
@@ -1061,6 +1107,15 @@ describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
         const files = productionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
+    });
+
+    it('does not classify read-only destructuring or projection as a shorthand write', () => {
+        expect(
+            countDeviceDataShorthandWrites({
+                path: 'src/modules/Arrangement/readDeviceData.ts',
+                source: 'const { devices, parameterValues } = track; const snapshot = { devices, parameterValues };',
+            })
+        ).toBe(0);
     });
 
     it.each([
@@ -1102,12 +1157,12 @@ describe('device write boundary closure', () => {
         {
             name: 'a direct devices writer',
             path: 'src/modules/Arrangement/newDeviceWriter.ts',
-            source: 'const next = { devices: [] };',
+            source: 'const devices = []; updateTrack("track", (current) => ({ ...current, devices }));',
         },
         {
             name: 'a direct parameterValues writer',
             path: 'src/modules/Project/newParameterWriter.ts',
-            source: 'const next = { parameterValues: {} };',
+            source: 'const parameterValues = {}; updateTrack("track", (current) => ({ ...current, parameterValues }));',
         },
     ])('rejects $name through the production closure assertion', ({ path, source }) => {
         const files = productionSources(process.cwd());

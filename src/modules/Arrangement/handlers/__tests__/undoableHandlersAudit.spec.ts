@@ -40,9 +40,8 @@ import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
 const ARRANGEMENT_ROOT = resolve(__dirname, '../..');
 
 /**
- * Undoable handlers with no spec naming their action. Fail-closed: the audit asserts
- * this set EXACTLY, so covering one of these forces its removal here, and a newly
- * registered undoable handler cannot be waved through by leaving the list alone.
+ * Undoable handlers with no spec naming their action. The dedicated assertion below
+ * pins this set empty, so it cannot become an exemption baseline again.
  *
  * Empty because `handleImportStemSet.spec.ts` executes `importStemSet` through an
  * atomic command batch, proves undo runs `discardImportedStemSet` to remove every
@@ -314,6 +313,11 @@ function handlerEntries() {
 }
 
 describe('Arrangement undoable handlers audit', () => {
+    it('permits no undoable or inverse coverage exemptions', () => {
+        expect(UNCOVERED_UNDOABLE_HANDLERS).toEqual([]);
+        expect(UNCOVERED_INVERSE_ACTIONS).toEqual([]);
+    });
+
     it('resolves a registry with undoable handlers in it', () => {
         // Guards every audit below: each one passes vacuously against an empty or
         // unresolvable registry, which is exactly how this audit could go green while
