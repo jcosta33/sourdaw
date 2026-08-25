@@ -39,7 +39,7 @@ vi.mock('#/infra/store/useStore', () => ({
 const TRACK_ID = 'track-hydration';
 const DEVICE_ID = 'device-hydration';
 
-/** Deliberately unlike `createDefaultGrandBouleConfig().masterGain` (0.7). */
+/** Deliberately unlike `createDefaultGrandBouleConfig().masterGain` (0.1). */
 const SAVED_MASTER_GAIN = 0.42;
 
 function pianoTrack(parameterValues: Record<string, number>): Track {

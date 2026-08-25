@@ -3,6 +3,9 @@ name = "daw-engine"
 version = "0.1.0"
 edition = "2021"
 description = "Real-time thread, lock-free communication, and graph processing."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["rlib"]

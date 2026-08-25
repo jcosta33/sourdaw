@@ -18,7 +18,7 @@ type GrandBouleResolverTrack = {
 type ResolveGrandBouleEngineInput = {
     deviceId: string;
     /**
-     * §52.1 — Render-time callers must pass the subscribed track list so
+     * Render-time callers pass the subscribed track list so
      * the React Compiler can memoize this derivation against the track
      * store. Non-render callers can omit this; we fall back to a live read.
      */
@@ -49,7 +49,7 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
     }
 
     const controls = deviceNode.grandBouleControls;
-    return {
+    const engine: GrandBouleEngineHandle = {
         noteOn: (noteInput) => controls.noteOn(noteInput.midiNote, noteInput.velocity),
         noteOff: (noteInput) => controls.noteOff(noteInput.midiNote),
         noteOnMidi2: (noteInput) =>
@@ -65,4 +65,5 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
         getAnalyserNode: () => strip.analyserNode,
         sampleRate: () => getAudioSampleRate(),
     };
+    return engine;
 }

@@ -1,23 +1,34 @@
-//! Bit-exactness goldens for four audio-path cost reductions that must not
-//! move a single sample.
+//! Bit-exactness goldens for audio-path cost reductions that must not move a
+//! sample.
 //!
-//! Each render is hashed rather than compared element-wise so the assertion
-//! is sensitive to every bit of every sample while staying readable. The
-//! expected values were captured from the implementations these changes
-//! replaced; a change that alters the output, in any mode, moves the hash.
+//! The optimized engines come from the shipping `daw_dsp` crate. Their
+//! pre-optimization counterparts live entirely under this integration test's
+//! shadow module tree, so release/native production contains no reference
+//! switch, field, API, or alternate branch.
 //!
-//! Scope: the hashes pin same-platform equivalence, captured and checked on
-//! the same toolchain and libm. The renders pass through f32 transcendentals
-//! (`tanh`, `exp`, `sin`) whose last-bit rounding is not specified across C
-//! runtimes, so a different platform may legitimately produce different
-//! hashes. If one of these fails after a toolchain or platform change and the
-//! DSP is untouched, re-capture the values on the new platform in their own
-//! commit; a failure after a DSP edit is a real behavioural change.
+//! Six goldens compare same-process renders, removing cross-platform libm
+//! variation from the oracle. The mechanical-noise golden keeps its captured
+//! absolute hash because that arithmetic has remained stable on every runner.
 
-use daw_dsp::grand_boule::engine::GrandBouleEngine;
+mod primitives {
+    pub use daw_dsp::primitives::*;
+}
+
+#[path = "dsp_cost_reduction_goldens/shadow/mod.rs"]
+mod shadow;
+
 use daw_dsp::grand_boule::mechanical_noise::{MechanicalNoise, NoiseEvent};
 use daw_dsp::grand_boule::string::ModalString;
+use daw_dsp::grand_boule::voice::{
+    PianoVoice, PianoVoiceStart, VoiceQuality as ProductionVoiceQuality,
+};
 use daw_dsp::grinder::engine::GrinderEngine;
+use shadow::grand_boule::voice::{
+    PianoVoice as ReferencePianoVoice, PianoVoiceStart as ReferencePianoVoiceStart,
+    VoiceQuality as ReferenceVoiceQuality,
+};
+use shadow::grinder::engine::GrinderEngine as ReferenceGrinderEngine;
+use shadow::modal_string::ModalString as ReferenceModalString;
 
 fn hash_samples(samples: &[f32]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
@@ -30,65 +41,147 @@ fn hash_samples(samples: &[f32]) -> u64 {
     hash
 }
 
+/// A silent or poisoned render would make hash comparison vacuous.
+fn assert_finite_and_non_silent(label: &str, render: &[f32]) {
+    assert!(
+        render.iter().all(|sample| sample.is_finite()),
+        "{label} golden render must contain only finite samples"
+    );
+    assert!(
+        render.iter().any(|sample| sample.abs() > 0.0),
+        "{label} golden render must produce audio or the comparison is vacuous"
+    );
+}
+
+fn assert_equivalent_renders(optimized: &[f32], reference: &[f32]) {
+    assert_finite_and_non_silent("optimized", optimized);
+    assert_finite_and_non_silent("reference", reference);
+    assert_eq!(hash_samples(optimized), hash_samples(reference));
+}
+
+fn assert_distinct_renders(optimized: &[f32], reference: &[f32]) {
+    assert_finite_and_non_silent("optimized", optimized);
+    assert_finite_and_non_silent("reference", reference);
+    assert_ne!(hash_samples(optimized), hash_samples(reference));
+}
+
 fn stimulus(total: usize) -> Vec<f32> {
     (0..total)
-        .map(|n| {
-            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 140.0) / 48_000.0).sin() * 0.09;
-            let high = ((n as f32 * 2.0 * std::f32::consts::PI * 2600.0) / 48_000.0).sin() * 0.04;
+        .map(|frame| {
+            let low = ((frame as f32 * 2.0 * std::f32::consts::PI * 140.0) / 48_000.0).sin() * 0.09;
+            let high =
+                ((frame as f32 * 2.0 * std::f32::consts::PI * 2600.0) / 48_000.0).sin() * 0.04;
             low + high
         })
         .collect()
 }
 
-fn grinder_render(configure: impl FnOnce(&mut GrinderEngine)) -> Vec<f32> {
-    let mut engine = GrinderEngine::new(48_000.0);
+trait GrinderHarness {
+    fn set_param(&mut self, name: &str, value: f32);
+    fn process_block(&mut self, left: &mut [f32], right: &mut [f32]);
+}
+
+impl GrinderHarness for GrinderEngine {
+    fn set_param(&mut self, name: &str, value: f32) {
+        GrinderEngine::set_param(self, name, value);
+    }
+
+    fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        GrinderEngine::process_block(self, left, right);
+    }
+}
+
+impl GrinderHarness for ReferenceGrinderEngine {
+    fn set_param(&mut self, name: &str, value: f32) {
+        ReferenceGrinderEngine::set_param(self, name, value);
+    }
+
+    fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        ReferenceGrinderEngine::process_block(self, left, right);
+    }
+}
+
+fn configure_grinder(engine: &mut impl GrinderHarness, params: &[(&str, f32)]) {
     engine.set_param("channel", 1.0);
     engine.set_param("gain", 6.0);
     engine.set_param("master", 5.0);
-    configure(&mut engine);
+    for &(name, value) in params {
+        engine.set_param(name, value);
+    }
+}
 
-    let mut left = stimulus(4096);
+fn grinder_render(
+    mut engine: impl GrinderHarness,
+    params: &[(&str, f32)],
+    frames: usize,
+) -> Vec<f32> {
+    configure_grinder(&mut engine, params);
+    let mut left = stimulus(frames);
     let mut right = left.clone();
     engine.process_block(&mut left, &mut right);
     left
 }
 
-/// F9: the dual power amp and output transformer ran in every routing mode
-/// but were read only under DualAmp. Gating them must not move Serial output.
+/// F9: Serial routing discards the second amp and transformer. The shadow runs
+/// both stages exactly as the pre-optimization engine did.
 #[test]
 fn serial_routing_output_is_unchanged_by_gating_the_dual_amp_chain() {
-    let render = grinder_render(|engine| {
-        engine.set_param("routingMode", 0.0);
-        engine.set_param("cabType", 2.0);
-    });
-    assert_eq!(hash_samples(&render), 13_745_200_862_744_656_841);
+    let params = [("routingMode", 0.0), ("cabType", 2.0)];
+    let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
+    let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
+    assert_equivalent_renders(&optimized, &reference);
 }
 
-/// The mode that does read the dual chain must be unchanged too.
+/// F9: DualAmp uses both amp chains in the optimized and pre-F9 engines. Fresh
+/// engines configured directly for that routing must remain bit-identical.
 #[test]
-fn dual_amp_routing_output_is_unchanged() {
-    let render = grinder_render(|engine| {
-        engine.set_param("routingMode", 3.0);
-        engine.set_param("cabType", 2.0);
-    });
-    assert_eq!(hash_samples(&render), 2_391_357_263_732_743_946);
+fn direct_dual_amp_output_is_unchanged_by_serial_gating() {
+    let params = [("routingMode", 3.0), ("cabType", 2.0)];
+    let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
+    let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
+    assert_equivalent_renders(&optimized, &reference);
 }
 
-/// F9, second half: Capture mode discarded the preamp and tone stack. Not
-/// running them must leave Capture output identical.
+/// F9: Serial routing freezes the optimized dual chain while the pre-F9 shadow
+/// continues processing it. Both paths agree during Serial, then diverge after
+/// switching to DualAmp because they enter with different dual-chain state.
+#[test]
+fn dual_amp_entry_diverges_after_serial_freezes_the_optimized_chain() {
+    fn render(mut engine: impl GrinderHarness) -> (Vec<f32>, Vec<f32>) {
+        configure_grinder(&mut engine, &[("routingMode", 0.0), ("cabType", 2.0)]);
+        let mut serial = stimulus(4096);
+        let mut right = serial.clone();
+        engine.process_block(&mut serial, &mut right);
+
+        engine.set_param("routingMode", 3.0);
+        let mut dual_amp = stimulus(4096);
+        right.copy_from_slice(&dual_amp);
+        engine.process_block(&mut dual_amp, &mut right);
+        (serial, dual_amp)
+    }
+
+    let (optimized_serial, optimized_dual_amp) = render(GrinderEngine::new(48_000.0));
+    let (reference_serial, reference_dual_amp) = render(ReferenceGrinderEngine::new(48_000.0));
+    assert_equivalent_renders(&optimized_serial, &reference_serial);
+    assert_distinct_renders(&optimized_dual_amp, &reference_dual_amp);
+}
+
+/// F9: Capture replaces the circuit preamp and tone stack. The shadow still
+/// computes and discards those stages.
 #[test]
 fn capture_mode_output_is_unchanged_by_gating_the_circuit_preamp() {
-    let render = grinder_render(|engine| {
-        engine.set_param("engineMode", 1.0);
-        engine.set_param("neuralModelSlot", 0.0);
-        engine.set_param("cabType", 2.0);
-    });
-    assert_eq!(hash_samples(&render), 164_338_697_114_077_204);
+    let params = [
+        ("engineMode", 1.0),
+        ("neuralModelSlot", 0.0),
+        ("cabType", 2.0),
+    ];
+    let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
+    let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
+    assert_equivalent_renders(&optimized, &reference);
 }
 
-/// F14: burst resonator coefficients moved from the per-sample loop into
-/// `trigger`. They were already constant per burst, so the output must be
-/// identical for a fixed seed and trigger sequence.
+/// F14: burst coefficients moved out of the per-sample loop. This arithmetic
+/// retains its measured absolute hash.
 #[test]
 fn mechanical_noise_bursts_render_identically_with_precomputed_coefficients() {
     let events = [
@@ -107,44 +200,136 @@ fn mechanical_noise_bursts_render_identically_with_precomputed_coefficients() {
         }
         render.push(noise.tick());
     }
+    assert_finite_and_non_silent("mechanical-noise", &render);
     assert_eq!(hash_samples(&render), 7_134_174_258_747_095_649);
 }
 
-/// F8 adds a per-sample output follower to every voice, and F14/F17 sit under
-/// the same render. None of them may move a sample of a held chord at the
-/// shipped default tier.
-#[test]
-fn grand_boule_held_chord_renders_identically() {
-    let mut engine = GrandBouleEngine::new(48_000.0, 32);
-    engine.note_on(48, 0.9);
-    engine.note_on(60, 0.7);
-    engine.note_on(67, 0.5);
-
-    let mut render = Vec::with_capacity(8192);
-    let mut left = vec![0.0_f32; 512];
-    let mut right = vec![0.0_f32; 512];
-    for _ in 0..16 {
-        left.fill(0.0);
-        right.fill(0.0);
-        engine.process_block(&mut left, &mut right);
-        render.extend_from_slice(&left);
-    }
-    assert_eq!(hash_samples(&render), 7_054_522_208_263_128_465);
+trait HeldVoiceHarness {
+    fn strike(&mut self);
+    fn tick(&mut self) -> f32;
+    fn is_high_quality(&self) -> bool;
+    fn is_standard_quality(&self) -> bool;
+    fn age_samples(&self) -> u64;
 }
 
-/// F17: the f32 partial loop now starts at `f64_partials`, skipping slots
-/// `configure` had already zeroed. A bass note exercises that prefix.
+impl HeldVoiceHarness for PianoVoice {
+    fn strike(&mut self) {
+        self.set_quality(ProductionVoiceQuality::High);
+        self.note_on(PianoVoiceStart {
+            midi_note: 60,
+            channel: 0,
+            velocity: 0.9,
+            key: 40,
+            pitch_ratio: 1.0,
+            stiffness_scale: 1.0,
+            mass_scale: 1.0,
+            attack_length: 0,
+        });
+    }
+
+    fn tick(&mut self) -> f32 {
+        PianoVoice::tick(self)
+    }
+
+    fn is_high_quality(&self) -> bool {
+        self.quality() == ProductionVoiceQuality::High
+    }
+
+    fn is_standard_quality(&self) -> bool {
+        self.quality() == ProductionVoiceQuality::Standard
+    }
+
+    fn age_samples(&self) -> u64 {
+        PianoVoice::age_samples(self)
+    }
+}
+
+impl HeldVoiceHarness for ReferencePianoVoice {
+    fn strike(&mut self) {
+        self.set_quality(ReferenceVoiceQuality::High);
+        self.note_on(ReferencePianoVoiceStart {
+            midi_note: 60,
+            channel: 0,
+            velocity: 0.9,
+            key: 40,
+            pitch_ratio: 1.0,
+            stiffness_scale: 1.0,
+            mass_scale: 1.0,
+            attack_length: 0,
+        });
+    }
+
+    fn tick(&mut self) -> f32 {
+        ReferencePianoVoice::tick(self)
+    }
+
+    fn is_high_quality(&self) -> bool {
+        self.quality() == ReferenceVoiceQuality::High
+    }
+
+    fn is_standard_quality(&self) -> bool {
+        self.quality() == ReferenceVoiceQuality::Standard
+    }
+
+    fn age_samples(&self) -> u64 {
+        ReferencePianoVoice::age_samples(self)
+    }
+}
+
+fn held_voice_render(mut voice: impl HeldVoiceHarness) -> (Vec<f32>, bool, bool, u64) {
+    const FRAMES: usize = 48_128;
+    voice.strike();
+    let mut render = Vec::with_capacity(FRAMES);
+    for _ in 0..FRAMES {
+        render.push(voice.tick());
+    }
+    (
+        render,
+        voice.is_high_quality(),
+        voice.is_standard_quality(),
+        voice.age_samples(),
+    )
+}
+
+/// F8: the shipping voice's output follower demotes a decayed held voice after
+/// one second; the pre-F8 shadow gates demotion on release amplitude, which stays
+/// at 1.0 while held. The model change occurs after hammer contact, so both
+/// renders must remain bit-identical.
+#[test]
+fn grand_boule_held_voice_renders_identically_across_the_demotion_boundary() {
+    let (optimized, optimized_high, optimized_standard, optimized_age) =
+        held_voice_render(PianoVoice::new(48_000.0));
+    let (reference, reference_high, reference_standard, reference_age) =
+        held_voice_render(ReferencePianoVoice::new(48_000.0));
+
+    assert!(optimized_age > 48_000 && reference_age > 48_000);
+    assert_equivalent_renders(&optimized, &reference);
+    assert!(!optimized_high && optimized_standard);
+    assert!(reference_high && !reference_standard);
+}
+
+/// F17: the shipping string skips the f32 slots whose coefficients were zeroed
+/// because those low partials are already processed in f64. The shadow retains
+/// the old zero-prefix loop.
 #[test]
 fn modal_string_renders_identically_when_the_zeroed_prefix_is_skipped() {
-    let mut string = ModalString::new();
-    // C2 (~65 Hz): several partials fall below the 200 Hz f64 cutoff, so the
-    // f32 arrays carry a zeroed prefix.
-    string.configure(65.406, 16, 0.125, 48_000.0, 0.2, 0.0);
+    let mut optimized = ModalString::new();
+    let mut reference = ReferenceModalString::new();
+    optimized.configure(65.406, 16, 0.125, 48_000.0, 0.2, 0.0);
+    reference.configure(65.406, 16, 0.125, 48_000.0, 0.2, 0.0);
+    assert!(
+        reference.f64_partials() > 0,
+        "the bass configuration must zero a prefix or this golden is vacuous"
+    );
 
-    let mut render = Vec::with_capacity(8192);
-    render.push(string.tick(1.0));
+    let mut optimized_render = Vec::with_capacity(8192);
+    let mut reference_render = Vec::with_capacity(8192);
+    optimized_render.push(optimized.tick(1.0));
+    reference_render.push(reference.tick(1.0));
     for _ in 1..8192 {
-        render.push(string.tick(0.0));
+        optimized_render.push(optimized.tick(0.0));
+        reference_render.push(reference.tick(0.0));
     }
-    assert_eq!(hash_samples(&render), 9_423_460_074_255_799_726);
+
+    assert_equivalent_renders(&optimized_render, &reference_render);
 }

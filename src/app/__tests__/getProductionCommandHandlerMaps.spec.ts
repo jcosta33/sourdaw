@@ -73,7 +73,7 @@ describe('getProductionCommandHandlerMaps', () => {
             Object.entries(handlerMap).map(([actionType, handler]) => ({ actionType, handler: handler as unknown }))
         );
 
-        expect(handlerMaps).toHaveLength(34);
+        expect(handlerMaps).toHaveLength(35);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         expect(
             allHandlers.filter(({ handler }) => !handlerCanJoinBatch(handler)).map(({ actionType }) => actionType)

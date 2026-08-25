@@ -5,5 +5,5 @@ export const LEVAIN_SOURCE = {
     license: 'CC0-1.0',
     licensePath: 'LICENSE',
     licenseBlob: '670154e3538863b2d9891fd5483160fbdfc89164',
-    recordsSha256: '3a8c147d796c66b31954cf21978daecfbb6c3917a2d5b1680d94e122877914e3',
+    recordsSha256: '5f960b59706b87daa23e5e573f7dc3e35d1f4ec76988a090fea2d6cf83b4e6e0',
 } as const;

@@ -802,19 +802,45 @@ describe('createGrandBouleNode', () => {
         });
     });
 
-    it('should forward a finite setParam value, drop a non-finite one, and post a temperament change', async () => {
+    it('should forward a finite framed setParam value, drop a non-finite one, and post a temperament change', async () => {
         const node = await createGrandBouleNode(ctx);
         workerPostMessage.mockClear();
 
-        node.setParam('brightness', 0.6);
+        node.setParam('brightness', 0.6, 384);
         node.setParam('brightness', Number.NaN);
 
         expect(workerPostMessage).toHaveBeenCalledTimes(1);
-        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'param', name: 'brightness', value: 0.6 });
+        expect(workerPostMessage).toHaveBeenCalledWith({
+            type: 'param',
+            name: 'brightness',
+            value: 0.6,
+            sampleFrame: 384,
+        });
 
         workerPostMessage.mockClear();
         node.setTemperament(3);
         expect(workerPostMessage).toHaveBeenCalledWith({ type: 'temperament', index: 3 });
+    });
+
+    it('rejects live playback above 48 kHz before allocating or loading, while offline keeps its rate', async () => {
+        const live96k = { currentTime: 0, state: 'running', sampleRate: 96_000 } as unknown as BaseAudioContext;
+
+        await expect(createGrandBouleNode(live96k)).rejects.toThrow(
+            'Grand Boule live playback supports sample rates up to 48000 Hz; received 96000 Hz'
+        );
+        expect(requireSharedArrayBuffer).not.toHaveBeenCalled();
+        expect(ensureWorkletRegistered).not.toHaveBeenCalled();
+        expect(workerConstructed).toBe(0);
+
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 96_000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        await expect(
+            createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext)
+        ).resolves.toBeDefined();
     });
 
     it('should post sustain, una corda and sostenuto messages', async () => {

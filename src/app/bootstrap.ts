@@ -100,7 +100,7 @@ import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
-import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
+import { initGrandBouleSubscribers, setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
@@ -436,6 +436,7 @@ initToasterKitPersistence();
 // here so a device's first appearance is already carrying whatever the document
 // held for it, and only a genuine edit afterwards writes back.
 initLevainDeviceStatePersistence();
+initGrandBouleSubscribers({ eventBus, logger });
 initCrumbsDeviceStatePersistence();
 initStalenessDetection();
 

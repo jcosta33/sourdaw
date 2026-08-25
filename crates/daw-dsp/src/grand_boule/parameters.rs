@@ -1,8 +1,7 @@
-//! Physical parameter tables for the Grand Boule piano.
+//! Project tuning curves and standard piano mappings for Grand Boule.
 //!
-//! Values are interpolated from Steinway D reference data per the plugin spec.
-//! All curves are key-indexed where `key = 1` is A0 (MIDI 21) and `key = 88` is
-//! C8 (MIDI 108).
+//! Project-authored curves are key-indexed from A0 (`key = 1`) through C8
+//! (`key = 88`).
 //!
 //! Every helper here is a pure function, allocation-free and panic-free over
 //! the valid key range.
@@ -46,7 +45,7 @@ impl Temperament {
     }
 }
 
-/// Historical temperament cent offsets relative to A = 0 per spec §4.
+/// Historical temperament cent offsets relative to A = 0.
 /// Indexed by pitch class: [C, C#, D, D#, E, F, F#, G, G#, A, A#, B].
 const WERCKMEISTER_III: [f32; 12] = [11.7, 2.0, 3.9, 5.9, 2.0, 9.8, 0.0, 7.8, 3.9, 0.0, 7.8, 3.9];
 const KIRNBERGER_III: [f32; 12] = [
@@ -92,126 +91,74 @@ pub fn midi_to_hz_equal_tempered(midi_note: u8) -> f32 {
     A4_HZ * (2.0_f32).powf(semitones / 12.0)
 }
 
-/// Hammer stiffness `K` per Chaigne & Askenfelt (1994):
-/// `log10(K(key)) ≈ 8.0 + 0.020·(key-1)`.
-///
-/// Ranges from ~10⁸ (bass) to ~5.5×10⁹ (treble), consistent with measured
-/// data. The original spec slope of 0.048 was far too steep, producing K
-/// values 15–1000× larger than real pianos above the bass register, which
-/// caused chaotic velocity response and harpsichord-like contact pulses.
+/// Project-authored hammer-stiffness curve. It rises non-linearly through the
+/// keyboard rather than retaining the legacy measured-data fit.
 pub fn hammer_stiffness_k(key: u32) -> f32 {
-    let exponent = 8.0_f32 + 0.020 * (key as f32 - 1.0);
+    let t = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+    let exponent = 7.86_f32 + 1.88 * t.powf(1.32) + 0.14 * t * (1.0 - t);
     (10.0_f32).powf(exponent)
 }
 
-/// Hammer felt nonlinearity exponent per spec: `p(key) ≈ 2.0 + 0.017·(key-1)`.
+/// Project hammer-felt exponent curve. This is a product voicing, not a
+/// measured instrument data series.
 pub fn hammer_exponent_p(key: u32) -> f32 {
-    2.0 + 0.017 * (key as f32 - 1.0)
+    let t = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+    2.28 + 1.12 * t.powf(1.18) + 0.10 * t * (1.0 - t)
 }
 
-/// Hammer mass in kilograms per spec: `m_H(key) ≈ 11.0·exp(-0.0134·(key-1))` grams.
+/// Project hammer-mass curve in kilograms. This is a product voicing, not a
+/// measured instrument data series.
 pub fn hammer_mass_kg(key: u32) -> f32 {
-    let grams = 11.0_f32 * (-0.0134 * (key as f32 - 1.0)).exp();
+    let t = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+    let grams = 3.6 + 7.8 * (1.0 - t).powf(1.22);
     grams * 1.0e-3
 }
 
-/// Inharmonicity coefficient `B` interpolated log-linearly between the
-/// published anchor keys (A0=0.0002, C4=0.0007, C8=0.10). The piano inharmonicity
-/// grows roughly geometrically with key number; log-linear fits the published
-/// data well enough for a first-pass engine.
+/// Monotonic project voicing for the dimensionless inharmonicity coefficient
+/// `B`. It is independently shaped rather than sampled from an instrument.
 pub fn inharmonicity_b(key: u32) -> f32 {
-    // Anchors: (key, B)
-    const ANCHORS: [(f32, f32); 3] = [(1.0, 0.0002), (40.0, 0.0007), (88.0, 0.10)];
-    let k = key as f32;
-    // Log-linear interpolation.
-    let interpolate = |k0: f32, b0: f32, k1: f32, b1: f32| -> f32 {
-        let t = (k - k0) / (k1 - k0);
-        let log_b = b0.ln() + t * (b1.ln() - b0.ln());
-        log_b.exp()
-    };
-    if k <= ANCHORS[1].0 {
-        interpolate(ANCHORS[0].0, ANCHORS[0].1, ANCHORS[1].0, ANCHORS[1].1)
-    } else {
-        interpolate(ANCHORS[1].0, ANCHORS[1].1, ANCHORS[2].0, ANCHORS[2].1)
-    }
+    let t = ((key as f32 - 1.0) / 87.0).clamp(0.0, 1.0);
+    0.00018 * (6.0 * t.powf(1.55)).exp()
 }
 
-/// Smooth Railsback stretch curve, in cents, relative to equal temperament.
-///
-/// Anchors are taken from Jaatinen & Pätynen (2022, JASA 152(2):1146,
-/// DOI: 10.1121/10.0013572) measurements of a Steinway D 274 cm: bass extreme
-/// −19 cents, treble extreme +45 cents (≈ 64 cent total stretch). The curve
-/// passes through 0 at A4 (key 49) and is interpolated piecewise-linearly
-/// between intermediate anchors so it stays smooth across the wound/plain
-/// transition. Per-note ±1–3 cent fluctuations are added on top via
-/// [`railsback_jitter_cents`] (Hinrichsen 2012, arXiv:1203.5101).
+/// Smooth project-authored Railsback-style stretch in cents relative to equal
+/// temperament. A4 remains the zero anchor; the bass and treble use separate
+/// curves chosen for this instrument's product voicing.
 pub fn railsback_smooth_cents(key: u32) -> f32 {
-    // Anchors fitted to the Jaatinen/Pätynen Steinway D curve.
-    const ANCHORS: [(f32, f32); 5] = [
-        (1.0, -19.0),
-        (16.0, -8.0),
-        (40.0, -0.5),
-        (49.0, 0.0),
-        (88.0, 45.0),
-    ];
-    let k = key as f32;
-    let mut lo = ANCHORS[0];
-    let mut hi = ANCHORS[ANCHORS.len() - 1];
-    for pair in ANCHORS.windows(2) {
-        if k >= pair[0].0 && k <= pair[1].0 {
-            lo = pair[0];
-            hi = pair[1];
-            break;
-        }
+    let clamped = key.clamp(1, NUM_KEYS as u32) as f32;
+    if clamped <= 49.0 {
+        let t = (49.0 - clamped) / 48.0;
+        -(14.0 * t.powf(1.35) + 3.0 * t * t * t)
+    } else {
+        let t = (clamped - 49.0) / 39.0;
+        32.0 * t.powf(1.5) + 7.0 * t * t * t
     }
-    let t = ((k - lo.0) / (hi.0 - lo.0)).clamp(0.0, 1.0);
-    lo.1 + t * (hi.1 - lo.1)
 }
 
-/// Note-to-note tuning fluctuations (±1–3 cents) on top of the smooth
-/// Railsback curve. Hinrichsen (2012) shows these are not measurement
-/// noise — they reflect individual string irregularities and partial-
-/// intensity variations and are essential for the "alive" character of
-/// a real instrument (§A8 of the realism appendix).
-///
-/// The values are produced by a deterministic LCG seeded per key and
-/// then low-pass filtered across keys to give a correlation length of
-/// roughly 3–5 semitones, matching the spatial smoothness Hinrichsen
-/// observed. Returned in cents.
+/// Deterministic project tuning variation on top of the smooth stretch curve.
+/// Adjacent keys share a small three-key blend and A4 remains exact.
 pub fn railsback_jitter_cents(key: u32) -> f32 {
-    // Deterministic smoothed jitter computed on-the-fly. Called only from
-    // `note_on` (never on the audio thread); ~88 LCG samples + a 5-tap
-    // smoother per call is negligible. No allocations, no statics.
-    fn smoothed_at(index: usize, raw: &[f32; NUM_KEYS]) -> f32 {
-        let lo2 = raw[index.saturating_sub(2)];
-        let lo1 = raw[index.saturating_sub(1)];
-        let mid = raw[index];
-        let hi1 = raw[(index + 1).min(NUM_KEYS - 1)];
-        let hi2 = raw[(index + 2).min(NUM_KEYS - 1)];
-        // Symmetric 5-tap [1 4 6 4 1]/16 — correlation length ≈ 5 semitones,
-        // matching Hinrichsen's (2012) measured spatial smoothness.
-        (lo2 + 4.0 * lo1 + 6.0 * mid + 4.0 * hi1 + hi2) / 16.0
+    fn raw_at(index: usize) -> f32 {
+        let mut value = (index as u32).wrapping_add(0x6D2B_79F5);
+        value ^= value >> 15;
+        value = value.wrapping_mul(0x2C1B_3C6D);
+        value ^= value >> 12;
+        value = value.wrapping_mul(0x297A_2D39);
+        value ^= value >> 15;
+        value as f32 / u32::MAX as f32 * 2.0 - 1.0
     }
 
-    let mut state: u32 = 0xC0FF_EE00;
-    let mut raw = [0.0_f32; NUM_KEYS];
-    for slot in raw.iter_mut() {
-        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        let r = (state >> 8) as f32 / (1u32 << 24) as f32;
-        *slot = 2.0 * r - 1.0;
+    fn blended_at(index: usize) -> f32 {
+        let previous = raw_at(index.saturating_sub(1));
+        let current = raw_at(index);
+        let next = raw_at((index + 1).min(NUM_KEYS - 1));
+        previous * 0.22 + current * 0.56 + next * 0.22
     }
 
-    // A4 (key 49, index 48) is the tuning anchor and must remain exact.
-    // Subtract its smoothed jitter from every read so the offset there is
-    // identically zero.
-    let anchor = smoothed_at(48, &raw);
     let index = (key as usize).saturating_sub(1).min(NUM_KEYS - 1);
-    let smoothed = smoothed_at(index, &raw) - anchor;
-
-    // Bass slightly larger than treble — wound/plain transition concentrates
-    // irregularities low. Final scale: ≈ ±2 cents typical.
-    let bass_emphasis = 1.0 + 0.5 * (1.0 - index as f32 / NUM_KEYS as f32);
-    smoothed * 2.0 * bass_emphasis
+    let anchored = blended_at(index) - blended_at(48);
+    let register_scale = 1.45 - 0.35 * (index as f32 / (NUM_KEYS - 1) as f32);
+    anchored * register_scale
 }
 
 /// Total Railsback offset (smooth curve + per-note jitter). Use this when
@@ -220,7 +167,7 @@ pub fn railsback_cents(key: u32) -> f32 {
     railsback_smooth_cents(key) + railsback_jitter_cents(key)
 }
 
-/// Hammer strike position as a fraction of string length, per spec §3.5.
+/// Hammer strike position as a fraction of string length.
 /// Bass (~1/7) → middle (~1/8) → treble (~1/12).
 pub fn hammer_strike_ratio(key: u32) -> f32 {
     // Piecewise linear: bass (key 1) ≈ 1/7, middle (key 40) ≈ 1/8, treble (key 88) ≈ 1/12.
@@ -283,25 +230,25 @@ pub fn unison_detune_cents(key: u32, unison_index: u32) -> f32 {
 }
 
 /// Whether a key has a damper.
-/// Notes above C7 (key 76) have no dampers per spec §5.2.
+/// Notes above C7 (key 76) have no dampers.
 pub fn has_damper(key: u32) -> bool {
     key <= 76
 }
 
 /// Whether a key has phantom longitudinal modes.
-/// Only bass keys below C5 (key 52) per spec §7.1.
+/// Enabled below C5 (key 52).
 pub fn has_longitudinal_modes(key: u32) -> bool {
     key < 52
 }
 
 /// Whether a key has duplex-scale resonance.
-/// C4+ per spec §7.2.
+/// Enabled from C4 upward.
 pub fn has_duplex_resonance(key: u32) -> bool {
     key >= 40
 }
 
 /// Approximate damper coefficient at full pedal-up (key held) position.
-/// Scales with √n as the string's wavenumber per spec §5.2.
+/// Scales inversely with the square root of the key index.
 pub fn damper_strength(key: u32) -> f32 {
     let base = 80.0_f32;
     base / (key as f32).sqrt()
@@ -338,6 +285,18 @@ mod tests {
     #[test]
     fn hammer_mass_decreases_with_pitch() {
         assert!(hammer_mass_kg(1) > hammer_mass_kg(88));
+    }
+
+    #[test]
+    fn project_hammer_stiffness_curve_is_non_linear_and_pinned() {
+        let bass = hammer_stiffness_k(1);
+        let middle = hammer_stiffness_k(49);
+        let treble = hammer_stiffness_k(88);
+
+        assert!((bass - 72_443_600.0).abs() < 64.0);
+        assert!((middle - 565_092_000.0).abs() < 1_024.0);
+        assert!((treble - 5_495_409_000.0).abs() < 16_384.0);
+        assert!(middle / bass < treble / middle);
     }
 
     #[test]

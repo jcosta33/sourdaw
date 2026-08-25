@@ -708,7 +708,6 @@ function validateCommandBatchProposal(
     if (commands.length === 0 || commands.length > 32) {
         return 'Provider command proposal exceeds the command budget.';
     }
-    const names = new Set<string>();
     for (const command of commands) {
         if (!isRecord(command)) {
             return 'Provider command proposal does not match the strict catalog contract.';
@@ -723,8 +722,7 @@ function validateCommandBatchProposal(
             typeof command.name !== 'string' ||
             command.name.length === 0 ||
             command.name.length > 128 ||
-            !isRecord(command.arguments) ||
-            (hasPrimitiveCommands && names.has(command.name))
+            !isRecord(command.arguments)
         ) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
@@ -743,7 +741,6 @@ function validateCommandBatchProposal(
         } catch {
             return 'Provider command proposal referenced an unavailable catalog command.';
         }
-        names.add(command.name);
     }
     return null;
 }

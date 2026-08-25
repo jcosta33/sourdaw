@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
+import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProjectContext } from '../getProjectContext';
@@ -243,6 +245,65 @@ function createGlueProviderContext(): ProjectContext {
         selectedClipIds: ['clip-intro', 'clip-verse'],
     };
 }
+
+const stemImportPromptScope = {
+    capability: {
+        schemaVersion: 1,
+        baseRevision: 'revision-stem-import',
+        actionType: 'importStemSet',
+        selectionId: 'selection-stems',
+        projectTempo: 120,
+        stems: [
+            { stemId: 'stem-kick', sourceName: 'Kick.wav', durationSeconds: 126, detectedTempo: 120 },
+            { stemId: 'stem-bass', sourceName: 'Bass.wav', durationSeconds: 126, detectedTempo: 120 },
+        ],
+        allowedRoles: ['kick', 'bass'],
+        constraints: {
+            requireCompleteSelection: true,
+            preserveExistingProject: true,
+            requireFreshConfirmation: true,
+            providerCannotAssignProjectIds: true,
+        },
+    },
+    actionSeed: {
+        selectionId: 'selection-stems',
+        groupName: 'Imported Stems',
+        projectTempo: 120,
+        folderId: 'folder-imported-stems',
+        stems: [
+            {
+                stemId: 'stem-kick',
+                sourceName: 'Kick.wav',
+                role: 'other',
+                sourceTempo: 120,
+                durationSeconds: 126,
+                sourceBytes: 1024,
+                decodedBytes: 4096,
+                audioBufferId: 'buffer-kick',
+                trackId: 'track-kick',
+                trackName: 'Kick',
+                trackGain: 1,
+                trackPan: 0,
+                clipId: 'clip-kick',
+            },
+            {
+                stemId: 'stem-bass',
+                sourceName: 'Bass.wav',
+                role: 'other',
+                sourceTempo: 120,
+                durationSeconds: 126,
+                sourceBytes: 2048,
+                decodedBytes: 8192,
+                audioBufferId: 'buffer-bass',
+                trackId: 'track-bass',
+                trackName: 'Bass',
+                trackGain: 1,
+                trackPan: 0,
+                clipId: 'clip-bass',
+            },
+        ],
+    },
+} satisfies StemImportPromptScope;
 
 describe('parsePromptToActions', () => {
     beforeEach(() => {
@@ -555,6 +616,87 @@ describe('parsePromptToActions', () => {
         expect(result.applicationToolReceipts).toMatchObject([
             { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
+    });
+
+    it('carries the normalized provider proposal for an accepted stem-import workflow action', async () => {
+        const expectedProviderProposal = {
+            semantic: { classification: 'complex', uncertainty: [] },
+            objective: 'Import the prepared stems and create the starting mix.',
+            constraints: ['Use only the prepared stem selection.'],
+            scope: {
+                targetIds: ['selection-stems'],
+                targetRanges: [],
+                protectedTargetIds: ['track-existing'],
+                protectedRanges: [],
+            },
+            capabilityIds: ['importStemSet'],
+            assetIds: ['stem-kick', 'stem-bass'],
+            alternatives: [],
+            validationStrategy: ['Validate the prepared stem selection before confirmation.'],
+            stoppingConditions: ['Stop before mutation if the prepared selection no longer matches.'],
+        } satisfies AgentRunProviderProposal;
+        const providerPlanWithRawOnlyField = {
+            ...expectedProviderProposal,
+            rawProviderOnlyField: 'must not be forwarded as authority',
+        };
+        const stemImportCommand = {
+            name: 'importStemSet',
+            arguments: {
+                selectionId: 'selection-stems',
+                groupName: 'Imported Stems',
+                stems: [
+                    { stemId: 'stem-kick', role: 'kick' },
+                    { stemId: 'stem-bass', role: 'bass' },
+                ],
+            },
+        };
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['importStemSet'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'selectWorkflowCapability',
+                        arguments: { capabilityId: 'stem-import-starting-mix' },
+                    },
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [stemImportCommand],
+                            plan: providerPlanWithRawOnlyField,
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'Import the prepared stems and build a starting mix',
+            baseContext,
+            undefined,
+            'revision-stem-import',
+            stemImportPromptScope
+        );
+
+        expect(result.actions).toHaveLength(1);
+        expect(result.actions[0]).toMatchObject({
+            type: 'importStemSet',
+            payload: {
+                selectionId: 'selection-stems',
+                groupName: 'Imported Stems',
+            },
+        });
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+        expect(result.workflowCapabilityId).toBe('stem-import-starting-mix');
+        expect(result.providerProposal).toEqual(expectedProviderProposal);
     });
 
     it('proposes an explicit provider time-signature command as one confirmable atomic action', async () => {

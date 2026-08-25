@@ -1,5 +1,5 @@
 /**
- * Per-device Grand Boule store reset (§13.1 — project-switch isolation).
+ * Per-device Grand Boule store reset for project-switch isolation.
  *
  * Grand Boule keeps a Map of separate `createStore` instances keyed by device
  * id, not a single `Record<deviceId, State>` store. A project reset that only

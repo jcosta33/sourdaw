@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,7 +16,12 @@ import {
     type StackedPullRequest,
     type TrackerCompletionPort,
 } from '../deliverPullRequest';
-import { GITHUB_HTTPS_REMOTE, REQUIRED_BASE_BRANCH } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_BOT_NODE_ID,
+    GITHUB_HTTPS_REMOTE,
+    REQUIRED_BASE_BRANCH,
+    REVIEWER_BOT_NODE_ID,
+} from '../githubAppIdentity.ts';
 
 function relationshipBody(relationship: string): string {
     return `### 🎯 What does this PR do?
@@ -93,7 +98,11 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                         {
                                             state: 'APPROVED',
                                             submittedAt: '2026-08-19T00:00:00Z',
-                                            author: { login: 'jcosta33-reviewer[bot]' },
+                                            author: {
+                                                id: REVIEWER_BOT_NODE_ID,
+                                                login: 'renamed-reviewer[bot]',
+                                                __typename: 'Bot',
+                                            },
                                             commit: { oid: 'head' },
                                         },
                                     ],
@@ -130,6 +139,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                       node_id: deliveryReceipt.id,
                                       body: deliveryReceipt.body,
                                       user: {
+                                          node_id: deliveryReceipt.authorNodeId,
                                           login: deliveryReceipt.authorLogin,
                                           type: deliveryReceipt.authorType,
                                       },
@@ -144,7 +154,8 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 deliveryReceipt = {
                     id: 'IC_delivery_42',
                     body: args.find((argument) => argument.startsWith('body='))?.slice('body='.length) ?? '',
-                    authorLogin: 'jcosta33-author[bot]',
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
                     authorType: 'Bot',
                     createdAt: '2026-08-21T00:00:00Z',
                     updatedAt: '2026-08-21T00:00:00Z',
@@ -152,7 +163,11 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 return JSON.stringify({
                     node_id: deliveryReceipt.id,
                     body: deliveryReceipt.body,
-                    user: { login: deliveryReceipt.authorLogin, type: deliveryReceipt.authorType },
+                    user: {
+                        node_id: deliveryReceipt.authorNodeId,
+                        login: deliveryReceipt.authorLogin,
+                        type: deliveryReceipt.authorType,
+                    },
                     created_at: deliveryReceipt.createdAt,
                     updated_at: deliveryReceipt.updatedAt,
                 });
@@ -219,6 +234,7 @@ type FakeInput = {
 type DeliveryReceiptComment = {
     id: string;
     body: string;
+    authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
     createdAt: string;
@@ -317,7 +333,8 @@ function fakePort(input: FakeInput = {}) {
             const receipt = {
                 id: `IC_delivery_${number}`,
                 body: receiptBody,
-                authorLogin: 'jcosta33-author[bot]',
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+                authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
                 createdAt: '2026-08-21T00:00:00Z',
                 updatedAt: '2026-08-21T00:00:00Z',
@@ -346,6 +363,12 @@ function deliverPullRequest(
 }
 
 describe('pull-request delivery', () => {
+    it('queries bot review author IDs through a Bot fragment', () => {
+        const source = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
+        expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
+        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(1);
+    });
+
     it('completes the canonical Closes issue only after merge and dependent retargeting', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
@@ -402,7 +425,8 @@ describe('pull-request delivery', () => {
                 {
                     id: 'IC_delivery_42',
                     body: deliveryReceiptBody(42, 'head', closes, 2372),
-                    authorLogin: 'jcosta33-author[bot]',
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
                     authorType: 'Bot',
                     createdAt: '2026-08-21T00:00:00Z',
                     updatedAt: '2026-08-21T00:00:00Z',
@@ -459,6 +483,7 @@ describe('pull-request delivery', () => {
                 {
                     id: 'IC_foreign_malformed',
                     body: '<!-- sourdaw-delivery-receipt:v1\nmalformed -->',
+                    authorNodeId: null,
                     authorLogin: 'contributor',
                     authorType: 'User',
                     createdAt: '2026-08-21T00:00:00Z',
@@ -467,6 +492,7 @@ describe('pull-request delivery', () => {
                 {
                     id: 'IC_foreign_copy',
                     body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: null,
                     authorLogin: 'jcosta33',
                     authorType: 'User',
                     createdAt: '2026-08-21T00:00:00Z',
@@ -489,7 +515,8 @@ describe('pull-request delivery', () => {
             {
                 id: 'IC_malformed',
                 body: '<!-- sourdaw-delivery-receipt:v1\nmalformed -->',
-                authorLogin: 'jcosta33-author[bot]',
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+                authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
                 createdAt: '2026-08-21T00:00:00Z',
                 updatedAt: '2026-08-21T00:00:00Z',
@@ -497,7 +524,8 @@ describe('pull-request delivery', () => {
             {
                 id: 'IC_wrong_target',
                 body: receipt,
-                authorLogin: 'jcosta33-author[bot]',
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+                authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
                 createdAt: '2026-08-21T00:00:00Z',
                 updatedAt: '2026-08-21T00:00:00Z',
@@ -505,7 +533,8 @@ describe('pull-request delivery', () => {
             {
                 id: 'IC_edited',
                 body: deliveryReceiptBody(42, 'head', closes, 2372),
-                authorLogin: 'jcosta33-author[bot]',
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+                authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
                 createdAt: '2026-08-21T00:00:00Z',
                 updatedAt: '2026-08-21T00:01:00Z',
@@ -526,7 +555,8 @@ describe('pull-request delivery', () => {
         const receipt = {
             id: 'IC_delivery_42',
             body: deliveryReceiptBody(42, 'head', closes, 2372),
-            authorLogin: 'jcosta33-author[bot]',
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
             authorType: 'Bot',
             createdAt: '2026-08-21T00:00:00Z',
             updatedAt: '2026-08-21T00:00:00Z',
@@ -661,7 +691,7 @@ describe('pull-request delivery', () => {
     it('rejects missing reviewer approval on the current head', () => {
         const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: null, unresolvedThreads: 0 } });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/not approved by jcosta33-reviewer\[bot\]/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/not approved by the required reviewer actor/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -673,7 +703,7 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/not approved by jcosta33-reviewer\[bot\]/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/not approved by the required reviewer actor/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -806,7 +836,11 @@ describe('delivery shell boundary', () => {
                                             {
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
-                                                author: { login: 'jcosta33-reviewer[bot]' },
+                                                author: {
+                                                    id: REVIEWER_BOT_NODE_ID,
+                                                    login: 'renamed-reviewer[bot]',
+                                                    __typename: 'Bot',
+                                                },
                                                 commit: { oid: 'head' },
                                             },
                                         ],
@@ -1010,7 +1044,7 @@ describe('delivery shell boundary', () => {
         }
     });
 
-    it('treats GraphQL reviewer login without [bot] as the reviewer App', () => {
+    it('accepts a renamed GraphQL reviewer with the immutable reviewer actor ID', () => {
         const shell: ShellRunner = {
             capture: (command, args) => {
                 if (args.some((arg) => arg.startsWith('query='))) {
@@ -1023,7 +1057,11 @@ describe('delivery shell boundary', () => {
                                             {
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
-                                                author: { login: 'jcosta33-reviewer' },
+                                                author: {
+                                                    id: REVIEWER_BOT_NODE_ID,
+                                                    login: 'renamed-reviewer',
+                                                    __typename: 'Bot',
+                                                },
                                                 commit: { oid: 'head' },
                                             },
                                         ],
@@ -1061,7 +1099,11 @@ describe('delivery shell boundary', () => {
                                             {
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
-                                                author: { login: 'jcosta33-reviewer[bot]' },
+                                                author: {
+                                                    id: REVIEWER_BOT_NODE_ID,
+                                                    login: 'renamed-reviewer[bot]',
+                                                    __typename: 'Bot',
+                                                },
                                                 commit: { oid: 'other-head' },
                                             },
                                         ],

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { audioBufferCache } from '../audioBufferCache';
 
 import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
 
 /**
  * AC-5 census. Base64 PCM may be produced by exactly one member of the audio
@@ -78,6 +79,24 @@ function buildInvocations(): Record<string, () => unknown> {
         set: () => audioBufferCache.set('pcm-2', makeAudioBuffer([PCM])),
         remove: () => audioBufferCache.remove('pcm-2'),
         has: () => audioBufferCache.has('pcm'),
+        persistPreparedBuffer: () =>
+            audioBufferCache.persistPreparedBuffer({
+                id: 'prepared-pcm',
+                buffer: makeAudioBuffer([PCM]),
+                leaseId: 'prepared-lease',
+            }),
+        reopenPreparedBuffer: () =>
+            audioBufferCache.reopenPreparedBuffer({
+                id: 'prepared-pcm',
+                leaseId: 'prepared-lease',
+                context: makeContext(),
+            }),
+        releasePreparedBuffer: () =>
+            audioBufferCache.releasePreparedBuffer({
+                id: 'prepared-pcm',
+                leaseId: 'prepared-lease',
+                disposition: 'discard',
+            }),
         getWaveformPeaks: () => audioBufferCache.getWaveformPeaks('pcm', 4),
         restoreFromIdb: () => audioBufferCache.restoreFromIdb({ context: makeContext() }),
         prepareFromIdb: () => audioBufferCache.prepareFromIdb({ context: makeContext() }),
@@ -106,6 +125,7 @@ describe('audioBufferCache base64 surface (AC-5)', () => {
     let btoaSpy: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
+        installTestAudioBufferConstructor();
         installFakeAudioIndexedDb();
         realBtoa = globalThis.btoa.bind(globalThis);
     });
