@@ -66,15 +66,12 @@ export function isAgentReferenceCapabilityCandidate(input: {
         );
     }
     if (input.capability === 'sidechain-capable-device') {
-        return (
-            input.dependencyId !== undefined &&
-            input.context.tracks.some(
-                (candidate) =>
-                    candidate.id === input.dependencyId &&
-                    candidate.devices.some(
-                        (device) => device.id === input.id && getSidechainTargetCapability(device.type) !== null
-                    )
-            )
+        return input.context.tracks.some(
+            (candidate) =>
+                (input.dependencyId === undefined || candidate.id === input.dependencyId) &&
+                candidate.devices.some(
+                    (device) => device.id === input.id && getSidechainTargetCapability(device.type) !== null
+                )
         );
     }
     if (input.capability === 'device-parameter') {

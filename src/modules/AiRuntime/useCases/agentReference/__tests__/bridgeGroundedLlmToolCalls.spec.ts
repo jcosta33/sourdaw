@@ -4626,7 +4626,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(result.actions).toEqual([]);
-        expect(result.rejections[0]?.reason).toContain('MF-06 capability');
+        expect(result.rejections[0]?.reason).toContain('application-owned capability');
     });
 
     it('grounds gain and pan lane creation only when the requested parameter is explicit', () => {

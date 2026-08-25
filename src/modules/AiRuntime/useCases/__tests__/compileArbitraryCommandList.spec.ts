@@ -86,6 +86,69 @@ const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
     stoppingConditions: [],
 });
 
+const supportedSidechainDevice = {
+    id: 'device-bass-compressor',
+    name: 'Bass Compressor',
+    type: 'builtin-sidechain-compressor',
+    bypassed: false,
+};
+
+function compileSidechainDeviceSelector(input: {
+    devices?: Array<typeof supportedSidechainDevice>;
+    arguments_?: { targetDeviceId?: string };
+    protectedTargetIds?: string[];
+}) {
+    const devices = input.devices ?? [supportedSidechainDevice];
+    const selectedDevice = devices[0]!;
+    return compileArbitraryCommandList({
+        context: {
+            ...context,
+            tracks: [
+                context.tracks[0]!,
+                {
+                    ...context.tracks[1]!,
+                    id: 'track-bass',
+                    name: 'Bass',
+                    devices,
+                },
+            ],
+        },
+        revision: 'revision-1',
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan([selectedDevice.id], input.protectedTargetIds),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'sidechain-bass',
+                                name: 'addSidechainRoute',
+                                arguments: {
+                                    sourceTrackId: 'track-kick',
+                                    targetTrackId: 'track-bass',
+                                    ...input.arguments_,
+                                },
+                                selector: {
+                                    targetArgument: 'targetDeviceId',
+                                    entity: 'device',
+                                    where: {
+                                        name: selectedDevice.name,
+                                        trackId: 'track-bass',
+                                        type: selectedDevice.type,
+                                    },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ],
+    });
+}
+
 const deviceParameter = (id: string) => ({
     id,
     name: id,
