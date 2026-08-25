@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -46,6 +47,7 @@ const RUN_ID = 'prompt-run-1';
 const BATCH_ID = 'batch-1';
 const IDEMPOTENCY_KEY = 'batch-key-1';
 const action = { type: 'togglePlayback' } satisfies AppAction;
+type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 const stemAction = {
     type: 'importStemSet',
     payload: {
@@ -142,14 +144,33 @@ function admitted(agentApproval: unknown = null) {
 function verifiedReceipt(
     outcome: 'committed' | 'executed' = 'committed',
     identity: { runId?: string; batchId?: string } = {}
-) {
+): VerifiedReceipt {
+    const revision = {
+        normalizedRevision: 'revision-1',
+        documentIdentityEpoch: null,
+        mutationEpoch: null,
+        documents: [],
+    };
     return {
         schemaVersion: 1,
         runId: identity.runId ?? RUN_ID,
         batchId: identity.batchId ?? BATCH_ID,
         outcome,
+        atomicity: 'atomic',
+        base: revision,
+        observedBase: revision,
+        resulting: revision,
+        commandOutcomes: [],
+        affectedIds: [],
+        createdBindings: [],
+        warnings: [],
+        errors: [],
+        pendingEffects: [],
         links: { render: [], analysis: [] },
-    } as never;
+        compensation: { available: false, commandIds: [] },
+        semanticDiff: null,
+        modelSummary: `Batch outcome: ${outcome}.`,
+    };
 }
 
 describe('executePromptActionGroup', () => {

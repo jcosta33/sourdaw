@@ -211,7 +211,7 @@ describe('recordAgentRunReceiptSaga', () => {
         });
     });
 
-    it('retains the exact continuation across a receipt-write crash without clearing independent restart work', () => {
+    it('retains the exact continuation across a receipt-write crash without clearing independent restart work', async () => {
         const pendingEffect = {
             commandId: '11111111-1111-4111-8111-111111111111',
             kind: 'runtime-graph' as const,
@@ -273,7 +273,9 @@ describe('recordAgentRunReceiptSaga', () => {
                 commandBatch: COMMAND_BATCH,
             })
         ).toThrow('simulated crash before AgentRun receipt writes');
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: ['run-agent-effects'] });
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
+            recoveredRunIds: ['run-agent-effects'],
+        });
         expect(agentRunLifecycle.get('run-agent-effects')).toMatchObject({
             phase: 'paused',
             manualResume: { required: true, workIds: ['render-other'] },

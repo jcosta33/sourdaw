@@ -176,7 +176,9 @@ describe('executePlannedActions', () => {
             })
         ).rejects.toThrow('simulated crash after durable project checkpoint');
 
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: [receipt.runId] });
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
+            recoveredRunIds: [receipt.runId],
+        });
         expect(agentRunLifecycle.get(receipt.runId)).toMatchObject({
             phase: 'partially-completed',
             manualResume: { required: false },
