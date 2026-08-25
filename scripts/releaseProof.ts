@@ -150,6 +150,7 @@ export type ReleaseProofFileReader = {
     open?: (path: string, flags: number) => number;
     noFollowFlag?: () => unknown;
     read?: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => number;
+    snapshotWrite?: (descriptor: number, buffer: Buffer, offset: number, length: number) => number;
     snapshotByteLimit?: number;
 };
 
@@ -1363,9 +1364,21 @@ function snapshotCandidateFile(
         (descriptor) => {
             const output = openSync(snapshotPath, 'wx');
             try {
-                const digest = digestCandidateDescriptor(descriptor, maxBytes, budget, fileReader, (bytes) =>
-                    writeSync(output, bytes)
-                );
+                const write = fileReader.snapshotWrite ?? writeSync;
+                const digest = digestCandidateDescriptor(descriptor, maxBytes, budget, fileReader, (bytes) => {
+                    let offset = 0;
+                    while (offset < bytes.length) {
+                        const remaining = bytes.length - offset;
+                        const written = write(output, bytes, offset, remaining);
+                        if (!Number.isInteger(written) || written < 0 || written > remaining) {
+                            throw new Error('candidate snapshot write returned an invalid byte count');
+                        }
+                        if (written === 0) {
+                            throw new Error('candidate snapshot write made no progress');
+                        }
+                        offset += written;
+                    }
+                });
                 return { digest, snapshotPath };
             } finally {
                 closeSync(output);

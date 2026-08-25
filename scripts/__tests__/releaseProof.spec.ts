@@ -20,6 +20,7 @@ import {
     truncateSync,
     utimesSync,
     writeFileSync,
+    writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -810,6 +811,39 @@ describe('release proof', () => {
         assemble(fixture);
 
         expect(validate(fixture, { noFollowFlag: () => constants.O_NOFOLLOW })).toEqual('');
+    });
+
+    it('retries short snapshot writes before semantic validation consumes candidate bytes', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        let shortWrites = 0;
+        const fileReader: ReleaseProofFileReader = {
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            snapshotWrite(descriptor, buffer, offset, length) {
+                shortWrites += 1;
+                return writeSync(descriptor, buffer, offset, Math.min(length, 7));
+            },
+        };
+
+        const errors = validate(fixture, fileReader);
+        expect(shortWrites).toBeGreaterThan(1);
+        expect(errors).toEqual('');
+    });
+
+    it('fails closed when a candidate snapshot write makes no progress', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        let writes = 0;
+        const fileReader: ReleaseProofFileReader = {
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            snapshotWrite() {
+                writes += 1;
+                return 0;
+            },
+        };
+
+        expect(validate(fixture, fileReader)).toContain('source manifest: file is missing or unsafe');
+        expect(writes).toBeGreaterThan(0);
     });
 
     it('stops snapshotting when a candidate manifest grows beyond its consumer limit', () => {
