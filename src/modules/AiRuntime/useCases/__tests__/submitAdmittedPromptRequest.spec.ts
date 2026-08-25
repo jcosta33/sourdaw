@@ -8,6 +8,7 @@ import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'revision-1'),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-1'),
     compileAgentActionExecution: vi.fn(),
     describePlannedAction: vi.fn(() => 'Toggle playback'),
     executePromptActionGroup: vi.fn(),
@@ -17,7 +18,10 @@ const mocks = vi.hoisted(() => ({
     planPromptActions: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRevision: mocks.captureProjectRevision }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureProjectRevision,
+    settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+}));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
@@ -100,6 +104,7 @@ describe('submitAdmittedPromptRequest', () => {
         agentRunLifecycle.clear();
         randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
         mocks.captureProjectRevision.mockReturnValue('revision-1');
+        mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-1');
         mocks.compileAgentActionExecution.mockReturnValue(compiled);
         mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
             status: 'valid',
@@ -349,6 +354,74 @@ describe('submitAdmittedPromptRequest', () => {
             phase: 'waiting-for-approval',
             batches: [{ batchId: 'batch-1', status: 'waiting-for-approval' }],
         });
+    });
+
+    it('settles pending project writes before a direct preset captures visible context and its base revision', async () => {
+        let pendingWriteSettled = false;
+        mocks.captureProjectRevision.mockReturnValue('revision-before-pending-write');
+        mocks.settlePendingProjectWritesAndCaptureRevision.mockImplementationOnce(() => {
+            pendingWriteSettled = true;
+            return 'revision-after-pending-write';
+        });
+        mocks.getProjectContext.mockImplementationOnce(
+            () =>
+                ({
+                    tracks: pendingWriteSettled ? [{ id: 'track-visible-after-settle' }] : [],
+                }) as never
+        );
+
+        await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'preset',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+
+        expect(mocks.settlePendingProjectWritesAndCaptureRevision).toHaveBeenCalledOnce();
+        expect(mocks.getProjectContext).toHaveBeenCalledOnce();
+        expect(mocks.settlePendingProjectWritesAndCaptureRevision.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.getProjectContext.mock.invocationCallOrder[0]!
+        );
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({
+                context: { tracks: [{ id: 'track-visible-after-settle' }] },
+                projectRevision: 'revision-after-pending-write',
+            })
+        );
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            revisions: {
+                created: 'revision-after-pending-write',
+                planned: 'revision-after-pending-write',
+            },
+        });
+    });
+
+    it('admits confirmation exactly once when the same preview is confirmed concurrently', async () => {
+        let finishExecution: ((value: { status: 'committed' }) => void) | undefined;
+        const execution = new Promise<{ status: 'committed' }>((resolve) => {
+            finishExecution = resolve;
+        });
+        mocks.executePromptActionGroup.mockImplementationOnce(() => execution);
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'preset',
+            actions: [action],
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Expected an approval preview, received ${result.status}`);
+        }
+
+        const firstConfirmation = result.preview.confirm();
+        const duplicateConfirmation = result.preview.confirm();
+
+        expect(duplicateConfirmation).toBe(firstConfirmation);
+        expect(mocks.executePromptActionGroup).toHaveBeenCalledOnce();
+        finishExecution?.({ status: 'committed' });
+        await expect(Promise.all([firstConfirmation, duplicateConfirmation])).resolves.toEqual([
+            { status: 'committed' },
+            { status: 'committed' },
+        ]);
     });
 
     it('requires approval for an authority-sensitive direct preset even when its metadata does not', async () => {

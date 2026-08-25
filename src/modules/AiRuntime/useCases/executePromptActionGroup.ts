@@ -214,12 +214,6 @@ export async function executePromptActionGroup(
     });
     if (leaseClaim.status !== 'claimed') {
         const reason = `Prepared command work could not be claimed: ${leaseClaim.status}`;
-        if (!TERMINAL_RUN_PHASES.has(agentRunLifecycle.get(input.runId)?.phase ?? 'failed')) {
-            agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
-            transitionRunIfLive(input.runId, 'failed');
-        }
-        await discardImportedStems();
-        notifyAiChange(`Command not executed: ${reason}`, []);
         throw new Error(reason);
     }
     const commandLease = leaseClaim.lease;

@@ -1,5 +1,5 @@
 import { parseVersionedCommandBatchEnvelope, requiresAppActionConfirmation } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
@@ -62,7 +62,7 @@ export async function submitAdmittedPromptRequest(
 ): Promise<SubmitAdmittedPromptRequestResult> {
     const prompt = input.prompt.trim();
     const runId = `agent-run-${crypto.randomUUID()}`;
-    const createdRevision = captureProjectRevision();
+    const createdRevision = settlePendingProjectWritesAndCaptureRevision();
     agentRunLifecycle.create({
         runId,
         request: prompt,
@@ -258,7 +258,7 @@ export async function submitAdmittedPromptRequest(
             },
         });
 
-        const execute = async (
+        const execute = (
             successVerb?: 'Confirmed',
             signal: AbortSignal | undefined = input.signal
         ): ReturnType<typeof executePromptActionGroup> =>
@@ -274,6 +274,7 @@ export async function submitAdmittedPromptRequest(
             });
 
         if (compiled.requiresConfirmation) {
+            let confirmationExecution: ReturnType<typeof executePromptActionGroup> | null = null;
             agentRunLifecycle.transitionPhase({
                 runId,
                 phase: 'waiting-for-approval',
@@ -286,7 +287,10 @@ export async function submitAdmittedPromptRequest(
                     actions: planned.result.actions,
                     actionLabels,
                     projectRevision: planned.projectRevision,
-                    confirm: (signal) => execute('Confirmed', signal),
+                    confirm: (signal) => {
+                        confirmationExecution ??= execute('Confirmed', signal);
+                        return confirmationExecution;
+                    },
                     cancel,
                 },
             };

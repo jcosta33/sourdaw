@@ -253,6 +253,47 @@ describe('executePromptActionGroup', () => {
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
     });
 
+    it('keeps concurrent duplicate confirmation outside the active stem-resource lease', async () => {
+        let finishExecution: ((value: unknown) => void) | undefined;
+        const settleLease = vi.spyOn(agentRunWorkLease, 'settle');
+        seedRun('waiting-for-approval');
+        mocks.executePlannedActions.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishExecution = resolve;
+                })
+        );
+        const confirmation = {
+            actions: [stemAction],
+            prompt: 'Import stems',
+            projectRevision: 'revision-1',
+            ...admitted({ actorId: 'artist-1', fingerprint: 'compiled-risk-fingerprint' }),
+        };
+
+        const firstExecution = executePromptActionGroup(confirmation);
+        await expect(executePromptActionGroup(confirmation)).rejects.toThrow(
+            'Prepared command work could not be claimed: already-claimed'
+        );
+        finishExecution?.({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt: verifiedReceipt('committed'),
+        });
+
+        await expect(firstExecution).resolves.toEqual({ status: 'committed' });
+        expect(mocks.executePlannedActions).toHaveBeenCalledOnce();
+        expect(settleLease).toHaveBeenCalledOnce();
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'completed',
+            workLeases: [{ workId: BATCH_ID, terminalState: 'completed' }],
+        });
+    });
+
     it.each([
         { execution: { status: 'invalidated', reason: 'Revision changed' }, outcome: 'failed' },
         { execution: { status: 'failed', reason: 'Execution failed' }, outcome: 'failed' },

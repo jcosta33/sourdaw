@@ -2459,11 +2459,15 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain('Affected IDs: device-bass-comp-a, sidechain-command-');
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
-        for (const [index, routeId] of routeIds.entries()) {
-            expect(executedActions?.[index]?.affectedIds).toContain(routeId);
-            expect(receipt?.content).toContain(routeId);
+        const expectedActionAffectedIds = [
+            ['device-bass-comp-a', routeIds[0]!, 'track-bass-synth', 'track-kick'],
+            ['device-bass-comp-b', routeIds[1]!, 'track-bass-synth', 'track-kick'],
+            ['device-bass-di-comp', routeIds[2]!, 'track-bass-di', 'track-kick'],
+        ];
+        expect(executedActions?.map((execution) => execution.affectedIds)).toEqual(expectedActionAffectedIds);
+        for (const affectedIds of expectedActionAffectedIds) {
+            expect(receipt?.content).toContain(`Affected IDs: ${affectedIds.join(', ')}`);
         }
         expect(undoStore.value?.past).toHaveLength(3);
 
@@ -2550,13 +2554,17 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain('Affected IDs: device-bass-comp-a, sidechain-command-');
         const routeIds = sidechainStore.value?.routes.map((route) => route.id) ?? [];
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
         expect(routeIds).toHaveLength(3);
-        for (const [index, routeId] of routeIds.entries()) {
-            expect(executedActions?.[index]?.affectedIds).toContain(routeId);
-            expect(receipt?.content).toContain(routeId);
+        const expectedActionAffectedIds = [
+            ['device-bass-comp-a', routeIds[0]!, 'track-bass-synth', 'track-kick'],
+            ['device-bass-comp-b', routeIds[1]!, 'track-bass-synth', 'track-kick'],
+            ['device-bass-di-comp', routeIds[2]!, 'track-bass-di', 'track-kick'],
+        ];
+        expect(executedActions?.map((execution) => execution.affectedIds)).toEqual(expectedActionAffectedIds);
+        for (const affectedIds of expectedActionAffectedIds) {
+            expect(receipt?.content).toContain(`Affected IDs: ${affectedIds.join(', ')}`);
         }
 
         await undo();
