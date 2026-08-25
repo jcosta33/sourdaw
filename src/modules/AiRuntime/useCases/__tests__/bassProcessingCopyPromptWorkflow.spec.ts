@@ -8,8 +8,13 @@ import {
     type AdjustmentLayer,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { audioEngine, scheduleAdjustmentLayers } from '#/modules/AudioEngine/useCases';
+import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    audioEngine,
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+    scheduleAdjustmentLayers,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
@@ -20,12 +25,14 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -48,7 +55,25 @@ const PROMPT =
 const PARAPHRASE =
     'Bring the first chorus bass-processing layers into the second chorus but keep its distortion automation untouched.';
 
-const providerPlan = [
+type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
+type ProviderPlanEntry = {
+    layerId: string;
+    startBeat: number;
+    endBeat: number;
+    blend: number;
+    fadeInBeats: number;
+    fadeOutBeats: number;
+};
+type BassProcessingCopyCapability = {
+    baseRevision: unknown;
+    actionType: 'addAdjustmentRegion';
+    exactPlan: ProviderPlanEntry[];
+    protectedObjectIds: string[];
+};
+
+const DEFAULT_PROTECTED_TARGET_IDS = ['track-lead-vocal', 'layer-vocal-reverb', 'auto-bass-distortion-drive'];
+
+const providerPlan: readonly [ProviderPlanCall, ProviderPlanCall] = [
     {
         name: 'addAdjustmentRegion',
         arguments: {
@@ -71,7 +96,7 @@ const providerPlan = [
             fadeOutBeats: 0,
         },
     },
-] as const;
+];
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'cloud' };
@@ -79,8 +104,14 @@ const runtimeMocks = vi.hoisted(() => {
         backend,
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn<(systemPrompt: string, userMessage: string) => Promise<string>>(),
+        providerPlanFactory: {
+            value: (_userMessage: string): ProviderPlanCall[] => [],
+        },
+        protectedTargetIdsFactory: {
+            value: (_userMessage: string): string[] => [],
+        },
         transformPlan: {
-            value: (plan: Array<{ name: string; arguments: Record<string, unknown> }>) => plan,
+            value: (plan: ProviderPlanCall[]): ProviderPlanCall[] => plan,
         },
     };
 });
@@ -111,48 +142,85 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function getProjectContextFromUserMessage(userMessage: string): Record<string, unknown> {
-    const match = /<project_context>\n([\s\S]+?)\n<\/project_context>/u.exec(userMessage);
-    if (!match?.[1]) {
-        throw new TypeError('Expected serialized project context');
+function isProviderPlanEntry(value: unknown): value is ProviderPlanEntry {
+    if (!isRecord(value)) {
+        return false;
     }
-    const parsed: unknown = JSON.parse(match[1]);
+    const { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats } = value;
+    return (
+        typeof layerId === 'string' &&
+        typeof startBeat === 'number' &&
+        typeof endBeat === 'number' &&
+        typeof blend === 'number' &&
+        typeof fadeInBeats === 'number' &&
+        typeof fadeOutBeats === 'number'
+    );
+}
+
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isBassProcessingCopyCapability(value: unknown): value is BassProcessingCopyCapability {
+    if (!isRecord(value)) {
+        return false;
+    }
+    return (
+        value.actionType === 'addAdjustmentRegion' &&
+        Array.isArray(value.exactPlan) &&
+        value.exactPlan.every(isProviderPlanEntry) &&
+        isStringArray(value.protectedObjectIds)
+    );
+}
+
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
     if (!isRecord(parsed)) {
-        throw new TypeError('Expected project context object');
+        throw new TypeError(`Expected object-shaped ${section}`);
     }
     return parsed;
 }
 
-function createProviderPlanFromUserMessage(userMessage: string) {
-    const context = getProjectContextFromUserMessage(userMessage);
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    const available = schemas.availableCapabilities;
+    if (typeof available !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(available);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
+function getBassProcessingCopyCapability(userMessage: string): BassProcessingCopyCapability {
+    const context = getProviderContext(userMessage);
     const capability = context.bassProcessingCopyCapability;
-    if (
-        !isRecord(capability) ||
-        capability.actionType !== 'addAdjustmentRegion' ||
-        !Array.isArray(capability.exactPlan)
-    ) {
+    if (!isBassProcessingCopyCapability(capability) || capability.baseRevision !== context.projectRevision) {
         throw new TypeError('Expected revision-bound EX-03 capability');
     }
+    return capability;
+}
+
+function createProviderPlanFromUserMessage(userMessage: string): ProviderPlanCall[] {
+    const capability = getBassProcessingCopyCapability(userMessage);
     return capability.exactPlan.map((entry) => {
-        if (!isRecord(entry)) {
-            throw new TypeError('Expected EX-03 plan entry');
-        }
         const { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats } = entry;
-        if (
-            typeof layerId !== 'string' ||
-            typeof startBeat !== 'number' ||
-            typeof endBeat !== 'number' ||
-            typeof blend !== 'number' ||
-            typeof fadeInBeats !== 'number' ||
-            typeof fadeOutBeats !== 'number'
-        ) {
-            throw new TypeError('Expected complete EX-03 plan entry');
-        }
         return {
             name: 'addAdjustmentRegion',
             arguments: { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats },
         };
     });
+}
+
+function getProtectedTargetIdsFromUserMessage(userMessage: string): string[] {
+    return getBassProcessingCopyCapability(userMessage).protectedObjectIds;
 }
 
 function getHostedUserMessage(body: string): string {
@@ -170,34 +238,302 @@ function getHostedUserMessage(body: string): string {
     return userMessage.content;
 }
 
-function useHostedFixture(): void {
-    runtimeMocks.backend.value = 'cloud';
-    runtimeMocks.fetch.mockImplementation((_input, init) => {
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find((receipt) => {
+        if (!isRecord(receipt) || receipt.id !== 'application-tool-loop' || !isRecord(receipt.summary)) {
+            return false;
+        }
+        return receipt.summary.truncated === false && typeof receipt.summary.value === 'string';
+    });
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const lines = summary.value.split('\n');
+    const payload = lines[lines.length - 1];
+    if (!payload) {
+        throw new TypeError('Expected serialized application tool receipt payload');
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function getExpectedCatalogCommandNames(finalCalls: readonly ProviderPlanCall[]): string[] {
+    const domainNames = finalCalls.flatMap((call) => {
+        if (call.name === 'selectWorkflowCapability') {
+            return [];
+        }
+        if (call.name !== 'command.batch.propose') {
+            return [call.name];
+        }
+        const commands = call.arguments.commands;
+        return Array.isArray(commands)
+            ? commands.flatMap((command) =>
+                  isRecord(command) && typeof command.name === 'string' ? [command.name] : []
+              )
+            : [];
+    });
+    return [...new Set(domainNames)];
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderPlanCall[]): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !Array.isArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set<string>();
+    for (const item of discoveryReceipt.data.items) {
+        if (
+            isRecord(item) &&
+            isRecord(item.function) &&
+            typeof item.function.name === 'string' &&
+            isRecord(item.function.parameters)
+        ) {
+            disclosedNames.add(item.function.name);
+        }
+    }
+    for (const name of getExpectedCatalogCommandNames(finalCalls)) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+function getBassProcessingCopyTargetRanges(
+    plan: readonly ProviderPlanCall[]
+): Array<{ startBeat: number; endBeat: number }> {
+    const sourceSection = markerStore.value?.sections.find((section) => section.id === 'section-chorus-one');
+    const targetSection = markerStore.value?.sections.find((section) => section.id === 'section-chorus-two');
+    if (!sourceSection || !targetSection) {
+        throw new TypeError('Expected exact EX-03 source and target sections');
+    }
+    const projectedRegionsByLayerId = new Map(
+        (adjustmentLayerStore.value?.layers ?? []).map((layer) => [
+            layer.id,
+            layer.regions.map((region) => ({ ...region })),
+        ])
+    );
+    const ranges: Array<{ startBeat: number; endBeat: number }> = [];
+    for (const [index, call] of plan.entries()) {
+        const layerId = call.arguments.layerId;
+        const startBeat = call.arguments.startBeat;
+        const endBeat = call.arguments.endBeat;
+        const blend = call.arguments.blend;
+        const fadeInBeats = call.arguments.fadeInBeats;
+        const fadeOutBeats = call.arguments.fadeOutBeats;
+        if (
+            typeof layerId !== 'string' ||
+            typeof startBeat !== 'number' ||
+            typeof endBeat !== 'number' ||
+            typeof blend !== 'number' ||
+            typeof fadeInBeats !== 'number' ||
+            typeof fadeOutBeats !== 'number'
+        ) {
+            throw new TypeError('Expected complete EX-03 scope plan entry');
+        }
+        const projectedRegions = projectedRegionsByLayerId.get(layerId);
+        if (!projectedRegions) {
+            throw new TypeError(`Expected EX-03 adjustment layer ${layerId}`);
+        }
+        const beatValues = [
+            startBeat,
+            endBeat,
+            fadeInBeats,
+            fadeOutBeats,
+            sourceSection.startBeat,
+            sourceSection.endBeat,
+            targetSection.startBeat,
+            targetSection.endBeat,
+            ...projectedRegions.flatMap((region) => [
+                region.startBeat,
+                region.endBeat,
+                region.fadeInBeats,
+                region.fadeOutBeats,
+            ]),
+        ];
+        ranges.push({ startBeat: Math.min(...beatValues), endBeat: Math.max(...beatValues) });
+        projectedRegionsByLayerId.set(layerId, [
+            ...projectedRegions,
+            {
+                id: `fixture-region-${String(index)}`,
+                startBeat,
+                endBeat,
+                blend,
+                fadeInBeats,
+                fadeOutBeats,
+            },
+        ]);
+    }
+    return ranges;
+}
+
+function getBassProcessingCopyTargetIds(plan: readonly ProviderPlanCall[]): string[] {
+    const layersById = new Map((adjustmentLayerStore.value?.layers ?? []).map((layer) => [layer.id, layer]));
+    const targetIds = new Set<string>();
+    for (const call of plan) {
+        const layerId = call.arguments.layerId;
+        if (typeof layerId !== 'string') {
+            throw new TypeError('Expected EX-03 adjustment layer target');
+        }
+        const layer = layersById.get(layerId);
+        if (!layer) {
+            throw new TypeError(`Expected EX-03 adjustment layer ${layerId}`);
+        }
+        for (const trackId of layer.affectedTrackIds) {
+            targetIds.add(trackId);
+        }
+    }
+    return [...targetIds];
+}
+
+function asCommandBatchProposal(
+    plan: readonly ProviderPlanCall[],
+    protectedTargetIds: readonly string[],
+    scopePlan: readonly ProviderPlanCall[]
+): ProviderPlanCall[] {
+    const targetIds = getBassProcessingCopyTargetIds(scopePlan);
+    const targetRanges = getBassProcessingCopyTargetRanges(scopePlan);
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Copy the exact Chorus One bass-processing regions into Chorus Two.',
+                    constraints: ['Preserve Chorus Two distortion automation and every protected project object.'],
+                    scope: {
+                        targetIds,
+                        targetRanges,
+                        protectedTargetIds: [...protectedTargetIds],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: [...new Set(plan.map((call) => call.name))],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate the revision-bound source regions and exact target ranges.'],
+                    stoppingConditions: ['Stop before mutation if any target or protected object conflicts.'],
+                },
+            },
+        },
+    ];
+}
+
+function createFinalProviderCalls(userMessage: string): ProviderPlanCall[] {
+    const scopePlan = runtimeMocks.providerPlanFactory.value(userMessage);
+    const plan = runtimeMocks.transformPlan.value(scopePlan);
+    return withWorkflowCapabilitySelection(
+        'bass-processing-copy',
+        asCommandBatchProposal(plan, runtimeMocks.protectedTargetIdsFactory.value(userMessage), scopePlan)
+    );
+}
+
+function catalogDiscoveryPlan(finalCalls: readonly ProviderPlanCall[]): ProviderPlanCall[] {
+    return [
+        {
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: getExpectedCatalogCommandNames(finalCalls) },
+        },
+    ];
+}
+
+function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage: string) => Promise<string> {
+    let turn = 0;
+    return (_systemPrompt, userMessage) => {
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (turn === 1) {
+            return Promise.resolve(
+                JSON.stringify(
+                    catalogDiscoveryPlan(
+                        withWorkflowCapabilitySelection(
+                            'bass-processing-copy',
+                            asCommandBatchProposal(providerPlan, DEFAULT_PROTECTED_TARGET_IDS, providerPlan)
+                        )
+                    )
+                )
+            );
+        }
+        const finalCalls = createFinalProviderCalls(userMessage);
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        return Promise.resolve(JSON.stringify(finalCalls));
+    };
+}
+
+function toolCallsResponse(calls: readonly ProviderPlanCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let turn = 0;
+    return (_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = withWorkflowCapabilitySelection(
-            'bass-processing-copy',
-            runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(getHostedUserMessage(init.body)))
-        );
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
-    });
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        const userMessage = getHostedUserMessage(init.body);
+        if (turn === 1) {
+            return Promise.resolve(
+                toolCallsResponse(
+                    catalogDiscoveryPlan(
+                        withWorkflowCapabilitySelection(
+                            'bass-processing-copy',
+                            asCommandBatchProposal(providerPlan, DEFAULT_PROTECTED_TARGET_IDS, providerPlan)
+                        )
+                    )
+                )
+            );
+        }
+        const finalCalls = createFinalProviderCalls(userMessage);
+        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        return Promise.resolve(toolCallsResponse(finalCalls));
+    };
+}
+
+function useHostedFixture(): void {
+    runtimeMocks.backend.value = 'cloud';
+    runtimeMocks.fetch.mockImplementation(createTurnTrackedHostedResponder());
 }
 
 function getProviderVisibleRegionPlan(
@@ -294,16 +630,9 @@ describe('bass-processing section copy workflow', () => {
         vi.spyOn(audioEngine, 'resetAdjustmentLayers').mockImplementation(() => undefined);
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'bass-processing-copy',
-                        runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(userMessage))
-                    )
-                )
-            )
-        );
+        runtimeMocks.providerPlanFactory.value = createProviderPlanFromUserMessage;
+        runtimeMocks.protectedTargetIdsFactory.value = getProtectedTargetIdsFromUserMessage;
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -325,6 +654,11 @@ describe('bass-processing section copy workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
         const bass = createTrack('track-bass', 'Bass');
@@ -450,6 +784,7 @@ describe('bass-processing section copy workflow', () => {
 
         await sendChatMessage(PROMPT);
 
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         const confirmationId = getConfirmationId();
         expect(confirmationId).not.toBe('');
         const confirmation = getPendingActionConfirmation(confirmationId);
@@ -521,7 +856,7 @@ describe('bass-processing section copy workflow', () => {
 
         const webUserMessage = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1];
         expect(typeof webUserMessage).toBe('string');
-        const providerContext = getProjectContextFromUserMessage(webUserMessage ?? '');
+        const providerContext = getProviderContext(webUserMessage ?? '');
         expect(providerContext.bassProcessingCopyCapability).toMatchObject({
             schemaVersion: 1,
             actionType: 'addAdjustmentRegion',
@@ -618,6 +953,7 @@ describe('bass-processing section copy workflow', () => {
 
         await sendChatMessage(PROMPT);
 
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions.map((action) => action.type)).toEqual([
             'addAdjustmentRegion',
@@ -767,7 +1103,7 @@ describe('bass-processing section copy workflow', () => {
             (plan: (typeof providerPlan)[number][]) => [
                 ...plan,
                 {
-                    name: 'addAdjustmentRegion' as const,
+                    name: 'addAdjustmentRegion',
                     arguments: {
                         layerId: 'layer-vocal-reverb',
                         startBeat: 48,
@@ -788,7 +1124,7 @@ describe('bass-processing section copy workflow', () => {
         ],
     ])('rejects a provider plan that %s', async (_label, transform) => {
         const originalLayers = structuredClone(adjustmentLayerStore.value);
-        runtimeMocks.transformPlan.value = (plan) => transform(plan as (typeof providerPlan)[number][]);
+        runtimeMocks.transformPlan.value = (plan) => transform(plan);
 
         await sendChatMessage(PROMPT);
 
@@ -871,7 +1207,8 @@ describe('bass-processing section copy workflow', () => {
         ],
     ])('fails closed when %s', async (_label, mutateProject) => {
         mutateProject();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
+        runtimeMocks.providerPlanFactory.value = () => [...providerPlan];
+        runtimeMocks.protectedTargetIdsFactory.value = () => [...DEFAULT_PROTECTED_TARGET_IDS];
         const originalLayers = structuredClone(adjustmentLayerStore.value);
 
         await sendChatMessage(PROMPT);

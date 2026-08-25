@@ -36,7 +36,7 @@ const {
 } = vi.hoisted(() => ({
     mockGetAudioContext: vi.fn(() => ({ sampleRate: 44_100 })),
     mockImportCachedAudioBuffers: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
-    mockPrepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
+    mockPrepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
     mockResetAudioGraph: vi.fn(),
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),

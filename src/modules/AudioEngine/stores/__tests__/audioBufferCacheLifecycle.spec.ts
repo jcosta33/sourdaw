@@ -87,28 +87,36 @@ function installFakeIndexedDb(): FakeBacking {
     // Two object stores from DB_VERSION 2 on, sharing a key space: the metadata
     // row and the record it describes must not land in the same map.
     const metaBacking = new Map<string, StoredBufferMeta>();
+    const recoveryBacking = new Map<IDBValidKey, unknown>([
+        [0, { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 }],
+    ]);
     backing.meta = metaBacking;
-    function makeStore<Value>(table: Map<string, Value>) {
+    function makeStore<Key, Value>(table: Map<Key, Value>) {
         return {
             clear: () => table.clear(),
-            delete: (key: string) => table.delete(key),
-            get: (key: string) => asyncRequest(() => table.get(key)),
+            delete: (key: Key) => table.delete(key),
+            get: (key: Key) => asyncRequest(() => table.get(key)),
             getAll: () => asyncRequest(() => [...table.values()]),
             getAllKeys: () => asyncRequest(() => [...table.keys()]),
-            put: (value: Value, key: string) => {
+            put: (value: Value, key: Key) => {
                 table.set(key, value);
             },
         };
     }
     const objectStore = makeStore(backing);
     const metaStore = makeStore(metaBacking);
+    const recoveryStore = makeStore(recoveryBacking);
     function storeFor(name: string) {
         if (name === 'bufferMeta') {
             return metaStore;
         }
+        if (name === 'preparedBufferRecovery') {
+            return recoveryStore;
+        }
         return objectStore;
     }
     const database = {
+        close: vi.fn(),
         objectStoreNames: { contains: () => true },
         createObjectStore: () => objectStore,
         transaction: () => {

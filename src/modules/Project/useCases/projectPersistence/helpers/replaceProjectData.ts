@@ -74,6 +74,7 @@ export async function replaceProjectData({
     decodedAudioBuffers,
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
+    let cancelPreparedStoredCandidate: (() => void) | undefined;
     const currentProject = projectStore.value;
     // Captured before the load claims the flags, so an abort can hand the
     // previous session back exactly as it was. Every abort returning through
@@ -109,6 +110,7 @@ export async function replaceProjectData({
     }
 
     function abortProjectReplacement(): ProjectReplacementResult {
+        cancelPreparedStoredCandidate?.();
         // `loading` is not cosmetic: `markDirty` reads it to tell a load's
         // hydration writes apart from a user's edit, so an abort that leaves it
         // set kills dirty tracking for the rest of the session — the unsaved
@@ -136,6 +138,7 @@ export async function replaceProjectData({
     }
 
     function failProjectReplacement(): ProjectReplacementResult {
+        cancelPreparedStoredCandidate?.();
         // The authority switch already happened: `createProject` installed a
         // fresh empty root and `resetAutomergeStorageProjections` replaced every
         // root-doc store's value with its `hydrateMissing()` default. The user's
@@ -216,6 +219,7 @@ export async function replaceProjectData({
             bufferIds: referencedIds.filter((id) => !embeddedBufferIds.has(id)),
             shouldContinue: transaction.isCurrent,
         });
+        cancelPreparedStoredCandidate = preparedStoredBuffers?.cancel;
     } catch (error) {
         logPreparationFailure(context, error);
         return abortProjectReplacement();
