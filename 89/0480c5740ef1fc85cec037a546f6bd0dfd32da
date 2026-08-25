@@ -1,0 +1,46 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_c60957f2cfd414 68,86,98-100,134,253,383,561-569
+  s_a40848e8f8cca9::t_f61ea1796c3d30 570-572
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_db32825a606a97 494-503
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_23257107ad1cb2 255-258,695-699,702,711
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_7f5e7dd21cd0b8 663
+  s_a40848e8f8cca9::t_627f70f114ec8c 87,662
+  s_a40848e8f8cca9::t_a6540ed1555ebe 3-6
+  s_a40848e8f8cca9::t_f4f937e0d20a1a 66-70,84-86,161-165,167-169,193-200
+  s_a40848e8f8cca9::t_cce213adaa19c5 95,160,612,619,661,744,766,843,855,887,903,1022
+src/modules/Project/useCases/projectPersistence/projectIdentityTransitionDependencies.ts
+  s_a40848e8f8cca9::t_1515ac74de17e6 3-4
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_a40848e8f8cca9::t_1515ac74de17e6 25,117
+  s_a40848e8f8cca9::t_6d578ff3b9d43a 118
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_1515ac74de17e6 71,291-300
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_a40848e8f8cca9::t_c5f91c2ad2f1d4 36,95-98,114,118-119
+  s_a40848e8f8cca9::t_5c8d1392f761e4 120
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_af7d3930145083 932
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_be6d37d53a29db 328,337-339,348,353-356,369-371,382
+  s_a40848e8f8cca9::t_e05a3b8e2f3ea4 347
+  s_a40848e8f8cca9::t_30d2a45063d358 383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "890480c5740ef1fc85cec037a546f6bd0dfd32da",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
