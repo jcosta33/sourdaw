@@ -1,0 +1,21 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_d678e92a622a0b 130,312,932,1275,1566-1571
+public/legal/DEPENDENCY-LICENSES.txt
+  s_a40848e8f8cca9::t_a900985c4c62a6 9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "dd96aa85ed25610c73d3c1dad26e952e07fce4e7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
