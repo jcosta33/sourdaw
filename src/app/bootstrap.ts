@@ -68,6 +68,7 @@ import {
     canMutateBranchMetadata,
     configureCollaborationAssetOwner,
     configureDurableAssetCommitProof,
+    getAssetTransfer,
     leaveSession,
 } from '#/modules/Collaboration/useCases';
 import {
@@ -287,7 +288,16 @@ setTimeOperationDependencies({
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
 });
-setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+setProjectIdentityTransitionDependencies({
+    leaveCollaborationSession: leaveSession,
+    resumeDurableAssetOwnerHandoffsAfterProjectLoad: async () => {
+        const assetTransfer = getAssetTransfer();
+        if (!assetTransfer) {
+            throw new Error('Durable asset owner recovery is unavailable after project load');
+        }
+        await assetTransfer.resumeDurableOwnerRebindsAfterProjectLoad();
+    },
+});
 
 function disposeYeastRealtimeBridge(): void {
     disposeWebMidiRealtimeProcessor();

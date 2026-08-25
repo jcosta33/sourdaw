@@ -65,6 +65,7 @@ const {
     canExecuteCommandBatchMock,
     configureCollaborationAssetOwnerMock,
     configureDurableAssetCommitProofMock,
+    getAssetTransferMock,
     getSettledProjectIdMock,
     isVersionedCommandBatchCommitProvenMock,
     prepareOfflineLevainMock,
@@ -82,6 +83,7 @@ const {
     configureRuntimeGraphTopologyValidatorMock,
     runtimeGraphTopologyMock,
     setNotificationEventBusMock,
+    setProjectIdentityTransitionDependenciesMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -93,6 +95,9 @@ const {
         canExecuteCommandBatchMock: vi.fn(() => true),
         configureCollaborationAssetOwnerMock: vi.fn(),
         configureDurableAssetCommitProofMock: vi.fn(),
+        getAssetTransferMock: vi.fn(() => ({
+            resumeDurableOwnerRebindsAfterProjectLoad: vi.fn(() => Promise.resolve()),
+        })),
         getSettledProjectIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
         isVersionedCommandBatchCommitProvenMock: vi.fn(() => true),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
@@ -126,6 +131,7 @@ const {
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
+        setProjectIdentityTransitionDependenciesMock: vi.fn(),
         configureRuntimeGraphProjectRevisionValidatorMock:
             vi.fn<(validator: RuntimeGraphProjectRevisionValidator) => void>(),
         configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator) => void>(),
@@ -244,7 +250,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
     configureCollaborationAssetOwner: configureCollaborationAssetOwnerMock,
     configureDurableAssetCommitProof: configureDurableAssetCommitProofMock,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
-    getAssetTransfer: () => null,
+    getAssetTransfer: getAssetTransferMock,
     leaveSession: noop,
 }));
 
@@ -374,7 +380,7 @@ vi.mock('#/modules/Project/useCases', () => ({
             mirrorsWithoutPrimary: 0,
             failed: 0,
         }),
-    setProjectIdentityTransitionDependencies: noop,
+    setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
 vi.mock('#/modules/Project/stores', () => ({
@@ -550,6 +556,18 @@ describe('bootstrap', () => {
         expect(configureCollaborationAssetOwnerMock).toHaveBeenCalledExactlyOnceWith({
             captureOwnerId: getSettledProjectIdMock,
         });
+    });
+
+    it('resumes durable owner handoffs only through the persisted-project load seam', async () => {
+        const dependencies = setProjectIdentityTransitionDependenciesMock.mock.calls[0]?.[0] as
+            { resumeDurableAssetOwnerHandoffsAfterProjectLoad?: () => Promise<void> } | undefined;
+
+        await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.();
+
+        expect(getAssetTransferMock).toHaveBeenCalledOnce();
+        expect(
+            getAssetTransferMock.mock.results[0]?.value.resumeDurableOwnerRebindsAfterProjectLoad
+        ).toHaveBeenCalledOnce();
     });
 
     it('binds durable asset admission to the Command commit proof', () => {

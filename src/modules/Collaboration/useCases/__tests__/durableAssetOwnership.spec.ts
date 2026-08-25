@@ -325,7 +325,7 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
-    it('resumes a prepared owner handoff after restart before reopening its exact lease', async () => {
+    it('resumes a prepared owner handoff after restart before reopening its promoted original', async () => {
         const provisionalOwner = 'collaboration-join:crash-before-handoff-commit';
         const projectOwner = 'project:restart-authoritative';
         const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
@@ -334,6 +334,9 @@ describe('durable asset ownership lifecycle', () => {
             'restart-handoff.wav',
             'asset-stage-restart-handoff'
         );
+        await expect(joining.promoteDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'promoted',
+        });
         await expect(joining.prepareDurableOwnerRebind(projectOwner)).resolves.toMatchObject({
             status: 'prepared',
         });
@@ -341,14 +344,16 @@ describe('durable asset ownership lifecycle', () => {
         joining.dispose();
 
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
-        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad();
+        await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
             status: 'opened',
             hash: staged.hash,
         });
         expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
-        await expect(
-            createDurableAssetRepository(provisionalOwner).reopenStagedAsset(staged.leaseId, staged.hash)
-        ).resolves.toEqual({ status: 'failed', reason: 'lease-owner-mismatch' });
+        await expect(createDurableAssetRepository(provisionalOwner).reopenDurableAsset(staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'asset-not-owned',
+        });
         recreated.dispose();
     });
 
@@ -361,6 +366,9 @@ describe('durable asset ownership lifecycle', () => {
             'bounded-retry.wav',
             'asset-stage-bounded-retry'
         );
+        await expect(joining.promoteDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'promoted',
+        });
         await joining.prepareDurableOwnerRebind(projectOwner);
         durableAssetIndexedDb.failNextReadwriteTransactions(3);
 
@@ -371,7 +379,8 @@ describe('durable asset ownership lifecycle', () => {
         joining.dispose();
 
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
-        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad();
+        await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
             status: 'opened',
             hash: staged.hash,
         });

@@ -22,6 +22,7 @@ import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
+import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
 
 export async function loadProject(): Promise<boolean> {
     // Boot restore is subordinate: if the user picked a project on the
@@ -112,6 +113,8 @@ export async function loadProject(): Promise<boolean> {
     if (project?.loading) {
         projectStore.set({ ...project, loading: false, initialized: true });
     }
+
+    await projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.();
 
     if (!transaction.isCurrent()) {
         return false;

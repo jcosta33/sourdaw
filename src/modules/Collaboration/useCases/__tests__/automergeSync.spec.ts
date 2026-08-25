@@ -491,6 +491,16 @@ describe('AutomergeSync', () => {
         expect(commitHandoff).not.toHaveBeenCalled();
         expect(restartedProjectOwnerId).toBe(previousOwnerId);
         expect(onPersistError).toHaveBeenCalledTimes(2);
+        const inProcessPublishedOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            nextOwnerId
+        );
+        await expect(inProcessPublishedOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-owner-mismatch',
+        });
+        inProcessPublishedOwner.dispose();
         const restartedPersistedOwner = new AssetTransfer(
             peer,
             { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },

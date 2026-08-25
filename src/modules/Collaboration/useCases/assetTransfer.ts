@@ -252,6 +252,10 @@ export class AssetTransfer {
                 this.durableAssetCache.delete(event.hash);
             }
         });
+        // Promotion/cleanup recovery is safe for every live owner. Owner
+        // handoff recovery is different: its journal is written before the
+        // adopting CRDT root is persisted, so only the explicit cold-load path
+        // may consume it.
         void this.runOwnerOperation(async () => undefined).catch((error: unknown) => {
             if (!this.disposed) {
                 logger.error(new Error('Durable asset startup recovery failed', { cause: error }));
@@ -688,9 +692,14 @@ export class AssetTransfer {
         });
     }
 
+    /** Resume target-keyed owner handoffs after a persisted project root has been loaded. */
+    async resumeDurableOwnerRebindsAfterProjectLoad(): Promise<void> {
+        await this.runOwnerOperation(async () => undefined, { resumeOwnerRebinds: true });
+    }
+
     private runOwnerOperation<Result>(
         operation: (durableAssets: DurableAssetRepository) => Promise<Result>,
-        options: { resumeRecoveries?: boolean } = {}
+        options: { resumeOwnerRebinds?: boolean; resumeRecoveries?: boolean } = {}
     ): Promise<Result> {
         const transferPredecessor = this.ownerOperationTail;
         const task = runDurableOwnerOperation(async () => {
@@ -699,7 +708,7 @@ export class AssetTransfer {
                 throw new Error('AssetTransfer is disposed');
             }
             return (async () => {
-                if (this.ownerRecoveryPending) {
+                if (options.resumeOwnerRebinds && this.ownerRecoveryPending) {
                     const recovery = await this.durableAssets.resumeOwnerRebinds();
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);

@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
     prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
     resetModuleStores: vi.fn(),
     readLegacyChordTrackMigration: vi.fn(),
+    resumeDurableAssetOwnerHandoffsAfterProjectLoad: vi.fn(() => Promise.resolve()),
     stopActiveAutoSave: vi.fn(),
     setAutoSaveHandle: vi.fn(),
     migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
@@ -91,7 +92,10 @@ describe('loadProject', () => {
         });
         mocks.readLegacyChordTrackMigration.mockReturnValue(null);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
-        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => Promise.resolve(),
+            resumeDurableAssetOwnerHandoffsAfterProjectLoad: mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad,
+        });
     });
 
     it('should hydrate only after collaboration exits and persistence activates', async () => {
@@ -107,8 +111,12 @@ describe('loadProject', () => {
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
         expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledTimes(1);
+        expect(mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad).toHaveBeenCalledTimes(1);
         expect(mocks.projectCrdtToStores.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.migrateActiveProjectIdentity.mock.invocationCallOrder[0]!
+        );
+        expect(mocks.migrateActiveProjectIdentity.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad.mock.invocationCallOrder[0]!
         );
     });
 
