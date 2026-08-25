@@ -146,9 +146,11 @@ const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 type PendingActionResourceLease = {
     bytes: number;
     prepareForCommit?: (commandBatch?: PendingCommandBatch) => void | Promise<void>;
+    protect?: () => void;
     commit?: () => void | Promise<void>;
     release: () => void | Promise<void>;
     retain?: () => void | Promise<void>;
+    transfer?: () => void | Promise<void>;
 };
 
 type PendingActionResourceLeaseDisposition = 'pending' | 'discard' | 'retain';
@@ -514,6 +516,15 @@ export async function commitPendingActionResourceLease(confirmationId: string): 
     await entry.commitInFlight;
 }
 
+export function protectPendingActionResourceLease(confirmationId: string): void {
+    const entry = pendingActionResourceLeases.get(confirmationId);
+    if (!entry || entry.disposition === 'discard') {
+        return;
+    }
+    entry.disposition = 'retain';
+    entry.lease.protect?.();
+}
+
 type SettlePendingActionResourceLeaseInput = {
     confirmationId: string;
     disposition: 'discard' | 'retain' | 'transfer';
@@ -532,8 +543,9 @@ export async function settlePendingActionResourceLease(input: SettlePendingActio
         return;
     }
     entry.disposition = 'retain';
+    const settle = input.disposition === 'transfer' ? (entry.lease.transfer ?? entry.lease.retain) : entry.lease.retain;
     entry.retainInFlight ??= Promise.resolve()
-        .then(() => entry.lease.retain?.())
+        .then(() => settle?.())
         .then(() => {
             if (pendingActionResourceLeases.get(input.confirmationId) === entry) {
                 pendingActionResourceLeases.delete(input.confirmationId);

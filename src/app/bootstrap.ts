@@ -220,9 +220,7 @@ configureCollaborationAssetOwner({
 configureDurableAssetCommitProof({
     isProven: isVersionedCommandBatchCommitProven,
 });
-try {
-    recoverInterruptedAgentRuns();
-} catch (error) {
+void recoverInterruptedAgentRuns().catch((error: unknown) => {
     logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
 });
 const createOfflineYeastProcessor = () =>

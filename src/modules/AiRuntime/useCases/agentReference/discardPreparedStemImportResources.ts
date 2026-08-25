@@ -43,21 +43,32 @@ async function prepareDiscardPreparedStemImportResources(
     for (const stem of stems) {
         releasePreviewAudioBuffer(stem.audioBufferId);
     }
-    const bindings = stems.flatMap((stem) => {
-        if (!stem.assetLeaseId && !stem.assetHash) {
-            return [];
+    const bindings: Array<{ leaseId: string; expectedHash: string }> = [];
+    const legacyLeaseIds: string[] = [];
+    for (const stem of stems) {
+        if (!stem.assetLeaseId) {
+            continue;
         }
-        if (!stem.assetLeaseId || !stem.assetHash) {
-            throw new Error('Prepared stem durable asset binding is incomplete');
+        if (!stem.assetHash) {
+            legacyLeaseIds.push(stem.assetLeaseId);
+            continue;
         }
-        return [{ leaseId: stem.assetLeaseId, expectedHash: stem.assetHash }];
-    });
-    if (bindings.length === 0) {
+        bindings.push({ leaseId: stem.assetLeaseId, expectedHash: stem.assetHash });
+    }
+    if (bindings.length === 0 && legacyLeaseIds.length === 0) {
         return null;
     }
     const assetTransfer = getAssetTransfer();
     if (!assetTransfer) {
-        throw new Error(`Asset transfer is unavailable for staged lease cleanup: ${bindings[0]?.leaseId}`);
+        throw new Error(
+            `Asset transfer is unavailable for staged lease cleanup: ${bindings[0]?.leaseId ?? legacyLeaseIds[0]}`
+        );
+    }
+    for (const leaseId of legacyLeaseIds) {
+        assetTransfer.releaseStagedAsset(leaseId);
+    }
+    if (bindings.length === 0) {
+        return null;
     }
     const recoveryId = promotionRecoveryId ?? getCleanupRecoveryId(bindings);
     const prepared = promotionRecoveryId

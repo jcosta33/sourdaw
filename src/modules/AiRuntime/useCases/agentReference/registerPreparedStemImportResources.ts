@@ -55,7 +55,7 @@ function createRegistration(input: {
             if (registrations.get(registrationKey)?.protected) {
                 throw new Error('Prepared stem cleanup is deferred until command commit truth is reconciled.');
             }
-            discardPreparedStemImportResources([input.stem]);
+            return preparedStemImportCleanup.discard([input.stem]);
         },
     });
     return registration;
@@ -269,14 +269,16 @@ function releasePreparedStemImportResources(input: {
 }): void {
     const settledBatchIds = new Set<string>();
     for (const stem of input.stems) {
-        registrations.get(key(input.runId, stem.audioBufferId))?.();
-        registrations.delete(key(input.runId, stem.audioBufferId));
-        const registeredAsset = agentRunLifecycle
-            .get(input.runId)
-            ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
-        if (!registeredAsset) {
+        const registrationKey = key(input.runId, stem.audioBufferId);
+        const registration = registrations.get(registrationKey);
+        if (!registration) {
             continue;
         }
+        if (registration.recovery) {
+            settledBatchIds.add(registration.recovery.batchId);
+        }
+        registration.unregister();
+        registrations.delete(registrationKey);
         agentRunLifecycle.forgetTemporaryAsset({
             runId: input.runId,
             assetId: stem.audioBufferId,
@@ -306,7 +308,7 @@ async function discardRegisteredPreparedStemImportResources(input: {
             continue;
         }
         if (registration?.protected) {
-            discardPreparedStemImportResources([stem]);
+            await preparedStemImportCleanup.discard([stem]);
             registration.unregister();
             registrations.delete(registrationKey);
             agentRunLifecycle.forgetTemporaryAsset({

@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { getVersionedCommandBatchCommitProof } from '#/modules/Command/useCases';
 
@@ -6,24 +7,99 @@ import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeActi
 import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
 import { preparedStemImportResources } from './registerPreparedStemImportResources';
 
-export function createStemImportConfirmationResourceLease(
-    actions: readonly ExecutableRuntimeAction[],
-    recoveryId?: string,
-    runId?: string
-) {
-    const stems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
-    if (stems.length === 0) {
-        return undefined;
-    }
+type PreparedStemRecovery = Parameters<typeof preparedStemImportResources.protect>[0]['recovery'];
 
-    let released = false;
-    let releaseInFlight: Promise<void> | null = null;
-    const bindings = stems.map((stem) => {
+type StemImportConfirmationResourceLeaseInput =
+    | {
+          actions: readonly ExecutableRuntimeAction[];
+          kind: 'registered';
+          recovery: PreparedStemRecovery | undefined;
+          runId: string;
+      }
+    | {
+          actions: readonly ExecutableRuntimeAction[];
+          kind: 'durable-promotion';
+          recoveryId: string | undefined;
+          runId: string | undefined;
+      }
+    | null;
+
+function resolveStemImportConfirmationResourceLeaseInput(
+    first: string | readonly ExecutableRuntimeAction[],
+    second?: string | readonly ExecutableRuntimeAction[],
+    third?: string | PreparedStemRecovery
+): StemImportConfirmationResourceLeaseInput {
+    if (typeof first === 'string') {
+        if (!Array.isArray(second)) {
+            return null;
+        }
+        const recovery = typeof third === 'object' ? third : undefined;
+        return {
+            actions: second,
+            kind: 'registered',
+            recovery,
+            runId: first,
+        };
+    }
+    return {
+        actions: first,
+        kind: 'durable-promotion',
+        recoveryId: typeof second === 'string' ? second : undefined,
+        runId: typeof third === 'string' ? third : undefined,
+    };
+}
+
+function reportPreparedStemImportResourceReleaseFailure(error: unknown): void {
+    logger.error(
+        new Error('Prepared stem import resource cleanup failed after confirmation release', {
+            cause: error,
+        })
+    );
+}
+
+function getDurablePromotionBindings(stems: readonly { assetHash?: string; assetLeaseId?: string }[]) {
+    return stems.map((stem) => {
         if (!stem.assetLeaseId || !stem.assetHash) {
             throw new Error('Prepared stem durable asset binding is incomplete');
         }
         return { leaseId: stem.assetLeaseId, expectedHash: stem.assetHash };
     });
+}
+
+export function createStemImportConfirmationResourceLease(
+    first: string | readonly ExecutableRuntimeAction[],
+    second?: string | readonly ExecutableRuntimeAction[],
+    third?: string | PreparedStemRecovery
+) {
+    const input = resolveStemImportConfirmationResourceLeaseInput(first, second, third);
+    if (!input) {
+        return undefined;
+    }
+    const { actions } = input;
+    const stems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
+    if (stems.length === 0) {
+        return undefined;
+    }
+
+    if (input.kind === 'registered') {
+        const { recovery, runId } = input;
+        return {
+            bytes: stems.reduce((total, stem) => total + stem.sourceBytes + stem.decodedBytes, 0),
+            protect: () => preparedStemImportResources.protect({ runId, stems, recovery }),
+            retain: () => preparedStemImportResources.retainForRecovery({ runId, stems, recovery }),
+            transfer: () => preparedStemImportResources.release({ runId, stems }),
+            release: () => {
+                void preparedStemImportResources
+                    .discard({ runId, stems })
+                    .catch(reportPreparedStemImportResourceReleaseFailure);
+            },
+        };
+    }
+
+    const { recoveryId, runId } = input;
+    let released = false;
+    let releaseInFlight: Promise<void> | null = null;
+    const bindings = recoveryId ? getDurablePromotionBindings(stems) : [];
     if (runId) {
         preparedStemImportResources.release({ runId, stems });
     }

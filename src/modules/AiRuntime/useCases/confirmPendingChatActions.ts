@@ -26,6 +26,7 @@ import {
     commitPendingActionResourceLease,
     getPendingActionConfirmation,
     preparePendingActionResourceLeaseForCommit,
+    protectPendingActionResourceLease,
     recordPendingActionExecution,
     refreshPendingActionConfirmationApproval,
     replacePendingActionExecutions,
@@ -83,7 +84,7 @@ const AGENT_RUN_STALE_COMPLETION_WARNING =
 
 async function settlePendingActionResourcesBestEffort(input: {
     confirmationId: string;
-    disposition: 'discard' | 'retain';
+    disposition: 'discard' | 'retain' | 'transfer';
 }): Promise<void> {
     await settlePendingActionResourceLeaseBestEffort(input);
 }
@@ -95,7 +96,7 @@ async function retainCommittedPendingActionResources(confirmationId: string): Pr
         logger.error(new Error('Committed resource recovery could not be made executable', { cause: error }));
         return;
     }
-    await settlePendingActionResourcesBestEffort({ confirmationId, disposition: 'retain' });
+    await settlePendingActionResourcesBestEffort({ confirmationId, disposition: 'transfer' });
 }
 
 function getVerifiedReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
