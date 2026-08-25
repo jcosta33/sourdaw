@@ -2968,7 +2968,15 @@ mod tests {
         let mut registry = GraphRegistry::default();
         let strip_batch = |track: bool, index: usize| {
             let strip = format!("{}{index}", if track { "t" } else { "b" });
-            let devices: Vec<Value> = (0..MAX_TRACK_DEVICES)
+            // Each arm states its own chain arithmetic: the budget is exact
+            // only while the bus arm fills with MAX_BUS_DEVICES, not with the
+            // track constant that happens to equal it today.
+            let chain_length = if track {
+                MAX_TRACK_DEVICES
+            } else {
+                MAX_BUS_DEVICES
+            };
+            let devices: Vec<Value> = (0..chain_length)
                 .map(|device| {
                     json!({ "id": format!("d-{strip}-{device}"),
                             "type": "knead", "bypassed": false, "parameterValues": {} })

@@ -618,7 +618,17 @@ pub async fn load_plugin(
     // as a counter on the callback. Checked against the instance map, which
     // counts the session's hosted instances whether or not a stream is
     // currently running — the limit is the session's, not the stream's.
-    ensure_hosted_plugin_session_headroom(state)?;
+    // This early check is ergonomics; the ceiling itself is re-decided
+    // inside the insert section's critical section
+    // (`insert_engine_plugin_record`), which is what closes the
+    // count-then-act race this check cannot.
+    {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+        ensure_hosted_plugin_session_headroom(&engine_plugins)?;
+    }
 
     match host_backend(&entry.format)? {
         HostBackend::Clap => {
@@ -704,12 +714,15 @@ pub async fn load_plugin(
                     let (bridge, bridge_handle) = create_audio_bridge(id);
                     let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
 
-                    let mut engine_plugins = state
-                        .engine_plugins
-                        .lock()
-                        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-                    engine_plugins.insert(
-                        instance_id.0.clone(),
+                    // The record insert re-decides the session ceiling
+                    // inside its own critical section — see
+                    // `insert_engine_plugin_record`. A refusal there leaves
+                    // nothing behind: the id above is a burned monotonic
+                    // counter, the rings drop with the return, and no engine
+                    // command has been pushed yet.
+                    insert_engine_plugin_record(
+                        state,
+                        &instance_id.0,
                         crate::state::EnginePluginInstanceData {
                             engine_plugin_id: id,
                             runtime: Arc::clone(&shared_plugin),
@@ -719,14 +732,23 @@ pub async fn load_plugin(
                             bridge: Some(bridge_handle),
                             relay_scratch: crate::state::PluginRelayScratch::default(),
                         },
-                    );
+                    )?;
 
                     if let Err(error) = engine.add_plugin_with_bridge(
                         id,
                         Box::new(HostedPluginSlot::new(shared_plugin)),
                         bridge,
                     ) {
-                        engine_plugins.remove(&instance_id.0);
+                        // The engine refused the registration (a full effect
+                        // table, or the ring): unwind the record under a
+                        // fresh acquisition, same order as every other
+                        // engine-then-map path, so the map never carries an
+                        // instance the engine never took.
+                        state
+                            .engine_plugins
+                            .lock()
+                            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?
+                            .remove(&instance_id.0);
                         return Err(error);
                     }
                     Some(id)
@@ -800,17 +822,51 @@ fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> R
 /// a load past it must never reach the audio thread: its refusal is a counter
 /// the loader cannot read, and the plugin it refused would sit in the rack
 /// passing dry audio forever.
-fn ensure_hosted_plugin_session_headroom(state: &AppState) -> Result<(), String> {
-    let engine_plugins = state
-        .engine_plugins
-        .lock()
-        .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
-
+///
+/// Takes the map its caller holds: `load_plugin`'s early check wraps its own
+/// brief acquisition (ergonomics — fail before the library is constructed),
+/// while the insert section calls this under the guard it inserts against,
+/// which is the ceiling that closes the count-then-act race.
+fn ensure_hosted_plugin_session_headroom(
+    engine_plugins: &HashMap<String, crate::state::EnginePluginInstanceData>,
+) -> Result<(), String> {
     if engine_plugins.len() >= HOSTED_PLUGIN_RESERVE {
         return Err(format!(
             "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
         ));
     }
+    Ok(())
+}
+
+/// The insert section of `load_plugin`: the session ceiling re-decided in
+/// the same critical section as the insert, and the one place a hosted
+/// instance record is created.
+///
+/// The early check at the top of `load_plugin` is ergonomics — it fails a
+/// hopeless load before the plugin library is even constructed — but it
+/// reads the count under a lock it drops, and two concurrent loads with
+/// distinct instance ids can both pass it. This is the ceiling: whatever
+/// count this critical section sees, it also inserts against, so nothing
+/// slips past `HOSTED_PLUGIN_RESERVE` between its early check and its
+/// insert. A refusal here is clean: `load_plugin` reaches this section
+/// having reserved only a monotonic plugin id (never reused, safe to burn)
+/// and built bridge rings that drop with the return — no engine command has
+/// been pushed and no record exists.
+///
+/// Standing alone, engine-free, on purpose: reaching `load_plugin`'s engine
+/// section needs an activated plugin and a live engine handle, so this seam
+/// is where the ceiling's atomicity with the insert is tested.
+fn insert_engine_plugin_record(
+    state: &AppState,
+    instance_id: &str,
+    record: crate::state::EnginePluginInstanceData,
+) -> Result<(), String> {
+    let mut engine_plugins = state
+        .engine_plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+    ensure_hosted_plugin_session_headroom(&engine_plugins)?;
+    engine_plugins.insert(instance_id.to_string(), record);
     Ok(())
 }
 
@@ -2189,9 +2245,11 @@ mod tests {
     /// that names it: past the limit the effect table's hosted-plugin reserve
     /// and the bridge table have no slot left, and the audio thread's own
     /// refusal is a counter nothing propagates — the plugin would load, open
-    /// its editor, and pass dry audio forever. The predicate is only half the
-    /// guarantee; the load path's call is pinned by
-    /// `load_plugin_refuses_at_the_hosted_session_ceiling_before_loading_the_library`.
+    /// its editor, and pass dry audio forever. The predicate is only part of
+    /// the guarantee: the load path's early call is pinned by
+    /// `load_plugin_refuses_at_the_hosted_session_ceiling_before_loading_the_library`,
+    /// and the insert section's re-decision of the ceiling by
+    /// `the_engine_plugin_insert_section_re_checks_the_ceiling_with_the_insert`.
     #[test]
     fn the_hosted_plugin_session_ceiling_predicate_refuses_with_the_limit_named() {
         let state = AppState::default();
@@ -2199,8 +2257,14 @@ mod tests {
             insert_engine_owned_fixture(&state, &format!("instance-{index}"), Vec::new());
         }
 
-        let refusal = ensure_hosted_plugin_session_headroom(&state)
-            .expect_err("a session at the ceiling must refuse the next instance");
+        let refusal = {
+            let engine_plugins = state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available");
+            ensure_hosted_plugin_session_headroom(&engine_plugins)
+                .expect_err("a session at the ceiling must refuse the next instance")
+        };
         assert_eq!(
             refusal,
             format!(
@@ -2214,7 +2278,80 @@ mod tests {
             .lock()
             .expect("engine_plugins lock should be available")
             .remove("instance-0");
-        assert!(ensure_hosted_plugin_session_headroom(&state).is_ok());
+        {
+            let engine_plugins = state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available");
+            assert!(ensure_hosted_plugin_session_headroom(&engine_plugins).is_ok());
+        }
+    }
+
+    /// The insert section re-decides the session ceiling under the same lock
+    /// it inserts against — the closure for the count-then-act race the
+    /// early check cannot close: it reads the count under a lock it drops,
+    /// so two concurrent loads at count N-1 both pass it. Tested at the seam
+    /// that carries the check because reaching `load_plugin`'s engine
+    /// section needs an activated plugin and a live engine handle;
+    /// `insert_engine_plugin_record` is deliberately engine-free and is the
+    /// only place a hosted-instance record is created. At the ceiling the
+    /// insert refuses with the ceiling's own message and the record never
+    /// lands; one below, it lands.
+    #[test]
+    fn the_engine_plugin_insert_section_re_checks_the_ceiling_with_the_insert() {
+        fn record() -> crate::state::EnginePluginInstanceData {
+            crate::state::EnginePluginInstanceData {
+                engine_plugin_id: 4_096,
+                runtime: Arc::new(SharedHostedPlugin::new(
+                    ClapWrapper::new_engine_owned_command_fixture(
+                        "Re-check Fixture",
+                        Vec::new(),
+                        false,
+                    ),
+                )),
+                name: "Re-check Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: false,
+                bridge: None,
+                relay_scratch: crate::state::PluginRelayScratch::default(),
+            }
+        }
+
+        let state = AppState::default();
+        for index in 0..HOSTED_PLUGIN_RESERVE {
+            insert_engine_owned_fixture(&state, &format!("instance-{index}"), Vec::new());
+        }
+
+        let refusal = insert_engine_plugin_record(&state, "instance-overflow", record())
+            .expect_err("the insert section must refuse at the ceiling");
+        assert_eq!(
+            refusal,
+            format!(
+                "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
+            )
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available")
+                .contains_key("instance-overflow"),
+            "a refused insert must leave no record behind"
+        );
+
+        // Unloading is what makes room, and then the insert lands.
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available")
+            .remove("instance-0");
+        insert_engine_plugin_record(&state, "instance-room", record())
+            .expect("an insert one below the ceiling must land");
+        assert!(state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available")
+            .contains_key("instance-room"));
     }
 
     /// Wiring: the ceiling the predicate states is the one the load path

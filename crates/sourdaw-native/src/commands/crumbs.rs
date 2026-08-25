@@ -932,7 +932,7 @@ mod tests {
     /// the guarantee; the create path's call is pinned by
     /// `create_crumbs_refuses_at_the_capture_ceiling_before_touching_the_engine`.
     #[test]
-    fn a_create_past_the_crumbs_capture_ceiling_is_refused_with_the_limit_named() {
+    fn the_crumbs_capture_ceiling_predicate_refuses_with_the_limit_named() {
         let state = CrumbsState::default();
         {
             let instances = state
