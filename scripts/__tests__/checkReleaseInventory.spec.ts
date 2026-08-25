@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     constants,
+    fstatSync,
     linkSync,
     lstatSync,
     mkdirSync,
@@ -1159,14 +1160,35 @@ describe('release inventory', () => {
         const root = join(base, 'repository');
         const firstPath = 'src/first.ts';
         const secondPath = 'src/second.ts';
-        const readDescriptors = new Set<number>();
+        const firstContents = "export default 'https://a.io';\n";
+        const secondContents = "export default 'https://b.io';\n";
+        let firstIdentity: { dev: bigint; ino: bigint } | undefined;
+        let secondIdentity: { dev: bigint; ino: bigint } | undefined;
+        let firstBytesRead = 0;
+        let secondBytesRead = 0;
+        let unknownBytesRead = 0;
         const reader = {
             fileByteLimit: 64,
             aggregateByteLimit: 40,
             read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
                 const bytesRead = readSync(descriptor, buffer, offset, length, position);
                 if (bytesRead > 0) {
-                    readDescriptors.add(descriptor);
+                    const metadata = fstatSync(descriptor, { bigint: true });
+                    if (
+                        firstIdentity !== undefined &&
+                        metadata.dev === firstIdentity.dev &&
+                        metadata.ino === firstIdentity.ino
+                    ) {
+                        firstBytesRead += bytesRead;
+                    } else if (
+                        secondIdentity !== undefined &&
+                        metadata.dev === secondIdentity.dev &&
+                        metadata.ino === secondIdentity.ino
+                    ) {
+                        secondBytesRead += bytesRead;
+                    } else {
+                        unknownBytesRead += bytesRead;
+                    }
                 }
                 return bytesRead;
             },
@@ -1174,13 +1196,21 @@ describe('release inventory', () => {
 
         try {
             mkdirSync(join(root, 'src'), { recursive: true });
-            writeFileSync(join(root, firstPath), "export default 'https://a.io';\n");
-            writeFileSync(join(root, secondPath), "export default 'https://b.io';\n");
+            const firstFile = join(root, firstPath);
+            const secondFile = join(root, secondPath);
+            writeFileSync(firstFile, firstContents);
+            writeFileSync(secondFile, secondContents);
+            const firstMetadata = lstatSync(firstFile, { bigint: true });
+            const secondMetadata = lstatSync(secondFile, { bigint: true });
+            firstIdentity = { dev: firstMetadata.dev, ino: firstMetadata.ino };
+            secondIdentity = { dev: secondMetadata.dev, ino: secondMetadata.ino };
 
             expect(() =>
                 loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [firstPath, secondPath], reader)
             ).toThrow('repository aggregate byte limit exceeded');
-            expect(readDescriptors.size).toBe(1);
+            expect(firstBytesRead).toBe(Buffer.byteLength(firstContents));
+            expect(secondBytesRead).toBe(0);
+            expect(unknownBytesRead).toBe(0);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
