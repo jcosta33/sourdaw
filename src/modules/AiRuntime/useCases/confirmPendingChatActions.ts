@@ -24,6 +24,7 @@ import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistory
 import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
+    protectPendingActionResourceLease,
     recordPendingActionExecution,
     refreshPendingActionConfirmationApproval,
     replacePendingActionExecutions,
@@ -35,7 +36,6 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
-import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
@@ -47,6 +47,7 @@ import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBin
 import { notifyAiChange } from './notifyAiChange';
 import { prepareAgentRunPendingEffectContinuation } from './prepareAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
+import { recoverPreparedStemImportResources } from './recoverPreparedStemImportResources';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ConfirmPendingChatActionsInput = {
@@ -195,12 +196,6 @@ function recordTrackedAgentRunReceipt(
             committedRevision: captureProjectRevision(),
         });
         effectsPending = recorded.effectsPending;
-        const importedStems = confirmation.actions.flatMap((action) =>
-            action.type === 'importStemSet' ? action.payload.stems : []
-        );
-        if (importedStems.length > 0) {
-            preparedStemImportResources.release({ runId: confirmation.runId, stems: importedStems });
-        }
     });
     return { warning, effectsPending };
 }
@@ -234,12 +229,12 @@ function settleTrackedAgentRunWorkLease(
     }
 }
 
-function settleVerifiedBatchReplay(
+async function settleVerifiedBatchReplay(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     recoveredExternalEffects = false,
     leaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null }
-): ConfirmPendingChatActionsResult {
+): Promise<ConfirmPendingChatActionsResult> {
     if (receipt.outcome === 'partially-committed' && receipt.pendingEffects.length > 0) {
         const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
             ...(confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
@@ -267,7 +262,7 @@ function settleVerifiedBatchReplay(
             completesRun: leaseSettlement.accepted,
         });
         const runPersistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'transfer' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'executed',
@@ -298,7 +293,7 @@ function settleVerifiedBatchReplay(
             });
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -326,6 +321,9 @@ function settleVerifiedBatchReplay(
         confirmationId: confirmation.id,
         disposition: replay.status === 'ambiguous' ? 'retain' : 'discard',
     });
+    if (replay.status === 'ambiguous') {
+        await recoverPreparedStemImportResources({ runId: confirmation.runId });
+    }
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'failed',
@@ -846,6 +844,7 @@ export async function confirmPendingChatActions(
             authority: commandBatch.authority,
             ...(approvalBinding ? { approvalBinding } : {}),
             serialized: commandBatch.serialized,
+            onProjectCommitPrepared: () => protectPendingActionResourceLease(confirmation.id),
             options: executionOptions,
         });
         const failedBeforeCommit =
@@ -978,7 +977,7 @@ export async function confirmPendingChatActions(
         ]
             .filter(Boolean)
             .join(' ');
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'transfer' });
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {
@@ -1125,7 +1124,7 @@ export async function confirmPendingChatActions(
             }
             agentRunLifecycle.transitionPhase({ runId: confirmation.runId, phase: 'completed' });
         });
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -1156,6 +1155,7 @@ export async function confirmPendingChatActions(
             compensation: 'manual-repair',
         });
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        await recoverPreparedStemImportResources({ runId: confirmation.runId });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',

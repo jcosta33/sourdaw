@@ -216,7 +216,7 @@ describe('agent run recovery', () => {
             }).status
         ).toBe('claimed');
 
-        const recovered = recoverInterruptedAgentRuns({ recoveredAt: 200 });
+        const recovered = await recoverInterruptedAgentRuns({ recoveredAt: 200 });
 
         expect(recovered).toEqual({ recoveredRunIds: ['run-recovery'] });
         expect(getAgentRun('run-recovery')).toMatchObject({
@@ -312,7 +312,7 @@ describe('agent run recovery', () => {
         });
     });
 
-    it('leaves terminal runs unchanged during restart recovery', () => {
+    it('leaves terminal runs unchanged during restart recovery', async () => {
         createAgentRun({
             runId: 'run-complete',
             request: 'Explain the bridge.',
@@ -327,7 +327,7 @@ describe('agent run recovery', () => {
             committedAt: 110,
         });
 
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: [] });
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({ recoveredRunIds: [] });
         expect(getAgentRun('run-complete')?.phase).toBe('completed');
     });
 
@@ -982,7 +982,7 @@ describe('agent run recovery', () => {
         ).toThrow('Agent run state could not be persisted locally');
     });
 
-    it('orphans live work and schedules asset cleanup for an already-paused run after restart', () => {
+    it('orphans live work and schedules asset cleanup for an already-paused run after restart', async () => {
         createAgentRun({
             runId: 'run-paused-with-live-work',
             request: 'Resume the analysis after approval.',
@@ -1023,7 +1023,7 @@ describe('agent run recovery', () => {
             requiredAt: 104,
         });
 
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
             recoveredRunIds: ['run-paused-with-live-work'],
         });
         expect(getAgentRun('run-paused-with-live-work')).toMatchObject({

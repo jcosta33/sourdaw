@@ -286,7 +286,7 @@ describe('cancelAgentRun', () => {
             cleanupOwner: 'render-worker',
             createdAt: 110,
         });
-        expect(recoverInterruptedAgentRuns({ recoveredAt: 120 })).toEqual({
+        await expect(recoverInterruptedAgentRuns({ recoveredAt: 120 })).resolves.toEqual({
             recoveredRunIds: ['run-restarted-cleanup'],
         });
         expect(agentRunLifecycle.get('run-restarted-cleanup')).toMatchObject({

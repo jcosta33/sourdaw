@@ -458,6 +458,7 @@ describe('mix prompt workflow', () => {
             risk: { level: 'broad-reversible' },
             protectedUnchanged: [{ id: 'track-drum-bus', name: 'Drum Bus' }],
         });
+        expect(confirmation?.projectRevision).toBe(captureProjectRevision());
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );

@@ -10,6 +10,13 @@ export async function getVersionedCommandBatchIdempotentReplay(input: {
     authority: CommandBatchAuthority;
     serialized: string;
 }) {
+    // A durable project checkpoint only exists for batches admitted through the
+    // durable idempotency port. Avoid hydrating the missing CRDT ledger while
+    // merely checking a fresh proposal: that initialization is a project write
+    // and would invalidate the proposal it is trying to inspect.
+    if (!commandBatchIdempotencyPort.isConfigured()) {
+        return null;
+    }
     const parsed = parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
     if (parsed.status === 'invalid') {
         return null;

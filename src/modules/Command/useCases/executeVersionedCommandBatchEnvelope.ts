@@ -36,6 +36,7 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
             discard: () => void;
         } | void;
     };
+    onProjectCommitPrepared?: () => void;
 };
 
 type ProjectCommitRecoveryPreparation = Exclude<
@@ -548,39 +549,40 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     (!requiresDurableExecutionAuthority || commandBatchExecutionAuthorityPort.canExecute()) &&
                     (callerShouldExecute?.() ?? true),
                 onProjectCommitPrepared: (committedResult) => {
-                    if (idempotencyContentHash === null) {
-                        return;
+                    if (idempotencyContentHash !== null) {
+                        const recoveryResult = {
+                            status: 'committed-with-warning' as const,
+                            actions: committedResult.actions,
+                            warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                            warningDetails: [
+                                { kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING },
+                                ...committedResult.pendingEffects.map((pendingEffect) => ({
+                                    kind: 'external-effect' as const,
+                                    commandId: pendingEffect.commandId,
+                                    message: pendingEffect.reason,
+                                    pendingEffect,
+                                })),
+                            ],
+                        };
+                        projectCommitRecovery.receipt = createVerifiedBatchReceipt({
+                            envelope: resolvedEnvelope,
+                            observedBaseRevision,
+                            receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                            resultingRevision: null,
+                            result: recoveryResult,
+                        });
+                        recordProjectCommandBatchIdempotencyCheckpoint({
+                            projectId: parsed.envelope.projectId,
+                            idempotencyKey: parsed.envelope.idempotencyKey,
+                            contentHash: idempotencyContentHash,
+                            state: 'effects-pending',
+                            serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
+                        });
+                        projectCommitRecovery.preparation =
+                            input.options?.onProjectCommitCheckpoint?.({ receipt: projectCommitRecovery.receipt }) ??
+                            null;
                     }
-                    const recoveryResult = {
-                        status: 'committed-with-warning' as const,
-                        actions: committedResult.actions,
-                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                        warningDetails: [
-                            { kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING },
-                            ...committedResult.pendingEffects.map((pendingEffect) => ({
-                                kind: 'external-effect' as const,
-                                commandId: pendingEffect.commandId,
-                                message: pendingEffect.reason,
-                                pendingEffect,
-                            })),
-                        ],
-                    };
-                    projectCommitRecovery.receipt = createVerifiedBatchReceipt({
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
-                        resultingRevision: null,
-                        result: recoveryResult,
-                    });
-                    recordProjectCommandBatchIdempotencyCheckpoint({
-                        projectId: parsed.envelope.projectId,
-                        idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
-                        state: 'effects-pending',
-                        serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
-                    });
-                    projectCommitRecovery.preparation =
-                        input.options?.onProjectCommitCheckpoint?.({ receipt: projectCommitRecovery.receipt }) ?? null;
+                    input.onProjectCommitPrepared?.();
                 },
                 prepareValidation: ({ allowCompatibleProjectDivergence }) =>
                     prepareCommandBatchPreflight(resolvedEnvelope, { allowCompatibleProjectDivergence }),

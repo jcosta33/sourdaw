@@ -314,6 +314,18 @@ export type AgentRunTemporaryAsset = {
     createdAt: number;
 };
 
+export const AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION = 1 as const;
+
+export type AgentRunPreparedStemImportRecovery = {
+    schemaVersion: typeof AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION;
+    batchId: string;
+    serializedCommandBatch: string;
+    resources: Array<{
+        audioBufferId: string;
+        assetLeaseId: string | null;
+    }>;
+};
+
 export type AgentRunManualResume = {
     required: boolean;
     reason: string | null;
@@ -432,6 +444,7 @@ export type AgentRun = {
     retriableWork: AgentRunRetriableWork[];
     temporaryAssets: AgentRunTemporaryAsset[];
     pendingEffectContinuations: AgentRunPendingEffectContinuation[];
+    preparedStemImports: AgentRunPreparedStemImportRecovery[];
     manualResume: AgentRunManualResume;
     workLeases: AgentRunWorkLease[];
     contextEvidence: AgentContextEvidence | null;

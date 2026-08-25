@@ -6,6 +6,7 @@ import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDa
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
     AGENT_RUN_PHASES,
+    AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION,
     AGENT_RUN_SCHEMA_VERSION,
     AGENT_RUN_ERROR_CATEGORIES,
     type AgentRun,
@@ -19,6 +20,7 @@ import {
     type AgentRunPendingEffect,
     type AgentRunPendingEffectContinuation,
     type AgentRunPendingEffectRecovery,
+    type AgentRunPreparedStemImportRecovery,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
@@ -677,6 +679,70 @@ function readTemporaryAsset(value: unknown): AgentRunTemporaryAsset | null {
         status: value.status as AgentRunTemporaryAsset['status'],
         createdAt,
     };
+}
+
+function readPreparedStemImportRecovery(value: unknown): AgentRunPreparedStemImportRecovery | null {
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION ||
+        !Array.isArray(value.resources) ||
+        value.resources.length === 0 ||
+        value.resources.length > MAX_COLLECTION_LENGTH
+    ) {
+        return null;
+    }
+    const batchId = readString(value.batchId);
+    const serializedCommandBatch = readString(value.serializedCommandBatch);
+    const resources: AgentRunPreparedStemImportRecovery['resources'] = [];
+    const resourceIds = new Set<string>();
+    for (const candidate of value.resources) {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const audioBufferId = readString(candidate.audioBufferId);
+        const assetLeaseId = readNullableString(candidate.assetLeaseId);
+        if (audioBufferId === null || assetLeaseId === undefined || resourceIds.has(audioBufferId)) {
+            return null;
+        }
+        resourceIds.add(audioBufferId);
+        resources.push({ audioBufferId, assetLeaseId });
+    }
+    return batchId === null || serializedCommandBatch === null
+        ? null
+        : {
+              schemaVersion: AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION,
+              batchId,
+              serializedCommandBatch,
+              resources,
+          };
+}
+
+function readPreparedStemImportRecoveries(value: unknown): AgentRunPreparedStemImportRecovery[] {
+    if (value === undefined) {
+        return [];
+    }
+    if (!Array.isArray(value) || value.length > MAX_COLLECTION_LENGTH) {
+        return [];
+    }
+    const recoveries: AgentRunPreparedStemImportRecovery[] = [];
+    const batchIds = new Set<string>();
+    const resourceIds = new Set<string>();
+    for (const candidate of value) {
+        const recovery = readPreparedStemImportRecovery(candidate);
+        if (
+            !recovery ||
+            batchIds.has(recovery.batchId) ||
+            recovery.resources.some((resource) => resourceIds.has(resource.audioBufferId))
+        ) {
+            return [];
+        }
+        batchIds.add(recovery.batchId);
+        for (const resource of recovery.resources) {
+            resourceIds.add(resource.audioBufferId);
+        }
+        recoveries.push(recovery);
+    }
+    return recoveries;
 }
 
 function readWorkLease(value: unknown): AgentRunWorkLease | null {
@@ -1414,6 +1480,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         value.pendingEffectContinuations === undefined
             ? []
             : readCollection(value.pendingEffectContinuations, readPendingEffectContinuation);
+    const preparedStemImports = readPreparedStemImportRecoveries(value.preparedStemImports);
     const workLeases = readCollection(value.workLeases, readWorkLease);
     const contextEvidence =
         value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
@@ -1536,6 +1603,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         retriableWork,
         temporaryAssets,
         pendingEffectContinuations,
+        preparedStemImports,
         manualResume: {
             required: value.manualResume.required,
             reason: manualResumeReason,
