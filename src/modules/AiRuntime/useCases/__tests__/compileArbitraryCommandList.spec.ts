@@ -157,6 +157,10 @@ describe('compileArbitraryCommandList', () => {
         { family: 'send', order: 'child-first' },
         { family: 'automation-lane', order: 'parent-first' },
         { family: 'automation-lane', order: 'child-first' },
+        { family: 'automated-track', order: 'parent-first' },
+        { family: 'automated-track', order: 'child-first' },
+        { family: 'automation-lane-creation', order: 'parent-first' },
+        { family: 'automation-lane-creation', order: 'child-first' },
         { family: 'sidechain', order: 'parent-first' },
         { family: 'sidechain', order: 'child-first' },
     ] as const)('rejects removeTrack with a $family child mutation when $order', ({ family, order }) => {
@@ -263,6 +267,28 @@ describe('compileArbitraryCommandList', () => {
                     quantity: { unit: 'targets' as const, exactly: 1 },
                 },
             },
+            'automated-track': {
+                id: 'automate-kick-gain',
+                name: 'automateTrackGainRange',
+                arguments: { sectionName: 'Chorus', gainDb: 1.5 },
+                selector: {
+                    targetArgument: 'trackIds',
+                    entity: 'track' as const,
+                    where: { name: 'Kick' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
+            'automation-lane-creation': {
+                id: 'create-kick-gain-lane',
+                name: 'addAutomationLane',
+                arguments: { parameterId: 'gain' },
+                selector: {
+                    targetArgument: 'trackId',
+                    entity: 'track' as const,
+                    where: { name: 'Kick' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
             sidechain: {
                 id: 'remove-kick-sidechain',
                 name: 'removeSidechainRoute',
@@ -280,6 +306,8 @@ describe('compileArbitraryCommandList', () => {
             device: ['track-kick', 'device-kick'],
             send: ['track-kick', 'track-send-bus'],
             'automation-lane': ['track-kick', 'lane-kick-gain'],
+            'automated-track': ['track-kick'],
+            'automation-lane-creation': ['track-kick'],
             sidechain: ['track-kick', 'track-hat'],
         } as const;
         const items =

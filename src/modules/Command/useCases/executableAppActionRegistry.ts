@@ -2346,6 +2346,22 @@ const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }], resourc
 const TRACK_RESOURCE_REFERENCE_IDENTITY = [
     { arguments: [{ argument: 'trackId' }], resourceFamily: 'track', resourceReferenceOnly: true },
 ] as const;
+const NON_DESTRUCTIVE_TRACK_RESOURCE_REFERENCE_IDENTITY = [
+    {
+        arguments: [{ argument: 'trackId' }],
+        destructive: false,
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
+const NON_DESTRUCTIVE_MANY_TRACKS_RESOURCE_REFERENCE_IDENTITY = [
+    {
+        arguments: [{ argument: 'trackIds', cardinality: 'many' }],
+        destructive: false,
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
 const PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = [
     {
         arguments: [{ argument: 'parentTrackIds', cardinality: 'many' }],
@@ -2382,7 +2398,10 @@ const AUTOMATED_SEND_MUTATION_IDENTITY = [
     },
     ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
-const AUTOMATED_TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }] as const;
+const AUTOMATED_TRACK_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
+    ...NON_DESTRUCTIVE_MANY_TRACKS_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY = [
     { arguments: [{ argument: 'laneId' }], resourceFamily: 'automation-lane', resourceReferenceOnly: true },
     ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
@@ -2393,6 +2412,7 @@ const AUTOMATION_LANE_MUTATION_IDENTITY = [
 ] as const;
 const AUTOMATION_LANE_CREATION_IDENTITY = [
     { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
+    ...NON_DESTRUCTIVE_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const MARKER_REFERENCE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },

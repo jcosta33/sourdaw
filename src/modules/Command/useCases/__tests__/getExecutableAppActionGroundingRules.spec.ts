@@ -49,6 +49,21 @@ describe('getExecutableAppActionGroundingRules', () => {
         ]);
         expect(getExecutableAppActionGroundingRules('automateTrackGainRange')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
+            {
+                arguments: [{ argument: 'trackIds', cardinality: 'many' }],
+                destructive: false,
+                resourceFamily: 'track',
+                resourceReferenceOnly: true,
+            },
+        ]);
+        expect(getExecutableAppActionGroundingRules('addAutomationLane')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
+            {
+                arguments: [{ argument: 'trackId' }],
+                destructive: false,
+                resourceFamily: 'track',
+                resourceReferenceOnly: true,
+            },
         ]);
         expect(getExecutableAppActionGroundingRules('addSend')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
