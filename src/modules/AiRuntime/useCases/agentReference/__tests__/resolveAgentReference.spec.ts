@@ -177,6 +177,67 @@ describe('resolveAgentReference', () => {
         ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
     });
 
+    it('limits sidechain device grounding to supported devices on the owning track', () => {
+        const project = createProjectState();
+        const bass = project.tracks.find((track) => track.id === 'track-bass');
+        if (!bass) {
+            throw new Error('Expected Bass track fixture');
+        }
+        bass.devices = [
+            {
+                id: 'device-sidechain',
+                name: 'Mutable Sidechain Name',
+                type: 'builtin-sidechain-compressor',
+                bypassed: false,
+            },
+            { id: 'device-eq', name: 'Sidechain Compressor', type: 'builtin-eq', bypassed: false },
+        ];
+        const vocals = project.tracks.find((track) => track.id === 'track-vocals');
+        if (!vocals) {
+            throw new Error('Expected Vocals track fixture');
+        }
+        vocals.devices = [
+            {
+                id: 'device-vocals-sidechain',
+                name: 'Sidechain Compressor',
+                type: 'builtin-sidechain-compressor',
+                bypassed: false,
+            },
+        ];
+        project.availableDeviceTypes = [
+            { id: 'builtin-sidechain-compressor', name: 'Sidechain Compressor' },
+            { id: 'builtin-eq', name: 'Sidechain Compressor' },
+        ];
+
+        expect(
+            resolveAgentReference({
+                prompt: 'route into Sidechain Compressor on Bass',
+                assertedId: 'device-sidechain',
+                capability: 'sidechain-capable-device',
+                context: project,
+                dependencyId: bass.id,
+            })
+        ).toEqual({ status: 'resolved', id: 'device-sidechain', evidence: 'exact-name' });
+        expect(
+            resolveAgentReference({
+                prompt: 'route into Sidechain Compressor on Bass',
+                assertedId: 'device-eq',
+                capability: 'sidechain-capable-device',
+                context: project,
+                dependencyId: bass.id,
+            })
+        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+        expect(
+            resolveAgentReference({
+                prompt: 'route into Sidechain Compressor on Bass',
+                assertedId: 'device-vocals-sidechain',
+                capability: 'sidechain-capable-device',
+                context: project,
+                dependencyId: bass.id,
+            })
+        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+    });
+
     it('resolves unique exact names and explicit selection language', () => {
         expect(resolveTrack('mute Vocals', 'track-vocals')).toEqual({
             status: 'resolved',
@@ -214,6 +275,37 @@ describe('resolveAgentReference', () => {
                 context: project,
             })
         ).toEqual({ status: 'resolved', id: 'track-bus', evidence: 'exact-name' });
+    });
+
+    it('excludes Master before removable-track evidence can make another track ambiguous', () => {
+        const project = createProjectState();
+        const fixtureTrack = project.tracks[0];
+        if (!fixtureTrack) {
+            throw new Error('Expected track fixture');
+        }
+        const master = {
+            ...fixtureTrack,
+            id: 'master',
+            name: 'Master',
+            kind: 'master' as const,
+            outputId: 'hw_out',
+        };
+        const busNamedMaster = {
+            ...fixtureTrack,
+            id: 'bus-master-name',
+            name: 'Master',
+            kind: 'bus' as const,
+        };
+        project.tracks = [...project.tracks, master, busNamedMaster];
+
+        expect(
+            resolveAgentReference({
+                prompt: 'delete Master',
+                assertedId: busNamedMaster.id,
+                capability: 'removable-track',
+                context: project,
+            })
+        ).toEqual({ status: 'resolved', id: busNamedMaster.id, evidence: 'exact-name' });
     });
 
     it('rejects ambiguous names, mismatched assertions, and incidental substrings', () => {

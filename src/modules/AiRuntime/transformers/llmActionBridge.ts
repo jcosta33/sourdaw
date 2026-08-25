@@ -2195,7 +2195,7 @@ function bridgeToolCall({
                     admission.targetDeviceId === args.targetDeviceId
             )
         ) {
-            return rejection(index, call.name, 'targetDeviceId requires an exact application-owned MF-06 capability');
+            return rejection(index, call.name, 'targetDeviceId requires an exact application-owned capability');
         }
         const supportedDevices = findSupportedSidechainDevices(target);
         let targetDevice = supportedDevices.find((device) => device.id === args.targetDeviceId);
