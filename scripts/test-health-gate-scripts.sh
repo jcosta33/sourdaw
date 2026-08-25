@@ -229,7 +229,11 @@ const secretScanRun = secretScan?.run ?? '';
 const secretScanUses = secretScan?.uses ?? '';
 const secretsEnv = secrets?.env ?? {};
 const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
-const unitRun = stepNamed(unit, 'Run shard')?.run ?? '';
+const unitRunStep = stepNamed(unit, 'Run shard');
+const e2eRunStep = stepNamed(e2e, 'Run shard');
+const unitFailureWarning = stepNamed(unit, 'Report shard failure');
+const e2eFailureWarning = stepNamed(e2e, 'Report shard failure');
+const unitRun = unitRunStep?.run ?? '';
 const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
@@ -376,13 +380,32 @@ expect(
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
 const pullRequestReportAllowance = "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
+const shardFailureCondition = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 expect(
-    unit?.['continue-on-error'] === pullRequestReportAllowance,
-    'unit suite report must remain blocking for schedule and workflow_dispatch'
+    unit?.['continue-on-error'] === undefined,
+    'unit suite must not use job-level continue-on-error'
 );
 expect(
-    e2e?.['continue-on-error'] === pullRequestReportAllowance,
-    'end-to-end suite report must remain blocking for schedule and workflow_dispatch'
+    e2e?.['continue-on-error'] === undefined,
+    'end-to-end suite must not use job-level continue-on-error'
+);
+expect(unitRunStep?.id === 'run_shard', 'unit Run shard step must keep its stable id');
+expect(e2eRunStep?.id === 'run_shard', 'end-to-end Run shard step must keep its stable id');
+expect(
+    unitRunStep?.['continue-on-error'] === pullRequestReportAllowance,
+    'unit Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+);
+expect(
+    e2eRunStep?.['continue-on-error'] === pullRequestReportAllowance,
+    'end-to-end Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+);
+expect(
+    unitFailureWarning?.if === shardFailureCondition && unitFailureWarning?.run?.includes('::warning') && unitFailureWarning?.run?.includes('$GITHUB_STEP_SUMMARY'),
+    'unit shard failure must remain visible without changing the job conclusion'
+);
+expect(
+    e2eFailureWarning?.if === shardFailureCondition && e2eFailureWarning?.run?.includes('::warning') && e2eFailureWarning?.run?.includes('$GITHUB_STEP_SUMMARY'),
+    'end-to-end shard failure must remain visible without changing the job conclusion'
 );
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
 expect(
