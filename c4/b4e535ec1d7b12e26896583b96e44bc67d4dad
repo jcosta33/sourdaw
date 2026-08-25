@@ -1,0 +1,28 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_0a3429e31e555d::t_ec975da3d76778 6,276,281
+  s_0a3429e31e555d::t_e14707d57ee9fe 277,280,284-285
+src/modules/WorkspaceShell/presentations/__tests__/expectExternalProjectLink.ts
+  s_0a3429e31e555d::t_ec975da3d76778 1-7
+src/modules/WorkspaceShell/presentations/components/__tests__/AlphaNoticeDialog.spec.tsx
+  s_0a3429e31e555d::t_ec975da3d76778 4,30-31
+  s_0a3429e31e555d::t_e14707d57ee9fe 34-35
+src/modules/WorkspaceShell/presentations/components/__tests__/MobileGate.spec.tsx
+  s_0a3429e31e555d::t_e14707d57ee9fe 100-101
+  s_0a3429e31e555d::t_ec975da3d76778 4,96-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c4b4e535ec1d7b12e26896583b96e44bc67d4dad",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
