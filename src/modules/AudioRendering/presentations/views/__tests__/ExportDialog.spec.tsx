@@ -9,6 +9,8 @@ import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings, saveExportSettings } from '../exportSettings';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 type TestClip = {
     id: string;
     trackId: string;
@@ -42,6 +44,10 @@ type TestStore<TData> = {
     value: TData;
 };
 
+type TestTrackStore = TestStore<TestTrackStoreState> & {
+    subscribe: TrackStoreSubscribe;
+};
+
 type TestTransportState = {
     loopStart: number;
     loopEnd: number;
@@ -71,7 +77,7 @@ type ExportDialogMocks = {
     renderOffline: ReturnType<typeof vi.fn>;
     restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<() => Promise<number>>>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
-    trackStore: TestStore<TestTrackStoreState>;
+    trackStore: TestTrackStore;
     transportStore: TestStore<TestTransportState>;
     useStore: ReturnType<typeof vi.fn<(store: TestStore<unknown>, defaultValue?: unknown) => unknown>>;
     clipSelectionStore: TestStore<TestClipSelectionState>;
@@ -86,9 +92,9 @@ type ExportDialogMocks = {
 };
 
 const mocks = vi.hoisted((): ExportDialogMocks => {
-    const trackStore = {
+    const trackStore: TestTrackStore = {
         value: { tracks: [], selectedTrackId: null, ghostClips: [] },
-        subscribe: vi.fn(() => () => {}),
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     };
     const transportStore: TestStore<TestTransportState> = {
         value: { loopStart: 0, loopEnd: 0 },

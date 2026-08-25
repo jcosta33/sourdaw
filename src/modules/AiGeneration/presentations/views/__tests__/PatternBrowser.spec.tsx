@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { PatternBrowser } from '../PatternBrowser';
 
+type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+
 // Mock external dependencies
 vi.mock('../../../useCases/patternQueries/PATTERN_TEMPLATES', () => ({
     PATTERN_TEMPLATES: [
@@ -45,7 +47,10 @@ vi.mock('../../../useCases/patternQueries/filterTemplates', () => ({
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: { value: { tracks: [], selectedTrackId: null }, subscribe: vi.fn(() => () => {}) },
+    trackStore: {
+        value: { tracks: [], selectedTrackId: null },
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
+    },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
