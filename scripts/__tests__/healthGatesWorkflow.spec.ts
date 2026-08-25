@@ -12,6 +12,20 @@ type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
 const REVIEW_CONDITION = "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
 const HEAVY_CONDITION = "needs.decide.outputs.heavy == 'true'";
+const FORCED_SCOPE_OUTPUTS = {
+    heavy: 'true',
+    rust: 'true',
+    server: 'true',
+    e2e: 'true',
+    web: 'true',
+};
+const SCOPE_OUTPUT_REFERENCES = {
+    heavy: '${{ steps.scope.outputs.heavy }}',
+    rust: '${{ steps.scope.outputs.rust }}',
+    server: '${{ steps.scope.outputs.server }}',
+    e2e: '${{ steps.scope.outputs.e2e }}',
+    web: '${{ steps.scope.outputs.web }}',
+};
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = "${{ github.event_name == 'pull_request' }}";
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
@@ -117,8 +131,11 @@ function assertScopeContract(candidate: UnknownRecord): string {
     if (decide.if !== REVIEW_CONDITION) {
         throw new Error('decide must only admit submitted approved reviews');
     }
-    if (recordAt(decide, 'outputs').heavy !== HEAVY_OUTPUT_REFERENCE) {
-        throw new Error('decide heavy output must expose steps.scope.outputs.heavy');
+    const outputs = recordAt(decide, 'outputs');
+    for (const [name, reference] of Object.entries(SCOPE_OUTPUT_REFERENCES)) {
+        if (outputs[name] !== reference) {
+            throw new Error(`decide ${name} output must expose steps.scope.outputs.${name}`);
+        }
     }
     const scope = stepNamed(decide, 'Resolve scope');
     if (scope.id !== 'scope') {
@@ -275,12 +292,18 @@ describe('health gates workflow contract', () => {
             e2e: 'false',
             web: 'false',
         });
-        for (const eventName of ['pull_request_review', 'schedule', 'workflow_dispatch']) {
-            expect(runScopeScript(scopeScript, eventName)).toMatchObject({ heavy: 'true' });
+        expect(runScopeScript(scopeScript, 'pull_request_review')).toMatchObject({ heavy: 'true' });
+        for (const eventName of ['schedule', 'workflow_dispatch']) {
+            expect(runScopeScript(scopeScript, eventName)).toEqual(FORCED_SCOPE_OUTPUTS);
         }
         const nonApproval = asRecord(structuredClone(workflow), 'non-approval workflow');
         jobAt(nonApproval, 'decide').if = "github.event_name != 'pull_request_review'";
         expect(() => assertScopeContract(nonApproval)).toThrow('decide must only admit submitted approved reviews');
+        const undisclosedWebScope = asRecord(structuredClone(workflow), 'undisclosed web scope workflow');
+        recordAt(jobAt(undisclosedWebScope, 'decide'), 'outputs').web = HEAVY_OUTPUT_REFERENCE;
+        expect(() => assertScopeContract(undisclosedWebScope)).toThrow(
+            'decide web output must expose steps.scope.outputs.web'
+        );
     });
 
     it('keeps the current fast, heavy, and required-gate dependency contract', () => {
