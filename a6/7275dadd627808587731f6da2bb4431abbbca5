@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_607b2c69de1f71 729,732,784,787
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandPreflightFixture.ts
+  s_a40848e8f8cca9::t_9b37178892c00b 1-2,13-18
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_5f50110c6b8d30 404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "a67275dadd627808587731f6da2bb4431abbbca5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
