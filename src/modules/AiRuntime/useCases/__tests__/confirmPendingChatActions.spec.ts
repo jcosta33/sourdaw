@@ -118,48 +118,6 @@ const stemAction = {
     },
 } satisfies AppAction;
 
-const stemResourceMocks = vi.hoisted(() => ({
-    releasePreviewAudioBuffer: vi.fn(),
-    releaseStagedAsset: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    releasePreviewAudioBuffer: stemResourceMocks.releasePreviewAudioBuffer,
-}));
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
-    getAssetTransfer: () => ({ releaseStagedAsset: stemResourceMocks.releaseStagedAsset }),
-}));
-
-const stemAction = {
-    type: 'importStemSet',
-    payload: {
-        selectionId: 'selection-confirmed-stems',
-        groupName: 'Imported Stems',
-        projectTempo: 120,
-        folderId: 'folder-confirmed-stems',
-        stems: [
-            {
-                stemId: 'stem-confirmed-1',
-                sourceName: 'Drums.wav',
-                role: 'other',
-                sourceTempo: 120,
-                durationSeconds: 10,
-                sourceBytes: 100,
-                decodedBytes: 200,
-                audioBufferId: 'buffer-confirmed-1',
-                assetLeaseId: 'lease-confirmed-1',
-                trackId: 'track-confirmed-1',
-                trackName: 'Drums',
-                trackGain: 1,
-                trackPan: 0,
-                clipId: 'clip-confirmed-1',
-            },
-        ],
-    },
-} satisfies AppAction;
-
 describe('confirmPendingChatActions transaction admission', () => {
     beforeEach(() => {
         stemResourceMocks.releasePreviewAudioBuffer.mockClear();
