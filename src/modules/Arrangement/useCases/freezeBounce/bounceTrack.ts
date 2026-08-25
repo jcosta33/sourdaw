@@ -45,6 +45,17 @@ export type BounceOptions = {
      * omit it and let the capture below take the ambient transaction.
      */
     transactionScope?: BounceTransactionScope;
+    /**
+     * Receives the filing callback for this bounce's undo entry instead of the
+     * entry being filed here. The dispatched handlers pass one that files from
+     * the execution result's `afterCommit`/`afterAmbiguousCommit`, because
+     * while `execute` runs the write merely pends in the dispatching
+     * transaction — an entry filed here would survive a commit-time abort that
+     * rolls the write back, leaving a phantom history step whose redo
+     * resurrects the bounce outside any transaction. A caller outside a
+     * command dispatch omits it and the entry files immediately.
+     */
+    deferUndoEntry?: (file: () => void) => void;
 };
 
 export async function bounceTrack(trackId: string, options: BounceOptions): Promise<boolean> {
@@ -200,22 +211,31 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         return true;
     }
 
-    // Register undo for the bounce operation
-    const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
-    pushUndoEntry(
-        'Bounce Track',
-        () => {
-            const state1 = trackStore.value;
-            if (state1) {
-                trackStore.set({ ...state1, tracks: tracksBefore });
+    // Register undo for the bounce operation. Filed through `deferUndoEntry`
+    // when a dispatching command owns the outcome, so the entry exists only
+    // once the write is durable — see `BounceOptions.deferUndoEntry`.
+    const fileUndoEntry = () => {
+        const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+        pushUndoEntry(
+            'Bounce Track',
+            () => {
+                const state1 = trackStore.value;
+                if (state1) {
+                    trackStore.set({ ...state1, tracks: tracksBefore });
+                }
+            },
+            () => {
+                const state1 = trackStore.value;
+                if (state1) {
+                    trackStore.set({ ...state1, tracks: tracksAfter });
+                }
             }
-        },
-        () => {
-            const state1 = trackStore.value;
-            if (state1) {
-                trackStore.set({ ...state1, tracks: tracksAfter });
-            }
-        }
-    );
+        );
+    };
+    if (options.deferUndoEntry) {
+        options.deferUndoEntry(fileUndoEntry);
+    } else {
+        fileUndoEntry();
+    }
     return true;
 }
