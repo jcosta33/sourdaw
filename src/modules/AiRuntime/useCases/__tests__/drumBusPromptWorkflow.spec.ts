@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
+import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -12,6 +13,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandBatchPreflightPort,
     commandTrackDefaultsPort,
     redo,
     resetActionReplayAuthority,
@@ -1051,6 +1053,7 @@ describe('drum bus prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         configureAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
         audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
@@ -1130,6 +1133,20 @@ describe('drum bus prompt workflow', () => {
             },
         });
         expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline + 1);
+    });
+
+    it('captures the production master target fingerprint while reaching confirmation', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+
+        await sendChatMessage(EX11_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation).not.toBeNull();
+        expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints.master).toBe('system-output:master');
     });
 
     it('grounds EX-11 into the dependency-ordered drum, parallel, gain, and render batch', async () => {
@@ -2489,6 +2506,49 @@ describe('drum bus prompt workflow', () => {
         await redo();
         expect(sidechainStore.value?.routes).toHaveLength(3);
         expect(undoStore.value?.past).toHaveLength(3);
+    });
+
+    it('rejects an unflushed sidechain target-device identity drift through production fingerprints', async () => {
+        setMf06Project();
+        useMf06WebLlmFixture();
+        await sendChatMessage(MF06_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        const approvedRevision = captureProjectRevision();
+        expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['device-bass-comp-a']).toBeDefined();
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-bass-synth'
+                    ? {
+                          ...track,
+                          devices: track.devices.map((device) =>
+                              device.id === 'device-bass-comp-a'
+                                  ? { ...device, id: 'device-bass-comp-a-collaborator' }
+                                  : device
+                          ),
+                      }
+                    : track
+            ),
+        });
+        const collaboratorState = structuredClone(trackStore.value);
+        expect(captureProjectRevision()).toBe(approvedRevision);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(trackStore.value).toEqual(collaboratorState);
+        expect(sidechainStore.value?.routes).toEqual([]);
+        expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
+        expect(undoStore.value).toMatchObject({ past: [], future: [] });
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toContain('The approved target fingerprints no longer match.');
     });
 
     it('reduces kick/bass masking without replacing either sound through the complete WebLLM workflow', async () => {

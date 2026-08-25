@@ -4,6 +4,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
+import { collaborationStore } from '#/modules/Collaboration/stores';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -17,6 +18,7 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -31,6 +33,7 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
@@ -176,6 +179,46 @@ function expectPreparedStemResourcesReleased(timesPerStem: number): void {
     expect(mocks.releaseStagedAsset.mock.calls.map(([assetLeaseId]) => assetLeaseId).sort()).toEqual(
         expectedAssetLeaseIds
     );
+}
+
+function expectPreparedStemLifecycleSettled(runId: string): void {
+    expect(mocks.decodeAudioFile.mock.calls.map(([file]: [File]) => file.name)).toEqual(STEM_SOURCE_NAMES);
+    expect(mocks.stageLocalAsset.mock.calls.map(([file, name]: [File, string]) => [file.name, name])).toEqual(
+        STEM_SOURCE_NAMES.map((name) => [name, name])
+    );
+    expectPreparedStemResourcesReleased(1);
+    expect(agentRunLifecycle.get(runId)).toMatchObject({ temporaryAssets: [], preparedStemImports: [] });
+}
+
+async function seedUndoHistory(): Promise<void> {
+    await executeAppAction({
+        type: 'setTrackGain',
+        payload: { trackId: 'track-guide', expectedGain: 1, gain: 0.8 },
+    });
+    await executeAppAction({
+        type: 'setTrackGain',
+        payload: { trackId: 'track-guide', expectedGain: 0.8, gain: 0.6 },
+    });
+    await undo();
+    expect(undoStore.value?.past).toHaveLength(1);
+    expect(undoStore.value?.future).toHaveLength(1);
+}
+
+function captureCollaboratorProjectState() {
+    const document: unknown = JSON.parse(JSON.stringify(getCrdtDoc('root')));
+    return {
+        collaboration: structuredClone(collaborationStore.value),
+        document,
+        tracks: structuredClone(trackStore.value),
+        transport: structuredClone(transportStore.value),
+    };
+}
+
+function expectCollaboratorProjectState(state: ReturnType<typeof captureCollaboratorProjectState>): void {
+    expect(collaborationStore.value).toEqual(state.collaboration);
+    expect(getCrdtDoc('root')).toEqual(state.document);
+    expect(trackStore.value).toEqual(state.tracks);
+    expect(transportStore.value).toEqual(state.transport);
 }
 
 function createTrack(id: string, name: string): Track {
@@ -856,35 +899,39 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('releases preparation-owned resources when the user cancels the exact proposal', async () => {
-        const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
+        await seedUndoHistory();
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
+        expect(confirmation, JSON.stringify(chatStore.value?.messages)).not.toBeNull();
+        const seededState = captureCollaboratorProjectState();
+        const seededUndoState = structuredClone(undoStore.value);
 
         await expect(cancelPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
             status: 'cancelled',
         });
-        expect(trackStore.value?.tracks).toEqual(originalTracks);
-        // The confirmation lease delegates disposal to the run-scoped prepared-
-        // resource owner, so each physical resource is released exactly once.
-        expectPreparedStemResourcesReleased(1);
-        expect(undoStore.value?.past).toHaveLength(0);
+        expectCollaboratorProjectState(seededState);
+        expect(undoStore.value).toEqual(seededUndoState);
+        expectPreparedStemLifecycleSettled(confirmation!.runId);
     });
 
     it('invalidates a stale proposal and cleans resources without touching the collaborator edit', async () => {
+        await seedUndoHistory();
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
+        expect(confirmation, JSON.stringify(chatStore.value?.messages)).not.toBeNull();
         await executeAppAction(
             { type: 'addTrack', payload: { id: 'track-collaborator', name: 'Collaborator', kind: 'audio' } },
             { skipUndo: true }
         );
+        const collaboratorState = captureCollaboratorProjectState();
+        const seededUndoState = structuredClone(undoStore.value);
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });
 
         expect(result.status).toBe('invalidated');
-        expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        // Stale-proposal invalidation reaches the same single physical owner.
-        expectPreparedStemResourcesReleased(1);
-        expect(undoStore.value?.past).toHaveLength(0);
+        expectCollaboratorProjectState(collaboratorState);
+        expect(undoStore.value).toEqual(seededUndoState);
+        expectPreparedStemLifecycleSettled(confirmation!.runId);
     });
 
     it('keeps grouped undo retryable when a collaborator changes an imported track', async () => {

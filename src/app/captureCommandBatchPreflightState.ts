@@ -123,6 +123,26 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
     return value as Readonly<Record<string, unknown>>;
 }
 
+function combineTargetFingerprints(input: {
+    advertised: Readonly<Record<string, string>>;
+    document: Readonly<Record<string, string>>;
+    targetIds: readonly string[];
+}): Record<string, string> {
+    return Object.fromEntries(
+        input.targetIds.flatMap((targetId) => {
+            const document = input.document[targetId];
+            const advertised = input.advertised[targetId];
+            if (document !== undefined && advertised !== undefined) {
+                return [[targetId, JSON.stringify({ advertised, document })]];
+            }
+            if (advertised !== undefined) {
+                return [[targetId, JSON.stringify({ advertised })]];
+            }
+            return document === undefined ? [] : [[targetId, document]];
+        })
+    );
+}
+
 function isValidOptionalField(
     record: Readonly<Record<string, unknown>>,
     key: string,
@@ -397,11 +417,22 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
     const duplicateIds = new Set<string>();
     const duplicateScanVisited = new WeakSet<object>();
     findDuplicateIds(projectDoc, allIds, duplicateIds, duplicateScanVisited);
-    const targetFingerprints = {
-        ...captureCommandTargetFingerprints({ document: projectDoc, targetIds: input.targetIds }),
-    };
-    if (targetIds.has('hw_out')) {
-        targetFingerprints.hw_out = 'system-output:hw_out';
+    const documentTargetFingerprints = captureCommandTargetFingerprints({
+        document: projectDoc,
+        targetIds: input.targetIds,
+    });
+    const advertisedTargetFingerprints = context
+        ? captureCommandTargetFingerprints({ document: { projectContext: context }, targetIds: input.targetIds })
+        : {};
+    const targetFingerprints = combineTargetFingerprints({
+        advertised: advertisedTargetFingerprints,
+        document: documentTargetFingerprints,
+        targetIds: input.targetIds,
+    });
+    for (const systemTargetId of ['master', 'hw_out']) {
+        if (targetIds.has(systemTargetId)) {
+            targetFingerprints[systemTargetId] = `system-output:${systemTargetId}`;
+        }
     }
     const tracks = (context?.tracks ?? []).map((track) => ({
         devices: track.devices.map((device) => ({ id: device.id, type: device.type })),

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
     adjustmentLayerStore,
@@ -19,6 +20,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandBatchPreflightPort,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -626,6 +628,7 @@ function getConfirmationId(): string {
 describe('bass-processing section copy workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
         vi.clearAllMocks();
         vi.spyOn(audioEngine, 'applyAdjustmentLayerTick').mockImplementation(() => undefined);
         vi.spyOn(audioEngine, 'resetAdjustmentLayers').mockImplementation(() => undefined);
@@ -779,6 +782,37 @@ describe('bass-processing section copy workflow', () => {
     it('routes a semantic paraphrase to the bass-processing copy capability', async () => {
         await sendChatMessage(PARAPHRASE);
         expect(getConfirmationId()).not.toBe('');
+    });
+
+    it('rejects unflushed adjustment-layer identity and state drift through production fingerprints', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        const approvedFingerprint = confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['layer-bass-eq'];
+        const approvedRevision = captureProjectRevision();
+        const runtimeCallsBeforeConfirmation = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
+        expect(approvedFingerprint).toBeDefined();
+
+        adjustmentLayerStore.set({
+            layers: (adjustmentLayerStore.value?.layers ?? []).map((layer) =>
+                layer.id === 'layer-bass-eq'
+                    ? { ...layer, id: 'layer-bass-eq-collaborator', name: 'Collaborator EQ', mix: 0.13 }
+                    : layer
+            ),
+        });
+        const collaboratorState = structuredClone(adjustmentLayerStore.value);
+        expect(captureProjectRevision()).toBe(approvedRevision);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(adjustmentLayerStore.value).toEqual(collaboratorState);
+        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforeConfirmation);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toContain('The approved target fingerprints no longer match.');
     });
 
     it('copies the exact bass processing through confirmation, receipt, runtime scheduling, undo, and redo', async () => {
