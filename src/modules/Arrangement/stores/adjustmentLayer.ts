@@ -5,6 +5,9 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export type AdjustmentEffectType =
     'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
@@ -53,6 +56,9 @@ export type AdjustmentLayerState = {
 };
 
 export const adjustmentLayerStore = createStore<AdjustmentLayerState>({
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'adjustmentLayers', {
+        hydrateMissing: () => ({ layers: [] }),
+    }),
     initialData: { layers: [] },
 });
 
