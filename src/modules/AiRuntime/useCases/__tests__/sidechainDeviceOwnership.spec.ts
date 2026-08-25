@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
@@ -114,6 +115,57 @@ describe('sidechain device ownership', () => {
         });
     });
 
+    it('bridges the exact sidechain device admitted by validated compiler evidence', () => {
+        const compiled = compileSidechainRoute('device-bass-compressor');
+        expect(compiled).toMatchObject({ status: 'accepted' });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            return;
+        }
+
+        expect(
+            bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context,
+                projectRevision: 'revision-sidechain-device-ownership',
+                prompt: 'add sidechain from Kick to Bass',
+            })
+        ).toEqual({
+            actions: [
+                {
+                    type: 'addSidechainRoute',
+                    payload: {
+                        sourceTrackId: 'track-kick',
+                        targetTrackId: 'track-bass',
+                        targetDeviceId: 'device-bass-compressor',
+                    },
+                },
+            ],
+            actionCommandGraph: { batchLocalBindings: [], dependenciesByActionIndex: [[]] },
+            rejections: [],
+        });
+    });
+
+    it('rejects an explicit sidechain device without compiler evidence', () => {
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                {
+                    name: 'addSidechainRoute',
+                    arguments: {
+                        sourceTrackId: 'track-kick',
+                        targetTrackId: 'track-bass',
+                        targetDeviceId: 'device-bass-compressor',
+                    },
+                },
+            ],
+            context,
+            prompt: 'add sidechain from Kick to Bass',
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('application-owned capability');
+    });
+
     it('rejects forged evidence that swaps a sidechain device across target tracks', () => {
         const compiled = compileSidechainRoute('device-bass-compressor');
         expect(compiled).toMatchObject({ status: 'accepted' });
@@ -148,16 +200,33 @@ describe('sidechain device ownership', () => {
             providerKnownTargetIds: ['track-bass', 'track-kick', 'device-vocals-compressor'],
         };
 
-        expect(
-            validateArbitraryCommandListEvidence({
-                evidence,
-                calls: commands,
-                context,
-                revision: 'revision-sidechain-device-ownership',
-            })
-        ).toEqual({
+        const validation = validateArbitraryCommandListEvidence({
+            evidence,
+            calls: commands,
+            context,
+            revision: 'revision-sidechain-device-ownership',
+        });
+        expect(validation).toEqual({
             status: 'rejected',
             reason: 'Structured command compiler evidence direct targets are invalid.',
+        });
+        expect(
+            bridgeGroundedLlmToolCalls({
+                calls: commands,
+                compilerEvidence: evidence,
+                context,
+                projectRevision: 'revision-sidechain-device-ownership',
+                prompt: 'add sidechain from Kick to Bass',
+            })
+        ).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: '<batch>',
+                    reason: 'Structured command compiler evidence direct targets are invalid.',
+                },
+            ],
         });
     });
 });
