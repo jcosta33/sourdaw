@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -6,6 +15,15 @@ import { redo } from '../redo';
 import { REDO_NOT_APPLIED } from '../redoResult';
 
 import type { ActionUndoEntry, CallbackUndoEntry, UndoEntry } from '../../models/UndoEntry';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {
@@ -74,6 +92,13 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
 
 describe('redo', () => {
     beforeEach(() => {
+        Container.clear();
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         mocks.undoStoreSet.mockReset();
         mocks.undoStoreSet.mockImplementation((state) => {
             mocks.undoStoreValue.value = state;
@@ -103,6 +128,11 @@ describe('redo', () => {
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
         clearHandlerRegistry();
+    });
+
+    afterEach(() => {
+        unsubscribeFromNotifications();
+        Container.clear();
     });
 
     it('delegates manual macro recording to the execution owner without creating a second undo entry', async () => {
@@ -353,6 +383,8 @@ describe('redo', () => {
         expect(mocks.executeAppActionBatch).toHaveBeenCalledOnce();
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [first, second] });
+        expect(notifications).toEqual([{ message: 'Cannot redo "Test": project state has changed', level: 'warning' }]);
     });
 
     it('advances a committed group but reports its post-commit warning', async () => {
