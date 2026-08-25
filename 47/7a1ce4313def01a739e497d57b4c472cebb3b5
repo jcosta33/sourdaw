@@ -1,0 +1,27 @@
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_a40848e8f8cca9::t_29df4c93d96422 11
+  s_a40848e8f8cca9::t_2e547ed69848da 28-30
+tests/e2e/aiBackendPreference.spec.ts
+  s_a40848e8f8cca9::t_2e547ed69848da 20,34-42
+tests/e2e/browserAiHardware.ts
+  s_a40848e8f8cca9::t_2e547ed69848da 3,63-67
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_a40848e8f8cca9::t_ce6232b6fd226a 1,3,106,119,137,158
+  s_a40848e8f8cca9::t_2e547ed69848da 27-28,95-104,107-118,121-125,127-136,138-139,151,159-165,174-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "477a1ce4313def01a739e497d57b4c472cebb3b5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
