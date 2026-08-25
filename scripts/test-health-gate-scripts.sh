@@ -256,6 +256,7 @@ const unitFailureWarning = stepNamed(unit, 'Report shard failure');
 const e2eFailureWarning = stepNamed(e2e, 'Report shard failure');
 const unitRun = unitRunStep?.run ?? '';
 const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
+const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
     'decide',
@@ -436,6 +437,7 @@ expect(
 expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(gate?.if === '${{ !cancelled() }}', 'Gate must not remain queued after concurrency cancellation');
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
@@ -445,6 +447,13 @@ expect(
 expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
 expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
 expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+expect(
+    gateRun.includes('select(.value.result != "success" and .value.result != "skipped")') &&
+        gateRun.includes('if [ -n "$failed" ]; then') &&
+        gateRun.includes('exit 1') &&
+        gateRun.includes("printf 'every job succeeded or was skipped\\n'"),
+    'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
+);
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
 expect(
     nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&

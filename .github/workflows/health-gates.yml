@@ -694,7 +694,9 @@ jobs:
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
     # passed, so both gate.
-    if: always()
+    # `!cancelled()` still evaluates failed or skipped dependencies for a live
+    # run, while allowing a superseded run to cancel Gate instead of queueing it.
+    if: ${{ !cancelled() }}
     needs:
       - decide
       - static
