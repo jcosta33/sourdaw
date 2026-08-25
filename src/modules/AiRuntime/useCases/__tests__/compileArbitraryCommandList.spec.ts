@@ -118,7 +118,7 @@ function compileSidechainDeviceSelector(input: {
             {
                 name: 'command.batch.propose',
                 arguments: {
-                    plan: plan([selectedDevice.id], input.protectedTargetIds),
+                    plan: plan(['track-kick', 'track-bass', selectedDevice.id], input.protectedTargetIds),
                     list: {
                         schemaVersion: 1,
                         items: [
@@ -1056,36 +1056,55 @@ describe('compileArbitraryCommandList', () => {
     });
 
     it('keys sidechain creation by source and materialized target device', () => {
+        const targetDevices = [
+            { ...supportedSidechainDevice, id: 'compressor-a', name: 'First Compressor' },
+            { ...supportedSidechainDevice, id: 'compressor-b', name: 'Second Compressor' },
+        ];
         const result = compileArbitraryCommandList({
-            context,
+            context: {
+                ...context,
+                tracks: context.tracks.map((track) =>
+                    track.id === 'track-hat'
+                        ? { ...track, deviceCount: targetDevices.length, devices: targetDevices }
+                        : track
+                ),
+            },
             revision: 'revision-1',
             calls: [
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick', 'track-hat']),
+                        plan: plan(['track-kick', 'track-hat', 'compressor-a', 'compressor-b']),
                         list: {
                             schemaVersion: 1,
                             items: [
                                 {
                                     id: 'route-to-first-compressor',
                                     name: 'addSidechainRoute',
-                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-a' },
+                                    arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-hat' },
                                     selector: {
-                                        targetArgument: 'sourceTrackId',
-                                        entity: 'track',
-                                        where: { name: 'Kick' },
+                                        targetArgument: 'targetDeviceId',
+                                        entity: 'device',
+                                        where: {
+                                            name: 'First Compressor',
+                                            trackId: 'track-hat',
+                                            type: 'builtin-sidechain-compressor',
+                                        },
                                         quantity: { unit: 'targets', exactly: 1 },
                                     },
                                 },
                                 {
                                     id: 'route-to-second-compressor',
                                     name: 'addSidechainRoute',
-                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-b' },
+                                    arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-hat' },
                                     selector: {
-                                        targetArgument: 'sourceTrackId',
-                                        entity: 'track',
-                                        where: { name: 'Kick' },
+                                        targetArgument: 'targetDeviceId',
+                                        entity: 'device',
+                                        where: {
+                                            name: 'Second Compressor',
+                                            trackId: 'track-hat',
+                                            type: 'builtin-sidechain-compressor',
+                                        },
                                         quantity: { unit: 'targets', exactly: 1 },
                                     },
                                     dependsOn: ['route-to-first-compressor'],
@@ -1176,36 +1195,50 @@ describe('compileArbitraryCommandList', () => {
     });
 
     it('rejects duplicate sidechain creation for one source and materialized target device', () => {
+        const targetDevice = { ...supportedSidechainDevice, id: 'compressor-a', name: 'First Compressor' };
         const result = compileArbitraryCommandList({
-            context,
+            context: {
+                ...context,
+                tracks: context.tracks.map((track) =>
+                    track.id === 'track-hat' ? { ...track, deviceCount: 1, devices: [targetDevice] } : track
+                ),
+            },
             revision: 'revision-1',
             calls: [
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick', 'track-hat']),
+                        plan: plan(['track-kick', 'track-hat', 'compressor-a']),
                         list: {
                             schemaVersion: 1,
                             items: [
                                 {
                                     id: 'route-device',
                                     name: 'addSidechainRoute',
-                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-a' },
+                                    arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-hat' },
                                     selector: {
-                                        targetArgument: 'sourceTrackId',
-                                        entity: 'track',
-                                        where: { name: 'Kick' },
+                                        targetArgument: 'targetDeviceId',
+                                        entity: 'device',
+                                        where: {
+                                            name: 'First Compressor',
+                                            trackId: 'track-hat',
+                                            type: 'builtin-sidechain-compressor',
+                                        },
                                         quantity: { unit: 'targets', exactly: 1 },
                                     },
                                 },
                                 {
                                     id: 'reroute-device',
                                     name: 'addSidechainRoute',
-                                    arguments: { targetTrackId: 'track-hat', targetDeviceId: 'compressor-a' },
+                                    arguments: { sourceTrackId: 'track-kick', targetTrackId: 'track-hat' },
                                     selector: {
-                                        targetArgument: 'sourceTrackId',
-                                        entity: 'track',
-                                        where: { name: 'Kick' },
+                                        targetArgument: 'targetDeviceId',
+                                        entity: 'device',
+                                        where: {
+                                            name: 'First Compressor',
+                                            trackId: 'track-hat',
+                                            type: 'builtin-sidechain-compressor',
+                                        },
                                         quantity: { unit: 'targets', exactly: 1 },
                                     },
                                     dependsOn: ['route-device'],
@@ -1219,7 +1252,7 @@ describe('compileArbitraryCommandList', () => {
 
         expect(result).toEqual({
             status: 'rejected',
-            reason: 'Structured command writes for addSidechainRoute on track-kick are not safely composable.',
+            reason: 'Structured command writes for addSidechainRoute on compressor-a are not safely composable.',
         });
     });
 
