@@ -1,7 +1,11 @@
+import { MAX_LLM_ACTIONS_PER_BATCH } from './LlmActionLimits';
+
 export const SEMANTIC_COMMAND_LIST_SCHEMA_VERSION = 1 as const;
 export const SEMANTIC_COMMAND_LIST_MAX_ITEMS = 16;
-export const SEMANTIC_COMMAND_LIST_MAX_COMMANDS = 32;
+export const SEMANTIC_COMMAND_LIST_MAX_COMMANDS = MAX_LLM_ACTIONS_PER_BATCH;
 export const SEMANTIC_COMMAND_LIST_MAX_REPEAT = 8;
+export const SEMANTIC_COMMAND_LIST_MAX_JSON_DEPTH = 16;
+export const SEMANTIC_COMMAND_LIST_MAX_JSON_NODES = SEMANTIC_COMMAND_LIST_MAX_ITEMS * 256;
 
 export const SEMANTIC_COMMAND_LIST_ENTITIES = [
     'track',
@@ -144,35 +148,143 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isJsonValue(value: unknown): boolean {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const prototype = Reflect.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+type JsonTraversalEntry = { phase: 'enter'; value: unknown; depth: number } | { phase: 'leave'; value: object };
+
+function isBoundedJsonValue(value: unknown): boolean {
+    const stack: JsonTraversalEntry[] = [{ phase: 'enter', value, depth: 0 }];
+    const ancestors = new WeakSet<object>();
+    let visitedNodes = 0;
+    let pendingNodes = 1;
+
+    const schedule = (entry: unknown, depth: number): boolean => {
+        if (visitedNodes + pendingNodes >= SEMANTIC_COMMAND_LIST_MAX_JSON_NODES) {
+            return false;
+        }
+        stack.push({ phase: 'enter', value: entry, depth });
+        pendingNodes += 1;
         return true;
+    };
+
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (current === undefined) {
+            return false;
+        }
+        if (current.phase === 'leave') {
+            ancestors.delete(current.value);
+            continue;
+        }
+
+        pendingNodes -= 1;
+        visitedNodes += 1;
+        if (
+            visitedNodes > SEMANTIC_COMMAND_LIST_MAX_JSON_NODES ||
+            current.depth > SEMANTIC_COMMAND_LIST_MAX_JSON_DEPTH
+        ) {
+            return false;
+        }
+
+        const currentValue = current.value;
+        if (currentValue === null || typeof currentValue === 'string' || typeof currentValue === 'boolean') {
+            continue;
+        }
+        if (typeof currentValue === 'number') {
+            if (!Number.isFinite(currentValue)) {
+                return false;
+            }
+            continue;
+        }
+        if (!Array.isArray(currentValue) && !isPlainRecord(currentValue)) {
+            return false;
+        }
+        if (ancestors.has(currentValue)) {
+            return false;
+        }
+
+        ancestors.add(currentValue);
+        stack.push({ phase: 'leave', value: currentValue });
+        if (Array.isArray(currentValue)) {
+            if (currentValue.length > SEMANTIC_COMMAND_LIST_MAX_JSON_NODES) {
+                return false;
+            }
+            for (let index = currentValue.length - 1; index >= 0; index -= 1) {
+                if (!Object.hasOwn(currentValue, index) || !schedule(currentValue[index], current.depth + 1)) {
+                    return false;
+                }
+            }
+            continue;
+        }
+        for (const key in currentValue) {
+            if (Object.hasOwn(currentValue, key) && !schedule(currentValue[key], current.depth + 1)) {
+                return false;
+            }
+        }
     }
-    if (typeof value === 'number') {
-        return Number.isFinite(value);
-    }
-    if (Array.isArray(value)) {
-        return value.every(isJsonValue);
-    }
-    return isRecord(value) && Object.values(value).every(isJsonValue);
+
+    return true;
 }
 
 function jsonValuesEqual(left: unknown, right: unknown): boolean {
-    if (Object.is(left, right)) {
-        return true;
+    const stack: Array<{ left: unknown; right: unknown; depth: number }> = [{ left, right, depth: 0 }];
+    let comparedNodes = 0;
+
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (current === undefined) {
+            return false;
+        }
+        comparedNodes += 1;
+        if (
+            comparedNodes > SEMANTIC_COMMAND_LIST_MAX_JSON_NODES ||
+            current.depth > SEMANTIC_COMMAND_LIST_MAX_JSON_DEPTH
+        ) {
+            return false;
+        }
+        if (Object.is(current.left, current.right)) {
+            continue;
+        }
+        if (Array.isArray(current.left) || Array.isArray(current.right)) {
+            if (
+                !Array.isArray(current.left) ||
+                !Array.isArray(current.right) ||
+                current.left.length !== current.right.length
+            ) {
+                return false;
+            }
+            for (let index = current.left.length - 1; index >= 0; index -= 1) {
+                stack.push({ left: current.left[index], right: current.right[index], depth: current.depth + 1 });
+            }
+            continue;
+        }
+        if (isRecord(current.left) || isRecord(current.right)) {
+            if (!isRecord(current.left) || !isRecord(current.right)) {
+                return false;
+            }
+            const leftKeys = Object.keys(current.left);
+            const rightKeys = Object.keys(current.right);
+            if (leftKeys.length !== rightKeys.length) {
+                return false;
+            }
+            for (const key of leftKeys) {
+                if (!Object.hasOwn(current.right, key)) {
+                    return false;
+                }
+                stack.push({ left: current.left[key], right: current.right[key], depth: current.depth + 1 });
+            }
+            continue;
+        }
+        return false;
     }
-    if (Array.isArray(left) && Array.isArray(right)) {
-        return left.length === right.length && left.every((entry, index) => jsonValuesEqual(entry, right[index]));
-    }
-    if (isRecord(left) && isRecord(right)) {
-        const leftKeys = Object.keys(left).sort();
-        const rightKeys = Object.keys(right).sort();
-        return (
-            leftKeys.length === rightKeys.length &&
-            leftKeys.every((key, index) => key === rightKeys[index] && jsonValuesEqual(left[key], right[key]))
-        );
-    }
-    return false;
+
+    return true;
 }
 
 function matchesType(value: unknown, type: unknown): boolean {
@@ -189,7 +301,7 @@ function matchesType(value: unknown, type: unknown): boolean {
 }
 
 function matchesSchema(value: unknown, schema: unknown, depth = 0): boolean {
-    if (depth > 16 || !isRecord(schema) || !isJsonValue(value)) {
+    if (depth > SEMANTIC_COMMAND_LIST_MAX_JSON_DEPTH || !isRecord(schema)) {
         return false;
     }
     if (schema.type !== undefined && !matchesType(value, schema.type)) {
@@ -223,7 +335,9 @@ function matchesSchema(value: unknown, schema: unknown, depth = 0): boolean {
         }
         if (
             schema.uniqueItems === true &&
-            value.some((entry, index) => value.slice(index + 1).some((candidate) => jsonValuesEqual(entry, candidate)))
+            value.some((entry, index) =>
+                value.some((candidate, candidateIndex) => candidateIndex > index && jsonValuesEqual(entry, candidate))
+            )
         ) {
             return false;
         }
@@ -262,11 +376,18 @@ function matchesSchema(value: unknown, schema: unknown, depth = 0): boolean {
 
 /** Parses only the closed structural grammar; command ownership and composition remain compiler checks. */
 export function parseSemanticCommandList(value: unknown): SemanticCommandListParseResult {
-    if (!matchesSchema(value, SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA)) {
+    try {
+        if (!isBoundedJsonValue(value) || !matchesSchema(value, SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA)) {
+            return {
+                status: 'rejected',
+                reason: 'Structured command list does not match the versioned application contract.',
+            };
+        }
+        return { status: 'accepted', value: structuredClone(value) as SemanticCommandListV1 };
+    } catch {
         return {
             status: 'rejected',
             reason: 'Structured command list does not match the versioned application contract.',
         };
     }
-    return { status: 'accepted', value: structuredClone(value) as SemanticCommandListV1 };
 }

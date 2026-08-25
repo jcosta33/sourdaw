@@ -231,26 +231,134 @@ describe('planAgentRun', () => {
         ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('capability') }));
     });
 
-    it('accepts app-computed action expansion only when compiler evidence verifies the narrower provider proposal scope', () => {
-        const verifiedProviderProposalScope = {
-            targetIds: ['track-bass'],
+    it.each([
+        {
+            label: 'track removal cascade',
+            action: { type: 'removeTrack' },
+            actionLabel: 'Remove Kick',
+            providerTargetIds: ['track-kick'],
+            applicationTargetIds: ['track-kick', 'clip-kick', 'device-kick', 'track-bus'],
+        },
+        {
+            label: 'duplicate-track dynamic effects',
+            action: { type: 'duplicateTrack' },
+            actionLabel: 'Duplicate Kick',
+            providerTargetIds: ['track-kick'],
+            applicationTargetIds: ['track-kick', 'track-kick-copy', 'clip-kick'],
+        },
+    ])('accepts exact provider-known scope while retaining full $label authority', (testCase) => {
+        const providerKnownScope = {
+            targetIds: testCase.providerTargetIds,
             targetRanges: [],
             protectedTargetIds: [],
             protectedRanges: [],
         };
         const result = planAgentRun({
-            request: 'Insert a compressor after the bass EQ.',
-            revision: 'heads-structured-1',
-            actions: [{ type: 'addDevice' }],
-            actionLabels: ['Insert compressor after Bass EQ'],
+            request: testCase.actionLabel,
+            revision: 'heads-dynamic-effects',
+            actions: [testCase.action],
+            actionLabels: [testCase.actionLabel],
             scope: {
-                targetIds: ['track-bass', 'device-bass-eq'],
+                ...providerKnownScope,
+                targetIds: testCase.applicationTargetIds,
+            },
+            providerKnownScope,
+            grants: {
+                allowedOperationPrefixes: [testCase.action.type],
+                create: testCase.action.type === 'duplicateTrack',
+                delete: testCase.action.type === 'removeTrack',
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: true,
+            providerProposal: providerProposal({
+                scope: providerKnownScope,
+                capabilityIds: [testCase.action.type],
+            }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'planned',
+            plan: { scope: { targetIds: testCase.applicationTargetIds } },
+        });
+    });
+
+    it.each([
+        { label: 'omits', providerTargetIds: [] },
+        { label: 'adds', providerTargetIds: ['track-kick', 'track-hat'] },
+    ])('rejects a provider proposal that $label a direct target', ({ providerTargetIds }) => {
+        const providerKnownScope = {
+            targetIds: ['track-kick'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        };
+        const result = planAgentRun({
+            request: 'Remove Kick',
+            revision: 'heads-direct-scope',
+            actions: [{ type: 'removeTrack' }],
+            actionLabels: ['Remove Kick'],
+            scope: {
+                ...providerKnownScope,
+                targetIds: ['track-kick', 'clip-kick', 'device-kick'],
+            },
+            providerKnownScope,
+            grants: {
+                allowedOperationPrefixes: ['removeTrack'],
+                create: false,
+                delete: true,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: true,
+            providerProposal: providerProposal({
+                scope: { ...providerKnownScope, targetIds: providerTargetIds },
+                capabilityIds: ['removeTrack'],
+            }),
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') })
+        );
+    });
+
+    it.each([
+        {
+            label: 'provider scope',
+            applicationTargetIds: ['bass-1', 'drum-bus'],
+            providerTargetIds: ['bass-1', 'bass-1'],
+        },
+        {
+            label: 'application-owned scope',
+            applicationTargetIds: ['bass-1', 'bass-1'],
+            providerTargetIds: ['bass-1', 'drum-bus'],
+        },
+    ])('rejects duplicate IDs in the $label', ({ applicationTargetIds, providerTargetIds }) => {
+        const result = planAgentRun({
+            request: 'Mute the scoped tracks.',
+            revision: 'heads-duplicate-scope',
+            actions: [{ type: 'muteTrack' }],
+            actionLabels: ['Mute the scoped tracks'],
+            scope: {
+                targetIds: applicationTargetIds,
                 targetRanges: [],
                 protectedTargetIds: [],
                 protectedRanges: [],
             },
             grants: {
-                allowedOperationPrefixes: ['addDevice'],
+                allowedOperationPrefixes: ['muteTrack'],
                 create: false,
                 delete: false,
                 routing: false,
@@ -262,45 +370,20 @@ describe('planAgentRun', () => {
                 autoCommit: false,
             },
             budgets: { limits: {}, consumed: {} },
-            requiresConfirmation: true,
-            providerProposal: providerProposal({ scope: verifiedProviderProposalScope, capabilityIds: ['addDevice'] }),
-            verifiedProviderProposalScope,
-        });
-
-        expect(result).toEqual(expect.objectContaining({ status: 'planned' }));
-        expect(
-            planAgentRun({
-                request: 'Insert a compressor after the bass EQ.',
-                revision: 'heads-structured-1',
-                actions: [{ type: 'addDevice' }],
-                actionLabels: ['Insert compressor after Bass EQ'],
+            requiresConfirmation: false,
+            providerProposal: providerProposal({
                 scope: {
-                    targetIds: ['track-bass', 'device-bass-eq'],
+                    targetIds: providerTargetIds,
                     targetRanges: [],
                     protectedTargetIds: [],
                     protectedRanges: [],
                 },
-                grants: {
-                    allowedOperationPrefixes: ['addDevice'],
-                    create: false,
-                    delete: false,
-                    routing: false,
-                    tempo: false,
-                    master: false,
-                    file: false,
-                    audioUpload: false,
-                    remoteGeneration: false,
-                    autoCommit: false,
-                },
-                budgets: { limits: {}, consumed: {} },
-                requiresConfirmation: true,
-                providerProposal: providerProposal({
-                    scope: verifiedProviderProposalScope,
-                    capabilityIds: ['addDevice'],
-                }),
-                verifiedProviderProposalScope: { ...verifiedProviderProposalScope, targetIds: ['track-other'] },
-            })
-        ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') }));
+            }),
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') })
+        );
     });
 
     it('persists and hydrates a canonical revision-bound plan rather than resume prose', () => {

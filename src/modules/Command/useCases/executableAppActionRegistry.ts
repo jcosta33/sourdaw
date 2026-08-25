@@ -15,7 +15,6 @@ export type ExecutableAppActionTargetCapability =
     | 'output'
     | 'device-host-track'
     | 'device'
-    | 'sidechain-capable-device'
     | 'device-parameter'
     | 'adjustment-layer'
     | 'vca-group'
@@ -44,6 +43,7 @@ export type ExecutableAppActionMutationIdentityArgument = {
 
 export type ExecutableAppActionMutationIdentityRule = {
     arguments: readonly ExecutableAppActionMutationIdentityArgument[];
+    destructive?: false;
     fallbackArguments?: readonly ExecutableAppActionMutationIdentityArgument[];
     resourceFamily?: string;
     resourceReferenceOnly?: true;
@@ -157,23 +157,13 @@ const sendTargetRules = [
     },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
-const sidechainRouteTargetRules = [
+const sidechainTargetRules = [
     { argument: 'targetTrackId', capability: 'routable-source', promptRole: 'destination' },
     {
         argument: 'sourceTrackId',
         capability: 'routable-source',
         distinctFrom: 'targetTrackId',
         promptRole: 'source',
-    },
-] as const satisfies readonly ExecutableAppActionTargetRule[];
-
-const sidechainAddTargetRules = [
-    ...sidechainRouteTargetRules,
-    {
-        argument: 'targetDeviceId',
-        capability: 'sidechain-capable-device',
-        dependsOn: 'targetTrackId',
-        optional: true,
     },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
@@ -1922,7 +1912,7 @@ export const executableAppActionDescriptors = [
         description:
             'Route one source track into a supported sidechain compressor on a distinct target track; use targetDeviceId when an app-owned capability enumerates an exact device.',
         intentPhrases: ['add sidechain', 'create sidechain', 'route sidechain', 'sidechain'],
-        targetRules: sidechainAddTargetRules,
+        targetRules: sidechainTargetRules,
         parameters: {
             properties: {
                 sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
@@ -1937,7 +1927,7 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description: 'Remove the single existing sidechain route between two distinct tracks.',
         intentPhrases: ['remove sidechain', 'delete sidechain', 'disconnect sidechain'],
-        targetRules: sidechainRouteTargetRules,
+        targetRules: sidechainTargetRules,
         parameters: {
             properties: {
                 sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
@@ -2353,14 +2343,68 @@ export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppAction
 const NO_MUTATION_IDENTITY = [] as const;
 const SINGLETON_MUTATION_IDENTITY = [{ arguments: [] }] as const;
 const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }], resourceFamily: 'track' }] as const;
-const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' }] as const;
-const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
-const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' }] as const;
+const TRACK_RESOURCE_REFERENCE_IDENTITY = [
+    { arguments: [{ argument: 'trackId' }], resourceFamily: 'track', resourceReferenceOnly: true },
+] as const;
+const NON_DESTRUCTIVE_TRACK_RESOURCE_REFERENCE_IDENTITY = [
+    {
+        arguments: [{ argument: 'trackId' }],
+        destructive: false,
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
+const NON_DESTRUCTIVE_MANY_TRACKS_RESOURCE_REFERENCE_IDENTITY = [
+    {
+        arguments: [{ argument: 'trackIds', cardinality: 'many' }],
+        destructive: false,
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
+const PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = [
+    {
+        arguments: [{ argument: 'parentTrackIds', cardinality: 'many' }],
+        destructive: false,
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
+const CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY;
+const CLIP_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const MANY_CLIPS_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'clipIds', cardinality: 'many' }], resourceFamily: 'clip' },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const DUAL_CLIPS_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'clipAId' }], resourceFamily: 'clip' },
+    { arguments: [{ argument: 'clipBId' }], resourceFamily: 'clip' },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const MIDI_ARTICULATION_COPY_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'targetClipId' }], resourceFamily: 'clip' },
+    {
+        arguments: [{ argument: 'sourceClipId' }],
+        destructive: false,
+        resourceFamily: 'clip',
+        resourceReferenceOnly: true,
+    },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const DEVICE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const DEVICE_PARAMETER_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const SEND_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const TRACK_OUTPUT_MUTATION_IDENTITY = [
     ...TRACK_MUTATION_IDENTITY,
@@ -2374,11 +2418,23 @@ const AUTOMATED_SEND_MUTATION_IDENTITY = [
     {
         arguments: [{ argument: 'trackIds', cardinality: 'many' }, { argument: 'busId' }],
     },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
-const AUTOMATED_TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }] as const;
-const AUTOMATION_LANE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'laneId' }] }] as const;
+const AUTOMATED_TRACK_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
+    ...NON_DESTRUCTIVE_MANY_TRACKS_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY = [
+    { arguments: [{ argument: 'laneId' }], resourceFamily: 'automation-lane', resourceReferenceOnly: true },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const AUTOMATION_LANE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'laneId' }] },
+    ...AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const AUTOMATION_LANE_CREATION_IDENTITY = [
     { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
+    ...NON_DESTRUCTIVE_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const MARKER_REFERENCE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'beat' }, { argument: 'name' }], resourceFamily: 'marker' },
@@ -2389,11 +2445,20 @@ const SECTION_REFERENCE_MUTATION_IDENTITY = [
         resourceFamily: 'section',
     },
 ] as const;
+const SIDECHAIN_ROUTE_RESOURCE_REFERENCE_IDENTITY = [
+    {
+        arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }],
+        resourceFamily: 'sidechain-route',
+        resourceReferenceOnly: true,
+    },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY = [
     {
         arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetDeviceId' }],
         fallbackArguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }],
     },
+    ...SIDECHAIN_ROUTE_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 
 export const executableAppActionMutationIdentityRulesByType = {
@@ -2401,7 +2466,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     addTrack: NO_MUTATION_IDENTITY,
     createBus: NO_MUTATION_IDENTITY,
     removeTrack: TRACK_MUTATION_IDENTITY,
-    addClip: NO_MUTATION_IDENTITY,
+    addClip: TRACK_RESOURCE_REFERENCE_IDENTITY,
     duplicateClip: CLIP_MUTATION_IDENTITY,
     duplicateClipToNextBar: CLIP_MUTATION_IDENTITY,
     removeClip: CLIP_MUTATION_IDENTITY,
@@ -2416,7 +2481,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipColor: CLIP_MUTATION_IDENTITY,
     setClipFade: CLIP_MUTATION_IDENTITY,
     glueClips: MANY_CLIPS_MUTATION_IDENTITY,
-    crossfadeClips: [{ arguments: [{ argument: 'clipAId' }] }, { arguments: [{ argument: 'clipBId' }] }],
+    crossfadeClips: DUAL_CLIPS_MUTATION_IDENTITY,
     lockClip: CLIP_MUTATION_IDENTITY,
     setClipLoop: CLIP_MUTATION_IDENTITY,
     setClipLoopLength: CLIP_MUTATION_IDENTITY,
@@ -2428,7 +2493,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
     arpeggiate: CLIP_MUTATION_IDENTITY,
     createDrumPreviewBranches: NO_MUTATION_IDENTITY,
-    copyMidiArticulations: [{ arguments: [{ argument: 'targetClipId' }] }],
+    copyMidiArticulations: MIDI_ARTICULATION_COPY_MUTATION_IDENTITY,
     transposeNotes: CLIP_MUTATION_IDENTITY,
     invertNotes: CLIP_MUTATION_IDENTITY,
     retrogradeNotes: CLIP_MUTATION_IDENTITY,
@@ -2469,7 +2534,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     createVcaGroup: [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }],
     assignToVca: TRACK_MUTATION_IDENTITY,
     removeFromVca: TRACK_MUTATION_IDENTITY,
-    addDevice: NO_MUTATION_IDENTITY,
+    addDevice: TRACK_RESOURCE_REFERENCE_IDENTITY,
     removeDevice: DEVICE_MUTATION_IDENTITY,
     setDeviceParameter: DEVICE_PARAMETER_MUTATION_IDENTITY,
     bypassDevice: DEVICE_MUTATION_IDENTITY,
@@ -2478,14 +2543,14 @@ export const executableAppActionMutationIdentityRulesByType = {
     removeSend: SEND_MUTATION_IDENTITY,
     setTrackOutput: TRACK_OUTPUT_MUTATION_IDENTITY,
     addSidechainRoute: ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY,
-    removeSidechainRoute: [{ arguments: [{ argument: 'sourceTrackId' }, { argument: 'targetTrackId' }] }],
+    removeSidechainRoute: SIDECHAIN_ROUTE_RESOURCE_REFERENCE_IDENTITY,
     addAdjustmentRegion: NO_MUTATION_IDENTITY,
     automateSendRange: AUTOMATED_SEND_MUTATION_IDENTITY,
     automateTrackGainRange: AUTOMATED_TRACK_MUTATION_IDENTITY,
     automateSendRanges: AUTOMATED_SEND_MUTATION_IDENTITY,
     renderProjectSections: NO_MUTATION_IDENTITY,
     addAutomationLane: AUTOMATION_LANE_CREATION_IDENTITY,
-    addAutomationPoint: NO_MUTATION_IDENTITY,
+    addAutomationPoint: AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY,
     setAutomationLaneEnabled: AUTOMATION_LANE_MUTATION_IDENTITY,
     setAutomationMode: TRACK_MUTATION_IDENTITY,
     scaleAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,

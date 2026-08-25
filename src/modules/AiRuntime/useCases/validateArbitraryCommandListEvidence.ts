@@ -1,6 +1,7 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 
 import { type ActionCommandGraph } from '../models/ActionCommandGraph';
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type SemanticCommandListEntity } from '../models/SemanticCommandList';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -10,8 +11,6 @@ import {
     type ArbitraryCommandListEvidence,
     type ArbitraryCommandListSelectorEvidence,
 } from './compileArbitraryCommandList';
-
-const MAX_COMMANDS = 32;
 
 type Candidate = {
     id: string;
@@ -169,7 +168,7 @@ export function validateArbitraryCommandListEvidence(input: {
     if (
         !sameToolCalls(evidence.commands, input.calls) ||
         evidence.commands.length === 0 ||
-        evidence.commands.length > MAX_COMMANDS
+        evidence.commands.length > MAX_LLM_ACTIONS_PER_BATCH
     ) {
         return {
             status: 'rejected',
@@ -229,15 +228,7 @@ export function validateArbitraryCommandListEvidence(input: {
                 (commandIndex) =>
                     !Number.isSafeInteger(commandIndex) ||
                     commandIndex < 0 ||
-                    commandIndex >= evidence.commands.length ||
-                    commandIndex >= item.commandStart + item.commandCount ||
-                    (commandIndex < item.commandStart &&
-                        !evidence.items.some(
-                            (candidate) =>
-                                commandIndex >= candidate.commandStart &&
-                                commandIndex < candidate.commandStart + candidate.commandCount &&
-                                evidenceDependsTransitivelyOn(item.itemId, candidate.itemId, itemsById)
-                        ))
+                    commandIndex >= item.commandStart + item.commandCount
             ) ||
             item.declaredCommandIdentities.some(
                 (identity, index) =>
@@ -555,7 +546,8 @@ export function validateArbitraryCommandListEvidence(input: {
     }
     if (
         commandCursor !== evidence.commands.length ||
-        !hasExactStableIdSet(evidence.proposalScope.targetIds, resolvedTargetIds)
+        !hasExactStableIdSet(evidence.providerKnownTargetIds, resolvedTargetIds) ||
+        !hasExactStableIdSet(evidence.proposalScope.targetIds, evidence.providerKnownTargetIds)
     ) {
         return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
     }
