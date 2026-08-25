@@ -10,7 +10,11 @@ describe('getWindowChromeOptions', () => {
         });
     });
 
-    it.each(['linux', 'win32'] as const)('keeps the native frame on %s', (platform) => {
-        expect(getWindowChromeOptions(platform)).toEqual({});
+    it('goes frameless on linux, where the app draws its own window controls', () => {
+        expect(getWindowChromeOptions('linux')).toEqual({ frame: false });
+    });
+
+    it('keeps the native frame on win32', () => {
+        expect(getWindowChromeOptions('win32')).toEqual({});
     });
 });

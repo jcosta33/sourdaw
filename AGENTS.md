@@ -24,9 +24,12 @@ technical risk never qualify for escalation. Missing access is a blocker, not a 
 Encountered defects are never out of scope: existing rot measurably causes new rot, and delegated
 agents imitate the code around them. A defect is observable misbehavior, a broken invariant, or a
 contradiction with a documented contract — never style preference. Sizeable defects get their own
-lane; small unrelated ones batch into one hygiene lane; work you cannot take now is filed at any
-size, written so a cold session can execute it. "Worth noting" is not an outcome — a thing worth
-noting is a thing worth fixing or filing.
+lane; small unrelated ones batch into one hygiene lane. A defect you are fixing yourself needs no
+issue: the lane and pull request are its claim, and an issue filed only to be closed again in the
+same hour is tracker noise. File only what you are leaving behind — when you must keep working on
+something else, file it at any size, written so a cold session or another agent can pick it up
+later. "Worth noting" is not an outcome — a thing worth noting is a thing worth fixing or handing
+off.
 
 ## Delegation
 
@@ -42,6 +45,10 @@ change, conflicting evidence, or unresolved ambiguity. Escalate a blocked or dis
 then return to the cheapest adequate tier. Route on evidence, scope, reversibility, and repeated
 failure. Ignore an agent's own confidence.
 
+For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
+Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
+author's.
+
 Every dispatch carries the objective, lane, branch, scope, exclusions, dependencies, acceptance
 conditions, and checks. Require back only status, changed paths, decisive evidence, and blockers.
 
@@ -54,10 +61,10 @@ Reviewers are blind. Each one gets the head, the diff, and exactly one stance �
 reviewer's prose, the author's transcript, or the orchestrator's reasoning. Independence is the
 entire value, and a reviewer shown prior findings anchors to them.
 
-Derive stances from the risk surface the change actually touches, and stop once every material risk
-is covered. No count is required. The recurring surfaces are correctness, module boundaries and
-contracts, real-time audio safety, project integrity and undo, security and platform boundaries,
-and test validity.
+Assign one independent stance per material risk. Expect about three on a typical PR; never add a
+stance to meet that number or omit one to stay near it. The recurring surfaces are correctness,
+module boundaries and contracts, real-time audio safety, project integrity and undo, security and
+platform boundaries, and test validity.
 
 Tier each reviewer by the criticality of its stance, not the size of the diff: economy for narrow
 low-risk checks, standard for behavioral and integration risk, the strongest tier for real-time
@@ -96,6 +103,12 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 ## Resource Safety
 
+The machine is shared by every lane at once. Verification that costs real resources belongs to the
+pipeline, which has a runner per job; running it here takes the machine away from every other lane
+and returns an answer the pipeline was going to give anyway.
+
+- Locally, run only what is cheap and narrow: the spec you wrote or changed, lint on the files you
+  touched. Push for everything else.
 - Run repository commands sequentially within your lane. Other lanes may validate concurrently only
   when the guard admits them.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
@@ -183,8 +196,8 @@ never mints or spawns `gh`. The slug is `work` if omitted, and never purely nume
 number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
 `agent/<issue>/<slug>`. The pull request closes that issue by default; campaign slices use
 `lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`,
-and `lane:publish` must run from inside that lane because the working directory identifies it. Touch
-only your own lane.
+and `lane:publish` takes its absolute path with `--lane`. Run publishing from the protected primary
+checkout, never through a lane's package route. Touch only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -239,32 +252,56 @@ exception at all: lane tooling owns every push, because a push from anywhere els
 review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
 tracker state. Identity for a script-covered write is the App that script mints, not a persona.
 
-| Need                        | Command                                                           |
-| --------------------------- | ----------------------------------------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]`                                   |
-| Push; open or update the PR | `pnpm lane:publish [issue] [--relates] [--test "<instructions>"]` |
-| Write the review bundle     | `pnpm review:prepare <pr>`                                        |
-| Post `review.json`          | `pnpm review:publish <pr>`                                        |
-| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`             |
-| Squash-merge                | `pnpm deliver <pr>`                                               |
-| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>` |
-| Remove a spent lane         | `pnpm lane:remove <path>`                                         |
+| Need                        | Command                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| Open a lane                 | `pnpm lane:open [issue] [slug]`                                                             |
+| Push; open or update the PR | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--test "<instructions>"]` |
+| Write the review bundle     | `pnpm review:prepare <pr>`                                                                  |
+| Post `review.json`          | `pnpm review:publish <pr>`                                                                  |
+| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                       |
+| Squash-merge                | `pnpm deliver <pr>`                                                                         |
+| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                           |
+| Remove a spent lane         | `pnpm lane:remove <path>`                                                                   |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
 `.env.sourdaw-reviewer` for `review:prepare` and `review:publish`. Do not commit them. Do not load
-the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
-`jcosta33-reviewer[bot]`. `deliver` does not mint the reviewer.
+the other role's file. Delivery authenticates the author and reviewer roles by their immutable bot
+actor node IDs in `scripts/githubAppIdentity.ts`; mutable App slugs and bot logins are display only.
+The two role IDs are never interchangeable. `deliver` does not mint the reviewer.
 
-If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
-scripts may run from the working tree.
+The protected primary checkout is the launcher trust boundary for snapshot-backed GitHub writes.
+Run `lane:publish`, `deliver`, and `issue:reconcile` through its package route. The launcher and the
+command's whole script closure must match one pinned `origin/main` commit and are read only from the
+primary repository; lane files are data, never executable delivery code. A lane that predates the
+launcher contract or merely trails `main` therefore publishes or delivers without merging first.
 
-Hosted checks do not run. `.github/workflows/health-gates.yml` is manual dispatch only because the
-account's Actions billing is suspended. `main` is covered by a ruleset, but read what it actually
-does: it blocks deletion and non-fast-forward, forces a squashed pull request, and demands resolved
-threads — it requires no status check and no approving review, so it constrains how a change lands
-and judges nothing about the change itself. The affected local checks and the review below are the
-only gate a change passes, so a check you skipped is a check nobody ran.
+This boundary isolates lane-controlled files, not arbitrary code already running as the operator.
+The operator environment before the primary launcher starts is trusted, and processes under that
+same account can read its credential files. Snapshot and token-bearing children discard Node
+loader/preload settings and Git, GitHub CLI, GitHub Actions, and App overrides, then use the launcher
+resolved `git` and `gh` executables.
+
+Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
+a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
+`gate` is required by the ruleset, and only `gate` may be — it depends on every other job and passes
+when each either succeeded or was skipped, so a pull request that skips a path-filtered leg still
+reports a conclusion. Requiring a filtered job by name would leave it pending forever. Do not rename
+`gate`.
+
+Hosted checks exist so that nobody runs those checks on this machine. Lanes share one machine, and
+several agents each running a repository-wide typecheck, lint, or suite exhaust it and stall each
+other — which is the cost the resource guard was invented to ration and CI removes outright.
+
+So run locally only what is genuinely cheap and genuinely yours: the spec you just wrote or changed,
+lint on the files you touched. Push, and let the pipeline run the rest. Do not run `lint:full`,
+`typecheck`, `deps:validate`, the unit suite, cargo, wasm, or end-to-end locally to satisfy a gate —
+the pipeline runs all of them on every push, and a second copy on this machine buys nothing but
+contention.
+
+`main` is covered by a ruleset. Read what it actually does: it blocks deletion and non-fast-forward,
+forces a squashed pull request, and demands resolved threads. Whether it also requires `gate` is
+repository configuration, not something this file can promise.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it carries each package's build script because that name is not derivable from the
@@ -277,11 +314,11 @@ the manifest agrees and the artifact is stale. `pnpm wasm:all` covers all of the
 rebase can merge cleanly and still leave wasm stale; `pnpm wasm:verify` is the only proof of
 freshness.
 
-`lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
-it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
-standing in, so an issueless lane is publishable only from inside itself. It pushes without
-`--force`, and refuses any lane with uncommitted changes: commit the work yourself with a
-conventional subject first.
+`lane:publish` names the lane it resolved, then prints the PR number last. Invoke it from the
+protected primary checkout. An issue number resolves an issue lane by branch prefix; `--lane` takes
+the absolute worktree root of an issueless or off-convention lane. It pushes without `--force`, and
+refuses any lane with uncommitted changes: commit the work yourself with a conventional subject
+first.
 
 A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it with the
 newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
@@ -299,12 +336,12 @@ Related tickets reads `None.` only for a lane whose branch carries no issue. It 
 conforming lane carrying no non-merge commit above `origin/main`, for the same reason it needs one
 to title the pull request. It does not enable auto-merge or post a review.
 
-An author-locked, off-convention branch may also publish — but only from inside its own worktree,
-since no issue argument ever resolves one, and only once the repository already has an open pull
-request for that exact branch, which is what proves the worktree a genuine, if stranded, lane
-rather than one locked for an unrelated purpose. That path never writes a title or body: pushing is
-the whole of what publishing it means, so it leaves the pull request exactly as its owner wrote it,
-and it refuses outright if that pull request is no longer open by the time the push lands.
+An author-locked, off-convention branch may also publish through `--lane <absolute-path>`, but only
+once the repository already has an open pull request for that exact branch, which is what proves the
+worktree a genuine, if stranded, lane rather than one locked for an unrelated purpose. That path
+never writes a title or body: pushing is the whole of what publishing it means, so it leaves the
+pull request exactly as its owner wrote it, and it refuses outright if that pull request is no longer
+open by the time the push lands.
 
 Write the pull request for a teammate who was not in the session. Under the template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
@@ -312,8 +349,8 @@ tables off the pull request.
 
 `review:prepare` prints a bundle path on the primary root: `manifest.json`, `diff.patch`, `pr.md`,
 and base-commit `contracts/`. The caller writes `review.json` for **this** head. A reviewer agent
-gets that bundle, not the author transcript. `review:publish` prints the review id and posts as
-`jcosta33-reviewer[bot]` only while GitHub's head still matches the bundle.
+gets that bundle, not the author transcript. `review:publish` prints the review id and posts through
+the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
@@ -342,30 +379,26 @@ current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
-there, and run the checks this diff can break. What that run leaves out, `main` absorbs. Name it
-instead of gesturing at it: the tests covering the changed files, the typecheck for every surface
-the diff touches, lint on the changed files, `pnpm deps:validate` whenever the change crosses a
-module boundary, and any other check this diff can turn red. Formatting belongs to the run but is
-not one of those checks — it rewrites rather than reports, so run it on the changed files and stage
-what it rewrote instead of reading it as a pass. The `Checks` table holds the commands.
+there, and read the pipeline's result for that head. The checks are the pipeline's job, not a second
+local run of the same commands — that is what `Gate` reports, and a green `Gate` on this head is the
+evidence. Formatting is the exception worth doing locally, because it rewrites rather than reports:
+run it on the changed files and stage what it rewrote.
 
-Affected-only is the shape of that run, not a discount on it. Resource Safety already sets the
-outer edge, and the one condition that moves it; the obligation here is everything that can fail
-because of these changed files. They are one boundary read from both sides: a check this diff can
-break is never out of scope, and a check it cannot break is not evidence about it. Run it in the
-lane, on the head being merged. Unrelated `origin/main` movement does not by itself stale feature
-review or affected-only evidence, and a lane may publish while behind when it still has lane
-commits to push. Re-run checks and review when the feature head changes in a way that touches the
-reviewed or tested surface, when you resolve conflicts, or when the affected surfaces changed. Base
+What the orchestrator still owns is the judgement no check makes. A green pipeline says the gates
+passed, not that the change does what it was specified to do, that a test observes what its name
+claims, or that a finding was addressed rather than silenced. Read the diff for those.
+
+Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
+changes in a way that touches the reviewed surface, and when you resolve conflicts. Base
 compatibility is GitHub's ordinary mergeability gate: if the pull request is no longer `CLEAN` or
-its base branch changes, refresh the evidence on the head that will actually merge.
+its base branch changes, the pipeline runs again on the head that will actually merge.
 
 An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
 test that fails when the change is reverted, a measurement at the boundary users experience. That
 proof stays in the session; it is not the GitHub review.
 
-`pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
-pull request is not a draft, merge state is `CLEAN`, and threads are resolved. It merges into `main`
+`pnpm deliver` squash-merges only after the immutable reviewer actor `APPROVED` the current head,
+the pull request is not a draft, merge state is `CLEAN`, and threads are resolved. It merges into `main`
 and nothing else: `lane:publish` opens every pull request there, so any other base is a retarget the
 delivery scripts did not make, and `deliver` refuses it rather than squashing onto a branch the
 change was never reviewed against. Do not merge any other way.

@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { env } from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
 import babel from '@rolldown/plugin-babel';
@@ -43,7 +44,15 @@ export default defineConfig({
     ],
     test: {
         environment: 'jsdom',
-        maxWorkers: 2,
+        /**
+         * Two workers is the agent-session ceiling: a lane shares its machine
+         * with every other lane and with the resource guard's reservations.
+         * CI has neither constraint and a runner has more cores than that, so
+         * the shards there raise it. The suite spends far more time building
+         * jsdom environments and loading modules than running assertions, so
+         * worker count is the lever that moves it.
+         */
+        maxWorkers: Number(env.VITEST_MAX_WORKERS ?? 2),
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
         /**

@@ -333,8 +333,9 @@ describe('audioBufferCache metadata store', () => {
     describe('migration', () => {
         // Mutation: back-filling every record inside `onupgradeneeded` reds
         // `bytesRead` at 384 118 — the stall this migration exists to avoid, on
-        // a store the freeze cleanup caps at 2 GiB.
-        it('creates the metadata store without reading a single record', async () => {
+        // a store the freeze cleanup caps at 2 GiB. The v3 recovery migration
+        // does a bounded key scan after upgrade, so scalar traffic is expected.
+        it('creates the metadata store without reading legacy PCM', async () => {
             const audioBufferCache = await importCache();
             controls.committed.set('legacy', legacyRecord({ frames: FRAMES_PER_SECOND, channels: 2, lastAccessed: 5 }));
 
@@ -343,7 +344,7 @@ describe('audioBufferCache metadata store', () => {
             await audioBufferCache.restoreFromIdb({ context: { createBuffer: () => stereoSecond() }, ids: [] });
 
             expect(controls.storeNames()).toContain(META_STORE);
-            expect(controls.bytesRead()).toBe(0);
+            expect(controls.bytesRead()).toBeLessThan(SCALAR_TRAFFIC_CEILING);
             expect(controls.committedMeta.size).toBe(0);
         });
 
@@ -500,7 +501,7 @@ describe('audioBufferCache metadata store', () => {
             await flushIndexedDbTasks();
 
             const writeScopes = controls.transactionScopes().filter((scope) => scope.includes(BUFFER_STORE));
-            expect(writeScopes).toEqual([[BUFFER_STORE, META_STORE]]);
+            expect(writeScopes.at(-1)).toEqual([BUFFER_STORE, META_STORE]);
         });
 
         // Fails the record store only, which is what a quota error looks like.
@@ -560,6 +561,37 @@ describe('audioBufferCache metadata store', () => {
 
             expect([...controls.committed.keys()]).toEqual(['freeze-live']);
             expect([...controls.committedMeta.keys()]).toEqual(['freeze-live']);
+        });
+
+        it('protects every prepared owner classification across durable and resident freeze scans', async () => {
+            const audioBufferCache = await importCache();
+            const invalidOwnerId = 'freeze-invalid-prepared-owner';
+            const reconcilingOwnerId = 'freeze-reconciling-prepared-owner';
+            const ordinaryId = 'freeze-ordinary-stale';
+            for (const id of [invalidOwnerId, reconcilingOwnerId, ordinaryId]) {
+                audioBufferCache.set(id, makeAudioBuffer([new Float32Array([0.5])]), { freezeProjectId: 200 });
+            }
+            await flushIndexedDbTasks();
+            controls.committedMeta.get(invalidOwnerId)!.preparedOwner = {
+                schemaVersion: 1,
+                leaseId: '',
+                status: 'project-owned',
+            };
+            controls.committedMeta.get(reconcilingOwnerId)!.preparedOwner = {
+                schemaVersion: 1,
+                leaseId: 'reconciling-lease',
+                promotionRevision: 'promotion-revision',
+                status: 'project-owned',
+            };
+
+            await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 200 });
+
+            expect(controls.committed.has(invalidOwnerId)).toBe(true);
+            expect(controls.committed.has(reconcilingOwnerId)).toBe(true);
+            expect(audioBufferCache.has(invalidOwnerId)).toBe(true);
+            expect(audioBufferCache.has(reconcilingOwnerId)).toBe(true);
+            expect(controls.committed.has(ordinaryId)).toBe(false);
+            expect(audioBufferCache.has(ordinaryId)).toBe(false);
         });
 
         // Mutation: dropping the metadata clear from `clear()` reds

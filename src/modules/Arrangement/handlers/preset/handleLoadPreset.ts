@@ -12,6 +12,11 @@ import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/tr
 import { type Device, type Track } from '../../stores/trackStore';
 import { compileTrackStripInitializationSnapshot } from '../../useCases/compileTrackStripInitializationSnapshot';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
+import { hasLiveProjectHostTrack } from '../../useCases/device/hasLiveProjectHostTrack';
+import {
+    getRuntimeDeviceDeltaPostCommitFailure,
+    type RuntimeDeviceDeltaPostCommitError,
+} from '../../useCases/device/runtimeDeviceDeltaPostCommit';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { findPresetById } from '../../useCases/preset/findPresetById';
 import { matchesMaterializedPresetDevices } from '../../useCases/preset/matchesMaterializedPresetDevices';
@@ -21,27 +26,6 @@ import { getPlannedTrackState } from '../getPlannedTrackState';
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
 type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
-type RuntimeDeviceDeltaFailure = Exclude<
-    RuntimeDeviceDeltaResult,
-    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
->;
-
-class RuntimePresetDeltaPostCommitError extends Error {
-    public readonly outcome: RuntimeDeviceDeltaFailure;
-    public readonly remediation: 'retry' | 'repair';
-
-    constructor(outcome: RuntimeDeviceDeltaFailure) {
-        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
-        super(
-            outcome.acceptance === 'rejected'
-                ? `Preset runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
-                : `Preset runtime delta requires ${remediation} after project commit: ${outcome.reason}`
-        );
-        this.name = 'RuntimePresetDeltaPostCommitError';
-        this.outcome = outcome;
-        this.remediation = remediation;
-    }
-}
 
 function findUniqueTrack(trackId: string): Track | null {
     const matches = (getTrackStoreState()?.tracks ?? []).filter((track) => track.id === trackId);
@@ -117,24 +101,30 @@ function createReplacementTopology(before: Track, replacementDevices: readonly D
     return { ...before, devices: toProjectDevices(replacementDevices) };
 }
 
-function initializeMissingLiveStrip(after: Track): RuntimeDeviceDeltaResult {
+function isReplacementStillAuthoritative(after: Track): boolean {
+    const current = findUniqueTrack(after.id);
+    return current !== null && runtimeGraphTopology.matchesNode(current, runtimeGraphTopology.createNode(after));
+}
+
+function initializeMissingLiveStrip(target: Track): RuntimeDeviceDeltaResult {
     const tracks = getTrackStoreState()?.tracks ?? [];
-    const projectTracks = tracks.some((track) => track.id === after.id)
-        ? tracks.map((track) => (track.id === after.id ? after : track))
-        : [...tracks, after];
-    const snapshot = compileTrackStripInitializationSnapshot(after, projectTracks);
+    const snapshot = compileTrackStripInitializationSnapshot(target, tracks);
     if (!snapshot) {
         return {
             acceptance: 'rejected',
             application: 'not-applied',
-            reason: `Cannot initialize preset runtime strip for track ${after.id}`,
+            reason: `Cannot initialize preset runtime strip for track ${target.id}`,
         };
     }
     return initializeTrackStripFromSnapshot(snapshot);
 }
 
-function createPostCommitRuntimeEffect(before: Track, after: Track): () => void {
-    let failure: RuntimePresetDeltaPostCommitError | undefined;
+function createPostCommitRuntimeEffect(
+    before: Track,
+    after: Track,
+    batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>
+): () => void {
+    let failure: RuntimeDeviceDeltaPostCommitError | undefined;
     return () => {
         if (failure) {
             throw failure;
@@ -142,34 +132,71 @@ function createPostCommitRuntimeEffect(before: Track, after: Track): () => void 
         if (!shouldCreateLiveTrackStrip(after)) {
             return;
         }
-        const result = getTrackStrip(after.id)
-            ? applyDeviceChainRuntimeDelta({
-                  before,
-                  after,
-                  operation: 'replace-device-chain',
-              })
-            : initializeMissingLiveStrip(after);
-        if (result.acceptance !== 'accepted' || result.application !== 'applied') {
-            failure = new RuntimePresetDeltaPostCommitError(result);
-            throw failure;
+        // This effect runs after the whole batch commits, so a later action in
+        // the same commit may have removed the host track. Both branches below
+        // are unsound once it is gone, and each is guarded on its own terms:
+        // the delta reports itself `superseded`, while strip initialization
+        // never consults project truth at all and would build a strip nothing
+        // owns for a track that no longer exists.
+        const liveStrip = getTrackStrip(after.id);
+        if (!liveStrip && !hasLiveProjectHostTrack(after.id)) {
+            return;
+        }
+        const authoritativeTarget = findUniqueTrack(after.id);
+        let runtimeTarget = authoritativeTarget ?? after;
+        let result: RuntimeDeviceDeltaResult;
+        if (liveStrip) {
+            result = applyDeviceChainRuntimeDelta({
+                before,
+                after,
+                operation: 'replace-device-chain',
+                batchContext,
+            });
+        } else {
+            if (!authoritativeTarget) {
+                result = {
+                    acceptance: 'rejected',
+                    application: 'not-applied',
+                    reason: `Cannot initialize preset runtime strip for track ${after.id}`,
+                };
+            } else {
+                runtimeTarget = authoritativeTarget;
+                result = initializeMissingLiveStrip(authoritativeTarget);
+            }
+        }
+        if (result.acceptance === 'superseded' && result.application === 'not-applied') {
+            return;
+        }
+        if (result.acceptance !== 'superseded') {
+            const presetFailure = getRuntimeDeviceDeltaPostCommitFailure(result, 'Preset');
+            if (presetFailure) {
+                failure = presetFailure;
+                throw failure;
+            }
+        }
+        if (result.application === 'discharged' && !isReplacementStillAuthoritative(after)) {
+            return;
         }
         // Parameter controls are intentionally separate from the topology
         // delta. They run only after the exact live chain was accepted.
-        for (const device of after.devices) {
+        for (const device of runtimeTarget.devices) {
             for (const [parameterId, value] of Object.entries(device.parameterValues)) {
-                updateDeviceParam(after.id, device.id, parameterId, value);
+                updateDeviceParam(runtimeTarget.id, device.id, parameterId, value);
             }
         }
     };
 }
 
-function executeReplacement(input: {
-    trackId: string;
-    expectedBefore: DeviceChainTopologySnapshot;
-    expectedFrozen: boolean;
-    replacementDevices: readonly DeviceSnapshot[];
-    expectedProjectRevision?: string;
-}) {
+function executeReplacement(
+    input: {
+        trackId: string;
+        expectedBefore: DeviceChainTopologySnapshot;
+        expectedFrozen: boolean;
+        replacementDevices: readonly DeviceSnapshot[];
+        expectedProjectRevision?: string;
+    },
+    batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>
+) {
     const current = resolveReplacement(
         {
             trackId: input.trackId,
@@ -186,7 +213,7 @@ function executeReplacement(input: {
     const before = structuredClone(current);
     const after = createReplacementTopology(before, input.replacementDevices);
     updateTrack(before.id, () => after);
-    const applyRuntimeEffect = createPostCommitRuntimeEffect(before, after);
+    const applyRuntimeEffect = createPostCommitRuntimeEffect(before, after, batchContext);
     return {
         status: 'written' as const,
         afterCommit: applyRuntimeEffect,
@@ -246,7 +273,7 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
             ) !== null
         );
     },
-    execute: (action) => {
+    execute: (action, context) => {
         if (
             resolveReplacement(
                 {
@@ -264,12 +291,15 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
         // The first application consumes the collaboration revision proof. The
         // guarded inverse and redo retain their exact topology fingerprints.
         delete action.payload.expectedProjectRevision;
-        return executeReplacement({
-            trackId: action.payload.trackId,
-            expectedBefore: action.payload.expectedBefore,
-            expectedFrozen: action.payload.expectedFrozen,
-            replacementDevices: action.payload.devices,
-        });
+        return executeReplacement(
+            {
+                trackId: action.payload.trackId,
+                expectedBefore: action.payload.expectedBefore,
+                expectedFrozen: action.payload.expectedFrozen,
+                replacementDevices: action.payload.devices,
+            },
+            context
+        );
     },
     describe: describeLoadPreset,
     previewExecution: 'isolated-project',
@@ -288,13 +318,16 @@ export const handleRestorePresetDeviceChain = createHandler<'restorePresetDevice
             },
             context
         ) !== null,
-    execute: (action) =>
-        executeReplacement({
-            trackId: action.payload.trackId,
-            expectedBefore: action.payload.expectedBefore,
-            expectedFrozen: action.payload.expectedFrozen,
-            replacementDevices: action.payload.replacementDevices,
-        }),
+    execute: (action, context) =>
+        executeReplacement(
+            {
+                trackId: action.payload.trackId,
+                expectedBefore: action.payload.expectedBefore,
+                expectedFrozen: action.payload.expectedFrozen,
+                replacementDevices: action.payload.replacementDevices,
+            },
+            context
+        ),
     describe: () => ({ label: 'Restore preset device chain' }),
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

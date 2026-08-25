@@ -3,6 +3,9 @@ name = "proof-chamber"
 version = "0.1.0"
 edition = "2021"
 description = "Dutch Oven — flagship Dattorro plate reverb engine for Sourdaw"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -1,4 +1,9 @@
-import { type DdspStoredArtifact, type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
+import {
+    type DdspSettings,
+    type DdspStoredArtifact,
+    type WorkerRequest,
+    type WorkerResponse,
+} from '../models/InferenceRequest';
 
 export type TfjsWorkerTensor = {
     data: () => Promise<ArrayLike<number>>;
@@ -32,15 +37,6 @@ export type TfjsWorkerRuntime = {
 type CreateTfjsInferenceRequestHandlerInput = {
     initializeTfjs: () => Promise<TfjsWorkerRuntime>;
     postResponse: (response: WorkerResponse, transfer?: Transferable[]) => void;
-};
-
-type DdspSettings = {
-    averageMaxLoudness: number;
-    loudnessThreshold: number;
-    meanLoudness: number;
-    meanPitch: number;
-    modelMaxFrameLength: number;
-    postGain: number;
 };
 
 type DdspSession = {
@@ -325,6 +321,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
 } {
     const sessions = new Map<string, DdspSession>();
     const sessionLoads = new Map<string, SessionLoad>();
+    const inFlightSessionLoads = new Set<SessionLoad>();
     const activeRequests = new Map<string, ActiveRequest>();
     const modelReleases = new Map<string, Promise<void>>();
     const closedPorts = new WeakSet<MessagePort>();
@@ -484,12 +481,14 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                         disposeModel(loadedModel);
                     }
                     closeArtifactPorts(load.artifacts);
+                    inFlightSessionLoads.delete(load);
                     if (sessionLoads.get(load.sessionKey) === load) {
                         sessionLoads.delete(load.sessionKey);
                     }
                 }
             }),
         };
+        inFlightSessionLoads.add(load);
         sessionLoads.set(request.sessionKey, load);
         return load;
     }
@@ -534,10 +533,14 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                 sessionKey: request.sessionKey,
                 backend,
                 modelFrameLength: existing.settings.modelMaxFrameLength,
+                settings: existing.settings,
             });
             return;
         }
         let load = sessionLoads.get(request.sessionKey);
+        if (load?.controller.signal.aborted) {
+            load = undefined;
+        }
         if (load) {
             closeArtifactPorts(request.artifacts);
         } else {
@@ -556,6 +559,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             sessionKey: request.sessionKey,
             backend: requireWebgpu(await getTfjs()),
             modelFrameLength: session.settings.modelMaxFrameLength,
+            settings: session.settings,
         });
     }
 
@@ -625,8 +629,10 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
 
     function releaseSession(sessionKey: string): Promise<void> {
         const priorRelease = modelReleases.get(sessionKey);
-        const load = sessionLoads.get(sessionKey);
-        load?.controller.abort();
+        const loads = [...inFlightSessionLoads].filter((load) => load.sessionKey === sessionKey);
+        for (const load of loads) {
+            load.controller.abort();
+        }
         const matchingRequests = [...activeRequests.values()].filter((request) => request.sessionKey === sessionKey);
         for (const request of matchingRequests) {
             request.controller.abort();
@@ -636,9 +642,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                 await priorRelease;
             }
             await Promise.allSettled(matchingRequests.map(({ settled }) => settled));
-            if (load) {
-                await load.promise.catch(() => undefined);
-            }
+            await Promise.allSettled(loads.map(({ promise }) => promise));
             const session = sessions.get(sessionKey);
             if (session) {
                 disposeModel(session.model);
@@ -667,7 +671,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
         for (const request of requests) {
             request.controller.abort();
         }
-        const loads = [...sessionLoads.values()];
+        const loads = [...inFlightSessionLoads];
         for (const load of loads) {
             load.controller.abort();
             closeArtifactPorts(load.artifacts);
@@ -678,6 +682,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
             ...modelReleases.values(),
         ]).then(() => {
             sessionLoads.clear();
+            inFlightSessionLoads.clear();
             disposeCachedSessions();
         });
         return disposePromise;

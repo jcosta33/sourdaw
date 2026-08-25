@@ -1,56 +1,32 @@
 import { expect, test } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
-async function openFermenterEffects(page: import('@playwright/test').Page): Promise<void> {
-    const search = page.getByTestId('browser-search');
-    if (!(await search.isVisible().catch(() => false))) {
-        await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
-    }
-    await search.fill('fermenter');
-    await page.waitForTimeout(500);
-    const card = page.getByRole('button', { name: /^Fermenter/i }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.click();
-    await expect(page.getByRole('button', { name: /Close Fermenter/i }).first()).toBeVisible({ timeout: 15_000 });
-    // Switch to Effects section.
-    const effectsTab = page.locator('.fermenter-faceplate').getByRole('button', { name: 'Effects', exact: true }).first();
-    await effectsTab.dispatchEvent('click');
-    await page.waitForTimeout(400);
-}
-
-// Fermenter Effects Dist tab knobs (Drive, Tone, Mix). The #1781 spec covered
-// the FX sub-tab SWITCH but not the knobs within each tab. The knobs sit behind
-// a clipping ancestor so visibility fails — but they ARE in the DOM and
-// keyboard works. This uses toBeAttached + focus + ArrowUp.
-test.describe('Fermenter FX Dist tab knobs — keyboard response', () => {
+test.describe('Fermenter FX Dist knobs', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await openFermenterEffects(page);
+        await open_browser_instrument({ page, instrument: 'Fermenter' });
+        await page
+            .locator('.fermenter-faceplate')
+            .getByRole('button', { name: 'Effects', exact: true })
+            .dispatchEvent('click');
     });
 
-    test('Dist Drive knob responds to keyboard', async ({ page }) => {
-        const drive = page.getByRole('slider', { name: 'Drive', exact: true }).first();
-        await expect(drive).toBeAttached({ timeout: 10_000 });
-        await drive.focus();
-        const before = Number(await drive.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await drive.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
-    });
+    test('ArrowUp steps Dist Drive 0 to 0.1 and Mix 0 to 0.01', async ({ page }) => {
+        const panel = page.locator('.fermenter-faceplate');
 
-    test('Dist Mix knob responds to keyboard', async ({ page }) => {
-        const mix = page.getByRole('slider', { name: 'Mix', exact: true }).first();
-        await expect(mix).toBeAttached({ timeout: 10_000 });
-        await mix.focus();
-        const before = Number(await mix.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await mix.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        const drive = panel.getByRole('slider', { name: 'Drive', exact: true });
+        await expect(drive).toHaveAttribute('aria-valuenow', '0');
+        await drive.scrollIntoViewIfNeeded();
+        await drive.press('ArrowUp');
+        await expect(drive).toHaveAttribute('aria-valuenow', '0.1');
+
+        const mix = panel.getByRole('slider', { name: 'Mix', exact: true });
+        await expect(mix).toHaveAttribute('aria-valuenow', '0');
+        await mix.scrollIntoViewIfNeeded();
+        await mix.press('ArrowUp');
+        await expect(mix).toHaveAttribute('aria-valuenow', '0.01');
     });
 });

@@ -1,6 +1,6 @@
 # AudioEngine module — Agent Guidelines
 
-WebAudio graph runtime: hosts every built-in device as a WASM engine node, plus the buffer cache
+WebAudio graph runtime: hosts every release-admitted built-in device as a WASM engine node, plus the buffer cache
 (`stores/audioBufferCache.ts`), recording, and metering.
 
 Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch Oven module.
@@ -13,16 +13,21 @@ Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch
   `src/modules/AudioEngine/wasm/`, prepending AudioWorklet-scope polyfills and replacing
   `new URL(..., import.meta.url)` with a static path so Vite does not bundle the `.wasm`. Re-run
   the `wasm:*` script after changing a crate; never hand-edit files under `AudioEngine/wasm/`.
+- Grand Boule runs its live WASM engine in a Worker behind a SharedArrayBuffer ring. Offline render
+  runs the same engine inline in an AudioWorklet, where no live deadline exists.
+- The release census covers the complete `public/wasm` tree and every manifest-declared AudioEngine
+  mirror. Package ids and artifact paths come from `scripts/wasm-artifacts.ts`; unknown sidecars,
+  manifest paths, text references, or binary exports fail release validation.
 - The main thread revalidates, fetches and asynchronously compiles each WASM URL once. A
   short-lived module lease is released on abort or host-construction failure; successful host
   construction commits one URL per bundle to the `AudioContext`, because wasm-bindgen glue is a
   realm singleton. Loading another version after that requires a fresh context and is rejected
   instead of silently retaining the old binary.
 - AudioWorklet processors receive the structured-cloned `WebAssembly.Module` through
-  `processorOptions`; the GrandBoule worker receives it in its idempotent init message. A separate
-  port init message starts caught instantiation and the ready/error handshake. Both processor kinds
-  call `initSync` and compile nothing on their real-time-adjacent threads. Shared module caching and
-  handshake logic live in `src/infra/audioWorklet/workletInitShared.ts`.
+  `processorOptions`; Grand Boule's Worker receives the same compiled module. A separate port init
+  message starts caught instantiation and the ready/error handshake.
+  Processors call `initSync` and compile nothing on their real-time-adjacent threads. Shared module
+  caching and handshake logic live in `src/infra/audioWorklet/workletInitShared.ts`.
 - Crumbs disk streaming is native-only ([daw-dsp](../../../crates/daw-dsp/AGENTS.md)). Browser
   playback and offline rendering run the same Crumbs engine in WASM, with decoded PCM preloaded
   into its in-memory sample pool.

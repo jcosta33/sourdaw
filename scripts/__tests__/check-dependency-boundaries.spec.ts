@@ -439,12 +439,14 @@ describe('check-dependency-boundaries', () => {
         }
         expect(violates(desktopIpcRule, 'src/modules/Foo/useCases/run.ts', 'src/utils/desktopBridge.ts')).toBe(true);
         expect(violates(desktopIpcRule, 'src/utils/desktopBridge.ts', resolvedTauriPaths[0])).toBe(false);
-        expect(violates(desktopIpcRule, 'src/utils/__tests__/desktopBridge.spec.ts', resolvedTauriPaths[0])).toBe(false);
+        expect(violates(desktopIpcRule, 'src/utils/__tests__/desktopBridge.spec.ts', resolvedTauriPaths[0])).toBe(
+            false
+        );
         expect(violates(desktopIpcRule, allowedRepositoryOrigins[0], 'src/utils/desktopBridge.ts')).toBe(false);
         expect(violates(desktopIpcRule, 'src/utils/otherBridge.ts', 'src/utils/desktopBridge.ts')).toBe(true);
-        expect(violates(testDesktopIpcRule, 'src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPaths[0])).toBe(
-            true
-        );
+        expect(
+            violates(testDesktopIpcRule, 'src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPaths[0])
+        ).toBe(true);
     });
 
     it('should apply desktop IPC confinement to type-only edges', () => {

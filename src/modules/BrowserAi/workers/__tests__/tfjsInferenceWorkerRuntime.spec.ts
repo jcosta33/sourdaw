@@ -267,6 +267,7 @@ describe('tfjsInferenceWorkerRuntime', () => {
             sessionKey: 'ddsp-violin:v1:fingerprint',
             backend: 'webgpu',
             modelFrameLength: MODEL_FRAME_LENGTH,
+            settings: SETTINGS_VALUES,
         });
         for (const artifact of transferred) {
             expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
@@ -793,6 +794,207 @@ describe('tfjsInferenceWorkerRuntime', () => {
         );
         expect(harness.model.dispose).not.toHaveBeenCalled();
         for (const artifact of duplicatePorts) {
+            expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
+        }
+    });
+
+    it('starts a fresh session load when the final subscriber cancelled the settling load', async () => {
+        const cancelledLoad = deferred<TfjsWorkerModel>();
+        const replacementLoad = deferred<TfjsWorkerModel>();
+        const harness = createHarness();
+        const controllerAbort = vi.spyOn(AbortController.prototype, 'abort');
+        const cancelledModel: TfjsWorkerModel = {
+            dispose: vi.fn(),
+            predict: vi.fn(() => fakeTensor(Float32Array.from([9, 9, 9, 9]))),
+        };
+        const replacementModel: TfjsWorkerModel = {
+            dispose: vi.fn(),
+            predict: vi.fn(() => fakeTensor(Float32Array.from([1, 2, 3, 4]))),
+        };
+        harness.loadGraphModel
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return cancelledLoad.promise;
+            })
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return replacementLoad.promise;
+            });
+        const cancelledPorts = artifacts();
+        const first = harness.runtime.handleRequest(sessionRequest('cancelled-load', cancelledPorts));
+        await vi.waitFor(() => expect(harness.loadGraphModel).toHaveBeenCalledOnce());
+
+        await harness.runtime.handleRequest({ type: 'cancel-request', requestId: 'cancelled-load' });
+        await first;
+        const replacementPorts = artifacts();
+        const replacement = harness.runtime.handleRequest(sessionRequest('replacement-load', replacementPorts));
+        await vi.waitFor(() => expect(harness.loadGraphModel).toHaveBeenCalledTimes(2));
+
+        cancelledLoad.resolve(cancelledModel);
+        await vi.waitFor(() => expect(cancelledModel.dispose).toHaveBeenCalledOnce());
+        const coalescedPorts = artifacts();
+        const coalesced = harness.runtime.handleRequest(sessionRequest('coalesced-load', coalescedPorts));
+        await Promise.resolve();
+        expect(harness.loadGraphModel).toHaveBeenCalledTimes(2);
+        replacementLoad.resolve(replacementModel);
+        await Promise.all([replacement, coalesced]);
+        await harness.runtime.handleRequest(inferenceRequest('replacement-inference'));
+
+        expect(harness.responses).toContainEqual({
+            type: 'error',
+            requestId: 'cancelled-load',
+            error: 'DDSP request cancelled',
+        });
+        expect(harness.responses).toContainEqual(
+            expect.objectContaining({ type: 'session-created', requestId: 'replacement-load' })
+        );
+        expect(harness.responses).toContainEqual(
+            expect.objectContaining({ type: 'session-created', requestId: 'coalesced-load' })
+        );
+        expect(harness.responses.at(-1)).toMatchObject({
+            type: 'ddsp-result',
+            requestId: 'replacement-inference',
+            audio: Float32Array.from([1, 2, 3, 4]),
+        });
+        expect(cancelledModel.predict).not.toHaveBeenCalled();
+        expect(replacementModel.predict).toHaveBeenCalledOnce();
+        for (const artifact of [...cancelledPorts, ...replacementPorts, ...coalescedPorts]) {
+            expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
+        }
+        await harness.runtime.dispose();
+        expect(controllerAbort).toHaveBeenCalledTimes(2);
+        expect(new Set(controllerAbort.mock.contexts).size).toBe(2);
+        expect(cancelledModel.dispose).toHaveBeenCalledOnce();
+        expect(replacementModel.dispose).toHaveBeenCalledOnce();
+        controllerAbort.mockRestore();
+    });
+
+    it('waits for an overwritten settling load before acknowledging worker disposal', async () => {
+        const cancelledLoad = deferred<TfjsWorkerModel>();
+        const replacementLoad = deferred<TfjsWorkerModel>();
+        const harness = createHarness();
+        const cancelledModel: TfjsWorkerModel = {
+            dispose: vi.fn(),
+            predict: vi.fn(() => fakeTensor(Float32Array.from([9, 9, 9, 9]))),
+        };
+        const replacementDispose = vi.fn();
+        const replacementModel: TfjsWorkerModel = {
+            dispose: replacementDispose,
+            predict: vi.fn(() => fakeTensor(Float32Array.from([1, 2, 3, 4]))),
+        };
+        harness.loadGraphModel
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return cancelledLoad.promise;
+            })
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return replacementLoad.promise;
+            });
+        const cancelledPorts = artifacts();
+        const first = harness.runtime.handleRequest(sessionRequest('dispose-cancelled-load', cancelledPorts));
+        await vi.waitFor(() => expect(harness.loadGraphModel).toHaveBeenCalledOnce());
+        await harness.runtime.handleRequest({ type: 'cancel-request', requestId: 'dispose-cancelled-load' });
+        await first;
+
+        const replacementPorts = artifacts();
+        const replacement = harness.runtime.handleRequest(sessionRequest('dispose-replacement-load', replacementPorts));
+        await vi.waitFor(() => expect(harness.loadGraphModel).toHaveBeenCalledTimes(2));
+        const coalescedPorts = artifacts();
+        const coalesced = harness.runtime.handleRequest(sessionRequest('dispose-coalesced-load', coalescedPorts));
+        await Promise.resolve();
+        expect(harness.loadGraphModel).toHaveBeenCalledTimes(2);
+        replacementLoad.resolve(replacementModel);
+        await Promise.all([replacement, coalesced]);
+        await harness.runtime.handleRequest(inferenceRequest('before-worker-disposal'));
+
+        const disposal = harness.runtime.handleRequest({ type: 'dispose-worker', requestId: 'dispose-worker' });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const acknowledgedBeforeOldSettled = harness.responses.some(
+            (response) => response.type === 'worker-disposed' && response.requestId === 'dispose-worker'
+        );
+        const replacementDisposedBeforeOldSettled = replacementDispose.mock.calls.length > 0;
+        cancelledLoad.resolve(cancelledModel);
+        await disposal;
+
+        expect(acknowledgedBeforeOldSettled).toBe(false);
+        expect(replacementDisposedBeforeOldSettled).toBe(false);
+        expect(harness.responses).toContainEqual(
+            expect.objectContaining({ type: 'ddsp-result', requestId: 'before-worker-disposal' })
+        );
+        expect(harness.responses.at(-1)).toEqual({ type: 'worker-disposed', requestId: 'dispose-worker' });
+        expect(cancelledModel.dispose).toHaveBeenCalledOnce();
+        expect(replacementModel.dispose).toHaveBeenCalledOnce();
+        for (const artifact of [...cancelledPorts, ...replacementPorts, ...coalescedPorts]) {
+            expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
+        }
+    });
+
+    it('waits for an overwritten settling load before disposing and acknowledging session release', async () => {
+        const cancelledLoad = deferred<TfjsWorkerModel>();
+        const replacementLoad = deferred<TfjsWorkerModel>();
+        const harness = createHarness();
+        const cancelledModel: TfjsWorkerModel = {
+            dispose: vi.fn(),
+            predict: vi.fn(() => fakeTensor(Float32Array.from([9, 9, 9, 9]))),
+        };
+        const replacementDispose = vi.fn();
+        const replacementModel: TfjsWorkerModel = {
+            dispose: replacementDispose,
+            predict: vi.fn(() => fakeTensor(Float32Array.from([1, 2, 3, 4]))),
+        };
+        harness.loadGraphModel
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return cancelledLoad.promise;
+            })
+            .mockImplementationOnce(async (handler) => {
+                await handler.load();
+                return replacementLoad.promise;
+            });
+        const cancelledPorts = artifacts();
+        const first = harness.runtime.handleRequest(sessionRequest('release-cancelled-load', cancelledPorts));
+        await vi.waitFor(() => expect(harness.loadGraphModel).toHaveBeenCalledOnce());
+        await harness.runtime.handleRequest({ type: 'cancel-request', requestId: 'release-cancelled-load' });
+        await first;
+
+        const replacementPorts = artifacts();
+        const replacement = harness.runtime.handleRequest(sessionRequest('release-replacement-load', replacementPorts));
+        await vi.waitFor(() => expect(harness.loadGraphModel).toHaveBeenCalledTimes(2));
+        replacementLoad.resolve(replacementModel);
+        await replacement;
+        await harness.runtime.handleRequest(inferenceRequest('before-session-release'));
+
+        const release = harness.runtime.handleRequest({
+            type: 'release-ddsp-session',
+            requestId: 'release-session',
+            sessionKey: 'ddsp-violin:v1:fingerprint',
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const acknowledgedBeforeOldSettled = harness.responses.some(
+            (response) => response.type === 'ddsp-session-released' && response.requestId === 'release-session'
+        );
+        const replacementDisposedBeforeOldSettled = replacementDispose.mock.calls.length > 0;
+        cancelledLoad.resolve(cancelledModel);
+        await release;
+
+        expect(acknowledgedBeforeOldSettled).toBe(false);
+        expect(replacementDisposedBeforeOldSettled).toBe(false);
+        expect(harness.responses).toContainEqual(
+            expect.objectContaining({ type: 'ddsp-result', requestId: 'before-session-release' })
+        );
+        expect(harness.responses.at(-1)).toEqual({
+            type: 'ddsp-session-released',
+            requestId: 'release-session',
+            sessionKey: 'ddsp-violin:v1:fingerprint',
+        });
+        expect(cancelledModel.dispose).toHaveBeenCalledOnce();
+        expect(replacementModel.dispose).toHaveBeenCalledOnce();
+        for (const artifact of [...cancelledPorts, ...replacementPorts]) {
             expect(artifact.modelDataPort.close).toHaveBeenCalledOnce();
         }
     });

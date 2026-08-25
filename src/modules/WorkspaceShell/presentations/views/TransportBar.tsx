@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type MouseEvent, type ReactElement } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
@@ -11,6 +11,7 @@ import { TempoEditor } from '#/modules/TimelineEditor/presentations/views';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
+import { windowChromeControls } from '../../useCases/windowChrome';
 import { VoiceButton } from '../components/Transport/VoiceButton';
 import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
 import { useProjectState } from '../hooks/useProjectState';
@@ -27,6 +28,7 @@ import { ProjectName } from './Transport/ProjectName';
 import { SoloModeSelector } from './Transport/SoloModeSelector';
 import { TransportControls } from './Transport/TransportControls';
 import { UndoRedoButtons } from './Transport/UndoRedoButtons';
+import { WindowControls } from './Transport/WindowControls';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
 
@@ -61,6 +63,24 @@ export const TransportBar = (): ReactElement => {
 
     const isRecording = transport.isRecording;
 
+    // Frameless chrome (Linux): the title row is the drag region, so a
+    // double-click on its empty stretches toggles maximize — unless it landed
+    // on an interactive element, which keeps its own double-click meaning.
+    const framelessChrome = windowChromeControls().frameless;
+    const toggleMaximizeOnTitlebarDoubleClick = (event: MouseEvent<HTMLElement>): void => {
+        if (!framelessChrome) {
+            return;
+        }
+        const target = event.target;
+        if (
+            target instanceof HTMLElement &&
+            target.closest('button, input, a, select, textarea, [role="button"]') !== null
+        ) {
+            return;
+        }
+        void windowChromeControls().toggleMaximize();
+    };
+
     return (
         <Stack
             as="header"
@@ -79,7 +99,12 @@ export const TransportBar = (): ReactElement => {
             aria-label="Transport controls"
         >
             {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
-            <Row grow className="desktop-titlebar-region w-full min-h-[40px] px-2" data-testid="window-titlebar-region">
+            <Row
+                grow
+                className={`desktop-titlebar-region${framelessChrome ? ' desktop-titlebar-region--frameless' : ''} w-full min-h-[40px] px-2`}
+                data-testid="window-titlebar-region"
+                onDoubleClick={toggleMaximizeOnTitlebarDoubleClick}
+            >
                 {/* Left wing (flex-1 basis-0 ensures the center is absolutely geometrically centered) */}
                 <Row grow gap={1} className="basis-0">
                     <ProjectName name={project.name} dirty={project.dirty} />
@@ -111,6 +136,12 @@ export const TransportBar = (): ReactElement => {
                         virtualKeyboardOpen={virtualKeyboardOpen}
                         dualViewOpen={dualViewOpen}
                     />
+                    {framelessChrome ? (
+                        <>
+                            <Sep />
+                            <WindowControls />
+                        </>
+                    ) : null}
                 </Row>
             </Row>
 

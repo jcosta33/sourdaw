@@ -1,8 +1,7 @@
 /// <reference lib="webworker" />
 /**
- * Grand Boule Engine Worker — runs the WASM physical-modeling piano engine
- * on a dedicated thread, rendering ahead into a SharedArrayBuffer ring buffer
- * that the AudioWorklet consumes.
+ * Grand Boule engine Worker. Runs the WASM piano engine on a dedicated thread
+ * and renders ahead into the SharedArrayBuffer ring consumed by the worklet.
  *
  * This decouples the heavy DSP from the AudioWorklet's strict real-time
  * deadline (~2.67 ms per 128-sample quantum at 48 kHz). The Worker gets a
@@ -18,7 +17,7 @@
  *
  * Note timing
  * -----------
- * `noteOn`, `noteOff` and `noteExpression` carry an optional `sampleFrame` — an
+ * `noteOn`, `noteOff`, `noteExpression`, and `param` carry an optional `sampleFrame` — an
  * absolute frame on the *AudioContext* clock, the same domain the transport
  * scheduler speaks. The engine's own clock is the ring write head, which counts
  * frames the engine has produced, so the two are related by a constant the
@@ -42,7 +41,7 @@
  *   ← { type: 'noteOn', midiNote, velocity, sampleFrame?, channel? }
  *   ← { type: 'noteExpression', midiNote, channel, bendSemitones, pressure, slide, sampleFrame? }
  *   ← { type: 'noteOff', midiNote, sampleFrame?, releaseVelocity }
- *   ← { type: 'param', name, value }
+ *   ← { type: 'param', name, value, sampleFrame? }
  *   ← { type: 'sustain', position }
  *   ← { type: 'unaCorda', engaged }
  *   ← { type: 'sostenuto', engaged }
@@ -71,7 +70,7 @@ import { type GrandBouleConsumerClock, readGrandBouleConsumerClock } from '../wo
 import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
-    createGrandBouleNoteQueue,
+    createGrandBouleFrameQueue,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from '../worklets/grandBouleEngineCore';
@@ -142,15 +141,15 @@ const consumerClock: GrandBouleConsumerClock = { contextFrame: 0, readHead: 0 };
 let hasConsumerClock = false;
 
 /**
- * Notes waiting for the block that contains their frame.
+ * Control messages waiting for the block that contains their frame.
  *
  * Bounded by the transport's scheduling look-ahead (100 ms) rather than by the
  * part length: the scheduler only ever hands over the next window. This worker
  * is not the audio thread — it owns a full OS timeslice and its deadline is the
  * ring's headroom, not a 2.67 ms quantum — but the render path still allocates
- * nothing; see `createGrandBouleNoteQueue`.
+ * nothing; see `createGrandBouleFrameQueue`.
  */
-const noteQueue = createGrandBouleNoteQueue();
+const frameQueue = createGrandBouleFrameQueue();
 
 /**
  * Cached views over the engine's rendered block, shared with the offline host.
@@ -252,7 +251,7 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     syncInts = nextSyncInts;
     anchorContextFrame = nextAnchorContextFrame;
     hasConsumerClock = false;
-    noteQueue.clear();
+    frameQueue.clear();
 
     // Parse SAB layout.
     controlInts = nextControlInts;
@@ -336,7 +335,7 @@ function stopEngine(): void {
     syncInts = null;
     anchorContextFrame = 0;
     hasConsumerClock = false;
-    noteQueue.clear();
+    frameQueue.clear();
 }
 
 /**
@@ -388,7 +387,7 @@ function renderLoop(generation: number): void {
         // has to run inside the loop, before each `process()`: the engine has no
         // sub-block note offset, so the block boundary is the only place a note
         // can be placed at all.
-        noteQueue.drain(instance, blockEndContextFrame(writeHead));
+        frameQueue.drain(instance, blockEndContextFrame(writeHead));
 
         // Render one block.
         const leftPtr = instance.process(BLOCK_SIZE);
@@ -410,8 +409,8 @@ function renderLoop(generation: number): void {
         );
 
         const lifecycleState = instance.lifecycle_state();
-        const hasScheduledNotes = noteQueue.size() > 0;
-        if (lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP && !hasScheduledNotes) {
+        const hasScheduledMessages = frameQueue.size() > 0;
+        if (lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP && !hasScheduledMessages) {
             Atomics.store(controlInts, GRAND_BOULE_SLEEP_HEAD_IDX, nextWriteHead);
             Atomics.store(controlInts, GRAND_BOULE_LIFECYCLE_IDX, lifecycleState);
             return;
@@ -466,7 +465,7 @@ function receive(msg: GrandBouleDispatchMsg): void {
         blockEndFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
     }
 
-    receiveGrandBouleMessage({ instance, queue: noteQueue, msg, blockEndFrame });
+    receiveGrandBouleMessage({ instance, queue: frameQueue, msg, blockEndFrame });
 
     if (!controlInts) {
         return;
@@ -478,8 +477,8 @@ function receive(msg: GrandBouleDispatchMsg): void {
     }
 
     const lifecycleState = instance.lifecycle_state();
-    const hasScheduledNotes = noteQueue.size() > 0;
-    if (lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP && !hasScheduledNotes) {
+    const hasScheduledMessages = frameQueue.size() > 0;
+    if (lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP && !hasScheduledMessages) {
         Atomics.store(controlInts, GRAND_BOULE_SLEEP_HEAD_IDX, Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
         Atomics.store(controlInts, GRAND_BOULE_LIFECYCLE_IDX, lifecycleState);
         return;

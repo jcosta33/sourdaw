@@ -67,8 +67,24 @@ export const downloadDdspInstrument = inject({
                 try {
                     await stageDdspInstrumentGeneration(storage);
                     staged = true;
-                    for (const [index, artifact] of instrument.artifacts.entries()) {
+                    const totalDownloadBytes = instrument.artifacts.reduce(
+                        (total, artifact) => total + artifact.sizeBytes,
+                        0
+                    );
+                    let completedBytes = 0;
+                    let reportedProgress = 0;
+                    const reportDownloadProgress = (candidate: number): void => {
+                        const nextProgress = Math.min(0.99, Math.max(reportedProgress, candidate));
+                        if (nextProgress === reportedProgress) {
+                            return;
+                        }
+                        reportedProgress = nextProgress;
+                        updateModelStatus(instrument.id, { downloadProgress: nextProgress });
+                    };
+
+                    for (const artifact of instrument.artifacts) {
                         throwIfAborted(signal);
+                        let artifactDownloadedBytes = 0;
                         await downloadModelRepo({
                             spec: {
                                 family: 'ddsp',
@@ -78,11 +94,17 @@ export const downloadDdspInstrument = inject({
                                 sha256: artifact.sha256,
                                 redirectPolicy: 'reject',
                             },
+                            onProgress: ({ bytesDownloaded }) => {
+                                const boundedBytes = Number.isFinite(bytesDownloaded)
+                                    ? Math.min(artifact.sizeBytes, Math.max(0, bytesDownloaded))
+                                    : 0;
+                                artifactDownloadedBytes = Math.max(artifactDownloadedBytes, boundedBytes);
+                                reportDownloadProgress((completedBytes + artifactDownloadedBytes) / totalDownloadBytes);
+                            },
                             signal,
                         });
-                        updateModelStatus(instrument.id, {
-                            downloadProgress: (index + 1) / instrument.artifacts.length,
-                        });
+                        completedBytes += artifact.sizeBytes;
+                        reportDownloadProgress(completedBytes / totalDownloadBytes);
                     }
                     throwIfAborted(signal);
                     await publishDdspInstrumentGeneration(storage);

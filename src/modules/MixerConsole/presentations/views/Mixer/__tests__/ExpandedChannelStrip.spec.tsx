@@ -144,9 +144,9 @@ describe('ExpandedChannelStrip', () => {
         vi.clearAllMocks();
         mocks.getVcaGroups.mockReturnValue([{ id: 'vca-1', name: 'Drums VCA', gain: 1, muted: false, trackIds: [] }]);
         mocks.confirmUser.mockResolvedValue(true);
-        // The strip reads the live track list (the fader's ceiling depends on
-        // whether this track mirrors a Toaster pad), so each case starts from
-        // an empty one rather than inheriting the previous case's fixture.
+        // The pad-child case below seeds the store with a Toaster parent, so
+        // each case starts from an empty list rather than inheriting the
+        // previous case's fixture.
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
@@ -184,15 +184,13 @@ describe('ExpandedChannelStrip', () => {
     });
 
     /**
-     * A control that can request what the writer refuses does not merely fail
-     * to move — it costs the undo. `setTrackGain` holds a pad-mirrored track at
-     * `TOASTER_PAD_MAX_GAIN`, while `handleSetTrackGain` builds the inverse
-     * entry's `expectedGain` from the *request*. A strip offering travel to
-     * `FADER_MAX_GAIN` here would record an inverse expecting a gain the store
-     * never held, `execute`'s equality check would return `conflict` on the way
-     * back, and the pre-drag value would be unrecoverable.
+     * A Toaster pad child used to be capped at unity because the fader mirrored
+     * onto the pad's `volume` and the two gain nodes sit in series (#2458). The
+     * mirror is gone — the pad keeps its own level — so the strip gets the same
+     * travel as any other, and the writer stores what this control can ask for,
+     * which keeps the undo entry's `expectedGain` honest.
      */
-    it('bounds a Toaster-pad-mirrored strip at the ceiling its own writer enforces', () => {
+    it('gives a Toaster pad child the full fader travel like any other strip', () => {
         trackStore.set({
             tracks: [
                 createProjectTrack({
@@ -224,9 +222,7 @@ describe('ExpandedChannelStrip', () => {
         );
 
         const fader = screen.getByRole('slider', { name: 'Track 1 gain' });
-        // `TOASTER_PAD_MAX_GAIN` — unity, what `crates/daw-dsp/src/toaster/pad.rs`
-        // accepts, and strictly below the fader law's own ceiling.
-        expect(Number(fader.getAttribute('aria-valuemax'))).toBe(1);
+        expect(Number(fader.getAttribute('aria-valuemax'))).toBeCloseTo(FADER_MAX_GAIN, 5);
         expect(FADER_MAX_GAIN).toBeGreaterThan(1);
     });
 

@@ -187,8 +187,8 @@ export function validateLevainProvenance(root: string, provenance: LevainProvena
         if (!generated.path.startsWith(`${sampleRoot}/`) || !generated.path.endsWith('/manifest.json')) {
             errors.push(`${generated.path}: generated path must be a Levain manifest`);
         }
-        if (generated.license !== 'pending:OS-10-project-license') {
-            errors.push(`${generated.path}: license must be pending:OS-10-project-license`);
+        if (generated.license !== 'Apache-2.0') {
+            errors.push(`${generated.path}: license must be Apache-2.0`);
         }
         if (!/^[0-9a-f]{64}$/.test(generated.sha256)) {
             errors.push(`${generated.path}: sha256 must be SHA-256`);

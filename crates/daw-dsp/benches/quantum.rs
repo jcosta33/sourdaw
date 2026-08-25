@@ -1,4 +1,4 @@
-//! What one AudioWorklet quantum of device DSP costs, for every device.
+//! What one render quantum of device DSP costs, for every daw-dsp engine.
 //!
 //! # The budget, and why it is that number
 //!
@@ -15,11 +15,9 @@
 //!
 //! # Two legs, and only one of them answers the question
 //!
-//! Production compiles this DSP to wasm and runs it in a browser worklet. A
-//! native aarch64 figure is a lower bound, not the answer — the original
-//! measurement put wasm at 2.17x native. This file is the **native** leg;
-//! `benches/wasm/` is the wasm leg, and it drives the same devices through the
-//! committed `_bg.wasm` artifacts inside a real `AudioWorkletGlobalScope`:
+//! Production compiles this DSP to WASM. Native figures are lower bounds, not
+//! browser answers. `benches/wasm/` drives the same released constructors in a
+//! browser worklet harness:
 //!
 //! ```text
 //! node crates/daw-dsp/benches/wasm/run.mjs --json /tmp/wasm-cost.json
@@ -71,9 +69,8 @@
 //!
 //! # Which devices are here, and which are not
 //!
-//! Every `#[wasm_bindgen]` render export in this crate: Bacteria, Crumbs,
-//! Crust, Fermenter, Gluten, Grand Boule, Grinder, Knead, Levain, Proof,
-//! Toaster.
+//! Every native render wrapper in this crate: Bacteria, Crumbs, Crust,
+//! Fermenter, Gluten, Grand Boule, Grinder, Knead, Levain, Proof, Toaster.
 //!
 //! That sentence was false for as long as Crust had an engine, because the
 //! list is written by hand and nothing checked it. `tests/quantum_bench_census.rs`
@@ -125,15 +122,9 @@
 //!
 //! # The precedent this file exists because of
 //!
-//! `grandBouleEngineWorker.ts` asserts
-//! that Grand Boule cannot meet it and must therefore render on a dedicated
-//! Web Worker behind a SharedArrayBuffer ring, unlike every other device in the
-//! project. That assertion had never been measured. This bench measures it,
-//! against Fermenter — the other polyphonic instrument, which runs in a plain
-//! worklet today — so the Grand Boule figure is read against a shipped worklet
-//! load rather than against an abstract budget. Grinder is included as a table
-//! row only: it is a monophonic effect with no voice pool, so it can answer
-//! "does *some* shipped device fit", which is not the question.
+//! Grand Boule renders on a Worker behind a SharedArrayBuffer ring. The browser
+//! benchmark measures the same DSP kernel in its timing worklet and assigns the
+//! row to the Worker cost site; it measures the ring consumer separately.
 //!
 //! # What these numbers do and do not establish
 //!
@@ -155,14 +146,13 @@
 //! deadline claim comes from. Keep the two claims apart: cost lives here,
 //! deadline misses live there.
 //!
-//! # 64 voices is the common case, not the worst case
+//! # The production workload uses 64 voices
 //!
 //! `GrandBouleEngine::note_off` skips `voice.note_off()` entirely while
 //! `pedals.sustain_position() > 0.5`. With the sustain pedal down, released
 //! notes stay `VoiceStage::Active` at `amplitude == 1.0` and keep paying the
-//! full `Standard`-tier cost, so ordinary pedalled playing walks the pool up to
-//! 64 within a few bars and holds it there. The 64-voice row is what pedalled
-//! piano costs, not an artificial ceiling.
+//! full `Standard`-tier cost, so the benchmark walks the production pool up to
+//! 64 and holds it there.
 //!
 //! # Sounding voices, not allocated ones — and still sounding at the end
 //!
@@ -212,9 +202,7 @@ const QUANTUM: usize = 128;
 /// measured against.
 const BUDGET_NS: f64 = 2_666_667.0;
 
-/// Grand Boule's production voice pool. `grandBouleEngineWorker.ts:207` builds
-/// `new GrandBouleInstance(workerSampleRate, 64)`, not the crate's
-/// `DEFAULT_VOICE_COUNT` of 32.
+/// The 64-voice pool used by the Grand Boule host.
 const GRAND_BOULE_POOL: usize = 64;
 
 /// What `fermenterProcessor.ts:170` asks for: `new FermenterInstance(sampleRate, 32)`.
@@ -234,8 +222,8 @@ const PRODUCTION_FERMENTER_VOICE_CEILING: usize = FERMENTER_POOL as usize;
 /// in. 128 blocks is ~341 ms of audio.
 const WARMUP_BLOCKS: usize = 128;
 
-/// Voice counts benchmarked. 64 is Grand Boule's full production pool; 32 is
-/// both the crate default and Fermenter's whole pool; 0 isolates the
+/// Voice counts benchmarked. 64 is the production Grand Boule workload;
+/// 32 is both the crate default and Fermenter's whole pool; 0 isolates the
 /// always-on shared blocks (soundboard, sympathetic bank, mechanical noise)
 /// from per-voice cost.
 const GRAND_BOULE_VOICE_COUNTS: [usize; 5] = [0, 1, 16, 32, 64];
@@ -275,8 +263,8 @@ fn rms(left: &[f32], right: &[f32]) -> f32 {
 // Grand Boule
 // ---------------------------------------------------------------------------
 
-/// A Grand Boule engine with the production pool size and `sounding` notes
-/// struck and still held, warmed past the attack transient.
+/// A Grand Boule engine with the production pool size and
+/// `sounding` notes struck and still held, warmed past the attack transient.
 fn grand_boule_engine(sounding: usize) -> (GrandBouleEngine, Vec<f32>, Vec<f32>) {
     let mut engine = GrandBouleEngine::new(SAMPLE_RATE, GRAND_BOULE_POOL);
     for note in spread_notes(sounding) {
@@ -292,10 +280,9 @@ fn grand_boule_engine(sounding: usize) -> (GrandBouleEngine, Vec<f32>, Vec<f32>)
     (engine, left, right)
 }
 
-/// The `#[wasm_bindgen]` wrapper the browser actually calls, in the same state.
+/// The instance wrapper in the same state as the raw engine row.
 /// `process` adds the two buffer clears and the two `sanitize_block` passes
-/// that the raw `process_block` figure leaves out, so this is the number the
-/// headless-Chromium harness is comparable with.
+/// that the raw `process_block` figure leaves out.
 fn grand_boule_instance(sounding: usize) -> GrandBouleInstance {
     let mut instance = GrandBouleInstance::new(SAMPLE_RATE, GRAND_BOULE_POOL as u32);
     for note in spread_notes(sounding) {
@@ -311,14 +298,8 @@ fn grand_boule_instance(sounding: usize) -> GrandBouleInstance {
 /// before the benchmark so the numbers below are readable as a claim about
 /// sounding voices.
 ///
-/// `GrandBouleEngine` exposes no active-voice count, so occupancy is
-/// established two ways. Structurally: every note struck here is distinct, so
-/// the retrigger branch never fires; `PianoVoice::steal_priority` ranks `Idle`
-/// above every sounding lifecycle/key-ownership class, so with 64 slots and at
-/// most 64 notes the allocator always lands on an empty slot and never steals
-/// a sounding one. Empirically: the RMS printed at the warm-up point and again
-/// after ~10 s of rendered audio — longer than any criterion sample — shows the
-/// strings still moving, and shows it growing with voice count.
+/// Occupancy is read from the engine and asserted after warm-up and after the
+/// long run. RMS remains a signal-health check, not a proxy for voice count.
 ///
 /// That RMS falls a long way over those 10 s, because that is what a struck
 /// piano string does. It does not make the voice cheaper. `amplitude` is the
@@ -337,6 +318,7 @@ fn verify_grand_boule_voices_stay_sounding() {
     eprintln!("[verify]  sounding | after warm-up | after 10 s |     peak @ 10 s");
     for sounding in GRAND_BOULE_VOICE_COUNTS {
         let (mut engine, mut left, mut right) = grand_boule_engine(sounding);
+        assert_eq!(engine.active_voice_count(), sounding);
         let warm = rms(&left, &right);
         for _ in 0..LONG_RUN_BLOCKS {
             left.fill(0.0);
@@ -344,6 +326,7 @@ fn verify_grand_boule_voices_stay_sounding() {
             engine.process_block(&mut left, &mut right);
         }
         let late = rms(&left, &right);
+        assert_eq!(engine.active_voice_count(), sounding);
         eprintln!(
             "[verify]  {sounding:>8} | {warm:>13.3e} | {late:>10.3e} | {:>15.3e}",
             peak(&left, &right)
@@ -365,6 +348,7 @@ fn bench_grand_boule_process_block(criterion: &mut Criterion) {
     group.measurement_time(Duration::from_secs(8));
     for sounding in GRAND_BOULE_VOICE_COUNTS {
         let (mut engine, mut left, mut right) = grand_boule_engine(sounding);
+        assert_eq!(engine.active_voice_count(), sounding);
         group.bench_with_input(
             BenchmarkId::from_parameter(sounding),
             &sounding,
@@ -387,6 +371,7 @@ fn bench_grand_boule_process_block(criterion: &mut Criterion) {
                 });
             },
         );
+        assert_eq!(engine.active_voice_count(), sounding);
     }
     group.finish();
 }
@@ -396,6 +381,7 @@ fn bench_grand_boule_instance(criterion: &mut Criterion) {
     group.measurement_time(Duration::from_secs(8));
     for sounding in GRAND_BOULE_VOICE_COUNTS {
         let mut instance = grand_boule_instance(sounding);
+        assert_eq!(instance.active_voices(), sounding as u32);
         group.bench_with_input(
             BenchmarkId::from_parameter(sounding),
             &sounding,
@@ -403,12 +389,13 @@ fn bench_grand_boule_instance(criterion: &mut Criterion) {
                 bencher.iter(|| black_box(instance.process(black_box(QUANTUM as u32))));
             },
         );
+        assert_eq!(instance.active_voices(), sounding as u32);
     }
     group.finish();
 }
 
-/// Build the maximum transient workload: 64 sounding production voices plus
-/// 64 preallocated one-millisecond steal tails. Distinct channels preserve the
+/// Build the maximum workload: 64 sounding voices plus 64
+/// preallocated one-millisecond steal tails. Distinct channels preserve the
 /// same-pitch identities while forcing every tail slot active.
 fn saturated_grand_boule_engine() -> (GrandBouleEngine, [f32; QUANTUM], [f32; QUANTUM]) {
     let mut engine = GrandBouleEngine::new(SAMPLE_RATE, GRAND_BOULE_POOL);
@@ -610,11 +597,11 @@ fn bench_grinder_instance(criterion: &mut Criterion) {
 ///
 /// Longer than `WARMUP_BLOCKS`, which exists only to clear a note-on transient.
 /// This one also has to get the *branch predictors and caches* into the state a
-/// device spends its life in, and it is chosen to match the wasm leg exactly so
-/// the two columns are comparable. The harness does not take it on trust: every
-/// row reports the mean of its first and last 500 timed samples, so a run that
-/// was still settling shows up as a drifting mean rather than hiding in the
-/// average.
+/// device spends its life in. It matches the WASM leg. The harness does not
+/// take stationarity on trust:
+/// every row reports the mean of its first and last 500 timed samples, so a run
+/// that was still settling shows up as a drifting mean rather than hiding in
+/// the average.
 const TABLE_WARMUP_QUANTA: usize = 4_000;
 
 /// Timed quanta per row. 20 000 x 128 frames is 53 s of rendered audio.
@@ -760,10 +747,10 @@ fn timer_floor() -> Distribution {
 /// Time `render` for `TABLE_SAMPLE_QUANTA` quanta after `TABLE_WARMUP_QUANTA`
 /// discarded ones, feeding the device each block *outside* the timed region.
 ///
-/// `feed` is untimed on purpose and the wasm leg does the same: a worklet pays
-/// the input marshalling against `inputs[0]` whichever device consumes it, so
-/// including it would attribute a host cost to a device. `feed` is also where a
-/// one-shot instrument re-strikes — see `row_toaster` and `row_grand_boule`.
+/// `feed` is untimed on purpose. The WASM leg does the same because a worklet
+/// pays input marshalling against `inputs[0]` whichever device consumes it. `feed` is
+/// also where a one-shot instrument re-strikes — see `row_toaster` and
+/// `row_grand_boule`.
 ///
 /// **The warm-up is the timed loop, run twice and the first pass thrown away.**
 /// An earlier version warmed up through a *different*, untimed loop body, and
@@ -1083,6 +1070,7 @@ fn row_fermenter() -> Row {
 /// is what a pedalled piano does anyway.
 fn row_grand_boule() -> Row {
     let mut instance = grand_boule_instance(GRAND_BOULE_POOL);
+    assert_eq!(instance.active_voices(), GRAND_BOULE_POOL as u32);
     let samples = sample_quanta(
         &mut instance,
         &mut |device, block| {
@@ -1095,14 +1083,15 @@ fn row_grand_boule() -> Row {
         &mut |device| device.process(QUANTUM as u32),
     );
     let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
+    let active = instance.active_voices();
+    assert_eq!(active, GRAND_BOULE_POOL as u32);
     Row {
         id: "grand_boule",
         label: "Grand Boule (64 voices, re-struck 1/s)",
-        load:
-            "grandBouleEngineCore.ts:143 constructs 64; pedalled playing fills and holds the pool",
+        load: "live host constructs 64 voices; pedalled playing fills and holds the pool",
         distribution: summarise(samples),
-        occupancy: format!("64 voices (no active-voice export), output RMS {level:.3e}"),
-        occupancy_ok: level > 1.0e-5,
+        occupancy: format!("active_voices() = {active}, expected 64, output RMS {level:.3e}"),
+        occupancy_ok: active == GRAND_BOULE_POOL as u32 && level > 1.0e-5,
     }
 }
 
@@ -1315,22 +1304,6 @@ const REFERENCE_PROJECT_AUDIO_THREAD: [(&str, usize); 8] = [
     ("proof", 1),
 ];
 
-/// Grand Boule is **not** in the audio-thread total, and that is the single
-/// most important line in this file.
-///
-/// `GrandBouleNode.ts:480-518` branches on `ctx instanceof OfflineAudioContext`.
-/// The live path builds `createWorkerRingTransport` — the engine runs in a
-/// `Worker` and reaches the audio thread only as a consumer worklet copying out
-/// of a `SharedArrayBuffer` ring. The inline-DSP worklet is the *offline* path,
-/// and there is no fallback: without `SharedArrayBuffer` the live path calls
-/// `requireSharedArrayBuffer('Grand Boule')` and throws before registering
-/// anything.
-///
-/// So this figure is real and it is large, but it is not charged against the
-/// 2.667 ms worklet deadline. An earlier version of this table summed it into
-/// that budget and reported a headline that was wrong by more than every other
-/// device combined. What the audio thread actually pays is measured by the
-/// `grand_boule_ring_consumer` row in the wasm leg.
 const REFERENCE_PROJECT_WORKER: [(&str, usize); 1] = [("grand_boule", 1)];
 
 /// Instances of a device in the reference project that are *not* in the table
@@ -1540,14 +1513,12 @@ fn cost_table(_criterion: &mut Criterion) {
         eprintln!("    {count} x {id}");
     }
     eprintln!("    {REFERENCE_PROJECT_GLUTEN_INSTANCES} x gluten");
-    eprintln!("  worker (not the audio thread):");
+    eprintln!("  worker:");
     for (id, count) in REFERENCE_PROJECT_WORKER {
         eprintln!("    {count} x {id}");
     }
     eprintln!("  (Scoring excluded: the tuner renders only while its surface is open.)");
-    eprintln!(
-        "  (ProofChamber and the Grand Boule ring consumer are wasm-leg rows; see the header.)"
-    );
+    eprintln!("  (ProofChamber and the Grand Boule ring consumer are WASM-leg rows.)");
     eprintln!(
         "\n  AUDIO THREAD >= {:.3} ms ({:.1}% of the {:.4} ms budget)   lower bound, valid under load",
         audio_floor / 1.0e6,
@@ -1560,8 +1531,7 @@ fn cost_table(_criterion: &mut Criterion) {
         percent_of_budget(audio_mean)
     );
     eprintln!(
-        "  WORKER line item, Grand Boule >= {:.3} ms ({:.1}%), <= {:.3} ms per quantum of audio, \
-         on its own thread",
+        "  WORKER Grand Boule >= {:.3} ms ({:.1}%), <= {:.3} ms per quantum of audio",
         worker_floor / 1.0e6,
         percent_of_budget(worker_floor),
         worker_mean / 1.0e6
@@ -1578,10 +1548,7 @@ fn cost_table(_criterion: &mut Criterion) {
          \n  assume every device spikes in the same quantum, which nothing makes true. The wasm leg \
          \n  reports period, tick cost and amortised mean instead."
     );
-    eprintln!(
-        "\n  Read against the wasm column, not this one. Native is a lower bound; production runs \
-         wasm in a worklet."
-    );
+    eprintln!("\n  Read against the WASM column: native is a lower bound.");
 }
 
 // ---------------------------------------------------------------------------

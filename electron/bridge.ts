@@ -30,6 +30,11 @@ import {
     VOICE_DICTATION_START_CHANNEL,
     VOICE_DICTATION_STOP_CHANNEL,
     VOICE_DICTATION_TERMINAL_CHANNEL,
+    WINDOW_CLOSE_CHANNEL,
+    WINDOW_IS_MAXIMIZED_CHANNEL,
+    WINDOW_MAXIMIZED_CHANGED_CHANNEL,
+    WINDOW_MINIMIZE_CHANNEL,
+    WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -170,11 +175,13 @@ const createVoiceActivation = (
 export const createSourdawBridge = (
     ipc: RendererIpc,
     epoch: string = bootEpoch(),
-    voiceDocument: VoiceControlDocument | undefined = discoveredVoiceDocument()
+    voiceDocument: VoiceControlDocument | undefined = discoveredVoiceDocument(),
+    platform: string = process.platform
 ): SourdawBridge => {
     const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
     const streamListeners = new Map<string, (payload: unknown) => void>();
     const voiceTerminalListeners = new Map<string, Set<(event: string, payload: unknown) => void>>();
+    const maximizedListeners = new Set<(maximized: boolean) => void>();
     let nextStreamId = 0;
     const voiceActivation = createVoiceActivation(ipc, voiceDocument);
 
@@ -219,7 +226,19 @@ export const createSourdawBridge = (
         }
     });
 
+    ipc.on(WINDOW_MAXIMIZED_CHANGED_CHANNEL, (_event, ...args) => {
+        const [maximized] = args;
+        if (typeof maximized !== 'boolean') {
+            return;
+        }
+        for (const listener of [...maximizedListeners]) {
+            listener(maximized);
+        }
+    });
+
     return {
+        platform,
+
         invoke: async (command, args = []) => {
             rejectUnknownCommand(command);
             if (args.some(isBytes)) {
@@ -345,6 +364,35 @@ export const createSourdawBridge = (
                     if (listeners.size === 0) {
                         voiceTerminalListeners.delete(sessionId);
                     }
+                };
+            },
+        },
+
+        windowControls: {
+            minimize: async () => {
+                await ipc.invoke(WINDOW_MINIMIZE_CHANNEL);
+            },
+            toggleMaximize: async () => {
+                const result = await ipc.invoke(WINDOW_TOGGLE_MAXIMIZE_CHANNEL);
+                if (typeof result !== 'boolean') {
+                    throw new TypeError('window.toggleMaximize returned a non-boolean payload');
+                }
+                return result;
+            },
+            close: async () => {
+                await ipc.invoke(WINDOW_CLOSE_CHANNEL);
+            },
+            isMaximized: async () => {
+                const result = await ipc.invoke(WINDOW_IS_MAXIMIZED_CHANNEL);
+                if (typeof result !== 'boolean') {
+                    throw new TypeError('window.isMaximized returned a non-boolean payload');
+                }
+                return result;
+            },
+            listenMaximized: (callback) => {
+                maximizedListeners.add(callback);
+                return () => {
+                    maximizedListeners.delete(callback);
                 };
             },
         },

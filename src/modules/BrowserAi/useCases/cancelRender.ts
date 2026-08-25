@@ -8,16 +8,17 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
+import { renderRequestCancellation } from '../repositories/renderRequestCancellation';
 import { clearActiveRender, inferenceProgressStore } from '../stores/inferenceProgressStore';
-import { cancelQueuedRender } from '../stores/renderQueueStore';
+import { cancelQueuedRender, renderQueueStore } from '../stores/renderQueueStore';
 
 type CancelRenderInput = {
     phraseId: string;
     requestId: string;
 };
 
-export const cancelRender = inject({ logger })(
-    ({ logger }) =>
+export const cancelRender = inject({ logger, renderRequestCancellation })(
+    ({ logger, renderRequestCancellation }) =>
         function cancelRender({ phraseId, requestId }: CancelRenderInput): void {
             logger.info(`[BrowserAi] Cancelling render: phrase=${phraseId}`);
 
@@ -28,8 +29,14 @@ export const cancelRender = inject({ logger })(
             if (activeRender && activeRender.phraseId !== phraseId) {
                 return;
             }
+            const queuedRender = renderQueueStore.value?.entries.find((entry) => entry.requestId === requestId);
+            if (queuedRender && queuedRender.phraseId !== phraseId) {
+                return;
+            }
             const ownsActiveRender = activeRender?.phraseId === phraseId;
             const pipeline = ownsActiveRender ? activeRender.pipeline : undefined;
+
+            renderRequestCancellation.cancel(phraseId, requestId);
 
             // Cancel only THIS request on its worker — sibling renders are untouched.
             if (pipeline === 'ddsp') {

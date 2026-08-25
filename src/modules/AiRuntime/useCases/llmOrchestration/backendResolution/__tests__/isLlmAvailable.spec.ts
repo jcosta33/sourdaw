@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { type AiBackend } from '../../../../models/LlmOrchestrationTypes';
 import { isLlmAvailable } from '../isLlmAvailable';
 
 const mocks = vi.hoisted(() => ({
-    resolveBackend: vi.fn(),
+    resolveBackend: vi.fn<() => AiBackend>(),
 }));
 
 vi.mock('../helpers', () => ({
@@ -12,9 +13,6 @@ vi.mock('../helpers', () => ({
 
 describe('isLlmAvailable', () => {
     it('returns true if backend is anything other than none', () => {
-        mocks.resolveBackend.mockReturnValue('native');
-        expect(isLlmAvailable()).toBe(true);
-
         mocks.resolveBackend.mockReturnValue('webllm');
         expect(isLlmAvailable()).toBe(true);
 

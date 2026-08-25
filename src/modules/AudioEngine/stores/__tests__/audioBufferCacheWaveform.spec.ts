@@ -67,15 +67,18 @@ function installFakeIndexedDb(): FakeBacking {
     // Two object stores from DB_VERSION 2 on, sharing a key space: the metadata
     // row and the record it describes must not land in the same map.
     const metaBacking = new Map<string, StoredBufferMeta>();
+    const recoveryBacking = new Map<IDBValidKey, unknown>([
+        [0, { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 }],
+    ]);
     backing.meta = metaBacking;
 
-    function makeStore<Value>(table: Map<string, Value>) {
+    function makeStore<Key, Value>(table: Map<Key, Value>) {
         return {
             clear: () => table.clear(),
-            delete: (key: string) => {
+            delete: (key: Key) => {
                 table.delete(key);
             },
-            get: (key: string) => {
+            get: (key: Key) => {
                 const request = {
                     result: undefined as Value | undefined,
                     error: null,
@@ -103,7 +106,7 @@ function installFakeIndexedDb(): FakeBacking {
             },
             getAllKeys: () => {
                 const request = {
-                    result: [] as string[],
+                    result: [] as Key[],
                     error: null,
                     onsuccess: null as (() => void) | null,
                     onerror: null as (() => void) | null,
@@ -114,7 +117,7 @@ function installFakeIndexedDb(): FakeBacking {
                 });
                 return request;
             },
-            put: (value: Value, key: string) => {
+            put: (value: Value, key: Key) => {
                 table.set(key, value);
             },
         };
@@ -122,14 +125,19 @@ function installFakeIndexedDb(): FakeBacking {
 
     const objectStore = makeStore(backing);
     const metaStore = makeStore(metaBacking);
+    const recoveryStore = makeStore(recoveryBacking);
     function storeFor(name: string) {
         if (name === 'bufferMeta') {
             return metaStore;
+        }
+        if (name === 'preparedBufferRecovery') {
+            return recoveryStore;
         }
         return objectStore;
     }
 
     const database = {
+        close: vi.fn(),
         objectStoreNames: { contains: () => true },
         createObjectStore: () => objectStore,
         transaction: () => {
@@ -321,6 +329,21 @@ describe('audioBufferCache prepareFromIdb cancellation + getAllKeys', () => {
 
     it('publishes zero buffers (but still pins ids) when the read throws mid-stream', async () => {
         // A store.get that rejects to trigger the catch arm with an ids list.
+        const recoveryStore = {
+            get: () => {
+                const request = {
+                    result: undefined as unknown,
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 };
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+        };
         const objectStore = {
             get: () => {
                 const request = {
@@ -344,9 +367,20 @@ describe('audioBufferCache prepareFromIdb cancellation + getAllKeys', () => {
             },
         };
         const database = {
+            close: vi.fn(),
             objectStoreNames: { contains: () => true },
             createObjectStore: () => objectStore,
-            transaction: () => ({ objectStore: () => objectStore }),
+            transaction: (storeNames: string | string[]) => {
+                const transaction = {
+                    error: null,
+                    onabort: null as (() => void) | null,
+                    oncomplete: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                    objectStore: () => (storeNames === 'preparedBufferRecovery' ? recoveryStore : objectStore),
+                };
+                setTimeout(() => transaction.oncomplete?.(), 0);
+                return transaction;
+            },
         };
         vi.stubGlobal('indexedDB', {
             open: () => {

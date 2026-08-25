@@ -42,6 +42,14 @@ const violinLoad = {
     artifacts: violin.artifacts,
 };
 let violinSessionKey = '';
+const VIOLIN_SETTINGS = {
+    averageMaxLoudness: -48.6,
+    loudnessThreshold: -100,
+    meanLoudness: -68.5,
+    meanPitch: 62,
+    modelMaxFrameLength: 1000,
+    postGain: 2,
+} as const;
 
 beforeEach(async () => {
     installedWorkers = [];
@@ -407,11 +415,13 @@ describe('inferenceWorkerBridge — DDSP (TF.js) session lifecycle', () => {
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
         await expect(ddspLoad).resolves.toEqual({
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
     });
 
@@ -551,6 +561,55 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
         });
         await expect(second).resolves.toMatchObject({ requestId: 'second' });
     });
+
+    it('aborts a loaded session request while shared worker shutdown remains pending', async () => {
+        vi.useFakeTimers();
+        const first = inferenceWorkerBridge.loadDdspSession(violinLoad);
+        const worker = await waitForTfjsWorker();
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            sessionKey: violinSessionKey,
+            backend: 'webgpu',
+            modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
+        });
+        await first;
+        await vi.advanceTimersByTimeAsync(60_000);
+        const disposeRequestId = lastRequestId(worker);
+        expect(lastRequest(worker)).toMatchObject({ type: 'dispose-worker' });
+
+        const firstLateChannel = storageChannels.length;
+        const controller = new AbortController();
+        let settled = false;
+        const cancelled = inferenceWorkerBridge
+            .loadDdspSession({ ...violinLoad, requestId: 'cancelled-during-shutdown' }, controller.signal)
+            .catch((error: unknown) => error)
+            .then((result) => {
+                settled = true;
+                return result;
+            });
+        await vi.waitFor(() => expect(modelStorageWorkerBridge.readModel).toHaveBeenCalledTimes(6));
+        const lateCloses = storageChannels.slice(firstLateChannel).map((channel) => vi.spyOn(channel.port1, 'close'));
+
+        controller.abort();
+        await flush();
+        const settledBeforeShutdown = settled;
+        reply(worker, { type: 'worker-disposed', requestId: disposeRequestId });
+
+        await expect(cancelled).resolves.toMatchObject({ name: 'AbortError' });
+        await flush();
+        expect(settledBeforeShutdown).toBe(true);
+        expect(lateCloses).toHaveLength(3);
+        expect(lateCloses.every((close) => close.mock.calls.length === 1)).toBe(true);
+        expect(installedWorkers).toHaveLength(1);
+        expect(
+            worker.postMessage.mock.calls.some(
+                ([request]) =>
+                    request.type === 'create-ddsp-session' && request.requestId === 'cancelled-during-shutdown'
+            )
+        ).toBe(false);
+    });
 });
 
 describe('inferenceWorkerBridge — runKokoroTts', () => {
@@ -642,6 +701,7 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
         await load;
 
@@ -749,6 +809,67 @@ describe('inferenceWorkerBridge — terminateOnnxWorker', () => {
 });
 
 describe('inferenceWorkerBridge — TF.js cancellation', () => {
+    it('aborts a deferred artifact read before session creation and leaves sibling work running', async () => {
+        const controller = new AbortController();
+        const lateChannel = new MessageChannel();
+        storageChannels.push(lateChannel);
+        const close = vi.spyOn(lateChannel.port1, 'close');
+        let resolveRead = (_port: MessagePort | null): void => undefined;
+        vi.mocked(modelStorageWorkerBridge.readModel).mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveRead = resolve;
+                })
+        );
+        let loadSettled = false;
+        const load = inferenceWorkerBridge
+            .loadDdspSession({ ...violinLoad, requestId: 'deferred-artifact' }, controller.signal)
+            .catch((error: unknown) => error)
+            .then((result) => {
+                loadSettled = true;
+                return result;
+            });
+        await vi.waitFor(() => expect(modelStorageWorkerBridge.readModel).toHaveBeenCalledOnce());
+        const sibling = inferenceWorkerBridge.runDdspInference(ddspRequest('sibling'));
+        await flush();
+        const worker = tfjsWorker();
+
+        controller.abort();
+        await flush();
+        const settledBeforeArtifactRead = loadSettled;
+        resolveRead(lateChannel.port1);
+
+        await expect(load).resolves.toMatchObject({ name: 'AbortError' });
+        await flush();
+        expect(close).toHaveBeenCalledOnce();
+        expect(worker.postMessage.mock.calls.some(([request]) => request.type === 'create-ddsp-session')).toBe(false);
+
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'sibling',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+            backend: 'webgpu',
+        });
+        await expect(sibling).resolves.toMatchObject({ requestId: 'sibling', backend: 'webgpu' });
+        expect(worker.terminate).not.toHaveBeenCalled();
+        expect(settledBeforeArtifactRead).toBe(true);
+    });
+
+    it('uses the render request identity so cancellation can reject a pending DDSP session load', async () => {
+        const load = inferenceWorkerBridge
+            .loadDdspSession({ ...violinLoad, requestId: 'render-session-load' })
+            .catch((error: unknown) => error);
+        const worker = await waitForTfjsWorker();
+
+        expect(lastRequestId(worker)).toBe('render-session-load');
+        inferenceWorkerBridge.cancelTfjsRequest('render-session-load');
+
+        await expect(load).resolves.toMatchObject({ name: 'AbortError' });
+        expect(lastRequest(worker)).toEqual({ type: 'cancel-request', requestId: 'render-session-load' });
+        expect(worker.terminate).not.toHaveBeenCalled();
+    });
+
     it('keeps an initialized TF.js worker alive for an unknown request id', async () => {
         const load = inferenceWorkerBridge.loadDdspSession(violinLoad);
         const worker = await waitForTfjsWorker();
@@ -758,6 +879,7 @@ describe('inferenceWorkerBridge — TF.js cancellation', () => {
             sessionKey: violinSessionKey,
             backend: 'webgpu',
             modelFrameLength: 1000,
+            settings: VIOLIN_SETTINGS,
         });
         await load;
 

@@ -78,7 +78,7 @@ export const handleCreateBus = createHandler<'createBus'>({
         }
         const result = handleAddTrack.execute(toAddTrackAction(action));
         if (result instanceof Promise) {
-            throw new Error('The certified add-track handler returned asynchronously');
+            throw new TypeError('The certified add-track handler returned asynchronously');
         }
         if (result?.status !== 'written') {
             pendingCreatedBusGuards.delete(action);

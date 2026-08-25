@@ -1,5 +1,5 @@
 /**
- * Thin I/O wrapper around the `GrandBouleInstance` WASM export.
+ * Thin I/O contract for the Grand Boule engine host.
  *
  * The runtime graph wiring (AudioWorklet construction, SharedArrayBuffer
  * plumbing, device-registry integration) lives in the AudioEngine module in
@@ -28,7 +28,7 @@ export type GrandBouleEngineHandle = {
     setSostenuto: (input: { engaged: boolean }) => void;
     /** Set historical temperament (0=Equal, 1=Werckmeister III, 2=Kirnberger III, 3=Vallotti, 4=Young II, 5=Meantone ¼-comma). */
     setTemperament: (input: { index: number }) => void;
-    /** Load an attack-transient clip for the hybrid pathway (§3.3). */
+    /** Load an attack-transient clip for the hybrid pathway. */
     loadAttackClip: (input: { key: number; samples: Float32Array }) => void;
     /** Panic: silence every voice immediately. */
     allNotesOff: () => void;
@@ -39,16 +39,15 @@ export type GrandBouleEngineHandle = {
     /**
      * The engine AudioContext sample rate (Hz). Attack clips authored at a
      * different rate must be resampled to this before being forwarded so they
-     * play back at the correct pitch (§3.3). Defaults to 44.1 kHz on the
+     * play back at the correct pitch. Defaults to 44.1 kHz on the
      * disconnected handle, which never forwards anything.
      */
     sampleRate: () => number;
 };
 
 /**
- * A no-op handle used before the audio engine has instantiated the WASM
- * module. Keeps the call sites in use cases branchless and allows them to
- * be exercised in unit tests without WASM.
+ * A no-op handle used before engine construction completes.
+ * Keeps use-case call sites branchless.
  */
 export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHandle {
     return {

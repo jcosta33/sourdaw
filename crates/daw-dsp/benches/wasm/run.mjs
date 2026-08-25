@@ -17,12 +17,10 @@
  *
  * # Where a cost is charged
  *
- * Rows are separated by **cost site** rather than lumped into one budget. Grand
- * Boule's DSP runs in a `Worker` in the live transport and cannot reach the
- * audio thread; what the audio thread pays for it is the ring-consumer row. See
- * `COST_SITE` in `deviceRecipes.js`. Summing a Worker's cost into an
- * audio-thread budget is the mistake the first version of this table made, and
- * it inflated the headline by more than everything else combined.
+ * Rows are separated by production **cost site** rather than lumped into one
+ * budget. Grand Boule renders on a Worker; this harness times the same kernel
+ * in its worklet realm, while the ring consumer carries the audio-thread cost.
+ * See `COST_SITE` in `deviceRecipes.js`.
  *
  * # The clock
  *
@@ -52,8 +50,8 @@
  * the device's cost, obtainable on a busy machine, while the median and the
  * percentiles from the same run are *upper bounds* contaminated by scheduling
  * rather than properties of the DSP. This repository has learned this once
- * already: the previous Grand Boule benchmark's minimum was contention-immune
- * and reproduced the claim almost exactly, while its median was 2.567x inflated.
+ * already: expensive rows retain a stable low percentile while scheduling
+ * contention inflates their medians.
  *
  * There is exactly one mechanism by which a sample can read *shorter* than the
  * truth, and it is counted rather than assumed away: the clock is a counter
@@ -91,7 +89,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,6 +102,24 @@ import { startServer } from './server.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
+
+const MEASUREMENT_SOURCE_PATHS = [
+    'crates/daw-dsp/benches/quantum.rs',
+    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+];
+
+function measurementSourceDigests() {
+    return Object.fromEntries(
+        MEASUREMENT_SOURCE_PATHS.map((path) => [
+            path,
+            createHash('sha256')
+                .update(readFileSync(resolve(repoRoot, path)))
+                .digest('hex'),
+        ])
+    );
+}
 
 /** 128 frames at 48 kHz, in milliseconds — the deadline every figure is read against. */
 const BUDGET_MS = (128 / 48_000) * 1000;
@@ -178,9 +195,9 @@ const MAX_CALIBRATION_SPREAD_PCT = 150;
  * than the truth — the one direction that corrupts a floor. Everything else
  * contention does adds time.
  *
- * Measured on this machine at load 20-45, the zero-tick fraction runs from ~0%
- * on Grand Boule to 12.6% on Gluten, and it tracks render length exactly: the
- * shorter the render, the likelier it falls entirely inside a stall. So on a
+ * Measured on this machine at load 20-45, the zero-tick fraction tracks render
+ * length: the shorter the render, the likelier it falls entirely inside a
+ * stall. So on a
  * contended machine **the floor is measurable for expensive devices and not for
  * cheap ones**, and pretending otherwise would publish a floor that is really a
  * record of how starved the clock was.
@@ -200,8 +217,8 @@ const MAX_ZERO_TICK_FRACTION_FOR_MEDIAN = 0.4;
  * Tolerance on "compute must fit inside the elapsed wall clock".
  *
  * A device that dominates its own context legitimately approaches a ratio of
- * 1.0 — Grand Boule at ~2.5 ms per quantum leaves almost no wall clock outside
- * its own render calls. The clock is known to hold the median to roughly +/-10%,
+ * 1.0 because almost no wall clock remains outside its own render calls. The
+ * clock is known to hold the median to roughly +/-10%,
  * so the gate allows that much overshoot before calling the rate inflated; what
  * it is there to catch is a rate wrong by a factor, not by a percent.
  */
@@ -433,9 +450,7 @@ async function main() {
         const sortedRates = [...rates].sort((a, b) => a - b);
         const medianRate = quantile(Float64Array.from(sortedRates), 0.5);
         const rateSpreadPct =
-            sortedRates.length > 1
-                ? ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100
-                : 0;
+            sortedRates.length > 1 ? ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100 : 0;
 
         // Each sample is converted with the rate of the segment it was taken
         // in, not with one rate for the whole run.
@@ -474,9 +489,7 @@ async function main() {
             lateVerify: result.lateVerify,
             stats,
             harnessFloor: summarise(floorMs),
-            dutyCycle: DUTY_CYCLE[result.id]
-                ? dutyCycleSplit(samplesMs, DUTY_CYCLE[result.id].periodQuanta)
-                : null,
+            dutyCycle: DUTY_CYCLE[result.id] ? dutyCycleSplit(samplesMs, DUTY_CYCLE[result.id].periodQuanta) : null,
             dutyCycleSource: DUTY_CYCLE[result.id]?.source ?? null,
             calibration: {
                 segments: rates.length,
@@ -594,7 +607,7 @@ async function main() {
     console.log('That makes the upper bound the decisive one here: if the contaminated total already fits the');
     console.log('budget, the true total certainly fits, and no quiet machine is needed to establish it.');
     console.log('');
-    console.log('Neither bounds the DEADLINE. They bound compute. Whether quanta are actually missed is AC-3\'s');
+    console.log("Neither bounds the DEADLINE. They bound compute. Whether quanta are actually missed is AC-3's");
     console.log('observation, which reads genuine underruns from AudioContext.playbackStats on a live context.');
     console.log('');
     console.log('A floor is only reported where the clock was awake often enough to catch the cheapest render:');
@@ -707,7 +720,6 @@ async function main() {
         );
         const workerFloor = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.floor);
         const workerMedian = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.median);
-
         // The defensible worst quantum: everyone at their median, plus the single
         // largest duty-cycle spike landing in that quantum. Summing every row's p95
         // assumes every device spikes in the same quantum, which nothing makes true
@@ -726,20 +738,28 @@ async function main() {
         for (const [id, count] of REFERENCE_PROJECT_AUDIO_THREAD) {
             console.log(`    ${count} x ${id}`);
         }
-        console.log('  worker (not the audio thread):');
+        console.log('  worker:');
         for (const [id, count] of REFERENCE_PROJECT_WORKER) {
             console.log(`    ${count} x ${id}`);
         }
         console.log('');
         const meanLoad = meanOf(rows.map((row) => row.load.mean));
-        console.log(`  measured at a mean 1-minute load average of ${meanLoad.toFixed(0)} on ${os.cpus().length} logical cores.`);
+        console.log(
+            `  measured at a mean 1-minute load average of ${meanLoad.toFixed(0)} on ${os.cpus().length} logical cores.`
+        );
         console.log('');
         console.log(`  AUDIO THREAD >= ${sig2(audioFloor)} ms  (${pct(audioFloor)} of budget)   lower bound`);
         if (floorRowsMissing.length > 0) {
-            console.log(`               partial: no floor from ${floorRowsMissing.join(', ')} (counted as zero, so still a lower bound)`);
+            console.log(
+                `               partial: no floor from ${floorRowsMissing.join(', ')} (counted as zero, so still a lower bound)`
+            );
         }
-        console.log(`  AUDIO THREAD <= ${sig2(audioMean)} ms  (${pct(audioMean)} of budget)   upper bound, taken under load ${meanLoad.toFixed(0)}`);
-        console.log(`  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`);
+        console.log(
+            `  AUDIO THREAD <= ${sig2(audioMean)} ms  (${pct(audioMean)} of budget)   upper bound, taken under load ${meanLoad.toFixed(0)}`
+        );
+        console.log(
+            `  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`
+        );
         console.log('');
         const verdict =
             audioWorstUpper < BUDGET_MS
@@ -752,8 +772,10 @@ async function main() {
                     '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
         console.log(verdict);
         console.log('');
-        console.log(`  WORKER line item, Grand Boule >= ${sig2(workerFloor)} ms (${pct(workerFloor)}), <= ${sig2(workerMedian)} ms per`);
-        console.log("                                quantum of audio, on its own thread with its own ring to keep ahead.");
+        console.log(
+            `  WORKER, Grand Boule >= ${sig2(workerFloor)} ms (${pct(workerFloor)}), <= ${sig2(workerMedian)} ms per`
+        );
+        console.log('                       quantum of audio, on its own thread with its own ring.');
         console.log('');
         console.log('  Neither bound is a deadline claim. They bound compute. AC-3 owns the deadline question.');
         console.log('');
@@ -803,6 +825,8 @@ async function main() {
             `${JSON.stringify(
                 {
                     machine,
+                    sourceRevision: machine.gitSha,
+                    sourceDigests: measurementSourceDigests(),
                     browser: payload.browser,
                     userAgent: payload.userAgent,
                     budgetMs: BUDGET_MS,

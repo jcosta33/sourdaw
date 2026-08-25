@@ -1,19 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { type AppAction, type DeviceSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import {
+    type applyDeviceChainRuntimeDelta,
+    type ApplyDeviceChainRuntimeDeltaResult,
+    type DeviceChainRuntimeDeltaDischarged,
+    type DeviceChainRuntimeDeltaSuperseded,
+} from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleLoadPreset } from '../handleLoadPreset';
 
 const mocks = vi.hoisted(() => ({
-    applyDeviceChainRuntimeDelta: vi.fn(),
+    applyDeviceChainRuntimeDelta: vi.fn<typeof applyDeviceChainRuntimeDelta>(),
     captureProjectRevision: vi.fn(() => 'project-1'),
     findPresetById: vi.fn(),
     getTrackStrip: vi.fn<() => unknown>(() => ({})),
+    hasLiveProjectHostTrack: vi.fn(() => true),
     getTrackStoreState: vi.fn(),
-    initializeTrackStripFromSnapshot: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(),
     matchesMaterializedPresetDevices: vi.fn(() => true),
     updateDeviceParam: vi.fn(),
     updateTrack: vi.fn(),
@@ -36,6 +44,10 @@ vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
 
+vi.mock('../../../useCases/device/hasLiveProjectHostTrack', () => ({
+    hasLiveProjectHostTrack: mocks.hasLiveProjectHostTrack,
+}));
+
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
@@ -53,6 +65,23 @@ vi.mock('../../../useCases/updateTrack', () => ({
 }));
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
+
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const supersededPresetDelta: DeviceChainRuntimeDeltaSuperseded = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track track-1 left project truth before its replace-device-chain delta was submitted',
+};
+
+const dischargedPresetDelta: DeviceChainRuntimeDeltaDischarged = {
+    acceptance: 'superseded',
+    application: 'discharged',
+    reason: 'Live runtime already matches the authoritative final device chain for track track-1',
+};
 
 const oldDevice: DeviceSnapshot = {
     id: 'old-device',
@@ -123,6 +152,10 @@ describe('handleLoadPreset', () => {
     });
 
     it('writes the catalog-owned project chain before applying its runtime delta and parameters', async () => {
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }] });
         const result = await handleLoadPreset.execute(action());
 
         expect(result).toMatchObject({ status: 'written' });
@@ -192,6 +225,10 @@ describe('handleLoadPreset', () => {
 
     it('initializes a missing live strip from the committed replacement snapshot before applying parameters', async () => {
         mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }] });
         const result = await handleLoadPreset.execute(action());
         if (!result || result.status !== 'written') {
             throw new Error('Preset load did not produce a project write');
@@ -220,11 +257,105 @@ describe('handleLoadPreset', () => {
         );
     });
 
+    it('initializes a missing live strip directly from the authoritative final same-track chain', async () => {
+        const presetAction = action();
+        const finalDevice: DeviceSnapshot = {
+            id: 'final-device-1',
+            name: 'Final',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: { threshold: -12 },
+        };
+        const laterDeviceMutation: AppAction = {
+            type: 'restorePresetDeviceChain',
+            payload: {
+                trackId: 'track-1',
+                expectedBefore: {
+                    id: 'track-1',
+                    kind: 'midi',
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [finalDevice],
+            },
+        };
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [finalDevice] }] });
+        const result = await handleLoadPreset.execute(presetAction, {
+            actions: [presetAction, laterDeviceMutation],
+            actionIndex: 0,
+        });
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+
+        await result.afterCommit();
+
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({
+                        id: 'track-1',
+                        devices: [{ id: 'final-device-1', type: 'builtin-compressor', parameterIds: ['threshold'] }],
+                    }),
+                ],
+            })
+        );
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'final-device-1', 'threshold', -12);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
+    });
+
+    it('uses the authoritative final same-track chain for parameters on an existing live strip', async () => {
+        const presetAction = action();
+        const finalDevice: DeviceSnapshot = {
+            id: 'final-device-1',
+            name: 'Final',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: { threshold: -12 },
+        };
+        const laterDeviceMutation: AppAction = {
+            type: 'restorePresetDeviceChain',
+            payload: {
+                trackId: 'track-1',
+                expectedBefore: {
+                    id: 'track-1',
+                    kind: 'midi',
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [finalDevice],
+            },
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [finalDevice] }] });
+        const result = await handleLoadPreset.execute(presetAction, {
+            actions: [presetAction, laterDeviceMutation],
+            actionIndex: 0,
+        });
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+
+        await result.afterCommit();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith({
+            before: expect.objectContaining({ id: 'track-1', devices: [oldDevice] }),
+            after: expect.objectContaining({ id: 'track-1', devices: [newDevice] }),
+            operation: 'replace-device-chain',
+            batchContext: { actions: [presetAction, laterDeviceMutation], actionIndex: 0 },
+        });
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'final-device-1', 'threshold', -12);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
+    });
+
     it('initializes a newly created Toaster folder from its committed after-state, not its empty before-state', async () => {
         mocks.getTrackStrip.mockReturnValue(undefined);
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }],
-        });
         const toasterDevice: DeviceSnapshot = {
             id: 'toaster-device',
             name: 'Toaster',
@@ -232,6 +363,12 @@ describe('handleLoadPreset', () => {
             bypassed: false,
             parameterValues: { masterGain: 1.2 },
         };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }] })
+            .mockReturnValue({
+                tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [toasterDevice] }],
+            });
         const toasterAction = action({
             trackId: 'toaster-folder',
             expectedProjectRevision: undefined,
@@ -318,7 +455,9 @@ describe('handleLoadPreset', () => {
         });
     });
 
-    it.each([
+    const runtimeFailureCases: ReadonlyArray<
+        readonly [label: string, runtimeResult: ApplyDeviceChainRuntimeDeltaResult, remediation: string]
+    > = [
         ['rejected', { acceptance: 'rejected', application: 'not-applied', reason: 'runtime revision stale' }, 'retry'],
         [
             'needs-reconcile',
@@ -332,7 +471,9 @@ describe('handleLoadPreset', () => {
             },
             'repair',
         ],
-    ])(
+    ];
+
+    it.each(runtimeFailureCases)(
         'does not return clean Command success after a %s runtime receipt',
         async (_label, runtimeResult, remediation) => {
             mocks.applyDeviceChainRuntimeDelta.mockReturnValue(runtimeResult);
@@ -367,7 +508,77 @@ describe('handleLoadPreset', () => {
         }
     );
 
+    it('returns clean Command success when the same commit superseded the replacement delta', async () => {
+        // The host track left project truth later in this commit, so the chain
+        // this preset would install is gone with it.
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(supersededPresetDelta);
+        registerHandlerMap({ loadPreset: handleLoadPreset });
+
+        await expect(executeAppAction(action())).resolves.toBeUndefined();
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('does not write parameters from a discharged intermediate replacement after a later same-track mutation', async () => {
+        const finalDevice: DeviceSnapshot = {
+            id: 'final-device-1',
+            name: 'Final',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: { threshold: -12 },
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [finalDevice] }] });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(dischargedPresetDelta);
+        const result = await handleLoadPreset.execute(action());
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+
+        await result.afterCommit();
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('writes parameters when a discharged replacement remains authoritative', async () => {
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }] });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(dischargedPresetDelta);
+        const result = await handleLoadPreset.execute(action());
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+
+        await result.afterCommit();
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
+    });
+
+    it('does not initialize a strip for a track the same commit removed', async () => {
+        // The no-live-strip branch never consults project truth, so without its
+        // own guard it happily builds a strip for a track that no longer
+        // exists — an orphan nothing owns or tears down.
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.hasLiveProjectHostTrack.mockReturnValue(false);
+        registerHandlerMap({ loadPreset: handleLoadPreset });
+
+        await expect(executeAppAction(action())).resolves.toBeUndefined();
+
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
     it('returns clean Command success only after the runtime replacement applies and parameters follow', async () => {
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValueOnce({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }] })
+            .mockReturnValue({ tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }] });
         registerHandlerMap({ loadPreset: handleLoadPreset });
 
         await expect(executeAppAction(action())).resolves.toBeUndefined();

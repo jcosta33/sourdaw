@@ -11,7 +11,7 @@
   {
     "id": "ui-00659da04155028b",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 859,
+    "line": 870,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -1109,7 +1109,7 @@
   {
     "id": "ui-0a20d1a0145a18ab",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 487,
+    "line": 498,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -1217,7 +1217,7 @@
   {
     "id": "ui-0b33415042e96a13",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 556,
+    "line": 567,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -3206,7 +3206,7 @@
   {
     "id": "ui-1e4b67278e16aa28",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 254,
+    "line": 258,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -3467,7 +3467,7 @@
   {
     "id": "ui-2056880f57b97489",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 596,
+    "line": 600,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -5168,7 +5168,7 @@
   {
     "id": "ui-31a9bde6a04766e0",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 840,
+    "line": 851,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -6005,7 +6005,7 @@
   {
     "id": "ui-3b35ba7f704c14e4",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 759,
+    "line": 770,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -6347,7 +6347,7 @@
   {
     "id": "ui-3e2bcec3328b6ce0",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 563,
+    "line": 567,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -6860,7 +6860,7 @@
   {
     "id": "ui-42e468964ee39a96",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 547,
+    "line": 558,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7679,7 +7679,7 @@
   {
     "id": "ui-4bf1f97acdd56199",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 306,
+    "line": 310,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7877,7 +7877,7 @@
   {
     "id": "ui-4e160e9b0a1794fe",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 406,
+    "line": 410,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -8606,7 +8606,7 @@
   {
     "id": "ui-54c577802aeaa5a2",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 614,
+    "line": 625,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -8930,7 +8930,7 @@
   {
     "id": "ui-58b02f7aff2ba797",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 810,
+    "line": 814,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -9191,7 +9191,7 @@
   {
     "id": "ui-5b5b0e2d65e8b1d4",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 776,
+    "line": 787,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -9200,7 +9200,7 @@
   {
     "id": "ui-5b671385d9aec9d3",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 259,
+    "line": 263,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -9254,7 +9254,7 @@
   {
     "id": "ui-5bc256a7707f8041",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 844,
+    "line": 855,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -10127,7 +10127,7 @@
   {
     "id": "ui-63b7a85faf49ce9d",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 799,
+    "line": 810,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -10856,7 +10856,7 @@
   {
     "id": "ui-6c104af92448306f",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 433,
+    "line": 437,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -11513,7 +11513,7 @@
   {
     "id": "ui-7323abb587988324",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 462,
+    "line": 473,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -11684,7 +11684,7 @@
   {
     "id": "ui-7585a50667d3ce6e",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 913,
+    "line": 924,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -11711,7 +11711,7 @@
   {
     "id": "ui-75b26891ba192447",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 276,
+    "line": 280,
     "fingerprint": "DawSectionDivider\t",
     "kind": "daw-chrome",
     "mapping": "DawSectionDivider",
@@ -13628,7 +13628,7 @@
   {
     "id": "ui-87c77b7e2df2265f",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 639,
+    "line": 650,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -14510,7 +14510,7 @@
   {
     "id": "ui-90f77253aff340a5",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 869,
+    "line": 880,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -15428,7 +15428,7 @@
   {
     "id": "ui-9b454fd38e7ca03a",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 812,
+    "line": 823,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16364,7 +16364,7 @@
   {
     "id": "ui-a497d3d8f6a5452e",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 829,
+    "line": 840,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16445,7 +16445,7 @@
   {
     "id": "ui-a59d7eb554d880b8",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 804,
+    "line": 808,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -17093,7 +17093,7 @@
   {
     "id": "ui-acdf277f71a6b4ee",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 550,
+    "line": 561,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -18551,7 +18551,7 @@
   {
     "id": "ui-ba4de0dd94d8e93f",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 418,
+    "line": 422,
     "fingerprint": "div\tflex flex-col border-border-hairline bg-surface-tray overflow-hidden",
     "kind": "layout",
     "mapping": "Stack",
@@ -18848,7 +18848,7 @@
   {
     "id": "ui-bdaa4e3a7fd826b4",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 328,
+    "line": 332,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18947,7 +18947,7 @@
   {
     "id": "ui-beb1239661c7687a",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 821,
+    "line": 825,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -19073,7 +19073,7 @@
   {
     "id": "ui-c06314c57048d235",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 451,
+    "line": 462,
     "fingerprint": "Grid\t",
     "kind": "layout",
     "mapping": "Grid",
@@ -19694,7 +19694,7 @@
   {
     "id": "ui-c6ae5c9539cb5eac",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 768,
+    "line": 779,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -19730,7 +19730,7 @@
   {
     "id": "ui-c73030a432e1a528",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 405,
+    "line": 409,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20036,7 +20036,7 @@
   {
     "id": "ui-ca81d09616e26ee8",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 683,
+    "line": 694,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -20054,7 +20054,7 @@
   {
     "id": "ui-ca92cd5511afcc19",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 801,
+    "line": 812,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20198,7 +20198,7 @@
   {
     "id": "ui-cb88c87a966758e3",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 516,
+    "line": 520,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20297,7 +20297,7 @@
   {
     "id": "ui-cc05f52fe55b3619",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 249,
+    "line": 253,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20729,7 +20729,7 @@
   {
     "id": "ui-d144a6c20d58dee4",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 509,
+    "line": 520,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -20855,7 +20855,7 @@
   {
     "id": "ui-d2be9a25f05983a1",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 458,
+    "line": 469,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -20963,7 +20963,7 @@
   {
     "id": "ui-d3948a9c47343ddc",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 593,
+    "line": 604,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -21179,7 +21179,7 @@
   {
     "id": "ui-d5f32b0ec709c691",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 453,
+    "line": 464,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21251,7 +21251,7 @@
   {
     "id": "ui-d6ebeb2d3da784a8",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 863,
+    "line": 867,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21476,7 +21476,7 @@
   {
     "id": "ui-d8d9aef08d21fe89",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 831,
+    "line": 842,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21683,7 +21683,7 @@
   {
     "id": "ui-db65000e608a7e92",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 498,
+    "line": 509,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -22826,7 +22826,7 @@
   {
     "id": "ui-e6eea4402aed8f16",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 372,
+    "line": 376,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -23726,7 +23726,7 @@
   {
     "id": "ui-efd21b66fab6eb45",
     "file": "src/modules/WorkspaceShell/presentations/views/AppShell.tsx",
-    "line": 582,
+    "line": 586,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24005,7 +24005,7 @@
   {
     "id": "ui-f2ea212a6a21092f",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 500,
+    "line": 511,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24113,7 +24113,7 @@
   {
     "id": "ui-f44ca6c5fb4bfb09",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 616,
+    "line": 627,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -24176,7 +24176,7 @@
   {
     "id": "ui-f524c1b510dfc888",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 501,
+    "line": 512,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24275,7 +24275,7 @@
   {
     "id": "ui-f63af9cf24748e3e",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 353,
+    "line": 357,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -24536,7 +24536,7 @@
   {
     "id": "ui-f83b6b7cc2696a4f",
     "file": "src/modules/Yeast/presentations/views/YeastPanel.tsx",
-    "line": 595,
+    "line": 606,
     "fingerprint": "DawPluginToggle\t",
     "kind": "daw-chrome",
     "mapping": "DawPluginToggle",
@@ -24788,7 +24788,7 @@
   {
     "id": "ui-fa5977bc451365b3",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
-    "line": 282,
+    "line": 286,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",

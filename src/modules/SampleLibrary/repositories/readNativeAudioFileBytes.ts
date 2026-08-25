@@ -6,6 +6,8 @@ type ReadNativeAudioFileBytesInput = {
 
 type ReadNativeAudioFileBytesOutput = Promise<Uint8Array>;
 
-export async function readNativeAudioFileBytes({ path }: ReadNativeAudioFileBytesInput): ReadNativeAudioFileBytesOutput {
+export async function readNativeAudioFileBytes({
+    path,
+}: ReadNativeAudioFileBytesInput): ReadNativeAudioFileBytesOutput {
     return readFileBytes({ path });
 }

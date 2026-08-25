@@ -1,0 +1,32 @@
+# Secret scanning configuration.
+#
+# The default rule set is kept in full; this file only records findings that
+# have been read and shown to be safe. Every entry names what it is and why it
+# is not a credential, because an allowlist nobody can audit is indistinguishable
+# from switching the scanner off.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Findings audited on 2026-08-22 during the first full-history scan"
+regexes = [
+  # Freesound's own published example OAuth2 response, quoted verbatim in a
+  # since-deleted integration guide (`.agents/samples-integration.md`, commit
+  # 57f011714). Both values appear in the vendor's public documentation at
+  # https://freesound.org/docs/api/authentication.html, and the second is not
+  # even valid hex — it contains an `r`. Nothing was ever issued to this
+  # project, so there is nothing to revoke.
+  '''64c64660ceed813476b314f52136d9698e075622''',
+  '''0354489231f6a874331aer4927569297c7fea4d5''',
+
+  # Test fixture in `commandBatchContract.spec.ts`: the literal batch
+  # idempotency key a contract spec sends. Matched only because the surrounding
+  # key is named `idempotencyKey`.
+  '''idempotency-1''',
+
+  # Public SHA-256 checksum for the pinned Gitleaks v8.30.1 Linux x64 archive.
+  # The health-gate contract repeats it to verify both the workflow pin and the
+  # helper download, so the surrounding names read like a generic API key.
+  '''551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb''',
+]

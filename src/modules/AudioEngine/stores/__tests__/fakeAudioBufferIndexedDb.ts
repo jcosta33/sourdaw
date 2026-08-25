@@ -11,8 +11,11 @@ import { vi } from 'vitest';
  *    unobserved-write defects rest on.
  * 2. Writes are staged and become visible only when the transaction commits, so
  *    "the write landed" and "the request succeeded" are distinguishable.
- * 3. A transaction can abort **bare** — firing `abort` and no `error` — which is
- *    what leaves an `onabort`-less promise pending forever.
+ * 3. A transaction can abort **bare** — firing transaction `abort` and no
+ *    transaction `error` — while requests it had not delivered fail with
+ *    `AbortError`, matching the platform's separate request/transaction events.
+ *    An unprevented request `error` instead bubbles through and aborts the whole
+ *    transaction, so earlier writes in the same multi-ID import roll back.
  * 4. Every `open()` yields a **distinct** connection over shared stored data, and
  *    a connection that has been closed refuses `transaction()` with
  *    `InvalidStateError` (IDB 3.0 §3.3.1). A caller that keeps using a handle it
@@ -35,21 +38,49 @@ export type StoredAudioBuffer = {
     sampleRate: number;
     numberOfChannels: number;
     channelData: Float32Array[];
-    lastAccessed: number;
-    sizeInBytes: number;
+    lastAccessed?: number;
+    sizeInBytes?: number;
 };
 
 /** The v2 metadata row. Mirrors `BufferMeta` in `audioBufferCache.ts`. */
 export type StoredBufferMeta = {
     freezeProjectId?: number;
     lastAccessed: number;
+    preparedOwner?: {
+        schemaVersion: 1;
+        createdAtMs?: number;
+        leaseId: string;
+        persistenceRevision?: string;
+        promotionRevision?: string;
+        status: 'project-owned' | 'temporary';
+    };
     sizeInBytes: number;
 };
 
-export type StoredValue = StoredAudioBuffer | StoredBufferMeta;
+export type StoredRecoveryRecord = {
+    data?: StoredAudioBuffer;
+    id?: string;
+    metadata?: StoredBufferMeta;
+    operation?: 'discard' | 'reclamation';
+    revision?: string;
+    schemaVersion?: 1;
+    stagedAtMs?: number;
+    kind?: 'prepared-audio-recovery-migration';
+};
+
+type MarkerlessRecoveryBytes = Float32Array & {
+    readonly data?: undefined;
+    readonly id?: undefined;
+};
+
+export type StoredRecoveryValue = StoredRecoveryRecord | MarkerlessRecoveryBytes;
+
+export type StoredValue = StoredAudioBuffer | StoredBufferMeta | StoredRecoveryValue;
 
 export const BUFFER_STORE = 'buffers';
 export const META_STORE = 'bufferMeta';
+export const RECOVERY_STORE = 'preparedBufferRecovery';
+const RECOVERY_MIGRATION_MARKER_KEY = 0;
 
 /** Structured-clone payload size of one value, in bytes.
  *
@@ -58,15 +89,12 @@ export const META_STORE = 'bufferMeta';
  * is noise. What it is exact about is the part that dominates: a
  * `Float32Array` costs its `byteLength`, so a record's PCM is counted in full
  * and a metadata row is not. */
-function measureBytes(value: unknown): number {
+function measureBytes(value: unknown, visited = new WeakSet<object>()): number {
     if (value === null || value === undefined) {
         return 0;
     }
     if (ArrayBuffer.isView(value)) {
-        return value.byteLength;
-    }
-    if (Array.isArray(value)) {
-        return value.reduce<number>((total, entry) => total + measureBytes(entry), 0);
+        return Math.max(1, value.byteLength);
     }
     if (typeof value === 'number') {
         return 8;
@@ -77,28 +105,63 @@ function measureBytes(value: unknown): number {
     if (typeof value === 'string') {
         return value.length * 2;
     }
-    if (typeof value === 'object') {
-        let total = 0;
-        for (const [key, entry] of Object.entries(value)) {
-            total += key.length * 2 + measureBytes(entry);
+    if (typeof value === 'bigint') {
+        return Math.max(8, value.toString().length * 2);
+    }
+    if (typeof value !== 'object' || visited.has(value)) {
+        return 0;
+    }
+    visited.add(value);
+    if (value instanceof ArrayBuffer) {
+        return Math.max(1, value.byteLength);
+    }
+    if (typeof Blob !== 'undefined' && value instanceof Blob) {
+        return Math.max(1, value.size);
+    }
+    if (value instanceof Date) {
+        return 8;
+    }
+    if (value instanceof RegExp) {
+        return Math.max(1, (value.source.length + value.flags.length) * 2);
+    }
+    if (value instanceof Map) {
+        let total = 1;
+        for (const [key, entry] of value) {
+            total += measureBytes(key, visited) + measureBytes(entry, visited);
         }
         return total;
     }
-    return 0;
+    if (value instanceof Set) {
+        let total = 1;
+        for (const entry of value) {
+            total += measureBytes(entry, visited);
+        }
+        return total;
+    }
+    if (Array.isArray(value)) {
+        return value.reduce<number>((total, entry) => total + measureBytes(entry, visited), 1);
+    }
+    let total = 1;
+    for (const [key, entry] of Object.entries(value)) {
+        total += key.length * 2 + measureBytes(entry, visited);
+    }
+    return total;
 }
 
 type FakeRequest<T> = {
     result: T | undefined;
     error: unknown;
-    onsuccess: (() => void) | null;
-    onerror: (() => void) | null;
+    onsuccess: ((event: Event) => void) | null;
+    onerror: ((event: Event) => void) | null;
 };
 
 export type FakeAudioIndexedDbControls = {
     /** Committed contents of the `buffers` object store. */
-    committed: Map<string, StoredAudioBuffer>;
+    committed: Map<IDBValidKey, StoredAudioBuffer>;
     /** Committed contents of the `bufferMeta` object store. */
-    committedMeta: Map<string, StoredBufferMeta>;
+    committedMeta: Map<IDBValidKey, StoredBufferMeta>;
+    /** Committed contents of the isolated prepared-recovery object store. */
+    committedRecovery: Map<IDBValidKey, StoredRecoveryValue>;
     /** Object stores that exist on the database right now. */
     storeNames: () => string[];
     /** Abort every subsequent readwrite transaction, after its requests succeed. */
@@ -115,6 +178,24 @@ export type FakeAudioIndexedDbControls = {
      */
     abortWritesTo: (storeName: string) => void;
     allowWrites: () => void;
+    /** Abort exactly the next readwrite transaction, then resume normal writes. */
+    abortNextWrite: () => void;
+    /** Fail every request issued against one store without making other stores unavailable. */
+    failRequestsFrom: (storeName: string) => void;
+    /** Resume request delivery for every store. */
+    allowRequests: () => void;
+    /** Hold readonly completion after its requests have produced their snapshots. */
+    pauseReadonlySettlements: () => void;
+    /** Release the oldest held readonly completion. */
+    releaseNextReadonlySettlement: () => void;
+    /** Readonly completions currently held after request delivery. */
+    pendingReadonlySettlementCount: () => number;
+    /** Hold readwrite completion after its writes have been staged. */
+    pauseWriteSettlements: () => void;
+    /** Release the oldest held readwrite commit or abort. */
+    releaseNextWriteSettlement: () => void;
+    /** Readwrite completions currently held after request delivery. */
+    pendingWriteSettlementCount: () => number;
     /** Number of readwrite transactions opened against the database. */
     writeTransactionCount: () => number;
     /** Number of `indexedDB.open` calls issued against the fake. */
@@ -150,7 +231,7 @@ type ByteMeters = {
     written: number;
 };
 
-type Tables = Map<string, Map<string, StoredValue>>;
+type Tables = Map<string, Map<IDBValidKey, StoredValue>>;
 
 class FakeTransaction {
     oncomplete: (() => void) | null = null;
@@ -158,25 +239,36 @@ class FakeTransaction {
     onabort: (() => void) | null = null;
     error: unknown = null;
 
-    private readonly queue: Array<() => void> = [];
-    private readonly staged = new Map<string, Map<string, StoredValue | null>>();
+    private readonly queue: Array<{ abort: () => void; run: () => void }> = [];
+    private readonly staged = new Map<string, Map<IDBValidKey, StoredValue | null>>();
     private scheduled = false;
+    private started = false;
     private settled = false;
 
     constructor(
         private readonly tables: Tables,
         private readonly scope: readonly string[],
         private readonly willAbort: boolean,
-        private readonly meters: ByteMeters
+        private readonly meters: ByteMeters,
+        private readonly holdSettlement?: (settle: () => void) => void,
+        private readonly onSettled?: () => void,
+        private readonly shouldFailRequest?: (storeName: string) => boolean
     ) {
         for (const name of scope) {
-            this.staged.set(name, new Map<string, StoredValue | null>());
+            this.staged.set(name, new Map<IDBValidKey, StoredValue | null>());
         }
+    }
+
+    start(): void {
+        if (this.started || this.settled) {
+            return;
+        }
+        this.started = true;
         this.schedule();
     }
 
-    enqueue(operation: () => void): void {
-        this.queue.push(operation);
+    enqueue(operation: () => void, abort: () => void): void {
+        this.queue.push({ abort, run: operation });
         this.schedule();
     }
 
@@ -197,15 +289,20 @@ class FakeTransaction {
                 'NotFoundError'
             );
         }
-        return new FakeObjectStore(this, committed, this.staged.get(name)!, this.meters);
+        return new FakeObjectStore(name, this, committed, this.staged.get(name)!, this.meters, this.shouldFailRequest);
     }
 
     abort(): void {
         this.settle(true);
     }
 
+    abortFromRequest(error: unknown): void {
+        this.error = error;
+        this.settle(true, true);
+    }
+
     private schedule(): void {
-        if (this.scheduled || this.settled) {
+        if (!this.started || this.scheduled || this.settled) {
             return;
         }
         this.scheduled = true;
@@ -221,30 +318,44 @@ class FakeTransaction {
         }
         const operation = this.queue.shift();
         if (operation) {
-            operation();
+            operation.run();
             // A handler may have queued further requests on this transaction;
             // real IDB keeps the transaction alive while that happens.
             this.schedule();
             return;
         }
+        if (this.holdSettlement) {
+            this.holdSettlement(() => this.settle(this.willAbort));
+            return;
+        }
         this.settle(this.willAbort);
     }
 
-    private settle(abort: boolean): void {
+    private settle(abort: boolean, requestFailed = false): void {
         if (this.settled) {
             return;
         }
         this.settled = true;
         if (abort) {
+            for (const operation of this.queue.splice(0)) {
+                operation.abort();
+            }
             // Every store in scope rolls back together — the property a
             // two-store mutation depends on for its size accounting to stay
             // consistent with its records.
             for (const staged of this.staged.values()) {
                 staged.clear();
             }
-            this.error = null;
-            // A bare abort fires `abort` and nothing else.
+            if (!requestFailed) {
+                this.error = null;
+            } else {
+                this.onerror?.();
+            }
+            // A bare abort fires `abort` and nothing else. An unprevented
+            // request error first bubbles through the transaction, then aborts
+            // the transaction and rolls back every staged store mutation.
             this.onabort?.();
+            this.onSettled?.();
             return;
         }
         for (const [name, staged] of this.staged) {
@@ -259,21 +370,26 @@ class FakeTransaction {
             staged.clear();
         }
         this.oncomplete?.();
+        this.onSettled?.();
     }
 }
 
 class FakeObjectStore {
     constructor(
+        private readonly name: string,
         private readonly transaction: FakeTransaction,
-        private readonly committed: Map<string, StoredValue>,
-        private readonly staged: Map<string, StoredValue | null>,
-        private readonly meters: ByteMeters
+        private readonly committed: Map<IDBValidKey, StoredValue>,
+        private readonly staged: Map<IDBValidKey, StoredValue | null>,
+        private readonly meters: ByteMeters,
+        private readonly shouldFailRequest?: (storeName: string) => boolean
     ) {}
 
-    get(key: string): FakeRequest<StoredValue | undefined> {
+    get(key: IDBValidKey): FakeRequest<StoredValue | undefined> {
         return this.request(() => {
             const value = this.read(key) ?? undefined;
-            this.meters.read += measureBytes(value);
+            if (!(this.name === RECOVERY_STORE && key === RECOVERY_MIGRATION_MARKER_KEY)) {
+                this.meters.read += measureBytes(value);
+            }
             return value;
         });
     }
@@ -286,7 +402,7 @@ class FakeObjectStore {
         });
     }
 
-    getAllKeys(): FakeRequest<string[]> {
+    getAllKeys(): FakeRequest<IDBValidKey[]> {
         return this.request(() => {
             const keys = [...this.keys()];
             this.meters.read += measureBytes(keys);
@@ -294,7 +410,7 @@ class FakeObjectStore {
         });
     }
 
-    put(value: StoredValue, key: string): FakeRequest<undefined> {
+    put(value: StoredValue, key: IDBValidKey): FakeRequest<undefined> {
         // IDB structured-clones the value at `put` time, so a later mutation of
         // the caller's object cannot reach the store.
         const snapshot = structuredClone(value);
@@ -305,7 +421,7 @@ class FakeObjectStore {
         });
     }
 
-    delete(key: string): FakeRequest<undefined> {
+    delete(key: IDBValidKey): FakeRequest<undefined> {
         return this.request(() => {
             this.staged.set(key, null);
             return undefined;
@@ -321,7 +437,7 @@ class FakeObjectStore {
         });
     }
 
-    private keys(): string[] {
+    private keys(): IDBValidKey[] {
         const keys = new Set(this.committed.keys());
         for (const [key, value] of this.staged) {
             if (value === null) {
@@ -333,7 +449,7 @@ class FakeObjectStore {
         return [...keys];
     }
 
-    private read(key: string): StoredValue | null {
+    private read(key: IDBValidKey): StoredValue | null {
         // Reads hand back a structured clone, so mutating a read result cannot
         // reach the store without a `put` that commits.
         const stored = this.staged.has(key) ? this.staged.get(key) : this.committed.get(key);
@@ -345,10 +461,25 @@ class FakeObjectStore {
 
     private request<T>(run: () => T): FakeRequest<T> {
         const request: FakeRequest<T> = { result: undefined, error: null, onsuccess: null, onerror: null };
-        this.transaction.enqueue(() => {
-            request.result = run();
-            request.onsuccess?.();
-        });
+        this.transaction.enqueue(
+            () => {
+                if (this.shouldFailRequest?.(this.name)) {
+                    request.error = new DOMException('The request failed.', 'UnknownError');
+                    const event = new Event('error', { bubbles: true, cancelable: true });
+                    request.onerror?.(event);
+                    if (!event.defaultPrevented) {
+                        this.transaction.abortFromRequest(request.error);
+                    }
+                    return;
+                }
+                request.result = run();
+                request.onsuccess?.(new Event('success'));
+            },
+            () => {
+                request.error = new DOMException('The transaction was aborted.', 'AbortError');
+                request.onerror?.(new Event('error', { bubbles: true, cancelable: true }));
+            }
+        );
         return request;
     }
 }
@@ -360,7 +491,22 @@ type FakeConnection = {
     onversionchange: (() => void) | null;
     close: () => void;
     transaction: (storeNames: string | string[], mode?: IDBTransactionMode) => FakeTransaction;
+    version: number;
     isClosed: () => boolean;
+    isEstablished: () => boolean;
+    markEstablished: () => void;
+};
+
+type FakeOpenRequest = {
+    result: FakeConnection;
+    error: DOMException | null;
+    onsuccess: (() => void) | null;
+    onerror: (() => void) | null;
+    onupgradeneeded: (() => void) | null;
+    onblocked: (() => void) | null;
+    requestedVersion: number;
+    versionChangeDispatched: boolean;
+    blockedFired: boolean;
 };
 
 export type InstallFakeAudioIndexedDbInput = {
@@ -370,6 +516,8 @@ export type InstallFakeAudioIndexedDbInput = {
      * creates anything beyond `buffers`.
      */
     existingStores?: readonly string[];
+    /** Leave the v3 recovery migration incomplete so an open must retry it. */
+    pendingLegacyRecoveryMigration?: boolean;
     /**
      * How `open()` behaves when another context holds a connection at the older
      * version (IDB 3.0 §3.3.1).
@@ -387,19 +535,46 @@ export type InstallFakeAudioIndexedDbInput = {
 };
 
 export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput = {}): FakeAudioIndexedDbControls {
-    const committed = new Map<string, StoredAudioBuffer>();
-    const committedMeta = new Map<string, StoredBufferMeta>();
-    const tables: Tables = new Map<string, Map<string, StoredValue>>();
+    const committed = new Map<IDBValidKey, StoredAudioBuffer>();
+    const committedMeta = new Map<IDBValidKey, StoredBufferMeta>();
+    const committedRecovery = new Map<IDBValidKey, StoredRecoveryValue>();
+    const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
+    if (existingStores.has(RECOVERY_STORE) && !input.pendingLegacyRecoveryMigration) {
+        committedRecovery.set(RECOVERY_MIGRATION_MARKER_KEY, {
+            kind: 'prepared-audio-recovery-migration',
+            schemaVersion: 1,
+        });
+    }
+    const tables: Tables = new Map<string, Map<IDBValidKey, StoredValue>>();
     // Both concrete maps are handed to specs by identity, so they are installed
     // as the backing tables rather than copied into them.
     tables.set(BUFFER_STORE, committed);
     tables.set(META_STORE, committedMeta);
+    tables.set(RECOVERY_STORE, committedRecovery);
 
-    const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
+    let databaseVersion = 1;
+    if (existingStores.has(RECOVERY_STORE)) {
+        databaseVersion = 3;
+    } else if (existingStores.has(META_STORE)) {
+        databaseVersion = 2;
+    }
     const meters: ByteMeters = { read: 0, written: 0 };
     const transactionScopes: string[][] = [];
     let abortWrites = false;
     let abortWritesToStore: string | null = null;
+    let abortNextWrite = false;
+    let failingRequestStore: string | null = null;
+    let pauseReadonlySettlements = false;
+    let pauseWriteSettlements = false;
+    const pendingReadonlySettlements: Array<() => void> = [];
+    const pendingWriteSettlements: Array<() => void> = [];
+    type ScheduledTransaction = {
+        mode: IDBTransactionMode;
+        scope: readonly string[];
+        transaction: FakeTransaction;
+    };
+    const pendingTransactions: ScheduledTransaction[] = [];
+    const activeTransactions: ScheduledTransaction[] = [];
     let writeTransactionCount = 0;
     let openRequestCount = 0;
     let closeCount = 0;
@@ -407,12 +582,147 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     // Every `open()` yields its own connection over the shared committed data,
     // exactly as a browser does. Closing one must not disturb the others.
     const connections: FakeConnection[] = [];
+    const pendingOpenRequests: FakeOpenRequest[] = [];
+    let openProcessingScheduled = false;
 
-    function createConnection(): FakeConnection {
+    function transactionsConflict(alpha: ScheduledTransaction, beta: ScheduledTransaction): boolean {
+        return (
+            (alpha.mode === 'readwrite' || beta.mode === 'readwrite') &&
+            alpha.scope.some((storeName) => beta.scope.includes(storeName))
+        );
+    }
+
+    function startEligibleTransactions(): void {
+        for (let index = 0; index < pendingTransactions.length; index++) {
+            const candidate = pendingTransactions[index]!;
+            const blockedByActive = activeTransactions.some((active) => transactionsConflict(active, candidate));
+            const blockedByEarlier = pendingTransactions
+                .slice(0, index)
+                .some((earlier) => transactionsConflict(earlier, candidate));
+            if (blockedByActive || blockedByEarlier) {
+                continue;
+            }
+            pendingTransactions.splice(index, 1);
+            index--;
+            activeTransactions.push(candidate);
+            candidate.transaction.start();
+        }
+    }
+
+    function scheduleTransaction(transaction: FakeTransaction, scope: readonly string[], mode: IDBTransactionMode) {
+        const scheduled = { transaction, scope, mode };
+        pendingTransactions.push(scheduled);
+        startEligibleTransactions();
+        return scheduled;
+    }
+
+    function finishTransaction(scheduled: ScheduledTransaction): void {
+        const activeIndex = activeTransactions.indexOf(scheduled);
+        if (activeIndex >= 0) {
+            activeTransactions.splice(activeIndex, 1);
+        } else {
+            const pendingIndex = pendingTransactions.indexOf(scheduled);
+            if (pendingIndex >= 0) {
+                pendingTransactions.splice(pendingIndex, 1);
+            }
+        }
+        startEligibleTransactions();
+    }
+
+    function scheduleOpenProcessing(): void {
+        if (openProcessingScheduled) {
+            return;
+        }
+        openProcessingScheduled = true;
+        setTimeout(() => {
+            openProcessingScheduled = false;
+            processNextOpen();
+        }, 0);
+    }
+
+    function finishOpen(request: FakeOpenRequest): void {
+        pendingOpenRequests.shift();
+        request.result.markEstablished();
+        request.onsuccess?.();
+        scheduleOpenProcessing();
+    }
+
+    function failOpen(request: FakeOpenRequest, error: DOMException): void {
+        pendingOpenRequests.shift();
+        request.error = error;
+        request.onerror?.();
+        scheduleOpenProcessing();
+    }
+
+    function performUpgrade(request: FakeOpenRequest): void {
+        const previousStores = new Set(existingStores);
+        try {
+            request.onupgradeneeded?.();
+            databaseVersion = request.requestedVersion;
+            finishOpen(request);
+        } catch (error) {
+            existingStores.clear();
+            for (const storeName of previousStores) {
+                existingStores.add(storeName);
+            }
+            failOpen(
+                request,
+                error instanceof DOMException
+                    ? error
+                    : new DOMException(error instanceof Error ? error.message : String(error), 'AbortError')
+            );
+        }
+    }
+
+    function processNextOpen(): void {
+        const request = pendingOpenRequests[0];
+        if (!request) {
+            return;
+        }
+        if (request.requestedVersion < databaseVersion) {
+            failOpen(
+                request,
+                new DOMException('The requested version is less than the existing database version.', 'VersionError')
+            );
+            return;
+        }
+        if (request.requestedVersion === databaseVersion) {
+            finishOpen(request);
+            return;
+        }
+        if (!request.versionChangeDispatched) {
+            request.versionChangeDispatched = true;
+            for (const connection of connections) {
+                if (connection.isEstablished() && !connection.isClosed()) {
+                    connection.onversionchange?.();
+                }
+            }
+            scheduleOpenProcessing();
+            return;
+        }
+        const blockers = connections.filter((connection) => connection.isEstablished() && !connection.isClosed());
+        if (blockers.length > 0) {
+            if (!request.blockedFired) {
+                request.blockedFired = true;
+                request.onblocked?.();
+            }
+            return;
+        }
+        performUpgrade(request);
+    }
+
+    function createConnection(version: number): FakeConnection {
         let closed = false;
+        let established = false;
         const connection: FakeConnection = {
             objectStoreNames: { contains: (name: string) => existingStores.has(name) },
             createObjectStore: (name: string) => {
+                if (existingStores.has(name)) {
+                    throw new DOMException(
+                        'An object store with the specified name already exists.',
+                        'ConstraintError'
+                    );
+                }
                 existingStores.add(name);
                 return undefined;
             },
@@ -424,6 +734,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                 }
                 closed = true;
                 closeCount++;
+                scheduleOpenProcessing();
             },
             transaction: (storeNames: string | string[], mode: IDBTransactionMode = 'readonly') => {
                 if (closed) {
@@ -450,10 +761,38 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                     writeTransactionCount++;
                 }
                 const doomed =
-                    isWrite && (abortWrites || (abortWritesToStore !== null && scope.includes(abortWritesToStore)));
-                return new FakeTransaction(tables, scope, doomed, meters);
+                    isWrite &&
+                    (abortWrites ||
+                        abortNextWrite ||
+                        (abortWritesToStore !== null && scope.includes(abortWritesToStore)));
+                if (isWrite && abortNextWrite) {
+                    abortNextWrite = false;
+                }
+                let heldSettlements: Array<() => void> | undefined;
+                if (isWrite && pauseWriteSettlements) {
+                    heldSettlements = pendingWriteSettlements;
+                } else if (!isWrite && pauseReadonlySettlements) {
+                    heldSettlements = pendingReadonlySettlements;
+                }
+                let scheduled: ScheduledTransaction;
+                const transaction = new FakeTransaction(
+                    tables,
+                    scope,
+                    doomed,
+                    meters,
+                    heldSettlements ? (settle) => heldSettlements.push(settle) : undefined,
+                    () => finishTransaction(scheduled),
+                    (storeName) => failingRequestStore === storeName
+                );
+                scheduled = scheduleTransaction(transaction, scope, mode);
+                return transaction;
             },
+            version,
             isClosed: () => closed,
+            isEstablished: () => established,
+            markEstablished: () => {
+                established = true;
+            },
         };
         return connection;
     }
@@ -467,35 +806,41 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     }
 
     vi.stubGlobal('indexedDB', {
-        open: () => {
+        open: (_name: string, requestedVersion?: number) => {
             openRequestCount++;
-            const connection = createConnection();
+            const version = requestedVersion ?? databaseVersion;
+            const connection = createConnection(version);
             connections.push(connection);
-            const request = {
+            const request: FakeOpenRequest = {
                 result: connection,
                 error: null,
                 onsuccess: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 onupgradeneeded: null as (() => void) | null,
                 onblocked: null as (() => void) | null,
+                requestedVersion: version,
+                versionChangeDispatched: false,
+                blockedFired: false,
             };
-            setTimeout(() => {
-                if (input.blockOpens !== undefined) {
+            if (input.blockOpens !== undefined) {
+                setTimeout(() => {
                     request.onblocked?.();
                     if (input.blockOpens === 'forever') {
                         return;
                     }
-                    // The blocking context closed; the open completes normally,
-                    // whether or not anyone still wants the result.
                     setTimeout(() => {
-                        request.onupgradeneeded?.();
+                        if (request.requestedVersion > databaseVersion) {
+                            request.onupgradeneeded?.();
+                            databaseVersion = request.requestedVersion;
+                        }
+                        request.result.markEstablished();
                         request.onsuccess?.();
                     }, 0);
-                    return;
-                }
-                request.onupgradeneeded?.();
-                request.onsuccess?.();
-            }, 0);
+                }, 0);
+                return request;
+            }
+            pendingOpenRequests.push(request);
+            scheduleOpenProcessing();
             return request;
         },
     });
@@ -503,6 +848,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     return {
         committed,
         committedMeta,
+        committedRecovery,
         storeNames: () => [...existingStores],
         abortWrites: () => {
             abortWrites = true;
@@ -514,6 +860,29 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
             abortWrites = false;
             abortWritesToStore = null;
         },
+        abortNextWrite: () => {
+            abortNextWrite = true;
+        },
+        failRequestsFrom: (storeName: string) => {
+            failingRequestStore = storeName;
+        },
+        allowRequests: () => {
+            failingRequestStore = null;
+        },
+        pauseReadonlySettlements: () => {
+            pauseReadonlySettlements = true;
+        },
+        releaseNextReadonlySettlement: () => {
+            pendingReadonlySettlements.shift()?.();
+        },
+        pendingReadonlySettlementCount: () => pendingReadonlySettlements.length,
+        pauseWriteSettlements: () => {
+            pauseWriteSettlements = true;
+        },
+        releaseNextWriteSettlement: () => {
+            pendingWriteSettlements.shift()?.();
+        },
+        pendingWriteSettlementCount: () => pendingWriteSettlements.length,
         writeTransactionCount: () => writeTransactionCount,
         openRequestCount: () => openRequestCount,
         closeCount: () => closeCount,

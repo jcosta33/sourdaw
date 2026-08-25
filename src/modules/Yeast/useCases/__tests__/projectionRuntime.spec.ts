@@ -14,6 +14,9 @@ const setProjection = vi.hoisted(() => vi.fn());
 
 vi.mock('../../stores/yeastStore', () => ({
     yeastStore: store,
+    // Groove-assignment reconcile reads the union of every rack; the mocked
+    // store's value is the only one these tests carry.
+    readAllYeastRacks: () => [store.value ?? { processors: [], uiLevel: 1 }],
 }));
 
 vi.mock('../../engine/yeastRuntime', () => ({

@@ -96,7 +96,7 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [entry] });
         });
 
-        it('notifies the user and un-wedges the stack when an entry conflicts', async () => {
+        it('notifies the user and preserves a conflicting entry for retry', async () => {
             const older = actionEntry({ id: 'older-1', label: 'First Action' });
             const conflicting = actionEntry({ id: 'conflict-1', label: 'Cut Clip' });
             mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
@@ -108,11 +108,11 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
                 'Cannot undo "Cut Clip": project state has changed',
                 'warning'
             );
-            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older], future: [] });
-            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('older-1');
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
         });
 
-        it('notifies the user and removes a conflicting action group from past', async () => {
+        it('notifies the user and preserves a conflicting action group for retry', async () => {
             const first = actionEntry({ id: 'g-first', groupId: 'group-1', groupLabel: 'Grouped Edit' });
             const second = actionEntry({ id: 'g-second', groupId: 'group-1', groupLabel: 'Grouped Edit' });
             mocks.undoStoreValue.value = { past: [first, second], future: [] };
@@ -134,8 +134,8 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
                 'Cannot undo "Grouped Edit": project state has changed',
                 'warning'
             );
-            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [] });
-            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
         });
     });
 

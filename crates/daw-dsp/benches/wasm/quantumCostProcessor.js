@@ -24,7 +24,20 @@
  * to this file; the bench header states it.
  */
 
-import { initSync as initDsp, BacteriaInstance, CrumbsInstance, CrustInstance, FermenterInstance, GlutenInstance, GrandBouleInstance, GrinderInstance, KneadInstance, LevainInstance, ProofInstance, ToasterInstance } from '/src/modules/AudioEngine/wasm/daw_dsp.js';
+import {
+    initSync as initDsp,
+    BacteriaInstance,
+    CrumbsInstance,
+    CrustInstance,
+    FermenterInstance,
+    GlutenInstance,
+    GrandBouleInstance,
+    GrinderInstance,
+    KneadInstance,
+    LevainInstance,
+    ProofInstance,
+    ToasterInstance,
+} from '/src/modules/AudioEngine/wasm/daw_dsp.js';
 import { initSync as initChamber, ProofChamberInstance } from '/src/modules/AudioEngine/wasm/proof_chamber.js';
 import { initSync as initScoring, ScoringInstance } from '/src/modules/AudioEngine/wasm/scoring.js';
 
@@ -32,6 +45,7 @@ import { buildDevices, QUANTUM } from './deviceRecipes.js';
 // The real shipped audio-thread code, type-stripped by the harness server, so
 // the ring-consumer row times the function production runs.
 import * as ring from '/src/modules/AudioEngine/models/GrandBouleRingProtocol.ts';
+import { publishGrandBouleConsumerClock } from '/src/modules/AudioEngine/worklets/grandBouleConsumerClock.ts';
 import { readBlockAcquire } from '/src/modules/AudioEngine/worklets/grandBouleProcessor.ts';
 
 /**
@@ -95,30 +109,31 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         let built;
         try {
             built = buildDevices({
-            only: config.deviceId,
-            // Every quantum this row will render, warm-up included. A recipe
-            // that has to lay out a timeline ahead of time sizes it from this
-            // rather than from a literal, so raising `--measure` cannot walk a
-            // row off the end of its own data.
-            quantaBudget: config.warmupQuanta + config.measureQuanta,
-            dsp: {
-                memory: dspExports.memory,
-                BacteriaInstance,
-                CrumbsInstance,
-                CrustInstance,
-                FermenterInstance,
-                GlutenInstance,
-                GrandBouleInstance,
-                GrinderInstance,
-                KneadInstance,
-                LevainInstance,
-                ProofInstance,
-                ToasterInstance,
-            },
-            chamber: { memory: chamberExports.memory, ProofChamberInstance },
-            scoring: { memory: scoringExports.memory, ScoringInstance },
-            ring,
-            readBlockAcquire,
+                only: config.deviceId,
+                // Every quantum this row will render, warm-up included. A recipe
+                // that has to lay out a timeline ahead of time sizes it from this
+                // rather than from a literal, so raising `--measure` cannot walk a
+                // row off the end of its own data.
+                quantaBudget: config.warmupQuanta + config.measureQuanta,
+                dsp: {
+                    memory: dspExports.memory,
+                    BacteriaInstance,
+                    CrumbsInstance,
+                    CrustInstance,
+                    FermenterInstance,
+                    GlutenInstance,
+                    GrandBouleInstance,
+                    GrinderInstance,
+                    KneadInstance,
+                    LevainInstance,
+                    ProofInstance,
+                    ToasterInstance,
+                },
+                chamber: { memory: chamberExports.memory, ProofChamberInstance },
+                scoring: { memory: scoringExports.memory, ScoringInstance },
+                ring,
+                publishGrandBouleConsumerClock,
+                readBlockAcquire,
             });
         } catch (error) {
             this.port.postMessage({
@@ -262,7 +277,7 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         if (this._counter >= this._measureQuanta) {
             const tailMs = Date.now() - this._segmentStartMs;
             if (tailMs > 0) {
-                this._segmentRates.push((((after - this._segmentStartTick) | 0)) / tailMs);
+                this._segmentRates.push(((after - this._segmentStartTick) | 0) / tailMs);
             }
             this.port.postMessage({
                 type: 'result',

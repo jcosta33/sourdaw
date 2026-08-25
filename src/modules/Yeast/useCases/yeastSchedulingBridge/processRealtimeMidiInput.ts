@@ -49,7 +49,7 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
         return Promise.resolve([createEvent(input.sampleTime)]);
     }
 
-    const { earlyBeats, lateBeats } = getYeastSchedulingLookahead();
+    const { earlyBeats, lateBeats } = getYeastSchedulingLookahead(input.rackId);
     const workerLookaheadSamples = Math.ceil(input.sampleRate * REALTIME_WORKER_LOOKAHEAD_SECONDS);
     const earlySamples = beatsToSamples(earlyBeats, transport.tempo, input.sampleRate);
     const lateSamples = beatsToSamples(lateBeats, transport.tempo, input.sampleRate);

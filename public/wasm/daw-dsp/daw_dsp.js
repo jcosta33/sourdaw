@@ -808,7 +808,7 @@ export class GlutenInstance {
 if (Symbol.dispose) GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
 
 /**
- * WASM-exported Grand Boule instance for AudioWorklet integration.
+ * Grand Boule host instance for native and WASM integration.
  */
 export class GrandBouleInstance {
     __destroy_into_raw() {
@@ -820,6 +820,14 @@ export class GrandBouleInstance {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_grandbouleinstance_free(ptr, 0);
+    }
+    /**
+     * Authoritative number of sounding voices in the playable pool.
+     * @returns {number}
+     */
+    active_voices() {
+        const ret = wasm.grandbouleinstance_active_voices(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * Panic: silence every voice immediately.

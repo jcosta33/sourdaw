@@ -80,7 +80,35 @@ vi.mock('../Transport/AutoScrollToggle', () => ({
 }));
 
 vi.mock('../Transport/PanelToggles', () => ({
-    PanelToggles: () => <div data-testid="panel-toggles">Toggles</div>,
+    PanelToggles: () => (
+        <div data-testid="panel-toggles">
+            <button data-testid="panel-toggle-button">Toggle</button>
+        </div>
+    ),
+}));
+
+vi.mock('../Transport/WindowControls', () => ({
+    WindowControls: () => <div data-testid="window-controls" />,
+}));
+
+const windowChromeMocks = vi.hoisted(() => ({
+    frameless: false,
+    minimize: vi.fn<() => Promise<void>>(),
+    toggleMaximize: vi.fn<() => Promise<boolean>>(),
+    close: vi.fn<() => Promise<void>>(),
+    isMaximized: vi.fn<() => Promise<boolean>>(),
+    listenMaximized: vi.fn<(callback: (maximized: boolean) => void) => () => void>(),
+}));
+
+vi.mock('#/modules/WorkspaceShell/useCases/windowChrome', () => ({
+    windowChromeControls: () => ({
+        frameless: windowChromeMocks.frameless,
+        minimize: windowChromeMocks.minimize,
+        toggleMaximize: windowChromeMocks.toggleMaximize,
+        close: windowChromeMocks.close,
+        isMaximized: windowChromeMocks.isMaximized,
+        listenMaximized: windowChromeMocks.listenMaximized,
+    }),
 }));
 
 vi.mock('#/modules/TimelineEditor/presentations/views', () => ({
@@ -121,6 +149,9 @@ describe('TransportBar', () => {
         voiceRuntimeMocks.isVoiceInputAvailable.mockClear();
         voiceRuntimeMocks.toggleVoiceInput.mockClear();
         voiceRuntimeMocks.isVoiceInputAvailable.mockReturnValue(false);
+        windowChromeMocks.frameless = false;
+        windowChromeMocks.toggleMaximize.mockClear();
+        windowChromeMocks.toggleMaximize.mockResolvedValue(true);
         // Reset the hoisted hook return-values to defaults after clearAllMocks.
         transportState.isRecording = false;
         transportState.isPlaying = false;
@@ -157,6 +188,32 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region');
+    });
+
+    it('marks the titlebar row as the frameless drag region and mounts the window controls', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        expect(screen.getByTestId('window-titlebar-region')).toHaveClass('desktop-titlebar-region--frameless');
+        expect(screen.getByTestId('window-controls')).toBeInTheDocument();
+    });
+
+    it('toggles maximize on a double-click on the titlebar row itself', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        fireEvent.doubleClick(screen.getByTestId('window-titlebar-region'));
+
+        expect(windowChromeMocks.toggleMaximize).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not toggle maximize when the double-click lands on an interactive element', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        fireEvent.doubleClick(screen.getByTestId('panel-toggle-button'));
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
 
     it('should show play button', () => {

@@ -54,8 +54,18 @@ const setup = ({ host, commands = ['load_plugin'], createStream = nullStream }: 
     return handlers;
 };
 
+// Dictation is routed by `voiceDictation.ts`, never by the generic command
+// router under test, so these stubs reject: reaching one from a router test
+// means the routing boundary moved.
+const refuseDictation = (name: string) => () => {
+    throw new Error(`Unexpected dictation call from the command router: ${name}`);
+};
+
 const hostWith = (methods: Record<string, (...args: readonly unknown[]) => unknown>): NativeHost => ({
     shutdown: () => undefined,
+    startDictation: refuseDictation('startDictation'),
+    stopDictation: refuseDictation('stopDictation'),
+    cancelDictation: refuseDictation('cancelDictation'),
     ...methods,
 });
 

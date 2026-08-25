@@ -68,7 +68,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(),
     importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
-    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
+    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ cancel: () => undefined, publish: () => 0 }),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
@@ -120,6 +120,9 @@ function makeProjectData(): ProjectData {
     return {
         version: CURRENT_PROJECT_VERSION,
         meta: {
+            // Required by isHydratableProjectData; this fixture predates
+            // that hardening.
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
             name: PROJECT_NAME,
             createdAt: CREATED_AT,
             updatedAt: CREATED_AT,

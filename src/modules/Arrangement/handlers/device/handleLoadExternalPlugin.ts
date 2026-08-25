@@ -3,46 +3,37 @@ import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHos
 import { createHandler } from '#/utils/createHandler';
 
 import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+import { type Device } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
 import { addExternalDevice } from '../../useCases/device/addExternalDevice';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
+import {
+    getRuntimeDeviceDeltaPostCommitFailure,
+    type RuntimeDeviceDeltaPostCommitError,
+} from '../../useCases/device/runtimeDeviceDeltaPostCommit';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
-type RuntimeDeviceDeltaFailure = Exclude<
-    RuntimeDeviceDeltaResult,
-    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
->;
-
-class RuntimeDeviceDeltaPostCommitError extends Error {
-    public readonly outcome: RuntimeDeviceDeltaFailure;
-    public readonly remediation: 'retry' | 'repair';
-
-    constructor(outcome: RuntimeDeviceDeltaFailure) {
-        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
-        super(
-            outcome.acceptance === 'rejected'
-                ? `Device runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
-                : `Device runtime delta requires ${remediation} after project commit: ${outcome.reason}`
-        );
-        this.name = 'RuntimeDeviceDeltaPostCommitError';
-        this.outcome = outcome;
-        this.remediation = remediation;
+function isCommittedExternalDeviceStillAuthoritative(trackId: string, committedDevice: Device): boolean {
+    const currentOwners = getTrackStoreState()?.tracks.filter((track) => track.id === trackId) ?? [];
+    if (currentOwners.length !== 1) {
+        return false;
     }
-}
-
-function getRuntimeDeviceDeltaPostCommitFailure(
-    result: RuntimeDeviceDeltaResult
-): RuntimeDeviceDeltaPostCommitError | undefined {
-    if (result.acceptance === 'accepted' && result.application === 'applied') {
-        return undefined;
+    const currentTrack = currentOwners[0];
+    if (!currentTrack) {
+        return false;
     }
-    return new RuntimeDeviceDeltaPostCommitError(result);
+    return currentTrack.devices.some(
+        (candidate) =>
+            candidate.id === committedDevice.id &&
+            candidate.type === 'external-plugin' &&
+            candidate.externalPluginId === committedDevice.externalPluginId &&
+            candidate.externalInstanceId === committedDevice.externalInstanceId
+    );
 }
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
-    execute: (alpha) => {
+    execute: (alpha, context) => {
         const { pluginId, trackId: providedTrackId } = alpha.payload;
         const plugin = findSupportedPlugin(pluginId);
         if (!plugin) {
@@ -64,9 +55,10 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
             didWrite = true;
         }
 
-        const beforeTrack = getTrackStoreState()?.tracks.find((track) => track.id === trackId);
+        const committedTrackId: string = trackId;
+        const beforeTrack = getTrackStoreState()?.tracks.find((track) => track.id === committedTrackId);
         const before = beforeTrack ? structuredClone(beforeTrack) : null;
-        const device = addExternalDevice(trackId, plugin.id, plugin.name);
+        const device = addExternalDevice(committedTrackId, plugin.id, plugin.name);
         if (!device) {
             return toHandlerExecutionResult(didWrite);
         }
@@ -82,7 +74,7 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
         const externalInstanceId = committedDevice.externalInstanceId;
         let postCommitFailure: RuntimeDeviceDeltaPostCommitError | undefined;
         let runtimeDeltaApplied = false;
-        let pluginActivated = false;
+        let pluginActivationSettled = false;
         function applyRuntimeEffect(): void {
             if (postCommitFailure) {
                 throw postCommitFailure;
@@ -92,15 +84,25 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                     before: committedBefore,
                     after,
                     operation: 'add-device',
+                    batchContext: context,
                 });
-                const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
-                if (runtimeFailure) {
-                    postCommitFailure = runtimeFailure;
-                    throw postCommitFailure;
+                // A later action in this same commit removed the host track.
+                // The chain delta is void, and so is the plugin activation
+                // below: activating a native instance onto a strip that is
+                // being torn down would leak the instance.
+                if (result.acceptance === 'superseded' && result.application === 'not-applied') {
+                    return;
+                }
+                if (result.acceptance !== 'superseded') {
+                    const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
+                    if (runtimeFailure) {
+                        postCommitFailure = runtimeFailure;
+                        throw postCommitFailure;
+                    }
                 }
                 runtimeDeltaApplied = true;
             }
-            if (pluginActivated) {
+            if (pluginActivationSettled) {
                 return;
             }
             if (!externalPluginId || !externalInstanceId) {
@@ -108,12 +110,16 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                     `External device ${committedDevice.id} is missing its plugin host identity after project commit`
                 );
             }
+            if (!isCommittedExternalDeviceStillAuthoritative(committedTrackId, committedDevice)) {
+                pluginActivationSettled = true;
+                return;
+            }
             activateExternalPlugin({
                 pluginId: externalPluginId,
                 instanceId: externalInstanceId,
                 onLatencyMs: (latencyMs) => reportLatency(committedDevice.id, latencyMs),
             });
-            pluginActivated = true;
+            pluginActivationSettled = true;
         }
 
         return {

@@ -24,6 +24,8 @@ export type RenderQueueState = {
     phraseStatusMap: Record<string, PhraseRenderStatus>;
     /** Current or terminal request owner for each phrase. */
     phraseRequestIds?: Record<string, string>;
+    /** Effective source associated with a completed canonical DDSP phrase. */
+    phraseSourceFingerprints?: Record<string, string>;
 };
 
 export const renderQueueStore = createStore<RenderQueueState>({
@@ -110,11 +112,55 @@ export function markPhraseStale(phraseId: string): void {
         if (!state) {
             return state;
         }
+        const phraseSourceFingerprints = state.phraseSourceFingerprints
+            ? { ...state.phraseSourceFingerprints }
+            : undefined;
+        delete phraseSourceFingerprints?.[phraseId];
         return {
             ...state,
             phraseStatusMap: { ...state.phraseStatusMap, [phraseId]: 'stale' },
+            ...(phraseSourceFingerprints ? { phraseSourceFingerprints } : {}),
         };
     });
+}
+
+export function associatePhraseSource(phraseId: string, sourceFingerprint: string): void {
+    renderQueueStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+        const status = state.phraseStatusMap[phraseId];
+        if (status !== 'preview' && status !== 'final') {
+            return state;
+        }
+        return {
+            ...state,
+            phraseSourceFingerprints: { ...(state.phraseSourceFingerprints ?? {}), [phraseId]: sourceFingerprint },
+        };
+    });
+}
+
+export function invalidatePhraseSource(phraseId: string, sourceFingerprint: string): boolean {
+    let invalidated = false;
+    renderQueueStore.update((state) => {
+        if (!state || state.phraseSourceFingerprints?.[phraseId] === undefined) {
+            return state;
+        }
+        const recordedFingerprint = state.phraseSourceFingerprints[phraseId];
+        const status = state.phraseStatusMap[phraseId];
+        if (recordedFingerprint === sourceFingerprint || (status !== 'preview' && status !== 'final')) {
+            return state;
+        }
+        invalidated = true;
+        const phraseSourceFingerprints = { ...state.phraseSourceFingerprints };
+        delete phraseSourceFingerprints[phraseId];
+        return {
+            ...state,
+            phraseStatusMap: { ...state.phraseStatusMap, [phraseId]: 'stale' },
+            phraseSourceFingerprints,
+        };
+    });
+    return invalidated;
 }
 
 export function cancelQueuedRender(phraseId: string, requestId: string, hasActiveRender = false): void {

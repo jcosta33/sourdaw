@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    BUFFER_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
+    META_STORE,
+    RECOVERY_STORE,
     type FakeAudioIndexedDbControls,
 } from './fakeAudioBufferIndexedDb';
 
@@ -50,7 +53,7 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
-        controls = installFakeAudioIndexedDb();
+        controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
     });
 
     afterEach(() => {

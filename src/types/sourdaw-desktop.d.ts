@@ -33,6 +33,8 @@ type SourdawMessageDialogOptions = {
 };
 
 type SourdawDesktopBridge = {
+    /** The platform the shell runs on (`process.platform`), published synchronously. */
+    readonly platform: string;
     /** Invoke a command whose arguments and result are JSON. Arguments are positional. */
     invoke: (command: string, args?: readonly unknown[]) => Promise<unknown>;
     /** Invoke a command whose final argument is a byte payload. Resolves with the command's own result. */
@@ -57,5 +59,14 @@ type SourdawDesktopBridge = {
         readonly stop: (sessionId: string) => Promise<void>;
         readonly cancel: (sessionId: string) => Promise<void>;
         readonly listenTerminal: (sessionId: string, callback: (event: string, payload: unknown) => void) => () => void;
+    };
+    /** The frameless window chrome's controls (Linux). */
+    windowControls: {
+        readonly minimize: () => Promise<void>;
+        /** Maximizes or restores; resolves with the resulting maximized state. */
+        readonly toggleMaximize: () => Promise<boolean>;
+        readonly close: () => Promise<void>;
+        readonly isMaximized: () => Promise<boolean>;
+        readonly listenMaximized: (callback: (maximized: boolean) => void) => () => void;
     };
 };

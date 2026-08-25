@@ -12,11 +12,8 @@
  *   device into an audibly active state and the harness verifies it in-run
  *   (`active_voices()` where the device exports one, output RMS otherwise) —
  *   see `verify` below.
- * * **The polyphony production constructs, not the crate default.** Grand Boule
- *   is 64 because `grandBouleEngineCore.ts` builds it with 64, against a crate
- *   `DEFAULT_VOICE_COUNT` of 32. That distinction was the whole finding of the
- *   original bench, so every load-bearing count here cites its production call
- *   site.
+ * * **The polyphony production constructs, not the crate default.** Every
+ *   load-bearing count here cites its production call site.
  */
 
 export const SAMPLE_RATE = 48_000;
@@ -68,21 +65,9 @@ export const DEVICE_IDS = [
 /**
  * Where a row's cost is actually charged.
  *
- * This is the distinction the first version of this table got wrong, and it
- * changed the headline. `GrandBouleNode.ts:480-518` branches on
- * `ctx instanceof OfflineAudioContext`: the **live** path builds
- * `createWorkerRingTransport` — engine in a `Worker`, samples across a
- * `SharedArrayBuffer` ring — and the only thing it registers on the audio
- * thread is a consumer worklet that copies from that ring. The inline-DSP
- * worklet is the **offline** path. There is no fallback: without
- * `SharedArrayBuffer` the live path calls `requireSharedArrayBuffer('Grand
- * Boule')` and *throws* before any module registration.
- *
- * So Grand Boule's DSP cost cannot land on the audio thread during playback,
- * and summing it into an audio-thread budget overstates that budget by more
- * than everything else combined. It is charged to `worker` and reported as its
- * own line; what the audio thread actually pays for Grand Boule is the
- * `grand_boule_ring_consumer` row.
+ * Grand Boule renders on its live Worker. The harness times the same DSP kernel
+ * here and assigns the row to that production cost site. Its audio-thread work
+ * is measured separately by the ring-consumer row.
  *
  * `offline` marks a figure that exists only in an `OfflineAudioContext` render
  * — bounce and export, where there is no deadline at all.
@@ -173,12 +158,8 @@ export function spreadNotes(count) {
  * Quanta between re-strikes for a device whose voices decay. 375 is one second
  * of audio.
  *
- * Two rows need it, and both are findings in their own right: over the 53 s a
- * row is timed for, a struck Grand Boule voice decays to an output RMS of 1e-9
- * and 16 struck Toaster pads decay to *exact zero*. Held-and-forgotten, they
- * report the cost of an instrument that has stopped making sound — precisely
- * the trap the bench header warns about. Re-striking is also what the devices
- * are for: a pedalled piano and a drum machine both retrigger constantly.
+ * Grand Boule and Toaster decay during the timed run. Re-striking keeps both
+ * rows audible instead of measuring instruments that have stopped sounding.
  */
 export const RESTRIKE_INTERVAL_QUANTA = 375;
 
@@ -209,13 +190,21 @@ export function loopSample(frames) {
  *   timed run, so a device that fell silent halfway through cannot be reported.
  * - `note` — what the load parameter is and where production sets it.
  */
-export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, only, quantaBudget }) {
+export function buildDevices({
+    dsp,
+    chamber,
+    scoring,
+    ring,
+    publishGrandBouleConsumerClock,
+    readBlockAcquire,
+    only,
+    quantaBudget,
+}) {
     const devices = [];
     /**
      * Constructing a device allocates: Levain and Crumbs each load a one-second
-     * sample, Grand Boule builds 64 physical-model voices. When the worklet is
-     * measuring one row it builds only that row, so an unrelated device's setup
-     * cost and heap residency never land in someone else's figure.
+     * sample, and Grand Boule builds 64 physical-model voices. When the worklet
+     * measures one row, it builds only that row.
      */
     const wanted = (id) => only === undefined || only === id;
 
@@ -781,19 +770,13 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
     };
 
     if (wanted('fermenter_automation_16')) {
-        devices.push(
-            automatedFermenter({ id: 'fermenter_automation_16', scheduleCount: 16 })
-        );
+        devices.push(automatedFermenter({ id: 'fermenter_automation_16', scheduleCount: 16 }));
     }
     if (wanted('fermenter_automation_90')) {
-        devices.push(
-            automatedFermenter({ id: 'fermenter_automation_90', scheduleCount: 90 })
-        );
+        devices.push(automatedFermenter({ id: 'fermenter_automation_90', scheduleCount: 90 }));
     }
     if (wanted('fermenter_automation_105')) {
-        devices.push(
-            automatedFermenter({ id: 'fermenter_automation_105', scheduleCount: 105 })
-        );
+        devices.push(automatedFermenter({ id: 'fermenter_automation_105', scheduleCount: 105 }));
     }
     // An amplifier, not a product configuration. Fermenter cannot have 1050
     // automatable parameters and this row does not claim it can.
@@ -814,13 +797,10 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
     // of them fit, so per-schedule cost here can only be dearer than in the
     // configuration being decided about.
     if (wanted('fermenter_automation_1050')) {
-        devices.push(
-            automatedFermenter({ id: 'fermenter_automation_1050', scheduleCount: 1050 })
-        );
+        devices.push(automatedFermenter({ id: 'fermenter_automation_1050', scheduleCount: 1050 }));
     }
 
     // -- Grand Boule — physical-model grand piano --------------------------
-    // `grandBouleEngineCore.ts:143` builds 64, not the crate's 32.
     if (wanted('grand_boule')) {
         const struck = 64;
         const notes = spreadNotes(struck);
@@ -831,36 +811,29 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
             }
         };
         strike();
-        // One voice, same pool size, same velocity, same re-strike cadence.
-        const soloInstance = new dsp.GrandBouleInstance(SAMPLE_RATE, 64);
-        const soloReference = makeSoloReference({
-            instance: soloInstance,
-            module: dsp,
-            strike: () => soloInstance.note_on(notes[Math.floor(notes.length / 2)], 0.8),
-        });
         devices.push(
             heldInstrument({
                 id: 'grand_boule',
-                label: 'Grand Boule (64 voices, re-struck 1/s) — WORKER, not audio thread',
-                note: 'grandBouleEngineCore.ts:143 constructs 64; live path is Worker + SAB ring (GrandBouleNode.ts:480-518), so this cost is not charged to the audio thread',
+                label: 'Grand Boule (64 voices, re-struck 1/s) — production Worker cost site',
+                note: 'the harness times the production DSP kernel; the ring consumer carries the separate audio-thread cost',
                 instance,
                 module: dsp,
                 struck,
+                expectSounding: struck,
+                activeVoices: () => instance.active_voices(),
                 restrike: strike,
-                soloReference,
             })
         );
     }
 
-    // -- Grand Boule's ring consumer — what the audio thread ACTUALLY pays ----
+    // -- Grand Boule ring consumer -----------------------------------------
     //
-    // The live transport registers exactly one thing on the audio thread: a
-    // worklet that copies rendered frames out of the SAB ring. This row times
-    // the **real shipped** `readBlockAcquire` from
+    // The live transport's audio-thread side copies rendered frames
+    // out of the SAB ring. This row times the real `readBlockAcquire` from
     // `worklets/grandBouleProcessor.ts` — the server strips its types on the
     // way out, so this is the function production runs, not a reproduction —
-    // plus the surrounding `Atomics.load`s that `process()` performs per
-    // quantum on the consuming path.
+    // plus every consumer-clock, read-head, sleep-head, and render-request
+    // atomic that `process()` performs on the successful consuming path.
     //
     // The ring is kept ahead of the read head from here rather than by a
     // Worker, so the timed path is the steady *consuming* branch. The underrun
@@ -869,6 +842,9 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
     if (wanted('grand_boule_ring_consumer')) {
         const ringFrames = 8192;
         const controlInts = new Int32Array(new SharedArrayBuffer(ring.GRAND_BOULE_CONTROL_HEADER_BYTES));
+        const syncInts = new Int32Array(
+            new SharedArrayBuffer(ring.GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT)
+        );
         const leftRing = new Float32Array(ringFrames);
         const rightRing = new Float32Array(ringFrames);
         for (let i = 0; i < ringFrames; i += 1) {
@@ -880,14 +856,17 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
         const out1 = new Float32Array(QUANTUM);
         let consumedCount = 0;
         let underruns = 0;
+        let consumerContextFrame = 0;
 
         devices.push({
             id: 'grand_boule_ring_consumer',
-            label: 'Grand Boule ring consumer (the live audio-thread cost)',
-            note: 'the only Grand Boule code on the audio thread in the live transport; real readBlockAcquire from grandBouleProcessor.ts',
-            feed() {
-                // Keep the producer ahead of the consumer, the way the engine
-                // Worker does. Untimed: production pays this on the Worker.
+            label: 'Grand Boule ring consumer',
+            note: 'live audio-thread transport; reproduces the successful consumer branch from grandBouleProcessor.ts',
+            feed(frame) {
+                // Keep the producer ahead of the consumer, as the live Worker
+                // does. Producer work is untimed because this
+                // row measures only the host consumer branch.
+                consumerContextFrame = frame * QUANTUM;
                 const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
                 Atomics.store(controlInts, ring.GRAND_BOULE_WRITE_HEAD_IDX, (readHead + 4 * QUANTUM) | 0);
             },
@@ -899,7 +878,14 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
                 const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
                 const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, QUANTUM);
                 if (consumed) {
-                    Atomics.store(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX, (readHead + QUANTUM) | 0);
+                    publishGrandBouleConsumerClock(syncInts, consumerContextFrame, readHead);
+                    const nextReadHead = (readHead + QUANTUM) | 0;
+                    Atomics.store(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX, nextReadHead);
+                    const sleepHead = Atomics.load(controlInts, ring.GRAND_BOULE_SLEEP_HEAD_IDX);
+                    if (nextReadHead !== sleepHead) {
+                        Atomics.add(controlInts, ring.GRAND_BOULE_RENDER_REQUEST_IDX, 1);
+                        Atomics.notify(controlInts, ring.GRAND_BOULE_RENDER_REQUEST_IDX);
+                    }
                     consumedCount += 1;
                 } else {
                     underruns += 1;
@@ -912,11 +898,21 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
                     sum += out0[i] * out0[i] + out1[i] * out1[i];
                 }
                 const level = Math.sqrt(sum / (2 * QUANTUM));
+                const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
+                const syncReadHead = Atomics.load(syncInts, ring.GRAND_BOULE_SYNC_READ_HEAD_IDX);
+                const renderRequests = Atomics.load(controlInts, ring.GRAND_BOULE_RENDER_REQUEST_IDX);
                 return {
-                    ok: level > 1e-5 && underruns === 0 && consumedCount > 0,
+                    ok:
+                        level > 1e-5 &&
+                        underruns === 0 &&
+                        consumedCount > 0 &&
+                        Atomics.load(syncInts, ring.GRAND_BOULE_CONSUMER_CLOCK_PUBLISHED_IDX) === 1 &&
+                        syncReadHead === ((readHead - QUANTUM) | 0) &&
+                        renderRequests === consumedCount,
                     detail:
                         `${consumedCount} quanta consumed, ${underruns} underruns (must be 0 — an underrun ` +
-                        `takes the cheap silence branch), output RMS ${level.toExponential(3)}`,
+                        `takes the cheap silence branch), ${renderRequests} render requests, output RMS ` +
+                        `${level.toExponential(3)}`,
                 };
             },
         });
@@ -981,7 +977,28 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
         const instance = new dsp.LevainInstance(SAMPLE_RATE, 64);
         const sampleId = instance.add_sample(loopSample(frameCount), frameCount, 1, SAMPLE_RATE);
         instance.add_zone(
-            0, sampleId, 0, 69, 0.0, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frameCount, 0, 0.0, 0.005, 0.1, 1.0, 0.3
+            0,
+            sampleId,
+            0,
+            69,
+            0.0,
+            0,
+            127,
+            0,
+            127,
+            0,
+            1,
+            0,
+            false,
+            1,
+            0,
+            frameCount,
+            0,
+            0.0,
+            0.005,
+            0.1,
+            1.0,
+            0.3
         );
         instance.build_zone_map(1, 1);
         for (const note of spreadNotes(struck)) {

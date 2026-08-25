@@ -61,6 +61,7 @@ export type Clip = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    midiOffsetBeats?: number;
     followAction?: FollowAction;
     generating?: boolean;
     isGhost?: boolean;

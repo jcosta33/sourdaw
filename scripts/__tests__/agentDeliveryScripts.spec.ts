@@ -1,18 +1,71 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { coordinateDelivery } from '../deliverPullRequest.ts';
+import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
+    BOOTSTRAP_PATH,
     executeTrustedSnapshot,
+    resolveTrustedLauncherBinding,
     runTrustedGithubWriteCommand,
+    trustedGitReadEnv,
     trustedDependencyPaths,
+    trustedSnapshotEnv,
 } from '../trustedGithubWriteBootstrap.ts';
 
 import type { DeliveryAuthentication, DeliveryCoordinatorDependencies, DeliveryPort } from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
+
+function runGit(repository: string, args: string[]): string {
+    const env = { ...process.env };
+    delete env.GIT_DIR;
+    delete env.GIT_WORK_TREE;
+    return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
+}
+
+function trustedPublishFixture(root: string, policy: string): void {
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({
+            type: 'module',
+            private: true,
+            scripts: { 'lane:publish': 'node scripts/trustedGithubWriteBootstrap.ts lane:publish' },
+        })
+    );
+    writeFileSync(
+        join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
+        readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8')
+    );
+    writeFileSync(
+        join(root, 'scripts/publishLane.ts'),
+        "import { appendFileSync } from 'node:fs';\n" +
+            "import { publishingPermission } from './githubAppIdentity.ts';\n" +
+            `export async function runPublishLaneCli(args) { appendFileSync(args.at(-1), ${JSON.stringify(policy)} + ':' + publishingPermission + '\\n'); return 0; }\n`
+    );
+    writeFileSync(join(root, 'scripts/githubAppIdentity.ts'), 'export const publishingPermission = "ordinary";\n');
+    writeFileSync(join(root, 'scripts/prContract.ts'), 'export {};\n');
+    runGit(root, ['init', '-b', 'main']);
+    runGit(root, ['config', 'user.name', 'Fixture']);
+    runGit(root, ['config', 'user.email', 'fixture@example.com']);
+    runGit(root, ['add', '.']);
+    runGit(root, ['commit', '--no-gpg-sign', '-m', 'test: trusted publishing fixture']);
+    runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+}
 
 describe('package scripts and gitignore', () => {
     it('defines the trusted pnpm commands as direct node invocations', () => {
@@ -20,7 +73,7 @@ describe('package scripts and gitignore', () => {
             scripts: Record<string, string>;
         };
         expect(pkg.scripts['lane:open']).toBe('node scripts/openLane.ts');
-        expect(pkg.scripts['lane:publish']).toBe('node scripts/publishLane.ts');
+        expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
@@ -87,33 +140,34 @@ describe('package scripts and gitignore', () => {
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
-        for (const changedPath of paths) {
-            let executed = false;
-            await expect(
-                runTrustedGithubWriteCommand('deliver', ['42'], {
-                    resolveOriginMain: () => 'trusted-sha',
-                    readLocalSource: (candidate) => (candidate === changedPath ? 'mutated' : 'trusted'),
-                    readOriginSource: (commit) => {
-                        expect(commit).toBe('trusted-sha');
-                        return 'trusted';
-                    },
-                    executeSnapshot: async () => {
-                        executed = true;
-                        return 0;
-                    },
-                })
-            ).rejects.toThrow(new RegExp(changedPath.replaceAll('.', '\\.')));
-            expect(executed).toBe(false);
-        }
+        // A lane holding a different copy of any executed script — mutated, or
+        // simply older than main — still delivers, and still runs main's code.
+        // Every source handed to the snapshot comes from the pinned origin
+        // commit, and the port exposes no way to read the lane's copy at all.
+        // This says nothing about the loader itself, which `package.json`
+        // resolves from the working tree and no snapshot imports.
+        let executedSources: ReadonlyMap<string, string> | undefined;
+        const exitCode = await runTrustedGithubWriteCommand('deliver', ['42'], {
+            resolveOriginMain: () => 'trusted-sha',
+            readOriginSource: (commit, candidate) => {
+                expect(commit).toBe('trusted-sha');
+                return `origin:${candidate}`;
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                executedSources = snapshot.sources;
+                return 0;
+            },
+        });
+
+        expect(exitCode).toBe(0);
+        expect([...(executedSources ?? new Map())]).toEqual(paths.map((path) => [path, `origin:${path}`]));
 
         let executedUncheckedDependency = false;
-        const sourceFor = (candidate: string) =>
-            candidate === 'scripts/deliverPullRequest.ts' ? "import './unchecked.ts';" : 'trusted';
         await expect(
             runTrustedGithubWriteCommand('deliver', ['42'], {
                 resolveOriginMain: () => 'trusted-sha',
-                readLocalSource: sourceFor,
-                readOriginSource: (_commit, candidate) => sourceFor(candidate),
+                readOriginSource: (_commit, candidate) =>
+                    candidate === 'scripts/deliverPullRequest.ts' ? "import './unchecked.ts';" : 'trusted',
                 executeSnapshot: async () => {
                     executedUncheckedDependency = true;
                     return 0;
@@ -123,10 +177,176 @@ describe('package scripts and gitignore', () => {
         expect(executedUncheckedDependency).toBe(false);
     });
 
-    it('pins one origin commit and executes only the verified snapshot after local mutation', async () => {
+    it('runs the package route only from the protected primary root and snapshots modified helpers', () => {
+        expect(trustedDependencyPaths('lane:publish')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/publishLane.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-package-'));
+        const checkout = join(fixtureRoot, 'checkout');
+        const lane = join(fixtureRoot, 'lane');
+        const policyLog = join(fixtureRoot, 'policy.log');
+        mkdirSync(checkout);
+        try {
+            trustedPublishFixture(checkout, 'checkout');
+            writeFileSync(
+                join(checkout, 'scripts/githubAppIdentity.ts'),
+                'export const publishingPermission = "workflow-write";\n'
+            );
+
+            execFileSync('pnpm', ['lane:publish', policyLog], {
+                cwd: checkout,
+                env: process.env,
+                encoding: 'utf8',
+            });
+
+            expect(readFileSync(policyLog, 'utf8')).toBe('checkout:ordinary\n');
+
+            writeFileSync(
+                join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'),
+                `${readFileSync(join(checkout, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')}\n// lane-local drift\n`
+            );
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', policyLog], { cwd: checkout, env: process.env, encoding: 'utf8' })
+            ).toThrow(/protected primary launcher does not match/);
+
+            runGit(checkout, ['restore', 'scripts/trustedGithubWriteBootstrap.ts']);
+            runGit(checkout, ['worktree', 'add', '-b', 'agent/test/current-route', lane]);
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', policyLog], { cwd: lane, env: process.env, encoding: 'utf8' })
+            ).toThrow(/protected primary checkout/);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('publishes a pre-migration lane through the primary package without executing its package route', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-primary-lane-route-'));
+        const primary = join(fixtureRoot, 'primary');
+        const lane = join(fixtureRoot, 'old-lane');
+        const policyLog = join(fixtureRoot, 'policy.log');
+        const poisonLog = join(fixtureRoot, 'poison.log');
+        try {
+            trustedPublishFixture(primary, 'primary');
+            runGit(primary, ['worktree', 'add', '-b', 'agent/old-lane', lane]);
+            writeFileSync(join(primary, 'main-advanced.txt'), 'new launcher-era main\n');
+            runGit(primary, ['add', 'main-advanced.txt']);
+            runGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: advance main past old lane']);
+            runGit(primary, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+            writeFileSync(
+                join(lane, 'package.json'),
+                JSON.stringify({
+                    type: 'module',
+                    private: true,
+                    scripts: { 'lane:publish': 'node poison.mjs' },
+                })
+            );
+            writeFileSync(
+                join(lane, 'poison.mjs'),
+                `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(poisonLog)}, 'entered');\n`
+            );
+
+            execFileSync('pnpm', ['lane:publish', '--lane', lane, policyLog], {
+                cwd: primary,
+                env: process.env,
+                encoding: 'utf8',
+            });
+
+            expect(readFileSync(policyLog, 'utf8')).toBe('primary:ordinary\n');
+            expect(existsSync(poisonLog)).toBe(false);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('resolves the trusted snapshot with no inherited Git or GitHub routing', () => {
+        const env = trustedGitReadEnv({
+            PATH: '/usr/bin',
+            GIT_DIR: '/hostile/.git',
+            GIT_WORK_TREE: '/hostile',
+            GH_TOKEN: 'personal',
+            GITHUB_TOKEN: 'actions',
+            SOURDAW_GITHUB_APP_PRIVATE_KEY: 'secret',
+            SOURDAW_TRUSTED_REPOSITORY_ROOT: '/repo',
+            NODE_OPTIONS: '--import=/hostile/preload.mjs',
+            NODE_PATH: '/hostile/modules',
+        });
+
+        expect(env.GIT_DIR).toBeUndefined();
+        expect(env.GIT_WORK_TREE).toBeUndefined();
+        expect(env.GH_TOKEN).toBeUndefined();
+        expect(env.GITHUB_TOKEN).toBeUndefined();
+        expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_REPOSITORY_ROOT).toBeUndefined();
+        expect(env.NODE_OPTIONS).toBeUndefined();
+        expect(env.NODE_PATH).toBeUndefined();
+        expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
+        expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
+    });
+
+    it('does not enter inherited Node preloads or child PATH shims', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-child-env-'));
+        const preloadMarker = join(root, 'preload-entered');
+        const pathMarker = join(root, 'path-entered');
+        const preload = join(root, 'preload.mjs');
+        const hostileBin = join(root, 'hostile-bin');
+        const hostileGit = join(hostileBin, 'git');
+        const previousNodeOptions = process.env.NODE_OPTIONS;
+        const previousPath = process.env.PATH;
+        try {
+            mkdirSync(hostileBin);
+            writeFileSync(
+                preload,
+                `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(preloadMarker)}, 'entered');\n`
+            );
+            writeFileSync(hostileGit, `#!/bin/sh\nprintf entered > ${JSON.stringify(pathMarker)}\nexit 91\n`);
+            chmodSync(hostileGit, 0o700);
+            process.env.NODE_OPTIONS = `--import=${preload}`;
+            process.env.PATH = `${hostileBin}:${previousPath ?? ''}`;
+            const gitPath = execFileSync('/usr/bin/which', ['git'], {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: previousPath },
+            }).trim();
+            const ghPath = execFileSync('/usr/bin/which', ['gh'], {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: previousPath },
+            }).trim();
+            const snapshot = {
+                commit: 'a'.repeat(40),
+                sources: new Map([
+                    [
+                        'scripts/deliverPullRequest.ts',
+                        "import { spawnSync } from 'node:child_process'; export async function runDeliverCli() { const result = spawnSync('git', ['--version']); return result.status ?? 1; }",
+                    ],
+                ]),
+                launcher: {
+                    primaryRoot: '/repo',
+                    commonDir: '/repo/.git',
+                    gitPath,
+                    ghPath,
+                },
+            };
+
+            expect(trustedSnapshotEnv(snapshot).NODE_OPTIONS).toBeUndefined();
+            await expect(executeTrustedSnapshot('deliver', [], snapshot)).resolves.toBe(0);
+            expect(existsSync(preloadMarker)).toBe(false);
+            expect(existsSync(pathMarker)).toBe(false);
+        } finally {
+            if (previousNodeOptions === undefined) {
+                delete process.env.NODE_OPTIONS;
+            } else {
+                process.env.NODE_OPTIONS = previousNodeOptions;
+            }
+            process.env.PATH = previousPath;
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('pins one origin commit and executes only that snapshot while origin advances', async () => {
         const paths = trustedDependencyPaths('deliver');
         const trusted = new Map(paths.map((path) => [path, `trusted:${path}`]));
-        const local = new Map(trusted);
         const originReads: string[] = [];
         let resolves = 0;
         let liveOrigin = 'pinned-sha';
@@ -138,14 +358,12 @@ describe('package scripts and gitignore', () => {
                 liveOrigin = 'advanced-sha';
                 return resolved;
             },
-            readLocalSource: (path) => local.get(path) ?? '',
             readOriginSource: (commit, path) => {
                 expect(liveOrigin).toBe('advanced-sha');
                 originReads.push(`${commit}:${path}`);
                 return trusted.get(path) ?? '';
             },
             executeSnapshot: async (command, args, snapshot) => {
-                local.set('scripts/deliverPullRequest.ts', 'mutated-after-verification');
                 expect(command).toBe('deliver');
                 expect(args).toEqual(['2495']);
                 expect(snapshot.commit).toBe('pinned-sha');
@@ -157,6 +375,57 @@ describe('package scripts and gitignore', () => {
         expect(result).toBe(17);
         expect(resolves).toBe(1);
         expect(originReads).toEqual(paths.map((path) => `pinned-sha:${path}`));
+    });
+
+    it('binds the launcher to the primary checkout instead of a worktree alias', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-launcher-root-'));
+        const primary = join(fixtureRoot, 'primary');
+        const lane = join(fixtureRoot, 'lane');
+        try {
+            trustedPublishFixture(primary, 'primary');
+            runGit(primary, ['worktree', 'add', '-b', 'agent/test/launcher', lane]);
+
+            expect(resolveTrustedLauncherBinding(primary).primaryRoot).toBe(realpathSync(primary));
+            expect(() => resolveTrustedLauncherBinding(lane)).toThrow(/protected primary checkout/);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps the loader inside its own trusted closure', () => {
+        for (const command of ['deliver', 'issue:reconcile', 'lane:publish'] as const) {
+            expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
+        }
+    });
+
+    it('should import the snapshot entry without direct execution and invoke its runner once with exact args', async () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-entry-import-'));
+        const recordPath = join(fixtureRoot, 'invocations.jsonl');
+        const callerArgs = ['2495', '--label', 'value with spaces', recordPath];
+        try {
+            await expect(
+                executeTrustedSnapshot('deliver', callerArgs, {
+                    commit: 'pinned-sha',
+                    sources: new Map([
+                        [
+                            'scripts/deliverPullRequest.ts',
+                            [
+                                "import { appendFileSync } from 'node:fs';",
+                                "import { fileURLToPath } from 'node:url';",
+                                'const recordPath = process.argv.at(-1);',
+                                "if (recordPath === undefined) throw new Error('missing invocation record path');",
+                                "if (process.argv[1] === fileURLToPath(import.meta.url)) appendFileSync(recordPath, `${JSON.stringify({ kind: 'direct' })}\\n`);",
+                                "export async function runDeliverCli(args) { appendFileSync(recordPath, `${JSON.stringify({ kind: 'runner', args })}\\n`); return 0; }",
+                            ].join('\n'),
+                        ],
+                    ]),
+                })
+            ).resolves.toBe(0);
+
+            expect(readFileSync(recordPath, 'utf8')).toBe(`${JSON.stringify({ kind: 'runner', args: callerArgs })}\n`);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
     });
 
     it('cleans the exact-byte snapshot tree after success and failure', async () => {
@@ -200,7 +469,7 @@ describe('package scripts and gitignore', () => {
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
-            minted: { token, login: 'jcosta33-author[bot]', permissions },
+            minted: { token, login: 'renamed-author[bot]', actorNodeId: AUTHOR_BOT_NODE_ID, permissions },
             session: {
                 configDir: `/${token}`,
                 env: { GH_TOKEN: token },
@@ -276,7 +545,7 @@ describe('package scripts and gitignore', () => {
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
-            'complete:jcosta33-author[bot]',
+            `complete:${AUTHOR_BOT_NODE_ID}`,
         ]);
         expect(adapterRequests).toEqual([
             {

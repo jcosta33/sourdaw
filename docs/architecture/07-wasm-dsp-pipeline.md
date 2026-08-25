@@ -1,6 +1,7 @@
 # WASM DSP Pipeline
 
-Sourdaw's built-in device DSP is written in Rust and compiled twice: natively (linked into the `sourdaw-native` addon) and to WebAssembly (for AudioWorklet processors in the browser engine). This document describes the WASM half of that pipeline — build, codegen, loading — and its traps.
+Sourdaw's built-in device DSP is written in Rust and compiled to WebAssembly for the browser. This
+document describes the WASM build, codegen, loading path, and its traps.
 
 It complements:
 
@@ -34,18 +35,41 @@ Never hand-edit files under `src/modules/AudioEngine/wasm/` — regenerate via t
 
 ## 2. Loading at runtime
 
-Worklets cannot fetch asynchronously at construction time, so the main thread fetches and asynchronously compiles each URL once through `fetchWasmModule`. Public WASM assets currently have stable filenames, so the first request revalidates the HTTP cache (`cache: 'no-cache'`) to prevent fresh generated glue from loading a stale binary; the in-memory promise still performs only one request and compilation per runtime URL. Each acquisition holds a short-lived version lease: aborting the request or failing host construction releases it, while a successful handoff to an `AudioWorkletNode` or Worker commits one URL for each generated-glue bundle (`daw-dsp`, `proof-chamber`, `scoring`) to the `AudioContext`. wasm-bindgen initialization is a realm singleton, so attempting to mix bundle versions after that fails explicitly and a version change requires a fresh context. A failed fetch or compilation also releases the claim so recovery can use the same or a replacement URL. Each `AudioWorkletNode` supplies the resulting structured-cloneable `WebAssembly.Module` in `processorOptions`; GrandBoule supplies it in the worker's init message. A separate port init message starts caught instantiation and the ready/error handshake. Both processor kinds call `initSync({ module: wasmModule })` without synchronous compilation on their real-time-adjacent threads. Sourdaw targets current Chrome, where compiled modules cross these same-agent-cluster boundaries; there is deliberately no byte-transfer fallback that would restore per-instance compilation. The shared handshake — per-context worklet registration and bundle-version ownership, URL-keyed module cache, and ready/error/timeout protocol — lives in `src/infra/audioWorklet/workletInitShared.ts` and is used by every WASM-backed `create*Node` factory in AudioEngine (the native-plugin bridge excepted).
+Worklets cannot fetch asynchronously at construction time, so the main thread fetches and
+asynchronously compiles each URL once through `fetchWasmModule`. Public WASM assets have stable
+filenames, so the first request revalidates the HTTP cache (`cache: 'no-cache'`) to prevent fresh
+generated glue from loading a stale binary; the in-memory promise still performs only one request
+and compilation per runtime URL. Each acquisition holds a short-lived version lease: aborting the
+request or failing host construction releases it, while a successful handoff to an
+`AudioWorkletNode` or Worker commits one URL for each generated-glue bundle (`daw-dsp`,
+`proof-chamber`, `scoring`) to the `AudioContext`.
 
-Each DSP crate exports `#[wasm_bindgen]` instance structs (`FermenterInstance`, `ToasterInstance`, `GrinderInstance`, `GrandBouleInstance`, `KneadInstance`, `LevainInstance`, `BacteriaInstance`, `GlutenInstance`, `CrumbsInstance`, `ProofInstance` from daw-dsp; `ProofChamberInstance` from proof-chamber; `ScoringInstance` from scoring). Released devices are instantiated through `wasmDeviceRegistry.ts`; the release-admission gate withholds preserved implementations that are not admitted.
+wasm-bindgen initialization is a realm singleton, so attempting to mix bundle versions fails
+explicitly and a version change requires a fresh context. Each admitted `AudioWorkletNode` supplies
+the resulting structured-cloneable `WebAssembly.Module` in `processorOptions`; processors call
+`initSync({ module: wasmModule })` without synchronous compilation on their real-time-adjacent
+threads. Sourdaw targets current Chrome, where compiled modules cross these same-agent-cluster
+boundaries. The shared handshake lives in `src/infra/audioWorklet/workletInitShared.ts`.
+
+`daw-dsp` exports every release-admitted instance in its `wasm32` crate graph, including Grand
+Boule. Grand Boule's live engine runs in a Worker behind a SharedArrayBuffer ring; its worklet pays
+only the ring-consumer cost. Offline render runs the engine inline because an
+`OfflineAudioContext` has no live deadline.
+
+Release validation treats `scripts/wasm-artifacts.ts` as the package and path authority. It rejects
+unexpected manifest packages, crate roots, artifact paths, and recursively discovered sidecars
+across the complete `public/wasm` tree and every declared AudioEngine mirror. `manifest.json` is the
+only public non-artifact control file. Every declared text artifact is scanned and every declared
+`.wasm` export table is inspected before a release inventory can pass.
 
 ## 3. What runs where
 
-| Crate                  | WASM | Native | Notes                                                                                         |
-| ---------------------- | ---- | ------ | --------------------------------------------------------------------------------------------- |
-| daw-dsp (10 engines)   | ✓    | ✓      | Crumbs disk streaming is native-only; WASM uses a preloaded in-memory sample pool             |
-| proof-chamber (reverb) | ✓    | —      | WASM-only crate; "Dutch Oven" device id                                                       |
-| scoring (tuner)        | ✓    | —      | WASM-only crate; passthrough audio + telemetry                                                |
-| daw-wasm-decoder       | ✓    | —      | main-thread decode for codecs `decodeAudioData` can't handle (ALAC, m4a, FLAC/OGG edge cases) |
+| Crate                  | WASM | Native | Notes                                                                                            |
+| ---------------------- | ---- | ------ | ------------------------------------------------------------------------------------------------ |
+| daw-dsp                | ✓    | ✓      | Grand Boule uses Worker/live and inline/offline hosts; Crumbs WASM uses an in-memory sample pool |
+| proof-chamber (reverb) | ✓    | —      | WASM-only crate; "Dutch Oven" device id                                                          |
+| scoring (tuner)        | ✓    | —      | WASM-only crate; passthrough audio + telemetry                                                   |
+| daw-wasm-decoder       | ✓    | —      | main-thread decode for codecs `decodeAudioData` can't handle (ALAC, m4a, FLAC/OGG edge cases)    |
 
 `daw-wasm-decoder` has no worklet generator — it is used on the main thread where async fetch is fine.
 

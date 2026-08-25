@@ -1,16 +1,15 @@
 /**
- * GrandBouleNode — one control surface for the Grand Boule piano, over two
- * transports.
+ * GrandBouleNode - one control surface over two transport designs.
  *
  * **Live** (`createWorkerRingTransport`):
  *   Main thread  →  Web Worker (WASM engine)  →  SAB ring buffer  →  AudioWorklet (consumer)
  *
- * The WASM physical-modeling engine runs on a dedicated Web Worker that renders
+ * The physical-modeling engine runs on a Web Worker that renders
  * ahead into a SharedArrayBuffer. The AudioWorklet `process()` just copies from
  * the ring — microseconds of work, and an overload starves this device's own
  * ring instead of missing the graph's deadline and glitching every track.
  *
- * **Offline** (`createInlineWorkletTransport`):
+ * **Inline offline** (`createInlineWorkletTransport`):
  *   Main thread  →  AudioWorklet (WASM engine)
  *
  * An `OfflineAudioContext` has no system-level audio callback and therefore no
@@ -44,6 +43,7 @@ import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+export const GRAND_BOULE_MAX_LIVE_SAMPLE_RATE = 48_000;
 
 /** Ring buffer: 8192 stereo frames ≈ 170 ms at 48 kHz. */
 const RING_FRAMES = 8192;
@@ -70,7 +70,7 @@ export type GrandBouleNodeResult = {
         slide: number,
         sampleFrame?: number
     ) => void;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number, sampleFrame?: number) => void;
     acceptsScheduledParam?: (name: string) => boolean;
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setSustain: (position: number) => void;
@@ -522,6 +522,12 @@ export async function createGrandBouleNode(
     // engine host is built, which is the thing the flag was compensating for.
     const isOfflineRender = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
 
+    if (!isOfflineRender && ctx.sampleRate > GRAND_BOULE_MAX_LIVE_SAMPLE_RATE) {
+        throw new RangeError(
+            `Grand Boule live playback supports sample rates up to ${String(GRAND_BOULE_MAX_LIVE_SAMPLE_RATE)} Hz; received ${String(ctx.sampleRate)} Hz`
+        );
+    }
+
     // Fail fast, before any AudioContext / worklet / WASM work — the ordering
     // every sibling factory keeps, and the reason it matters here: past this
     // point the caller has resumed the context, permanently registered a
@@ -614,9 +620,9 @@ export async function createGrandBouleNode(
                 sampleFrame,
             });
         },
-        setParam(name: string, value: number) {
+        setParam(name: string, value: number, sampleFrame?: number) {
             if (Number.isFinite(value)) {
-                post({ type: 'param', name, value });
+                post({ type: 'param', name, value, sampleFrame });
             }
         },
         acceptsScheduledParam(name: string) {

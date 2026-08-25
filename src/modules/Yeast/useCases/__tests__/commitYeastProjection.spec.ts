@@ -50,6 +50,9 @@ vi.mock('../../stores/yeastStore', () => ({
             mocks.yeastState = next;
         }),
     },
+    // Groove-assignment reconcile reads the union of every rack; the mocked
+    // active rack is the only one these tests carry.
+    readAllYeastRacks: () => [mocks.yeastState ?? { processors: [], uiLevel: 1 }],
 }));
 
 const { commitYeastProjection } = await import('../commitYeastProjection');

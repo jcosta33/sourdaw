@@ -1,0 +1,12 @@
+{
+    "schemaVersion": 1,
+    "kind": "web-artifact-manifest",
+    "artifact": "web",
+    "hashAlgorithm": "sha256",
+    "buildCommand": "pnpm build",
+    "outputDirectory": "dist",
+    "manifestFile": "web-artifact-manifest.json",
+    "sourceRevisionField": "sourceRevision",
+    "binding": "release-proof.json",
+    "requiredFiles": ["index.html", "assets/", "legal/"]
+}

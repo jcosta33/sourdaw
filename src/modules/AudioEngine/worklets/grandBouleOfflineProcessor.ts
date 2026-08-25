@@ -1,5 +1,5 @@
 /**
- * AudioWorkletProcessor that *is* the Grand Boule engine, for offline rendering.
+ * AudioWorkletProcessor that hosts the Grand Boule engine for offline rendering.
  *
  * This is a sibling of `grandBouleProcessor`, not a mode of it. That one is a
  * SharedArrayBuffer ring consumer whose `process()` copies published frames out
@@ -20,9 +20,7 @@
  * the producer: `Atomics.wait` is banned in `AudioWorkletGlobalScope`, and the
  * working group explicitly refused to relax that for the offline case.
  *
- * Live keeps the Worker and the ring. A Grand Boule overload there starves its
- * own ring and only Grand Boule drops out, which is worth having in a browser tab
- * where missing the graph deadline glitches every track.
+ * Live keeps the Worker and ring so an overload starves only Grand Boule.
  *
  * ## Clock
  *
@@ -45,8 +43,9 @@ import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
 import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
-    createGrandBouleNoteQueue,
+    createGrandBouleFrameQueue,
     dispatch,
+    isFramedGrandBouleMsg,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
@@ -169,7 +168,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _faultMessage: string | null = null;
     _pendingMessages: GrandBouleControlMessage[] = [];
     _paramAutomation: ScheduledParam[][] = [[], [], [], [], []];
-    _queue = createGrandBouleNoteQueue();
+    _queue = createGrandBouleFrameQueue();
     // Cached WASM linear-memory views, revalidated on a memory.grow() buffer
     // identity change (audit RT-7). In steady state `update` performs four
     // primitive comparisons and allocates nothing.
@@ -260,12 +259,10 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
             return;
         }
         // Offline scheduling posts the complete part before rendering starts.
-        // Hold a note exactly on the next frame so frame-zero automation reaches
-        // the sleeping engine first; preserve the shared host behavior for notes
-        // already inside the remainder of the current quantum and for late notes.
-        const holdAtCurrentFrame =
-            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
-            msg.sampleFrame === currentFrame;
+        // Hold a framed event exactly on the next frame so frame-zero automation
+        // reaches the sleeping engine first; preserve shared behavior for events
+        // already inside the remainder of the current quantum and for late ones.
+        const holdAtCurrentFrame = isFramedGrandBouleMsg(msg) && msg.sampleFrame === currentFrame;
         receiveGrandBouleMessage({
             instance,
             queue: this._queue,

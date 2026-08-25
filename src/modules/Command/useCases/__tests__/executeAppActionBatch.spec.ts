@@ -6,6 +6,10 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -18,6 +22,7 @@ type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
+type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
 
 const mocks = vi.hoisted(() => ({
     agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
@@ -33,6 +38,11 @@ const mocks = vi.hoisted(() => ({
     recordActionHistoryMetadata: vi.fn(() => []),
     commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
+    // Reached only through the barrel's import graph — `sessionManagement`
+    // subscribes to `branchStore`, `automergeSync` reads `actionHistoryStore` —
+    // never by this spec's own subject. They stand still so the graph resolves.
+    branchStore: { value: null, subscribe: vi.fn(() => vi.fn()) },
+    actionHistoryStore: { value: null, subscribe: vi.fn(() => vi.fn()) },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -40,6 +50,9 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
+    branchStore: mocks.branchStore,
+    actionHistoryStore: mocks.actionHistoryStore,
+    MAIN_BRANCH_ID: 'main',
 }));
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {
@@ -126,13 +139,13 @@ describe('executeAppActionBatch', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         mocks.agentProjectRepairStateStore.value = null;
-        productionBriefAdmissionPort.setGuard(() => true);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
     });
 
     afterEach(() => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
-        productionBriefAdmissionPort.setGuard(() => true);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
     });
 
     it('commits every action as one project document mutation', async () => {
@@ -274,6 +287,117 @@ describe('executeAppActionBatch', () => {
             actions: [],
             failureKind: 'verification',
         });
+    });
+
+    it('aborts a project batch when a collaborator locks the removed clip range before commit', async () => {
+        const previousProject = projectStore.value ? structuredClone(projectStore.value) : null;
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        const clipId = 'clip-vocal-verse';
+        const initialTrack = createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio' });
+        const document: Record<string, unknown> = {};
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(document),
+        });
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [initialTrack] });
+        const initialClip = addClip({
+            id: clipId,
+            trackId: initialTrack.id,
+            name: 'Vocal verse',
+            type: 'audio',
+            startBeat: 8,
+            endBeat: 16,
+        });
+        if (!initialClip) {
+            throw new Error('Expected the range-lock fixture clip');
+        }
+        projectStore.set(structuredClone(defaultProjectStoreState));
+        flushAutomergeStorageWrites();
+        productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
+
+        const action: RemoveClipAction = { type: 'removeClip', payload: { clipId } };
+        const afterCommit = vi.fn();
+        registerHandlerMap({
+            removeClip: createHandler<RemoveClipAction>({
+                execute: async () => {
+                    const currentTracks = trackStore.value;
+                    if (!currentTracks) {
+                        throw new Error('Expected current tracks');
+                    }
+                    setTrackStoreState({
+                        ...currentTracks,
+                        tracks: currentTracks.tracks.map((track) =>
+                            track.id === initialTrack.id
+                                ? { ...track, clips: track.clips.filter((clip) => clip.id !== clipId) }
+                                : track
+                        ),
+                    });
+                    markHandlerStarted?.();
+                    await handlerRelease;
+                    return { status: 'written', afterCommit, afterAmbiguousCommit: afterCommit };
+                },
+            }),
+        });
+        expect(doesProductionBriefAllowActionBatch([action])).toBe(true);
+
+        try {
+            const execution = executeAppActionBatch([action]);
+            await handlerStarted;
+            expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+            const currentProject = projectStore.value;
+            if (!currentProject) {
+                throw new Error('Expected a current project');
+            }
+            projectStore.set({
+                ...currentProject,
+                productionBrief: {
+                    ...currentProject.productionBrief,
+                    revision: currentProject.productionBrief.revision + 1,
+                    locks: [
+                        {
+                            id: 'collaborator-track-lock',
+                            scope: { kind: 'range', startBeat: 8, endBeat: 16 },
+                            statement: 'Keep the vocal verse fixed',
+                            createdAt: currentProject.productionBrief.updatedAt + 1,
+                        },
+                    ],
+                    updatedAt: currentProject.productionBrief.updatedAt + 1,
+                },
+            });
+            releaseHandler?.();
+
+            await expect(execution).resolves.toEqual({
+                status: 'conflicted',
+                reason: 'Action batch conflicts with locked production intent',
+                actions: [],
+                failureKind: 'verification',
+            });
+            expect(trackStore.value?.tracks[0]?.clips).toEqual([initialClip]);
+            expect(document).toHaveProperty('tracks.tracks.0.clips', [initialClip]);
+            expect(afterCommit).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        } finally {
+            releaseHandler?.();
+            if (previousProject) {
+                projectStore.set(previousProject);
+            }
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+        }
     });
 
     it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {
@@ -1141,7 +1265,7 @@ describe('executeAppActionBatch', () => {
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({ execute }),
         });
-        productionBriefAdmissionPort.setGuard(() => false);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
 
         const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
 

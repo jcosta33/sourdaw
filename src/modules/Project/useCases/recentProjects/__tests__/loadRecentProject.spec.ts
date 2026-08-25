@@ -38,7 +38,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),
     importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
-    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
+    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ cancel: () => undefined, publish: () => 0 }),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
@@ -73,6 +73,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
 const validProjectData = {
     version: CURRENT_PROJECT_VERSION,
     meta: {
+        // The validator requires a canonical project id; this fixture
+        // predates that hardening and failed isHydratableProjectData
+        // without it.
+        projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
         name: 'Large Project',
         createdAt: 1,
         updatedAt: 2,
@@ -105,7 +109,7 @@ describe('loadRecentProject', () => {
             .mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 });
         vi.mocked(prepareCachedAudioBuffersFromIdb)
             .mockReset()
-            .mockResolvedValue({ publish: () => 0 });
+            .mockResolvedValue({ cancel: () => undefined, publish: () => 0 });
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -114,7 +118,6 @@ describe('loadRecentProject', () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
 
         const ok = await loadRecentProject('sourdaw:project:Large Project');
-
         expect(ok).toBe('committed');
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
@@ -283,8 +286,8 @@ describe('loadRecentProject', () => {
         let completeRestore: (() => void) | undefined;
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<{ publish: () => number }>((resolve) => {
-                    completeRestore = () => resolve({ publish: () => 0 });
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );
 
@@ -348,11 +351,11 @@ describe('loadRecentProject', () => {
         vi.mocked(prepareCachedAudioBuffersFromIdb)
             .mockImplementationOnce(
                 () =>
-                    new Promise<{ publish: () => number }>((resolve) => {
-                        completeFirstRestore = () => resolve({ publish: () => 0 });
+                    new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                        completeFirstRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                     })
             )
-            .mockResolvedValueOnce({ publish: () => 0 });
+            .mockResolvedValueOnce({ cancel: () => undefined, publish: () => 0 });
 
         const firstLoad = loadRecentProject('first-project');
         const secondLoad = loadRecentProject('second-project');
@@ -402,8 +405,8 @@ describe('loadRecentProject', () => {
         let completeRestore: (() => void) | undefined;
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<{ publish: () => number }>((resolve) => {
-                    completeRestore = () => resolve({ publish: () => 0 });
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );
 
@@ -431,8 +434,8 @@ describe('loadRecentProject', () => {
         let completeRestore: (() => void) | undefined;
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<{ publish: () => number }>((resolve) => {
-                    completeRestore = () => resolve({ publish: () => 0 });
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
                 })
         );
 

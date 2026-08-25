@@ -21,6 +21,7 @@ import {
     type ProjectTrack,
     type ProjectTrackAlternative,
     type ProjectTransport,
+    type ProjectYeastFlatState,
     type ProjectYeastState,
 } from '../../../models/ProjectData';
 
@@ -51,7 +52,7 @@ export type HydratableProjectData = {
     midi?: ProjectMidi;
     chordTrack?: ProjectChordTrackState;
     grooves?: ProjectGrooveState;
-    yeast?: ProjectYeastState;
+    yeast?: ProjectYeastState | ProjectYeastFlatState;
     markers?: ProjectMarker[];
     tempoMap?: ProjectTempoMap;
     timeSignatureMap?: ProjectTimeSignatureMap;
@@ -104,40 +105,60 @@ const PROJECT_YEAST_PROCESSOR_TYPES = new Set([
     'mutation',
 ]);
 
-function isYeastState(value: unknown): value is ProjectYeastState {
+function isYeastProcessor(processor: unknown, ids: Set<string>): boolean {
     if (
-        !isRecord(value) ||
-        Object.keys(value).some((key) => key !== 'processors') ||
-        !Array.isArray(value.processors)
+        !isRecord(processor) ||
+        Object.keys(processor).some(
+            (key) => key !== 'id' && key !== 'type' && key !== 'name' && key !== 'bypassed' && key !== 'params'
+        ) ||
+        typeof processor.id !== 'string' ||
+        processor.id.normalize('NFKC').trim() !== processor.id ||
+        ids.has(processor.id) ||
+        typeof processor.type !== 'string' ||
+        !PROJECT_YEAST_PROCESSOR_TYPES.has(processor.type) ||
+        typeof processor.name !== 'string' ||
+        processor.name.trim().length === 0 ||
+        typeof processor.bypassed !== 'boolean' ||
+        (processor.params !== undefined &&
+            (!isRecord(processor.params) ||
+                !Object.values(processor.params).every(
+                    (parameter) => typeof parameter === 'number' && Number.isFinite(parameter)
+                )))
     ) {
         return false;
     }
+    ids.add(processor.id);
+    return true;
+}
+
+function isYeastProcessorList(processors: unknown): boolean {
+    if (!Array.isArray(processors)) {
+        return false;
+    }
     const ids = new Set<string>();
-    return value.processors.every((processor) => {
-        if (
-            !isRecord(processor) ||
-            Object.keys(processor).some(
-                (key) => key !== 'id' && key !== 'type' && key !== 'name' && key !== 'bypassed' && key !== 'params'
-            ) ||
-            typeof processor.id !== 'string' ||
-            processor.id.normalize('NFKC').trim() !== processor.id ||
-            ids.has(processor.id) ||
-            typeof processor.type !== 'string' ||
-            !PROJECT_YEAST_PROCESSOR_TYPES.has(processor.type) ||
-            typeof processor.name !== 'string' ||
-            processor.name.trim().length === 0 ||
-            typeof processor.bypassed !== 'boolean' ||
-            (processor.params !== undefined &&
-                (!isRecord(processor.params) ||
-                    !Object.values(processor.params).every(
-                        (parameter) => typeof parameter === 'number' && Number.isFinite(parameter)
-                    )))
-        ) {
-            return false;
-        }
-        ids.add(processor.id);
-        return true;
-    });
+    return processors.every((processor) => isYeastProcessor(processor, ids));
+}
+
+function isYeastState(value: unknown): value is ProjectYeastState | ProjectYeastFlatState {
+    if (!isRecord(value)) {
+        return false;
+    }
+    // The pre-split single-rack section — read-tolerated legacy input.
+    if (Object.keys(value).every((key) => key === 'processors')) {
+        return isYeastProcessorList(value.processors);
+    }
+    // The device-keyed shape: one validated rack per Yeast device id.
+    if (Object.keys(value).some((key) => key !== 'racks') || !isRecord(value.racks)) {
+        return false;
+    }
+    return Object.entries(value.racks).every(
+        ([deviceId, rack]) =>
+            typeof deviceId === 'string' &&
+            deviceId.trim().length > 0 &&
+            isRecord(rack) &&
+            Object.keys(rack).every((key) => key === 'processors') &&
+            isYeastProcessorList(rack.processors)
+    );
 }
 
 function hasOptionalType({

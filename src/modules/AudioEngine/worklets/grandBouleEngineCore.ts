@@ -1,19 +1,15 @@
 /**
- * Grand Boule engine core — everything two hosts run identically.
+ * Grand Boule engine core shared by two host designs.
  *
- * Grand Boule is rendered by two different transports, and the split is
- * deliberate rather than accidental:
- *
- *  - **Live** the WASM engine runs in a Web Worker and publishes into a
+ *  - **Live** the WASM engine runs in a Worker and publishes rendered blocks into a
  *    SharedArrayBuffer ring that a consumer worklet drains. A Grand Boule
  *    overload starves its own ring and only Grand Boule drops out; the rest of
  *    the session keeps its deadline.
- *  - **Offline** the engine runs directly inside a plain `AudioWorkletProcessor`.
+ *  - **Offline** the engine runs inside an `AudioWorkletProcessor`.
  *    An `OfflineAudioContext` has no system-level audio callback and therefore no
  *    load value and no underrun (Web Audio §2.6), so the ring protects against a
  *    deadline that does not exist — while its back-pressure and its
- *    consumer-offset plane are precisely what collapse an export into silence
- *    (INVENTORY-device-clock-parity G-1).
+ *    consumer-offset plane can collapse an export into silence.
  *
  * Every serious plugin API formalises the same split: VST3
  * `ProcessSetup::processMode`, CLAP `clap_plugin_render`. What must *not* differ
@@ -96,8 +92,11 @@ export type GrandBouleNoteExpressionMsg = {
     sampleFrame?: number;
 };
 
-/** The three messages that address a moment in time rather than the device. */
-export type GrandBouleFramedMsg = GrandBouleNoteOnMsg | GrandBouleNoteOffMsg | GrandBouleNoteExpressionMsg;
+export type GrandBouleParamMsg = { type: 'param'; name: string; value: number; sampleFrame?: number };
+
+/** Messages that address a moment in time rather than only the device. */
+export type GrandBouleFramedMsg =
+    GrandBouleNoteOnMsg | GrandBouleNoteOffMsg | GrandBouleNoteExpressionMsg | GrandBouleParamMsg;
 
 /** A framed message that actually carries a usable frame, so it can be queued. */
 export type GrandBouleQueuedMsg = GrandBouleFramedMsg & { sampleFrame: number };
@@ -106,7 +105,7 @@ export type GrandBouleDispatchMsg =
     | GrandBouleNoteOnMsg
     | GrandBouleNoteOffMsg
     | GrandBouleNoteExpressionMsg
-    | { type: 'param'; name: string; value: number }
+    | GrandBouleParamMsg
     | { type: 'sustain'; position: number }
     | { type: 'unaCorda'; engaged: boolean }
     | { type: 'sostenuto'; engaged: boolean }
@@ -133,8 +132,7 @@ export type CreateGrandBouleInstanceOutput = {
 };
 
 /**
- * Instantiate the WASM engine. Both hosts construct it the same way, at the same
- * voice count, so a change here cannot reach one transport and miss the other.
+ * Instantiate the WASM engine. Both hosts use the same voice ceiling and path.
  */
 export function createGrandBouleInstance({
     wasmModule,
@@ -310,19 +308,21 @@ export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMs
     }
 }
 
-export type GrandBouleNoteQueue = {
+export type GrandBouleFrameQueue = {
     /** Place a framed message at its frame, keeping the queue ordered. */
     enqueue: (msg: GrandBouleQueuedMsg) => void;
     /** Voice everything due strictly before `blockEndFrame`. */
     drain: (instance: GrandBouleInstance, blockEndFrame: number) => void;
-    /** Drop everything pending. */
+    /** Drop every pending framed message. */
     clear: () => void;
+    /** Drop pending notes/expression while preserving scheduled parameter state. */
+    discardNotes: () => void;
     /** Pending messages, for tests and for host-side assertions. */
     size: () => number;
 };
 
 /**
- * A frame-ordered queue of note messages awaiting the block that contains them.
+ * A frame-ordered queue of control messages awaiting the block that contains them.
  *
  * Bounded by the transport's scheduling look-ahead live, and by the part length
  * offline — an export posts every note before rendering starts, which is exactly
@@ -330,7 +330,7 @@ export type GrandBouleNoteQueue = {
  * which runs on message arrival, touches the array's capacity, and the backing
  * array is truncated only once the queue has fully drained.
  */
-export function createGrandBouleNoteQueue(): GrandBouleNoteQueue {
+export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
     /** `head` is the read index, so draining never shifts the array. */
     const queue: GrandBouleQueuedMsg[] = [];
     let head = 0;
@@ -379,6 +379,19 @@ export function createGrandBouleNoteQueue(): GrandBouleNoteQueue {
             head = 0;
         },
 
+        discardNotes() {
+            let retained = 0;
+            for (let index = head; index < queue.length; index++) {
+                const queued = queue[index];
+                if (queued?.type === 'param') {
+                    queue[retained] = queued;
+                    retained++;
+                }
+            }
+            queue.length = retained;
+            head = 0;
+        },
+
         size() {
             return queue.length - head;
         },
@@ -391,12 +404,12 @@ export function isPlaceableGrandBouleMsg(msg: GrandBouleFramedMsg): msg is Grand
 }
 
 export function isFramedGrandBouleMsg(msg: GrandBouleDispatchMsg): msg is GrandBouleFramedMsg {
-    return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression';
+    return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression' || msg.type === 'param';
 }
 
 export type ReceiveGrandBouleMessageInput = {
     instance: GrandBouleInstance;
-    queue: GrandBouleNoteQueue;
+    queue: GrandBouleFrameQueue;
     msg: GrandBouleDispatchMsg;
     /**
      * First frame *after* the block the engine is about to produce, on the host
@@ -420,7 +433,7 @@ export function receiveGrandBouleMessage({ instance, queue, msg, blockEndFrame }
     if (msg.type === 'allNotesOff') {
         // A panic must also drop what has not sounded yet, or the pending
         // look-ahead window keeps arriving after the user asked for silence.
-        queue.clear();
+        queue.discardNotes();
         dispatch(instance, msg);
         return;
     }
