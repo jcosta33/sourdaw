@@ -24,12 +24,17 @@ import type { NotificationEventBus } from '#/utils/Notification/notificationEven
 
 type HandlerMapSentinel = { moduleId: string };
 type ArrangementEventBus = Parameters<typeof setArrangementEventBus>[0];
-type RuntimeGraphProjectRevisionValidator = Parameters<typeof configureRuntimeGraphProjectRevisionValidator>[0];
-type RuntimeGraphTopologyValidator = Parameters<typeof configureRuntimeGraphTopologyValidator>[0];
+type RuntimeGraphProjectRevisionValidator = NonNullable<
+    Parameters<typeof configureRuntimeGraphProjectRevisionValidator>[0]
+>;
+type RuntimeGraphTopologyValidator = NonNullable<Parameters<typeof configureRuntimeGraphTopologyValidator>[0]>;
 type ProjectIdentityTransitionDependencies = Parameters<typeof setProjectIdentityTransitionDependencies>[0];
 type DurableAssetOwnerRecoveryAfterProjectLoad = NonNullable<
     ProjectIdentityTransitionDependencies['resumeDurableAssetOwnerHandoffsAfterProjectLoad']
 >;
+type AssetTransferMock = {
+    resumeDurableOwnerRebindsAfterProjectLoad: DurableAssetOwnerRecoveryAfterProjectLoad;
+};
 
 /**
  * The one sink member this spec asserts on. The offline render's device chain
@@ -100,7 +105,7 @@ const {
         canExecuteCommandBatchMock: vi.fn(() => true),
         configureCollaborationAssetOwnerMock: vi.fn(),
         configureDurableAssetCommitProofMock: vi.fn(),
-        getAssetTransferMock: vi.fn(() => ({
+        getAssetTransferMock: vi.fn<() => AssetTransferMock | null>(() => ({
             resumeDurableOwnerRebindsAfterProjectLoad: vi.fn(() => Promise.resolve()),
         })),
         getDurableProjectOwnerIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
@@ -139,8 +144,8 @@ const {
         setProjectIdentityTransitionDependenciesMock:
             vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
-            vi.fn<(validator: RuntimeGraphProjectRevisionValidator) => void>(),
-        configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator) => void>(),
+            vi.fn<(validator: RuntimeGraphProjectRevisionValidator | null) => void>(),
+        configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator | null) => void>(),
         runtimeGraphTopologyMock: {
             matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
         },
@@ -589,9 +594,11 @@ describe('bootstrap', () => {
         await resumeDurableAssetOwnerHandoffsAfterProjectLoad(authority);
 
         expect(getAssetTransferMock).toHaveBeenCalledOnce();
-        expect(
-            getAssetTransferMock.mock.results[0]?.value.resumeDurableOwnerRebindsAfterProjectLoad
-        ).toHaveBeenCalledExactlyOnceWith({
+        const assetTransferResult = getAssetTransferMock.mock.results[0];
+        if (!assetTransferResult?.value) {
+            throw new Error('bootstrap did not resolve an asset transfer');
+        }
+        expect(assetTransferResult.value.resumeDurableOwnerRebindsAfterProjectLoad).toHaveBeenCalledExactlyOnceWith({
             ownerId: authority.ownerId,
             isCurrent: expect.any(Function),
             signal: authority.signal,
@@ -640,6 +647,9 @@ describe('bootstrap', () => {
             throw new Error('bootstrap never configured the runtime graph project revision validator');
         }
         const [projectRevisionValidator] = projectRevisionValidatorCall;
+        if (!projectRevisionValidator) {
+            throw new Error('bootstrap configured a null runtime graph project revision validator');
+        }
         captureProjectRevisionMock.mockReturnValue('revision-1');
         expect(projectRevisionValidator('revision-1')).toBe(true);
         captureProjectRevisionMock.mockReturnValue('revision-2');
