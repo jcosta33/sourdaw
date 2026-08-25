@@ -14,6 +14,10 @@ function uniqueIds(ids: readonly string[]): string[] {
     return [...new Set(ids)];
 }
 
+function addProtectedTargetIds(scope: AgentRunScope, protectedTargetIds: readonly string[]): void {
+    scope.protectedTargetIds = uniqueIds([...scope.protectedTargetIds, ...protectedTargetIds]);
+}
+
 /** Builds scope only from application-resolved command and workflow evidence. */
 export function composeVerifiedProviderProposalScope(input: {
     actions: readonly AppAction[];
@@ -45,12 +49,12 @@ export function composeVerifiedProviderProposalScope(input: {
     const mutedDeletionScope = getMutedEmptyTrackDeletionScope(input.prompt, input.context);
     if (mutedDeletionScope !== null) {
         scope.targetIds = mutedDeletionScope.targetIds;
-        scope.protectedTargetIds = mutedDeletionScope.protectedTrackIds;
+        addProtectedTargetIds(scope, mutedDeletionScope.protectedTrackIds);
         return scope;
     }
     const bulkInsertionScope = getBulkDeviceInsertionTrackScope(input.prompt, input.context);
     if (bulkInsertionScope !== null) {
-        scope.protectedTargetIds = bulkInsertionScope.excludedFrozenTrackIds;
+        addProtectedTargetIds(scope, bulkInsertionScope.excludedFrozenTrackIds);
         return scope;
     }
     const sidechainScope = getSidechainRoutingPromptScope(input.prompt, input.context);
@@ -58,7 +62,10 @@ export function composeVerifiedProviderProposalScope(input: {
         scope.targetIds = uniqueIds(
             sidechainScope.routes.flatMap((route) => [route.targetTrackId, route.sourceTrackId, route.targetDeviceId])
         );
-        scope.protectedTargetIds = sidechainScope.protectedTargets.map((target) => target.id);
+        addProtectedTargetIds(
+            scope,
+            sidechainScope.protectedTargets.map((target) => target.id)
+        );
     }
     return scope;
 }

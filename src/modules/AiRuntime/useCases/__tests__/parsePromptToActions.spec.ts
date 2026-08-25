@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
@@ -8,6 +10,8 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -157,6 +161,38 @@ function createMixerContext(): ProjectContext {
             devices: [],
             sends: [],
         })),
+    };
+}
+
+function createBulkInsertionContext(): ProjectContext {
+    const createTrack = (id: string, name: string, frozen = false) => ({
+        id,
+        name,
+        kind: 'audio' as const,
+        muted: false,
+        soloed: false,
+        soloSafe: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        automationMode: 'read' as const,
+        outputId: 'master',
+        frozen,
+        clipCount: 0,
+        deviceCount: 1,
+        clips: [],
+        devices: [{ id: `${id}-eq`, name: 'EQ', type: 'builtin-eq', bypassed: false }],
+        sends: [],
+    });
+    return {
+        ...baseContext,
+        availableDeviceTypes: [{ id: 'builtin-compressor', name: 'Compressor' }],
+        tracks: [
+            createTrack('track-bass-di', 'Bass DI'),
+            createTrack('track-bass-amp', 'Bass Amp'),
+            createTrack('track-bass-frozen', 'Bass Frozen', true),
+            createTrack('track-guitar', 'Guitar'),
+        ],
     };
 }
 
@@ -337,6 +373,7 @@ describe('parsePromptToActions', () => {
     });
 
     afterEach(() => {
+        clearHandlerRegistry();
         vi.restoreAllMocks();
     });
 
@@ -476,6 +513,104 @@ describe('parsePromptToActions', () => {
             protectedTargetIds: [],
             protectedRanges: [],
         });
+    });
+
+    it('unions explicit and structural bulk protections across proposal, confirmation, and authority', async () => {
+        const context = createBulkInsertionContext();
+        const prompt =
+            'Insert a compressor after EQ on every bass track, excluding frozen tracks, and keep Guitar unchanged.';
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['addDevice'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Insert compressors on the unfrozen bass tracks.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: ['provider-invented'],
+                                    targetRanges: [],
+                                    protectedTargetIds: ['track-bass-frozen'],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['addDevice'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'insert-bass-di-compressor',
+                                        name: 'addDevice',
+                                        arguments: {
+                                            deviceType: 'Compressor',
+                                            afterDeviceId: 'track-bass-di-eq',
+                                        },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { name: 'Bass DI' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                    {
+                                        id: 'insert-bass-amp-compressor',
+                                        name: 'addDevice',
+                                        arguments: {
+                                            deviceType: 'Compressor',
+                                            afterDeviceId: 'track-bass-amp-eq',
+                                        },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { name: 'Bass Amp' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-bulk-protections');
+        const protectedTargetIds = ['track-bass-frozen', 'track-guitar'];
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.providerProposal?.scope.targetIds).toEqual(result.providerKnownTargetIds);
+        expect(result.providerProposal?.scope.protectedTargetIds).toEqual(protectedTargetIds);
+        const confirmation = describePendingActionConfirmation({ actions: result.actions, context, prompt });
+        expect(confirmation.protectedUnchanged.map((object) => object.id)).toEqual(protectedTargetIds);
+        registerHandlerMap(getArrangementHandlers());
+        const compiled = compilePlannedActionCommandBatch({
+            actions: result.actions,
+            actionLabels: confirmation.actionLabels,
+            autoCommit: false,
+            context,
+            group: { groupId: 'bulk-protections', groupLabel: 'Bulk protections' },
+            intent: prompt,
+            projectRevision: 'revision-bulk-protections',
+            protectedTargetIds: confirmation.protectedUnchanged.map((object) => object.id),
+            runId: 'run-bulk-protections',
+        });
+        expect(compiled.commandBatch.authority.scope.protectedTargetIds).toEqual(protectedTargetIds);
     });
 
     it('materializes compiler-owned binding scope and preserves its action graph', async () => {
