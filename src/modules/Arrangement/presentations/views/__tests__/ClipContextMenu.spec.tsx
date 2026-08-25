@@ -11,6 +11,8 @@ import { removeClip } from '../../../useCases/clip/removeClip';
 import { renameClip } from '../../../useCases/clipEditing/renameClip';
 import { ClipContextMenu } from '../ClipContextMenu';
 
+type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
+
 // useStore reads via getSnapshot(); clipSelectionStore must reflect clipSelectionStore.set() in tests.
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store: { getSnapshot?: () => unknown; value?: unknown }, defaultValue: unknown) => {
@@ -54,8 +56,20 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => ({
                 },
             ],
         },
+        subscribe: vi.fn<TrackStoreSubscribe>(() => () => undefined),
     },
 }));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        ...actual,
+        trackStore: {
+            ...actual.trackStore,
+            subscribe: vi.fn<TrackStoreSubscribe>(() => () => undefined),
+        },
+    };
+});
 
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),

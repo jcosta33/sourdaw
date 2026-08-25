@@ -16,6 +16,8 @@ import type { TransportState } from '#/modules/Transport/stores';
 import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TrackStoreState } from '../../stores/trackStore';
 
+type TrackStoreSubscribe = (typeof import('../../stores/trackStore'))['trackStore']['subscribe'];
+
 const {
     trackStoreMock,
     transportStoreMock,
@@ -24,7 +26,23 @@ const {
     clipSelectionStoreMock,
     preferencesStoreMock,
 } = vi.hoisted(() => ({
-    trackStoreMock: { value: null as TrackStoreState | null, set: vi.fn() },
+    trackStoreMock: (() => {
+        const subscribers = new Set<Parameters<TrackStoreSubscribe>[0]>();
+        const mock = {
+            value: null as TrackStoreState | null,
+            set: vi.fn((value: TrackStoreState | null) => {
+                mock.value = value;
+                for (const callback of subscribers) {
+                    callback(value);
+                }
+            }),
+            subscribe: vi.fn<TrackStoreSubscribe>((callback) => {
+                subscribers.add(callback);
+                return () => subscribers.delete(callback);
+            }),
+        };
+        return mock;
+    })(),
     transportStoreMock: { value: null as Partial<TransportState> | null, set: vi.fn() },
     timelineViewStoreMock: { value: null as Partial<TimelineViewState> | null, set: vi.fn() },
     midiStoreMock: { value: null as MidiStoreState | null, set: vi.fn() },
@@ -37,6 +55,10 @@ const {
 
 vi.mock('../../stores/trackStore', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
+    return { ...actual, trackStore: trackStoreMock };
+});
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return { ...actual, trackStore: trackStoreMock };
 });
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
