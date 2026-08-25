@@ -193,7 +193,6 @@ describe('buildAgentContext', () => {
                 {
                     id: 'application-receipt',
                     summary: 'application'.repeat(800),
-                    source: 'application-owned-tool-loop',
                 },
             ],
         });

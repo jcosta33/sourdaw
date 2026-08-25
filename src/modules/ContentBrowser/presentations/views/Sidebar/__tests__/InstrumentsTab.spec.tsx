@@ -327,7 +327,7 @@ describe('InstrumentsTab', () => {
         expect(screen.getByRole('button', { name: /^Grand Boule/ })).toBeInTheDocument();
     });
 
-    it('keeps the canonical Crumbs preset out of ordinary rows while retaining the premium card', () => {
+    it('keeps the canonical Crumbs preset out of ordinary rows while exposing its card on a supported platform', () => {
         arrangementMocks.getFactoryPresets.mockReturnValue([
             {
                 id: 'sampler-default',
@@ -374,6 +374,41 @@ describe('InstrumentsTab', () => {
         );
 
         expect(screen.getByRole('button', { name: /^Crumbs/ })).toBeInTheDocument();
+    });
+
+    it('does not advertise Crumbs when the platform-filtered catalogue withholds its sampler preset', () => {
+        const root = renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions()}
+            />
+        );
+
+        expect(screen.queryByRole('button', { name: /^Crumbs/ })).not.toBeInTheDocument();
+        root.unmount();
+
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery="crumbs"
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions()}
+            />
+        );
+
+        expect(screen.queryByRole('button', { name: /^Crumbs/ })).not.toBeInTheDocument();
     });
 
     it('explains why a preserved preset with a withheld device cannot load', () => {

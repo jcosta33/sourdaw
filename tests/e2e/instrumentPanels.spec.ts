@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
-const EXPECTED_BROWSER_INSTRUMENT_CARDS = ['Fermenter', 'Toaster', 'Levain', 'Crumbs', 'Grand Boule'] as const;
+const EXPECTED_BROWSER_INSTRUMENT_CARDS = ['Fermenter', 'Toaster', 'Levain', 'Grand Boule'] as const;
 
 test.describe('Instrument Panels — Synths & Samplers', () => {
     test.beforeEach(async ({ page }) => {
@@ -22,6 +22,7 @@ test.describe('Instrument Panels — Synths & Samplers', () => {
             const card = playDoughCards.getByRole('button', { name: new RegExp(`^${label}\\b`, 'i') });
             await expect(card).toHaveCount(1);
         }
+        await expect(playDoughCards.getByRole('button', { name: /^Crumbs\\b/i })).toHaveCount(0);
     });
 
     test('Default MIDI track has synth device shown in inspector', async ({ page }) => {
