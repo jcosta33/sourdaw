@@ -4,14 +4,16 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
-const sidechainDevice = (id: string) => ({
+type ProjectDevice = ProjectContext['tracks'][number]['devices'][number];
+
+const sidechainDevice = (id: string): ProjectDevice => ({
     id,
     name: 'Sidechain Compressor',
     type: 'builtin-sidechain-compressor',
     bypassed: false,
 });
 
-const track = (id: string, name: string, devices = []) => ({
+const track = (id: string, name: string, devices: ProjectDevice[] = []) => ({
     id,
     name,
     kind: 'audio' as const,
