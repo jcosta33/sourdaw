@@ -1,4 +1,3 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
 import {
     configureRuntimeGraphProjectRevisionValidator,
@@ -6,6 +5,8 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { captureCommandTargetFingerprints, commandBatchPreflightPort } from '#/modules/Command/useCases';
 import { captureProjectRevision, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
+
+import { getProjectContext } from '../getProjectContext';
 
 export function configureAiWorkflowCommandPreflightFixture(projectId?: string): void {
     configureRuntimeGraphProjectRevisionValidator(
@@ -18,7 +19,7 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
             targetIds,
         });
         const liveFingerprints = captureCommandTargetFingerprints({
-            document: { trackStore: trackStore.value },
+            document: { projectContext: getProjectContext() },
             targetIds,
         });
         const targetFingerprints = {

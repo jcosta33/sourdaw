@@ -401,6 +401,7 @@ function getBassProcessingCopyTargetIds(plan: readonly ProviderPlanCall[]): stri
         if (!layer) {
             throw new TypeError(`Expected EX-03 adjustment layer ${layerId}`);
         }
+        targetIds.add(layer.id);
         for (const trackId of layer.affectedTrackIds) {
             targetIds.add(trackId);
         }
@@ -875,7 +876,7 @@ describe('bass-processing section copy workflow', () => {
             expect.arrayContaining(['track-lead-vocal', 'layer-vocal-reverb', 'auto-bass-distortion-drive'])
         );
 
-        await confirmPendingChatActions({ confirmationId });
+        await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
 
         const committedLayers = adjustmentLayerStore.value?.layers ?? [];
         const eqRegions = committedLayers.find((layer) => layer.id === 'layer-bass-eq')?.regions ?? [];
@@ -1065,7 +1066,7 @@ describe('bass-processing section copy workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId });
 
-        expect(result.status).toBe('executed');
+        expect(result).toEqual({ status: 'executed' });
         expect(
             adjustmentLayerStore.value?.layers
                 .find((layer) => layer.id === 'layer-bass-eq')

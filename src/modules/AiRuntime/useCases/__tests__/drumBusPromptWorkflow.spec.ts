@@ -400,14 +400,12 @@ function getProviderContext(userMessage: string): Record<string, unknown> {
  * (`getScopeTargetIds` / `getVersionedCommandTargetReferences`) treats as stable
  * target references for each action type used by this fixture file. `planAgentRun`
  * compares scopes by sorted membership, so declaration order here does not need
- * to match the application's own `parameters.properties` order. Device-only
- * arguments (e.g. `targetDeviceId`) are intentionally excluded: the application
- * only tracks track/bus identities in `scope.targetIds`, and `renderProjectSections`
- * has no target rules at all.
+ * to match the application's own `parameters.properties` order.
+ * `renderProjectSections` has no target rules at all.
  */
 const SCOPE_TARGET_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
     setTrackOutput: ['trackId', 'outputId'],
-    addSidechainRoute: ['sourceTrackId', 'targetTrackId'],
+    addSidechainRoute: ['sourceTrackId', 'targetTrackId', 'targetDeviceId'],
     addDevice: ['trackId'],
     addSend: ['trackId', 'busId'],
     setTrackGain: ['trackId'],

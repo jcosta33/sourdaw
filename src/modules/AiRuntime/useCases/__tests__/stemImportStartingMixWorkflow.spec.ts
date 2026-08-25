@@ -864,13 +864,9 @@ describe('stem import and starting mix workflow', () => {
             status: 'cancelled',
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        // Two cleanup owners each release the six prepared stems once: the
-        // cancellation-registered temporary-asset cleanup (the run-scoped
-        // safety net) and the pending-confirmation resource lease discard.
-        // Either can be the only owner present, so both fire here; the
-        // underlying buffer-cache removal and staging-lease release are
-        // idempotent, which keeps the double disposal safe.
-        expectPreparedStemResourcesReleased(2);
+        // The confirmation lease delegates disposal to the run-scoped prepared-
+        // resource owner, so each physical resource is released exactly once.
+        expectPreparedStemResourcesReleased(1);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -886,10 +882,8 @@ describe('stem import and starting mix workflow', () => {
 
         expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        // Same two-owner release contract as the cancellation test above:
-        // run-scoped temporary-asset cleanup plus confirmation-lease discard,
-        // each releasing the six stems once against idempotent repositories.
-        expectPreparedStemResourcesReleased(2);
+        // Stale-proposal invalidation reaches the same single physical owner.
+        expectPreparedStemResourcesReleased(1);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -1007,8 +1001,10 @@ describe('stem import and starting mix workflow', () => {
             reason: 'unexpected command rejection',
         });
 
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        await vi.waitFor(() => {
+            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
+            expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);
+        });
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
 
