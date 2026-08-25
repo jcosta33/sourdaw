@@ -1,0 +1,95 @@
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_332560f27905e0 276
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_d6836f747ff191 48
+  s_a40848e8f8cca9::t_df2cbc7c13e1d2 255
+  s_a40848e8f8cca9::t_12ca761e657114 96-101,244-254,256-258
+  s_a40848e8f8cca9::t_f5ba720b3d8ee0 259-261
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  s_a40848e8f8cca9::t_98805d006c2d8d 1-62,69-99
+  s_a40848e8f8cca9::t_7f390990973c89 63-68
+src/modules/Transport/useCases/index.ts
+  s_a40848e8f8cca9::t_98805d006c2d8d 5
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_152cbd2a6a9975 932
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_a40848e8f8cca9::t_e8e2161814e38c 8,15-16
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_a40848e8f8cca9::t_7335d2a6760645 95,101
+  s_a40848e8f8cca9::t_5bd6e8fd11c394 25,52
+src/modules/Arrangement/handlers/device/__tests__/handleAddDevice.spec.ts
+  s_a40848e8f8cca9::t_c0239b40999766 170
+src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_7ee0d6c3adeb85 1-33
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_a40848e8f8cca9::t_66e78aabf724d9 2-6,21
+  s_a40848e8f8cca9::t_e8e2161814e38c 22-23
+src/modules/AiRuntime/useCases/__tests__/recordAgentRunReceiptSaga.spec.ts
+  s_a40848e8f8cca9::t_7ee0d6c3adeb85 8
+  s_a40848e8f8cca9::t_ed4d6f10d46a91 1,6-7,213-306
+  s_a40848e8f8cca9::t_ceebcb9a6917e3 307
+src/modules/PluginHost/useCases/pluginLifecycle/externalPluginActivationTasks.ts
+  s_a40848e8f8cca9::t_66e78aabf724d9 2,6
+  s_a40848e8f8cca9::t_e8e2161814e38c 1,3-5
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_a40848e8f8cca9::t_12ca761e657114 91
+  s_a40848e8f8cca9::t_7335d2a6760645 177-186
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_10f3e7f884222a 19,29-31
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_98805d006c2d8d 149,199
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  s_a40848e8f8cca9::t_6002e0dd94f8e2 37
+  s_a40848e8f8cca9::t_98805d006c2d8d 1-36,38-48
+src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_7ee0d6c3adeb85 6
+  s_a40848e8f8cca9::t_80a7781e50b900 178,181-182
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_10f3e7f884222a 652-661,664,666-668
+  s_a40848e8f8cca9::t_e51f979562f35f 646-650
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_80a7781e50b900 805-814,883
+  s_a40848e8f8cca9::t_7ee0d6c3adeb85 48,951
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_2edfca13e65ecc 81-82,130-131,263,422,579-582
+  s_a40848e8f8cca9::t_e512bb5e3a0e72 583-584
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_a7e37bb6e07668 2272,2287
+  s_a40848e8f8cca9::t_332560f27905e0 2264-2267,2280-2281
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_381c4f28d472af 186-203
+  s_a40848e8f8cca9::t_332560f27905e0 17,112,166-175
+  s_a40848e8f8cca9::t_8d8e0fcca395b2 350,696,873
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_80a7781e50b900 32-35
+  s_a40848e8f8cca9::t_09b0df564439d7 501
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_a40848e8f8cca9::t_f407fde4679c60 119,130,150,154
+  s_a40848e8f8cca9::t_e8e2161814e38c 9,11-14,70,72-75,77-92,100-105,118,146,161-164,172-175
+  s_a40848e8f8cca9::t_66e78aabf724d9 10,71,93-99,165-170
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_a40848e8f8cca9::t_df2cbc7c13e1d2 89-92
+  s_a40848e8f8cca9::t_5bd6e8fd11c394 20,25-26,62-66,81,93-97,106
+  s_a40848e8f8cca9::t_6002e0dd94f8e2 21-24,79
+  s_a40848e8f8cca9::t_816dda3268bff3 59,85-87
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_a40848e8f8cca9::t_12ca761e657114 175-188
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_8768a522b90609 577-613
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "ab8b53637fb913fa4b036cd5f03c1210bab5c21d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
