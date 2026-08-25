@@ -322,6 +322,9 @@ export async function replaceProjectData({
                     productionBrief: data.meta.productionBrief ?? createDefaultProductionBrief(data.meta.createdAt),
                     dirty: false,
                     identityMigrationPending: false,
+                    // Loaded from storage, so the identity is already durable —
+                    // no initial-persistence barrier applies to this activation.
+                    identityPersistencePending: false,
                     // Still loading: `batchStoreUpdates` defers subscriber
                     // notification to the end of the batch, so the hydration
                     // writes above have not reached their subscribers yet. The

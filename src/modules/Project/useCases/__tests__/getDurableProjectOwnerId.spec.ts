@@ -34,6 +34,7 @@ function createProjectState(overrides: Partial<ProjectStoreState> = {}): Project
         dirty: false,
         loading: false,
         identityMigrationPending: false,
+        identityPersistencePending: false,
         keyRoot: 0,
         scaleName: 'chromatic',
         tuning: {
@@ -63,6 +64,7 @@ describe('getDurableProjectOwnerId', () => {
         ['the project ID is absent', createProjectState({ projectId: undefined })],
         ['the project ID is malformed', createProjectState({ projectId: 'not-a-project-uuid' })],
         ['identity migration is pending', createProjectState({ identityMigrationPending: true })],
+        ['initial identity persistence is pending', createProjectState({ identityPersistencePending: true })],
     ])('returns no owner when %s', (_scenario, project) => {
         mocks.projectStore.value = project;
 

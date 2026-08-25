@@ -4,7 +4,7 @@ import { isSemanticProjectIdentityReady } from './semanticProjectIndex';
 
 export function getDurableProjectOwnerId(): string | undefined {
     const project = projectStore.value;
-    if (!project?.initialized || !isSemanticProjectIdentityReady(project)) {
+    if (!project?.initialized || project.identityPersistencePending || !isSemanticProjectIdentityReady(project)) {
         return undefined;
     }
 
