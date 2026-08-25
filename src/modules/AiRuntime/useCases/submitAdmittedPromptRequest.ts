@@ -205,6 +205,7 @@ export async function submitAdmittedPromptRequest(
         );
         const compiled = compileAgentActionExecution({
             actions: planned.result.actions,
+            actionCommandGraph: planned.result.actionCommandGraph,
             actionLabels,
             context: planned.context,
             group: { groupId: `prompt-${runId}`, groupLabel: 'Prompt action' },

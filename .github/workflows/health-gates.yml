@@ -80,6 +80,10 @@ jobs:
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
+              - 'package.json'
+              - 'vite.config.ts'
+              - 'scripts/checkVitestCollectionScope.ts'
+              - '.github/workflows/health-gates.yml'
             e2e:
               - 'src/**'
               - 'public/**'

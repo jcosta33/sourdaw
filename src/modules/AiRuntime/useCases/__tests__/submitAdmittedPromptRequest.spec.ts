@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
@@ -251,6 +253,39 @@ describe('submitAdmittedPromptRequest', () => {
             cancellation: { generation: 1 },
             workLeases: [{ workId: 'provider-planning', terminalState: 'cancelled' }],
         });
+    });
+
+    it('preserves compiler dependencies and batch-local bindings at the admitted compilation boundary', async () => {
+        const actions = [
+            { type: 'createBus', payload: { name: 'Drum Bus', busId: 'bus-ai-drum' } },
+            {
+                type: 'setTrackGain',
+                payload: { trackId: 'bus-ai-drum', gain: 0.8, expectedGain: 1 },
+            },
+        ] satisfies AppAction[];
+        const actionCommandGraph = {
+            dependenciesByActionIndex: [[], [0]],
+            batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
+        } as const;
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions,
+                actionCommandGraph,
+                rawText: 'Create a Drum Bus, then set its gain to 0.8.',
+                requiresConfirmation: true,
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await submitAdmittedPromptRequest({
+            prompt: 'Create a Drum Bus, then set its gain to 0.8.',
+            source: 'prompt-bar',
+        });
+
+        expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
+            expect.objectContaining({ actions, actionCommandGraph })
+        );
     });
 
     it('forwards the exact compiled approval and command batch from submit to confirmation', async () => {

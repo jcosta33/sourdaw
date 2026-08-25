@@ -299,6 +299,7 @@ describe('executePromptActionGroup', () => {
         expect(mocks.retainPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
             runId: RUN_ID,
             stems: stemAction.payload.stems,
+            recovery: { batchId: BATCH_ID, commandBatch },
         });
     });
 
@@ -447,6 +448,7 @@ describe('executePromptActionGroup', () => {
         expect(mocks.retainPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
             runId: RUN_ID,
             stems: stemAction.payload.stems,
+            recovery: { batchId: BATCH_ID, commandBatch },
         });
     });
 

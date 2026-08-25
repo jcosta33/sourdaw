@@ -1,7 +1,7 @@
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 
-import { createProjectId, isCanonicalProjectId } from '../../models/ProjectData';
+import { deriveDeterministicProjectId, isCanonicalProjectId } from '../../models/ProjectData';
 import { projectStore, type ProjectStoreState } from '../../stores/projectStore';
 
 type ActiveIdentityMigration = {
@@ -64,6 +64,14 @@ async function persistIdentityMigration({
  * explicit load/save seam mints once, commits the store write into the active
  * Automerge document, and persists that document before a version-2 snapshot
  * or canonical address can be published.
+ *
+ * The candidate is derived deterministically from the legacy document's
+ * durable meta — its previous identity slot (absent or malformed) and its
+ * `createdAt` — rather than minted at random. Both inputs are replicated CRDT
+ * content, so two peers migrating the same converged legacy document mint the
+ * SAME candidate and converge instead of persisting divergent owners. No
+ * random fallback is needed: `createdAt` is required store state, so a stable
+ * per-document seed always exists at this seam.
  */
 export function migrateActiveProjectIdentity(): Promise<boolean> {
     const project = projectStore.value;
@@ -83,7 +91,7 @@ export function migrateActiveProjectIdentity(): Promise<boolean> {
     const candidateProjectId =
         project.identityMigrationPending && isCanonicalProjectId(project.projectId)
             ? project.projectId
-            : createProjectId();
+            : deriveDeterministicProjectId(project.projectId ?? '', String(project.createdAt));
     const deferred = Promise.withResolvers<boolean>();
     const migration: ActiveIdentityMigration = {
         candidateProjectId,

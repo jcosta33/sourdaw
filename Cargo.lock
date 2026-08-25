@@ -610,6 +610,7 @@ dependencies = [
 name = "daw-engine"
 version = "0.1.0"
 dependencies = [
+ "assert_no_alloc",
  "cpal",
  "daw-dsp",
  "rtrb",
