@@ -788,6 +788,8 @@ describe('pull-request delivery', () => {
 
     it.each([
         ['empty', body.replace('Change.', '')],
+        ['title echo', body.replace('Change.', 'feat(delivery): add gate')],
+        ['title remainder', body.replace('Change.', 'add gate')],
         ['duplicate', `${body}\n### 🎯 What does this PR do?\nAgain.`],
         [
             'out-of-order',

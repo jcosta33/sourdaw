@@ -32,6 +32,7 @@ import {
     fail,
     howToTestFromBody,
     issueRelationshipFromBody,
+    whatFromBody,
     type IssueRelationship,
 } from './prContract.ts';
 
@@ -45,7 +46,7 @@ export type PublishWorktree = {
 export type ExistingPullRequest = { number: number; body: unknown };
 
 export const PUBLISH_LANE_USAGE =
-    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--test <instructions>]';
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>]';
 
 const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
@@ -107,6 +108,7 @@ export function parsePublishLaneArgs(args: string[]): {
     lanePath?: string;
     relationship?: IssueRelationship;
     testInstructions?: string;
+    summary?: string;
     help: boolean;
 } {
     if (args[0] === '--help') {
@@ -119,6 +121,7 @@ export function parsePublishLaneArgs(args: string[]): {
     let lanePath: string | undefined;
     let relationship: IssueRelationship | undefined;
     let testInstructions: string | undefined;
+    let summary: string | undefined;
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
         if (arg === '--relates') {
@@ -134,6 +137,15 @@ export function parsePublishLaneArgs(args: string[]): {
                 fail(PUBLISH_LANE_USAGE);
             }
             testInstructions = value;
+            index += 1;
+            continue;
+        }
+        if (arg === '--summary') {
+            const value = args[index + 1];
+            if (summary !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            summary = value;
             index += 1;
             continue;
         }
@@ -159,6 +171,7 @@ export function parsePublishLaneArgs(args: string[]): {
         ...(lanePath === undefined ? {} : { lanePath }),
         ...(relationship === undefined ? {} : { relationship }),
         ...(testInstructions === undefined ? {} : { testInstructions }),
+        ...(summary === undefined ? {} : { summary }),
         help: false,
     };
 }
@@ -418,6 +431,7 @@ export function publishLane(
     port: PublishLanePort,
     relationship?: IssueRelationship,
     testInstructions?: string,
+    summary?: string,
     authorization?: AuthorizedResolvedLane
 ): number {
     const lane = resolveAuthorLane(
@@ -461,7 +475,7 @@ export function publishLane(
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
     }
-    const write = pullRequestWrite(issue, lane, baseSha, headSha, port, relationship, testInstructions);
+    const write = pullRequestWrite(issue, lane, baseSha, headSha, port, relationship, testInstructions, summary);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
@@ -526,7 +540,8 @@ function pullRequestWrite(
     headSha: string,
     port: PublishLanePort,
     relationship: IssueRelationship | undefined,
-    testInstructions: string | undefined
+    testInstructions: string | undefined,
+    summary: string | undefined
 ): PullRequestWrite | undefined {
     if (lane.legacy) {
         return undefined;
@@ -555,6 +570,9 @@ function pullRequestWrite(
     if (existing === undefined && testInstructions === undefined) {
         fail('opening a pull request requires --test <instructions>');
     }
+    if (existing === undefined && summary === undefined) {
+        fail('opening a pull request requires --summary <text>');
+    }
     let resolvedTestInstructions = testInstructions;
     if (resolvedTestInstructions === undefined) {
         if (existing === undefined || typeof existing.body !== 'string') {
@@ -562,9 +580,16 @@ function pullRequestWrite(
         }
         resolvedTestInstructions = howToTestFromBody(existing.body);
     }
+    let resolvedSummary = summary;
+    if (resolvedSummary === undefined) {
+        if (existing === undefined || typeof existing.body !== 'string') {
+            fail('existing pull-request body is unreadable');
+        }
+        resolvedSummary = whatFromBody(existing.body);
+    }
     return {
         title,
-        body: composePublishBody(laneIssue, title, resolvedTestInstructions, resolvedRelationship),
+        body: composePublishBody(laneIssue, title, resolvedSummary, resolvedTestInstructions, resolvedRelationship),
         existing,
     };
 }
@@ -958,6 +983,7 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
             shellPort(auth.session, selectionPath, primaryRoot, { git: runtime.gitPath, gh: runtime.ghPath }),
             parsed.relationship,
             parsed.testInstructions,
+            parsed.summary,
             { ...auth.authorization, legacy: authenticationLane.legacy }
         );
         return 0;

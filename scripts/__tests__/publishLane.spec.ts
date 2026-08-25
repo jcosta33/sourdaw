@@ -42,6 +42,7 @@ import {
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
+const DEFAULT_SUMMARY = 'Keep VCS identity records so each authored change names who wrote it.';
 const TEST_INSTRUCTIONS = 'Run the focused publisher specs and confirm they pass.';
 const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
@@ -149,7 +150,7 @@ function fakePort(input: FakeInput = {}) {
                       number,
                       body:
                           input.existingBody === undefined
-                              ? composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS)
+                              ? composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS)
                               : input.existingBody,
                   };
         },
@@ -308,7 +309,7 @@ describe('lane publish', () => {
                 TEST_MINT_LOG: mintLog,
                 TEST_EVENT_LOG: eventLog,
             };
-            execFileSync('pnpm', ['lane:publish', '12', '--test', TEST_INSTRUCTIONS], {
+            execFileSync('pnpm', ['lane:publish', '12', '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS], {
                 cwd: primary,
                 env: launcherEnv,
                 encoding: 'utf8',
@@ -409,7 +410,7 @@ describe('lane publish', () => {
     it('pushes without force, opens one PR, and prints the number', () => {
         const { port, calls, logs } = fakePort();
 
-        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls.some((call) => call.includes('--force'))).toBe(false);
         expect(calls.some((call) => call.includes('merge --auto'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(true);
@@ -433,6 +434,14 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
+    it('refuses to open a pull request without an explicit summary', () => {
+        const { port, calls } = fakePort();
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toThrow(/requires --summary <text>/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
     it('refuses a dirty lane instead of committing it under an earlier commit subject', () => {
         const { port, calls } = fakePort({ dirty: true });
 
@@ -447,7 +456,7 @@ describe('lane publish', () => {
     it('publishes a clean lane', () => {
         const { port, calls } = fakePort({ dirty: false });
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(calls).toContain('push:agent/12/work');
     });
@@ -464,13 +473,13 @@ describe('lane publish', () => {
         };
         const accepted = fakePort({ headSha: classifiedHead });
 
-        publishLane(12, accepted.port, undefined, TEST_INSTRUCTIONS, authorization);
+        publishLane(12, accepted.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, authorization);
         expect(accepted.calls).toContain(`pushHead:${classifiedHead}`);
 
         const changed = fakePort({ headSha: 'b'.repeat(40) });
-        expect(() => publishLane(12, changed.port, undefined, TEST_INSTRUCTIONS, authorization)).toThrow(
-            /HEAD changed after its permission-scoped token was minted/
-        );
+        expect(() =>
+            publishLane(12, changed.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, authorization)
+        ).toThrow(/HEAD changed after its permission-scoped token was minted/);
         expect(changed.calls.some((call) => call.startsWith('push:'))).toBe(false);
     });
 
@@ -485,7 +494,7 @@ describe('lane publish', () => {
         };
         const { port, calls } = fakePort({ headSha: authorization.headSha, baseSha: 'c'.repeat(40) });
 
-        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, authorization)).toThrow(
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, authorization)).toThrow(
             /origin\/main changed after its permission-scoped token was minted/
         );
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
@@ -505,7 +514,7 @@ describe('lane publish', () => {
     it('names the resolved lane before it pushes or opens a pull request', () => {
         const { port, calls } = fakePort();
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         const receipt = calls.indexOf(`log:publishing ${ISSUE_LANE} on agent/12/work`);
         expect(receipt).toBeGreaterThanOrEqual(0);
@@ -516,9 +525,11 @@ describe('lane publish', () => {
     it('writes Closes #<issue> into the body when an issue is given', () => {
         const { port, bodies } = fakePort();
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(bodies.at(-1)).toContain('Closes #12');
+        expect(bodies.at(-1)).toContain(`### 🎯 What does this PR do?\n${DEFAULT_SUMMARY}`);
+        expect(bodies.at(-1)).not.toContain(`### 🎯 What does this PR do?\n${DEFAULT_SUBJECT}`);
         expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${TEST_INSTRUCTIONS}`);
     });
 
@@ -528,7 +539,7 @@ describe('lane publish', () => {
             cwd: `${ISSUE_LANE}/scripts`,
         });
 
-        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls).toContain('push:agent/12/work');
         expect(bodies.at(-1)).toContain('Closes #12');
     });
@@ -536,7 +547,7 @@ describe('lane publish', () => {
     it('references a campaign issue without closing it', () => {
         const { port, bodies } = fakePort();
 
-        publishLane(12, port, 'relates', TEST_INSTRUCTIONS);
+        publishLane(12, port, 'relates', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(bodies.at(-1)).toContain('Related #12');
         expect(bodies.at(-1)).not.toContain('Closes #12');
@@ -548,7 +559,7 @@ describe('lane publish', () => {
             cwd: `${ISSUE_LANE}/scripts`,
         });
 
-        publishLane(undefined, port, 'relates', TEST_INSTRUCTIONS);
+        publishLane(undefined, port, 'relates', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(bodies.at(-1)).toContain('Related #12');
     });
@@ -556,7 +567,7 @@ describe('lane publish', () => {
     it('preserves Related on a later flagless update', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS, 'relates'),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS, 'relates'),
         });
 
         publishLane(12, port);
@@ -568,7 +579,7 @@ describe('lane publish', () => {
     it('preserves Closes on a later flagless update', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port);
@@ -581,7 +592,7 @@ describe('lane publish', () => {
         const existingInstructions = 'Open the settings panel and confirm the new control is visible.';
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, existingInstructions),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, existingInstructions),
         });
 
         publishLane(12, port);
@@ -589,11 +600,24 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${existingInstructions}`);
     });
 
+    it('preserves a valid existing What section when --summary is omitted', () => {
+        const existingSummary = 'Name each authored change so reviewers can see who wrote it.';
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, existingSummary, TEST_INSTRUCTIONS),
+        });
+
+        publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain(`### 🎯 What does this PR do?\n${existingSummary}`);
+        expect(bodies.at(-1)).not.toContain(DEFAULT_SUMMARY);
+    });
+
     it('updates existing test instructions when --test is supplied', () => {
         const updatedInstructions = 'Run the publisher CLI and confirm the updated instructions appear.';
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port, undefined, updatedInstructions);
@@ -602,10 +626,23 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain(TEST_INSTRUCTIONS);
     });
 
+    it('updates the existing What section when --summary is supplied', () => {
+        const updatedSummary = 'Describe the change for a teammate who was not in the session.';
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+        });
+
+        publishLane(12, port, undefined, undefined, updatedSummary);
+
+        expect(bodies.at(-1)).toContain(`### 🎯 What does this PR do?\n${updatedSummary}`);
+        expect(bodies.at(-1)).not.toContain(DEFAULT_SUMMARY);
+    });
+
     it('changes a valid existing relationship only when requested', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port, 'relates');
@@ -659,7 +696,7 @@ describe('lane publish', () => {
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
             cwd: CLEANUP_LANE,
             existing: 41,
-            existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(undefined, port);
@@ -684,7 +721,7 @@ describe('lane publish', () => {
             cwd: CLEANUP_LANE,
         });
 
-        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls).toContain('push:agent/cleanup');
         expect(calls.some((call) => call.startsWith('issueExists:'))).toBe(false);
         expect(bodies.at(-1)).not.toContain('Closes #');
@@ -698,7 +735,7 @@ describe('lane publish', () => {
             cwd: `${CLEANUP_LANE}/scripts/__tests__`,
         });
 
-        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls).toContain('push:agent/cleanup');
     });
 
@@ -888,7 +925,7 @@ describe('lane publish', () => {
     it('uses the lane subject as the pull-request title', () => {
         const { port, calls } = fakePort({ subject: 'feat(foo): bar' });
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(calls.some((call) => call.includes('feat(foo): bar'))).toBe(true);
     });
@@ -896,7 +933,7 @@ describe('lane publish', () => {
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
-        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toThrow(message);
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(message);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
@@ -924,6 +961,12 @@ describe('lane publish', () => {
             testInstructions: TEST_INSTRUCTIONS,
             help: false,
         });
+        expect(parsePublishLaneArgs(['--summary', DEFAULT_SUMMARY, '12', '--test', TEST_INSTRUCTIONS])).toEqual({
+            issue: 12,
+            summary: DEFAULT_SUMMARY,
+            testInstructions: TEST_INSTRUCTIONS,
+            help: false,
+        });
         expect(parsePublishLaneArgs(['--relates'])).toEqual({ relationship: 'relates', help: false });
         expect(parsePublishLaneArgs([])).toEqual({ help: false });
         expect(parsePublishLaneArgs(['--help'])).toEqual({ help: true });
@@ -931,6 +974,10 @@ describe('lane publish', () => {
         expect(() => parsePublishLaneArgs(['--relates', '--relates'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--test'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--test', TEST_INSTRUCTIONS, '--test', TEST_INSTRUCTIONS])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--summary'])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--summary', DEFAULT_SUMMARY, '--summary', DEFAULT_SUMMARY])).toThrow(
+            /usage/
+        );
         expect(() => parsePublishLaneArgs(['--lane', 'relative/lane'])).toThrow(/absolute path/);
         expect(() => parsePublishLaneArgs(['12', '--lane', CLEANUP_LANE])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
