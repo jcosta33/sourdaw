@@ -1155,10 +1155,9 @@ describe('release inventory', () => {
     it('rejects an unexpected early EOF before accepting a repository descriptor snapshot', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-early-eof-'));
         const root = join(base, 'repository');
-        const path = 'src/early-eof.ts';
+        const path = 'release/open-source-inventory.json';
         const filePath = join(root, path);
-        const benignReference = 'https://benign.example/reference';
-        const contents = `export default '${benignReference}'; trailing-bytes\n`;
+        const contents = JSON.stringify(inventory());
         let reads = 0;
         const reader: RepositorySnapshotFileReader = {
             read(descriptor, buffer, offset, length, position) {
@@ -1174,11 +1173,18 @@ describe('release inventory', () => {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, contents);
 
-            const snapshot = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], reader);
+            let failure: unknown;
+            try {
+                readReleaseInventory(root, reader);
+            } catch (error) {
+                failure = error;
+            }
 
             expect(reads).toBe(2);
-            expect(snapshot.externalReferences).not.toContain(benignReference);
-            expect(snapshot.externalReferences).toEqual([]);
+            expect(failure).toMatchObject({
+                message: `release inventory cannot be read safely: ${filePath}`,
+                cause: { message: 'unexpected early EOF while reading repository file descriptor' },
+            });
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
