@@ -20,14 +20,18 @@
  *     have caught. A clean clone has no worktrees; without the fixture this
  *     assertion would pass by having nothing to look at, which is the blind shape
  *     ADR 0015 rule 4 names.
- *  2. **Presence, from an independent source.** The collected set is compared for
+ *  2. **Owned absence, from an independent source.** A filesystem walk enumerates
+ *     the server specs, proves that population is non-empty, and requires the root
+ *     Vitest collection to contain none of them. The dedicated server gate owns
+ *     those `node:test` specs.
+ *  3. **Presence, from an independent source.** The collected set is compared for
  *     exact equality against a filesystem walk of the collectable roots below. The
  *     two sides are sourced differently — vitest's glob resolution versus a plain
  *     directory walk — so neither can launder the other (rule 3). This side is what
  *     reds if an over-broad exclusion, or a `--dir` / `include` allowlist, silently
  *     drops specs that used to run: `scripts/__tests__/` holds four of them and
  *     lives outside `src`.
- *  3. **Registry, not list.** `collectableRoots` is the enumeration. A spec added
+ *  4. **Registry, not list.** `collectableRoots` is the enumeration. A spec added
  *     anywhere inside a declared root is covered automatically; a new root is a
  *     deliberate edit here, and until it is made the equality fails loudly rather
  *     than the specs silently not running.
@@ -47,9 +51,13 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * the equality check enumerates; it is not a sample.
  *
  * `tests/e2e` is deliberately absent — those are Playwright specs, excluded by
- * `vite.config.ts` and run by `pnpm test:e2e <spec>`.
+ * `vite.config.ts` and run by `pnpm test:e2e <spec>`. `server` is also absent:
+ * those specs use `node:test` and are owned by `pnpm health:server:full`.
  */
-const collectableRoots = ['src', 'scripts', 'electron', 'server'] as const;
+const collectableRoots = ['src', 'scripts', 'electron'] as const;
+
+/** Specs owned by the dedicated server test gate, not root Vitest. */
+const serverRoot = 'server';
 
 /** The directory the exclusion under test is responsible for. */
 const worktreeRoot = '.agents/worktrees';
@@ -106,9 +114,9 @@ function walkForSpecs(absoluteDirectory: string, found: string[]): void {
     }
 }
 
-function enumerateExpectedSpecs(): string[] {
+function enumerateSpecs(roots: readonly string[]): string[] {
     const found: string[] = [];
-    for (const root of collectableRoots) {
+    for (const root of roots) {
         walkForSpecs(join(repoRoot, root), found);
     }
     return found.sort();
@@ -185,8 +193,9 @@ function main(): number {
     }
 
     const collectedSet = new Set(collected);
-    const expected = enumerateExpectedSpecs();
+    const expected = enumerateSpecs(collectableRoots);
     const expectedSet = new Set(expected);
+    const serverSpecs = enumerateSpecs([serverRoot]);
 
     // 1. Absence, with the subject planted.
     const collectedWorktreeSpecs = collected.filter((path) => path.startsWith(`${worktreeRoot}/`));
@@ -202,7 +211,25 @@ function main(): number {
         );
     }
 
-    // 2. Presence, from an independent source.
+    // 2. Owned absence, from an independently enumerated, non-empty population.
+    const collectedServerSpecs = serverSpecs.filter((path) => collectedSet.has(path));
+    if (serverSpecs.length === 0) {
+        failures.push(
+            `  ✗ no spec files exist under ${serverRoot}/; the root-collection exclusion check would be vacuous.`
+        );
+    } else if (collectedServerSpecs.length === 0) {
+        console.log(`  ✓ none of the ${serverSpecs.length} spec files under ${serverRoot}/ were collected`);
+    } else {
+        failures.push(
+            [
+                `  ✗ the root run collected ${collectedServerSpecs.length} spec(s) owned by ${serverRoot}/.`,
+                '    These node:test specs belong to pnpm health:server:full.',
+                formatSample(collectedServerSpecs),
+            ].join('\n')
+        );
+    }
+
+    // 3. Presence, from an independent source.
     const missing = expected.filter((path) => !collectedSet.has(path));
     const unexpected = collected.filter((path) => !expectedSet.has(path));
 
