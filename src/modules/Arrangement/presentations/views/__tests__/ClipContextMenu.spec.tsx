@@ -21,53 +21,98 @@ vi.mock('#/infra/store/useStore', () => ({
     }),
 }));
 
-vi.mock('../../../stores/trackStore', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../../../stores/trackStore')>()),
-    trackStore: {
-        value: {
-            tracks: [
-                {
+vi.mock('../../../stores/trackStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/trackStore')>();
+    const { createTrack } = await import('../../../models/Track');
+    const subscribers = new Set<Parameters<TrackStoreSubscribe>[0]>();
+    let value: typeof actual.trackStore.value = {
+        tracks: [
+            {
+                ...createTrack({
                     id: 't1',
-                    clips: [
-                        {
-                            id: 'clip1',
-                            name: 'Test',
-                            type: 'audio',
-                            startBeat: 0,
-                            endBeat: 4,
-                        },
-                        {
-                            id: 'clip2',
-                            name: 'Test With Buffer',
-                            type: 'audio',
-                            startBeat: 4,
-                            endBeat: 8,
-                            audioBufferId: 'buffer-2',
-                        },
-                        {
-                            id: 'midi1',
-                            name: 'MIDI Clip',
-                            type: 'midi',
-                            startBeat: 0,
-                            endBeat: 4,
-                            isInlineEditing: true,
-                        },
-                    ],
-                },
-            ],
+                    name: 'Track 1',
+                    kind: 'audio',
+                    color: '#808080',
+                    initialAlternativeId: 'alt-1',
+                    withoutDefaultDevice: true,
+                }),
+                clips: [
+                    {
+                        id: 'clip1',
+                        trackId: 't1',
+                        name: 'Test',
+                        type: 'audio',
+                        startBeat: 0,
+                        endBeat: 4,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                        gain: 1,
+                        color: '#808080',
+                        locked: false,
+                        muted: false,
+                    },
+                    {
+                        id: 'clip2',
+                        trackId: 't1',
+                        name: 'Test With Buffer',
+                        type: 'audio',
+                        startBeat: 4,
+                        endBeat: 8,
+                        audioBufferId: 'buffer-2',
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                        gain: 1,
+                        color: '#808080',
+                        locked: false,
+                        muted: false,
+                    },
+                    {
+                        id: 'midi1',
+                        trackId: 't1',
+                        name: 'MIDI Clip',
+                        type: 'midi',
+                        startBeat: 0,
+                        endBeat: 4,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                        gain: 1,
+                        color: '#808080',
+                        locked: false,
+                        muted: false,
+                        isInlineEditing: true,
+                    },
+                ],
+            },
+        ],
+        selectedTrackId: null,
+    };
+    const trackStore = {
+        ...actual.trackStore,
+        get value(): typeof actual.trackStore.value {
+            return value;
         },
-        subscribe: vi.fn<TrackStoreSubscribe>(() => () => undefined),
-    },
-}));
+        set: vi.fn((nextValue: Parameters<(typeof actual.trackStore)['set']>[0]) => {
+            value = nextValue;
+            for (const callback of subscribers) {
+                callback(value);
+            }
+        }),
+        subscribe: vi.fn<TrackStoreSubscribe>((callback) => {
+            subscribers.add(callback);
+            return () => subscribers.delete(callback);
+        }),
+        getSnapshot: vi.fn(() => value),
+    };
+
+    return { ...actual, trackStore };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    const { trackStore } = await import('../../../stores/trackStore');
     return {
         ...actual,
-        trackStore: {
-            ...actual.trackStore,
-            subscribe: vi.fn<TrackStoreSubscribe>(() => () => undefined),
-        },
+        trackStore,
     };
 });
 
@@ -168,6 +213,34 @@ describe('ClipContextMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipIds: [] });
+    });
+
+    it('uses the same track store through the defining module and public barrel', async () => {
+        const [{ trackStore: definingTrackStore }, { trackStore: barrelTrackStore }] = await Promise.all([
+            import('../../../stores/trackStore'),
+            import('#/modules/Arrangement/stores'),
+        ]);
+
+        expect(barrelTrackStore).toBe(definingTrackStore);
+    });
+
+    it('notifies track store subscribers until they unsubscribe', async () => {
+        const { trackStore } = await import('../../../stores/trackStore');
+        const previous = trackStore.value;
+        if (!previous) {
+            throw new Error('Expected the track fixture to contain a value');
+        }
+        const subscriber = vi.fn();
+        const unsubscribe = trackStore.subscribe(subscriber);
+        const selected = { ...previous, selectedTrackId: 't1' };
+
+        trackStore.set(selected);
+        expect(subscriber).toHaveBeenCalledOnce();
+        expect(subscriber).toHaveBeenCalledWith(selected);
+
+        unsubscribe();
+        trackStore.set(previous);
+        expect(subscriber).toHaveBeenCalledOnce();
     });
 
     it('should render without crashing', () => {
@@ -312,21 +385,23 @@ describe('ClipContextMenu', () => {
     });
 
     it('shows Unmute/Lock toggles and dispatches the inverse state for a muted+locked clip', async () => {
-        // Add a muted, locked audio clip to the mocked track store via a fresh
-        // render with a controllable store snapshot.
         const { trackStore } = await import('../../../stores/trackStore');
         const previous = trackStore.value;
-        (trackStore as unknown as { value: unknown }).value = {
+        const track = previous?.tracks[0];
+        const clip = track?.clips[0];
+        if (!previous || !track || !clip) {
+            throw new Error('Expected the track fixture to contain a clip');
+        }
+        trackStore.set({
+            ...previous,
             tracks: [
                 {
-                    id: 't1',
+                    ...track,
                     clips: [
                         {
+                            ...clip,
                             id: 'clipM',
                             name: 'Muted',
-                            type: 'audio',
-                            startBeat: 0,
-                            endBeat: 4,
                             muted: true,
                             locked: true,
                             audioBufferId: 'bufM',
@@ -334,7 +409,7 @@ describe('ClipContextMenu', () => {
                     ],
                 },
             ],
-        };
+        });
         try {
             render(<ClipContextMenu x={0} y={0} clipId="clipM" splitBeat={4} onClose={mockOnClose} />);
             // Muted+locked → the labels flip to the inverse action.
@@ -349,7 +424,7 @@ describe('ClipContextMenu', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Unlock Clip' }));
             expect(lockClip).toHaveBeenCalledWith('clipM', false);
         } finally {
-            (trackStore as unknown as { value: unknown }).value = previous;
+            trackStore.set(previous);
         }
     });
 
@@ -383,19 +458,33 @@ describe('ClipContextMenu', () => {
     it('shows the Open Inline Editor toggle for a midi clip not yet editing inline', async () => {
         const { trackStore } = await import('../../../stores/trackStore');
         const previous = trackStore.value;
-        (trackStore as unknown as { value: unknown }).value = {
+        const track = previous?.tracks[0];
+        const clip = track?.clips[0];
+        if (!previous || !track || !clip) {
+            throw new Error('Expected the track fixture to contain a clip');
+        }
+        trackStore.set({
+            ...previous,
             tracks: [
                 {
-                    id: 't1',
-                    clips: [{ id: 'midiPlain', name: 'Plain MIDI', type: 'midi', startBeat: 0, endBeat: 4 }],
+                    ...track,
+                    clips: [
+                        {
+                            ...clip,
+                            id: 'midiPlain',
+                            name: 'Plain MIDI',
+                            type: 'midi',
+                            isInlineEditing: false,
+                        },
+                    ],
                 },
             ],
-        };
+        });
         try {
             render(<ClipContextMenu x={0} y={0} clipId="midiPlain" splitBeat={4} onClose={mockOnClose} />);
             expect(screen.getByRole('button', { name: 'Open Inline Editor' })).toBeInTheDocument();
         } finally {
-            (trackStore as unknown as { value: unknown }).value = previous;
+            trackStore.set(previous);
         }
     });
 
