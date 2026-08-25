@@ -71,7 +71,7 @@ export const AgentRunDecisionControls = ({
                 {statusMessage}
             </p>
             <ul className="mt-2 space-y-3" aria-label="Pending agent decisions">
-                {decisions.map((decision) => {
+                {decisions.map((decision, decisionIndex) => {
                     const isAvailable = decision.allowedActions.resume;
                     const unavailableReason = isAvailable ? null : getUnavailableReason(decision);
 
@@ -79,8 +79,8 @@ export const AgentRunDecisionControls = ({
                         <li key={decision.runId} className="rounded border border-border/60 bg-surface-raised/80 p-2.5">
                             <p className="text-xs text-foreground">{decision.decision.reason}</p>
                             <ul className="mt-2 space-y-2" aria-label="Decision alternatives">
-                                {decision.decision.alternatives.map((alternative, index) => {
-                                    const alternativeStatusId = `${statusId}-${decision.runId}-${alternative.id}`;
+                                {decision.decision.alternatives.map((alternative, alternativeIndex) => {
+                                    const alternativeStatusId = `${statusId}-alternative-${decisionIndex}-${alternativeIndex}`;
 
                                     return (
                                         <li key={alternative.id} className="flex items-center justify-between gap-2">
@@ -88,7 +88,7 @@ export const AgentRunDecisionControls = ({
                                             <Button
                                                 ref={
                                                     isAvailable &&
-                                                    index === 0 &&
+                                                    alternativeIndex === 0 &&
                                                     firstAvailableDecision?.runId === decision.runId
                                                         ? firstAvailableControlRef
                                                         : undefined

@@ -257,7 +257,13 @@ describe('ChatPanel', () => {
                 resumeRejectionReason: null,
                 decision: {
                     reason: 'Choose the bounded interpretation before the run can continue.',
-                    alternatives: [{ id: 'keep-tempo', label: 'Keep the current tempo', changesAuthority: false }],
+                    alternatives: [
+                        {
+                            id: 'keep tempo / primary!',
+                            label: 'Keep the current tempo',
+                            changesAuthority: false,
+                        },
+                    ],
                 },
             },
         ]);
@@ -274,7 +280,7 @@ describe('ChatPanel', () => {
 
         expect(agentRunControls.resumeDecision).toHaveBeenCalledWith({
             runId: 'decision-run',
-            alternativeId: 'keep-tempo',
+            alternativeId: 'keep tempo / primary!',
         });
         expect(await screen.findByText('Started replacement agent run resumed-run.')).toBeInTheDocument();
         const status = screen.getByRole('status');
@@ -319,7 +325,13 @@ describe('ChatPanel', () => {
                 resumeRejectionReason: 'The project revision changed while the decision was pending.',
                 decision: {
                     reason: 'Choose a tempo before continuing.',
-                    alternatives: [{ id: 'keep-tempo', label: 'Keep the current tempo', changesAuthority: false }],
+                    alternatives: [
+                        {
+                            id: 'keep tempo / primary!',
+                            label: 'Keep the current tempo',
+                            changesAuthority: false,
+                        },
+                    ],
                 },
             },
         ]);
