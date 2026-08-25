@@ -1,3 +1,4 @@
+import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -9,6 +10,13 @@ import { trackStore } from '../../stores/trackStore';
 
 import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
+
+/**
+ * Re-enters an open storage transaction. Structural twin of the type in
+ * `createAutomergeStorage`, which keeps the shape unexported; passing a scope
+ * into an async use case is the same contract `executeAppActionBatch` uses.
+ */
+export type BounceTransactionScope = <Result>(callback: () => Result) => Result;
 
 export type BounceOptions = {
     includeInserts: boolean;
@@ -27,9 +35,28 @@ export type BounceOptions = {
      * so undoing past the command would re-apply the bounces it just reverted.
      */
     recordUndoEntry?: boolean;
+    /**
+     * Re-entry into the dispatching command's storage transaction. The
+     * `consolidateAllTracks` handler supplies one it captured before its first
+     * `await`, because its per-track loop has already crossed that `await` by
+     * the second iteration — a capture inside `bounceTrack` would then find no
+     * ambient transaction and silently degrade to an unscoped write. Callers
+     * that invoke `bounceTrack` synchronously inside their handler's `execute`
+     * omit it and let the capture below take the ambient transaction.
+     */
+    transactionScope?: BounceTransactionScope;
 };
 
 export async function bounceTrack(trackId: string, options: BounceOptions): Promise<boolean> {
+    // Every write below the `await renderTrackOffline` lands after the action's
+    // storage transaction has stopped being ambient, so without a capture they
+    // commit on their own frame — a bounce that destroyed the source clips
+    // survived an abort that should have discarded it, and a multi-track
+    // consolidation persisted track by track instead of as one atomic change.
+    // Captured here, while the transaction is still ambient; `await` outside,
+    // write inside.
+    const scope = options.transactionScope ?? captureAutomergeStorageTransactionScope();
+
     const state = trackStore.value;
     if (!state) {
         return false;
@@ -130,18 +157,20 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     const tracksBefore = structuredClone(freshState.tracks);
 
     if (options.destination === 'replace') {
-        trackStore.set({
-            ...freshState,
-            tracks: freshState.tracks.map((time) => {
-                if (time.id !== trackId) {
-                    return time;
-                }
-                return {
-                    ...time,
-                    clips: [bouncedClip],
-                    devices: options.includeInserts ? [] : time.devices,
-                };
-            }),
+        scope(() => {
+            trackStore.set({
+                ...freshState,
+                tracks: freshState.tracks.map((time) => {
+                    if (time.id !== trackId) {
+                        return time;
+                    }
+                    return {
+                        ...time,
+                        clips: [bouncedClip],
+                        devices: options.includeInserts ? [] : time.devices,
+                    };
+                }),
+            });
         });
     } else {
         const altId = `alt-bounce-${crypto.randomUUID().slice(0, 8)}`;
@@ -162,7 +191,9 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         const insertIndex = freshState.tracks.findIndex((time) => time.id === trackId) + 1;
         const tracks = [...freshState.tracks];
         tracks.splice(insertIndex, 0, newTrack);
-        trackStore.set({ ...freshState, tracks });
+        scope(() => {
+            trackStore.set({ ...freshState, tracks });
+        });
     }
 
     if (options.recordUndoEntry === false) {

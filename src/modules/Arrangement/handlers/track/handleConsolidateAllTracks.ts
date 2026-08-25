@@ -1,3 +1,4 @@
+import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { createHandler } from '#/utils/createHandler';
 import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
@@ -36,6 +37,14 @@ function resolveEligibleTrackIds(): string[] {
 
 export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>({
     execute: async (action) => {
+        // Captured before the loop, while the command's storage transaction is
+        // still ambient: only the first `bounceInPlace` runs before `execute`
+        // crosses its first `await`, so a capture inside `bounceTrack` would
+        // find no ambient transaction from the second track on and every later
+        // bounce would commit on its own frame — outside the atomic commit the
+        // command's undo entry and validators describe.
+        const transactionScope = captureAutomergeStorageTransactionScope();
+
         const trackIds = resolveEligibleTrackIds();
         if (trackIds.length === 0) {
             return { status: 'no-write' };
@@ -47,12 +56,12 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
             // them *below* this command's entry, each holding a whole-`tracks` snapshot
             // taken part-way through the loop — so undoing past this command would put the
             // earlier bounces back rather than continue unwinding.
-            await bounceInPlace(trackId, { recordUndoEntry: false });
+            await bounceInPlace(trackId, { recordUndoEntry: false, transactionScope });
         }
 
-        // A pure read: `bounceInPlace` (via `bounceTrack`) owns every write this
-        // loop produces, so nothing here needs its own Automerge transaction
-        // scope captured across the `await`s above.
+        // A pure read settling the undo payload: `bounceInPlace` (via
+        // `bounceTrack`) owns every write this loop produces, and each of those
+        // writes is already scoped to the command's transaction above.
         const pending = pendingConsolidateSnapshots.get(action);
         if (pending) {
             const settled = captureTrackClipStates(pending.trackIds);
