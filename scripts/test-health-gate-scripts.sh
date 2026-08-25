@@ -216,6 +216,7 @@ const events = workflow.on;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
+const e2e = workflow.jobs?.e2e;
 const gate = workflow.jobs?.gate;
 const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
@@ -374,6 +375,8 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
+expect(unit?.['continue-on-error'] === true, 'unit suite report must remain nonblocking');
+expect(e2e?.['continue-on-error'] === true, 'end-to-end suite report must remain nonblocking');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
 expect(
     Array.isArray(gateNeeds) &&
