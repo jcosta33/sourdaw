@@ -17,6 +17,7 @@ import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TrackStoreState } from '../../stores/trackStore';
 
 type TrackStoreSubscribe = (typeof import('../../stores/trackStore'))['trackStore']['subscribe'];
+type TrackStoreSubscribeReact = (typeof import('../../stores/trackStore'))['trackStore']['subscribeReact'];
 
 const {
     trackStoreMock,
@@ -28,6 +29,7 @@ const {
 } = vi.hoisted(() => ({
     trackStoreMock: (() => {
         const subscribers = new Set<Parameters<TrackStoreSubscribe>[0]>();
+        const reactSubscribers = new Set<Parameters<TrackStoreSubscribeReact>[0]>();
         const mock = {
             value: null as TrackStoreState | null,
             set: vi.fn((value: TrackStoreState | null) => {
@@ -35,11 +37,19 @@ const {
                 for (const callback of subscribers) {
                     callback(value);
                 }
+                for (const listener of reactSubscribers) {
+                    listener();
+                }
             }),
             subscribe: vi.fn<TrackStoreSubscribe>((callback) => {
                 subscribers.add(callback);
                 return () => subscribers.delete(callback);
             }),
+            subscribeReact: vi.fn<TrackStoreSubscribeReact>((listener) => {
+                reactSubscribers.add(listener);
+                return () => reactSubscribers.delete(listener);
+            }),
+            getSnapshot: vi.fn(() => mock.value),
         };
         return mock;
     })(),

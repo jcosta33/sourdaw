@@ -12,6 +12,7 @@ import { renameClip } from '../../../useCases/clipEditing/renameClip';
 import { ClipContextMenu } from '../ClipContextMenu';
 
 type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
+type TrackStoreSubscribeReact = (typeof import('../../../stores/trackStore'))['trackStore']['subscribeReact'];
 
 // useStore reads via getSnapshot(); clipSelectionStore must reflect clipSelectionStore.set() in tests.
 vi.mock('#/infra/store/useStore', () => ({
@@ -25,6 +26,7 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../../stores/trackStore')>();
     const { createTrack } = await import('../../../models/Track');
     const subscribers = new Set<Parameters<TrackStoreSubscribe>[0]>();
+    const reactSubscribers = new Set<Parameters<TrackStoreSubscribeReact>[0]>();
     let value: typeof actual.trackStore.value = {
         tracks: [
             {
@@ -96,10 +98,17 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => {
             for (const callback of subscribers) {
                 callback(value);
             }
+            for (const listener of reactSubscribers) {
+                listener();
+            }
         }),
         subscribe: vi.fn<TrackStoreSubscribe>((callback) => {
             subscribers.add(callback);
             return () => subscribers.delete(callback);
+        }),
+        subscribeReact: vi.fn<TrackStoreSubscribeReact>((listener) => {
+            reactSubscribers.add(listener);
+            return () => reactSubscribers.delete(listener);
         }),
         getSnapshot: vi.fn(() => value),
     };
@@ -224,23 +233,30 @@ describe('ClipContextMenu', () => {
         expect(barrelTrackStore).toBe(definingTrackStore);
     });
 
-    it('notifies track store subscribers until they unsubscribe', async () => {
+    it('keeps both reactive track store subscriber channels on one snapshot', async () => {
         const { trackStore } = await import('../../../stores/trackStore');
         const previous = trackStore.value;
         if (!previous) {
             throw new Error('Expected the track fixture to contain a value');
         }
         const subscriber = vi.fn();
+        const reactSubscriber = vi.fn();
         const unsubscribe = trackStore.subscribe(subscriber);
+        const unsubscribeReact = trackStore.subscribeReact(reactSubscriber);
         const selected = { ...previous, selectedTrackId: 't1' };
 
         trackStore.set(selected);
         expect(subscriber).toHaveBeenCalledOnce();
         expect(subscriber).toHaveBeenCalledWith(selected);
+        expect(reactSubscriber).toHaveBeenCalledOnce();
+        expect(trackStore.getSnapshot()).toBe(selected);
 
         unsubscribe();
+        unsubscribeReact();
         trackStore.set(previous);
         expect(subscriber).toHaveBeenCalledOnce();
+        expect(reactSubscriber).toHaveBeenCalledOnce();
+        expect(trackStore.getSnapshot()).toBe(previous);
     });
 
     it('should render without crashing', () => {
