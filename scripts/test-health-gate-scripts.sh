@@ -186,6 +186,7 @@ const events = workflow.on;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
+const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
 const gate = workflow.jobs?.gate;
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
@@ -209,6 +210,7 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
+    'browser-ai-webgpu',
     'codeql',
     'secrets',
 ];
@@ -343,6 +345,8 @@ expect(
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
 expect(gate?.name === 'Gate', 'stable Gate summary job name must stay exact');
+expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
+expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
