@@ -190,6 +190,10 @@ vi.mock('../../../stores/trackStore', () => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        // yeastStore subscribes to trackStore at module init (via the
+        // Collaboration use-cases importOriginal chain); the box must offer
+        // the subscription surface or suite collection crashes.
+        subscribe: vi.fn(() => () => {}),
     },
 }));
 vi.mock('../../../useCases/clipSelection/toggleClipInSelection', () => ({
@@ -902,6 +906,8 @@ describe('useTimelineInteractions', () => {
             ],
             tempo: 120,
         });
+        // moveClip reports whether the write landed; history only follows a real mutation.
+        mocks.moveClip.mockReturnValue(true);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -936,11 +942,9 @@ describe('useTimelineInteractions', () => {
             tracks: [{ id: 't1', height: 100, clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
             tempo: 120,
         });
-        // duplicateClipCore appends a new clip to the track; simulate by mutating store.
-        mocks.duplicateClipCore.mockImplementation(() => {
-            const s = mocks.trackStoreValue.value as { tracks: { id: string; clips: { id: string }[] }[] };
-            s.tracks[0]!.clips.push({ id: 'copy-1' });
-        });
+        // duplicateClipCore reports whether the copy was created; the undo
+        // entry is keyed on the pre-allocated copy id, not a store scan.
+        mocks.duplicateClipCore.mockReturnValue(true);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {

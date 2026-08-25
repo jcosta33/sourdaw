@@ -112,6 +112,10 @@ export { selectAllClips } from './clipSelection/selectAllClips';
 export { clearClipSelection } from './clipSelection/clearClipSelection';
 export { setMarqueeSelection } from './clipSelection/setMarqueeSelection';
 
+// ── Timeline Interactions ─────────────────────────────────────────────────────
+
+export { cancelActiveTimelineGesture } from './timelineInteractions/cancelActiveTimelineGesture';
+
 // ── Comping ───────────────────────────────────────────────────────────────────
 
 export { addTake } from './comping/addTake';

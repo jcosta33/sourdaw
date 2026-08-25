@@ -8,6 +8,7 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
@@ -20,6 +21,7 @@ import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { addClip } from '../../useCases/clip/addClip';
 import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
 import { moveClip } from '../../useCases/clip/moveClip';
+import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
 import { removeClip } from '../../useCases/clip/removeClip';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
@@ -39,12 +41,15 @@ import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';
 import { rippleMoveClip } from '../../useCases/rippleMove/rippleMoveClip';
 import { setTrackState } from '../../useCases/setTrackState';
 import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
+import { clipDropRejectionReason } from '../../useCases/timelineInteractions/clipDropRejectionReason';
 import { commitInlineAutomationPaint } from '../../useCases/timelineInteractions/commitInlineAutomationPaint';
 import { commitInlineMidiNoteMove } from '../../useCases/timelineInteractions/commitInlineMidiNoteMove';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
+import { isClipDropCompatible } from '../../useCases/timelineInteractions/isClipDropCompatible';
+import { registerTimelineGestureCanceler } from '../../useCases/timelineInteractions/registerTimelineGestureCanceler';
 import { setPlayheadFromClick } from '../../useCases/timelineInteractions/setPlayheadFromClick';
 import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
@@ -106,6 +111,19 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     const rubberBandRef = useRef<{ startX: number; startY: number } | null>(null);
     const [hoverCursor, setHoverCursor] = useState<string | null>(null);
     const lastPresenceBroadcastRef = useRef<number>(0);
+    // Clip id that should become the sole selection on pointer-up if the press
+    // never turned into a drag (pointer-down on a multi-selection member keeps
+    // the selection so the group can be dragged; a plain click collapses it).
+    const pendingCollapseClipIdRef = useRef<string | null>(null);
+    // Per-drag clip metadata captured at drag start: clip types (for track-kind
+    // drop compatibility) and locked membership (locked clips never preview).
+    const dragContextRef = useRef<{ types: Map<string, 'audio' | 'midi'>; locked: Set<string> } | null>(null);
+    // Drop rejection computed during the last preview pass: the reason surfaced
+    // at drop time and the clips excluded from the commit.
+    const dropRejectedRef = useRef<{ reason: string | null; clipIds: Set<string> }>({
+        reason: null,
+        clipIds: new Set<string>(),
+    });
     // Cached canvas bounding rect. getBoundingClientRect() forces a synchronous
     // layout flush, so calling it on every 60+Hz pointer event is expensive
     // (finding #57). We cache it and invalidate on resize / scroll instead.
@@ -146,6 +164,80 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             return { x: 0, y: 0 };
         }
         return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+
+    // ── Gesture cancellation (Escape / window blur / pointer leaving canvas) ──
+
+    // dragState is mirrored into a ref at every setDragState call site (event
+    // handlers, never render) so the registered canceler — a stable closure —
+    // never sees stale state and never trips the no-refs-during-render rule.
+    const dragStateRef = useRef<DragState | null>(null);
+
+    const cancelActiveGesture = (): boolean => {
+        const hadGesture =
+            dragStateRef.current !== null ||
+            slipDragRef.current !== null ||
+            drawDragRef.current !== null ||
+            autoDragRef.current !== null ||
+            noteDragRef.current !== null ||
+            rubberBandRef.current !== null ||
+            loopDragRef.current !== null;
+        if (!hadGesture) {
+            return false;
+        }
+        // Every gesture previews through refs; project truth is only written
+        // at commit (mouse-up). Cancelling therefore just discards the
+        // preview — no history entry, original state already intact.
+        slipDragRef.current = null;
+        drawDragRef.current = null;
+        autoDragRef.current = null;
+        noteDragRef.current = null;
+        rubberBandRef.current = null;
+        loopDragRef.current = null;
+        inlineMidiNotePreviewRef.current = null;
+        clipDragPreviewRef.current = null;
+        previewDirtyFlag.value = true;
+        pendingCollapseClipIdRef.current = null;
+        dragContextRef.current = null;
+        dropRejectedRef.current = { reason: null, clipIds: new Set<string>() };
+        setRubberBand(null);
+        dragStateRef.current = null;
+        setDragState(null);
+        if (canvasRef.current) {
+            canvasRef.current.style.cursor = '';
+        }
+        return true;
+    };
+
+    const cancelGestureRef = useRef<() => boolean>(() => false);
+    useEffect(() => {
+        cancelGestureRef.current = cancelActiveGesture;
+    });
+
+    useEffect(() => {
+        const cancel = (): boolean => cancelGestureRef.current();
+        registerTimelineGestureCanceler(cancel);
+        const handleBlur = (): void => {
+            cancel();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                cancel();
+            }
+        };
+        window.addEventListener('blur', handleBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            registerTimelineGestureCanceler(null);
+            window.removeEventListener('blur', handleBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
+
+    // Pointer leaving the canvas mid-gesture cancels rather than committing at
+    // the last position (audit: arrangement focus-loss cancellation).
+    const handleMouseLeave = (): void => {
+        cancelGestureRef.current();
     };
 
     const getBeatFromX = (x: number): number => canvasXToBeat(x);
@@ -254,7 +346,17 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (event.shiftKey || event.metaKey) {
                 toggleClipInSelection(clipHit.clipId);
             } else {
-                selectClipWithFocus(clipHit.clipId);
+                // Pointer-down on a member of a multi-selection must NOT
+                // collapse the selection — the press may become a drag of the
+                // whole group. Focus the clip now; if the pointer comes back
+                // up without a drag, collapse to it on mouse-up instead.
+                const selectedIds = clipSelectionStore.value?.selectedClipIds ?? [];
+                if (!event.altKey && selectedIds.length > 1 && selectedIds.includes(clipHit.clipId)) {
+                    selectClip(clipHit.clipId);
+                    pendingCollapseClipIdRef.current = clipHit.clipId;
+                } else {
+                    selectClipWithFocus(clipHit.clipId);
+                }
             }
         }
 
@@ -267,6 +369,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         if (event.altKey && clipHit && dragMode === 'move') {
             dragMode = 'duplicate';
         }
+        // Only a plain body press is a click-selection candidate; a trim,
+        // stretch, or duplicate gesture released in place keeps the selection.
+        if (dragMode !== 'move') {
+            pendingCollapseClipIdRef.current = null;
+        }
 
         const drag = beginClipDrag(x, y, dragMode);
         if (drag) {
@@ -277,6 +384,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const state = trackStore.value;
             if (state) {
                 const originals = new Map<string, ClipPreviewPosition>();
+                const types = new Map<string, 'audio' | 'midi'>();
+                const locked = new Set<string>();
                 for (const time of state.tracks) {
                     for (const clip of time.clips) {
                         if (allIds.includes(clip.id)) {
@@ -285,12 +394,22 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                 startBeat: clip.startBeat,
                                 endBeat: clip.endBeat,
                             });
+                            types.set(clip.id, clip.type);
+                            if (clip.locked) {
+                                locked.add(clip.id);
+                            }
                         }
                     }
                 }
-                clipDragPreviewRef.current = { positions: new Map(originals), originals };
+                // Locked clips never enter the preview: they stay put for the
+                // whole gesture rather than being silently skipped at commit.
+                const positions = new Map([...originals].filter(([id]) => !locked.has(id)));
+                clipDragPreviewRef.current = { positions, originals };
+                dragContextRef.current = { types, locked };
+                dropRejectedRef.current = { reason: null, clipIds: new Set<string>() };
                 previewDirtyFlag.value = true;
             }
+            dragStateRef.current = drag;
             setDragState(drag);
             return;
         }
@@ -498,27 +617,71 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const selectedIds = clipSelectionStore.value?.selectedClipIds ?? [];
             const preview = clipDragPreviewRef.current;
             if (preview) {
+                const context = dragContextRef.current;
+                const locked = context?.locked ?? new Set<string>();
+                const types = context?.types ?? new Map<string, 'audio' | 'midi'>();
+                const rejected = new Set<string>();
+                let rejectReason: string | null = null;
+
                 const primaryOrig = preview.originals.get(dragState.clipId);
+                const anchorIndex = primaryOrig ? tracks.findIndex((track) => track.id === primaryOrig.trackId) : -1;
+                // Per-clip track offsets: every dragged clip keeps its distance
+                // from the drag anchor's track; an offset that would leave the
+                // track list clamps to the nearest edge track.
+                const destinationFor = (orig: ClipPreviewPosition): (typeof tracks)[number] => {
+                    const origIndex = tracks.findIndex((track) => track.id === orig.trackId);
+                    if (origIndex < 0 || anchorIndex < 0) {
+                        return targetTrack;
+                    }
+                    const offset = trackHit.index - anchorIndex;
+                    const clamped = Math.max(0, Math.min(tracks.length - 1, origIndex + offset));
+                    return tracks[clamped]!;
+                };
+
+                const previewClip = (id: string, startBeat: number): void => {
+                    const orig = preview.originals.get(id);
+                    if (!orig) {
+                        return;
+                    }
+                    if (locked.has(id)) {
+                        // Locked clips stay put for the whole gesture.
+                        rejected.add(id);
+                        rejectReason = rejectReason ?? 'Locked clips stay in place';
+                        return;
+                    }
+                    const destination = destinationFor(orig);
+                    const clipType = types.get(id);
+                    if (clipType && !isClipDropCompatible(clipType, destination.kind)) {
+                        // Rejected destination: hold the clip at its origin so
+                        // the preview never shows it landing somewhere it can't.
+                        preview.positions.set(id, { ...orig });
+                        rejected.add(id);
+                        rejectReason = rejectReason ?? clipDropRejectionReason(clipType, destination.kind);
+                        return;
+                    }
+                    const duration = orig.endBeat - orig.startBeat;
+                    preview.positions.set(id, {
+                        trackId: destination.id,
+                        startBeat,
+                        endBeat: startBeat + duration,
+                    });
+                };
+
                 if (selectedIds.length > 1 && selectedIds.includes(dragState.clipId) && primaryOrig) {
                     const beatDelta = snappedBeat - primaryOrig.startBeat;
                     for (const id of selectedIds) {
                         const orig = preview.originals.get(id);
                         if (orig) {
-                            const newStart = Math.max(0, orig.startBeat + beatDelta);
-                            preview.positions.set(id, {
-                                trackId: targetTrack.id,
-                                startBeat: newStart,
-                                endBeat: newStart + (orig.endBeat - orig.startBeat),
-                            });
+                            previewClip(id, Math.max(0, orig.startBeat + beatDelta));
                         }
                     }
                 } else if (primaryOrig) {
-                    const duration = primaryOrig.endBeat - primaryOrig.startBeat;
-                    preview.positions.set(dragState.clipId, {
-                        trackId: targetTrack.id,
-                        startBeat: snappedBeat,
-                        endBeat: snappedBeat + duration,
-                    });
+                    previewClip(dragState.clipId, snappedBeat);
+                }
+
+                dropRejectedRef.current = { reason: rejectReason, clipIds: rejected };
+                if (canvasRef.current) {
+                    canvasRef.current.style.cursor = rejected.has(dragState.clipId) ? 'not-allowed' : 'grabbing';
                 }
                 previewDirtyFlag.value = true;
             }
@@ -728,40 +891,81 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             clipDragPreviewRef.current = null;
             previewDirtyFlag.value = true;
 
-            if (preview && preview.positions.size > 0) {
-                const primaryPos = preview.positions.get(dragClipId);
-                const primaryOrig = preview.originals.get(dragClipId);
+            const primaryPos = preview?.positions.get(dragClipId);
+            const primaryOrig = preview?.originals.get(dragClipId);
 
+            // A plain press on a multi-selection member that never became a
+            // drag collapses the selection to that clip on release (the press
+            // itself preserved the selection so the group could be dragged).
+            const pendingCollapse = pendingCollapseClipIdRef.current;
+            pendingCollapseClipIdRef.current = null;
+            const dragMoved =
+                !!primaryPos &&
+                !!primaryOrig &&
+                (primaryPos.trackId !== primaryOrig.trackId ||
+                    !Object.is(primaryPos.startBeat, primaryOrig.startBeat) ||
+                    !Object.is(primaryPos.endBeat, primaryOrig.endBeat));
+
+            // Surface a rejected drop (locked clip, incompatible track kind) at
+            // drop time; rejected clips were held at their origin in the preview
+            // and are excluded from the commit below.
+            const dropRejected = dropRejectedRef.current;
+            dropRejectedRef.current = { reason: null, clipIds: new Set<string>() };
+            dragContextRef.current = null;
+
+            if (pendingCollapse && !dragMoved) {
+                selectClipWithFocus(pendingCollapse);
+                dragStateRef.current = null;
+                setDragState(null);
+                if (canvasRef.current) {
+                    canvasRef.current.style.cursor = '';
+                }
+                return;
+            }
+            if (dropRejected.reason) {
+                notifyUser(dropRejected.reason, 'warning');
+            }
+
+            if (preview && preview.positions.size > 0) {
                 if (dragMode === 'duplicate') {
-                    // Alt+drag duplicate: originals stay, create copies at drop positions (R-B1)
-                    const copiedIds: string[] = [];
+                    // Alt+drag duplicate: originals stay, create copies at drop
+                    // positions (R-B1) — on the dragged-to track, as previewed.
+                    const copies: { copyId: string; sourceId: string; trackId: string; startBeat: number }[] = [];
                     for (const [clipId, pos] of preview.positions) {
-                        duplicateClipCore(clipId, () => pos.startBeat);
-                        // Track created clip for undo — duplicateClipCore adds to the track
-                        const state = trackStore.value;
-                        if (state) {
-                            for (const time of state.tracks) {
-                                if (time.id === pos.trackId) {
-                                    const created = time.clips.at(-1);
-                                    if (created && created.id !== clipId) {
-                                        copiedIds.push(created.id);
-                                    }
-                                }
-                            }
+                        if (dropRejected.clipIds.has(clipId)) {
+                            continue;
+                        }
+                        // Pre-allocate the copy's id so undo removes exactly the
+                        // created clip, never an array-position guess.
+                        const copyId = prepareDuplicateClipTargetId();
+                        const created = duplicateClipCore({
+                            clipId,
+                            targetClipId: copyId,
+                            destinationTrackId: pos.trackId,
+                            computeStartBeat: () => pos.startBeat,
+                        });
+                        if (created) {
+                            copies.push({ copyId, sourceId: clipId, trackId: pos.trackId, startBeat: pos.startBeat });
                         }
                     }
-                    if (copiedIds.length > 0) {
+                    if (copies.length > 0) {
                         pushUndoEntry(
-                            `Duplicate ${copiedIds.length} clip${copiedIds.length > 1 ? 's' : ''}`,
+                            `Duplicate ${copies.length} clip${copies.length > 1 ? 's' : ''}`,
                             () => {
-                                for (const id of copiedIds) {
-                                    removeClip(id);
+                                for (const copy of copies) {
+                                    removeClip(copy.copyId);
                                 }
                             },
                             () => {
-                                // Redo: re-run duplication at saved positions
-                                for (const [clipId, pos] of preview.positions) {
-                                    duplicateClipCore(clipId, () => pos.startBeat);
+                                // Redo recreates exactly the copies undo removed
+                                // (same ids, same destinations).
+                                for (const copy of copies) {
+                                    duplicateClipCore({
+                                        clipId: copy.sourceId,
+                                        targetClipId: copy.copyId,
+                                        destinationTrackId: copy.trackId,
+                                        computeStartBeat: () => copy.startBeat,
+                                    });
                                 }
                             }
                         );
@@ -770,10 +974,25 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
                     let usedRipple = false;
                     let ripplePlan: ReturnType<typeof planRippleMove> = null;
+                    // History is pushed only for clips whose write actually
+                    // landed — a rejected or no-op move mints no entry.
+                    const moved: {
+                        clipId: string;
+                        fromTrackId: string;
+                        fromStartBeat: number;
+                        toTrackId: string;
+                        toStartBeat: number;
+                    }[] = [];
 
                     for (const [clipId, pos] of preview.positions) {
                         const orig = preview.originals.get(clipId);
-                        if (rippleEnabled && orig && orig.trackId === pos.trackId) {
+                        if (!orig) {
+                            continue;
+                        }
+                        if (orig.trackId === pos.trackId && Object.is(orig.startBeat, pos.startBeat)) {
+                            continue;
+                        }
+                        if (rippleEnabled && orig.trackId === pos.trackId) {
                             const state = trackStore.value;
                             if (state) {
                                 const track = state.tracks.find((time) => time.id === pos.trackId);
@@ -796,92 +1015,128 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                             plan: ripplePlan,
                                         });
                                         usedRipple = true;
+                                        moved.push({
+                                            clipId,
+                                            fromTrackId: orig.trackId,
+                                            fromStartBeat: orig.startBeat,
+                                            toTrackId: pos.trackId,
+                                            toStartBeat: pos.startBeat,
+                                        });
                                         continue;
                                     }
                                 }
                             }
                         }
-                        moveClip(clipId, pos.trackId, pos.startBeat, orig?.startBeat);
+                        const didMove = moveClip(clipId, pos.trackId, pos.startBeat, orig.startBeat);
+                        if (didMove) {
+                            moved.push({
+                                clipId,
+                                fromTrackId: orig.trackId,
+                                fromStartBeat: orig.startBeat,
+                                toTrackId: pos.trackId,
+                                toStartBeat: pos.startBeat,
+                            });
+                        }
                     }
 
-                    if (primaryPos && primaryOrig) {
-                        const { trackId: newTrackId, startBeat: newStart } = primaryPos;
-                        if (newStart !== primaryOrig.startBeat || newTrackId !== primaryOrig.trackId) {
-                            if (usedRipple && ripplePlan) {
-                                // Ripple move undo: restore clip and all shifted clips
-                                const savedPlan = ripplePlan;
-                                const savedDuration = origEnd - origStart;
-                                pushUndoEntry(
-                                    'Move clip (ripple)',
-                                    () => {
-                                        // Restore moved clip to original position
-                                        moveClip(dragClipId, origTrackId, origStart);
-                                        // Restore ripple-shifted clips to original positions
-                                        const state2 = getTrackStoreState();
-                                        if (state2) {
-                                            const allShifted = [
-                                                ...savedPlan.gapClosedClips,
-                                                ...savedPlan.destinationOpenedClips,
-                                            ];
-                                            const shiftMap = new Map(
-                                                allShifted.map((state1) => [state1.clipId, state1])
+                    if (moved.length > 0) {
+                        if (usedRipple && ripplePlan) {
+                            // Ripple move undo: restore clip and all shifted clips
+                            const savedPlan = ripplePlan;
+                            const savedDuration = origEnd - origStart;
+                            const movedClips = moved;
+                            pushUndoEntry(
+                                'Move clip (ripple)',
+                                () => {
+                                    // Restore every moved clip to its original position
+                                    for (const movedClip of movedClips) {
+                                        moveClip(movedClip.clipId, movedClip.fromTrackId, movedClip.fromStartBeat);
+                                    }
+                                    // Restore ripple-shifted clips to original positions
+                                    const state2 = getTrackStoreState();
+                                    if (state2) {
+                                        const allShifted = [
+                                            ...savedPlan.gapClosedClips,
+                                            ...savedPlan.destinationOpenedClips,
+                                        ];
+                                        const shiftMap = new Map(allShifted.map((state1) => [state1.clipId, state1]));
+                                        const updatedTracks = state2.tracks.map((time) => {
+                                            if (time.id !== origTrackId) {
+                                                return time;
+                                            }
+                                            return {
+                                                ...time,
+                                                clips: time.clips.map((context) => {
+                                                    const orig2 = shiftMap.get(context.id);
+                                                    if (!orig2) {
+                                                        return context;
+                                                    }
+                                                    return {
+                                                        ...context,
+                                                        startBeat: orig2.origStartBeat,
+                                                        endBeat: orig2.origEndBeat,
+                                                    };
+                                                }),
+                                            };
+                                        });
+                                        setTrackState({ ...state2, tracks: updatedTracks });
+                                    }
+                                },
+                                () => {
+                                    const state2 = trackStore.value;
+                                    if (state2) {
+                                        const primaryMove = movedClips.find(
+                                            (movedClip) => movedClip.clipId === dragClipId
+                                        );
+                                        if (primaryMove) {
+                                            const track2 = state2.tracks.find(
+                                                (time) => time.id === primaryMove.toTrackId
                                             );
-                                            const updatedTracks = state2.tracks.map((time) => {
-                                                if (time.id !== origTrackId) {
-                                                    return time;
-                                                }
-                                                return {
-                                                    ...time,
-                                                    clips: time.clips.map((context) => {
-                                                        const orig2 = shiftMap.get(context.id);
-                                                        if (!orig2) {
-                                                            return context;
-                                                        }
-                                                        return {
-                                                            ...context,
-                                                            startBeat: orig2.origStartBeat,
-                                                            endBeat: orig2.origEndBeat,
-                                                        };
-                                                    }),
-                                                };
-                                            });
-                                            setTrackState({ ...state2, tracks: updatedTracks });
-                                        }
-                                    },
-                                    () => {
-                                        const state2 = trackStore.value;
-                                        if (state2) {
-                                            const track2 = state2.tracks.find((time) => time.id === newTrackId);
                                             const clip2 = track2?.clips.find((context) => context.id === dragClipId);
                                             const dur = clip2 ? clip2.endBeat - clip2.startBeat : savedDuration;
                                             const redoPlan = planRippleMove({
-                                                trackId: newTrackId,
+                                                trackId: primaryMove.toTrackId,
                                                 clipId: dragClipId,
-                                                oldStartBeat: origStart,
-                                                newStartBeat: newStart,
+                                                oldStartBeat: primaryMove.fromStartBeat,
+                                                newStartBeat: primaryMove.toStartBeat,
                                                 clipDuration: dur,
                                             });
                                             if (redoPlan) {
                                                 rippleMoveClip({
-                                                    trackId: newTrackId,
+                                                    trackId: primaryMove.toTrackId,
                                                     clipId: dragClipId,
-                                                    newStartBeat: newStart,
+                                                    newStartBeat: primaryMove.toStartBeat,
                                                     clipDuration: dur,
                                                     plan: redoPlan,
                                                 });
                                             } else {
-                                                moveClip(dragClipId, newTrackId, newStart);
+                                                moveClip(dragClipId, primaryMove.toTrackId, primaryMove.toStartBeat);
                                             }
                                         }
                                     }
-                                );
-                            } else {
-                                pushUndoEntry(
-                                    'Move clip',
-                                    () => moveClip(dragClipId, origTrackId, origStart),
-                                    () => moveClip(dragClipId, newTrackId, newStart)
-                                );
-                            }
+                                    // Redo every non-primary moved clip.
+                                    for (const movedClip of movedClips) {
+                                        if (movedClip.clipId !== dragClipId) {
+                                            moveClip(movedClip.clipId, movedClip.toTrackId, movedClip.toStartBeat);
+                                        }
+                                    }
+                                }
+                            );
+                        } else {
+                            const movedClips = moved;
+                            pushUndoEntry(
+                                movedClips.length > 1 ? `Move ${movedClips.length} clips` : 'Move clip',
+                                () => {
+                                    for (const movedClip of movedClips) {
+                                        moveClip(movedClip.clipId, movedClip.fromTrackId, movedClip.fromStartBeat);
+                                    }
+                                },
+                                () => {
+                                    for (const movedClip of movedClips) {
+                                        moveClip(movedClip.clipId, movedClip.toTrackId, movedClip.toStartBeat);
+                                    }
+                                }
+                            );
                         }
                     }
                 } else if (dragMode === 'trim-start' && primaryPos) {
@@ -907,6 +1162,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 }
             }
 
+            dragStateRef.current = null;
             setDragState(null);
             if (canvasRef.current) {
                 canvasRef.current.style.cursor = '';
@@ -1036,6 +1292,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
+        handleMouseLeave,
         handleDoubleClick,
         handleContextMenu,
         handlePointerDown,
