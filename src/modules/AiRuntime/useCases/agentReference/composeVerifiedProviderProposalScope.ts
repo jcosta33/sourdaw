@@ -27,8 +27,16 @@ export function composeVerifiedProviderProposalScope(input: {
     workflowCapabilityId: WorkflowCapabilityId | undefined;
     workflowScope: AgentRunScope | undefined;
 }): AgentRunScope | undefined {
+    const applicationProtectedTargetIds = getApplicationProtectedObjects({
+        actions: input.actions,
+        context: input.context,
+        prompt: input.prompt,
+        workflowCapabilityId: input.workflowCapabilityId,
+    }).map((object) => object.id);
     if (input.workflowScope !== undefined) {
-        return structuredClone(input.workflowScope);
+        const scope = structuredClone(input.workflowScope);
+        scope.protectedTargetIds = uniqueIds([...applicationProtectedTargetIds, ...scope.protectedTargetIds]);
+        return scope;
     }
     const resolvedTargetIds = input.compilerEvidence?.providerKnownTargetIds;
     if (resolvedTargetIds === undefined) {
@@ -38,12 +46,7 @@ export function composeVerifiedProviderProposalScope(input: {
     const scope: AgentRunScope = {
         targetIds: [...resolvedTargetIds],
         targetRanges: [],
-        protectedTargetIds: getApplicationProtectedObjects({
-            actions: input.actions,
-            context: input.context,
-            prompt: input.prompt,
-            workflowCapabilityId: input.workflowCapabilityId,
-        }).map((object) => object.id),
+        protectedTargetIds: applicationProtectedTargetIds,
         protectedRanges: [],
     };
     const mutedDeletionScope = getMutedEmptyTrackDeletionScope(input.prompt, input.context);

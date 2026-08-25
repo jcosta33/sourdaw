@@ -196,6 +196,39 @@ function createBulkInsertionContext(): ProjectContext {
     };
 }
 
+function createDrumRoutingContext(): ProjectContext {
+    const createTrack = (id: string, name: string, kind: 'audio' | 'bus' = 'audio') => ({
+        id,
+        name,
+        kind,
+        muted: false,
+        soloed: false,
+        soloSafe: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        automationMode: 'read' as const,
+        outputId: 'master',
+        clipCount: 0,
+        deviceCount: 0,
+        clips: [],
+        devices: [],
+        sends: [],
+    });
+    return {
+        ...baseContext,
+        tracks: [
+            createTrack('track-kick', 'Kick'),
+            createTrack('track-snare', 'Snare'),
+            createTrack('track-hats', 'Hats'),
+            createTrack('track-room', 'Drum Room'),
+            createTrack('track-parallel', 'Parallel Compression Return'),
+            createTrack('track-bass', 'Bass DI'),
+            createTrack('bus-drums', 'Drum Bus', 'bus'),
+        ],
+    };
+}
+
 type CompletePlanOutcome = {
     status: 'complete';
     toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
@@ -611,6 +644,57 @@ describe('parsePromptToActions', () => {
             runId: 'run-bulk-protections',
         });
         expect(compiled.commandBatch.authority.scope.protectedTargetIds).toEqual(protectedTargetIds);
+    });
+
+    it('unions explicit protections into exact application-resolved workflow authority', async () => {
+        const context = createDrumRoutingContext();
+        const prompt =
+            'Route every drum track except the parallel-compression return into the Drum Bus, and keep Bass DI unchanged.';
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectWorkflowCapability', arguments: { capabilityId: 'drum-routing' } },
+                { name: 'setTrackOutput', arguments: { trackId: 'track-kick', outputId: 'bus-drums' } },
+                { name: 'setTrackOutput', arguments: { trackId: 'track-snare', outputId: 'bus-drums' } },
+                { name: 'setTrackOutput', arguments: { trackId: 'track-hats', outputId: 'bus-drums' } },
+                { name: 'setTrackOutput', arguments: { trackId: 'track-room', outputId: 'bus-drums' } },
+            ])
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-workflow-protections');
+        const workflowTargetIds = ['bus-drums', 'track-kick', 'track-snare', 'track-hats', 'track-room'];
+        const protectedTargetIds = ['track-bass', 'track-parallel'];
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.providerProposal?.scope).toEqual({
+            targetIds: workflowTargetIds,
+            targetRanges: [],
+            protectedTargetIds,
+            protectedRanges: [],
+        });
+        const confirmation = describePendingActionConfirmation({
+            actions: result.actions,
+            context,
+            prompt,
+            workflowCapabilityId: result.workflowCapabilityId,
+        });
+        expect(confirmation.protectedUnchanged.map((object) => object.id)).toEqual(protectedTargetIds);
+        registerHandlerMap(getArrangementHandlers());
+        const compiled = compilePlannedActionCommandBatch({
+            actions: result.actions,
+            actionLabels: confirmation.actionLabels,
+            autoCommit: false,
+            context,
+            group: { groupId: 'workflow-protections', groupLabel: 'Workflow protections' },
+            intent: prompt,
+            projectRevision: 'revision-workflow-protections',
+            protectedTargetIds: confirmation.protectedUnchanged.map((object) => object.id),
+            runId: 'run-workflow-protections',
+        });
+        expect([...compiled.commandBatch.authority.scope.targetIds].sort()).toEqual([...workflowTargetIds].sort());
+        expect(compiled.commandBatch.authority.scope.targetRanges).toEqual([]);
+        expect(compiled.commandBatch.authority.scope.protectedTargetIds).toEqual(protectedTargetIds);
+        expect(compiled.commandBatch.authority.scope.protectedRanges).toEqual([]);
     });
 
     it('materializes compiler-owned binding scope and preserves its action graph', async () => {
