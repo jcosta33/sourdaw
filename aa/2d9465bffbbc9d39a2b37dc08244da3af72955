@@ -1,0 +1,28 @@
+server/package.json
+  s_a40848e8f8cca9::t_e513fb2d07b2ce 8
+  s_a40848e8f8cca9::t_b6584822b7f1f7 17-18
+server/vitest.config.mjs
+  s_a40848e8f8cca9::t_e513fb2d07b2ce 1-9
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_a40848e8f8cca9::t_b6584822b7f1f7 259,270
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_a40848e8f8cca9::t_b6584822b7f1f7 1,180
+server/package-lock.json
+  s_a40848e8f8cca9::t_4506743d2321f4 15-16,461-789,1150-1153,1156-1162,1164-1165,1168-1171,1174-1396,1402-1882,1944-2128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "aa2d9465bffbbc9d39a2b37dc08244da3af72955",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
