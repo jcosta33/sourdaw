@@ -1,0 +1,205 @@
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_ace1a9d336ede4 1,3-15,17-19,152-161,163-516,518-519,524,529-549,561-574,576-577,582,587-589,593-594,604-605,608-633,635-642,644-655,657-704,707,710,715,720-728,737-740,743-744,746-754,757-758,763,768-780,790,793,795-798,801-808,811,819,823,825-828,837-844,847,849,855,859,861-864,873-876,879-880,882-907,910,916,921-923,925-999,1001,1013,1015,1021,1026-1034,1037-1046,1058,1060,1066,1071-1079,1082-1091,1100,1103-1130,1132,1138,1143-1153,1162,1166-1175,1178,1186,1191-1193,1195-1206,1211,1220-1223,1226-1252,1254,1260,1263-1280,1287-1289,1293,1295,1312-1314,1316-1322,1331-1334,1337-1391,1393-1420,1422-1429,1431-1466,1471-1476,1479-1505,1507,1509-1542,1545-1576,1578-1579,1583,1588-1640,1642,1644-4337
+.github/workflows/health-gates.yml
+  s_a40848e8f8cca9::t_7f3cee2e9f4419 83-86
+crates/daw-engine/src/lib.rs
+  s_a40848e8f8cca9::t_2face02fece621 738,968-981,991-995,1001,1040,1071-1074,1103-1115
+crates/daw-engine/src/scheduler.rs
+  s_a40848e8f8cca9::t_e082fc0e8eea73 17-18,520-584,588,591-696,698-813,983-986,988-990,1057,1059,1237-1249,1256,1275,1299-1300,1305,1315,1326,1334-1337,1386-1389,1501-1504,1547-1556,1569,1605-1607,1609-1648,1681,1687,1696-1700,1704-1715,1717-1725,1728,1730-1735,1794-1797,1802-1804,1987,1989,1997,1999,2035-2042,2063,2141,2143-2145,2148,2150,2161,2165-2168,2934-3317,3326-3329,3332-3335,3426,3429-3432,3769-3829
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_a40848e8f8cca9::t_46827bf736b6fc 21,166-195,203-217,227-232,234-267,269-272,927-1031
+crates/sourdaw-native/src/commands/graph.rs
+  s_a40848e8f8cca9::t_7fcbeb340be6aa 123,935-944,953,955-956,2959-2965,2967-2982,2985-3007,3009-3018,3020-3055,3058-3064,3069-3081,3084-3086,3093,3099-3100
+crates/sourdaw-native/src/commands/plugins.rs
+  s_a40848e8f8cca9::t_f7207d5ae41323 12,613-632,717-725,735,742-751,814-872,2244-2393
+public/legal/DEPENDENCY-LICENSES.txt
+  s_a40848e8f8cca9::t_137323fab96373 9
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_7af2758542ea1f 130,312,932,1203,1206-1211,1216,1281,1573-1578,1738-1739,1743-1744,1748-1749
+scripts/checkVitestCollectionScope.ts
+  s_a40848e8f8cca9::t_2a54475ff6b80d 15,23-30,37,46,57-58,60-67,124,126,132-153,225,227-228,244-292
+src/modules/AiGeneration/presentations/views/__tests__/PatternBrowser.spec.tsx
+  s_a40848e8f8cca9::t_0e96443fd76532 6-7,50-53
+src/modules/AiRuntime/models/ActionCommandGraph.ts
+  s_a40848e8f8cca9::t_3ec7cfe08601d6 1-8
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_e60ce12f1ee3a6 1,16-17,26-27
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  s_a40848e8f8cca9::t_1c53361aa83f93 1-393
+src/modules/AiRuntime/models/__tests__/SemanticCommandList.spec.ts
+  s_a40848e8f8cca9::t_f318472297615a 1-67
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_48978310ae408c 12
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_a28babc0f03c52 6,63-97
+src/modules/AiRuntime/useCases/__tests__/compilePendingActionCommandEnvelopes.spec.ts
+  s_a40848e8f8cca9::t_cc8e4bb231d1a7 12-32,112-128
+src/modules/AiRuntime/useCases/__tests__/compilePlannedActionCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_2102188415a710 6-10,81,148-215
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_c9c8b05de5876c 69-91
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_ad1cb0cfa23ee7 452-607
+src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts
+  s_a40848e8f8cca9::t_c0c90ba5566b86 234-388
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_aed4323ea88c31 3-6,9-11,13-14,31,101-104,109-251,386-456,471-472,494-496,582-664
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_3884c160b9df3b 4,93-341
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_a40848e8f8cca9::t_f5ed0e9398cbe0 499-535
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_b4c4293c4602b1 7-8,99,125-156,3580-3581,3616-3623,3651-3672,3735-3748,3769,3771-3772,3774,3782,4028,4040-4059,4424,4565-4581,4690-4700,4725-4727,4741
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_d45338082b4022 17,34,62-66,77-81,84-86
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_88c2b5f5a8d2f5 282-285
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_a40848e8f8cca9::t_0bc7707b88d635 3-4,130,141
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_0a744efe15f5c7 8-9,710-711
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_7cbe92259d116e 2,6-13,21,40-46,49,55,61-62,69,135-142,156,174,178,183,191-192,197,208,219-223,243-283,285-446,449-518,521-523,528-531,536,540-572,574-580,583-638,640-692,694-741,775-777,779-781,783,791-794,796,813-815,817-822,825,827-837,841-856,858,861-863,866,874,880,885-887,890,892,905-922,924-926,928-940,948-956,959,966,968-971,975,977-987,989-992,994,997-1004,1008,1013,1017,1019,1025-1026,1046
+src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts
+  s_a40848e8f8cca9::t_ce7006e8d990dd 7-8,10,18-45
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_a40848e8f8cca9::t_7084a9b4c1372f 8,15,334,339-363,372
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_dc1dcbc774fd25 5-6,15,36
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_3ab50082f7ffe8 1,112-114
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_d33d4712f3b2b2 9,91,624-643,646-648,654-657
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_a40848e8f8cca9::t_71930f8af77cfd 26-27,49-66,185,189-194
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_d6b3feb7df4d11 21,291-311,540,587,653,711-714
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_786e68ab9f9d0b 1-4,6,17,28-44,82-89,103-150,158-162,171,209,212,225-240,268-282,287-289,297-306,310-320,322-334,341-361,365-377,384-389,392-491,493-541,544,549-550,554-604
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_a40848e8f8cca9::t_c3049bdec87e18 3-4,22-27,34-42,51,59-64,106-107,194-195,211-217
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_a40848e8f8cca9::t_8322b432ea31f8 1830,1933-1940
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_a40848e8f8cca9::t_0b7e500e2b2fe7 6-7,34
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_a40848e8f8cca9::t_288b1bb129c6f1 6-7,195
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_a40848e8f8cca9::t_4b462b29aa7731 7,326-354,357-358,452,484
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_a40848e8f8cca9::t_ef2b0e4d1cfd49 11,22,127-170,247,703,718,759,881,892,907,1090-1091,1114,1156,1178,1198
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_a40848e8f8cca9::t_f081cb78834267 12-13,47-50,80,95,97
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_4c3f0d9e8dd048 3-4,33-36
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_a40848e8f8cca9::t_e211e3f089236c 53-68
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_a40848e8f8cca9::t_9ce2f392d27c25 134-157
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_7b3291699242ac 2175,2199-2206,2212-2221,2335,2381-2401
+src/modules/Command/useCases/__tests__/getAppActionStaticAuthority.spec.ts
+  s_a40848e8f8cca9::t_9ee438dc3a20ae 1-44
+src/modules/Command/useCases/__tests__/getExecutableAppActionGroundingRules.spec.ts
+  s_a40848e8f8cca9::t_bf32f9c3eb98ab 21-150,196-198
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  s_a40848e8f8cca9::t_75199fae36ff19 1-10,19-27,95-101,133-137,303,387-388
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_4a4b1fe3ec3da4 20,40-52,1956,2020-2027,2055-2064,2354-2674
+src/modules/Command/useCases/getAppActionStaticAuthority.ts
+  s_a40848e8f8cca9::t_afeca73bfb67a7 1-33
+src/modules/Command/useCases/getExecutableAppActionGroundingRules.ts
+  s_a40848e8f8cca9::t_736cefeadb27a1 4,15-16,29-30
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_073b4b22b7cd91 3-8,39-40
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_e0b64cab64c347 27
+src/modules/Command/useCases/migrateLegacyAppActionToVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_fcfc84a3a58ef7 11,29
+src/modules/Command/useCases/redo.ts
+  s_a40848e8f8cca9::t_1c8278204b22c8 1-2,21-24,175-176,195-196
+src/modules/CommandInterface/useCases/__tests__/selectAllClips.spec.ts
+  s_a40848e8f8cca9::t_7fe409711c3e65 3-4,21
+src/modules/CrdtDocument/useCases/projection/__tests__/projectMixStateSlots.spec.ts
+  s_a40848e8f8cca9::t_a4f77a3607ed34 13-14,32
+src/modules/CrdtDocument/useCases/projection/__tests__/projectModulationSlot.spec.ts
+  s_a40848e8f8cca9::t_4b7fa519f8414b 8-9,19
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_a40848e8f8cca9::t_cda8de026b6f4b 5-6,26
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_a40848e8f8cca9::t_0e376cac016608 4-5,115-118
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  s_a40848e8f8cca9::t_96c2190f20a6c0 3-4,9-14,28-36,279,283-288,296-297,319,326,329-330,335-336,344,347,349-354,357-358,370,373,375-380
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_b90babbb5f330b 116,133,152,175,186,202,230,277,295
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_a7b2cac1cc3a3a 21-23,49,70-76,105,113,273,283,301
+src/modules/Project/useCases/__tests__/getDurableProjectOwnerId.spec.ts
+  s_a40848e8f8cca9::t_fd66e9c8b543ac 1-73
+src/modules/Project/useCases/createFreshProjectMetadata.ts
+  s_a40848e8f8cca9::t_7d7cf666c0d725 24
+src/modules/Project/useCases/getDurableProjectOwnerId.ts
+  s_a40848e8f8cca9::t_ea6b79156d561a 1-12
+src/modules/Project/useCases/index.ts
+  s_a40848e8f8cca9::t_d6bf099ffa129e 29
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.spec.ts
+  s_a40848e8f8cca9::t_c1927af56c5788 234,250-251,253,255,260-274
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_a40848e8f8cca9::t_e519fd3eeec598 19,303-364
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_a40848e8f8cca9::t_bb46a1c3942e27 325-327
+src/modules/Project/useCases/projectPersistence/migrateActiveProjectIdentity.ts
+  s_a40848e8f8cca9::t_67d9ddb10bbf26 4,67-74,94
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_a40848e8f8cca9::t_336ebc15b53692 113,115-126,135-138
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_a40848e8f8cca9::t_7d7a9d5ba439e2 152
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_34026c60a57e10 9-10,50
+src/modules/Transport/useCases/scheduling/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_2dca634972a01b 14-17
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_14c6650e0368e2 22,24
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_a40848e8f8cca9::t_650745b15242a1 13,15
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_f4edd2a110d691 35,37
+src/modules/WorkspaceShell/presentations/__tests__/expectExternalProjectLink.ts
+  s_a40848e8f8cca9::t_31bd65c1f3b480 1-7
+src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx
+  s_a40848e8f8cca9::t_6d556b98a09dd9 3-4,9-10,73-74,78-90,92-103,108,115
+src/modules/WorkspaceShell/presentations/components/MobileGate.tsx
+  s_a40848e8f8cca9::t_87f49dce8e7dac 3-4,8,10,135-158
+src/modules/WorkspaceShell/presentations/components/__tests__/AlphaNoticeDialog.spec.tsx
+  s_a40848e8f8cca9::t_42a7a04491f27e 4,27,30-37,40,42-43
+src/modules/WorkspaceShell/presentations/components/__tests__/MobileGate.spec.tsx
+  s_a40848e8f8cca9::t_79d4a419ba7f5a 4,90,96-103
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_ffefb2f5761bbb 474-542
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_7e956f665b7806 68,327,369
+src/modules/WorkspaceShell/presentations/projectLinks.ts
+  s_a40848e8f8cca9::t_3ece00a5430553 1-5
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_a40848e8f8cca9::t_b2fc05990b05bf 3,12-18,30,245-281
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_a40848e8f8cca9::t_56941ba47a4adb 1,6,266-289
+vite.config.ts
+  s_a40848e8f8cca9::t_b4c6ec77f42552 73-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "cfd049360a469467e4764da947d096238127c88f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
