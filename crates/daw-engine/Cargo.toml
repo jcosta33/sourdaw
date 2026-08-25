@@ -10,6 +10,11 @@ repository.workspace = true
 [lib]
 crate-type = ["rlib"]
 
+[features]
+# Exposes a detached EngineHandle whose command ring can be inspected by
+# downstream command tests. Production dependencies leave this disabled.
+command-capture-fixture = []
+
 [dependencies]
 rtrb = "0.4"
 cpal = { version = "0.18", features = [] }
