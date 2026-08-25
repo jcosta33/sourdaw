@@ -596,11 +596,22 @@ pub const EFFECT_TABLE_CAPACITY: usize =
 /// slots — so the table is sized to exactly their reserves; timeline chain
 /// devices never take a bridge.
 ///
-/// The shared effect-table ledger must remain the binding ceiling: a
-/// registration the ledger admitted that the bridge table then refused would
-/// die as a counter on the callback — the exact failure the ledger exists to
-/// remove — so the host enforces each reserve control-side and this table is
-/// sized to hold whatever those checks admit.
+/// The reserves are enforced by map-gated control-side checks, and the maps
+/// count entries, not live bridges. Bridges sit outside those gates in the
+/// teardown conditions the reserve docs disclose: a destroy removes its map
+/// entry before the removal is pushed, and between that push and its
+/// application on the callback the bridge is draining but uncounted — a
+/// gate-admitted create's registration can already be in the ring beside its
+/// removal; and a removal whose push failed leaks the engine slot and its
+/// bridge-table entry past the gate permanently. In those states the table
+/// holds checks-admitted bridges plus ones the gates can no longer see, and a
+/// registration both gates admitted can still reach this capacity arm on the
+/// callback, where its refusal is a counter nothing hands back — the exact
+/// failure the effect-table ledger exists to remove, binding here at the
+/// reserves' sum, 6144 slots sooner than the effect table's own last line.
+/// That callback-time bridge-table refusal is the last line for this table,
+/// named as such, exactly as the effect table's docs name theirs; the gates
+/// above are what keep it out of ordinary sessions.
 pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize =
     HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
 
