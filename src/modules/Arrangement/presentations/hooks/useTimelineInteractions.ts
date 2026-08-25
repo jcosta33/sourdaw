@@ -905,9 +905,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             }
 
             if (preview && preview.positions.size > 0) {
-                if (dragMode === 'duplicate') {
+                if (dragMode === 'duplicate' && anyPreviewMoved) {
                     // Alt+drag duplicate: originals stay, create copies at drop
                     // positions (R-B1) — on the dragged-to track, as previewed.
+                    // Gated on actual movement: a motionless Alt+click must not
+                    // stack invisible copies on the originals.
                     const copies: { copyId: string; sourceId: string; trackId: string; startBeat: number }[] = [];
                     for (const [clipId, pos] of preview.positions) {
                         if (dropRejected.clipIds.has(clipId)) {
@@ -1054,13 +1056,22 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                         type ShiftedClip =
                                             (typeof savedRippleMoves)[number]['plan']['gapClosedClips'][number];
                                         const shiftMap = new Map<string, ShiftedClip>();
+                                        // First-wins: plans were computed
+                                        // sequentially with each rippleMoveClip
+                                        // applied before the next planRippleMove,
+                                        // so the FIRST plan mentioning a clip
+                                        // holds its true pre-drag original; a
+                                        // later plan records an already-shifted
+                                        // position.
                                         for (const rippleMove of savedRippleMoves) {
                                             const allShifted = [
                                                 ...rippleMove.plan.gapClosedClips,
                                                 ...rippleMove.plan.destinationOpenedClips,
                                             ];
                                             for (const shifted of allShifted) {
-                                                shiftMap.set(shifted.clipId, shifted);
+                                                if (!shiftMap.has(shifted.clipId)) {
+                                                    shiftMap.set(shifted.clipId, shifted);
+                                                }
                                             }
                                         }
                                         const updatedTracks = state2.tracks.map((time) => ({

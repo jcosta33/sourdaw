@@ -9,17 +9,19 @@ describe('cancelActiveTimelineGesture', () => {
     });
 
     it('invokes every registered canceler and reports whether any gesture was active', () => {
-        const idle = vi.fn(() => false);
+        // The active canceler registers FIRST: a short-circuiting aggregate
+        // would return true without ever invoking the idle one.
         const active = vi.fn(() => true);
-        const unregisterIdle = registerTimelineGestureCanceler(idle);
+        const idle = vi.fn(() => false);
         const unregisterActive = registerTimelineGestureCanceler(active);
+        const unregisterIdle = registerTimelineGestureCanceler(idle);
         try {
             expect(cancelActiveTimelineGesture()).toBe(true);
-            expect(idle).toHaveBeenCalledTimes(1);
             expect(active).toHaveBeenCalledTimes(1);
+            expect(idle).toHaveBeenCalledTimes(1);
         } finally {
-            unregisterIdle();
             unregisterActive();
+            unregisterIdle();
         }
     });
 
