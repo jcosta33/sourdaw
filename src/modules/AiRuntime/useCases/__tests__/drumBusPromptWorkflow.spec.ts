@@ -702,23 +702,6 @@ function getEx11ProtectedTargetIds(userMessage: string): string[] {
 }
 
 /**
- * `bridgeDrumRenderComparisonPlan` attaches an `expectedTrackOutputs` guard to
- * the drum bus's `createBus` action, verifying the room still routes to
- * `capability.room.currentOutputId`. That guard's argument path contains
- * "Track" (from `expectedTrackOutputs`), so the compiled envelope picks up its
- * `outputId` as a stable `scope.targetIds` entry even though the provider's own
- * `createBus` call never carries it. This reads the same `master` value back
- * out of the capability so the fixture's declared scope matches.
- */
-function getEx11ExtraTargetIds(userMessage: string): string[] {
-    const capability = getProviderContext(userMessage).drumRenderComparisonCapability;
-    if (!isRecord(capability) || !isRecord(capability.room) || typeof capability.room.currentOutputId !== 'string') {
-        throw new TypeError('Expected EX-11 room capability');
-    }
-    return [capability.room.currentOutputId];
-}
-
-/**
  * `bridgeDrumRenderComparisonPlan` attaches each render job's `startBeat`/
  * `endBeat` to the `renderProjectSections` command it compiles, even though the
  * provider's own call only carries `sectionIds`. Those nested beat fields
@@ -747,7 +730,7 @@ function useEx11WebLlmFixture(): void {
             ...asCommandBatchProposal(
                 createEx11ProviderPlanFromUserMessage(userMessage),
                 getEx11ProtectedTargetIds(userMessage),
-                getEx11ExtraTargetIds(userMessage),
+                [],
                 getEx11ExtraTargetRanges(userMessage)
             ),
         ])
@@ -769,7 +752,7 @@ function useEx11HostedFixture(
                 ...asCommandBatchProposal(
                     plan,
                     getEx11ProtectedTargetIds(userMessage),
-                    getEx11ExtraTargetIds(userMessage),
+                    [],
                     getEx11ExtraTargetRanges(userMessage)
                 ),
             ];
@@ -2420,12 +2403,12 @@ describe('drum bus prompt workflow', () => {
         expect(confirmation?.affectedIds).not.toContain('device-guitar-comp');
         expect(confirmation?.affectedIds).not.toContain('device-bass-eq');
         expect(confirmation?.affectedIds).toEqual([
+            'device-bass-comp-a',
             'track-bass-synth',
             'track-kick',
-            'device-bass-comp-a',
             'device-bass-comp-b',
-            'track-bass-di',
             'device-bass-di-comp',
+            'track-bass-di',
         ]);
         expect(confirmation?.protectedUnchanged).toEqual([
             { id: 'device-bass-eq', name: 'Bass Synth Bass EQ' },
@@ -2476,7 +2459,7 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
+        expect(receipt?.content).toContain('Affected IDs: device-bass-comp-a, sidechain-command-');
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
         for (const [index, routeId] of routeIds.entries()) {
             expect(executedActions?.[index]?.affectedIds).toContain(routeId);
@@ -2567,7 +2550,7 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
+        expect(receipt?.content).toContain('Affected IDs: device-bass-comp-a, sidechain-command-');
         const routeIds = sidechainStore.value?.routes.map((route) => route.id) ?? [];
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
         expect(routeIds).toHaveLength(3);

@@ -401,6 +401,7 @@ function getBassProcessingCopyTargetIds(plan: readonly ProviderPlanCall[]): stri
         if (!layer) {
             throw new TypeError(`Expected EX-03 adjustment layer ${layerId}`);
         }
+        targetIds.add(layerId);
         for (const trackId of layer.affectedTrackIds) {
             targetIds.add(trackId);
         }
