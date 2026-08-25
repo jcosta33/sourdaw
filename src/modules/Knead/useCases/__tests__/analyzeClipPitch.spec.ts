@@ -2,8 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { kneadStore, defaultKneadState } from '../../stores/kneadStore';
 import { analyzeClipPitch } from '../analyzeClipPitch';
+import { updateClipKneadState } from '../updateClipKneadState';
 
-const { analyzePitchForClip } = vi.hoisted(() => ({ analyzePitchForClip: vi.fn() }));
+const { analyzePitchForClip, updateClipInStore } = vi.hoisted(() => ({
+    analyzePitchForClip: vi.fn(),
+    updateClipInStore: vi.fn(),
+}));
 
 type PitchAnalysisInput = {
     clipId: string;
@@ -51,10 +55,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     analyzePitchForClip,
 }));
 
-// updateClipKneadState (run for real below) also writes the Arrangement store;
-// stub that side so the test stays focused on the Knead store.
+// `updateClipInStore` is the persisted-clip boundary: a clip's `kneadState` is
+// authored only through it. Stubbing it lets the tests below observe exactly
+// when the analysis chain writes project state.
 vi.mock('#/modules/Arrangement/stores', () => ({
-    updateClipInStore: vi.fn(),
+    updateClipInStore,
 }));
 
 describe('analyzeClipPitch', () => {
@@ -102,6 +107,78 @@ describe('analyzeClipPitch', () => {
         // Each blob carries its pitch center so the worklet shift is well-defined.
         expect(clipState?.blobs[0]?.pitchCenterCents).toBeGreaterThan(0);
         expect(kneadStore.value).toMatchObject({ isAnalyzing: false, analysisProgress: 1 });
+    });
+
+    // Regression (#2557): the Knead editor's mount effect fires this use case
+    // the moment a clip is selected while pitch mode is the open audio-edit
+    // mode (asserted by KneadEditor.spec's own 'triggers analysis when no
+    // contour has been computed yet'). Analysis completing must leave the
+    // clip's persisted `kneadState` untouched — `updateClipInStore` is the only
+    // route to it — while the editor and engine still get the blobs from the
+    // Knead store. Before the transient/persisting split, the ingest seeded a
+    // default settings object (blobs included) onto a clip nobody edited: a
+    // dirty project from browsing, written as if chosen and CRDT-synced.
+    it('completes analysis without authoring the clip persisted kneadState (#2557)', async () => {
+        const voicedPoints = Array.from({ length: 8 }, (_, index) => ({
+            time_ms: index * 10,
+            frequency_hz: 440,
+            confidence: 0.9,
+            voiced: true,
+        }));
+        analyzePitchForClip.mockImplementation((input: PitchAnalysisInput) => {
+            input.onStart();
+            return Promise.resolve({
+                status: 'analyzed',
+                contour: { points: voicedPoints, sample_rate: 44100, hop_size: 256, algorithm: 'pyin' },
+            });
+        });
+
+        await analyzeClipPitch('c1');
+
+        // The transient home holds the result: blobs plus the seeded default
+        // settings the editor's controls read.
+        const clipState = kneadState().clips.c1;
+        expect(clipState).toBeDefined();
+        expect(clipState?.blobs.length).toBeGreaterThan(0);
+        expect(clipState?.retuneSpeedMs).toBe(25);
+        // The persisted clip is unchanged: no blobs, no seeded defaults.
+        expect(updateClipInStore).not.toHaveBeenCalled();
+    });
+
+    // Regression (#2557), the other half of the contract: the persisted state
+    // is not gone, it is deferred. The first real edit — every Knead-editor
+    // control writes through `updateClipKneadState` — materializes it, exactly
+    // once, carrying the transient analysis (blobs) with it.
+    it('persists blobs and settings exactly once on the first real edit, carrying the analysis over (#2557)', async () => {
+        const voicedPoints = Array.from({ length: 8 }, (_, index) => ({
+            time_ms: index * 10,
+            frequency_hz: 440,
+            confidence: 0.9,
+            voiced: true,
+        }));
+        analyzePitchForClip.mockImplementation((input: PitchAnalysisInput) => {
+            input.onStart();
+            return Promise.resolve({
+                status: 'analyzed',
+                contour: { points: voicedPoints, sample_rate: 44100, hop_size: 256, algorithm: 'pyin' },
+            });
+        });
+        await analyzeClipPitch('c1');
+        updateClipInStore.mockClear();
+        updateClipInStore.mockImplementation((_clipId: string, updater: (clip: { fileId: string }) => unknown) =>
+            updater({ fileId: 'file-1' })
+        );
+
+        updateClipKneadState('c1', (state) => ({ ...state, retuneSpeedMs: 80 }));
+
+        expect(updateClipInStore).toHaveBeenCalledTimes(1);
+        const persisted = updateClipInStore.mock.results[0]?.value as {
+            fileId: string;
+            kneadState: { retuneSpeedMs: number; blobs: unknown[] };
+        };
+        expect(persisted.fileId).toBe('file-1');
+        expect(persisted.kneadState.retuneSpeedMs).toBe(80);
+        expect(persisted.kneadState.blobs.length).toBeGreaterThan(0);
     });
 
     it('does not ingest blobs when the engine resolves a clip with no buffer', async () => {

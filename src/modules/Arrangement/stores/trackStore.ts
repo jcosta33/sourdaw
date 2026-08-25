@@ -24,6 +24,8 @@ import type {
 export type {
     AutomationMode,
     Clip,
+    ClipKneadBlob,
+    ClipKneadState,
     Device,
     DeviceStateChunk,
     DeviceStateValue,

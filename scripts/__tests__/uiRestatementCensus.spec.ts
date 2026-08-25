@@ -1,7 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
+import { getFileInfo } from 'prettier';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -441,5 +442,22 @@ describe('checkUiRestatementCensus', () => {
         mkdirSync(join(root, 'scripts'), { recursive: true });
         writeFileSync(join(root, 'scripts/ui-restatement-census.json'), canonicalizeCensus(rows));
         expect(checkUiRestatementCensus(root)).toEqual([]);
+    });
+});
+
+// The committed ledger is byte-exact: `checkUiRestatementCensus` compares the
+// file's bytes against `canonicalizeCensus` output, so any formatter rewrite
+// (prettier would reformat all ~25k lines) fails `pnpm census:ui` with
+// "census ledger is not canonical JSON". Only `--write` may produce the file,
+// which is why `.prettierignore` lists it. This guard asks prettier itself,
+// through the same ignore-path resolution `pnpm format` uses, so removing the
+// `.prettierignore` entry reddens exactly this test.
+describe('.prettierignore coverage', () => {
+    it('ignores the byte-exact census ledger', async () => {
+        const repoRoot = resolve(import.meta.dirname, '../..');
+        const info = await getFileInfo(join(repoRoot, 'scripts', 'ui-restatement-census.json'), {
+            ignorePath: join(repoRoot, '.prettierignore'),
+        });
+        expect(info.ignored).toBe(true);
     });
 });

@@ -6,6 +6,7 @@ import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDa
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
     AGENT_RUN_PHASES,
+    AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION,
     AGENT_RUN_SCHEMA_VERSION,
     AGENT_RUN_ERROR_CATEGORIES,
     type AgentRun,
@@ -16,6 +17,7 @@ import {
     type AgentRunDecision,
     type AgentRunError,
     type AgentRunPlan,
+    type AgentRunPreparedStemImportRecovery,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
@@ -109,9 +111,9 @@ function readRanges(value: unknown, allowPointRange: boolean): Array<{ startBeat
             !isRecord(candidate) ||
             typeof candidate.startBeat !== 'number' ||
             !Number.isFinite(candidate.startBeat) ||
+            candidate.startBeat < 0 ||
             typeof candidate.endBeat !== 'number' ||
             !Number.isFinite(candidate.endBeat) ||
-            candidate.startBeat < 0 ||
             (allowPointRange ? candidate.endBeat < candidate.startBeat : candidate.endBeat <= candidate.startBeat)
         ) {
             return null;
@@ -494,6 +496,70 @@ function readTemporaryAsset(value: unknown): AgentRunTemporaryAsset | null {
     };
 }
 
+function readPreparedStemImportRecovery(value: unknown): AgentRunPreparedStemImportRecovery | null {
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION ||
+        !Array.isArray(value.resources) ||
+        value.resources.length === 0 ||
+        value.resources.length > MAX_COLLECTION_LENGTH
+    ) {
+        return null;
+    }
+    const batchId = readString(value.batchId);
+    const serializedCommandBatch = readString(value.serializedCommandBatch);
+    const resources: AgentRunPreparedStemImportRecovery['resources'] = [];
+    const resourceIds = new Set<string>();
+    for (const candidate of value.resources) {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const audioBufferId = readString(candidate.audioBufferId);
+        const assetLeaseId = readNullableString(candidate.assetLeaseId);
+        if (audioBufferId === null || assetLeaseId === undefined || resourceIds.has(audioBufferId)) {
+            return null;
+        }
+        resourceIds.add(audioBufferId);
+        resources.push({ audioBufferId, assetLeaseId });
+    }
+    return batchId === null || serializedCommandBatch === null
+        ? null
+        : {
+              schemaVersion: AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION,
+              batchId,
+              serializedCommandBatch,
+              resources,
+          };
+}
+
+function readPreparedStemImportRecoveries(value: unknown): AgentRunPreparedStemImportRecovery[] {
+    if (value === undefined) {
+        return [];
+    }
+    if (!Array.isArray(value) || value.length > MAX_COLLECTION_LENGTH) {
+        return [];
+    }
+    const recoveries: AgentRunPreparedStemImportRecovery[] = [];
+    const batchIds = new Set<string>();
+    const resourceIds = new Set<string>();
+    for (const candidate of value) {
+        const recovery = readPreparedStemImportRecovery(candidate);
+        if (
+            !recovery ||
+            batchIds.has(recovery.batchId) ||
+            recovery.resources.some((resource) => resourceIds.has(resource.audioBufferId))
+        ) {
+            return [];
+        }
+        batchIds.add(recovery.batchId);
+        for (const resource of recovery.resources) {
+            resourceIds.add(resource.audioBufferId);
+        }
+        recoveries.push(recovery);
+    }
+    return recoveries;
+}
+
 function readWorkLease(value: unknown): AgentRunWorkLease | null {
     if (!isRecord(value)) {
         return null;
@@ -670,6 +736,17 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             const digest = readString(candidate.digest);
             return id === null || digest === null ? null : { id, digest };
         });
+        const sections =
+            rawSnapshot.sections === undefined
+                ? undefined
+                : readCollection(rawSnapshot.sections, (candidate) => {
+                      if (!isRecord(candidate)) {
+                          return null;
+                      }
+                      const id = readString(candidate.id);
+                      const digest = readString(candidate.digest);
+                      return id === null || digest === null ? null : { id, digest };
+                  });
         if (
             identity === null ||
             typeof rawSnapshot.tempo !== 'number' ||
@@ -679,6 +756,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             !rawSnapshot.timeSignature.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
             selectedTrack === undefined ||
             selectableTargets === null ||
+            sections === null ||
             readNonNegativeInteger(rawSnapshot.targetCount) === null ||
             typeof rawSnapshot.truncated !== 'boolean'
         ) {
@@ -690,6 +768,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             timeSignature: [rawSnapshot.timeSignature[0], rawSnapshot.timeSignature[1]] as [number, number],
             selectedTrack,
             selectableTargets,
+            ...(sections === undefined ? {} : { sections }),
             targetCount: readNonNegativeInteger(rawSnapshot.targetCount)!,
             truncated: rawSnapshot.truncated,
         };
@@ -1225,6 +1304,7 @@ function readAgentRun(value: unknown): AgentRun | null {
     const committedWork = readCollection(value.committedWork, readCommittedWork);
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
+    const preparedStemImports = readPreparedStemImportRecoveries(value.preparedStemImports);
     const workLeases = readCollection(value.workLeases, readWorkLease);
     const contextEvidence =
         value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
@@ -1345,6 +1425,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         committedWork,
         retriableWork,
         temporaryAssets,
+        preparedStemImports,
         manualResume: {
             required: value.manualResume.required,
             reason: manualResumeReason,

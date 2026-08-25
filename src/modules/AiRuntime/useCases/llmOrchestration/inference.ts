@@ -16,13 +16,14 @@ import {
 } from '../../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderName,
+    type ModelProviderFailure,
     type ModelProviderRequest,
     type ModelProviderResult,
     type ModelProviderSession,
     type ModelProviderStreamIdentity,
 } from '../../models/ModelProviderProtocol';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
-import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
+import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
@@ -32,6 +33,7 @@ import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore'
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
+import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
@@ -113,6 +115,81 @@ function createProviderAttemptAdmissionError(reason: string): Error {
 
 function isProviderAttemptAdmissionError(error: unknown): error is Error {
     return error instanceof Error && error.name === 'ProviderAttemptAdmissionError';
+}
+
+type AdmittedProviderAttempt = {
+    provider: ModelProviderName;
+    model: string | null;
+    request: ModelProviderRequest;
+    disclosurePublished: boolean;
+};
+
+function preSessionProviderResult(input: {
+    attempt: AdmittedProviderAttempt;
+    error: unknown;
+    cancelled: boolean;
+}): ModelProviderResult {
+    const normalizedFailure = isModelProviderFailureError(input.error) ? input.error : null;
+    const cancelled = input.cancelled || isAiRuntimeConfigurationChangedError(input.error);
+    let failure: Pick<ModelProviderFailure, 'code' | 'retryable' | 'safeMessage'>;
+    if (cancelled) {
+        failure = {
+            code: 'cancelled',
+            retryable: true,
+            safeMessage: 'The model provider request was cancelled.',
+        };
+    } else if (normalizedFailure === null) {
+        failure = {
+            code: 'provider-attempt-failed',
+            retryable: true,
+            safeMessage: 'The model provider request failed before its session started.',
+        };
+    } else {
+        failure = {
+            code: normalizedFailure.code,
+            retryable: normalizedFailure.retryable,
+            safeMessage: normalizedFailure.message,
+        };
+    }
+    const dataCategories = input.attempt.request.dataCategories;
+    return {
+        schemaVersion: input.attempt.request.schemaVersion,
+        provider: input.attempt.provider,
+        model: input.attempt.model,
+        correlationId: input.attempt.request.correlationId,
+        status: cancelled ? 'cancelled' : 'failed',
+        output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+        usage: {
+            inputTokens: null,
+            outputTokens: null,
+            cachedInputTokens: null,
+            reasoningTokens: null,
+            provenance: 'unavailable',
+        },
+        finishReason: cancelled ? 'cancelled' : 'error',
+        partialOutputDisposition: 'none',
+        failure: {
+            ...failure,
+            correlationId: input.attempt.request.correlationId,
+            partialOutputDisposition: 'none',
+        },
+        ignoredProviderEvents: [],
+        ...(input.attempt.disclosurePublished && dataCategories !== undefined
+            ? {
+                  remoteDisclosure: {
+                      requestId: input.attempt.request.requestId,
+                      categories: [...dataCategories],
+                      retention: {
+                          applicationState: 'unknown' as const,
+                          abuseMonitoring: 'unknown' as const,
+                          promptCache: 'unknown' as const,
+                          safetyLegalException: 'unknown' as const,
+                          unknown: 'unknown' as const,
+                      },
+                  },
+              }
+            : {}),
+    };
 }
 
 async function waitForInference<TResult>(inference: Promise<TResult>, signal?: AbortSignal): Promise<TResult> {
@@ -209,6 +286,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         let lastError: Error | null = null;
 
         for (const backend of chain) {
+            let admittedAttempt: AdmittedProviderAttempt | null = null;
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
             let providerSessionSettled = false;
@@ -222,21 +300,23 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
                     const applicationTools = availableTools.filter(
-                        (tool) => tool.function.name === PROJECT_QUERY_TOOL_NAME
+                        (tool) =>
+                            tool.function.name === PROJECT_QUERY_TOOL_NAME ||
+                            tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
                     );
                     const actionTools = availableTools.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
-                            tool.function.name !== PROJECT_QUERY_TOOL_NAME
+                            tool.function.name !== PROJECT_QUERY_TOOL_NAME &&
+                            tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
                         prompt: toolSelectionPrompt,
                     });
-                    const workflowActionToolNames = new Set<string>(WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES);
                     const workflowActionTools =
                         workflowSelectionTools.length > 0
-                            ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
+                            ? actionTools.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
                             : [];
                     const mandatoryToolNames = new Set(
                         [...workflowSelectionTools, ...applicationTools, ...workflowActionTools].map(
@@ -246,12 +326,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const promptActionTools = selectedActionTools.filter(
                         (tool) => !mandatoryToolNames.has(tool.function.name)
                     );
+                    const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
-                        ...workflowSelectionTools,
-                        ...applicationTools,
-                        ...workflowActionTools,
-                        ...promptActionTools,
-                    ].slice(0, 30);
+                        ...mandatoryTools,
+                        ...promptActionTools.slice(0, Math.max(0, 30 - mandatoryTools.length)),
+                    ];
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
                     );
@@ -313,6 +392,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (admission?.status === 'rejected') {
                     throw createProviderAttemptAdmissionError(admission.reason);
                 }
+                admittedAttempt = {
+                    provider: providerName,
+                    model: getBackendModelId(backend),
+                    request: providerRequest,
+                    disclosurePublished: false,
+                };
                 if (
                     remoteDisclosure !== undefined &&
                     !remoteTransmissionDisclosure.publish({
@@ -322,6 +407,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     })
                 ) {
                     throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
+                }
+                if (remoteDisclosure !== undefined) {
+                    admittedAttempt.disclosurePublished = true;
                 }
                 providerSession = providerProtocol.start(providerRequest);
                 providerSource = createModelProviderStreamWriter(providerRequest, providerSession);
@@ -473,6 +561,16 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     }
+                    reportProviderResult(failedResult);
+                    if (failedResult.failure !== null) {
+                        normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
+                    }
+                } else if (admittedAttempt !== null) {
+                    const failedResult = preSessionProviderResult({
+                        attempt: admittedAttempt,
+                        error,
+                        cancelled: isExplicitAbort || signal?.aborted === true,
+                    });
                     reportProviderResult(failedResult);
                     if (failedResult.failure !== null) {
                         normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);

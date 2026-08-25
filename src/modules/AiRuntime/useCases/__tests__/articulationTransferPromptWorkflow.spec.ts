@@ -533,10 +533,12 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(() => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();

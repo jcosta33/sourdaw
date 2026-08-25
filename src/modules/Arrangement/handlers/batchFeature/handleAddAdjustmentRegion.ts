@@ -139,6 +139,7 @@ function currentStateMatches(
 }
 
 export const handleAddAdjustmentRegion = createHandler<'addAdjustmentRegion'>({
+    canReapplyAfterDivergence: (action) => action.payload.expectedLayer !== undefined,
     validate: (action, context) => currentStateMatches(action, expectedLayerAtValidation(action, context)),
     execute: (a, context) => {
         const expectedLayer = expectedLayerAtExecution(a, context);
