@@ -29,10 +29,20 @@ vi.mock('fflate', async (importOriginal) => {
     const actual = await importOriginal<typeof import('fflate')>();
 
     class ProbedUnzip extends actual.Unzip {
+        private archiveOffset = 0;
+        private archiveMatches = true;
+
         override push(chunk: Uint8Array, final?: boolean): void {
             const archive = zipPayloadExpansionProbe.archive;
-            if (archive !== undefined && final === true && Buffer.from(chunk).equals(archive)) {
-                zipPayloadExpansionProbe.attempts += 1;
+            if (archive !== undefined && this.archiveMatches && chunk.byteLength > 0) {
+                const bytes = Buffer.from(chunk);
+                const expected = archive.subarray(this.archiveOffset, this.archiveOffset + bytes.length);
+                if (expected.length === bytes.length && bytes.equals(expected)) {
+                    this.archiveOffset += bytes.length;
+                    zipPayloadExpansionProbe.attempts += 1;
+                } else {
+                    this.archiveMatches = false;
+                }
             }
             super.push(chunk, final);
         }
@@ -1112,6 +1122,39 @@ describe('release proof', () => {
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
     }, 15_000);
+
+    it('observes expansion for a valid ZIP with split input chunks', () => {
+        const fixture = createFixture();
+        const buildRunner: ReleaseBuildRunner = (phase, root) => {
+            if (phase === 'web') {
+                writeWebBuild(fixture);
+                const payload = Buffer.alloc(1_100_000);
+                let state = 0x12345678;
+                for (let index = 0; index < payload.length; index += 1) {
+                    state ^= state << 13;
+                    state ^= state >>> 17;
+                    state ^= state << 5;
+                    payload[index] = state & 0xff;
+                }
+                write(join(root, 'dist/large.bin'), payload);
+                return;
+            }
+            createDesktopZip(fixture, join(root, 'release/desktop'), fixture.desktopOptions);
+        };
+        assemble(fixture, buildRunner);
+        const archive = join(fixture.candidate, webProof(proof(fixture)).archivePath as string);
+        const archiveBytes = readFileSync(archive);
+        expect(archiveBytes.length).toBeGreaterThan(1_000_000);
+        zipPayloadExpansionProbe.archive = archiveBytes;
+        zipPayloadExpansionProbe.attempts = 0;
+        try {
+            expect(validate(fixture)).toBe('');
+            expect(zipPayloadExpansionProbe.attempts).toBeGreaterThan(0);
+        } finally {
+            zipPayloadExpansionProbe.archive = undefined;
+            zipPayloadExpansionProbe.attempts = 0;
+        }
+    });
 
     it('rejects ZIP entry bytes that exceed their declarations', () => {
         const fixture = createFixture();
