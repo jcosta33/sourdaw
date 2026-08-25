@@ -1,7 +1,8 @@
 # Sourdaw Agent Rules
 
-`CLAUDE.md` points here. A nested `AGENTS.md` overrides this file inside its subtree. Read the
-local one before editing that tree.
+`CLAUDE.md`, `GEMINI.md`, `CODEX.md`, `KIMI.md`, and `ZCODE.md` point here. A nested `AGENTS.md` (with
+companion provider symlinks) overrides this file inside its subtree. Read the local one before
+editing that tree.
 
 ## Ownership
 
