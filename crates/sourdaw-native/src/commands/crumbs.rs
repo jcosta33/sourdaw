@@ -344,29 +344,34 @@ pub async fn destroy_crumbs(
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
 
-    if let Some(instance) = instances.remove(&instance_id) {
-        // Attempt the scheduler removal but never let its failure skip the
-        // bridge-handle cleanup — a stale ring would keep accepting blocks
-        // for a dead plugin (PR #564 review).
-        let removal_result = (|app_state: &&AppState| -> Result<(), String> {
-            let mut engine_guard = app_state
-                .engine
-                .lock()
-                .map_err(|e| format!("Failed to lock engine: {e}"))?;
-            if let Some(ref mut engine_handle) = *engine_guard {
-                engine_handle.remove_plugin(instance.engine_plugin_id)?;
-            }
-            Ok(())
-        })(&app_state);
+    let Some(engine_plugin_id) = instances
+        .get(&instance_id)
+        .map(|instance| instance.engine_plugin_id)
+    else {
+        return Ok(());
+    };
 
-        let mut feed = app_state
-            .audio_bridges
-            .lock()
-            .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-        feed.bridges.remove(&instance.engine_plugin_id);
+    // Keep both ownership ledgers intact until every fallible lock and the
+    // scheduler-removal admission succeed. A full command ring means the
+    // runtime is still live, so its map entry and bridge must remain reachable
+    // for retry. Lock order stays instances -> engine -> audio_bridges.
+    let mut engine_guard = app_state
+        .engine
+        .lock()
+        .map_err(|e| format!("Failed to lock engine: {e}"))?;
+    let mut feed = app_state
+        .audio_bridges
+        .lock()
+        .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
 
-        removal_result?;
+    if let Some(ref mut engine_handle) = *engine_guard {
+        engine_handle.remove_plugin(engine_plugin_id)?;
     }
+
+    // Once queued, scheduler retirement is inevitable. No fallible work may
+    // follow before command-side ownership is erased.
+    feed.bridges.remove(&engine_plugin_id);
+    instances.remove(&instance_id);
     Ok(())
 }
 
@@ -1209,6 +1214,108 @@ mod tests {
                 .bridges
                 .is_empty(),
             "destroy must remove the original record bridge"
+        );
+    }
+
+    /// A full scheduler command ring refuses destruction before either runtime
+    /// ownership ledger is changed. Once capacity is available, the retry must
+    /// queue the exact original retirement once and only then erase ownership.
+    #[test]
+    fn destroy_crumbs_keeps_the_runtime_owned_until_removal_is_admitted() {
+        const INSTANCE_ID: &str = "queue-full-destroy-crumbs";
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(1);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        crate::block_on_test(create_crumbs(
+            INSTANCE_ID.to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect("create should fill the one-command scheduler ring");
+
+        let original_engine_plugin_id = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .get(INSTANCE_ID)
+            .expect("create should publish the ownership entry")
+            .engine_plugin_id;
+
+        let refusal =
+            crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+                .expect_err("destroy must refuse while scheduler-removal admission is full");
+        assert_eq!(refusal, "Audio command queue full");
+        assert_eq!(
+            state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .get(INSTANCE_ID)
+                .expect("failed admission must preserve the ownership entry")
+                .engine_plugin_id,
+            original_engine_plugin_id
+        );
+        assert!(
+            app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .contains_key(&original_engine_plugin_id),
+            "failed admission must preserve the live runtime bridge"
+        );
+
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
+            Ok(_) => panic!("the retained command must be the original registration"),
+            Err(_) => panic!("create must have filled the one-command scheduler ring"),
+        };
+        assert_eq!(registered_engine_plugin_id, original_engine_plugin_id);
+        assert!(
+            command_rx.pop().is_err(),
+            "failed destroy must not queue a removal command"
+        );
+
+        crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("destroy should succeed after scheduler capacity is drained");
+
+        let removed_engine_plugin_id = match command_rx.pop() {
+            Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
+            Ok(_) => panic!("retry must queue the bridged-plugin removal command"),
+            Err(_) => panic!("retry must queue one engine removal command"),
+        };
+        assert_eq!(
+            removed_engine_plugin_id, original_engine_plugin_id,
+            "retry must remove the exact runtime registered by create"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "retry must queue exactly one engine removal command"
+        );
+        assert!(
+            !state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .contains_key(INSTANCE_ID),
+            "ownership entry may disappear only after removal admission succeeds"
+        );
+        assert!(
+            !app_state
+                .audio_bridges
+                .lock()
+                .expect("audio bridge lock should be available")
+                .bridges
+                .contains_key(&original_engine_plugin_id),
+            "bridge may disappear only after removal admission succeeds"
         );
     }
 
