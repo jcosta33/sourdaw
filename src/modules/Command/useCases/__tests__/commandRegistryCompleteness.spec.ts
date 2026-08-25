@@ -11,6 +11,7 @@ import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import {
     executableAppActionDescriptors,
     type ExecutableAppAction,
+    type ExecutableAppActionMutationIdentityArgument,
     type ExecutableProviderAction,
 } from '../executableAppActionRegistry';
 import { getCommandHandler } from '../getCommandHandler';
@@ -53,15 +54,19 @@ describe('command registry completeness', () => {
             expect(registration.mutationIdempotent).toBeTypeOf('boolean');
             expect(Array.isArray(registration.mutationIdentityRules)).toBe(true);
             for (const identityRule of registration.mutationIdentityRules) {
-                const fallbackArguments: readonly { argument: string; cardinality?: 'many' }[] =
+                const fallbackArguments: readonly ExecutableAppActionMutationIdentityArgument[] =
                     'fallbackArguments' in identityRule ? identityRule.fallbackArguments : [];
-                const identityArgumentGroups: readonly (readonly {
-                    argument: string;
-                    cardinality?: 'many';
-                }[])[] = [identityRule.arguments, fallbackArguments];
+                const identityArgumentGroups: readonly (readonly ExecutableAppActionMutationIdentityArgument[])[] = [
+                    identityRule.arguments,
+                    fallbackArguments,
+                ];
                 for (const identityArguments of identityArgumentGroups) {
                     expect(new Set(identityArguments.map((rule) => rule.argument)).size).toBe(identityArguments.length);
                     for (const identityArgument of identityArguments) {
+                        if (identityArgument.source === 'app-derived') {
+                            expect(descriptor?.parameters.properties).not.toHaveProperty(identityArgument.argument);
+                            continue;
+                        }
                         expect(descriptor?.parameters.properties).toHaveProperty(identityArgument.argument);
                     }
                 }
@@ -95,6 +100,21 @@ describe('command registry completeness', () => {
         expect(getCommandHandler(action)).toBe(
             registrations.find((registration) => registration.actionType === action.type)?.handler
         );
+    });
+
+    it('marks duplicateClip parent-track scope as app-derived rather than provider payload', () => {
+        const registration = getExecutableCommandRegistrations().find(
+            (candidate) => candidate.actionType === 'duplicateClip'
+        );
+        const descriptor = executableAppActionDescriptors.find((candidate) => candidate.actionType === 'duplicateClip');
+
+        expect(descriptor?.parameters.properties).not.toHaveProperty('parentTrackIds');
+        expect(registration?.mutationIdentityRules).toContainEqual({
+            arguments: [{ argument: 'parentTrackIds', cardinality: 'many', source: 'app-derived' }],
+            destructive: false,
+            resourceFamily: 'track',
+            resourceReferenceOnly: true,
+        });
     });
 
     it('fails closed when an executable descriptor has no production handler registration', () => {

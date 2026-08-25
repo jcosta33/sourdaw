@@ -37,10 +37,17 @@ export type ExecutableAppActionTargetRule = {
     optional?: boolean;
 };
 
-export type ExecutableAppActionMutationIdentityArgument = {
-    argument: string;
-    cardinality?: 'many';
-};
+export type ExecutableAppActionMutationIdentityArgument =
+    | {
+          argument: string;
+          cardinality?: 'many';
+          source?: 'provider';
+      }
+    | {
+          argument: string;
+          cardinality?: 'many';
+          source: 'app-derived';
+      };
 
 export type ExecutableAppActionMutationIdentityRule = {
     arguments: readonly ExecutableAppActionMutationIdentityArgument[];
@@ -2375,7 +2382,7 @@ const NON_DESTRUCTIVE_MANY_TRACKS_RESOURCE_REFERENCE_IDENTITY = [
 ] as const;
 const PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = [
     {
-        arguments: [{ argument: 'parentTrackIds', cardinality: 'many' }],
+        arguments: [{ argument: 'parentTrackIds', cardinality: 'many', source: 'app-derived' }],
         destructive: false,
         resourceFamily: 'track',
         resourceReferenceOnly: true,

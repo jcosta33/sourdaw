@@ -24,7 +24,7 @@ describe('getExecutableAppActionGroundingRules', () => {
 
     it('owns mutation identity independently from capability targets', () => {
         const parentTrackReference = {
-            arguments: [{ argument: 'parentTrackIds', cardinality: 'many' as const }],
+            arguments: [{ argument: 'parentTrackIds', cardinality: 'many' as const, source: 'app-derived' as const }],
             destructive: false as const,
             resourceFamily: 'track',
             resourceReferenceOnly: true as const,
