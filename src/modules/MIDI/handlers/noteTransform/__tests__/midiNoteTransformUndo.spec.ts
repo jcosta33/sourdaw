@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { type MidiNote } from '../../../models/MidiNote';
 import { midiStore } from '../../../stores/midiStore';
@@ -16,6 +24,15 @@ import { handleRetrogradeNotes } from '../handleRetrogradeNotes';
 import { handleScaleAllVelocities } from '../handleScaleAllVelocities';
 import { handleSetAllVelocities } from '../handleSetAllVelocities';
 import { handleTransposeNotes } from '../handleTransposeNotes';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
 
 const CLIP_ID = 'clip-1';
 
@@ -259,9 +276,16 @@ describe('MIDI note transform handlers', () => {
 
 describe('MIDI note transforms through AppAction execution', () => {
     beforeEach(() => {
+        Container.clear();
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         registerHandlerMap(getMidiNoteTransformHandlers());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -269,6 +293,8 @@ describe('MIDI note transforms through AppAction execution', () => {
     afterEach(() => {
         clearUndoHistory();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
+        Container.clear();
         configureAutomergeStoragePort(null);
     });
 
@@ -290,35 +316,14 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(currentNotes()).toEqual(before);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
+        expect(notifications).toEqual([]);
 
         await redo();
 
         expect(currentNotes()).toEqual(transformed);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
-    });
-
-    it('keeps a stale transform undo entry and preserves later divergent notes', async () => {
-        seedNotes([note('a', 60, 0.11)]);
-        await executeAppAction({
-            type: 'transposeNotes',
-            payload: { clipId: CLIP_ID, semitones: 7 },
-        });
-        const laterNote = note('later', 72, 1.25);
-        const state = midiStore.value;
-        if (!state) {
-            throw new Error('Expected MIDI state');
-        }
-        midiStore.set({
-            ...state,
-            notesByClipId: { ...state.notesByClipId, [CLIP_ID]: [...currentNotes(), laterNote] },
-        });
-
-        await expect(undo()).resolves.toBeUndefined();
-
-        expect(currentNotes()).toContainEqual(laterNote);
-        expect(undoStore.value?.past).toHaveLength(1);
-        expect(undoStore.value?.future).toHaveLength(0);
+        expect(notifications).toEqual([]);
     });
 
     it('keeps a stale redo entry and preserves edits made after undo', async () => {
@@ -344,5 +349,34 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(currentNotes()).toEqual([...before, laterNote]);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
+        expect(notifications).toEqual([
+            { message: 'Cannot redo "Transpose +7 semitones": project state has changed', level: 'warning' },
+        ]);
+    });
+
+    it('keeps a stale transform undo entry and preserves later divergent notes', async () => {
+        seedNotes([note('a', 60, 0.11)]);
+        await executeAppAction({
+            type: 'transposeNotes',
+            payload: { clipId: CLIP_ID, semitones: 7 },
+        });
+        const laterNote = note('later', 72, 1.25);
+        const state = midiStore.value;
+        if (!state) {
+            throw new Error('Expected MIDI state');
+        }
+        midiStore.set({
+            ...state,
+            notesByClipId: { ...state.notesByClipId, [CLIP_ID]: [...currentNotes(), laterNote] },
+        });
+
+        await expect(undo()).resolves.toBeUndefined();
+
+        expect(currentNotes()).toContainEqual(laterNote);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Transpose +7 semitones": project state has changed', level: 'warning' },
+        ]);
+        expect(undoStore.value?.future).toHaveLength(0);
     });
 });

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -17,11 +19,26 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -31,6 +48,7 @@ const noActionHistoryMetadataPort = {
 
 describe('handleMoveClip atomic integration', () => {
     beforeEach(() => {
+        Container.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('move clip atomic integration');
         removeCrdtDoc('root');
@@ -38,6 +56,12 @@ describe('handleMoveClip atomic integration', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -79,6 +103,8 @@ describe('handleMoveClip atomic integration', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
+        Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         configureAutomergeStoragePort(null);
@@ -165,6 +191,8 @@ describe('handleMoveClip atomic integration', () => {
             payload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 16 },
         };
         await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
+        expect(notifications).toEqual([]);
+
         const movedLane = automationStore.value!.lanes[0]!;
         automationStore.set({
             lanes: [{ ...movedLane, points: [{ ...movedLane.points[0]!, value: 0.9 }, movedLane.points[1]!] }],
@@ -180,5 +208,12 @@ describe('handleMoveClip atomic integration', () => {
                 { beat: 16, value: 0.75 },
             ],
         });
+        expect(notifications).toEqual([
+            {
+                message:
+                    'Cannot undo "Move clip "Verse Lead" (clip-1) to track track-2 at beat 16": project state has changed',
+                level: 'warning',
+            },
+        ]);
     });
 });
