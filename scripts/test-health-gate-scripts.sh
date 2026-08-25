@@ -232,16 +232,6 @@ function expectShardFailureWarning(step, slug, suite, shard) {
     );
 }
 
-function evaluateHealthGateEventPolicy({ eventName, reviewState, pullRequestNumber, runId }) {
-    const validatesPullRequest =
-        eventName === 'pull_request' || (eventName === 'pull_request_review' && reviewState === 'approved');
-    return {
-        group: `health-gates-${validatesPullRequest ? pullRequestNumber : runId}`,
-        cancelInProgress: validatesPullRequest,
-        gateEligible: eventName !== 'pull_request_review' || reviewState === 'approved',
-    };
-}
-
 const events = workflow.on;
 const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
@@ -297,20 +287,6 @@ expect(
         "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
     'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
 );
-const eventPolicyCases = [
-    ['pull_request', { eventName: 'pull_request', pullRequestNumber: '2798', runId: '1001' }, ['health-gates-2798', true, true]],
-    ['approved review', { eventName: 'pull_request_review', reviewState: 'approved', pullRequestNumber: '2798', runId: '1002' }, ['health-gates-2798', true, true]],
-    ['commented review', { eventName: 'pull_request_review', reviewState: 'commented', pullRequestNumber: '2798', runId: '1003' }, ['health-gates-1003', false, false]],
-    ['changes requested review', { eventName: 'pull_request_review', reviewState: 'changes_requested', pullRequestNumber: '2798', runId: '1004' }, ['health-gates-1004', false, false]],
-    ['schedule', { eventName: 'schedule', runId: '1005' }, ['health-gates-1005', false, true]],
-    ['workflow dispatch', { eventName: 'workflow_dispatch', runId: '1006' }, ['health-gates-1006', false, true]],
-];
-for (const [label, input, [group, cancelInProgress, gateEligible]] of eventPolicyCases) {
-    expect(
-        JSON.stringify(evaluateHealthGateEventPolicy(input)) === JSON.stringify({ group, cancelInProgress, gateEligible }),
-        `${label} must keep its exact concurrency and Gate policy`
-    );
-}
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
     'decide must run the heavy path only for approved pull_request_review submissions'
