@@ -423,25 +423,25 @@ describe('ClipContextMenu', () => {
         if (!previous || !track || !clip) {
             throw new Error('Expected the track fixture to contain a clip');
         }
-        trackStore.set({
-            ...previous,
-            tracks: [
-                {
-                    ...track,
-                    clips: [
-                        {
-                            ...clip,
-                            id: 'clipM',
-                            name: 'Muted',
-                            muted: true,
-                            locked: true,
-                            audioBufferId: 'bufM',
-                        },
-                    ],
-                },
-            ],
-        });
         try {
+            trackStore.set({
+                ...previous,
+                tracks: [
+                    {
+                        ...track,
+                        clips: [
+                            {
+                                ...clip,
+                                id: 'clipM',
+                                name: 'Muted',
+                                muted: true,
+                                locked: true,
+                                audioBufferId: 'bufM',
+                            },
+                        ],
+                    },
+                ],
+            });
             render(<ClipContextMenu x={0} y={0} clipId="clipM" splitBeat={4} onClose={mockOnClose} />);
             // Muted+locked → the labels flip to the inverse action.
             expect(screen.getByRole('button', { name: 'Unmute Clip' })).toBeInTheDocument();
@@ -494,24 +494,24 @@ describe('ClipContextMenu', () => {
         if (!previous || !track || !clip) {
             throw new Error('Expected the track fixture to contain a clip');
         }
-        trackStore.set({
-            ...previous,
-            tracks: [
-                {
-                    ...track,
-                    clips: [
-                        {
-                            ...clip,
-                            id: 'midiPlain',
-                            name: 'Plain MIDI',
-                            type: 'midi',
-                            isInlineEditing: false,
-                        },
-                    ],
-                },
-            ],
-        });
         try {
+            trackStore.set({
+                ...previous,
+                tracks: [
+                    {
+                        ...track,
+                        clips: [
+                            {
+                                ...clip,
+                                id: 'midiPlain',
+                                name: 'Plain MIDI',
+                                type: 'midi',
+                                isInlineEditing: false,
+                            },
+                        ],
+                    },
+                ],
+            });
             render(<ClipContextMenu x={0} y={0} clipId="midiPlain" splitBeat={4} onClose={mockOnClose} />);
             expect(screen.getByRole('button', { name: 'Open Inline Editor' })).toBeInTheDocument();
         } finally {
