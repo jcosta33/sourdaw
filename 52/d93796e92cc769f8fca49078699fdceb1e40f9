@@ -1,0 +1,55 @@
+crates/daw-engine/Cargo.toml
+  s_a40848e8f8cca9::t_a5610467779535 13-17
+crates/daw-engine/src/audio_thread.rs
+  s_a40848e8f8cca9::t_51f50140b379b9 51
+crates/daw-engine/src/lib.rs
+  s_a40848e8f8cca9::t_0a6dd156133bf1 695-696
+crates/daw-engine/src/scheduler.rs
+  s_a40848e8f8cca9::t_bbbeb1d20cabad 618-622,624,627,629-633,635-638,643-645,647-650,655-666,671-680,685-695,697-702,706-709,712-721,726-743,745-778,780,782,784-796,800-821,823-833,837-918,1094-1099,1127-1136,1181-1183,1203-1204,1251-1260,1475,1527,1642,1695-1696,1770,1777-1779,1832-1843,1855,1873-1876,1883-1885,2096-2112,2125-2138,2151-2159,2236-2249,2336-2362,2511-2515,2584-2604,2650-2986,3651-3657,3659-3669,3672-3674,4098-4174
+crates/sourdaw-native/Cargo.toml
+  s_a40848e8f8cca9::t_81bafb61618d78 67
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_a40848e8f8cca9::t_e77444f6678ead 110-111,118-148,249-257,269-271,347-352,354-365,367-368,370-374,1082-1435
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_a40848e8f8cca9::t_4629c1ef4f5f01 14-16,25-33,35-94,96-125,226-337,482-486,488-505,519,553-557,559-575,579
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_a40848e8f8cca9::t_417c99512d6b4f 19-21,30-63,115-198
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_20bb0a4c44e250 116,133,152,175,186,202,230,277,295
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_c9224ab0282b8f 21-23,49,70-76,105,113,273,283,301
+src/modules/Project/useCases/__tests__/getDurableProjectOwnerId.spec.ts
+  s_a40848e8f8cca9::t_c314937d9c4887 1-73
+src/modules/Project/useCases/createFreshProjectMetadata.ts
+  s_a40848e8f8cca9::t_d6cd045575d100 24
+src/modules/Project/useCases/getDurableProjectOwnerId.ts
+  s_a40848e8f8cca9::t_9492002043bf5c 1-12
+src/modules/Project/useCases/index.ts
+  s_a40848e8f8cca9::t_fbf9f1e358e7d5 29
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.spec.ts
+  s_a40848e8f8cca9::t_d6f468cdad5dd2 234,250-251,253,255,260-274
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_a40848e8f8cca9::t_99ef5d0780f205 19,303-364
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_a40848e8f8cca9::t_37a2e33112714e 325-327
+src/modules/Project/useCases/projectPersistence/migrateActiveProjectIdentity.ts
+  s_a40848e8f8cca9::t_327ee4243b81ba 4,67-74,94
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_a40848e8f8cca9::t_c145305e40cf49 113,115-126,135-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "52d93796e92cc769f8fca49078699fdceb1e40f9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
