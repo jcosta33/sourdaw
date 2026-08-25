@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url';
 import {
     GITHUB_HTTPS_REMOTE,
     REQUIRED_REPOSITORY,
-    REVIEWER_BOT_LOGIN,
+    REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    isReviewerBotNodeId,
     gitAuthenticatedArgs,
     originMainBlob,
     parseJson,
@@ -187,8 +188,8 @@ async function main(): Promise<number> {
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
     try {
-        if (auth.minted.login !== REVIEWER_BOT_LOGIN) {
-            fail(`minted login ${auth.minted.login} is not ${REVIEWER_BOT_LOGIN}`);
+        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
         }
         const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
             env: auth.session.env,
