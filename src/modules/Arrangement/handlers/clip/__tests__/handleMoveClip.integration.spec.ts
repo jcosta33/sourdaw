@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
@@ -47,6 +48,7 @@ const noActionHistoryMetadataPort = {
 
 describe('handleMoveClip atomic integration', () => {
     beforeEach(() => {
+        Container.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('move clip atomic integration');
         removeCrdtDoc('root');
@@ -102,6 +104,7 @@ describe('handleMoveClip atomic integration', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         unsubscribeFromNotifications();
+        Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         configureAutomergeStoragePort(null);

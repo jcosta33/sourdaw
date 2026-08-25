@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
@@ -275,6 +276,7 @@ describe('MIDI note transform handlers', () => {
 
 describe('MIDI note transforms through AppAction execution', () => {
     beforeEach(() => {
+        Container.clear();
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         registerHandlerMap(getMidiNoteTransformHandlers());
@@ -292,6 +294,7 @@ describe('MIDI note transforms through AppAction execution', () => {
         clearUndoHistory();
         clearHandlerRegistry();
         unsubscribeFromNotifications();
+        Container.clear();
         configureAutomergeStoragePort(null);
     });
 
@@ -321,6 +324,34 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(undoStore.value?.future).toHaveLength(0);
     });
 
+    it('keeps a stale redo entry and preserves edits made after undo', async () => {
+        const before = seedNotes([note('a', 60, 0.11)]);
+        await executeAppAction({
+            type: 'transposeNotes',
+            payload: { clipId: CLIP_ID, semitones: 7 },
+        });
+        await undo();
+
+        const laterNote = note('later', 72, 1.25);
+        const state = midiStore.value;
+        if (!state) {
+            throw new Error('Expected MIDI state');
+        }
+        midiStore.set({
+            ...state,
+            notesByClipId: { ...state.notesByClipId, [CLIP_ID]: [...before, laterNote] },
+        });
+
+        await expect(redo()).resolves.toBeUndefined();
+
+        expect(currentNotes()).toEqual([...before, laterNote]);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+        expect(notifications).toEqual([
+            { message: 'Cannot redo "Transpose +7 semitones": project state has changed', level: 'warning' },
+        ]);
+    });
+
     it('keeps a stale transform undo entry and preserves later divergent notes', async () => {
         seedNotes([note('a', 60, 0.11)]);
         await executeAppAction({
@@ -345,30 +376,5 @@ describe('MIDI note transforms through AppAction execution', () => {
             { message: 'Cannot undo "Transpose +7 semitones": project state has changed', level: 'warning' },
         ]);
         expect(undoStore.value?.future).toHaveLength(0);
-    });
-
-    it('keeps a stale redo entry and preserves edits made after undo', async () => {
-        const before = seedNotes([note('a', 60, 0.11)]);
-        await executeAppAction({
-            type: 'transposeNotes',
-            payload: { clipId: CLIP_ID, semitones: 7 },
-        });
-        await undo();
-
-        const laterNote = note('later', 72, 1.25);
-        const state = midiStore.value;
-        if (!state) {
-            throw new Error('Expected MIDI state');
-        }
-        midiStore.set({
-            ...state,
-            notesByClipId: { ...state.notesByClipId, [CLIP_ID]: [...before, laterNote] },
-        });
-
-        await expect(redo()).resolves.toBeUndefined();
-
-        expect(currentNotes()).toEqual([...before, laterNote]);
-        expect(undoStore.value?.past).toHaveLength(0);
-        expect(undoStore.value?.future).toHaveLength(1);
     });
 });
