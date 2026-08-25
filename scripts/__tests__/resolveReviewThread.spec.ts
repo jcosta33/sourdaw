@@ -254,7 +254,18 @@ describe('review thread resolution', () => {
         expect(source).toContain('resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId})');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(3);
-        expect(source.match(/resolvedBy\{id login __typename\}/g)).toHaveLength(2);
+        const inspectQuery = source.match(
+            /export function inspectReviewThread\b[\s\S]*?const query\s*=\s*`(query\([^`]*)`;/
+        )?.[1];
+        const resolveMutation = source.match(
+            /function resolveThread\b[\s\S]*?const query\s*=\s*`(mutation\([^`]*)`;/
+        )?.[1];
+        const resolvedByActorSelection = /resolvedBy\s*\{\s*id\s+login\s+__typename\s*\}/;
+        const resolvedByBotFragment = /resolvedBy\s*\{[^}]*\.\.\.\s+on\s+Bot\s*\{\s*id\s*\}/;
+        for (const operationQuery of [inspectQuery, resolveMutation]) {
+            expect(operationQuery).toMatch(resolvedByActorSelection);
+            expect(operationQuery).not.toMatch(resolvedByBotFragment);
+        }
     });
     it.each([
         [
