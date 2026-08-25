@@ -73,6 +73,9 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
             platform: 'linux',
             invoke: (command, args = []) => {
                 calls.push({ command, args });
+                if (command === 'load_cached_whisper_model') {
+                    return Promise.resolve(undefined);
+                }
                 if (command === 'list_midi_inputs') {
                     return Promise.resolve([]);
                 }
