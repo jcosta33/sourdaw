@@ -1,0 +1,42 @@
+src/modules/WorkspaceShell/presentations/components/__tests__/MobileGate.spec.tsx
+  s_0a3429e31e555d::t_16f51cde03cb00 89,95-102
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_b1bed59dfd8b37 1206-1211,1216,1738-1739,1743-1744,1748-1749
+  s_0a3429e31e555d::t_35cd23d7a6124c 1203
+src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx
+  s_0a3429e31e555d::t_722f32944beb31 78-90,92-103,108,115
+  s_0a3429e31e555d::t_35b6b42ba0de7a 73-74
+  s_0a3429e31e555d::t_13ee9f5c28c384 3-4,9
+  s_0a3429e31e555d::t_cfd3d5880a0843 10
+src/modules/WorkspaceShell/presentations/components/__tests__/AlphaNoticeDialog.spec.tsx
+  s_0a3429e31e555d::t_16f51cde03cb00 26,29-36,39,41-42
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_0a3429e31e555d::t_16f51cde03cb00 1,265-286
+  s_0a3429e31e555d::t_115adfb5d7eb85 287-288
+src/modules/WorkspaceShell/presentations/projectLinks.ts
+  s_0a3429e31e555d::t_14d1db905c9ad1 1,5
+  s_0a3429e31e555d::t_b1bed59dfd8b37 2-4
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_0a3429e31e555d::t_b235cc974f6041 245-281
+  s_0a3429e31e555d::t_14d1db905c9ad1 3,12-18,30
+src/modules/WorkspaceShell/presentations/components/MobileGate.tsx
+  s_0a3429e31e555d::t_e1e0c782b1f8c4 3-4,8
+  s_0a3429e31e555d::t_425ddd5eebc1a9 135-158
+  s_0a3429e31e555d::t_38c80d96266891 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "e6ccd48921e02a3717ad629e9576e8854a7e0d12",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
