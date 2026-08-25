@@ -14,6 +14,7 @@ import { migrateAbsoluteMidiNotes, readLegacyChordTrackMigration } from '#/modul
 
 import { projectStore } from '../../stores/projectStore';
 import { finishProjectLoading } from '../finishProjectLoading';
+import { getDurableProjectOwnerId } from '../getDurableProjectOwnerId';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
@@ -114,7 +115,14 @@ export async function loadProject(): Promise<boolean> {
         projectStore.set({ ...project, loading: false, initialized: true });
     }
 
-    await projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.();
+    const durableOwnerId = getDurableProjectOwnerId();
+    if (!durableOwnerId || !transaction.isCurrent()) {
+        return false;
+    }
+    await projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
+        ownerId: durableOwnerId,
+        isCurrent: () => transaction.isCurrent() && getDurableProjectOwnerId() === durableOwnerId,
+    });
 
     if (!transaction.isCurrent()) {
         return false;

@@ -135,6 +135,11 @@ type AssetTransferDurabilityOptions = {
     handoffSourceOwnerIds?: readonly string[];
 };
 
+type DurableOwnerRecoveryAuthority = {
+    readonly ownerId: string;
+    readonly isCurrent: () => boolean;
+};
+
 type DurableAssetStageOptions = {
     protectAcrossTransfer?: boolean;
 };
@@ -692,14 +697,21 @@ export class AssetTransfer {
         });
     }
 
-    /** Resume target-keyed owner handoffs after a persisted project root has been loaded. */
-    async resumeDurableOwnerRebindsAfterProjectLoad(): Promise<void> {
-        await this.runOwnerOperation(async () => undefined, { resumeOwnerRebinds: true });
+    /** Resume target-keyed owner handoffs only while the exact persisted project load stays authoritative. */
+    async resumeDurableOwnerRebindsAfterProjectLoad(authority: DurableOwnerRecoveryAuthority): Promise<void> {
+        await this.runOwnerOperation(async () => undefined, {
+            resumeOwnerRebinds: true,
+            recoveryAuthority: authority,
+        });
     }
 
     private runOwnerOperation<Result>(
         operation: (durableAssets: DurableAssetRepository) => Promise<Result>,
-        options: { resumeOwnerRebinds?: boolean; resumeRecoveries?: boolean } = {}
+        options: {
+            resumeOwnerRebinds?: boolean;
+            resumeRecoveries?: boolean;
+            recoveryAuthority?: DurableOwnerRecoveryAuthority;
+        } = {}
     ): Promise<Result> {
         const transferPredecessor = this.ownerOperationTail;
         const task = runDurableOwnerOperation(async () => {
@@ -708,7 +720,10 @@ export class AssetTransfer {
                 throw new Error('AssetTransfer is disposed');
             }
             return (async () => {
-                if (options.resumeOwnerRebinds && this.ownerRecoveryPending) {
+                const recoveryIsAuthorized = () =>
+                    !options.recoveryAuthority ||
+                    (options.recoveryAuthority.ownerId === this.ownerId && options.recoveryAuthority.isCurrent());
+                if (options.resumeOwnerRebinds && this.ownerRecoveryPending && recoveryIsAuthorized()) {
                     const recovery = await this.durableAssets.resumeOwnerRebinds();
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);
@@ -718,7 +733,7 @@ export class AssetTransfer {
                     }
                     this.ownerRecoveryPending = false;
                 }
-                if (options.resumeRecoveries !== false) {
+                if (options.resumeRecoveries !== false && recoveryIsAuthorized()) {
                     const protectedRecoveryIds = new Set([
                         ...this.protectedStageRecoveryIds,
                         ...getLiveStageRecoveries(this.ownerId),

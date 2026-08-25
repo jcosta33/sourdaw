@@ -126,8 +126,8 @@ import {
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
 import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
-import { getSettledProjectId } from '#/modules/Project/stores';
 import {
+    getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
     initProjectDirtyTracking,
@@ -215,7 +215,7 @@ actionHistoryStore.subscribe((state) => {
 });
 setRuntimeLogger(logger);
 configureCollaborationAssetOwner({
-    captureOwnerId: getSettledProjectId,
+    captureOwnerId: getDurableProjectOwnerId,
 });
 configureDurableAssetCommitProof({
     isProven: isVersionedCommandBatchCommitProven,
@@ -290,12 +290,22 @@ setTimeOperationDependencies({
 });
 setProjectIdentityTransitionDependencies({
     leaveCollaborationSession: leaveSession,
-    resumeDurableAssetOwnerHandoffsAfterProjectLoad: async () => {
+    resumeDurableAssetOwnerHandoffsAfterProjectLoad: async (authority) => {
+        const isCurrentOwner = () => authority.isCurrent() && getDurableProjectOwnerId() === authority.ownerId;
+        if (!isCurrentOwner()) {
+            return;
+        }
         const assetTransfer = getAssetTransfer();
         if (!assetTransfer) {
             throw new Error('Durable asset owner recovery is unavailable after project load');
         }
-        await assetTransfer.resumeDurableOwnerRebindsAfterProjectLoad();
+        if (!isCurrentOwner()) {
+            return;
+        }
+        await assetTransfer.resumeDurableOwnerRebindsAfterProjectLoad({
+            ownerId: authority.ownerId,
+            isCurrent: isCurrentOwner,
+        });
     },
 });
 

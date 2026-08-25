@@ -344,7 +344,7 @@ describe('durable asset ownership lifecycle', () => {
         joining.dispose();
 
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
-        await recreated.resumeDurableOwnerRebindsAfterProjectLoad();
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad({ ownerId: projectOwner, isCurrent: () => true });
         await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
             status: 'opened',
             hash: staged.hash,
@@ -353,6 +353,58 @@ describe('durable asset ownership lifecycle', () => {
         await expect(createDurableAssetRepository(provisionalOwner).reopenDurableAsset(staged.hash)).resolves.toEqual({
             status: 'failed',
             reason: 'asset-not-owned',
+        });
+        recreated.dispose();
+    });
+
+    it('does not consume a prepared handoff after the loaded project authority is superseded in the owner queue', async () => {
+        const provisionalOwner = 'collaboration-join:superseded-load';
+        const projectOwner = 'project:superseded-load';
+        const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
+        const staged = await joining.stageDurableAsset(
+            new Blob(['superseded-load-original']),
+            'superseded-load.wav',
+            'asset-stage-superseded-load'
+        );
+        await joining.promoteDurableStagedAsset(staged.leaseId, staged.hash);
+        await joining.prepareDurableOwnerRebind(projectOwner);
+        joining.dispose();
+
+        const durableAssets = createDurableAssetRepository(projectOwner);
+        const startupRecovery = Promise.withResolvers<{
+            status: 'resumed';
+            ownerId: string;
+            recoveryCount: number;
+            promotedHashes: string[];
+        }>();
+        const resumeRecoveries = vi
+            .fn()
+            .mockImplementationOnce(() => startupRecovery.promise)
+            .mockImplementation((...args: Parameters<typeof durableAssets.resumeRecoveries>) =>
+                durableAssets.resumeRecoveries(...args)
+            );
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner, {
+            ...durableAssets,
+            resumeRecoveries,
+        });
+        let isCurrent = true;
+        const recovery = recreated.resumeDurableOwnerRebindsAfterProjectLoad({
+            ownerId: projectOwner,
+            isCurrent: () => isCurrent,
+        });
+        await vi.waitFor(() => expect(resumeRecoveries).toHaveBeenCalledOnce());
+        isCurrent = false;
+        startupRecovery.resolve({ status: 'resumed', ownerId: projectOwner, recoveryCount: 0, promotedHashes: [] });
+
+        await recovery;
+
+        expect(resumeRecoveries).toHaveBeenCalledOnce();
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+        await expect(
+            createDurableAssetRepository(provisionalOwner).reopenDurableAsset(staged.hash)
+        ).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
         });
         recreated.dispose();
     });
@@ -379,7 +431,7 @@ describe('durable asset ownership lifecycle', () => {
         joining.dispose();
 
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
-        await recreated.resumeDurableOwnerRebindsAfterProjectLoad();
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad({ ownerId: projectOwner, isCurrent: () => true });
         await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
             status: 'opened',
             hash: staged.hash,

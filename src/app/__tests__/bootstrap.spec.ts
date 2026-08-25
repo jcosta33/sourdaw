@@ -66,7 +66,7 @@ const {
     configureCollaborationAssetOwnerMock,
     configureDurableAssetCommitProofMock,
     getAssetTransferMock,
-    getSettledProjectIdMock,
+    getDurableProjectOwnerIdMock,
     isVersionedCommandBatchCommitProvenMock,
     prepareOfflineLevainMock,
     initBranchStateMock,
@@ -98,7 +98,7 @@ const {
         getAssetTransferMock: vi.fn(() => ({
             resumeDurableOwnerRebindsAfterProjectLoad: vi.fn(() => Promise.resolve()),
         })),
-        getSettledProjectIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
+        getDurableProjectOwnerIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
         isVersionedCommandBatchCommitProvenMock: vi.fn(() => true),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
@@ -380,11 +380,12 @@ vi.mock('#/modules/Project/useCases', () => ({
             mirrorsWithoutPrimary: 0,
             failed: 0,
         }),
+    getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
 vi.mock('#/modules/Project/stores', () => ({
-    getSettledProjectId: getSettledProjectIdMock,
+    getSettledProjectId: getDurableProjectOwnerIdMock,
 }));
 
 vi.mock('#/modules/ProjectVersioning/useCases', () => ({
@@ -554,20 +555,52 @@ describe('bootstrap', () => {
 
     it('gives Collaboration only Project-owned settled identity reads', () => {
         expect(configureCollaborationAssetOwnerMock).toHaveBeenCalledExactlyOnceWith({
-            captureOwnerId: getSettledProjectIdMock,
+            captureOwnerId: getDurableProjectOwnerIdMock,
         });
     });
 
     it('resumes durable owner handoffs only through the persisted-project load seam', async () => {
         const dependencies = setProjectIdentityTransitionDependenciesMock.mock.calls[0]?.[0] as
-            { resumeDurableAssetOwnerHandoffsAfterProjectLoad?: () => Promise<void> } | undefined;
+            | {
+                  resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
+                      ownerId: string;
+                      isCurrent: () => boolean;
+                  }) => Promise<void>;
+              }
+            | undefined;
+        const authority = {
+            ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            isCurrent: () => true,
+        };
 
-        await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.();
+        await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.(authority);
 
         expect(getAssetTransferMock).toHaveBeenCalledOnce();
         expect(
             getAssetTransferMock.mock.results[0]?.value.resumeDurableOwnerRebindsAfterProjectLoad
-        ).toHaveBeenCalledOnce();
+        ).toHaveBeenCalledExactlyOnceWith({
+            ownerId: authority.ownerId,
+            isCurrent: expect.any(Function),
+        });
+    });
+
+    it('does not resolve or recover an asset owner after project-load authority is stale', async () => {
+        const dependencies = setProjectIdentityTransitionDependenciesMock.mock.calls[0]?.[0] as
+            | {
+                  resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
+                      ownerId: string;
+                      isCurrent: () => boolean;
+                  }) => Promise<void>;
+              }
+            | undefined;
+        const callsBeforeStaleRecovery = getAssetTransferMock.mock.calls.length;
+
+        await dependencies?.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
+            ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            isCurrent: () => false,
+        });
+
+        expect(getAssetTransferMock).toHaveBeenCalledTimes(callsBeforeStaleRecovery);
     });
 
     it('binds durable asset admission to the Command commit proof', () => {
