@@ -1274,6 +1274,43 @@ describe('release proof', () => {
         expect(swapped).toBe(true);
     });
 
+    it('rejects a same-inode same-size candidate rewrite after snapshot capture', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const path = join(fixture.candidate, 'web/contents/assets/app.js');
+        const original = readFileSync(path);
+        const replacement = Buffer.from(original.toString('utf8').replace('current', 'raced!!'), 'utf8');
+        const before = lstatSync(path, { bigint: true });
+        let targetDescriptor: number | undefined;
+        let rewritten = false;
+        const fileReader: ReleaseProofFileReader = {
+            open(openPath, flags) {
+                const descriptor = openSync(openPath, flags);
+                if (openPath === path) {
+                    targetDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                if (descriptor === targetDescriptor && bytesRead > 0 && !rewritten) {
+                    writeFileSync(path, replacement);
+                    rewritten = true;
+                }
+                return bytesRead;
+            },
+        };
+
+        expect(replacement.length).toBe(original.length);
+        expect(validate(fixture, fileReader)).toContain('web contents: missing or unsafe assets/app.js');
+        expect(rewritten).toBe(true);
+        const after = lstatSync(path, { bigint: true });
+        expect(after.dev).toBe(before.dev);
+        expect(after.ino).toBe(before.ino);
+        expect(after.size).toBe(before.size);
+    });
+
     it.each([
         ['web manifest', 'web/contents/web-artifact-manifest.json'],
         ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],

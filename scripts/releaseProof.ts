@@ -1178,17 +1178,22 @@ function sameFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
     return left.dev === right.dev && left.ino === right.ino;
 }
 
+function sameRegularFileSnapshot(left: BigIntStats, right: BigIntStats): boolean {
+    return (
+        sameFileIdentity(left, right) &&
+        left.nlink === right.nlink &&
+        left.size === right.size &&
+        left.mtimeNs === right.mtimeNs &&
+        left.ctimeNs === right.ctimeNs
+    );
+}
+
 function pathMatchesOpenedRegularFile(rootRealPath: string, path: string, opened: BigIntStats): boolean {
     if (!opened.isFile() || opened.nlink !== 1n) {
         return false;
     }
     const pathMetadata = lstatSync(path, { bigint: true });
-    if (
-        !pathMetadata.isFile() ||
-        pathMetadata.nlink !== 1n ||
-        pathMetadata.size !== opened.size ||
-        !sameFileIdentity(pathMetadata, opened)
-    ) {
+    if (!pathMetadata.isFile() || !sameRegularFileSnapshot(pathMetadata, opened)) {
         return false;
     }
     const realPath = realpathSync(path);
@@ -1196,7 +1201,7 @@ function pathMatchesOpenedRegularFile(rootRealPath: string, path: string, opened
         return false;
     }
     const resolved = statSync(realPath, { bigint: true });
-    return resolved.nlink === 1n && resolved.size === opened.size && sameFileIdentity(resolved, opened);
+    return resolved.isFile() && sameRegularFileSnapshot(resolved, opened);
 }
 
 function withContainedRegularFile<Result>(
@@ -1225,7 +1230,7 @@ function withContainedRegularFile<Result>(
         if (opened.size > BigInt(maxBytes)) {
             throw new FileReadLimitError('file');
         }
-        if (!sameFileIdentity(beforeOpen, opened) || !pathMatchesOpenedRegularFile(rootRealPath, path, opened)) {
+        if (!sameRegularFileSnapshot(beforeOpen, opened) || !pathMatchesOpenedRegularFile(rootRealPath, path, opened)) {
             return undefined;
         }
         const result = consume(descriptor);
@@ -1233,7 +1238,7 @@ function withContainedRegularFile<Result>(
         if (closed.size > BigInt(maxBytes)) {
             throw new FileReadLimitError('file');
         }
-        if (!sameFileIdentity(opened, closed) || !pathMatchesOpenedRegularFile(rootRealPath, path, closed)) {
+        if (!sameRegularFileSnapshot(opened, closed) || !pathMatchesOpenedRegularFile(rootRealPath, path, closed)) {
             return undefined;
         }
         return result;
