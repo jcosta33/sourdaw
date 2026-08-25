@@ -2250,7 +2250,6 @@ impl AudioScheduler {
             // leaving it alone is a deliberate, observable tradeoff, not an
             // unbounded leak.
             if self.bridge_index.lookup(effect.id).is_some() {
-                effect.pending_midi.clear();
                 continue;
             }
 
