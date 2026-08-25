@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
@@ -36,7 +36,7 @@ export default defineConfig({
     ],
     webServer: {
         command: `pnpm dev --host 127.0.0.1 --port ${WEBGPU_ADMISSION_PORT} --strictPort`,
-        cwd: fileURLToPath(new URL('../..', import.meta.url)),
+        cwd: resolve(import.meta.dirname, '../..'),
         url: WEBGPU_ADMISSION_ORIGIN,
         reuseExistingServer: false,
         gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },

@@ -3,8 +3,15 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
+
+import {
+    getBrowserAiWebGpuHardwareRequirement,
+    probeBrowserWebGpuHardwareInPage,
+    requireBrowserWebGpuHardware,
+} from '../../tests/e2e/browserAiHardware';
+import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -36,7 +43,13 @@ const BROWSER_AI_WEBGPU_JOB = 'browser-ai-webgpu';
 const BROWSER_AI_WEBGPU_JOB_NAME = 'Browser AI WebGPU admission';
 const BROWSER_AI_WEBGPU_CONDITION = "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'";
 const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
+const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
+const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
+    'playwright test --config tests/e2e/browserAiWebGpuAdmission.playwright.config.ts';
+const BROWSER_AI_WEBGPU_TEST_MATCH = 'browserAiWebGpuAdmission.spec.ts';
+const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
+const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
 const CURRENT_NON_GATING_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
@@ -44,6 +57,9 @@ const CURRENT_NON_GATING_JOB_WIRING = {
 } satisfies Record<(typeof CURRENT_NON_GATING_JOBS)[number], Readonly<{ needs: string; if: string }>>;
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
+const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
+const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
+const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
 const workflowSource = readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8');
 const workflowDocument = parseDocument(workflowSource);
 if (workflowDocument.errors.length > 0) {
@@ -99,6 +115,16 @@ function assertConcurrencyContract(candidate: UnknownRecord): void {
     }
     if (concurrency['cancel-in-progress'] !== PULL_REQUEST_CONCURRENCY_CANCELLATION) {
         throw new Error('only a newer pull-request run may cancel in-progress work');
+    }
+}
+
+function assertWorkflowPermissions(candidate: UnknownRecord): void {
+    const permissions = recordAt(candidate, 'permissions');
+    if (permissions.contents !== 'read' || permissions['pull-requests'] !== 'read') {
+        throw new Error('workflow must grant only read access to contents and pull requests');
+    }
+    if (Object.keys(permissions).length !== 2) {
+        throw new Error('workflow permissions must not exceed path-filter requirements');
     }
 }
 
@@ -237,6 +263,33 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     }
 }
 
+function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: UnknownRecord): void {
+    const scripts = recordAt(manifest, 'scripts');
+    if (scripts[BROWSER_AI_WEBGPU_SCRIPT_NAME] !== BROWSER_AI_WEBGPU_PACKAGE_SCRIPT) {
+        throw new Error('Browser AI WebGPU package script must run the dedicated Playwright config');
+    }
+    if (config.testMatch !== BROWSER_AI_WEBGPU_TEST_MATCH) {
+        throw new Error('Browser AI WebGPU config must match only the dedicated admission spec');
+    }
+    const projects = arrayAt(config, 'projects');
+    if (projects.length !== 1) {
+        throw new Error('Browser AI WebGPU config must contain one dedicated project');
+    }
+    const project = asRecord(projects[0], 'Browser AI WebGPU project');
+    if (getBrowserAiWebGpuHardwareRequirement(recordAt(project, 'metadata')) !== 'required') {
+        throw new Error('Browser AI WebGPU project must require hardware');
+    }
+    const server = recordAt(config, 'webServer');
+    if (
+        server.command !== BROWSER_AI_WEBGPU_SERVER_COMMAND ||
+        server.url !== BROWSER_AI_WEBGPU_ORIGIN ||
+        server.reuseExistingServer !== false ||
+        recordAt(config, 'use').baseURL !== BROWSER_AI_WEBGPU_ORIGIN
+    ) {
+        throw new Error('Browser AI WebGPU config must own a non-reused isolated server');
+    }
+}
+
 function gateResults(
     candidate: UnknownRecord,
     result: JobResult,
@@ -313,6 +366,10 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
 }
 
 describe('health gates workflow contract', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     it('parses and subscribes only to the intended events', () => {
         expect(workflowDocument.errors).toEqual([]);
         const events = recordAt(workflow, 'on');
@@ -320,8 +377,20 @@ describe('health gates workflow contract', () => {
         expect(Object.hasOwn(events, 'pull_request')).toBe(true);
         expect(Object.hasOwn(events, 'schedule')).toBe(true);
         expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(true);
-        expect(recordAt(workflow, 'permissions')).toEqual({ contents: 'read' });
+        expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
+
+        const missingPullRequestAccess = asRecord(structuredClone(workflow), 'missing pull-request permission');
+        delete recordAt(missingPullRequestAccess, 'permissions')['pull-requests'];
+        expect(() => assertWorkflowPermissions(missingPullRequestAccess)).toThrow(
+            'workflow must grant only read access to contents and pull requests'
+        );
+
+        const widenedPullRequestAccess = asRecord(structuredClone(workflow), 'widened pull-request permission');
+        recordAt(widenedPullRequestAccess, 'permissions')['pull-requests'] = 'write';
+        expect(() => assertWorkflowPermissions(widenedPullRequestAccess)).toThrow(
+            'workflow must grant only read access to contents and pull requests'
+        );
     });
 
     it('rejects review-triggered cancellation and changing the pull-request grouping key', () => {
@@ -399,8 +468,9 @@ describe('health gates workflow contract', () => {
         }
     });
 
-    it('gates the dedicated Browser AI WebGPU proof on a standard macOS runner', () => {
+    it('gates the dedicated Browser AI WebGPU proof on a standard macOS runner', async () => {
         expect(() => assertBrowserAiWebGpuJob(workflow)).not.toThrow();
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
 
         for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
             const premiumRunner = asRecord(structuredClone(workflow), `${runner} Browser AI workflow`);
@@ -428,6 +498,58 @@ describe('health gates workflow contract', () => {
         gateNeeds.splice(gateNeeds.indexOf(BROWSER_AI_WEBGPU_JOB), 1);
         expect(() => assertBrowserAiWebGpuJob(disconnectedGate)).toThrow(
             'gate must depend on the Browser AI WebGPU job'
+        );
+
+        const indirectPackageScript = asRecord(structuredClone(packageManifest), 'indirect package manifest');
+        recordAt(indirectPackageScript, 'scripts')[BROWSER_AI_WEBGPU_SCRIPT_NAME] =
+            'playwright test tests/e2e/browserAiWebGpuAdmission.spec.ts';
+        expect(() => assertBrowserAiWebGpuProofChain(indirectPackageScript, browserAiWebGpuConfig)).toThrow(
+            'Browser AI WebGPU package script must run the dedicated Playwright config'
+        );
+
+        const broadConfig = asRecord(structuredClone(browserAiWebGpuConfig), 'broad Browser AI config');
+        broadConfig.testMatch = '*.spec.ts';
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, broadConfig)).toThrow(
+            'Browser AI WebGPU config must match only the dedicated admission spec'
+        );
+
+        const optionalHardware = asRecord(
+            structuredClone(browserAiWebGpuConfig),
+            'optional-hardware Browser AI config'
+        );
+        delete recordAt(asRecord(arrayAt(optionalHardware, 'projects')[0], 'Browser AI project'), 'metadata')
+            .browserAiWebGpuHardware;
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, optionalHardware)).toThrow(
+            'Browser AI WebGPU project must require hardware'
+        );
+
+        const sharedServer = asRecord(structuredClone(browserAiWebGpuConfig), 'shared-server Browser AI config');
+        recordAt(sharedServer, 'webServer').reuseExistingServer = true;
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, sharedServer)).toThrow(
+            'Browser AI WebGPU config must own a non-reused isolated server'
+        );
+
+        const sharedOrigin = asRecord(structuredClone(browserAiWebGpuConfig), 'shared-origin Browser AI config');
+        recordAt(sharedOrigin, 'use').baseURL = 'http://localhost:5173';
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, sharedOrigin)).toThrow(
+            'Browser AI WebGPU config must own a non-reused isolated server'
+        );
+
+        const fallbackRequestAdapter = vi.fn().mockResolvedValue({
+            info: { isFallbackAdapter: true },
+            requestDevice: vi.fn(),
+        });
+        vi.stubGlobal('navigator', { gpu: { requestAdapter: fallbackRequestAdapter } });
+        await expect(probeBrowserWebGpuHardwareInPage()).resolves.toEqual({
+            status: 'unavailable',
+            reason: 'fallback-adapter',
+        });
+        expect(fallbackRequestAdapter).toHaveBeenCalledWith({
+            featureLevel: 'core',
+            forceFallbackAdapter: false,
+        });
+        expect(() => requireBrowserWebGpuHardware({ status: 'unavailable', reason: 'fallback-adapter' })).toThrow(
+            'This Browser AI proof requires hardware WebGPU (fallback-adapter)'
         );
     });
 

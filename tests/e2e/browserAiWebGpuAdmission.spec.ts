@@ -1,6 +1,10 @@
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 
-import { probeBrowserWebGpuHardware, requireBrowserWebGpuHardware } from './browserAiHardware';
+import {
+    getBrowserAiWebGpuHardwareRequirement,
+    probeBrowserWebGpuHardware,
+    requireBrowserWebGpuHardware,
+} from './browserAiHardware';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
@@ -23,8 +27,6 @@ type BrowserAiCapabilityReport = {
     webGpu: { reason?: string; status: 'supported' | 'unavailable' };
     workerAvailable: boolean;
 };
-
-type BrowserAiWebGpuHardwareRequirement = 'optional' | 'required';
 
 declare global {
     // oxlint-disable-next-line typescript/consistent-type-definitions -- Window must merge with the DOM global.
@@ -92,17 +94,6 @@ async function renderDdspAfterViteWorkerOptimization(
     }
 }
 
-function getBrowserAiWebGpuHardwareRequirement(testInfo: TestInfo): BrowserAiWebGpuHardwareRequirement {
-    const configuredRequirement = testInfo.project.metadata.browserAiWebGpuHardware;
-    if (configuredRequirement === undefined) {
-        return 'optional';
-    }
-    if (configuredRequirement === 'required') {
-        return 'required';
-    }
-    throw new TypeError('Browser AI WebGPU proof configuration has an invalid hardware requirement');
-}
-
 async function openBrowserAiPreferences(page: Page): Promise<Locator> {
     await page.getByTestId('toggle-preferences').click();
     const dialog = page.getByRole('dialog');
@@ -118,7 +109,7 @@ async function assertBrowserAiCapabilityBoundary({
     testInfo: TestInfo;
 }): Promise<{ supportsHardwareWebGpu: boolean }> {
     const hardwareProbe = await probeBrowserWebGpuHardware(page);
-    const hardwareRequirement = getBrowserAiWebGpuHardwareRequirement(testInfo);
+    const hardwareRequirement = getBrowserAiWebGpuHardwareRequirement(testInfo.project.metadata);
     if (hardwareRequirement === 'required') {
         requireBrowserWebGpuHardware(hardwareProbe);
     }
