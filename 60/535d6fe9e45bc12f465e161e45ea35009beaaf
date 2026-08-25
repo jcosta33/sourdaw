@@ -1,0 +1,86 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_4329dfd5e8caab 48,806
+src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_8a6bc38ad0bc1d 1-46
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_a40848e8f8cca9::t_ae3e74d486c7bb 10,147-180
+  s_a40848e8f8cca9::t_7dd911630e02eb 181-182
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_587030f446e051 165-166
+  s_a40848e8f8cca9::t_75ec48f735d060 7,194-231
+  s_a40848e8f8cca9::t_2beaaceddaae0d 232-233
+src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_8a6bc38ad0bc1d 1-23
+src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts
+  s_a40848e8f8cca9::t_8a6bc38ad0bc1d 4,9,22
+src/modules/PluginHost/useCases/pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild.ts
+  s_a40848e8f8cca9::t_f714bc39f84b9f 3
+  s_a40848e8f8cca9::t_54b20a7ec38972 2,6-7,9-35
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_617b2fb0317370 116-117,136-137,188-190,238,307-326
+  s_a40848e8f8cca9::t_ce64abbb5b37ca 327,440-563
+  s_0a3429e31e555d::t_84678d7fe39d0a 328
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_055432dd444db6 26-29
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_b0cd2c4d89d8af 451-452,454-496
+  s_a40848e8f8cca9::t_3ed19266a84a2a 391
+  s_a40848e8f8cca9::t_d91b363285c08d 9,395-450
+  s_a40848e8f8cca9::t_130180e885d6be 453
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_a40848e8f8cca9::t_5b2371beec0deb 32,43-47,62-76
+  s_a40848e8f8cca9::t_6f3dd8ee5b97da 77
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_a40848e8f8cca9::t_54b20a7ec38972 132
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_a40848e8f8cca9::t_caf81fcde057e5 13,69-141
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_8be1074a36a7fa 626,629,631,664,670-676
+  s_a40848e8f8cca9::t_05342d2e29890a 621,624-625,627-628,632-633,636-639
+  s_a40848e8f8cca9::t_738788bafb3ca0 630,648,761-827
+  s_a40848e8f8cca9::t_b677c12500f8c8 16,21,110-131,622-623,634-635,640-646,649,651-663,665-669,677-700,708-723,726-729,737,739-748,751-760,828-831,1174,1182-1183
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_33f2786d084d3b 34-37,42-44,55-59
+  s_a40848e8f8cca9::t_d15a3a38bb0eb9 80-86
+  s_a40848e8f8cca9::t_5f666234a55ad5 41,45-47,54,60-79,87-110,137-141,310,313,333-340,582-583,591-604,670-681
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_3195cc8668f8d8 377-381,445-446
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_3195cc8668f8d8 21,34,297-308,1566-1595,1617-1621
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_a40848e8f8cca9::t_54b20a7ec38972 72-75,86-92,134-140
+  s_a40848e8f8cca9::t_f714bc39f84b9f 18
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_a40848e8f8cca9::t_ae3e74d486c7bb 217,233-237,248-249
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_5f666234a55ad5 15,206-208,232-234
+src/modules/PluginHost/useCases/pluginLifecycle/serializePluginLifecycle.ts
+  s_a40848e8f8cca9::t_54b20a7ec38972 93
+  s_a40848e8f8cca9::t_f714bc39f84b9f 1-5,7-87
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_4329dfd5e8caab 14,91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "60535d6fe9e45bc12f465e161e45ea35009beaaf",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
