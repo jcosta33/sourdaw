@@ -211,12 +211,14 @@ describe('usePromptExecution', () => {
                           projectRevision: 'revision-1',
                       };
             const actions = planned.result.actions;
+            // Rejection and no-match notifications are production use-case
+            // behavior, pinned by the submitAdmittedPromptRequest spec;
+            // re-implementing them here would make these tests assert on the
+            // mock instead of the hook.
             if (planned.result.rejectionReason) {
-                notifyAiChange(`Command not executed: ${planned.result.rejectionReason}`, []);
                 return { status: 'rejected' as const, runId: 'prompt-run-1' };
             }
             if (actions.length === 0) {
-                notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
                 return { status: 'no-op' as const, runId: 'prompt-run-1' };
             }
             const requiresConfirmation =
@@ -564,20 +566,24 @@ describe('usePromptExecution', () => {
         expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledTimes(1);
     });
 
-    it('notifies when no executable action matches', async () => {
+    it('clears the prompt without executing when no executable action matches', async () => {
         const { result } = renderHook(() => usePromptExecution());
 
         act(() => result.current.setValue('do something unknown'));
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
         });
-        expect(vi.mocked(notifyAiChange)).toHaveBeenLastCalledWith(
-            'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
-            []
-        );
+
+        expect(executionUseCaseMocks.submitAdmittedPromptRequest).toHaveBeenCalledTimes(1);
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
+        // The no-match notice belongs to the admitted-submission use case,
+        // which has its own spec; the hook must not duplicate it.
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(result.current.isProcessing).toBe(false);
+        expect(result.current.value).toBe('');
     });
 
-    it('surfaces a rejected prompt receipt without executing or showing a no-match notice', async () => {
+    it('does not execute or duplicate notifications when the prompt request is rejected', async () => {
         executionUseCaseMocks.parsePromptToActions.mockResolvedValue({
             actions: [],
             rawText: 'save project',
@@ -592,14 +598,11 @@ describe('usePromptExecution', () => {
         });
 
         expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
-            'Command not executed: Action saveProject cannot be executed by AI because it does not report completion.',
-            []
-        );
-        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalledWith(
-            'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
-            []
-        );
+        // The rejection notice belongs to the admitted-submission use case,
+        // which has its own spec; the hook must not duplicate it.
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(result.current.isProcessing).toBe(false);
+        expect(result.current.value).toBe('');
     });
 
     it('ignores blank submissions and recovers after a parsing failure', async () => {

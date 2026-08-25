@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 
 import { preparedStemImportResources } from './registerPreparedStemImportResources';
@@ -17,6 +19,9 @@ export function createStemImportConfirmationResourceLease(
         protect: () => preparedStemImportResources.protect({ runId, stems, recovery }),
         retain: () => preparedStemImportResources.retainForRecovery({ runId, stems, recovery }),
         transfer: () => preparedStemImportResources.release({ runId, stems }),
-        release: () => void preparedStemImportResources.discard({ runId, stems }),
+        release: () =>
+            void preparedStemImportResources.discard({ runId, stems }).catch((error: unknown) => {
+                logger.error(new Error('Stem import confirmation resource release failed', { cause: error }));
+            }),
     };
 }
