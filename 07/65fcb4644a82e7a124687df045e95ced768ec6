@@ -1,0 +1,59 @@
+Cargo.lock
+  s_a40848e8f8cca9::t_01e835a070c30a 613
+crates/daw-engine/Cargo.toml
+  s_a40848e8f8cca9::t_bf2dfa25e35856 27-32
+crates/daw-engine/src/lib.rs
+  s_a40848e8f8cca9::t_6b5fe0af080fa9 22,310-320,324-327,736,742-748,880-881,890,1072,1118,1133
+crates/daw-engine/src/scheduler.rs
+  s_a40848e8f8cca9::t_6873d5eddb981b 71-78,112-113,116-122,130,432-443,448-461,935-936,938-939,1325-1328,1330-1336,1340,1342,1345-1347,1351-1353,1357,2434,2464,2496,2534-2538,2542-2555,2557,2582-2586,2592,2603,2610-2617,2636-2640,2642,2645,2651,2668-2672,2685,2885-3076,3871,4023
+crates/sourdaw-native/src/commands/graph.rs
+  s_a40848e8f8cca9::t_eea7d34520eb46 123,887-890,895,963,1176-1178,1279-1281,1468-1469
+src/modules/AiGeneration/presentations/views/__tests__/PatternBrowser.spec.tsx
+  s_a40848e8f8cca9::t_56e4d4d4d776cb 6-7,50-53
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_a40848e8f8cca9::t_10f007951fa63d 6-7,34
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_a40848e8f8cca9::t_3969b506bbcead 6-7,195
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_a40848e8f8cca9::t_3bc55d7c84cac4 12-13,45-48,80,95,97
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_1136bf6019b9b2 3-4,33,35
+src/modules/CommandInterface/useCases/__tests__/selectAllClips.spec.ts
+  s_a40848e8f8cca9::t_cf567d8aeecf46 3-4,22
+src/modules/CrdtDocument/useCases/projection/__tests__/projectMixStateSlots.spec.ts
+  s_a40848e8f8cca9::t_1a4297d0e02772 13-14,32
+src/modules/CrdtDocument/useCases/projection/__tests__/projectModulationSlot.spec.ts
+  s_a40848e8f8cca9::t_4498a21d35af82 8-9,19
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_a40848e8f8cca9::t_98359d849bac21 5-6,26
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_a40848e8f8cca9::t_83dab0d1e8b8df 4-5,115-118
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_a40848e8f8cca9::t_75b5c7ac505fd9 153
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_75fe4d0174fba6 9-10,51
+src/modules/Transport/useCases/scheduling/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_32c38e9bca3f7c 14-17
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_5932ae4affbc44 22,24
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_a40848e8f8cca9::t_ac259b3c1e8d86 13,15
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationSteppedQuantisation.spec.ts
+  s_a40848e8f8cca9::t_ac45c73182b439 35,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "0765fcb4644a82e7a124687df045e95ced768ec6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
