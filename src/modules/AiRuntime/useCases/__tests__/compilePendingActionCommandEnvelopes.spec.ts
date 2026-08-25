@@ -9,6 +9,27 @@ import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCom
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type AddSidechainRouteAction = Extract<AppAction, { type: 'addSidechainRoute' }>;
 
+function compileTempoGraph(dependenciesByActionIndex: readonly (readonly number[])[]) {
+    registerHandlerMap({
+        setTempo: {
+            describe: () => ({ label: 'Set tempo' }),
+            execute: () => undefined,
+            undoable: false,
+        },
+    });
+    return () =>
+        compilePendingActionCommandEnvelopes({
+            actions: [
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 128 } },
+            ],
+            actionCommandGraph: { dependenciesByActionIndex, batchLocalBindings: [] },
+            actionLabels: ['Set tempo to 120 BPM', 'Set tempo to 128 BPM'],
+            group: { groupId: 'group-tempo-graph', groupLabel: 'Set tempo twice' },
+            projectRevision: 'revision-graph',
+        });
+}
+
 describe('compilePendingActionCommandEnvelopes', () => {
     afterEach(() => {
         clearHandlerRegistry();
@@ -87,5 +108,22 @@ describe('compilePendingActionCommandEnvelopes', () => {
                 },
             },
         });
+    });
+
+    it('rejects a command graph whose dependency rows do not exactly match the action batch', () => {
+        expect(compileTempoGraph([[]])).toThrow('Action command graph does not exactly match the action batch');
+    });
+
+    it.each([
+        { name: 'duplicate', dependencies: [[], [0, 0]] },
+        { name: 'self', dependencies: [[], [1]] },
+        { name: 'forward', dependencies: [[1], []] },
+        { name: 'out-of-range', dependencies: [[], [9]] },
+        { name: 'negative', dependencies: [[], [-1]] },
+        { name: 'non-integer', dependencies: [[], [0.5]] },
+    ])('rejects a $name action dependency index', ({ dependencies }) => {
+        expect(compileTempoGraph(dependencies)).toThrow(
+            'Action command graph contains an invalid or out-of-order dependency'
+        );
     });
 });

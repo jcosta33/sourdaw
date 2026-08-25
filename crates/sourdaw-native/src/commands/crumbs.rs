@@ -18,6 +18,7 @@ use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsParam, SampleId};
 use daw_engine::audio_bridge::MAX_BLOCK_FRAMES;
+use daw_engine::scheduler::CRUMBS_CAPTURE_RESERVE;
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -162,6 +163,36 @@ pub struct LoopPointDetectionResult {
 
 // ── Commands ───────────────────────────────────────────────────────────
 
+/// Refuse when the session already holds its ceiling of live crumbs
+/// instances.
+///
+/// Each live instance holds one capture slot of the shared effect table and
+/// one bridge for its record feed. The app renders exactly one Crumbs panel,
+/// and re-pointing it tears the old instance down asynchronously while the new
+/// one is already being created, so two can be live at once. The gate this
+/// enforces is the instance map itself: a destroy removes its map entry
+/// before the engine slot's retirement has drained, so re-points inside that
+/// teardown window can admit a third engine slot past this check — at that
+/// extreme the engine's own callback-time capacity check is the last line.
+/// Inside the gate, the refusal reaches the panel instead of dying as a
+/// counter on the audio callback that leaves armed recording capturing
+/// silence with nothing saying why.
+///
+/// Takes the map `create_crumbs` already holds: the check and the insert stay
+/// inside that one critical section, so a create that parked mid-registration
+/// cannot let a concurrent create read the same live count and slip past the
+/// ceiling.
+fn ensure_crumbs_capture_headroom(
+    instances: &HashMap<String, CrumbsInstanceData>,
+) -> Result<(), String> {
+    if instances.len() >= CRUMBS_CAPTURE_RESERVE {
+        return Err(format!(
+            "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+        ));
+    }
+    Ok(())
+}
+
 /// Create a new crumbs engine instance.
 pub async fn create_crumbs(
     instance_id: String,
@@ -169,6 +200,21 @@ pub async fn create_crumbs(
     state: &CrumbsState,
     app_state: &AppState,
 ) -> Result<(), String> {
+    // The instances lock is taken first and held through the engine
+    // registration to the insert at the bottom, so the headroom decision and
+    // the insert are one critical section — a count-then-act split here is
+    // what let two concurrent creates both observe the same live count and
+    // both register against a ceiling with one slot left. Every path holding
+    // two of these locks takes them instances -> engine -> audio_bridges;
+    // `destroy_crumbs` already held exactly that order, so this hold cannot
+    // invert against it — including across the re-point's concurrent
+    // create/destroy pair.
+    let mut instances = state
+        .instances
+        .lock()
+        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+    ensure_crumbs_capture_headroom(&instances)?;
+
     let (tx, rx) = rtrb::RingBuffer::new(128);
     // Commit-handoff rings (ledger #568): the engine hands committed takes
     // out in O(1); drain_pending_recording_commits completes them off the
@@ -178,53 +224,53 @@ pub async fn create_crumbs(
     let metering = Arc::new(CrumbsMetering::default());
     let engine = CrumbsEngine::with_metering(sample_rate, metering.clone());
 
-    let mut engine_guard = app_state
-        .engine
-        .lock()
-        .map_err(|e| format!("Failed to lock engine: {e}"))?;
-
-    let engine_plugin_id = if let Some(ref mut engine_handle) = *engine_guard {
-        // Reserve the id up front and register an audio bridge alongside the
-        // slot (mirrors the CLAP path in plugins.rs): the bridge is the only
-        // channel that carries real audio from the app into the native
-        // engine — the slot feeds incoming bridge blocks to the engine's
-        // record input before rendering, so without it armed recording can
-        // only ever capture silence.
-        //
-        // The capture slot takes a slot of the same shared effect table the
-        // project's devices and its plugins fill, so refuse before the id is
-        // reserved and the bridge is published. The audio thread's refusal is
-        // a counter nothing here can read, and a capture slot refused there
-        // leaves armed recording capturing silence with nothing saying why.
-        engine_handle.ensure_effect_table_headroom(1)?;
-
-        let id = engine_handle.reserve_plugin_id();
-        let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
-        let mut engine = engine;
-        engine.enable_commit_handoff();
-        let slot = CrumbsPluginSlot {
-            engine,
-            command_rx: rx,
-            commit_tx,
-            recycle_rx,
-        };
-        engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
-
-        let mut feed = app_state
-            .audio_bridges
+    // The engine guard is scoped to the registration alone — it is the
+    // engine-wide mutex, not this instance's — while the instances guard
+    // above spans the whole create, per the ordering law stated there.
+    let engine_plugin_id = {
+        let mut engine_guard = app_state
+            .engine
             .lock()
-            .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-        feed.bridges.insert(id, bridge_handle);
+            .map_err(|e| format!("Failed to lock engine: {e}"))?;
 
-        id
-    } else {
-        return Err("Native engine not running".to_string());
+        if let Some(ref mut engine_handle) = *engine_guard {
+            // Reserve the id up front and register an audio bridge alongside the
+            // slot (mirrors the CLAP path in plugins.rs): the bridge is the only
+            // channel that carries real audio from the app into the native
+            // engine — the slot feeds incoming bridge blocks to the engine's
+            // record input before rendering, so without it armed recording can
+            // only ever capture silence.
+            //
+            // The capture slot takes a slot of the same shared effect table the
+            // project's devices and its plugins fill, so refuse before the id is
+            // reserved and the bridge is published. The audio thread's refusal is
+            // a counter nothing here can read, and a capture slot refused there
+            // leaves armed recording capturing silence with nothing saying why.
+            engine_handle.ensure_effect_table_headroom(1)?;
+
+            let id = engine_handle.reserve_plugin_id();
+            let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
+            let mut engine = engine;
+            engine.enable_commit_handoff();
+            let slot = CrumbsPluginSlot {
+                engine,
+                command_rx: rx,
+                commit_tx,
+                recycle_rx,
+            };
+            engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
+
+            let mut feed = app_state
+                .audio_bridges
+                .lock()
+                .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
+            feed.bridges.insert(id, bridge_handle);
+
+            id
+        } else {
+            return Err("Native engine not running".to_string());
+        }
     };
-
-    let mut instances = state
-        .instances
-        .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
 
     instances.insert(
         instance_id,
@@ -876,6 +922,111 @@ mod tests {
         );
         assert_eq!(json["sampleRate"], 48_000);
         assert!(json.get("decode_warning_count").is_none());
+    }
+
+    /// The session-limit predicate itself, at the ceiling, in the wording
+    /// that names it: a stray create (a double init, a retry racing a slow
+    /// destroy) must refuse where the panel can report it, not as a
+    /// capture-slot refusal on the callback that leaves recording armed and
+    /// capturing silence with nothing saying why. The predicate is only half
+    /// the guarantee; the create path's call is pinned by
+    /// `create_crumbs_refuses_at_the_capture_ceiling_before_touching_the_engine`.
+    #[test]
+    fn the_crumbs_capture_ceiling_predicate_refuses_with_the_limit_named() {
+        let state = CrumbsState::default();
+        {
+            let instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            assert!(ensure_crumbs_capture_headroom(&instances).is_ok());
+        }
+
+        {
+            let mut instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            for index in 0..CRUMBS_CAPTURE_RESERVE {
+                let (instance, _commit_tx, _recycle_rx, _cmd_rx) = instance_with_rings();
+                instances.insert(format!("instance-{index}"), instance);
+            }
+        }
+
+        let refusal = {
+            let instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            ensure_crumbs_capture_headroom(&instances)
+                .expect_err("a session at the capture ceiling must refuse another instance")
+        };
+        assert_eq!(
+            refusal,
+            format!(
+                "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+            )
+        );
+
+        // Destroying is what makes room: one below the ceiling admits again.
+        state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .remove("instance-0");
+        {
+            let instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            assert!(ensure_crumbs_capture_headroom(&instances).is_ok());
+        }
+    }
+
+    /// Wiring: the ceiling the predicate states is the one `create_crumbs`
+    /// itself enforces, before any engine dependency — the check runs ahead
+    /// of the engine lock. A state at the ceiling must refuse with the
+    /// ceiling message; with the call unwired, this same state has no engine
+    /// and would fail later as "Native engine not running", so the exact
+    /// message pins the call site.
+    #[test]
+    fn create_crumbs_refuses_at_the_capture_ceiling_before_touching_the_engine() {
+        let state = CrumbsState::default();
+        {
+            let mut instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            for index in 0..CRUMBS_CAPTURE_RESERVE {
+                let (instance, _commit_tx, _recycle_rx, _cmd_rx) = instance_with_rings();
+                instances.insert(format!("instance-{index}"), instance);
+            }
+        }
+
+        let app_state = AppState::default();
+        let refusal = crate::block_on_test(create_crumbs(
+            "instance-overflow".to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect_err("a create at the capture ceiling must refuse");
+
+        assert_eq!(
+            refusal,
+            format!(
+                "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+            ),
+            "the refusal must be the ceiling's own message, not the missing engine's"
+        );
+
+        // Nothing was created past the refusal.
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        assert_eq!(instances.len(), CRUMBS_CAPTURE_RESERVE);
+        assert!(!instances.contains_key("instance-overflow"));
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData
