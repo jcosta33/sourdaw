@@ -283,11 +283,12 @@ loader/preload settings and Git, GitHub CLI, GitHub Actions, and App overrides, 
 resolved `git` and `gh` executables.
 
 Hosted checks run. `.github/workflows/health-gates.yml` has two lanes: a fast one on every push to
-a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch. Only
-`gate` is required by the ruleset, and only `gate` may be — it depends on every other job and passes
-when each either succeeded or was skipped, so a pull request that skips a path-filtered leg still
-reports a conclusion. Requiring a filtered job by name would leave it pending forever. Do not rename
-`gate`.
+a pull request, and a heavy one on an approving review, on a nightly schedule, and on dispatch.
+`gate` is the stable workflow summary: it depends on every job whose result currently decides the
+summary, and passes when each either succeeded or was skipped, so a pull request that skips a
+path-filtered leg still reports a conclusion. It is not currently a ruleset-required check. A
+ruleset must never require a status context emitted by a pull-request-controlled workflow; requiring
+a filtered job by name would also leave it pending forever. Do not rename `gate`.
 
 Hosted checks exist so that nobody runs those checks on this machine. Lanes share one machine, and
 several agents each running a repository-wide typecheck, lint, or suite exhaust it and stall each
