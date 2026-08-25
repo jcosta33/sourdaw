@@ -187,7 +187,33 @@ function expectPreparedStemLifecycleSettled(runId: string): void {
         STEM_SOURCE_NAMES.map((name) => [name, name])
     );
     expectPreparedStemResourcesReleased(1);
+    expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
     expect(agentRunLifecycle.get(runId)).toMatchObject({ temporaryAssets: [], preparedStemImports: [] });
+}
+
+function setNontrivialCollaborationState(): void {
+    collaborationStore.set({
+        isEnabled: true,
+        sessionId: 'session-stem-workflow',
+        localPeerId: 'peer-local',
+        localName: 'Local Producer',
+        localColor: '#3b82f6',
+        isHost: true,
+        peers: [
+            {
+                id: 'peer-collaborator',
+                name: 'Collaborator',
+                color: '#ef4444',
+                isHost: false,
+                isConnected: true,
+                lastSeen: 1_700_000_000_000,
+                latencyMs: 24,
+            },
+        ],
+        connectionStatus: 'connected',
+        error: null,
+        quarantinedPeerIds: ['peer-quarantined'],
+    });
 }
 
 async function seedUndoHistory(): Promise<void> {
@@ -651,6 +677,18 @@ describe('stem import and starting mix workflow', () => {
         resetActionReplayAuthority();
         commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
+        collaborationStore.set({
+            isEnabled: false,
+            sessionId: null,
+            localPeerId: null,
+            localName: '',
+            localColor: '',
+            isHost: false,
+            peers: [],
+            connectionStatus: 'disconnected',
+            error: null,
+            quarantinedPeerIds: [],
+        });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
@@ -900,9 +938,12 @@ describe('stem import and starting mix workflow', () => {
 
     it('releases preparation-owned resources when the user cancels the exact proposal', async () => {
         await seedUndoHistory();
+        setNontrivialCollaborationState();
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         expect(confirmation, JSON.stringify(chatStore.value?.messages)).not.toBeNull();
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(1);
         const seededState = captureCollaboratorProjectState();
         const seededUndoState = structuredClone(undoStore.value);
 
@@ -916,9 +957,12 @@ describe('stem import and starting mix workflow', () => {
 
     it('invalidates a stale proposal and cleans resources without touching the collaborator edit', async () => {
         await seedUndoHistory();
+        setNontrivialCollaborationState();
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         expect(confirmation, JSON.stringify(chatStore.value?.messages)).not.toBeNull();
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(1);
         await executeAppAction(
             { type: 'addTrack', payload: { id: 'track-collaborator', name: 'Collaborator', kind: 'audio' } },
             { skipUndo: true }

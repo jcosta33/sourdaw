@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
+import {
+    captureAgentProjectInspectionState,
+    captureCommandBatchPreflightState,
+} from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -45,10 +48,6 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
@@ -1052,7 +1051,6 @@ describe('drum bus prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
-        configureAiWorkflowCommandPreflightFixture();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
         audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
@@ -1105,7 +1103,9 @@ describe('drum bus prompt workflow', () => {
         commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
-        resetAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(null);
+        audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(null);
+        audioEngineUseCases.configureRuntimeGraphTopologyValidator(null);
         clearAgentSectionRenderArtifacts();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
@@ -1147,6 +1147,44 @@ describe('drum bus prompt workflow', () => {
         );
         expect(confirmation).not.toBeNull();
         expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints.master).toBe('system-output:master');
+    });
+
+    it('inspects only the supplied project document and preserves a real master-track fingerprint', () => {
+        setEx11Project();
+        const rawDocument = getCrdtDoc<Record<string, unknown>>('root');
+        const rawTracks = rawDocument.tracks;
+        if (!isRecord(rawTracks) || !Array.isArray(rawTracks.tracks)) {
+            throw new TypeError('Expected raw project tracks');
+        }
+        const historicalMaster = {
+            ...createTrack('master', 'Historical Master', 'master'),
+            gain: 0.73,
+            outputId: 'hw_out',
+        };
+        const suppliedDocument: Record<string, unknown> = {
+            ...structuredClone(rawDocument),
+            tracks: {
+                ...structuredClone(rawTracks),
+                tracks: [...structuredClone(rawTracks.tracks), historicalMaster],
+            },
+        };
+        const historicalInspection = captureAgentProjectInspectionState({
+            projectDocument: suppliedDocument,
+            targetIds: ['master'],
+        });
+
+        const liveMaster = { ...createTrack('master', 'Ambient Live Master', 'master'), gain: 0.19 };
+        trackStore.set({ tracks: [liveMaster], selectedTrackId: null, ghostClips: [] });
+        const repeatedInspection = captureAgentProjectInspectionState({
+            projectDocument: suppliedDocument,
+            targetIds: ['master'],
+        });
+
+        expect(repeatedInspection).toEqual(historicalInspection);
+        expect(historicalInspection.audioGraphValid).toBe(true);
+        expect(historicalInspection.projectInvariantsValid).toBe(true);
+        expect(historicalInspection.targetFingerprints.master).toContain('Historical Master');
+        expect(historicalInspection.targetFingerprints.master).not.toBe('system-output:master');
     });
 
     it('grounds EX-11 into the dependency-ordered drum, parallel, gain, and render batch', async () => {

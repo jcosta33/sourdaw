@@ -46,10 +46,6 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -627,7 +623,6 @@ function getConfirmationId(): string {
 
 describe('bass-processing section copy workflow', () => {
     beforeEach(async () => {
-        configureAiWorkflowCommandPreflightFixture();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
         vi.clearAllMocks();
         vi.spyOn(audioEngine, 'applyAdjustmentLayerTick').mockImplementation(() => undefined);
@@ -761,7 +756,9 @@ describe('bass-processing section copy workflow', () => {
 
     afterEach(async () => {
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
-        resetAiWorkflowCommandPreflightFixture();
+        commandBatchPreflightPort.setProvider(null);
+        configureRuntimeGraphProjectRevisionValidator(null);
+        configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -784,7 +781,7 @@ describe('bass-processing section copy workflow', () => {
         expect(getConfirmationId()).not.toBe('');
     });
 
-    it('rejects unflushed adjustment-layer identity and state drift through production fingerprints', async () => {
+    it('rejects unflushed adjustment-layer identity drift through production fingerprints', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         const approvedFingerprint = confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['layer-bass-eq'];
@@ -794,9 +791,36 @@ describe('bass-processing section copy workflow', () => {
 
         adjustmentLayerStore.set({
             layers: (adjustmentLayerStore.value?.layers ?? []).map((layer) =>
-                layer.id === 'layer-bass-eq'
-                    ? { ...layer, id: 'layer-bass-eq-collaborator', name: 'Collaborator EQ', mix: 0.13 }
-                    : layer
+                layer.id === 'layer-bass-eq' ? { ...layer, id: 'layer-bass-eq-collaborator' } : layer
+            ),
+        });
+        const collaboratorState = structuredClone(adjustmentLayerStore.value);
+        expect(captureProjectRevision()).toBe(approvedRevision);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(adjustmentLayerStore.value).toEqual(collaboratorState);
+        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforeConfirmation);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toContain('The approved target fingerprints no longer match.');
+    });
+
+    it('rejects unflushed adjustment-layer state drift through production fingerprints', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        const approvedFingerprint = confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['layer-bass-eq'];
+        const approvedRevision = captureProjectRevision();
+        const runtimeCallsBeforeConfirmation = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
+        expect(approvedFingerprint).toBeDefined();
+
+        adjustmentLayerStore.set({
+            layers: (adjustmentLayerStore.value?.layers ?? []).map((layer) =>
+                layer.id === 'layer-bass-eq' ? { ...layer, mix: 0.13 } : layer
             ),
         });
         const collaboratorState = structuredClone(adjustmentLayerStore.value);

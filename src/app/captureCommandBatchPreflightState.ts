@@ -9,7 +9,13 @@ import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/C
 
 type CaptureCommandBatchPreflightStateInput = {
     assetReferences: readonly { assetHash?: string; audioBufferId?: string }[];
+    includeLiveProjectContext?: boolean;
     projectDocument?: Readonly<Record<string, unknown>>;
+    targetIds: readonly string[];
+};
+
+type CaptureAgentProjectInspectionStateInput = {
+    projectDocument: Readonly<Record<string, unknown>>;
     targetIds: readonly string[];
 };
 
@@ -410,7 +416,8 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 }
 
 export function captureCommandBatchPreflightState(input: CaptureCommandBatchPreflightStateInput) {
-    const context = agentProjectRepairStateStore.value ? null : getProjectContext();
+    const context =
+        input.includeLiveProjectContext === false || agentProjectRepairStateStore.value ? null : getProjectContext();
     const targetIds = new Set(input.targetIds);
     const projectDoc = input.projectDocument ?? getCrdtDoc(DOC_PREFIX_ROOT);
     const allIds = new Set<string>();
@@ -429,10 +436,11 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
         document: documentTargetFingerprints,
         targetIds: input.targetIds,
     });
-    for (const systemTargetId of ['master', 'hw_out']) {
-        if (targetIds.has(systemTargetId)) {
-            targetFingerprints[systemTargetId] = `system-output:${systemTargetId}`;
-        }
+    if (targetIds.has('master') && targetFingerprints.master === undefined) {
+        targetFingerprints.master = 'system-output:master';
+    }
+    if (targetIds.has('hw_out')) {
+        targetFingerprints.hw_out = 'system-output:hw_out';
     }
     const tracks = (context?.tracks ?? []).map((track) => ({
         devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
@@ -479,5 +487,19 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             duplicateIds.size === 0 &&
             (stagedInspection?.projectInvariantsValid ?? (context ? projectInvariantsAreValid(context) : false)),
         targetFingerprints,
+    };
+}
+
+export function captureAgentProjectInspectionState(input: CaptureAgentProjectInspectionStateInput) {
+    const inspection = captureCommandBatchPreflightState({
+        assetReferences: [],
+        includeLiveProjectContext: false,
+        projectDocument: input.projectDocument,
+        targetIds: input.targetIds,
+    });
+    return {
+        audioGraphValid: inspection.audioGraphValid,
+        projectInvariantsValid: inspection.projectInvariantsValid,
+        targetFingerprints: inspection.targetFingerprints,
     };
 }
