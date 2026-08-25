@@ -99,7 +99,7 @@ function readNumberRecord(value: unknown): Record<string, number> | null {
     return result;
 }
 
-function readRanges(value: unknown): Array<{ startBeat: number; endBeat: number }> | null {
+function readRanges(value: unknown, allowPointRange: boolean): Array<{ startBeat: number; endBeat: number }> | null {
     if (!Array.isArray(value) || value.length > MAX_COLLECTION_LENGTH) {
         return null;
     }
@@ -112,7 +112,7 @@ function readRanges(value: unknown): Array<{ startBeat: number; endBeat: number 
             candidate.startBeat < 0 ||
             typeof candidate.endBeat !== 'number' ||
             !Number.isFinite(candidate.endBeat) ||
-            candidate.endBeat < candidate.startBeat
+            (allowPointRange ? candidate.endBeat < candidate.startBeat : candidate.endBeat <= candidate.startBeat)
         ) {
             return null;
         }
@@ -851,9 +851,9 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
     const planScope = isRecord(value.scope)
         ? {
               targetIds: readStringArray(value.scope.targetIds),
-              targetRanges: readRanges(value.scope.targetRanges),
+              targetRanges: readRanges(value.scope.targetRanges, true),
               protectedTargetIds: readStringArray(value.scope.protectedTargetIds),
-              protectedRanges: readRanges(value.scope.protectedRanges),
+              protectedRanges: readRanges(value.scope.protectedRanges, false),
           }
         : null;
     const steps = readCollection(value.steps, (candidate) => {
@@ -981,9 +981,9 @@ function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefin
     // A persisted decision from before resumptions were leased was not claimed.
     const resumeAttemptId = value.resumeAttemptId === undefined ? null : readNullableString(value.resumeAttemptId);
     const targetIds = readStringArray(value.scope.targetIds);
-    const targetRanges = readRanges(value.scope.targetRanges);
+    const targetRanges = readRanges(value.scope.targetRanges, true);
     const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
-    const protectedRanges = readRanges(value.scope.protectedRanges);
+    const protectedRanges = readRanges(value.scope.protectedRanges, false);
     const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
     const alternatives = readCollection(value.alternatives, (candidate) => {
         if (!isRecord(candidate)) {
@@ -1089,9 +1089,9 @@ function readAgentRun(value: unknown): AgentRun | null {
     const approvedRevision = readNullableString(value.revisions.approved);
     const committedRevision = readNullableString(value.revisions.committed);
     const targetIds = readStringArray(value.scope.targetIds);
-    const targetRanges = readRanges(value.scope.targetRanges);
+    const targetRanges = readRanges(value.scope.targetRanges, true);
     const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
-    const protectedRanges = readRanges(value.scope.protectedRanges);
+    const protectedRanges = readRanges(value.scope.protectedRanges, false);
     const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
     const limits = readNumberRecord(value.budgets.limits);
     const consumed = readNumberRecord(value.budgets.consumed);

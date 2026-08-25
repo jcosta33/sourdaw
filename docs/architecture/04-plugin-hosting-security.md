@@ -48,7 +48,7 @@ future non-plugin-hosting release channel, helper process, or reduced-capability
 
 Do not remove these entitlements from the current plugin-host-capable build until the replacement plugin
 scan, load, and editor-window model is implemented and verified. Removing them early can break real CLAP,
-VST3, or AU hosting.
+VST® 3, or AU hosting.
 
 ## 4. Release rule
 

@@ -6,6 +6,7 @@ const {
     mockClearRuntimeCachedAudioBuffers,
     mockGetAudioContext,
     mockImportCachedAudioBuffers,
+    mockCancelPreparedStoredBuffers,
     mockPrepareCachedAudioBuffersFromIdb,
     mockResetAudioGraph,
     mockClearUndoHistory,
@@ -33,7 +34,8 @@ const {
     mockImportCachedAudioBuffers: vi.fn(() =>
         Promise.resolve({ publish: vi.fn(), persist: () => Promise.resolve(true) })
     ),
-    mockPrepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
+    mockCancelPreparedStoredBuffers: vi.fn(),
+    mockPrepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
     mockResetAudioGraph: vi.fn(),
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),
@@ -158,7 +160,10 @@ describe('replaceProjectData', () => {
         vi.clearAllMocks();
         mockProjectStore.value = null;
         mockImportCachedAudioBuffers.mockResolvedValue({ publish: vi.fn(), persist: () => Promise.resolve(true) });
-        mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: vi.fn() });
+        mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({
+            cancel: mockCancelPreparedStoredBuffers,
+            publish: vi.fn(),
+        });
         mockStopPlayback.mockResolvedValue(undefined);
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
@@ -209,7 +214,10 @@ describe('replaceProjectData', () => {
     it('commits successfully when all steps pass', async () => {
         const storedPublish = vi.fn();
         const embeddedPublish = vi.fn();
-        mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: storedPublish });
+        mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({
+            cancel: mockCancelPreparedStoredBuffers,
+            publish: storedPublish,
+        });
         mockImportCachedAudioBuffers.mockResolvedValue({
             publish: embeddedPublish,
             persist: () => Promise.resolve(true),
@@ -298,6 +306,21 @@ describe('replaceProjectData', () => {
         await expect(replacement).resolves.toEqual({ status: 'aborted' });
         expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+    });
+
+    it('cancels the stored-buffer candidate when playback shutdown fails before publication', async () => {
+        mockStopPlayback.mockRejectedValueOnce(new Error('stop failed'));
+
+        await expect(
+            replaceProjectData({
+                context: 'loadRecentProject',
+                data: makeData('stored-buffer'),
+                transaction: makeTransaction(),
+            })
+        ).resolves.toEqual({ status: 'aborted' });
+
+        expect(mockCancelPreparedStoredBuffers).toHaveBeenCalledOnce();
+        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
     });
     it('returns degraded=true when a committed step fails', async () => {
         mockHydrateArrangement.mockImplementation(() => {

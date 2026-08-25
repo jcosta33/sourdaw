@@ -1,4 +1,5 @@
 import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import { prepareOfflineGrandBoule } from '#/modules/GrandBoule/useCases';
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { prepareOfflineProof } from '#/modules/Proof/useCases';
 import { prepareOfflineToaster } from '#/modules/Toaster/useCases';
@@ -81,27 +82,7 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
         signal?.throwIfAborted();
         throw new Error(`Crumbs content preparation ${outcome} for ${deviceId}`);
     },
-    // **Deferred, not "nothing to do".** This row is a known-wrong answer kept as
-    // `null` on purpose, pending a decision about state ownership rather than
-    // about hydration.
-    //
-    // The transport is no longer the obstacle: an offline Grand Boule now runs
-    // its engine inside the worklet, so the port this seam is handed reaches the
-    // engine and a hydration entry here would work. What is missing is anything
-    // to hydrate *from*. Grand Boule writes none of its state to
-    // `Device.parameterValues`; `grandBouleStore` holds nine engine-affecting
-    // surfaces — temperament, velocity curve, morph state, stretch amount, attack
-    // bite, per-note parameters, pedal state, preset parameters and attack clips
-    // — and not one of them is persisted: `hydrateModuleStoresFromProjectData`
-    // has no Grand Boule arm, and project load calls `resetGrandBouleStores()`.
-    // So the piano already forgets all of it live, on every reopen.
-    //
-    // Mirroring that store here would make an export match the current session's
-    // live engine for four of those surfaces while the live path keeps the same
-    // hole for all nine — treating the symptom. `prepareOfflineProof` works
-    // because `parameterValues` *is* project truth; Grand Boule has no such
-    // source yet. Fill this in once it does.
-    'grand-boule': null,
+    'grand-boule': ({ deviceState, port }) => prepareOfflineGrandBoule({ deviceState, port }),
     gluten: null,
     // Every control the panel owns is a `CrustPatch` key, and every one of them
     // is encoded to a number by `crustParamBridge` and persisted as a

@@ -70,6 +70,9 @@ export default defineConfig({
             // the same sources must not be, or the run doubles up on any machine
             // that has started the shell.
             'electron/out/**',
+            // The collaboration server's specs use node:test and are owned by
+            // `pnpm health:server:full`, not the root Vitest harness.
+            'server/**',
             '.agents/worktrees/**',
             'tests/e2e/**',
             '**/*.e2e.spec.*',

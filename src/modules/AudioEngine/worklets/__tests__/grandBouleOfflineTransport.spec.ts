@@ -4,18 +4,14 @@ import { resolve } from 'node:path';
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 
 /**
- * Preserved host/transport proof for the withheld Grand Boule implementation.
- * The real distributed `daw-dsp` module is compiled and passed into the real
- * offline processor, while the source-owned constructor seam supplies
- * synthetic transport data. This proves that the exact compiled module is
- * forwarded to `initSync`, along with 64-voice construction, dispatch, and
- * block transfer. It makes no browser-WASM DSP, provenance-enforcement, or
- * timing claim; native Rust benches own retained native-only evidence.
+ * Grand Boule offline-host proof. The distributed module is compiled and
+ * passed into the real processor. The generated constructor is mocked only to
+ * make 64-voice construction, dispatch, and block transfer deterministic.
  */
 
 const HOST_SAMPLE_RATE = 48_000;
 const QUANTUM_FRAMES = 128;
-/** The retained host requests its 64-voice ceiling from the injected seam. */
+/** The host requests its 64-voice ceiling from the generated constructor. */
 const VOICE_COUNT = 64;
 /** Lowest MIDI note of an 88-key piano; 64 voices from here stay in range. */
 const LOWEST_PIANO_NOTE = 21;
@@ -103,12 +99,11 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
         wasmStub.initModules.push(module);
         return { memory: wasmStub.memory };
     },
-}));
-vi.mock('../grandBouleWasmInstance', () => ({
-    createGrandBouleWasmInstance: (sampleRate: number, voiceCount: number) => {
-        const instance = new wasmStub.SyntheticTransportInstance(sampleRate, voiceCount);
-        wasmStub.instances.push(instance);
-        return instance;
+    GrandBouleInstance: class extends wasmStub.SyntheticTransportInstance {
+        constructor(sampleRate: number, voiceCount: number) {
+            super(sampleRate, voiceCount);
+            wasmStub.instances.push(this);
+        }
     },
 }));
 
@@ -126,7 +121,7 @@ class AudioWorkletProcessorShim {
     }
 }
 
-describe('the retained Grand Boule offline host transport', () => {
+describe('the Grand Boule offline host transport', () => {
     let processor: ProcessorLike;
     let port: HarnessPort;
     let compiledWasmModule: WebAssembly.Module;

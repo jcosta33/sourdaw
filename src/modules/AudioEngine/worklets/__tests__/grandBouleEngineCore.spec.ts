@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import {
-    createGrandBouleNoteQueue,
+    createGrandBouleFrameQueue,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from '../grandBouleEngineCore';
@@ -53,7 +53,7 @@ function createRecordingInstance(): RecordingInstance {
 
 function receive(
     instance: Parameters<typeof receiveGrandBouleMessage>[0]['instance'],
-    queue: ReturnType<typeof createGrandBouleNoteQueue>,
+    queue: ReturnType<typeof createGrandBouleFrameQueue>,
     msg: GrandBouleDispatchMsg,
     blockEndFrame: number | null
 ): void {
@@ -63,7 +63,7 @@ function receive(
 describe('an unrecognised message', () => {
     it('is ignored, not raised', () => {
         const { calls, instance } = createRecordingInstance();
-        const queue = createGrandBouleNoteQueue();
+        const queue = createGrandBouleFrameQueue();
 
         // `createWebAudioEngine` already broadcasts `{type:'shutdown'}` to every
         // device worklet, and `post` is untyped at the sender, so an unknown
@@ -81,10 +81,10 @@ describe('an unrecognised message', () => {
     });
 });
 
-describe('the Grand Boule note queue', () => {
+describe('the Grand Boule frame queue', () => {
     it('drops pending notes when the device panics', () => {
         const { calls, instance } = createRecordingInstance();
-        const queue = createGrandBouleNoteQueue();
+        const queue = createGrandBouleFrameQueue();
 
         receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 5_000 }, 128);
         const queuedBeforePanic = queue.size();
@@ -102,9 +102,35 @@ describe('the Grand Boule note queue', () => {
         });
     });
 
+    it('preserves a scheduled parameter when panic discards pending notes', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'param', name: 'toneColor', value: 0.3, sampleFrame: 500 }, 128);
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, 128);
+        receive(instance, queue, { type: 'allNotesOff' }, 128);
+        queue.drain(instance, 1_000);
+
+        expect(calls).toEqual([
+            { method: 'all_notes_off', args: [] },
+            { method: 'set_param', args: ['tone_color', 0.3] },
+        ]);
+    });
+
+    it('holds a framed parameter until the block containing its frame', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'param', name: 'masterGain', value: 0.7, sampleFrame: 128 }, 128);
+        expect(calls).toEqual([]);
+
+        queue.drain(instance, 256);
+        expect(calls).toEqual([{ method: 'set_param', args: ['master_gain', 0.7] }]);
+    });
+
     it('places a frame sitting exactly on a block boundary in that block, not the one before', () => {
         const { calls, instance } = createRecordingInstance();
-        const queue = createGrandBouleNoteQueue();
+        const queue = createGrandBouleFrameQueue();
 
         // Block 0 ends at frame 128, exclusive. Frame 128 belongs to block 1.
         receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 128 }, 128);
@@ -117,7 +143,7 @@ describe('the Grand Boule note queue', () => {
 
     it('voices a note whose frame the engine has already passed instead of holding it', () => {
         const { calls, instance } = createRecordingInstance();
-        const queue = createGrandBouleNoteQueue();
+        const queue = createGrandBouleFrameQueue();
 
         // A note that arrives late sounds late. Holding it would silently drop
         // every note of a part scheduled behind the render cursor.
@@ -131,7 +157,7 @@ describe('the Grand Boule note queue', () => {
 
     it('keeps an expression behind the note-on it shares a frame with', () => {
         const { calls, instance } = createRecordingInstance();
-        const queue = createGrandBouleNoteQueue();
+        const queue = createGrandBouleFrameQueue();
 
         receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, 128);
         receive(
@@ -157,7 +183,7 @@ describe('the Grand Boule note queue', () => {
 
     it('voices immediately when the host cannot place a frame yet', () => {
         const { calls, instance } = createRecordingInstance();
-        const queue = createGrandBouleNoteQueue();
+        const queue = createGrandBouleFrameQueue();
 
         // `null` is the Worker before its ring is mapped. Queueing there would
         // strand the message against a clock that never arrives.
@@ -171,7 +197,7 @@ describe('the Grand Boule note queue', () => {
 
     it('voices a note whose frame is not a usable number', () => {
         const { calls, instance } = createRecordingInstance();
-        const queue = createGrandBouleNoteQueue();
+        const queue = createGrandBouleFrameQueue();
 
         receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: Number.NaN }, 128);
 

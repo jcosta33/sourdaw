@@ -1187,6 +1187,14 @@ export type AppAction =
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | {
+          type: 'setGrandBouleDeviceState';
+          payload: {
+              deviceId: string;
+              before: DeviceStateChunkSnapshot;
+              after: DeviceStateChunkSnapshot;
+          };
+      }
+    | {
           type: 'createBus';
           payload: {
               name: string;

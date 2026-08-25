@@ -3,6 +3,9 @@ name = "daw-io"
 version = "0.1.0"
 edition = "2021"
 description = "Native I/O: audio codec decode/encode, filesystem workflows."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["rlib"]

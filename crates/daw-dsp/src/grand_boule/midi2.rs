@@ -1,4 +1,4 @@
-//! MIDI 2.0 UMP + microtuning support (§2.3).
+//! MIDI 2.0 UMP and microtuning support.
 //!
 //! Parses a subset of 32-bit and 64-bit Universal MIDI Packets sufficient to
 //! drive the Grand Boule engine from a MIDI 2.0 source:
@@ -10,7 +10,7 @@
 //!
 //! Velocity is returned at the full MIDI 2.0 resolution (16 bits → 65536
 //! levels). Microtuning is expressed in `signed 32-bit cents × 2^-24`, i.e.
-//! >1/512 semitone resolution as required by the spec.
+//! more than 1/512-semitone resolution under the MIDI 2.0 UMP format.
 
 /// A parsed MIDI 2.0 voice event. Everything downstream the engine needs is
 /// surfaced here — the engine never parses UMPs directly.

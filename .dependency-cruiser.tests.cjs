@@ -1,4 +1,5 @@
-/* (c) Copyright Sourdaw Ltd., all rights reserved. */
+/* SPDX-FileCopyrightText: Copyright Sourdaw Ltd. */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 /*
  * Test-inclusive boundary cruise.

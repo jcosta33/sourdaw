@@ -27,7 +27,8 @@
 //!   nobody wrote to, and compared against the same control set explicitly to
 //!   its documented default. A default that drifts away from the constructor
 //!   changes what an untouched project sounds like without any test noticing,
-//!   which is the hole #1411's M8 found.
+//!   which is the hole #1411's M8 found. The untouched Plate also keeps an
+//!   absolute cross-platform level, energy and start-shape guard below.
 
 use proof_chamber::ProofChamberInstance;
 
@@ -119,28 +120,14 @@ fn early_rms(output: &[f32]) -> f32 {
     rms(&output[..EARLY_END.min(output.len())])
 }
 
-/// Three cheap scalars of a render, pinned beside the digest and asserted
-/// before it.
+/// Three cheap, cross-platform scalars of the untouched Plate render.
 ///
-/// The digest is a good tripwire and a useless diagnosis. `digest 0x…` is three
-/// opaque integers, identical whether the render moved by one sample of fine
-/// structure, dropped 6 dB, went silent, or swapped its channels — and it is
-/// the *only* thing that fires for a whole class of change. Whoever moves this
-/// constant next has to work out which kind they caused, and the justification
-/// written above it cites T60 from a 50 ms envelope, seven octave bands and a
-/// lag-swept correlation, none of which any instrument in this repo produces.
-/// The number regenerates in one command; the reasoning does not regenerate at
-/// all.
-///
-/// So the scalars go next to it, and they are asserted first so their message
-/// is the one that appears. A change that reds the digest while these hold *is*
-/// the diagnosis — same level, same start, different fine structure, which is
-/// what a retune looks like. A change that reds one of these names itself.
-///
-/// What they do not catch, stated so nobody reads more into them: a channel
-/// swap (the stimulus is mono-summed and this render keeps the left channel
-/// only), and any redistribution of energy that preserves peak, total RMS and
-/// onset. The digest is still the thing that notices those.
+/// They deliberately pin only level, total energy and start. Plate character
+/// has independent, named instruments: `plate_default_damping.rs` owns the
+/// spectral decay, and `wet_onset_follows_predelay.rs` owns wet onset and tail
+/// continuity. This file owns parameter response and constructor/default
+/// parity; it does not promise historical bit identity for a recirculating
+/// render whose fine structure varies with platform math.
 struct RenderShape {
     peak: f32,
     rms: f32,
@@ -165,7 +152,7 @@ fn shape(output: &[f32]) -> RenderShape {
 
 /// Level tolerance, in dB, for the two amplitude scalars.
 ///
-/// Sized to pass the change that produced the current digests and to fail
+/// Sized to pass the measured retune and to fail
 /// anything a listener would call a level change. #1547's one-to-two-sample
 /// retune moved peak by 0.00000 dB and RMS by 0.00013 dB on this render; 0.1 dB
 /// is nearly three orders of magnitude above that and an order of magnitude
@@ -182,8 +169,7 @@ fn assert_shape(actual: &RenderShape, expected: &RenderShape, label: &str) {
     assert!(
         peak_db.abs() < SHAPE_LEVEL_TOLERANCE_DB,
         "{label}: peak moved {peak_db:+.4} dB ({:e} against the pinned {:e}). \
-         That is a level change, not a retune — the digest below would have \
-         told you only that something moved.",
+         That is a level change, not a fine-structure retune.",
         actual.peak,
         expected.peak
     );
@@ -224,91 +210,19 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
             .all(|(x, y)| x.to_bits() == y.to_bits())
 }
 
-/// FNV-1a over every sample's bit pattern, so any change anywhere in the
-/// buffer moves it.
-fn digest(output: &[f32]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for sample in output {
-        hash ^= u64::from(sample.to_bits());
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
-}
-
-/// What the plate renders with nothing written to it but `algorithm` and
-/// `mix`, which is what every project that never touched a control hears.
+/// What the Plate renders with nothing written to it but `algorithm` and `mix`.
 ///
-/// A `render(&[])`-versus-`render(&[(name, default)])` comparison — the shape
-/// the three older rows in this file use — cannot pin this. Both sides of that
-/// comparison run the *same* mapping, so it catches a default that drifts away
-/// from the constructor and is blind to a mapping that is wrong at the default
-/// in the same way on both sides. That blindness is not hypothetical: a
-/// candidate `gravity` tilt neutral at 0 rather than at the shipped 0.5 passed
-/// every other assertion in this file while quietly changing what every
-/// existing project sounds like.
+/// This is an absolute, cross-platform guard for the part of that render this
+/// parameter-surface spec owns: level, total energy and start. It is not a
+/// whole-buffer historical oracle. The Plate's recirculating delay and filter
+/// math amplifies platform-level transcendental rounding into different sample
+/// bits while preserving these audible invariants.
 ///
-/// So the reference is a constant rather than a second render. Changing this
-/// number is not a maintenance chore — it means an untouched project now
-/// sounds different, and that belongs in a release note.
-///
-/// Changed once, by #1546: the constructor's `damping` moved from 0.0005 —
-/// which is bypass, 0.0087 dB at Nyquist — to the 0.3 the panel knob had been
-/// claiming all along. 0x9107_053e_5140_7165 → the value below, re-measured on
-/// this file's stimulus in the same commit as the constructor edit. The
-/// audible content of that move is measured in
-/// `tests/plate_default_damping.rs`, not fingerprinted: 9.66 dB of 6-12 kHz
-/// shed across the tail against 4.88 dB before.
-///
-/// The reach is newly added devices, not existing projects: `addDevice` writes
-/// the descriptor's `damping` into `Device.parameterValues` and
-/// `projectTrackToLiveStrip` replays every stored value on load, so a saved
-/// project keeps whatever it was added with.
-///
-/// Moved a second time, by #1547, which corrected the same off-by-one in two
-/// places: `DelayLine::read` now counts back from `write_pos - 1` instead of
-/// `write_pos`, and `EarlyReflections::process` does the same. The fix is aimed
-/// at Pre-Delay 0 ms, which used to render 503 ms of nothing; this row moves
-/// because those two expressions serve every delay in the engine, so the input
-/// path got two samples longer and the tank lines one. Dattorro's Table 2
-/// positions are literal sample delays — `delay_48_54[266]` is 266 samples —
-/// and the old expression delivered 265, so the fourteen output taps and the
-/// six Schroeder allpasses now match the paper. Six reads still do not, by one
-/// sample each, and `proof_chamber.rs`'s `read` says which and why.
-/// 0x15ca_3842_cec5_5de2 → the value below.
-///
-/// Unlike #1546 this is *not* a voicing change, and the difference between the
-/// two moves is the reason this comment is longer than the last one. A one-
-/// sample retune of a recirculating tank scrambles the fine structure while
-/// leaving everything measurable where it was. On the default plate, mix 1,
-/// impulse, 3.0 s at 48 kHz, before against after:
-///
-/// * peak 0.699514031 → 0.699514031, identical to every digit f32 carries
-/// * RMS -0.00013 dB (L), +0.00148 dB (R)
-/// * T60 from a 50 ms envelope 1.450 s → 1.450 s
-/// * seven octave bands from 20 Hz to 20 kHz, all within ±0.03 dB
-/// * the 50 ms RMS envelope, across its whole audible span, within
-///   +0.61/-0.56 dB with a mean of -0.02 dB
-///
-/// What moved is the waveform. Excluding sample 0 — which is the dry impulse
-/// leaking through the 30 ms `mix` ramp and holds 54% of the buffer's energy,
-/// so including it flatters every correlation figure — the zero-lag correlation
-/// between the two renders is **0.029**. The best realigning lag in -12..+12 is
-/// +2 samples, the two the input path gained, and even there it only holds in
-/// the dense head: r = +0.60 over the first 50 ms (70% of the tail's energy),
-/// +0.23 over the next 200 ms, and 0.00 everywhere past 250 ms, because the
-/// tank's circulation period changed rather than its output being delayed.
-///
-/// That is what a fingerprint is for. An untouched project renders a different
-/// tail with the same level, the same decay time and the same spectrum — worth
-/// a release note for the Pre-Delay fix, not for this.
-const UNTOUCHED_PLATE_DIGEST: u64 = 0x245952ca_4c990c89;
-
-/// The same render, described in three numbers a human can read.
-///
-/// Regenerate these together with the digest above and never separately: they
-/// are the same render, and a shape that disagrees with its digest means one of
-/// the two was copied from a different run. See `RenderShape` for what each one
-/// is for and what none of them can see.
+/// `plate_default_damping.rs` independently pins the untouched Plate's spectral
+/// decay, `wet_onset_follows_predelay.rs` pins its wet onset and continuous tail,
+/// and `algorithm_switch_parameter_retention.rs` pins constructor/cache/Plate
+/// selection parity. Those distinct instruments own Plate character and path
+/// identity; this file keeps its parameter/default contract narrow.
 ///
 /// `onset: 0` is measured, not a placeholder, and it is the weakest of the
 /// three. Both this render and the sibling's are at `mix = 1`, and both measure
@@ -316,7 +230,7 @@ const UNTOUCHED_PLATE_DIGEST: u64 = 0x245952ca_4c990c89;
 /// so the dry burst is still most of the opening samples and the first sample
 /// above 1e-6 is the first sample. Neither can therefore reproduce #1547's
 /// shape — the dry path was never silent — and nothing here should be read as
-/// covering it. What the scalar does catch is a render that stops sounding or
+/// covering it. What this scalar does catch is a render that stops sounding or
 /// starts wholesale late. `wet_onset_follows_predelay.rs` is the file that
 /// carries the #1547 shape, on a stimulus with the ramp pre-rolled away.
 const UNTOUCHED_PLATE_SHAPE: RenderShape = RenderShape {
@@ -551,8 +465,8 @@ fn size_renders_differently_at_interior_settings() {
 ///
 /// Un-ignore this when the constructor seeds `EarlyReflections` from the field
 /// it also stores. Note the direction of that fix: seeding from 0.75 changes
-/// what an untouched plate renders, so it moves `UNTOUCHED_PLATE_DIGEST` and
-/// `UNTOUCHED_PLATE_SHAPE` with it and belongs in a release note.
+/// what an untouched Plate renders, so it must still satisfy
+/// `UNTOUCHED_PLATE_SHAPE` and the independent character specs cited above.
 #[test]
 #[ignore = "pins the plate's split Size default — the field is seeded 0.75 (src/proof_chamber.rs:550) while EarlyReflections is built at 0.5 (:614), so an untouched plate renders a room it does not report. Red until the plate Size default lane lands."]
 fn size_defaults_to_the_documented_value() {
@@ -627,9 +541,9 @@ fn gravity_spans_the_whole_declared_range() {
 fn gravity_defaults_to_the_documented_value() {
     // The constraint that keeps this fix from changing what every existing
     // project sounds like. The tilt is exactly 1.0 at 0.5, so an engine nobody
-    // wrote to must render bit-identically to one written to its default —
-    // and, before this parameter did anything, to what the plate has always
-    // rendered.
+    // wrote to must render bit-identically to one written to its default. This
+    // is same-process constructor/default parity, not a historical buffer
+    // oracle.
     let untouched = render(&[]);
     let explicit = render(&[("gravity", 0.5)]);
     assert!(
@@ -646,32 +560,18 @@ fn gravity_defaults_to_the_documented_value() {
 }
 
 #[test]
-fn the_untouched_plate_still_renders_what_it_always_has() {
-    // The claim `gravity` had to satisfy to be implementable at all: the tilt
-    // is exactly 1.0 at the shipped default, so wiring a parameter that was
-    // inert does not move a single sample of any project that never wrote it.
-    //
-    // This digest was taken from the plate *before* gravity read its field.
+fn the_untouched_plate_keeps_its_cross_platform_level_energy_and_start_shape() {
+    // The absolute half of this file's default contract. The surrounding rows
+    // compare each constructor value with its explicit documented default;
+    // this row requires an untouched Plate to retain its level, total energy
+    // and start across platforms. The independent character specs cited above
+    // own spectral decay, wet onset and tail continuity.
     let output = render(&[]);
 
-    // Scalars first, so that when both fire it is the readable one that
-    // reports. See `RenderShape`.
     assert_shape(
         &shape(&output),
         &UNTOUCHED_PLATE_SHAPE,
         "the untouched plate",
-    );
-
-    let digest_now = digest(&output);
-    assert_eq!(
-        digest_now, UNTOUCHED_PLATE_DIGEST,
-        "the untouched plate changed: an existing project that never wrote a \
-         control now renders differently. digest {digest_now:#x}. The three \
-         scalars above held, so the level, the total energy and the start of \
-         this render are all where they were — what moved is fine structure, \
-         which is what a delay-length or coefficient retune looks like. If that \
-         was the intent, re-measure and move this constant with the reasoning; \
-         if it was not, the change is smaller than it looks and harder to see."
     );
 }
 

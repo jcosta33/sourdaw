@@ -1,12 +1,14 @@
-//! Grand Boule — Sourdaw's physically-modelled grand piano.
+//! Grand Boule — Sourdaw's modelled grand piano.
 //!
 //! Modal synthesis engine producing polyphonic piano audio from an inharmonic
-//! biquad bank driven by a nonlinear felt-hammer interaction. The complete
-//! module is retained for native builds and excluded from the wasm32 crate
-//! graph by `lib.rs` while Grand Boule remains release-withheld.
+//! string bank driven by a nonlinear felt-hammer interaction, followed by a
+//! finite FIR body. Compiles to native and WASM hosts.
 //!
-//! The audio path is lock-free and allocation-free after construction, per
-//! `docs/architecture/01-system.md §3.1`.
+//! The audio path is lock-free and allocation-free after construction.
+//!
+//! Provenance: implementation, body kernels, and tuning curves are
+//! project-authored product voicings; standard MIDI, temperament, and piano
+//! construction conventions are used only as general engineering inputs.
 
 pub mod attack_sampler;
 pub mod coupled_strings;
@@ -29,10 +31,10 @@ use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
 use parameters::Temperament;
 use wasm_bindgen::prelude::*;
 
-/// Pre-allocated maximum block size exposed by the retained native wrapper.
+/// Pre-allocated maximum block size exposed to hosts.
 const MAX_BLOCK_SIZE: usize = 4096;
 
-/// Grand Boule host instance retained for native builds.
+/// Grand Boule host instance for native and WASM integration.
 #[wasm_bindgen]
 pub struct GrandBouleInstance {
     engine: GrandBouleEngine,
@@ -67,6 +69,11 @@ impl GrandBouleInstance {
     /// Begin the release phase for any voice holding this note.
     pub fn note_off(&mut self, midi_note: u8) {
         self.engine.note_off(midi_note);
+    }
+
+    /// Authoritative number of sounding voices in the playable pool.
+    pub fn active_voices(&self) -> u32 {
+        self.engine.active_voice_count() as u32
     }
 
     /// Trigger a note carrying its MPE member channel.

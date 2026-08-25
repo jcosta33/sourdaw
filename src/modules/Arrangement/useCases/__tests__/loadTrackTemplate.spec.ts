@@ -11,6 +11,8 @@ import { loadTrackTemplates } from '../../repositories/trackTemplate/loadTrackTe
 import { loadTrackTemplate } from '../loadTrackTemplate';
 import { trackTemplateCache } from '../trackTemplate';
 
+const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
+
 vi.mock('../../models/Track', () => ({
     createTrack: vi.fn(),
 }));
@@ -26,6 +28,16 @@ vi.mock('../../repositories/track/setTrackState', () => ({
 vi.mock('../../repositories/trackTemplate/loadTrackTemplates', () => ({
     loadTrackTemplates: vi.fn(),
 }));
+vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/release/deviceReleaseAdmission')>();
+
+    return {
+        ...actual,
+        findWithheldDeviceType: (devices: ReadonlyArray<{ type: string }>) =>
+            devices.find(({ type }) => injectedWithheldDeviceTypes.has(type))?.type ??
+            actual.findWithheldDeviceType(devices),
+    };
+});
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 describe('loadTrackTemplate', () => {
@@ -48,6 +60,7 @@ describe('loadTrackTemplate', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         vi.clearAllMocks();
+        injectedWithheldDeviceTypes.clear();
         trackTemplateCache.templates = null;
     });
 
@@ -62,12 +75,13 @@ describe('loadTrackTemplate', () => {
     });
 
     it('preserves but does not instantiate a template containing a withheld device', () => {
+        injectedWithheldDeviceTypes.add('test-withheld-device');
         const template = createTemplate({
             devices: [
                 {
-                    id: 'grand-boule-source',
-                    name: 'Grand Boule',
-                    type: 'grand-boule',
+                    id: 'withheld-source',
+                    name: 'Withheld test device',
+                    type: 'test-withheld-device',
                     bypassed: false,
                     parameterValues: {},
                 },
@@ -82,7 +96,7 @@ describe('loadTrackTemplate', () => {
         expect(getTrackState).not.toHaveBeenCalled();
         expect(setTrackState).not.toHaveBeenCalled();
         expect(notifyUser).toHaveBeenCalledWith(
-            'Template contains withheld device "grand-boule" and was not loaded.',
+            'Template contains withheld device "test-withheld-device" and was not loaded.',
             'warning'
         );
     });

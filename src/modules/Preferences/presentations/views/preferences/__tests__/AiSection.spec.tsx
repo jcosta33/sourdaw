@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AiSection } from '../AiSection';
 
 const mocks = vi.hoisted(() => ({
+    admission: { webLlm: true },
     backendPreference: { value: 'auto' },
     configureCloudProvider: vi.fn(),
     hostedProvider: { value: null },
@@ -12,6 +13,10 @@ const mocks = vi.hoisted(() => ({
     removeCloudProvider: vi.fn(),
     resolveBackend: vi.fn(() => 'none'),
     setAiBackendPreference: vi.fn(),
+}));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({
+    MODEL_RELEASE_ADMISSION: mocks.admission,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -39,17 +44,6 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     setAiBackendPreference: mocks.setAiBackendPreference,
 }));
 
-vi.mock('#/infra/release/modelReleaseAdmission', () => ({
-    MODEL_RELEASE_ADMISSION: {
-        basicPitch: true,
-        ddsp: false,
-        kokoro: true,
-        rave: false,
-        webLlm: false,
-        whisper: true,
-    },
-}));
-
 vi.mock('#/modules/BrowserAi/presentations/views', () => ({
     CapabilityReportPanel: () => <div data-testid="capability-report-panel" />,
     ModelManagerPanel: () => <div data-testid="model-manager-panel" />,
@@ -62,6 +56,7 @@ vi.mock('#/utils/platformCapabilities', () => ({
 describe('AiSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.admission.webLlm = true;
         mocks.backendPreference.value = 'auto';
         mocks.hostedProvider.value = null;
         mocks.isDesktop = true;
@@ -69,16 +64,17 @@ describe('AiSection', () => {
         mocks.resolveBackend.mockReturnValue('none');
     });
 
-    it('withholds the unproved browser model and keeps hosted selection explicit', () => {
+    it('offers Browser WebLLM alongside desktop hosted selection', () => {
         render(<AiSection />);
 
         expect(screen.getByRole('option', { name: 'Automatic' })).toBeInTheDocument();
-        expect(screen.queryByRole('option', { name: 'Browser WebLLM' })).not.toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Browser WebLLM' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Hosted provider' })).toBeInTheDocument();
-        expect(screen.getByText(/No local language model is admitted in this release/)).toBeInTheDocument();
+        expect(screen.getByText(/Automatic uses WebLLM in this browser only/)).toBeInTheDocument();
+        expect(screen.queryByText(/No local language model is admitted in this release/)).not.toBeInTheDocument();
 
-        fireEvent.change(screen.getByLabelText('AI execution backend'), { target: { value: 'cloud' } });
-        expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('cloud');
+        fireEvent.change(screen.getByLabelText('AI execution backend'), { target: { value: 'webllm' } });
+        expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('webllm');
     });
 
     it('configures an explicitly selected hosted provider without exposing a retired option', async () => {
@@ -101,8 +97,59 @@ describe('AiSection', () => {
         render(<AiSection />);
 
         expect(screen.queryByRole('option', { name: 'Hosted provider' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('option', { name: 'Browser WebLLM' })).not.toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Browser WebLLM' })).toBeInTheDocument();
         expect(screen.queryByLabelText(/API key/u)).not.toBeInTheDocument();
         expect(screen.getByText(/Web builds never accept provider credentials/u)).toBeInTheDocument();
+    });
+
+    it('keeps Automatic selected in web builds when the persisted preference is auto', () => {
+        mocks.isDesktop = false;
+        mocks.backendPreference.value = 'auto';
+        mocks.resolveBackend.mockReturnValue('none');
+
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('AI execution backend')).toHaveValue('auto');
+    });
+
+    it('reflects an explicit WebLLM preference in web builds', () => {
+        mocks.isDesktop = false;
+        mocks.backendPreference.value = 'webllm';
+        mocks.resolveBackend.mockReturnValue('none');
+
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('AI execution backend')).toHaveValue('webllm');
+    });
+
+    it('hides Browser WebLLM and falls back to Automatic when admission is off', () => {
+        mocks.admission.webLlm = false;
+        mocks.isDesktop = false;
+
+        render(<AiSection />);
+
+        expect(screen.queryByRole('option', { name: 'Browser WebLLM' })).not.toBeInTheDocument();
+        expect(screen.getByLabelText('AI execution backend')).toHaveValue('auto');
+    });
+
+    it('resolves a stale persisted WebLLM preference to Automatic when admission is off', () => {
+        mocks.admission.webLlm = false;
+        mocks.isDesktop = false;
+        mocks.backendPreference.value = 'webllm';
+        mocks.resolveBackend.mockReturnValue('webllm');
+
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('AI execution backend')).toHaveValue('auto');
+    });
+
+    it('resolves a stale persisted cloud preference to Automatic in web builds', () => {
+        mocks.isDesktop = false;
+        mocks.backendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('AI execution backend')).toHaveValue('auto');
     });
 });

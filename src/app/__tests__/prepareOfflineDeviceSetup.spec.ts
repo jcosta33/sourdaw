@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import { prepareOfflineGrandBoule } from '#/modules/GrandBoule/useCases';
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { prepareOfflineToaster } from '#/modules/Toaster/useCases';
 import { NATIVE_DSP_DEVICE_TYPES } from '#/utils/nativeDspDeviceTypes';
@@ -28,6 +29,7 @@ vi.mock('#/modules/Levain/useCases', () => ({
 vi.mock('#/modules/Crumbs/useCases', () => ({
     prepareCrumbsEngine: vi.fn(() => Promise.resolve('ready')),
 }));
+vi.mock('#/modules/GrandBoule/useCases', () => ({ prepareOfflineGrandBoule: vi.fn() }));
 // Toaster's kit push is asserted against real project state in
 // `toasterLiveOfflineParity.spec.ts`. What this spec owns is the table wiring:
 // that the `toaster` row exists and is handed the right arguments.
@@ -134,6 +136,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         vi.mocked(prepareOfflineLevain).mockClear();
         vi.mocked(prepareCrumbsEngine).mockReset().mockResolvedValue('ready');
         vi.mocked(prepareOfflineToaster).mockClear();
+        vi.mocked(prepareOfflineGrandBoule).mockClear();
     });
 
     it('routes levain to its own hydration, forwarding the abort signal it needs to cancel a fetch', async () => {
@@ -190,7 +193,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
     // a recorded decision — their whole state arrives as `parameterValues` — so the
     // observable contract is that they post nothing at all, not that they happen to
     // have no branch.
-    const HYDRATING_TYPES = ['levain', 'proof', 'toaster', 'builtin-crumbs'] as const;
+    const HYDRATING_TYPES = ['levain', 'proof', 'toaster', 'builtin-crumbs', 'grand-boule'] as const;
     const NON_HYDRATING_TYPES = NATIVE_DSP_DEVICE_TYPES.filter(
         (type) => !HYDRATING_TYPES.some((hydrating) => hydrating === type)
     );
@@ -213,7 +216,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         // then arrived as a native device with nothing to hydrate — every
         // control it owns is a `parameterValue` — taking the table to 13 rows
         // and the non-hydrating count to 9.
-        expect(NON_HYDRATING_TYPES).toHaveLength(9);
+        expect(NON_HYDRATING_TYPES).toHaveLength(8);
         expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(13);
     });
 
@@ -232,6 +235,15 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         // No signal: the kit push is a bounded run of postMessage calls with
         // nothing to abort, unlike Levain's sample fetch.
         expect(prepareOfflineToaster).toHaveBeenCalledExactlyOnceWith({ deviceId: 'toaster-1', deviceState, port });
+    });
+
+    it('routes Grand Boule with the immutable render snapshot', async () => {
+        const { port } = makePort();
+        const deviceState = { version: 1, data: { morphPosition: 0.25 } };
+
+        await prepareOfflineDeviceSetup({ deviceId: 'grand-1', deviceType: 'grand-boule', deviceState, port });
+
+        expect(prepareOfflineGrandBoule).toHaveBeenCalledExactlyOnceWith({ deviceState, port });
     });
 
     it('does nothing for a device type no native factory builds', async () => {

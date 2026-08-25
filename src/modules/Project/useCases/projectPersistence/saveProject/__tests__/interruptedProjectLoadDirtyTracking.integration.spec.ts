@@ -61,11 +61,11 @@ const {
     // and never independently of it (`audioBufferCache.ts:643`, `:647`, `:662`,
     // `:677` — invalid rows are skipped, and the catch returns an object).
     mockPrepareCachedAudioBuffersFromIdb: vi.fn(
-        (input: { shouldContinue?: () => boolean }): Promise<{ publish: () => void } | null> => {
+        (input: { shouldContinue?: () => boolean }): Promise<{ cancel: () => void; publish: () => void } | null> => {
             if (input.shouldContinue?.() === false) {
                 return Promise.resolve(null);
             }
-            return Promise.resolve({ publish: vi.fn() });
+            return Promise.resolve({ cancel: vi.fn(), publish: vi.fn() });
         }
     ),
     mockResetAudioGraph: vi.fn(),
@@ -231,11 +231,13 @@ function openProject(name: string, trackId: string, trackName: string) {
 }
 
 /** The default IndexedDB buffer read, restored between cases. */
-function readStoredBuffers(input: { shouldContinue?: () => boolean }): Promise<{ publish: () => void } | null> {
+function readStoredBuffers(input: {
+    shouldContinue?: () => boolean;
+}): Promise<{ cancel: () => void; publish: () => void } | null> {
     if (input.shouldContinue?.() === false) {
         return Promise.resolve(null);
     }
-    return Promise.resolve({ publish: vi.fn() });
+    return Promise.resolve({ cancel: vi.fn(), publish: vi.fn() });
 }
 
 function editTheArrangement(): void {

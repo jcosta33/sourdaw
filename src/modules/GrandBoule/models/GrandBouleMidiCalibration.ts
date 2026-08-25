@@ -1,5 +1,5 @@
 /**
- * MIDI controller calibration state for the Grand Boule piano (spec SS3.1).
+ * MIDI controller calibration state for the Grand Boule piano.
  *
  * Defines per-instance calibration parameters that shape how raw MIDI input
  * is mapped to the physical-modelling engine's hammer/pedal dynamics.

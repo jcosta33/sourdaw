@@ -13,6 +13,11 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+authors = ["Jose Costa"]
+license = "Apache-2.0"
+repository = "https://github.com/jcosta33/sourdaw"
+
 [workspace.dependencies]
 # The Windows device layer (ADR 0027) reaches IAudioClient3 and WASAPI
 # Exclusive through the platform's own bindings. Pinned to the version

@@ -3,8 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
-import { modelRegistryStore } from '#/modules/BrowserAi/stores';
-import { downloadModel, KOKORO_MODEL_ENTRY, renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { modelRegistryStore, renderQueueStore } from '#/modules/BrowserAi/stores';
+import { downloadModel, KOKORO_MODEL_ENTRY, renderDdspInstrument, renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
@@ -56,6 +59,11 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>();
+    return { ...actual, openPreferencesDialog: vi.fn() };
+});
+
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AiRuntime/useCases')>();
     return {
@@ -69,6 +77,7 @@ vi.mock('#/modules/BrowserAi/useCases', async (importOriginal) => {
     return {
         ...actual,
         downloadModel: vi.fn(),
+        renderDdspInstrument: vi.fn(),
         renderKokoroTts: vi.fn(),
     };
 });
@@ -103,6 +112,7 @@ type TestMidiState = { notesByClipId: Record<string, TestMidiNote[]> };
 
 const midiStoreMock = vi.hoisted(() => ({
     state: null as TestMidiState | null,
+    listeners: new Set<() => void>(),
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
@@ -113,6 +123,11 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
             ...actual.midiStore,
             get value() {
                 return midiStoreMock.state;
+            },
+            getSnapshot: () => midiStoreMock.state,
+            subscribeReact: (listener: () => void) => {
+                midiStoreMock.listeners.add(listener);
+                return () => midiStoreMock.listeners.delete(listener);
             },
         },
     };
@@ -172,6 +187,14 @@ describe('ClipMidiAiSection', () => {
     it('keeps singing synthesis unavailable without an admitted vocoder', () => {
         render(<ClipMidiAiSection {...defaultProps} />);
         expect(screen.getByRole('button', { name: 'Sung unavailable' })).toBeDisabled();
+    });
+
+    it('opens AI Model Manager when no DDSP instrument is ready', () => {
+        render(<ClipMidiAiSection {...defaultProps} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Browse Instruments' }));
+
+        expect(vi.mocked(openPreferencesDialog)).toHaveBeenCalledOnce();
     });
 });
 
@@ -591,5 +614,465 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         // stillOwnsPanel — the first launch then announces and stops the second's spinner.
         expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
         expect(variationsButton().textContent).toContain('Generating…');
+    });
+});
+
+describe('ClipMidiAiSection — DDSP instrument preview', () => {
+    type DdspInstrumentFixture = NonNullable<typeof modelRegistryStore.value>['ddspInstruments'][number];
+
+    const clipA: Clip = {
+        id: 'ddsp-clip-a',
+        trackId: 'track-1',
+        name: 'DDSP Clip A',
+        startBeat: 8,
+        endBeat: 12,
+        type: 'midi',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ff0000',
+        locked: false,
+        muted: false,
+    };
+    const clipB: Clip = { ...clipA, id: 'ddsp-clip-b', name: 'DDSP Clip B' };
+    const violin: DdspInstrumentFixture = {
+        id: 'ddsp-violin',
+        name: 'Violin',
+        family: 'ddsp' as const,
+        instrument: 'violin',
+        url: 'https://example.test/violin/model.json',
+        sizeBytes: 4,
+        license: 'Unverified' as const,
+        attribution: 'Magenta',
+        nativeSampleRate: 16_000,
+        frameRate: 250,
+        artifactVersion: 'v1',
+        status: 'ready' as const,
+        downloadProgress: 1,
+    };
+    const flute = { ...violin, id: 'ddsp-flute', name: 'Flute', instrument: 'flute' };
+
+    type Gate = { fail: (error: Error) => void; open: () => void; promise: Promise<void> };
+    const createGate = (): Gate => {
+        let open: () => void = () => undefined;
+        let fail: (error: Error) => void = () => undefined;
+        const promise = new Promise<void>((resolve, reject) => {
+            open = resolve;
+            fail = reject;
+        });
+        return { promise, open, fail };
+    };
+    const renderOutput = () => ({
+        audio: new Float32Array([0.25, -0.25]),
+        sampleRate: 44_100,
+        provenance: {
+            modelId: 'ddsp-violin',
+            renderQuality: 'standard' as const,
+            renderedAt: 0,
+            tier: 'browser-preview' as const,
+        },
+    });
+    const setRegistry = (instruments: DdspInstrumentFixture[] = [violin]): void => {
+        modelRegistryStore.set({
+            ddspInstruments: instruments,
+            kokoroModel: null,
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
+    };
+    const publishNotes = (notesByClipId: Record<string, TestMidiNote[]>): void => {
+        act(() => {
+            midiStoreMock.state = { notesByClipId };
+            for (const listener of midiStoreMock.listeners) {
+                listener();
+            }
+        });
+    };
+    const instrumentButton = (): HTMLElement => screen.getByRole('button', { name: /Rendering…|Render Instrument/ });
+    const settle = async (action: () => void): Promise<void> => {
+        await act(async () => {
+            action();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        midiStoreMock.state = { notesByClipId: {} };
+        midiStoreMock.listeners.clear();
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+    });
+
+    afterEach(() => {
+        vi.mocked(renderDdspInstrument).mockReset();
+        modelRegistryStore.set({
+            ddspInstruments: [],
+            kokoroModel: null,
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
+        midiStoreMock.listeners.clear();
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
+    });
+
+    it('selects only ready instruments and renders exact clipped MIDI timing with the canonical phrase id', async () => {
+        setRegistry([violin, { ...flute, status: 'downloading' as const }]);
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'ramp', beat: 10, tempo: 60, curve: 'linear' },
+                { id: 'target', beat: 12, tempo: 120, curve: 'instant' },
+            ],
+        });
+        publishNotes({
+            [clipA.id]: [
+                { id: 'left', pitch: 60, velocity: 100, startBeat: -1, duration: 2 },
+                { id: 'ramp', pitch: 64, velocity: 90, startBeat: 1, duration: 2 },
+                { id: 'outside', pitch: 67, velocity: 80, startBeat: 5, duration: 1 },
+            ],
+        });
+        vi.mocked(renderDdspInstrument).mockResolvedValue(renderOutput());
+
+        render(<ClipMidiAiSection clip={clipA} />);
+
+        expect(screen.getByRole('option', { name: 'Violin' })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: 'Flute' })).not.toBeInTheDocument();
+        fireEvent.click(instrumentButton());
+
+        await screen.findByTestId('ai-render-preview');
+        expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith({
+            phraseId: 'ddsp-clip-a-ddsp',
+            instrumentId: 'ddsp-violin',
+            durationSec: expect.closeTo(1 + 2 * Math.LN2, 9),
+            notes: [
+                { pitch: 60, velocity: 100, startSec: 0, durationSec: 0.5 },
+                { pitch: 64, velocity: 90, startSec: 0.5, durationSec: expect.closeTo(0.5 + 2 * Math.log(1.5), 9) },
+            ],
+            signal: expect.any(AbortSignal),
+        });
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Instrument render complete', expect.any(Array));
+    });
+
+    it('preserves a ready selection and renders its selected instrument id', async () => {
+        setRegistry([violin, flute]);
+        publishNotes({ [clipA.id]: [{ id: 'note', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        vi.mocked(renderDdspInstrument).mockResolvedValue(renderOutput());
+        render(<ClipMidiAiSection clip={clipA} />);
+
+        fireEvent.change(screen.getByLabelText('DDSP instrument'), { target: { value: 'ddsp-flute' } });
+        fireEvent.click(instrumentButton());
+
+        await screen.findByTestId('ai-render-preview');
+        expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith(
+            expect.objectContaining({ instrumentId: 'ddsp-flute', signal: expect.any(AbortSignal) })
+        );
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Flute');
+    });
+
+    it('does not render when clipping leaves no notes', () => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'outside', pitch: 60, velocity: 100, startBeat: 8, duration: 1 }] });
+        render(<ClipMidiAiSection clip={clipA} />);
+
+        fireEvent.click(instrumentButton());
+
+        expect(vi.mocked(renderDdspInstrument)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith('No MIDI notes in this clip to render', 'error');
+    });
+
+    it('projects slipped MIDI through the scheduler projection before converting it to seconds', async () => {
+        setRegistry();
+        const slippedClip = { ...clipA, midiOffsetBeats: 2 };
+        publishNotes({ [slippedClip.id]: [{ id: 'slipped', pitch: 60, velocity: 100, startBeat: 2, duration: 1 }] });
+        vi.mocked(renderDdspInstrument).mockResolvedValue(renderOutput());
+
+        render(<ClipMidiAiSection clip={slippedClip} />);
+        fireEvent.click(instrumentButton());
+
+        await screen.findByTestId('ai-render-preview');
+        expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith(
+            expect.objectContaining({ notes: [{ pitch: 60, velocity: 100, startSec: 0, durationSec: 0.5 }] })
+        );
+    });
+
+    it('projects every visible loop occurrence without dropping or duplicating a seam note', async () => {
+        setRegistry();
+        const loopedClip = { ...clipA, startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 };
+        publishNotes({ [loopedClip.id]: [{ id: 'seam', pitch: 60, velocity: 100, startBeat: 3.5, duration: 1 }] });
+        vi.mocked(renderDdspInstrument).mockResolvedValue(renderOutput());
+
+        render(<ClipMidiAiSection clip={loopedClip} />);
+        fireEvent.click(instrumentButton());
+
+        await screen.findByTestId('ai-render-preview');
+        expect(vi.mocked(renderDdspInstrument)).toHaveBeenCalledWith(
+            expect.objectContaining({
+                notes: [
+                    { pitch: 60, velocity: 100, startSec: 0, durationSec: 0.25 },
+                    { pitch: 60, velocity: 100, startSec: 1.75, durationSec: 0.25 },
+                    { pitch: 60, velocity: 100, startSec: 2, durationSec: 0.25 },
+                    { pitch: 60, velocity: 100, startSec: 3.75, durationSec: 0.25 },
+                ],
+            })
+        );
+    });
+
+    it.each([
+        [
+            'notes',
+            (_view: ReturnType<typeof render>) =>
+                publishNotes({ [clipA.id]: [{ id: 'changed', pitch: 67, velocity: 100, startBeat: 0, duration: 1 }] }),
+        ],
+        [
+            'bounds',
+            (view: ReturnType<typeof render>) => view.rerender(<ClipMidiAiSection clip={{ ...clipA, endBeat: 13 }} />),
+        ],
+        ['version', () => act(() => setRegistry([{ ...violin, artifactVersion: 'v2' }]))],
+        ['readiness', () => act(() => setRegistry([]))],
+        ['default tempo', () => act(() => transportStore.set({ ...defaultTransportState, tempo: 90 }))],
+        [
+            'tempo step',
+            () => act(() => tempoMapStore.set({ changes: [{ id: 'step', beat: 9, tempo: 90, curve: 'instant' }] })),
+        ],
+        [
+            'tempo ramp',
+            () =>
+                act(() =>
+                    tempoMapStore.set({
+                        changes: [
+                            { id: 'ramp', beat: 8, tempo: 90, curve: 'linear' },
+                            { id: 'target', beat: 12, tempo: 120, curve: 'instant' },
+                        ],
+                    })
+                ),
+        ],
+    ])('cancels and stales a DDSP request after a same-clip %s source change', async (_label, mutate) => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'note', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        const pending = createGate();
+        let signal: AbortSignal | undefined;
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async (input) => {
+            signal = input.signal;
+            await pending.promise;
+            return renderOutput();
+        });
+        const view = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+
+        await act(async () => {
+            mutate(view);
+        });
+
+        await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+        await settle(pending.open);
+        expect(screen.queryByTestId('ai-render-preview')).not.toBeInTheDocument();
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+    });
+
+    it('keeps a request when an unrelated clip or playhead changes', async () => {
+        setRegistry();
+        publishNotes({
+            [clipA.id]: [{ id: 'note-a', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }],
+            [clipB.id]: [{ id: 'note-b', pitch: 62, velocity: 100, startBeat: 0, duration: 1 }],
+        });
+        const pending = createGate();
+        let signal: AbortSignal | undefined;
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async (input) => {
+            signal = input.signal;
+            await pending.promise;
+            return renderOutput();
+        });
+        render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+
+        publishNotes({
+            [clipA.id]: [{ id: 'note-a', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }],
+            [clipB.id]: [{ id: 'note-b', pitch: 65, velocity: 100, startBeat: 0, duration: 1 }],
+        });
+        act(() => transportStore.set({ ...defaultTransportState, playheadPosition: 3 }));
+
+        expect(signal?.aborted).toBe(false);
+        await settle(pending.open);
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+    });
+
+    it('keeps a request for source edits outside the effective DDSP input', async () => {
+        setRegistry();
+        tempoMapStore.set({ changes: [{ id: 'base-a', beat: 0, tempo: 120, curve: 'instant' }] });
+        publishNotes({ [clipA.id]: [{ id: 'inside', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        const pending = createGate();
+        let signal: AbortSignal | undefined;
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async (input) => {
+            signal = input.signal;
+            await pending.promise;
+            return renderOutput();
+        });
+        render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+
+        publishNotes({
+            [clipA.id]: [
+                { id: 'inside', pitch: 60, velocity: 100, startBeat: 0, duration: 1 },
+                { id: 'outside', pitch: 64, velocity: 100, startBeat: 8, duration: 1 },
+            ],
+        });
+        act(() =>
+            tempoMapStore.set({
+                changes: [
+                    { id: 'base-b', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'after', beat: 16, tempo: 90, curve: 'linear' },
+                ],
+            })
+        );
+
+        expect(signal?.aborted).toBe(false);
+        await settle(pending.open);
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+    });
+
+    it('cancels a DDSP request when a committed clip groove changes its projected notes', async () => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'grooved', pitch: 60, velocity: 100, startBeat: 0.25, duration: 1 }] });
+        const pending = createGate();
+        let signal: AbortSignal | undefined;
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async (input) => {
+            signal = input.signal;
+            await pending.promise;
+            return renderOutput();
+        });
+        render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+
+        act(() => {
+            grooveTemplateStore.set({
+                ...structuredClone(defaultGrooveTemplateState),
+                assignments: [{ consumerType: 'clip', consumerId: clipA.id, templateId: 'swing-light', amount: 1 }],
+            });
+        });
+
+        await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+        await settle(pending.open);
+        expect(screen.queryByTestId('ai-render-preview')).not.toBeInTheDocument();
+    });
+
+    it('invalidates a completed preview when the inspector remounts with a changed effective source', async () => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'note', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        renderQueueStore.set({
+            entries: [],
+            cachedPhraseIds: [],
+            phraseStatusMap: { 'ddsp-clip-a-ddsp': 'preview' },
+        });
+        vi.mocked(renderDdspInstrument).mockResolvedValue(renderOutput());
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+        await screen.findByTestId('ai-render-preview');
+        unmount();
+
+        act(() => transportStore.set({ ...defaultTransportState, tempo: 90 }));
+        render(<ClipMidiAiSection clip={clipA} />);
+
+        expect(renderQueueStore.value?.phraseStatusMap['ddsp-clip-a-ddsp']).toBe('stale');
+    });
+
+    it('clears a completed preview and stales its canonical phrase after a mounted source change', async () => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'note', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        renderQueueStore.set({
+            entries: [],
+            cachedPhraseIds: [],
+            phraseStatusMap: { 'ddsp-clip-a-ddsp': 'preview' },
+        });
+        vi.mocked(renderDdspInstrument).mockResolvedValue(renderOutput());
+
+        render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+        await screen.findByTestId('ai-render-preview');
+
+        act(() => transportStore.set({ ...defaultTransportState, tempo: 90 }));
+
+        expect(screen.queryByTestId('ai-render-preview')).not.toBeInTheDocument();
+        expect(renderQueueStore.value?.phraseStatusMap['ddsp-clip-a-ddsp']).toBe('stale');
+    });
+
+    it('drops a request during the source-change commit before its pending render settles', async () => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'note', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        const pending = createGate();
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async () => {
+            await pending.promise;
+            return renderOutput();
+        });
+        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+
+        act(() => {
+            rerender(<ClipMidiAiSection clip={{ ...clipA, endBeat: 13 }} />);
+        });
+        await settle(pending.open);
+
+        expect(screen.queryByTestId('ai-render-preview')).not.toBeInTheDocument();
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+    });
+
+    it('aborts on unmount and rejects A-to-B-to-A stale work without clearing the current spinner', async () => {
+        setRegistry();
+        publishNotes({
+            [clipA.id]: [{ id: 'note-a', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }],
+            [clipB.id]: [{ id: 'note-b', pitch: 62, velocity: 100, startBeat: 0, duration: 1 }],
+        });
+        const abandoned = createGate();
+        const current = createGate();
+        let firstSignal: AbortSignal | undefined;
+        vi.mocked(renderDdspInstrument)
+            .mockImplementationOnce(async (input) => {
+                firstSignal = input.signal;
+                await abandoned.promise;
+                return renderOutput();
+            })
+            .mockImplementationOnce(async () => {
+                await current.promise;
+                return renderOutput();
+            });
+        const { rerender, unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+        rerender(<ClipMidiAiSection clip={clipB} />);
+        rerender(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+
+        await settle(() => abandoned.fail(new Error('stale failure')));
+        expect(firstSignal?.aborted).toBe(true);
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+        expect(instrumentButton()).toHaveTextContent('Rendering…');
+        await settle(current.open);
+        expect(screen.getByTestId('ai-render-preview')).toHaveTextContent('DDSP: Violin');
+
+        unmount();
+    });
+
+    it('aborts an in-flight DDSP request on unmount', () => {
+        setRegistry();
+        publishNotes({ [clipA.id]: [{ id: 'note-a', pitch: 60, velocity: 100, startBeat: 0, duration: 1 }] });
+        const pending = createGate();
+        let signal: AbortSignal | undefined;
+        vi.mocked(renderDdspInstrument).mockImplementationOnce(async (input) => {
+            signal = input.signal;
+            await pending.promise;
+            return renderOutput();
+        });
+        const { unmount } = render(<ClipMidiAiSection clip={clipA} />);
+        fireEvent.click(instrumentButton());
+
+        unmount();
+
+        expect(signal?.aborted).toBe(true);
     });
 });

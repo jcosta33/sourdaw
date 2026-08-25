@@ -13,9 +13,8 @@ Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch
   `src/modules/AudioEngine/wasm/`, prepending AudioWorklet-scope polyfills and replacing
   `new URL(..., import.meta.url)` with a static path so Vite does not bundle the `.wasm`. Re-run
   the `wasm:*` script after changing a crate; never hand-edit files under `AudioEngine/wasm/`.
-- Grand Boule remains complete native Rust and TypeScript host source, but the complete Rust module
-  is absent from the `wasm32` crate graph. The host stack imports a local structural interface and an
-  inert production construction seam; focused tests inject in-memory instances at that seam.
+- Grand Boule runs its live WASM engine in a Worker behind a SharedArrayBuffer ring. Offline render
+  runs the same engine inline in an AudioWorklet, where no live deadline exists.
 - The release census covers the complete `public/wasm` tree and every manifest-declared AudioEngine
   mirror. Package ids and artifact paths come from `scripts/wasm-artifacts.ts`; unknown sidecars,
   manifest paths, text references, or binary exports fail release validation.
@@ -25,8 +24,8 @@ Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch
   realm singleton. Loading another version after that requires a fresh context and is rejected
   instead of silently retaining the old binary.
 - AudioWorklet processors receive the structured-cloned `WebAssembly.Module` through
-  `processorOptions`; the retained Grand Boule host follows the same transport shape in focused
-  tests. A separate port init message starts caught instantiation and the ready/error handshake.
+  `processorOptions`; Grand Boule's Worker receives the same compiled module. A separate port init
+  message starts caught instantiation and the ready/error handshake.
   Processors call `initSync` and compile nothing on their real-time-adjacent threads. Shared module
   caching and handshake logic live in `src/infra/audioWorklet/workletInitShared.ts`.
 - Crumbs disk streaming is native-only ([daw-dsp](../../../crates/daw-dsp/AGENTS.md)). Browser

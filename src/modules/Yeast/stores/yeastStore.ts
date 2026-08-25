@@ -14,7 +14,6 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
-import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
 import { trackStore } from '#/modules/Arrangement/stores';
 
@@ -133,15 +132,15 @@ localStateReader.read = readCurrentYeastState;
  * BEFORE the active device can move. The storage layer's device-switch
  * projection replaces a visible pending write's value (its sanitizer
  * contract), so an unflushed edit would be silently reverted — or flushed
- * under the wrong device's key. The global flush skips writes owned by open
- * action transactions, and every rack-editing use case runs inside one, so
- * this only ever lands rAF-deferred unscoped writes. The one residual window
+ * under the wrong device's key. The storage view's flush authority is bound
+ * to its private unscoped commit owner, so it cannot publish another adapter's
+ * write or a write owned by an open action transaction. The one residual window
  * — an unscoped rack write pending while NO panel pins a device and the
  * project-order resolution changes in the same frame — has no writer in
  * production: rack edits come from the pinned panel or scoped transactions.
  */
 function flushPendingRackWrites(): void {
-    flushAutomergeStorageWrites();
+    yeastStorageView.flushPendingRackWrite();
 }
 
 /**

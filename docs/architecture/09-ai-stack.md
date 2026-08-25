@@ -1,82 +1,46 @@
-# AI Stack Architecture
+# AI Stack
 
-Sourdaw runs language models, audio ML, and model-driven project actions.
+This page separates code in the repository from features admitted for the current
+source build. Model weights are separate artifacts with separate terms.
 
-It complements:
+## Language models
 
-- `CRDT & Collaboration Architecture` — the write path AI actions enter
-- The `llm-action-bridge` agent skill — rules for model-driven actions
-- `crates/sourdaw-native/AGENTS.md` — native command-body boundaries
+- Hosted Anthropic, OpenAI, and OpenAI-compatible providers are available through
+  the desktop native gateway. Configure them with
+  `SOURDAW_ANTHROPIC_API_KEY`, `SOURDAW_OPENAI_API_KEY`, or
+  `SOURDAW_OPENAI_COMPATIBLE_API_KEY`, respectively.
+- The exact pinned WebLLM Qwen conversions admitted by
+  [ADR 0037](../../.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md) are available on
+  browser and desktop release surfaces. WebLLM may be selected on any platform,
+  but runtime use still requires WebGPU; explicit selection fails closed when
+  that capability is unavailable and never falls back to a hosted provider.
+  Artifact admission is separate from runtime capability: the release manifest
+  pins and verifies each artifact before storage or inference.
+  [ADR 0037](../../.agents/decisions/0037-admit-webllm-qwen-conversions-under-apache-2.0.md)
+  records the remaining unproven exact Qwen checkpoint mapping and build inputs;
+  those gaps must not be represented as proven provenance. Browser hosted
+  credentials are not supported. An unauthenticated OpenAI-compatible loopback
+  endpoint remains a local browser path.
 
----
+## Audio and speech models
 
-## 1. Language model runtimes
+| Capability      | Current truth                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Basic Pitch     | Bundled and admitted for audio-to-MIDI.                                                                                                                             |
+| Kokoro          | Code is present and admitted on demand; voice weights are downloaded and cached locally.                                                                            |
+| DDSP            | Code is present and admitted on demand. Sourdaw downloads checkpoints directly and does not redistribute their weights; the exact checkpoint license is unverified. |
+| Whisper         | Desktop-native dictation uses a cached or explicitly supplied local model.                                                                                          |
+| RAVE            | Unavailable; its model path is withheld from admission.                                                                                                             |
+| Stem separation | Unavailable; no compatible model is admitted.                                                                                                                       |
 
-AiRuntime owns two explicit runtime classes:
+The source tree can contain runtime code, manifests, and integration paths that
+are not release-admitted. Admission is the product boundary, not the import graph.
+Code licenses also do not settle the license or redistribution terms for model
+weights. Check the terms attached to each downloaded artifact.
 
-| Runtime          | Boundary                             | Use                                                                                   |
-| ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| WebLLM           | Browser worker via `@mlc-ai/web-llm` | Architecture retained; exact model artifacts withheld                                 |
-| Hosted providers | Desktop native gateway               | Anthropic, OpenAI, and OpenAI-compatible inference through opaque credential sessions |
+## Actions
 
-Voice input runs through whisper-rs dictation in `speech.rs`.
-
-No browser language model is admitted in this release. Hosted providers require the desktop app and
-explicit selection. Native code reads fixed `SOURDAW_*_API_KEY` environment
-variables; the renderer receives only an opaque session ID. Web builds expose no hosted credential
-surface. Unauthenticated loopback OpenAI-compatible endpoints carry no credential and remain local.
-
-## 2. Audio ML
-
-**Native:** first-party downward-expander denoise (`ai_audio.rs`) plus audio post-processing
-(`audio_postprocess.rs`). Neither path loads a model artifact.
-
-**In-browser (BrowserAi):** Kokoro TTS runs through a dedicated worker and model registry. Its model
-and exposed voices are revision-pinned and SHA-256 verified. DDSP, RAVE, and singing synthesis stay
-withheld until exact model chains pass admission. BrowserAi initializes non-blocking at bootstrap.
-
-**Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via the
-admitted Spotify Basic Pitch package, and mix-vs-reference comparison. Stem separation stays
-unavailable until a compatible model passes admission.
-
-## 3. The action bridge — AI that does things
-
-The load-bearing design decision: model output never touches state directly. The bridge:
-
-```
-model output
-   │  structured action proposals (typed, named)
-   ▼
-validation (structure, bounds, ID existence, capability)
-   │  pendingActionConfirmationStore — user confirms risky/bulk actions
-   ▼
-runAppAction → executeAppAction          AiRuntime/useCases/aiPanelActions/
-   │  same Automerge transaction as human input
-   ▼
-aiActionHistoryStore                     revert of AI-initiated actions
-```
-
-Because execution shares the human write path, AI actions get undo, persistence, collaboration merge, and audit history for free — and `undoLastAction.ts` can revert them through the dedicated AI action history. `confirmPendingChatActions.ts` gates destructive or bulk proposals behind explicit confirmation.
-
-The operational rules for building on this bridge (registry discipline, plan/execute separation, validation, observability) live in the `llm-action-bridge` skill.
-
-## 4. Module map
-
-| Module        | Owns                                                                                          |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| AiRuntime     | LLM runtimes, chat panel, voice commands, action execution + AI action history, preset search |
-| AiGeneration  | generative MIDI (melody/drums/chords/variations), denoise previews, AI task queue             |
-| BrowserAi     | in-browser ML models (TTS and timbre transfer), model registry, inference workers             |
-| AudioAnalysis | musical analysis and audio→MIDI                                                               |
-
-External dependency ownership is deliberate: `@mlc-ai/web-llm` appears only in AiRuntime;
-`onnxruntime-web` only in BrowserAi and AudioAnalysis; `@spotify/basic-pitch`, `meyda`, and `pitchy`
-only in AudioAnalysis. Hosted provider transport lives in `sourdaw-native`.
-
-## References
-
-- `.agents/skills/llm-action-bridge/SKILL.md` — rules for model-driven actions
-- `.agents/decisions/0028-native-provider-credential-sessions.md` — hosted credential boundary
-- `.agents/decisions/0030-exact-model-release-admission.md` — model artifact admission
-- `crates/sourdaw-native/AGENTS.md` — native command-body boundaries
-- `docs/architecture/06-crdt-collaboration.md` — the write path actions enter
+Model output does not write project state directly. Only admitted actions can
+pass validation and any required confirmation into the shared application action
+path. Each action inherits only the persistence, undo, and collaboration
+semantics that its existing path provides.

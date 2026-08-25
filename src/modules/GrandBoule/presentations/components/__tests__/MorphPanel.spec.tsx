@@ -65,6 +65,15 @@ describe('MorphPanel — morph position readout', () => {
     });
 });
 
+describe('MorphPanel — product voicings', () => {
+    it('does not offer removed branded aliases', () => {
+        render(<MorphPanel {...defaultProps()} />);
+
+        expect(screen.queryByText(/steinway|yamaha/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Steinway|Yamaha/u)).not.toBeInTheDocument();
+    });
+});
+
 describe('MorphPanel — knob accessible names', () => {
     it('exposes the morph and balance knobs as named sliders', () => {
         render(<MorphPanel {...defaultProps({ morph: morph({ enabled: true }) })} />);

@@ -12,6 +12,7 @@ import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers } from '#/modules/ControlSurface/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
+import { getGrandBouleHandlers } from '#/modules/GrandBoule/useCases';
 import { getPitchHandlers } from '#/modules/Knead/useCases';
 import {
     getChordTrackHandlers,
@@ -62,6 +63,7 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getVersionControlHandlers(),
         getDawProjectHandlers(),
         getFinalFeatureHandlers(),
+        getGrandBouleHandlers(),
         getNodeViewHandlers(),
         getWebMidiInputHandlers(),
         getRaveHandlers(),

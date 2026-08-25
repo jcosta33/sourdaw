@@ -7,8 +7,8 @@ import { NATIVE_DSP_DEVICE_FACTORIES } from '../../repositories/deviceStrategy/n
 import { getAgentBuiltinDeviceRuntimeManifest } from '../getAgentBuiltinDeviceRuntimeManifest';
 
 describe('built-in device runtime manifest', () => {
-    it('omits devices withheld from release', () => {
-        expect(getAgentBuiltinDeviceRuntimeManifest(['grand-boule'])).toEqual([]);
+    it('publishes the Grand Boule runtime', () => {
+        expect(getAgentBuiltinDeviceRuntimeManifest(['grand-boule'])).toHaveLength(1);
     });
 
     it('projects physical factory topology, note support, and reported latency semantics', () => {

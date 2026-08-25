@@ -109,10 +109,7 @@ class GrandBouleInstanceMock {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: vi.fn(() => ({ memory: wasmStub.memory })),
-}));
-vi.mock('../grandBouleWasmInstance', () => ({
-    createGrandBouleWasmInstance: (sampleRate: number, voiceCount: number) =>
-        new GrandBouleInstanceMock(sampleRate, voiceCount),
+    GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
 // ---------------------------------------------------------------------------

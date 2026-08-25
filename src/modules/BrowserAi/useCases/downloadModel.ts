@@ -32,6 +32,9 @@ export const downloadModel = inject({ logger, downloadModelRepo, getStorageStatu
             sizeBytes,
             onProgress,
         }: DownloadModelInput): Promise<void> {
+            if (family === 'ddsp') {
+                throw new Error('Use the dedicated DDSP instrument download boundary');
+            }
             logger.info(`[BrowserAi] Starting download: ${modelId}`);
 
             await downloadModelRepo({

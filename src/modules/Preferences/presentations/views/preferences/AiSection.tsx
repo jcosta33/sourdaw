@@ -34,6 +34,7 @@ type HostedModelOption = {
 type SelectedBackendInput = {
     backend: 'webllm' | 'cloud' | 'none';
     preference: 'auto' | BackendSelection;
+    hostedProvidersAvailable: boolean;
 };
 
 const HOSTED_MODEL_OPTIONS: Record<Exclude<HostedProviderSelection, 'openai-compatible'>, HostedModelOption[]> = {
@@ -66,17 +67,23 @@ function isBackendSelection(value: string): value is BackendSelection {
     return value === 'auto' || value === 'webllm' || value === 'cloud';
 }
 
-function getSelectedBackend({ backend, preference }: SelectedBackendInput): BackendSelection {
+function getSelectedBackend({ backend, preference, hostedProvidersAvailable }: SelectedBackendInput): BackendSelection {
     if (preference === 'webllm' && !MODEL_RELEASE_ADMISSION.webLlm) {
+        return 'auto';
+    }
+    if (preference === 'cloud' && !hostedProvidersAvailable) {
         return 'auto';
     }
     if (preference !== 'auto') {
         return preference;
     }
-    if (backend !== 'none') {
+    if (backend === 'webllm') {
         return backend;
     }
-    return MODEL_RELEASE_ADMISSION.webLlm ? 'webllm' : 'auto';
+    if (backend === 'cloud' && hostedProvidersAvailable) {
+        return backend;
+    }
+    return 'auto';
 }
 
 function getProviderLabel(provider: HostedProviderSelection): string {
@@ -102,12 +109,11 @@ export const AiSection = (): ReactElement => {
     const [configurationPending, setConfigurationPending] = useState(false);
     const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
     const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
-    let selectedBackend: BackendSelection;
-    if (hostedProvidersAvailable) {
-        selectedBackend = getSelectedBackend({ backend, preference: backendPreference });
-    } else {
-        selectedBackend = MODEL_RELEASE_ADMISSION.webLlm ? 'webllm' : 'auto';
-    }
+    const selectedBackend = getSelectedBackend({
+        backend,
+        preference: backendPreference,
+        hostedProvidersAvailable,
+    });
     const cloudAvailable = configuredProvider !== null;
     const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
     const customFirstPartyModel =

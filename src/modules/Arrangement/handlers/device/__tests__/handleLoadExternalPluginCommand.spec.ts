@@ -9,6 +9,7 @@ import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#
 
 import { createTrack } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
+import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleLoadExternalPlugin } from '../handleLoadExternalPlugin';
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +29,17 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({ reportLatency: mocks.reportLa
 vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
+
+/**
+ * What the delta reports once its host track left project truth mid-commit.
+ * Typed against the production variant so a fixture cannot describe an outcome
+ * the union does not carry.
+ */
+const supersededPluginDelta: DeviceChainRuntimeDeltaSuperseded = {
+    acceptance: 'superseded',
+    application: 'not-applied',
+    reason: 'Track audio-1 left project truth before its add-device delta was submitted',
+};
 
 function seedAudioTrack(): void {
     const track = createTrack({ id: 'audio-1', kind: 'audio', name: 'Audio' });
@@ -137,6 +149,22 @@ describe('handleLoadExternalPlugin command path', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('returns clean command success and activates no instance when the delta is superseded', async () => {
+        // The host track left project truth later in this commit. Activating a
+        // native plugin instance onto a strip that is being torn down would
+        // leak the instance, so the whole runtime effect is void — not a
+        // failure demanding manual repair.
+        configureStoragePort(() => undefined);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(supersededPluginDelta);
+
+        await expect(
+            executeAppAction({ type: 'loadExternalPlugin', payload: { pluginId: 'plugin-1', trackId: 'audio-1' } })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
     it('commits project truth before running the device delta and host activation', async () => {

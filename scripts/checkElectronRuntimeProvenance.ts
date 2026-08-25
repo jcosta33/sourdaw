@@ -55,6 +55,7 @@ export function electronReleaseInventoryContract(contract: ElectronRuntimeContra
             contract.ffmpeg.repository,
             'package.json',
             'public/legal/ELECTRON-SOURCES.json',
+            'release/desktop-runtime-material.json',
         ],
         revisions: [
             `electron ${contract.version} ${contract.revision}`,
@@ -62,12 +63,13 @@ export function electronReleaseInventoryContract(contract: ElectronRuntimeContra
             `Node ${contract.node.version} ${contract.node.revision}`,
             `FFmpeg ${contract.ffmpeg.revision}`,
             'pnpm-lock.yaml',
+            'release-proof:exact-candidate-revision',
         ],
         digests: [
             `npm-integrity:${contract.integrity}`,
             `sha256:${contract.licenseSha256}`,
             'public/legal/ELECTRON-SOURCES.json',
-            'pending:OS-12-final-desktop-package',
+            'release-proof:desktop-mac-arm64-artifact',
         ],
         licenses: [
             'MIT:Electron',

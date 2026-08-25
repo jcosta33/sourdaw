@@ -529,11 +529,10 @@ fn the_curve_is_monotonic_across_its_declared_travel() {
 
 /// The default curve is not merely close to transparent, it is the identity.
 ///
-/// This is the claim `plate_parameter_surface.rs`'s `UNTOUCHED_PLATE_DIGEST` and
-/// `algorithm_switch_parameter_retention.rs`'s `UNTOLD_INSTANCE_DIGEST` rest on
-/// — both survived this stage being instantiated, and neither was regenerated.
-/// Asserted here rather than left to those two files, because they would also
-/// stay green if the stage were simply never reached.
+/// This is the claim `plate_parameter_surface.rs`'s untouched-Plate shape guard
+/// and `algorithm_switch_parameter_retention.rs`'s constructor-versus-first-
+/// selection parity rest on. Asserted here rather than left to those two files,
+/// because they would also stay green if the stage were simply never reached.
 #[test]
 fn writing_every_band_to_its_default_renders_bit_identically() {
     for sample_rate in SAMPLE_RATES {

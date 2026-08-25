@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
+import { installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
+
 // Loaded fresh per test. The cache holds one IndexedDB connection for the life
 // of the module (audit M-045), and these tests install a new `indexedDB` double
 // per test — without the reset, every test after the first would keep talking to
@@ -8,6 +11,7 @@ let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 
 beforeEach(async () => {
     vi.resetModules();
+    installTestAudioBufferConstructor();
     ({ audioBufferCache } = await import('../audioBufferCache'));
 });
 
@@ -88,18 +92,60 @@ type StoredAudioBuffer = {
     sizeInBytes: number;
 };
 
-function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
-    const backing = new Map<string, StoredAudioBuffer>();
+type StoredBufferMeta = {
+    lastAccessed: number;
+    sizeInBytes: number;
+    preparedOwner?: {
+        schemaVersion: 1;
+        leaseId: string;
+        status: 'project-owned' | 'temporary';
+    };
+};
+
+type FakeBacking = Map<string, StoredAudioBuffer> & { meta: Map<string, StoredBufferMeta> };
+
+function createCompletedRecoveryMigrationTransaction() {
+    const request = {
+        result: undefined as unknown,
+        error: null,
+        onsuccess: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+    };
+    const transaction = {
+        error: null,
+        onabort: null as (() => void) | null,
+        oncomplete: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        objectStore: () => ({
+            get: () => {
+                queueMicrotask(() => {
+                    request.result = { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 };
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+        }),
+    };
+    setTimeout(() => transaction.oncomplete?.(), 0);
+    return transaction;
+}
+
+function installFakeIndexedDb(): FakeBacking {
+    const backing = new Map<string, StoredAudioBuffer>() as FakeBacking;
     // The database has two object stores from DB_VERSION 2 on, and they share a
     // key space. A double that handed the same map to both would let the
     // metadata row overwrite the record it describes.
-    const metaBacking = new Map<string, { lastAccessed: number; sizeInBytes: number }>();
+    const metaBacking = new Map<string, StoredBufferMeta>();
+    const recoveryBacking = new Map<IDBValidKey, unknown>([
+        [0, { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 }],
+    ]);
+    backing.meta = metaBacking;
 
-    function makeStore<Value>(table: Map<string, Value>) {
+    function makeStore<Key, Value>(table: Map<Key, Value>) {
         return {
             clear: () => table.clear(),
-            delete: (key: string) => table.delete(key),
-            get: (key: string) => {
+            delete: (key: Key) => table.delete(key),
+            get: (key: Key) => {
                 const request = {
                     result: undefined as Value | undefined,
                     error: null,
@@ -112,9 +158,22 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 });
                 return request;
             },
+            getAll: () => {
+                const request = {
+                    result: [] as Value[],
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = [...table.values()];
+                    request.onsuccess?.();
+                });
+                return request;
+            },
             getAllKeys: () => {
                 const request = {
-                    result: [] as string[],
+                    result: [] as Key[],
                     error: null,
                     onsuccess: null as (() => void) | null,
                     onerror: null as (() => void) | null,
@@ -125,7 +184,7 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 });
                 return request;
             },
-            put: (value: Value, key: string) => {
+            put: (value: Value, key: Key) => {
                 table.set(key, value);
             },
         };
@@ -133,14 +192,19 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
 
     const bufferStore = makeStore(backing);
     const metaStore = makeStore(metaBacking);
+    const recoveryStore = makeStore(recoveryBacking);
     function storeFor(name: string) {
         if (name === 'bufferMeta') {
             return metaStore;
+        }
+        if (name === 'preparedBufferRecovery') {
+            return recoveryStore;
         }
         return bufferStore;
     }
 
     const database = {
+        close: vi.fn(),
         objectStoreNames: { contains: () => true },
         createObjectStore: () => bufferStore,
         transaction: () => {
@@ -412,7 +476,10 @@ describe('audioBufferCache conversions', () => {
         const put = vi.fn();
         const database = {
             objectStoreNames: { contains: () => true },
-            transaction: () => {
+            transaction: (storeNames: string | string[]) => {
+                if (storeNames === 'preparedBufferRecovery') {
+                    return createCompletedRecoveryMigrationTransaction();
+                }
                 const transaction: ControlledTransaction = {
                     abort: vi.fn(() => queueMicrotask(() => transaction.onabort?.())),
                     error: null,
@@ -511,7 +578,10 @@ describe('audioBufferCache conversions', () => {
         };
         const database = {
             objectStoreNames: { contains: () => true },
-            transaction: vi.fn(() => {
+            transaction: vi.fn((storeNames: string | string[]) => {
+                if (storeNames === 'preparedBufferRecovery') {
+                    return createCompletedRecoveryMigrationTransaction();
+                }
                 const transaction = {
                     error: null,
                     objectStore: () => store,
@@ -569,6 +639,202 @@ describe('audioBufferCache conversions', () => {
             }
             vi.unstubAllGlobals();
         }
+    });
+
+    it('reports prepared PCM durable only after commit and reopens the exact owner after reload', async () => {
+        const backing = installFakeIndexedDb();
+        const source = createAudioBuffer({ length: 2, sampleRate: 48_000 });
+        source.getChannelData(0).set([0.25, -0.75]);
+        let settled = false;
+
+        const persistence = audioBufferCache
+            .persistPreparedBuffer({ id: 'prepared-pcm', buffer: source })
+            .then((result) => {
+                settled = true;
+                return result;
+            });
+
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(backing.has('prepared-pcm')).toBe(false);
+
+        const persisted = await persistence;
+        expect(persisted).toMatchObject({ status: 'persisted', bufferId: 'prepared-pcm' });
+        if (persisted.status !== 'persisted') {
+            throw new TypeError('Expected prepared PCM persistence to commit');
+        }
+        expect(Array.from(backing.get('prepared-pcm')?.channelData[0] ?? [])).toEqual([0.25, -0.75]);
+        expect(backing.meta.get('prepared-pcm')?.preparedOwner).toEqual({
+            schemaVersion: 1,
+            createdAtMs: expect.any(Number),
+            leaseId: persisted.leaseId,
+            persistenceRevision: expect.any(String),
+            status: 'temporary',
+        });
+
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        const reopened = await audioBufferCache.reopenPreparedBuffer({
+            id: 'prepared-pcm',
+            leaseId: persisted.leaseId,
+            context: createTestContext(
+                vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+        });
+
+        expect(reopened).toEqual({ status: 'reopened', bufferId: 'prepared-pcm', ownership: 'temporary' });
+        expect(Array.from(audioBufferCache.get('prepared-pcm')?.getChannelData(0) ?? [])).toEqual([0.25, -0.75]);
+    });
+
+    it('types prepared persistence failure and missing or mismatched reopen without claiming durability', async () => {
+        vi.stubGlobal('indexedDB', {
+            open: () => {
+                const request = {
+                    error: new Error('storage unavailable'),
+                    onerror: null as (() => void) | null,
+                    onsuccess: null as (() => void) | null,
+                    onupgradeneeded: null as (() => void) | null,
+                };
+                queueMicrotask(() => request.onerror?.());
+                return request;
+            },
+        });
+
+        await expect(
+            audioBufferCache.persistPreparedBuffer({
+                id: 'failed-pcm',
+                buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            })
+        ).resolves.toMatchObject({ status: 'failed', reason: 'storage unavailable' });
+
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        const aborted = installFakeAudioIndexedDb();
+        aborted.abortWrites();
+        await expect(
+            audioBufferCache.persistPreparedBuffer({
+                id: 'aborted-pcm',
+                buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            })
+        ).resolves.toMatchObject({ status: 'failed', reason: 'IDB transaction aborted' });
+        expect(aborted.committed.has('aborted-pcm')).toBe(false);
+
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        const backing = installFakeIndexedDb();
+        backing.set('owned-pcm', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.5])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        });
+        backing.meta.set('owned-pcm', {
+            lastAccessed: 1,
+            sizeInBytes: 4,
+            preparedOwner: { schemaVersion: 1, leaseId: 'lease-correct', status: 'temporary' },
+        });
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            )
+        );
+
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({ id: 'missing-pcm', leaseId: 'lease-missing', context })
+        ).resolves.toEqual({ status: 'missing' });
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({ id: 'owned-pcm', leaseId: 'lease-wrong', context })
+        ).resolves.toEqual({ status: 'mismatched' });
+
+        backing.get('owned-pcm')!.sizeInBytes = 8;
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({ id: 'owned-pcm', leaseId: 'lease-correct', context })
+        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio PCM is invalid.' });
+    });
+
+    it('settles temporary ownership once and never lets later discard delete project-owned PCM', async () => {
+        const backing = installFakeIndexedDb();
+        const retained = await audioBufferCache.persistPreparedBuffer({
+            id: 'retained-pcm',
+            buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+        });
+        if (retained.status !== 'persisted') {
+            throw new TypeError('Expected retained PCM persistence to commit');
+        }
+
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'retained-pcm',
+                leaseId: retained.leaseId,
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'retained-pcm',
+                leaseId: retained.leaseId,
+                disposition: 'discard',
+            })
+        ).resolves.toEqual({ status: 'already-settled', disposition: 'project-owned' });
+        expect(backing.has('retained-pcm')).toBe(true);
+        audioBufferCache
+            .importBuffers({
+                buffers: {},
+                cacheIds: ['retained-pcm'],
+                context: createTestContext(vi.fn()),
+            })
+            ?.publish();
+
+        const discarded = await audioBufferCache.persistPreparedBuffer({
+            id: 'discarded-pcm',
+            buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+        });
+        if (discarded.status !== 'persisted') {
+            throw new TypeError('Expected discarded PCM persistence to commit');
+        }
+        await expect(audioBufferCache.garbageCollectByAge(-1)).resolves.toBe(0);
+        await expect(audioBufferCache.garbageCollectBySize(0)).resolves.toBe(0);
+        expect(backing.has('discarded-pcm')).toBe(true);
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'discarded-pcm',
+                leaseId: discarded.leaseId,
+                disposition: 'discard',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'discarded' });
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'discarded-pcm',
+                leaseId: discarded.leaseId,
+                disposition: 'discard',
+            })
+        ).resolves.toEqual({ status: 'missing' });
+        expect(backing.has('discarded-pcm')).toBe(false);
+    });
+
+    it('lets only the newest persistence generation claim prepared ownership for an exact buffer id', async () => {
+        const backing = installFakeIndexedDb();
+        const firstBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        firstBuffer.getChannelData(0)[0] = 0.25;
+        const secondBuffer = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        secondBuffer.getChannelData(0)[0] = 0.75;
+
+        const first = audioBufferCache.persistPreparedBuffer({ id: 'generation-pcm', buffer: firstBuffer });
+        const second = audioBufferCache.persistPreparedBuffer({ id: 'generation-pcm', buffer: secondBuffer });
+
+        await expect(first).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio persistence was superseded.',
+        });
+        const secondResult = await second;
+        expect(secondResult).toMatchObject({ status: 'persisted', bufferId: 'generation-pcm' });
+        expect(backing.get('generation-pcm')?.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(backing.meta.get('generation-pcm')?.preparedOwner?.leaseId).toBe(
+            secondResult.status === 'persisted' ? secondResult.leaseId : undefined
+        );
     });
 
     it('keeps every active-project buffer resident when the project exceeds the LRU cap', async () => {

@@ -34,13 +34,13 @@ export type GrandBouleState = {
     config: GrandBouleConfig;
     parameters: GrandBoulePresetParameters;
     pedals: GrandBoulePedalState;
-    /** MIDI controller calibration per spec §3.1. */
+    /** MIDI controller calibration. */
     midiCalibration: GrandBouleMidiCalibration;
-    /** Per-note parameter overrides per spec §3.1. */
+    /** Per-note parameter overrides. */
     perNoteOverrides: GrandBoulePerNoteMap;
-    /** Morph/layer state per spec §3.1. */
+    /** Morph/layer state. */
     morph: GrandBouleMorphState;
-    /** Active historical temperament per spec §4. */
+    /** Active historical temperament. */
     temperament: TemperamentIndex;
 };
 
@@ -64,6 +64,9 @@ export function createDefaultGrandBouleState(): GrandBouleState {
 export const defaultGrandBouleState: GrandBouleState = createDefaultGrandBouleState();
 
 const storesByDevice = new Map<string, ReturnType<typeof createStore<GrandBouleState>>>();
+const storeCreatedListeners = new Set<
+    (deviceId: string, store: ReturnType<typeof createStore<GrandBouleState>>) => void
+>();
 
 export function createGrandBouleStore(deviceId: string) {
     let store = storesByDevice.get(deviceId);
@@ -72,8 +75,21 @@ export function createGrandBouleStore(deviceId: string) {
             initialData: createDefaultGrandBouleState(),
         });
         storesByDevice.set(deviceId, store);
+        for (const listener of storeCreatedListeners) {
+            listener(deviceId, store);
+        }
     }
     return store;
+}
+
+export function subscribeToGrandBouleStoreCreation(
+    listener: (deviceId: string, store: ReturnType<typeof createStore<GrandBouleState>>) => void
+): () => void {
+    storeCreatedListeners.add(listener);
+    for (const [deviceId, store] of storesByDevice) {
+        listener(deviceId, store);
+    }
+    return () => storeCreatedListeners.delete(listener);
 }
 
 /** @deprecated Use createGrandBouleStore(deviceId) instead. Shim for backwards compatibility. */
@@ -86,7 +102,7 @@ export const grandBouleStore = createGrandBouleStore('default');
  * Map (unlike the single `Record<deviceId, State>` stores other modules use,
  * which a `.set({})` clears wholesale). Project teardown must reset every
  * device's slice here, or a prior project's Grand Boule state leaks into a New
- * Project (§13.1).
+ * project.
  *
  * Every Map entry's value is reset to a fresh default in place rather than
  * dropping the entries, so any open panel still subscribed to its store keeps a

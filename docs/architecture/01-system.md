@@ -640,7 +640,7 @@ The architecture should distinguish:
 
 ### 12.4 Native hosting stays behind ports/adapters
 
-If the system supports VST3/CLAP through the desktop shell's native backend, that belongs behind ports and adapters.
+If the system supports VST® 3/CLAP through the desktop shell's native backend, that belongs behind ports and adapters.
 
 ### 12.5 Built-in devices and hosted plugins should align conceptually
 

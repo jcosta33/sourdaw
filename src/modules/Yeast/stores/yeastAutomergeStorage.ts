@@ -378,6 +378,8 @@ export type YeastAutomergeStorageInput = {
 
 export type YeastAutomergeStorageView = {
     storage: StorageAdapter<YeastState>;
+    /** Settle only this view's pending unscoped rack edit before its device identity moves. */
+    flushPendingRackWrite(): void;
     /**
      * Switch which device's rack the view reflects WITHOUT authoring a write:
      * the new rack is decoded from the slot state this adapter already holds.
@@ -446,6 +448,9 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
         return buildViewState(resolveRackFor(getActiveDeviceId()));
     }
 
+    /** Device whose rack the view last projected; `undefined` = never projected. */
+    let projectedDeviceId: string | null | undefined;
+
     /** Parse a slot value into per-device rack states, parking any legacy single rack. */
     function parseSlot(value: unknown): Map<string, RackCrdtState> {
         assertSupportedSlotSchema(value);
@@ -500,7 +505,7 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
      * the value stays session-visible but nothing owns it in shared truth.
      */
     function mutateSlot({ doc, key, value }: { doc: MutableRecord; key: string; value: YeastState }): void {
-        const activeDeviceId = getActiveDeviceId();
+        const activeDeviceId = projectedDeviceId === undefined ? getActiveDeviceId() : projectedDeviceId;
         if (activeDeviceId === null) {
             return;
         }
@@ -579,9 +584,6 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
         }
     }
 
-    /** Device whose rack the view last projected; `undefined` = never projected. */
-    let projectedDeviceId: string | null | undefined;
-
     const storage = createAutomergeStorage<YeastState>('root', 'yeast', {
         fromCrdt: (value) => {
             decodedRacks = parseSlot(value);
@@ -612,6 +614,9 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
 
     return {
         storage,
+        flushPendingRackWrite: () => {
+            storage.flushPendingUnscopedWrite();
+        },
         setActiveDevice: (deviceId) => {
             // No-op unless the resolved device changed: this fires on every
             // track-store notification, and re-projecting an unchanged device

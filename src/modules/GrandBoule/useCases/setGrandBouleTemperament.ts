@@ -2,7 +2,7 @@ import { type Store } from '#/infra/store/types';
 
 import { type GrandBouleState, type TemperamentIndex } from '../stores/grandBouleStore';
 /**
- * Set the historical temperament for the Grand Boule piano (spec §4).
+ * Set the historical temperament for the Grand Boule piano.
  *
  * Updates the store and forwards to the engine. Active voices will use the
  * new temperament on their next note-on — already-sounding voices keep their

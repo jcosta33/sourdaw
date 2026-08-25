@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInstrumentCatalog';
 import { type RenderProvenance } from '../models/RenderProgress';
@@ -114,6 +115,9 @@ export const renderDdspInstrument = inject({
             durationSec,
             signal,
         }: RenderDdspInstrumentInput): RenderDdspInstrumentOutput {
+            if (!MODEL_RELEASE_ADMISSION.ddsp) {
+                throw new Error('DDSP rendering is not release-admitted');
+            }
             const targetSamples = targetSampleCount(durationSec, OUTPUT_SAMPLE_RATE);
             const instrument = resolveDdspInstrument(instrumentId);
             const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);

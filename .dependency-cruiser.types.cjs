@@ -1,4 +1,5 @@
-/* (c) Copyright Sourdaw Ltd., all rights reserved. */
+/* SPDX-FileCopyrightText: Copyright Sourdaw Ltd. */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 /*
  * Type-edge cruise: applies architecture boundary rules to `import type` /

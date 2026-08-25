@@ -1,3 +1,5 @@
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type UndoEntry } from '../models/UndoEntry';
 import { isActionEntry } from '../models/UndoEntry';
@@ -14,6 +16,10 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
 function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
+}
+
+function redoEntryLabel(entry: UndoEntry): string {
+    return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
 function commitRedoTransition(
@@ -166,6 +172,8 @@ async function redoImpl(): Promise<void> {
             if (groupEntries.every(isActionEntry)) {
                 const outcome = await executeActionGroupRedo(groupEntries);
                 if (outcome.status === 'conflict') {
+                    const label = redoEntryLabel(entry);
+                    notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
                     if (future.length !== state.future.length) {
                         commitRedoTransition(state.future, future, []);
                     }
@@ -184,6 +192,8 @@ async function redoImpl(): Promise<void> {
         const outcome = await executeRedo(entry);
 
         if (outcome.status === 'conflict') {
+            const label = redoEntryLabel(entry);
+            notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
             // Nothing was written, so the entry stays at the head of `future`
             // and remains redoable. Only a purge of not-applied entries made
             // earlier in this scan needs persisting.

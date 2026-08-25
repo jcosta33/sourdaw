@@ -18,5 +18,7 @@ contains a modified TypeScript adaptation of the operation registration.
 
 This notice and Apache-2.0 grant apply only to the Magenta.js source-code basis.
 They do not state or imply that the separately downloaded Magenta DDSP
-checkpoint artifacts are Apache-2.0. Those artifacts remain separately
-permissioned and release-withheld.
+checkpoint artifacts are Apache-2.0. The checkpoint license remains unverified.
+Sourdaw does not bundle or redistribute those artifacts; the user's browser
+downloads the exact pinned bytes directly from Magenta only after an explicit
+download action and verifies them before publication or use.

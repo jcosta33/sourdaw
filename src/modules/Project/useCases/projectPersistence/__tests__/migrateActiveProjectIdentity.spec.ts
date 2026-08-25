@@ -231,7 +231,7 @@ describe('migrateActiveProjectIdentity', () => {
         expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
     });
 
-    it('publishes only the successful retry identity after a rejected attempt', async () => {
+    it('republishes the same deterministic identity when a rejected attempt is retried', async () => {
         const failure = new Error('first persistence failed');
         mocks.project.value = legacyProject();
         mocks.persistCrdtProject.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
@@ -247,13 +247,29 @@ describe('migrateActiveProjectIdentity', () => {
             .filter((value) => !value.identityMigrationPending && isCanonicalProjectId(value.projectId))
             .map((value) => value.projectId);
 
+        // The rejected candidate was never persisted, so the retry derives the
+        // same deterministic identity from the unchanged legacy projection.
         expect(isCanonicalProjectId(rejectedCandidate)).toBe(true);
-        expect(publishedIds).toHaveLength(1);
-        expect(publishedIds[0]).not.toBe(rejectedCandidate);
+        expect(publishedIds).toEqual([rejectedCandidate]);
         expect(mocks.project.value).toMatchObject({
-            projectId: publishedIds[0],
+            projectId: rejectedCandidate,
             identityMigrationPending: false,
         });
+    });
+
+    it('mints the same candidate for two replicas migrating the same converged legacy document', async () => {
+        mocks.project.value = legacyProject();
+        await expect(migrateActiveProjectIdentity()).resolves.toBe(true);
+        const firstReplicaIdentity = mocks.project.value?.projectId;
+
+        // A second peer projecting the identical converged legacy document:
+        // same durable meta, same absent identity slot.
+        mocks.project.value = legacyProject();
+        await expect(migrateActiveProjectIdentity()).resolves.toBe(true);
+        const secondReplicaIdentity = mocks.project.value?.projectId;
+
+        expect(isCanonicalProjectId(firstReplicaIdentity)).toBe(true);
+        expect(secondReplicaIdentity).toBe(firstReplicaIdentity);
     });
 
     it('is idempotent once the active project has a canonical identity', async () => {

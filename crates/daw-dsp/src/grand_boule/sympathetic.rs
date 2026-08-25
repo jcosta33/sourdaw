@@ -1,6 +1,6 @@
 //! Sympathetic resonance bank for the Grand Boule piano.
 //!
-//! Per spec §4.3, a global bank of 24 high-Q biquad resonators tuned to a
+//! A global bank of 24 high-Q biquad resonators is tuned to a
 //! selection of piano fundamentals. It is driven by the aggregate bridge
 //! force of all active voices and contributes its summed output back into
 //! the soundboard / mix bus.

@@ -11,6 +11,10 @@ import { cancelRender } from '../cancelRender';
 import { renderDdspInstrument } from '../renderDdspInstrument';
 import { supersedeBrowserRender } from '../supersedeBrowserRender';
 
+const release_gate = vi.hoisted(() => ({ ddsp: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: release_gate }));
+
 const loadDdspSession = vi.fn();
 const runDdspInference = vi.fn();
 const cancelOnnxRequest = vi.fn();
@@ -48,6 +52,7 @@ describe('renderDdspInstrument', () => {
     let lockHeld = false;
 
     beforeEach(() => {
+        release_gate.ddsp = true;
         lockHeld = false;
         renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {}, phraseRequestIds: {} });
         inferenceProgressStore.set({ activeRenders: {} });
@@ -121,6 +126,21 @@ describe('renderDdspInstrument', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('rejects when DDSP admission is disabled before queue, lock, storage, or worker work', async () => {
+        release_gate.ddsp = false;
+
+        await expect(render()).rejects.toThrow(/not release-admitted/i);
+
+        expect(withDdspInstrumentLock).not.toHaveBeenCalled();
+        expect(checkDdspInstrumentReady).not.toHaveBeenCalled();
+        expect(loadDdspSession).not.toHaveBeenCalled();
+        expect(runDdspInference).not.toHaveBeenCalled();
+        expect(readRenderCache).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(inferenceProgressStore.value?.activeRenders).toEqual({});
     });
 
     it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(

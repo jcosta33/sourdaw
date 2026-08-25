@@ -216,7 +216,9 @@ describe('buildAgentContext', () => {
             projectRevision: 'revision-1',
         });
 
-        expect(initial.message).toContain('"sections":[{"id":"section-intro","name":{"trust":"untrusted_imported_string","value":"Intro","truncated":false},"startBeat":0,"endBeat":16},{"id":"section-verse","name":{"trust":"untrusted_imported_string","value":"Verse","truncated":false},"startBeat":16,"endBeat":32}]');
+        expect(initial.message).toContain(
+            '"sections":[{"name":{"trust":"untrusted_imported_string","value":"Intro","truncated":false},"startBeat":0,"endBeat":16},{"name":{"trust":"untrusted_imported_string","value":"Verse","truncated":false},"startBeat":16,"endBeat":32}]'
+        );
         expect(initial.evidence.snapshot.sections).toHaveLength(2);
 
         const updated = buildAgentContext({
@@ -235,7 +237,65 @@ describe('buildAgentContext', () => {
         });
 
         expect(updated.evidence.delta).toMatchObject({ mode: 'delta', baseRevision: 'revision-1' });
-        expect(updated.message).toContain('"sections":[{"id":"section-verse","name":{"trust":"untrusted_imported_string","value":"Verse 1 Modified","truncated":false},"startBeat":16,"endBeat":32},{"id":"section-chorus","name":{"trust":"untrusted_imported_string","value":"Chorus","truncated":false},"startBeat":32,"endBeat":48}]');
+        expect(updated.message).toContain(
+            '"sections":[{"name":{"trust":"untrusted_imported_string","value":"Verse 1 Modified","truncated":false},"startBeat":16,"endBeat":32},{"name":{"trust":"untrusted_imported_string","value":"Chorus","truncated":false},"startBeat":32,"endBeat":48}]'
+        );
+    });
+
+    it('carries a single receipt summary far past the imported-string bound and reports it untruncated', () => {
+        const marker = 'project-summary-evidence-marker';
+        const summary = `${'e'.repeat(4_096)}${marker}${'e'.repeat(8_192 - 4_096 - marker.length)}`;
+
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'inspect the project',
+            context,
+            projectRevision: 'revision-1',
+            receipts: [{ id: 'application-tool-loop', summary }],
+        });
+
+        expect(summary).toHaveLength(8_192);
+        expect(built.message).toContain(marker);
+        expect(built.message).toContain(JSON.stringify({ value: summary, truncated: false }));
+    });
+
+    it('truncates a receipt summary past the receipt evidence budget and still reports the truncation', () => {
+        const summary = `${'e'.repeat(8_192)}dropped-tail-marker`;
+
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'inspect the project',
+            context,
+            projectRevision: 'revision-1',
+            receipts: [{ id: 'application-tool-loop', summary }],
+        });
+
+        expect(built.message).not.toContain('dropped-tail-marker');
+        expect(built.message).toContain(JSON.stringify({ value: 'e'.repeat(8_192), truncated: true }));
+    });
+
+    it('shares one receipt evidence budget across retained receipts so the message stays bounded', () => {
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'inspect the project',
+            context,
+            projectRevision: 'revision-1',
+            receipts: Array.from({ length: 24 }, (_unused, index) => ({
+                id: `receipt-${String(index)}`,
+                summary: 'e'.repeat(9_000),
+            })),
+        });
+
+        const relevantEvidence = /relevant_evidence:\n(.*)\n\ncapability_schemas:/.exec(built.message)?.[1] ?? '';
+        const parsed = JSON.parse(relevantEvidence) as {
+            receipts: Array<{ id: string; summary: { value: string; truncated: boolean } }>;
+            omitted: number;
+        };
+
+        expect(parsed.receipts).toHaveLength(16);
+        expect(parsed.omitted).toBe(8);
+        expect(parsed.receipts.map((receipt) => receipt.id)).toContain('receipt-23');
+        expect(parsed.receipts.every((receipt) => receipt.summary.truncated)).toBe(true);
+        expect(parsed.receipts.reduce((total, receipt) => total + receipt.summary.value.length, 0)).toBe(8_192);
     });
 });
-

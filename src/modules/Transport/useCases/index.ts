@@ -13,6 +13,7 @@ export { setMasterGain } from './setMasterGain';
 export { replaceMasterGain } from './replaceMasterGain';
 export { setTempo } from './setTempo';
 export { setTimeSignature } from './setTimeSignature';
+export { secondsBetweenBeats } from './secondsBetweenBeats';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';
 export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
 export { projectPpqEndpoints } from './projectPpqEndpoints';

@@ -13,9 +13,31 @@ cleanup() {
 trap cleanup 0
 trap 'exit 1' 1 2 15
 
-mkdir -p "$fake_bin" "$temp_root/scripts" "$temp_root/server"
+mkdir -p \
+    "$fake_bin" \
+    "$temp_root/scripts" \
+    "$temp_root/server" \
+    "$temp_root/trusted-scanner/scripts" \
+    "$temp_root/scan-target/scripts" \
+    "$temp_root/scan-target/.git" \
+    "$temp_root/workflow-runner"
 cp "$repo_root/scripts/health-gates-web.sh" "$temp_root/scripts/health-gates-web.sh"
 cp "$repo_root/scripts/health-gates-server.sh" "$temp_root/scripts/health-gates-server.sh"
+cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/scripts/run-gitleaks-history-scan.sh"
+cp "$repo_root/.gitleaks.toml" "$temp_root/.gitleaks.toml"
+cp "$repo_root/.gitleaksignore" "$temp_root/.gitleaksignore"
+cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/trusted-scanner/scripts/run-gitleaks-history-scan.sh"
+cp "$repo_root/.gitleaks.toml" "$temp_root/trusted-scanner/.gitleaks.toml"
+cp "$repo_root/.gitleaksignore" "$temp_root/trusted-scanner/.gitleaksignore"
+cat > "$temp_root/scan-target/scripts/run-gitleaks-history-scan.sh" <<'SH'
+#!/bin/sh
+set -eu
+printf 'PR-owned helper invoked\n' >> "$MALICIOUS_HELPER_MARKER"
+exit "${GITLEAKS_EXIT_CODE:-0}"
+SH
+chmod +x "$temp_root/scan-target/scripts/run-gitleaks-history-scan.sh"
+printf '[allowlist]\npaths = [".*"]\n' > "$temp_root/scan-target/.gitleaks.toml"
+printf '*\n' > "$temp_root/scan-target/.gitleaksignore"
 
 printf '%s\n' \
     '#!/bin/sh' \
@@ -60,7 +82,391 @@ printf '%s\n' \
     '    test) exit "${FAKE_CARGO_TEST_STATUS:-0}" ;;' \
     'esac' \
     > "$fake_bin/cargo"
-chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo"
+cat > "$fake_bin/curl" <<'SH'
+#!/bin/sh
+set -eu
+printf 'curl %s\n' "$*" >> "$COMMAND_LOG"
+output=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --output)
+            shift
+            output=$1
+            ;;
+    esac
+    shift
+done
+test -n "$output"
+printf 'fake gitleaks archive\n' > "$output"
+SH
+cat > "$fake_bin/sha256sum" <<'SH'
+#!/bin/sh
+set -eu
+printf 'sha256sum %s\n' "$*" >> "$COMMAND_LOG"
+if IFS= read -r digest_line; then
+    printf 'sha256sum stdin: %s\n' "$digest_line" >> "$COMMAND_LOG"
+fi
+exit "${FAKE_SHA256SUM_STATUS:-0}"
+SH
+cat > "$fake_bin/tar" <<'SH'
+#!/bin/sh
+set -eu
+printf 'tar %s\n' "$*" >> "$COMMAND_LOG"
+extract_dir=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -C)
+            shift
+            extract_dir=$1
+            ;;
+    esac
+    shift
+done
+test -n "$extract_dir"
+mkdir -p "$extract_dir"
+cat > "$extract_dir/gitleaks" <<'GITLEAKS'
+#!/bin/sh
+set -eu
+printf 'gitleaks %s\n' "$*" >> "$COMMAND_LOG"
+exit "${FAKE_GITLEAKS_STATUS:-0}"
+GITLEAKS
+chmod +x "$extract_dir/gitleaks"
+SH
+chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
+
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" node --input-type=module <<'NODE'
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { parse } from 'yaml';
+
+const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
+const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
+const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
+const failures = [];
+
+function expect(condition, message) {
+    if (!condition) {
+        failures.push(message);
+    }
+}
+
+function stepNamed(job, name) {
+    return job?.steps?.find((step) => step.name === name);
+}
+
+function runResolveScope(event, scopes) {
+    const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-${event}.output`;
+    writeFileSync(outputPath, '');
+    const result = spawnSync('bash', ['-c', resolveScopeRun], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            EVENT: event,
+            RUST: scopes.rust,
+            SERVER: scopes.server,
+            E2E: scopes.e2e,
+            WEB: scopes.web,
+            GITHUB_OUTPUT: outputPath,
+        },
+    });
+    expect(result.status === 0, `Resolve scope must execute for ${event}: ${result.stderr.trim()}`);
+    return readFileSync(outputPath, 'utf8');
+}
+
+function runWorkflowShell(label, body, env) {
+    const result = spawnSync('bash', ['-c', body], {
+        cwd: process.env.TEST_TEMP_ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+    });
+    expect(result.status === 0, `${label} must execute outside the scan target: ${result.stderr.trim()}`);
+}
+
+const events = workflow.on;
+const decide = workflow.jobs?.decide;
+const secrets = workflow.jobs?.secrets;
+const unit = workflow.jobs?.unit;
+const gate = workflow.jobs?.gate;
+const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
+const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
+const targetCheckout = stepNamed(secrets, 'Checkout scan target');
+const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
+const positiveControlRun = positiveControl?.run ?? '';
+const secretScan = stepNamed(secrets, 'Scan history for secrets');
+const secretScanRun = secretScan?.run ?? '';
+const secretScanUses = secretScan?.uses ?? '';
+const secretsEnv = secrets?.env ?? {};
+const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
+const unitRun = stepNamed(unit, 'Run shard')?.run ?? '';
+const gateNeeds = gate?.needs ?? [];
+const expectedGateNeeds = [
+    'decide',
+    'static',
+    'lint',
+    'boundaries',
+    'dependency-review',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'codeql',
+    'secrets',
+];
+
+expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
+expect(events?.pull_request !== undefined, 'pull_request trigger must remain present');
+expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
+expect(events?.schedule !== undefined, 'schedule trigger must remain present');
+expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
+expect(
+    decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
+    'decide must run the heavy path only for approved pull_request_review submissions'
+);
+const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
+const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
+const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
+expect(
+    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    'schedule must enable the heavy path and every scope'
+);
+expect(
+    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    'workflow_dispatch must enable the heavy path and every scope'
+);
+expect(
+    runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\n',
+    'pull_request_review must enable the heavy path and preserve path-filter outputs'
+);
+expect(
+    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\n',
+    'pull_request must disable the heavy path and preserve path-filter outputs'
+);
+expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
+expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
+expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(targetCheckout?.uses ?? ''), 'scan target checkout action must be pinned to a full commit SHA');
+expect(
+    trustedCheckout?.with?.ref === '${{ github.event.pull_request.base.sha || github.sha }}',
+    'trusted scanner must use the immutable pull request base SHA with the current event SHA fallback'
+);
+expect(trustedCheckout?.with?.path === 'trusted-scanner', 'trusted scanner must use its own checkout path');
+expect(trustedCheckout?.with?.['persist-credentials'] === false, 'trusted scanner checkout must not persist credentials');
+expect(
+    targetCheckout?.with?.ref === '${{ github.event.pull_request.head.sha || github.sha }}',
+    'scan target must use the immutable pull request head SHA with the current event SHA fallback'
+);
+expect(targetCheckout?.with?.path === 'scan-target', 'scan target must use its own checkout path');
+expect(targetCheckout?.with?.['fetch-depth'] === 0, 'scan target checkout must fetch full history');
+expect(targetCheckout?.with?.['persist-credentials'] === false, 'scan target checkout must not persist credentials');
+expect(trustedCheckout?.with?.path !== targetCheckout?.with?.path, 'trusted scanner and scan target checkout paths must remain separate');
+expect(secretScanUses === '', 'secret scan must not use gitleaks-action, which rejects pull_request_review events');
+expect(secretsEnv.GITLEAKS_VERSION === '8.30.1', 'secret scan must pin the Gitleaks binary version');
+expect(
+    secretsEnv.GITLEAKS_SHA256 === '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+    'secret scan must pin the Gitleaks binary SHA-256 digest'
+);
+expect(
+    gitleaksHelper.includes(
+        'https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz'
+    ),
+    'secret scan must download the pinned Gitleaks Linux x64 release binary'
+);
+expect(gitleaksHelper.includes('sha256sum --check --status'), 'secret scan must verify the downloaded Gitleaks binary digest');
+expect(/"\$gitleaks_dir\/gitleaks" git/u.test(gitleaksHelper), 'secret scan must invoke the event-agnostic Gitleaks git scanner');
+expect(
+    gitleaksHelper.includes('gitleaks_config="$trusted_root/.gitleaks.toml"') &&
+        gitleaksHelper.includes('--config "$gitleaks_config"'),
+    'secret scan must force the trusted checkout config instead of loading target-controlled configuration'
+);
+expect(
+    gitleaksHelper.includes('gitleaks_ignore="$trusted_root/.gitleaksignore"') &&
+        gitleaksHelper.includes('--gitleaks-ignore-path "$gitleaks_ignore"'),
+    'secret scan must force the trusted checkout ignore file instead of loading cwd-controlled ignore rules'
+);
+expect(gitleaksHelper.includes('--ignore-gitleaks-allow'), 'secret scan must reject PR-authored gitleaks:allow annotations');
+expect(!/^\s*paths\s*=/mu.test(gitleaksConfig), 'trusted Gitleaks config must not contain path-wide allowlists');
+expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
+expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
+expect(
+    secretScanRun ===
+        'sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$GITHUB_WORKSPACE/scan-target/.git"',
+    'secret scan must execute only the trusted helper against the target Git database, outside target-controlled config files'
+);
+expect(secretScan?.['working-directory'] === '${{ github.workspace }}', 'secret scan must run outside the untrusted checkout');
+expect(positiveControl?.env?.GITLEAKS_EXPECTED_LEAK_EXIT_CODE === 79, 'positive control must use a distinct expected leak exit code');
+expect(
+    positiveControlRun.includes('mktemp -d "$RUNNER_TEMP/gitleaks-positive-control.XXXXXX"'),
+    'positive control must use a temporary runner path'
+);
+expect(
+    positiveControlRun.includes("synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')"),
+    'positive control secret must be assembled at runtime'
+);
+expect(
+    positiveControlRun.includes('mkdir -p "$positive_control_repo/public/wasm"') &&
+        positiveControlRun.includes('aws_access_key_id = "%s" // gitleaks:allow') &&
+        positiveControlRun.includes('> "$positive_control_repo/public/wasm/fixture.js"'),
+    'positive control must place an annotated secret under a formerly excluded path'
+);
+expect(
+    positiveControlRun.includes('cat > "$positive_control_repo/.gitleaks.toml"') &&
+        positiveControlRun.includes('regexes = [\'\'\'.*\'\'\']') &&
+        positiveControlRun.includes('git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml'),
+    'positive control must commit a target-root config that would suppress the synthetic secret if loaded'
+);
+expect(
+    positiveControlRun.includes('GITLEAKS_EXIT_CODE="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"'),
+    'positive control must run the helper with the distinct leak exit code'
+);
+expect(
+    positiveControlRun.includes(
+        'sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$positive_control_repo/.git"'
+    ),
+    'positive control must scan the temporary repository Git database with the trusted helper'
+);
+expect(positiveControl?.['working-directory'] === '${{ github.workspace }}', 'positive control must run outside the untrusted checkout');
+expect(
+    positiveControlRun.includes('positive_control_status') && positiveControlRun.includes('-ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"'),
+    'positive control must require the exact leak exit code'
+);
+expect(
+    !gitleaksHelper.includes('GITHUB_EVENT_NAME') &&
+        !gitleaksHelper.includes('github.event') &&
+        !secretScanRun.includes('GITHUB_EVENT_NAME') &&
+        !secretScanRun.includes('github.event') &&
+        !positiveControlRun.includes('GITHUB_EVENT_NAME') &&
+        !positiveControlRun.includes('github.event'),
+    'secret scan invocation must not branch on the triggering event'
+);
+expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
+expect(
+    unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
+    'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
+);
+expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(
+    Array.isArray(gateNeeds) &&
+        gateNeeds.length === expectedGateNeeds.length &&
+        gateNeeds.every((need, index) => need === expectedGateNeeds[index]),
+    `Gate needs must stay exactly: ${expectedGateNeeds.join(', ')}`
+);
+expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
+expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
+expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+
+const maliciousHelperMarker = `${process.env.TEST_TEMP_ROOT}/pr-owned-helper-invoked.log`;
+const workflowCommandLog = `${process.env.TEST_TEMP_ROOT}/workflow-secret-scan.log`;
+writeFileSync(workflowCommandLog, '');
+const workflowShellEnv = {
+    GITHUB_WORKSPACE: process.env.TEST_TEMP_ROOT,
+    RUNNER_TEMP: `${process.env.TEST_TEMP_ROOT}/workflow-runner`,
+    PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
+    COMMAND_LOG: workflowCommandLog,
+    GITLEAKS_VERSION: '8.30.1',
+    GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+    MALICIOUS_HELPER_MARKER: maliciousHelperMarker,
+};
+runWorkflowShell('positive control', positiveControlRun, {
+    ...workflowShellEnv,
+    GITLEAKS_EXPECTED_LEAK_EXIT_CODE: '79',
+    FAKE_GITLEAKS_STATUS: '79',
+});
+runWorkflowShell('secret scan', secretScanRun, { ...workflowShellEnv, FAKE_GITLEAKS_STATUS: '0' });
+expect(!existsSync(maliciousHelperMarker), 'PR-owned target helper must not influence either scanner invocation');
+const workflowGitleaksCommands = readFileSync(workflowCommandLog, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith('gitleaks git '));
+const trustedGitleaksPrefix = `gitleaks git --config ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaks.toml --gitleaks-ignore-path ${process.env.TEST_TEMP_ROOT}/trusted-scanner/.gitleaksignore --ignore-gitleaks-allow --no-banner --no-color --redact=100 --verbose`;
+expect(
+    workflowGitleaksCommands.some(
+        (command) =>
+            command.startsWith(`${trustedGitleaksPrefix} --exit-code=79 --log-opts=--all `) &&
+            command.includes('/gitleaks-positive-control.') &&
+            command.endsWith('/.git')
+    ),
+    'positive control must use trusted config and ignore inputs while scanning the fixture Git database'
+);
+expect(
+    workflowGitleaksCommands.includes(
+        `${trustedGitleaksPrefix} --exit-code=1 --log-opts=--all ${process.env.TEST_TEMP_ROOT}/scan-target/.git`
+    ),
+    'actual scan must use trusted config and exclude target-controlled config files from the scanner source path'
+);
+
+if (failures.length > 0) {
+    for (const failure of failures) {
+        console.error(`workflow secret scan contract failed: ${failure}`);
+    }
+    process.exit(1);
+}
+
+console.log('workflow secret scan contract: PASS');
+NODE
+
+gitleaks_version=8.30.1
+gitleaks_sha256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+gitleaks_url="https://github.com/gitleaks/gitleaks/releases/download/v${gitleaks_version}/gitleaks_${gitleaks_version}_linux_x64.tar.gz"
+gitleaks_target="$temp_root/gitleaks-target"
+mkdir -p "$gitleaks_target"
+
+gitleaks_runner_temp="$temp_root/gitleaks-runner"
+mkdir -p "$gitleaks_runner_temp"
+gitleaks_archive="$gitleaks_runner_temp/gitleaks_${gitleaks_version}_linux_x64.tar.gz"
+gitleaks_dir="$gitleaks_runner_temp/gitleaks-${gitleaks_version}"
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/gitleaks-success.log" \
+    RUNNER_TEMP="$gitleaks_runner_temp" \
+    GITLEAKS_VERSION="$gitleaks_version" \
+    GITLEAKS_SHA256="$gitleaks_sha256" \
+    sh "$temp_root/scripts/run-gitleaks-history-scan.sh" "$gitleaks_target" >/dev/null
+printf '%s\n' \
+    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --output $gitleaks_archive $gitleaks_url" \
+    'sha256sum --check --status' \
+    "sha256sum stdin: $gitleaks_sha256  $gitleaks_archive" \
+    "tar -xzf $gitleaks_archive -C $gitleaks_dir gitleaks" \
+    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --ignore-gitleaks-allow --no-banner --no-color --redact=100 --verbose --exit-code=1 --log-opts=--all $gitleaks_target" \
+    > "$temp_root/expected-gitleaks-success.log"
+diff -u "$temp_root/expected-gitleaks-success.log" "$temp_root/gitleaks-success.log"
+
+gitleaks_override_runner_temp="$temp_root/gitleaks-override-runner"
+mkdir -p "$gitleaks_override_runner_temp"
+gitleaks_override_archive="$gitleaks_override_runner_temp/gitleaks_${gitleaks_version}_linux_x64.tar.gz"
+gitleaks_override_dir="$gitleaks_override_runner_temp/gitleaks-${gitleaks_version}"
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/gitleaks-override.log" \
+    RUNNER_TEMP="$gitleaks_override_runner_temp" \
+    GITLEAKS_VERSION="$gitleaks_version" \
+    GITLEAKS_SHA256="$gitleaks_sha256" \
+    GITLEAKS_EXIT_CODE=79 \
+    sh "$temp_root/scripts/run-gitleaks-history-scan.sh" "$gitleaks_target" >/dev/null
+printf '%s\n' \
+    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --output $gitleaks_override_archive $gitleaks_url" \
+    'sha256sum --check --status' \
+    "sha256sum stdin: $gitleaks_sha256  $gitleaks_override_archive" \
+    "tar -xzf $gitleaks_override_archive -C $gitleaks_override_dir gitleaks" \
+    "gitleaks git --config $temp_root/.gitleaks.toml --gitleaks-ignore-path $temp_root/.gitleaksignore --ignore-gitleaks-allow --no-banner --no-color --redact=100 --verbose --exit-code=79 --log-opts=--all $gitleaks_target" \
+    > "$temp_root/expected-gitleaks-override.log"
+diff -u "$temp_root/expected-gitleaks-override.log" "$temp_root/gitleaks-override.log"
+
+bad_checksum_runner_temp="$temp_root/gitleaks-bad-checksum-runner"
+mkdir -p "$bad_checksum_runner_temp"
+bad_checksum_archive="$bad_checksum_runner_temp/gitleaks_${gitleaks_version}_linux_x64.tar.gz"
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/gitleaks-bad-checksum.log" \
+    RUNNER_TEMP="$bad_checksum_runner_temp" \
+    GITLEAKS_VERSION="$gitleaks_version" \
+    GITLEAKS_SHA256="$gitleaks_sha256" \
+    FAKE_SHA256SUM_STATUS=44 \
+    sh "$temp_root/scripts/run-gitleaks-history-scan.sh" "$gitleaks_target" >/dev/null 2>&1
+bad_checksum_status=$?
+set -e
+test "$bad_checksum_status" -eq 44
+printf '%s\n' \
+    "curl --fail --location --proto =https --tlsv1.2 --silent --show-error --output $bad_checksum_archive $gitleaks_url" \
+    'sha256sum --check --status' \
+    "sha256sum stdin: $gitleaks_sha256  $bad_checksum_archive" \
+    > "$temp_root/expected-gitleaks-bad-checksum.log"
+diff -u "$temp_root/expected-gitleaks-bad-checksum.log" "$temp_root/gitleaks-bad-checksum.log"
 
 # A PATH that has the fake npm but no cargo at all, used to prove the missing
 # toolchain precondition. `sh` and `dirname` are the only external commands
@@ -309,4 +715,7 @@ printf '%s\n' \
     "missing cargo exit: $no_cargo_status" \
     "cargo clippy failure exit: $cargo_clippy_status" \
     "cargo test failure exit (SIGABRT): $cargo_test_status" \
+    'gitleaks helper scan argv: PASS' \
+    "gitleaks helper bad checksum exit: $bad_checksum_status" \
+    'gitleaks helper bad checksum stops before extract/scan: PASS' \
     'rust workspace gate failure propagation: PASS'

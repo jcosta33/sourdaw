@@ -2,7 +2,7 @@
 type: adr
 id: 0033
 title: Make Grand Boule string and soundboard stages explicit
-status: accepted
+status: superseded by 0036
 date: 2026-08-21
 owner: The Sourdaw team
 sources:

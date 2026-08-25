@@ -109,7 +109,10 @@ describe('Project Persistence Use Cases', () => {
                 ],
             },
         });
-        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: mocks.publishPreparedBuffers });
+        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({
+            cancel: vi.fn(),
+            publish: mocks.publishPreparedBuffers,
+        });
     });
 
     afterEach(() => {

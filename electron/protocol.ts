@@ -66,17 +66,20 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
  * - `raw.githubusercontent.com`, for the MLC wasm runtime. It is as
  *   multi-tenant as any public bucket host and is admitted only because
  *   `webLlmArtifactAdmission` pins every artifact it serves by sha256.
+ * - The exact Magenta DDSP checkpoint path, for explicit downloads of the
+ *   twelve artifacts whose URL, byte size, and sha256 are pinned by
+ *   `DdspArtifactManifest` and verified before publication or use.
  *
  * A host with no consumer stays out however plausible its future use, because a
- * shared multi-tenant origin admitted "for later" is an attacker-registrable
- * exfiltration endpoint in the meantime. DDSP checkpoints are the live example:
- * they sit on `storage.googleapis.com`, one origin fronting every public GCS
- * bucket, and DDSP rendering is a stub in this build that performs no egress.
- * The source returns path-scoped when DDSP rendering ships.
+ * shared multi-tenant origin admitted broadly is an attacker-registrable
+ * exfiltration endpoint. Magenta checkpoints sit on `storage.googleapis.com`,
+ * one origin fronting every public GCS bucket, so the DDSP consumer admits only
+ * `/magentadata/js/checkpoints/ddsp/`; neither the bare origin nor another GCS
+ * bucket is reachable through this policy.
  */
 export const PRODUCTION_CSP = [
     "default-src 'self'",
-    "connect-src 'self' http://localhost:* http://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com",
+    "connect-src 'self' http://localhost:* http://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/",
     "img-src 'self' data: blob:",
     "media-src 'self' data: blob:",
     "style-src 'self' 'unsafe-inline'",

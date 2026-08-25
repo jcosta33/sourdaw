@@ -17,7 +17,7 @@ describe('built-in descriptor manifest law', () => {
     it('publishes Arrangement-owned descriptors without inventing runtime topology or latency', () => {
         const manifest = getAgentBuiltinDeviceFactoryManifest();
         expect(manifest).toHaveLength(BUILTIN_PLUGINS.filter(({ id }) => isDeviceReleaseAdmitted(id)).length);
-        expect(manifest.some(({ type }) => type === 'grand-boule')).toBe(false);
+        expect(manifest.some(({ type }) => type === 'grand-boule')).toBe(true);
         const sidechain = manifest.find((device) => device.type === 'builtin-sidechain-compressor');
         expect(sidechain).toMatchObject({
             type: 'builtin-sidechain-compressor',

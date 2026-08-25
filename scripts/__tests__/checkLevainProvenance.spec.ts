@@ -47,7 +47,7 @@ function fixture(root: string): LevainProvenance {
             {
                 path: 'public/samples/levain/violin/manifest.json',
                 source: `git:${sourceCommit}`,
-                license: 'pending:OS-10-project-license',
+                license: 'Apache-2.0',
                 sha256: digest('sha256', manifest),
             },
         ],

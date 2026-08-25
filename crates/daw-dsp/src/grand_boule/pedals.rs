@@ -1,6 +1,6 @@
 //! Pedal & damper model for the Grand Boule piano.
 //!
-//! Implements §5.2 of the spec:
+//! Implements the piano pedal model:
 //! * **Sustain (CC64)** — continuous "half-pedal". Maps pedal position to a
 //!   per-key damper bandwidth via a smoothstep. Notes above C7 (key 76)
 //!   have no damper.
@@ -12,7 +12,7 @@
 
 use super::parameters::{damper_strength, has_damper};
 
-/// Hammer stiffness multiplier under the una-corda pedal (§5.2).
+/// Hammer stiffness multiplier under the una-corda pedal.
 pub const UNA_CORDA_STIFFNESS_SCALE: f32 = 0.7;
 
 /// Sympathetic coupling scaling to un-excited strings under una-corda.
@@ -20,8 +20,8 @@ pub const UNA_CORDA_SYMPATHETIC_COUPLING: f32 = 0.3;
 
 /// Reference smoothstep lower threshold for the half-pedal curve — the pedal
 /// position at which the dampers start to leave the strings. Calibratable at
-/// runtime via `PedalState::set_half_pedal_low`; this is the value a
-/// reference pedal is measured at.
+/// runtime via `PedalState::set_half_pedal_low`; this is the default product
+/// calibration point.
 pub const DEFAULT_HALF_PEDAL_LOW: f32 = 0.15;
 
 /// Upper bound accepted for the calibrated lower threshold. Mirrors the
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn cc_smoothing_is_clamped_to_the_published_range() {
+    fn cc_smoothing_is_clamped_to_the_product_range() {
         let mut pedals = PedalState::new();
         assert_eq!(pedals.cc_smoothing_ms(), 0.0);
 
@@ -666,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn calibrated_threshold_is_clamped_to_the_published_range() {
+    fn calibrated_threshold_is_clamped_to_the_product_range() {
         let mut pedals = PedalState::new();
         assert_eq!(pedals.half_pedal_low(), DEFAULT_HALF_PEDAL_LOW);
 

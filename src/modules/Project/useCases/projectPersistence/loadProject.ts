@@ -71,26 +71,31 @@ export async function loadProject(): Promise<boolean> {
         shouldContinue: transaction.isCurrent,
     });
     if (!preparedBuffers || !transaction.isCurrent()) {
+        preparedBuffers?.cancel();
         return false;
     }
 
-    batchStoreUpdates(() => {
-        preparedBuffers.publish();
-        // Reset in-memory module/device state, then discard the reset writes at
-        // the projection boundary before hydrating the newly loaded authority.
-        resetModuleStoresToDefault({ resetGrooveTemplates: false, resetMidiState: false, resetYeastState: false });
-        projectCrdtToStores({ resetProjections: true });
-        migrateAbsoluteMidiNotes();
+    try {
+        batchStoreUpdates(() => {
+            preparedBuffers.publish();
+            // Reset in-memory module/device state, then discard the reset writes at
+            // the projection boundary before hydrating the newly loaded authority.
+            resetModuleStoresToDefault({ resetGrooveTemplates: false, resetMidiState: false, resetYeastState: false });
+            projectCrdtToStores({ resetProjections: true });
+            migrateAbsoluteMidiNotes();
 
-        // Buffers that failed to resolve out of IndexedDB are simply absent from
-        // the cache — nothing above throws for them. Scan the hydrated track
-        // state against the cache so the absence becomes a counted, inspectable
-        // record instead of silent playback. Runs after `publish()` and
-        // `projectCrdtToStores` so both sides of the comparison are current.
-        verifyAudioBufferReferences();
+            // Buffers that failed to resolve out of IndexedDB are simply absent from
+            // the cache — nothing above throws for them. Scan the hydrated track
+            // state against the cache so the absence becomes a counted, inspectable
+            // record instead of silent playback. Runs after `publish()` and
+            // `projectCrdtToStores` so both sides of the comparison are current.
+            verifyAudioBufferReferences();
 
-        clearUndoHistory();
-    });
+            clearUndoHistory();
+        });
+    } finally {
+        preparedBuffers.cancel();
+    }
 
     await migrateActiveProjectIdentity();
     if (!transaction.isCurrent()) {

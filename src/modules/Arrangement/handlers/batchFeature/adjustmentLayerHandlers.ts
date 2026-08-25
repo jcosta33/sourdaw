@@ -97,7 +97,6 @@ const removeAdjustmentRegionWithFreezeStaleness = withFreezeStaleness(handleRemo
 
 const addAdjustmentRegionHandler: ActionHandler<Extract<AppAction, { type: 'addAdjustmentRegion' }>> = {
     undoable: true,
-    canReapplyAfterDivergence: (action) => handleAddAdjustmentRegion.canReapplyAfterDivergence?.(action) ?? false,
     validate: (action, context) => {
         if (!action.payload.expectedLayer || !action.payload.regionId) {
             return context.actions.length === 1;
@@ -120,7 +119,7 @@ const addAdjustmentRegionHandler: ActionHandler<Extract<AppAction, { type: 'addA
 
 const removeAdjustmentRegionHandler: ActionHandler<Extract<AppAction, { type: 'removeAdjustmentRegion' }>> = {
     undoable: true,
-    canReapplyAfterDivergence: (action) => handleRemoveAdjustmentRegion.canReapplyAfterDivergence?.(action) ?? false,
+    canReapplyAfterDivergence: (action) => handleRemoveAdjustmentRegion.canReapplyAfterDivergence?.(action) === true,
     validate: (action, context) => {
         if (!action.payload.expectedRegion) {
             return context.actions.length === 1;

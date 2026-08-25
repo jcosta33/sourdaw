@@ -10,8 +10,8 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { getTrackFaderCeiling, getVcaGroups } from '#/modules/Arrangement/useCases';
-import { formatGainDb } from '#/utils/audioLevelLaw';
+import { getVcaGroups } from '#/modules/Arrangement/useCases';
+import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -306,12 +306,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             value={actions.displayGain}
                             onChange={actions.setGain}
                             min={0}
-                            // The writer's own ceiling, not the fader law's:
-                            // a Toaster-pad-mirrored track is held at unity, and
-                            // a control that could ask past it would record an
-                            // undo entry whose `expectedGain` never matches the
-                            // stored value, making the move unrecoverable.
-                            max={getTrackFaderCeiling(track.id)}
+                            // The fader law's own ceiling — the same bound the
+                            // writer clamps to, so this control can never ask
+                            // for a value `setTrackGain` would refuse and
+                            // strand the undo entry's `expectedGain`.
+                            max={FADER_MAX_GAIN}
                             step={0.01}
                             fineStep={0.001}
                             defaultValue={0.8}

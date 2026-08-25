@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { net, protocol } from 'electron';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { MODEL_RELEASE_ADMISSION } from '../../src/infra/release/modelReleaseAdmission.js';
 import { APP_ORIGIN, handleAppProtocol, ISOLATION_HEADERS, PRODUCTION_CSP, type ContentRoots } from '../protocol.js';
 import { withTrustedSender, type SenderFrameCarrier } from '../router.js';
 import {
@@ -41,6 +42,7 @@ vi.mock('electron', () => ({
 }));
 
 const DEV_SERVER = 'http://localhost:5173';
+const MAGENTA_DDSP_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
 const origins = [APP_ORIGIN, DEV_SERVER];
 
 const parseCsp = (policy: string): Map<string, string[]> => {
@@ -89,10 +91,10 @@ describe('the production Content-Security-Policy', () => {
         // a user-run OpenAI-compatible LLM server (a hosted https provider
         // streams through the native gateway over IPC, which no CSP directive
         // governs), Hugging Face plus its CDN redirect hosts for Kokoro/WebLLM
-        // model artifacts, and raw.githubusercontent.com for the MLC wasm
-        // runtime, whose artifacts are sha256-pinned. A host with no consumer
-        // stays out, and a bare `https:` is an open exfiltration channel that
-        // must never return.
+        // model artifacts, raw.githubusercontent.com for the MLC wasm runtime,
+        // and only the exact Magenta DDSP checkpoint path whose artifacts are
+        // sha256-pinned. A host with no consumer stays out, and a bare `https:`
+        // is an open exfiltration channel that must never return.
         expect(directives.get('connect-src')).toEqual([
             "'self'",
             'http://localhost:*',
@@ -101,7 +103,18 @@ describe('the production Content-Security-Policy', () => {
             'https://*.huggingface.co',
             'https://*.hf.co',
             'https://raw.githubusercontent.com',
+            MAGENTA_DDSP_CSP_SOURCE,
         ]);
+        for (const broadSource of [
+            'https://storage.googleapis.com',
+            'https://storage.googleapis.com/',
+            'https://storage.googleapis.com/*',
+            'https://*.googleapis.com',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/',
+            'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/*',
+        ]) {
+            expect(directives.get('connect-src')).not.toContain(broadSource);
+        }
         expect(directives.get('connect-src')).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('http:');
@@ -110,6 +123,11 @@ describe('the production Content-Security-Policy', () => {
         // in front of a musician. This scan fails the same mistake at test
         // time instead.
         expect(readProductionTypescript('src')).not.toMatch(/new\s+Worker\s*\(\s*URL\.createObjectURL/gu);
+    });
+
+    it('keeps the exact Magenta DDSP egress source aligned with release admission', () => {
+        const connectSources = new Set<string>(directives.get('connect-src') ?? []);
+        expect(connectSources.has(MAGENTA_DDSP_CSP_SOURCE)).toBe(MODEL_RELEASE_ADMISSION.ddsp);
     });
 
     it('closes the directives an injected document would reach for', () => {

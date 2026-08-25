@@ -1,4 +1,5 @@
-/* (c) Copyright Sourdaw Ltd., all rights reserved. */
+/* SPDX-FileCopyrightText: Copyright Sourdaw Ltd. */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 const SPEC_FILE_RE = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';

@@ -31,6 +31,7 @@ import {
 } from '../models/RuntimeGraphDelta';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
+import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
@@ -409,6 +410,7 @@ class AudioEngineImpl implements AudioEngine {
                 providedContext ??
                 new AudioContext({
                     latencyHint: this.latencyHint ?? getAudioContextLatencyHint(DEFAULT_AUDIO_LATENCY_PROFILE),
+                    sampleRate: 48_000,
                 });
             this.masterGainNode = this.context.createGain();
             this.masterGainNode.gain.value = 0.8;
@@ -522,23 +524,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private matchesRuntimeDeviceChain(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
-        return (
-            node.trackId === expected.id &&
-            node.strip.deviceNodes.length === expected.devices.length &&
-            node.strip.deviceNodes.every((device, index) => {
-                const expectedDevice = expected.devices[index];
-                const parameterIds = device.parameterIds ?? [];
-                return (
-                    device.deviceId === expectedDevice?.id &&
-                    device.type === expectedDevice.type &&
-                    device.externalInstanceId === expectedDevice.externalInstanceId &&
-                    parameterIds.length === expectedDevice.parameterIds.length &&
-                    parameterIds.every(
-                        (parameterId, parameterIndex) => parameterId === expectedDevice.parameterIds[parameterIndex]
-                    )
-                );
-            })
-        );
+        return matchesRuntimeDeviceChainTopology(node.strip, expected);
     }
 
     private needsRuntimeGraphReconciliation(

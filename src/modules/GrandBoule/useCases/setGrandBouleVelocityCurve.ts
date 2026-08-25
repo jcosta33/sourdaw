@@ -2,7 +2,7 @@ import { type Store } from '#/infra/store/types';
 /**
  * Set the velocity curve exponent for the Grand Boule piano.
  *
- * Controls how MIDI velocity maps to hammer force (spec §3.1):
+ * Controls how MIDI velocity maps to hammer force:
  *   0.5 = compressed (soft touch, higher minimum)
  *   1.0 = linear
  *   2.0 = expanded (requires stronger strikes for forte)

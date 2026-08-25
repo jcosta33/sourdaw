@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
     projectCrdtToStores: vi.fn(),
     createCrdtProject: vi.fn(() => Promise.resolve()),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
-    prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
+    prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
     resetModuleStores: vi.fn(),
     readLegacyChordTrackMigration: vi.fn(() => undefined),
     stopActiveAutoSave: vi.fn(),

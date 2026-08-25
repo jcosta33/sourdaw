@@ -49,8 +49,8 @@ describe('soundPresetLibrary', () => {
         expect(second).toBe(first);
     });
 
-    it('omits presets for devices withheld from release', () => {
-        expect(getFactoryPresets().some(({ id }) => id === 'grand-boule-default')).toBe(false);
+    it('includes the Grand Boule factory preset', () => {
+        expect(getFactoryPresets().some(({ id }) => id === 'grand-boule-default')).toBe(true);
     });
 });
 
@@ -80,8 +80,7 @@ describe('getFactoryPresets platform cache', () => {
 
         // Native rebuild invalidates the web cache entry, producing a fresh array.
         expect(nativePresets).not.toBe(webPresets);
-        // Release admission does not change by runtime, so both catalogs omit
-        // the same withheld presets.
+        // Release admission does not change by runtime.
         expect(nativePresets.map((preset) => preset.id)).toEqual(webPresets.map((preset) => preset.id));
     });
 });

@@ -1,4 +1,5 @@
-/* (c) Copyright Sourdaw Ltd., all rights reserved. */
+/* SPDX-FileCopyrightText: Copyright Sourdaw Ltd. */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 /*
  * Value-import-only cruise for the reachability rule. Type-only edges are omitted

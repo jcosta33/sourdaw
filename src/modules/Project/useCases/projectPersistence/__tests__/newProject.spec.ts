@@ -16,6 +16,7 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { isCanonicalProjectId } from '../../../models/ProjectData';
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
+import { getDurableProjectOwnerId } from '../../getDurableProjectOwnerId';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { newProject } from '../newProject';
@@ -298,5 +299,67 @@ describe('newProject injectable', () => {
 
         await expect(activation).resolves.toBe(false);
         expect(projectStore.value).toBe(newerLoadingState);
+    });
+
+    it('withholds the durable owner identity until the initial compaction persists it', async () => {
+        const compaction = createDeferred<void>();
+        vi.mocked(compactProject).mockReturnValueOnce(compaction.promise);
+
+        const activation = newProject('Barrier Project');
+        await vi.waitFor(() => expect(compactProject).toHaveBeenCalledOnce());
+
+        const publishedProjectId = projectStore.value?.projectId;
+        expect(isCanonicalProjectId(publishedProjectId)).toBe(true);
+        expect(projectStore.value).toMatchObject({ initialized: true, identityPersistencePending: true });
+        expect(getDurableProjectOwnerId()).toBeUndefined();
+
+        compaction.resolve(undefined);
+        await expect(activation).resolves.toBe(true);
+
+        expect(projectStore.value).toMatchObject({ identityPersistencePending: false });
+        expect(getDurableProjectOwnerId()).toBe(publishedProjectId);
+    });
+
+    it('keeps the durable owner identity withheld when the initial compaction fails', async () => {
+        vi.mocked(compactProject).mockRejectedValueOnce(new Error('initial compaction failed'));
+
+        await expect(newProject('Unpersisted Project')).resolves.toBe(true);
+
+        expect(isCanonicalProjectId(projectStore.value?.projectId)).toBe(true);
+        expect(projectStore.value).toMatchObject({ initialized: true, identityPersistencePending: true });
+        expect(getDurableProjectOwnerId()).toBeUndefined();
+    });
+
+    it('does not clear the persistence barrier of a superseded project', async () => {
+        const compaction = createDeferred<void>();
+        let latestTransition = 1;
+        vi.mocked(runProjectLoadTransaction)
+            .mockReturnValueOnce({
+                prepare: vi.fn().mockResolvedValue(true),
+                activate: vi.fn().mockReturnValue(true),
+                canActivate: () => latestTransition === 1,
+                isCurrent: () => latestTransition === 1,
+            })
+            .mockReturnValueOnce({
+                prepare: vi.fn().mockResolvedValue(true),
+                activate: vi.fn().mockReturnValue(true),
+                canActivate: () => true,
+                isCurrent: () => true,
+            });
+        vi.mocked(compactProject).mockReturnValueOnce(compaction.promise);
+
+        const firstActivation = newProject('First Project');
+        await vi.waitFor(() => expect(compactProject).toHaveBeenCalledOnce());
+        const firstProjectId = projectStore.value?.projectId;
+
+        latestTransition = 2;
+        await expect(newProject('Second Project')).resolves.toBe(true);
+        expect(projectStore.value).toMatchObject({ name: 'Second Project', identityPersistencePending: false });
+
+        compaction.resolve(undefined);
+        await expect(firstActivation).resolves.toBe(true);
+
+        expect(projectStore.value?.projectId).not.toBe(firstProjectId);
+        expect(projectStore.value).toMatchObject({ name: 'Second Project', identityPersistencePending: false });
     });
 });

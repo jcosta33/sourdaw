@@ -231,6 +231,161 @@ describe('planAgentRun', () => {
         ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('capability') }));
     });
 
+    it.each([
+        {
+            label: 'track removal cascade',
+            action: { type: 'removeTrack' },
+            actionLabel: 'Remove Kick',
+            providerTargetIds: ['track-kick'],
+            applicationTargetIds: ['track-kick', 'clip-kick', 'device-kick', 'track-bus'],
+        },
+        {
+            label: 'duplicate-track dynamic effects',
+            action: { type: 'duplicateTrack' },
+            actionLabel: 'Duplicate Kick',
+            providerTargetIds: ['track-kick'],
+            applicationTargetIds: ['track-kick', 'track-kick-copy', 'clip-kick'],
+        },
+    ])('accepts exact provider-known scope while retaining full $label authority', (testCase) => {
+        const providerKnownScope = {
+            targetIds: testCase.providerTargetIds,
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        };
+        const result = planAgentRun({
+            request: testCase.actionLabel,
+            revision: 'heads-dynamic-effects',
+            actions: [testCase.action],
+            actionLabels: [testCase.actionLabel],
+            scope: {
+                ...providerKnownScope,
+                targetIds: testCase.applicationTargetIds,
+            },
+            providerKnownScope,
+            grants: {
+                allowedOperationPrefixes: [testCase.action.type],
+                create: testCase.action.type === 'duplicateTrack',
+                delete: testCase.action.type === 'removeTrack',
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: true,
+            providerProposal: providerProposal({
+                scope: providerKnownScope,
+                capabilityIds: [testCase.action.type],
+            }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'planned',
+            plan: { scope: { targetIds: testCase.applicationTargetIds } },
+        });
+    });
+
+    it.each([
+        { label: 'omits', providerTargetIds: [] },
+        { label: 'adds', providerTargetIds: ['track-kick', 'track-hat'] },
+    ])('rejects a provider proposal that $label a direct target', ({ providerTargetIds }) => {
+        const providerKnownScope = {
+            targetIds: ['track-kick'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        };
+        const result = planAgentRun({
+            request: 'Remove Kick',
+            revision: 'heads-direct-scope',
+            actions: [{ type: 'removeTrack' }],
+            actionLabels: ['Remove Kick'],
+            scope: {
+                ...providerKnownScope,
+                targetIds: ['track-kick', 'clip-kick', 'device-kick'],
+            },
+            providerKnownScope,
+            grants: {
+                allowedOperationPrefixes: ['removeTrack'],
+                create: false,
+                delete: true,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: true,
+            providerProposal: providerProposal({
+                scope: { ...providerKnownScope, targetIds: providerTargetIds },
+                capabilityIds: ['removeTrack'],
+            }),
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') })
+        );
+    });
+
+    it.each([
+        {
+            label: 'provider scope',
+            applicationTargetIds: ['bass-1', 'drum-bus'],
+            providerTargetIds: ['bass-1', 'bass-1'],
+        },
+        {
+            label: 'application-owned scope',
+            applicationTargetIds: ['bass-1', 'bass-1'],
+            providerTargetIds: ['bass-1', 'drum-bus'],
+        },
+    ])('rejects duplicate IDs in the $label', ({ applicationTargetIds, providerTargetIds }) => {
+        const result = planAgentRun({
+            request: 'Mute the scoped tracks.',
+            revision: 'heads-duplicate-scope',
+            actions: [{ type: 'muteTrack' }],
+            actionLabels: ['Mute the scoped tracks'],
+            scope: {
+                targetIds: applicationTargetIds,
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            grants: {
+                allowedOperationPrefixes: ['muteTrack'],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: false,
+            providerProposal: providerProposal({
+                scope: {
+                    targetIds: providerTargetIds,
+                    targetRanges: [],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+            }),
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') })
+        );
+    });
+
     it('persists and hydrates a canonical revision-bound plan rather than resume prose', () => {
         const planned = planAgentRun({
             request: 'Raise Bass by 1 dB.',
@@ -377,6 +532,128 @@ describe('planAgentRun', () => {
                     decision: { revision: 'heads-9', selectedAlternativeId: null, alternatives: expect.any(Array) },
                 },
             ],
+        });
+    });
+    describe('provider scope authority when the batch creates application-assigned entities', () => {
+        const createdBusId = 'bus-ai-69ae2571-2c4c-4d1a-8f9b-0f2a9d4c7a11';
+        const creationInput = {
+            request: 'Send the backing vocals to a new plate bus.',
+            revision: 'heads-3',
+            actions: [{ type: 'createBus' }, { type: 'setTrackOutput' }],
+            actionLabels: ['Create the backing vocal plate bus', 'Route the backing vocals to the plate bus'],
+            scope: {
+                targetIds: ['track-bgv-high', createdBusId, 'track-bgv-low'],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            grants: {
+                allowedOperationPrefixes: ['createBus', 'setTrackOutput'],
+                create: true,
+                delete: false,
+                routing: true,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: false,
+            applicationAssignedTargetIds: [createdBusId],
+        };
+
+        it('admits a proposal that names every pre-existing target the application computed', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-high', 'track-bgv-low'],
+                        targetRanges: [],
+                        protectedTargetIds: [],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual(expect.objectContaining({ status: 'planned' }));
+        });
+
+        it('admits a proposal that declares the same targets, protected targets, and ranges in another order', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                scope: {
+                    targetIds: ['track-bgv-high', createdBusId, 'track-bgv-low'],
+                    targetRanges: [
+                        { startBeat: 33, endBeat: 49 },
+                        { startBeat: 1, endBeat: 17 },
+                    ],
+                    protectedTargetIds: ['master', 'tape-bus'],
+                    protectedRanges: [
+                        { startBeat: 65, endBeat: 81 },
+                        { startBeat: 9, endBeat: 25 },
+                    ],
+                },
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-low', 'track-bgv-high'],
+                        targetRanges: [
+                            { startBeat: 1, endBeat: 17 },
+                            { startBeat: 33, endBeat: 49 },
+                        ],
+                        protectedTargetIds: ['tape-bus', 'master'],
+                        protectedRanges: [
+                            { startBeat: 9, endBeat: 25 },
+                            { startBeat: 65, endBeat: 81 },
+                        ],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual(expect.objectContaining({ status: 'planned' }));
+        });
+
+        it('rejects a proposal that names a pre-existing target outside the computed scope', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-high', 'track-bgv-low', 'drum-bus'],
+                        targetRanges: [],
+                        protectedTargetIds: [],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'Provider attempted to enlarge or omit the application-owned scope.',
+            });
+        });
+
+        it('rejects a proposal that omits a pre-existing target the application computed', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-high'],
+                        targetRanges: [],
+                        protectedTargetIds: [],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'Provider attempted to enlarge or omit the application-owned scope.',
+            });
         });
     });
 });

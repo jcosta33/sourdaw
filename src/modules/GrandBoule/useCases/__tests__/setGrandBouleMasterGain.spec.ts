@@ -26,7 +26,7 @@ function engine() {
     };
 }
 
-/** Seeded away from the default 0.7 so a restored default cannot pass as a write. */
+/** Seeded away from the default 0.1 so a restored default cannot pass as a write. */
 function seededStore() {
     const state = createDefaultGrandBouleState();
     return createStore<GrandBouleState>({
@@ -43,33 +43,33 @@ describe('setGrandBouleMasterGain', () => {
     it('previews on the engine and the store without touching project truth', () => {
         const store = seededStore();
 
-        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 1.25, isTransient: true });
+        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 0.75, isTransient: true });
 
-        expect(store.value?.config.masterGain).toBe(1.25);
+        expect(store.value?.config.masterGain).toBe(0.75);
         // camelCase reaches the engine and `PARAM_MAP` translates it; the previous
         // hand-written 'master_gain' bypassed the one table that owns that mapping.
-        expect(engineWrites).toEqual([{ name: 'masterGain', value: 1.25 }]);
+        expect(engineWrites).toEqual([{ name: 'masterGain', value: 0.75 }]);
         expect(dispatched).toEqual([]);
     });
 
     it('commits through setDeviceParameter and waits for project truth before changing the session', () => {
         const store = seededStore();
 
-        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 1.25 });
+        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 0.75 });
 
         expect(store.value?.config.masterGain).toBe(0.15);
         expect(dispatched).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'masterGain', value: 1.25 } },
+            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'masterGain', value: 0.75 } },
         ]);
         expect(engineWrites).toEqual([]);
     });
 
-    it('clamps to the declared 0..2 range in both halves', () => {
+    it('clamps to the declared 0..1 range in both halves', () => {
         const store = seededStore();
 
         setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 7.5 });
         expect(dispatched).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'masterGain', value: 2 } },
+            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'masterGain', value: 1 } },
         ]);
         expect(store.value?.config.masterGain).toBe(0.15);
 
@@ -82,7 +82,7 @@ describe('setGrandBouleMasterGain', () => {
         const store = seededStore();
         const before = store.value!.config;
 
-        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 1.9 });
+        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 0.9 });
 
         expect(store.value?.config.soundboardSend).toBe(before.soundboardSend);
         expect(store.value?.config.sympatheticSend).toBe(before.sympatheticSend);
@@ -92,7 +92,7 @@ describe('setGrandBouleMasterGain', () => {
     it('does nothing when the store holds no state', () => {
         const store = createStore<GrandBouleState>();
 
-        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 1.25 });
+        setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 0.75 });
 
         expect(store.value).toBeNull();
         expect(dispatched).toEqual([]);

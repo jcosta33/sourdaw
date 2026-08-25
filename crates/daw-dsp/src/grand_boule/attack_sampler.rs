@@ -1,4 +1,4 @@
-//! Hybrid sampled-attack pathway (§3.3).
+//! Hybrid sampled-attack pathway.
 //!
 //! Blends a short sample-based attack transient with the modelled modal
 //! output. The blend window is typically 10–50 ms — long enough to capture
@@ -10,8 +10,7 @@
 //! out of the set and cross-fades them out against the modelled voice
 //! output over the clip's duration.
 
-/// Maximum length of one attack clip in samples. 2400 samples = 50 ms @
-/// 48 kHz, matching the spec's upper bound.
+/// Maximum attack clip: 2400 samples, or 50 ms at 48 kHz.
 pub const MAX_ATTACK_SAMPLES: usize = 2_400;
 
 /// Number of piano keys.

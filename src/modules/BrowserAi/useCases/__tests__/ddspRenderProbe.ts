@@ -77,7 +77,7 @@ async function renderOffline(): Promise<DdspRenderProof> {
         peak = Math.max(peak, Math.abs(sample));
     }
     return {
-        admissionWithheld: MODEL_RELEASE_ADMISSION.ddsp === false,
+        admissionWithheld: !MODEL_RELEASE_ADMISSION.ddsp,
         backend: result.backend,
         finite: result.audio.length > 0 && result.audio.every(Number.isFinite),
         peak,

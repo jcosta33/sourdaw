@@ -3,6 +3,9 @@ name = "daw-dsp"
 version = "0.1.0"
 edition = "2021"
 description = "Pure mathematical algorithms and DSP components for Sourdaw."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["rlib", "cdylib"]

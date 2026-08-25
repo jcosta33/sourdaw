@@ -10,6 +10,20 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     getUserPresets: vi.fn(),
 }));
+const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
+
+vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/release/deviceReleaseAdmission')>();
+
+    return {
+        ...actual,
+        findWithheldDeviceType: (devices: ReadonlyArray<{ type: string }>) =>
+            devices.find(({ type }) => injectedWithheldDeviceTypes.has(type))?.type ??
+            actual.findWithheldDeviceType(devices),
+        isDeviceReleaseAdmitted: (type: string) =>
+            !injectedWithheldDeviceTypes.has(type) && actual.isDeviceReleaseAdmitted(type),
+    };
+});
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
@@ -45,6 +59,7 @@ function preset(overrides: Partial<SoundPreset> = {}): SoundPreset {
 describe('compileLoadPresetActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        injectedWithheldDeviceTypes.clear();
         mocks.getFactoryPresets.mockReturnValue([preset()]);
         mocks.getUserPresets.mockReturnValue([]);
         mocks.getTrackStoreState.mockReturnValue({
@@ -112,9 +127,30 @@ describe('compileLoadPresetActions', () => {
         expect(compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' })).toBeNull();
     });
 
-    it('rejects a preset containing a device withheld from release', () => {
-        const withheldPreset = preset({
+    it('loads and verifies a Grand Boule preset', () => {
+        const grandBoulePreset = preset({
             devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }],
+        });
+        mocks.getFactoryPresets.mockReturnValue([grandBoulePreset]);
+
+        expect(compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' })).not.toBeNull();
+        expect(
+            matchesMaterializedPresetDevices(grandBoulePreset, [
+                {
+                    id: 'preset-device-1',
+                    name: 'Grand Boule',
+                    type: 'grand-boule',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ])
+        ).toBe(true);
+    });
+
+    it('rejects a preset containing a device withheld from release', () => {
+        injectedWithheldDeviceTypes.add('test-withheld-device');
+        const withheldPreset = preset({
+            devices: [{ type: 'test-withheld-device', name: 'Withheld test device', parameterValues: {} }],
         });
         mocks.getFactoryPresets.mockReturnValue([withheldPreset]);
 
@@ -123,8 +159,8 @@ describe('compileLoadPresetActions', () => {
             matchesMaterializedPresetDevices(withheldPreset, [
                 {
                     id: 'preset-device-1',
-                    name: 'Grand Boule',
-                    type: 'grand-boule',
+                    name: 'Withheld test device',
+                    type: 'test-withheld-device',
                     bypassed: false,
                     parameterValues: {},
                 },

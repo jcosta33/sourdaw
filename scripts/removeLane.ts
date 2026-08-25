@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
     AUTHOR_LOCK_REASON,
     assertTrustedExecutingBlob,
-    isAuthorBotLogin,
+    isAuthorBotNodeId,
     originMainBlob,
     removalLockPid,
     resolvePrimaryRoot,
@@ -38,6 +38,7 @@ export type PullRequest = {
 
 export type IssueComment = {
     body: string;
+    authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
 };
@@ -186,7 +187,7 @@ type OwnershipSnapshot = {
 function supersededReplacement(number: number, port: LaneRemovalPort): number {
     const receipts = port
         .comments(number)
-        .filter((comment) => comment.authorType === 'Bot' && isAuthorBotLogin(comment.authorLogin))
+        .filter((comment) => comment.authorType === 'Bot' && isAuthorBotNodeId(comment.authorNodeId))
         .map((comment) => supersessionReplacement(comment.body))
         .filter((parsed): parsed is number => parsed !== undefined);
     const [replacement] = receipts;
@@ -442,7 +443,9 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
             }));
         },
         comments: (number) => {
-            const pages = parseJson<Array<Array<{ body: string; user: { login: string; type: string } | null }>>>(
+            const pages = parseJson<
+                Array<Array<{ body: string; user: { node_id: string; login: string; type: string } | null }>>
+            >(
                 shell.capture('gh', [
                     'api',
                     '--paginate',
@@ -453,6 +456,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
             );
             return pages.flat().map((comment) => ({
                 body: comment.body,
+                authorNodeId: comment.user?.node_id ?? null,
                 authorLogin: comment.user?.login ?? null,
                 authorType: comment.user?.type ?? null,
             }));

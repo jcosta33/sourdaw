@@ -7,6 +7,11 @@
 import { init, change, load, save, merge, getChanges, getHeads, view } from '@automerge/automerge';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import {
+    getCurrentAutomergeStorageMutationOwner,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
+
 import { automergeRepository } from '../automergeRepository';
 
 type TestSnapshotEntry = { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
@@ -38,6 +43,38 @@ vi.stubGlobal(
 
 beforeEach(() => {
     automergeRepository.reset();
+});
+
+describe('AutomergeRepository mutation ownership', () => {
+    it('attributes direct repository mutations to each exact storage transaction owner', () => {
+        automergeRepository.createProject('p');
+        const totalMutationBaseline = automergeRepository.getMutationEpoch();
+        const unownedMutationBaseline = automergeRepository.getUnownedMutationEpoch();
+        let firstOwner: object | undefined;
+        let secondOwner: object | undefined;
+
+        const firstTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            firstOwner = getCurrentAutomergeStorageMutationOwner();
+            automergeRepository.createChildDoc('candidate-1');
+        });
+        firstTransaction.commit();
+        const secondTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            secondOwner = getCurrentAutomergeStorageMutationOwner();
+            automergeRepository.createChildDoc('candidate-2');
+        });
+        secondTransaction.commit();
+
+        expect(firstOwner).toBeDefined();
+        expect(secondOwner).toBeDefined();
+        if (!firstOwner || !secondOwner) {
+            throw new Error('Expected both storage transactions to expose exact owners');
+        }
+        expect(secondOwner).not.toBe(firstOwner);
+        expect(automergeRepository.getMutationEpoch()).toBe(totalMutationBaseline + 2);
+        expect(automergeRepository.getUnownedMutationEpoch()).toBe(unownedMutationBaseline);
+        expect(automergeRepository.getMutationEpochForOwner(firstOwner)).toBe(1);
+        expect(automergeRepository.getMutationEpochForOwner(secondOwner)).toBe(1);
+    });
 });
 
 describe('transactSnapshot - explicit mutation ownership', () => {

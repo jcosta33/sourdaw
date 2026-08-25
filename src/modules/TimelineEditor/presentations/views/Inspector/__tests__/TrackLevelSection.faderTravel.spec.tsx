@@ -100,12 +100,16 @@ describe('TrackLevelSection — gain travel', () => {
         );
     });
 
-    it('holds a Toaster-pad-mirrored track at the pad ceiling, exactly as the writer does', () => {
+    it('gives a Toaster pad child the same fader travel as any other track', () => {
+        // The fader no longer mirrors onto the pad's `volume` (#2458) — the pad
+        // keeps its own level — so nothing holds this track at unity. Read back
+        // from the fader law rather than written out, so this fails if the
+        // control and the writer ever diverge again.
         render(<TrackLevelSection track={viewTrack(PAD_CHILD_ID, 0.75)} />);
 
-        // 100% of unity — the pad's own range, which `crates/daw-dsp/src/toaster/
-        // pad.rs` clamps to `0.0..=1.0`. Written out rather than read back from
-        // the ceiling function, so this fails if the two ever diverge.
-        expect(screen.getByRole('slider', { name: 'Test Track gain' })).toHaveAttribute('aria-valuemax', '100');
+        expect(screen.getByRole('slider', { name: 'Test Track gain' })).toHaveAttribute(
+            'aria-valuemax',
+            String(FADER_MAX_GAIN * 100)
+        );
     });
 });

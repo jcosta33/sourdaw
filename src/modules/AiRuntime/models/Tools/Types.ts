@@ -1,4 +1,5 @@
-/* (c) Copyright Sourdaw Ltd., all rights reserved. */
+/* SPDX-FileCopyrightText: Copyright Sourdaw Ltd. */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 /** Schema for a single LLM-callable tool (Hermes function calling format). */
 export type ToolSchema = {

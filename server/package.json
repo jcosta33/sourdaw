@@ -1,6 +1,7 @@
 {
     "name": "sourdaw-collab-server",
     "private": true,
+    "license": "Apache-2.0",
     "scripts": {
         "dev": "tsx collab-server.ts",
         "build": "tsc",

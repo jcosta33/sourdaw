@@ -2,6 +2,8 @@ export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
 export { captureProjectRevision } from './captureProjectRevision';
+export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
+export { captureUnownedProjectMutations } from './captureUnownedProjectMutations';
 export { agentProjectInspectionPort } from './agentProjectInspectionPort';
 export { inspectAgentProjectDivergence } from './inspectAgentProjectDivergence';
 export { findAutomergeProjectConflicts } from './findAutomergeProjectConflicts';
@@ -10,7 +12,6 @@ export { createCommandPreviewWorkspace } from './createCommandPreviewWorkspace';
 export { createCommandRecoveryWorkspace } from './createCommandRecoveryWorkspace';
 export { captureActiveBranchReference } from './captureActiveBranchReference';
 export { getDrumPreviewBranchHandlers } from './getDrumPreviewBranchHandlers';
-export { isDrumPreviewBranchPlanApplied } from './crdtBranching/isDrumPreviewBranchPlanApplied';
 export { waitForCrdtDocumentTransition } from './waitForCrdtDocumentTransition';
 export { createCrdtProject } from './createCrdtProject';
 export { getPersistenceBackend } from './crdtProjectLifecycle';

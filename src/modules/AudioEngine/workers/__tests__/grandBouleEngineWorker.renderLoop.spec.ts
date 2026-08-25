@@ -70,9 +70,7 @@ class GrandBouleInstanceMock {
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: vi.fn(() => ({ memory: mem })),
-}));
-vi.mock('../../worklets/grandBouleWasmInstance', () => ({
-    createGrandBouleWasmInstance: () => new GrandBouleInstanceMock(),
+    GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
 const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));

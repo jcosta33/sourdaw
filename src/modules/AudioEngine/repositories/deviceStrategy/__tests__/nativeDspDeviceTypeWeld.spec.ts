@@ -52,9 +52,9 @@ describe('native DSP device types are welded to the factory list', () => {
         expect(unbuildable).toEqual([]);
     });
 
-    it('keeps withheld implementations out of released offline rendering', () => {
+    it('exposes admitted Grand Boule to released offline rendering', () => {
         expect(isNativeDspDevice('grand-boule')).toBe(true);
-        expect(findReleasedNativeDspDeviceFactory('grand-boule')).toBeUndefined();
+        expect(findReleasedNativeDspDeviceFactory('grand-boule')?.type).toBe('grand-boule');
     });
 
     it('the resolver and the factory matchers agree on what is native', () => {

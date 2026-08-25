@@ -1,9 +1,8 @@
 /**
- * Retained AudioWorklet ring consumer for the Grand Boule host design.
+ * AudioWorklet ring consumer for the Grand Boule live host.
  *
- * It constructs no DSP instance. Focused host tests may inject a producer for
- * the SharedArrayBuffer ring; released product paths cannot obtain a Grand
- * Boule constructor from daw-dsp WASM and remain blocked by release admission.
+ * The Worker owns the DSP instance and produces frames into the
+ * SharedArrayBuffer ring. This processor consumes them on the audio thread.
  *
  * Messages from main thread:
  *   { type: 'init', sab: SharedArrayBuffer }

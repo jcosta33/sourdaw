@@ -2,14 +2,14 @@
 import { fileURLToPath } from 'node:url';
 
 import {
-    AUTHOR_BOT_LOGIN,
+    AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
-    REVIEWER_BOT_LOGIN,
+    REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
-    isAuthorBotLogin,
-    isReviewerBotLogin,
+    isAuthorBotNodeId,
+    isReviewerBotNodeId,
     originMainBlob,
     parseGraphqlResponse,
     resolvePrimaryRoot,
@@ -22,16 +22,19 @@ export type ReviewComment = {
     id: string;
     fullDatabaseId: string;
     body: string;
+    authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
 };
 export type ReviewThread = {
     id: string;
     isResolved: boolean;
+    resolvedByNodeId: string | null;
     resolvedByLogin: string | null;
     resolvedByType: string | null;
     rootCommentId: string | null;
     rootCommentFullDatabaseId: string | null;
+    rootAuthorNodeId: string | null;
     rootAuthorLogin: string | null;
     rootAuthorType: string | null;
     comments: ReviewComment[];
@@ -40,11 +43,17 @@ export type ReviewThreadInspection = { head: string; thread: ReviewThread | null
 export type ReviewReply = {
     id: string;
     fullDatabaseId: string;
+    authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
     clientMutationId: string;
 };
-export type ReviewResolutionReceipt = { resolvedByLogin: string; resolvedByType: string; clientMutationId: string };
+export type ReviewResolutionReceipt = {
+    resolvedByNodeId: string;
+    resolvedByLogin: string;
+    resolvedByType: string;
+    clientMutationId: string;
+};
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
     replyDone: (threadId: string) => ReviewReply;
@@ -86,11 +95,11 @@ export function resolveReviewThread(
     number: number,
     threadId: string,
     expectedHead: string,
-    authorLogin: string,
+    authorNodeId: string,
     port: ResolveReviewThreadPort
 ): string {
-    if (authorLogin !== AUTHOR_BOT_LOGIN) {
-        fail(`authenticated author login ${authorLogin} is not ${AUTHOR_BOT_LOGIN}`);
+    if (!isAuthorBotNodeId(authorNodeId)) {
+        fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
     }
     const before = port.inspect(number, threadId);
     assertExpectedHead(before.head, expectedHead);
@@ -254,20 +263,20 @@ function assertExpectedHeadAfterMutation(currentHead: string, expectedHead: stri
 function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
-function authorBotLogin(value: unknown): string {
-    if (typeof value !== 'string' || !isAuthorBotLogin(value)) {
-        fail('expected author bot login');
+function authorBotNodeId(value: unknown): string {
+    if (typeof value !== 'string' || !isAuthorBotNodeId(value)) {
+        fail('expected author bot actor ID');
     }
     return value;
 }
-function isAuthorBotActor(login: unknown, type: unknown): boolean {
-    return type === 'Bot' && typeof login === 'string' && isAuthorBotLogin(login);
+function isAuthorBotActor(nodeId: unknown, type: unknown): boolean {
+    return type === 'Bot' && typeof nodeId === 'string' && isAuthorBotNodeId(nodeId);
 }
-function isAuthorResolutionActor(login: unknown, type: unknown): boolean {
-    return type === 'User' && typeof login === 'string' && isAuthorBotLogin(login);
+function isAuthorResolutionActor(nodeId: unknown, type: unknown): boolean {
+    return type === 'User' && typeof nodeId === 'string' && isAuthorBotNodeId(nodeId);
 }
-function isReviewerBotActor(login: unknown, type: unknown): boolean {
-    return type === 'Bot' && typeof login === 'string' && isReviewerBotLogin(login);
+function isReviewerBotActor(nodeId: unknown, type: unknown): boolean {
+    return type === 'Bot' && typeof nodeId === 'string' && isReviewerBotNodeId(nodeId);
 }
 function replyClientMutationId(threadId: string): string {
     return `review-reply:${threadId}`;
@@ -280,7 +289,7 @@ function assertReply(reply: ReviewReply, expectedClientMutationId: string): void
         typeof reply.id !== 'string' ||
         reply.id === '' ||
         !isDecimalId(reply.fullDatabaseId) ||
-        !isAuthorBotActor(reply.authorLogin, reply.authorType) ||
+        !isAuthorBotActor(reply.authorNodeId, reply.authorType) ||
         reply.clientMutationId !== expectedClientMutationId
     ) {
         fail('add review-thread reply returned an invalid result');
@@ -288,7 +297,7 @@ function assertReply(reply: ReviewReply, expectedClientMutationId: string): void
 }
 function assertResolutionReceipt(receipt: ReviewResolutionReceipt, expectedClientMutationId: string): void {
     if (
-        !isAuthorResolutionActor(receipt.resolvedByLogin, receipt.resolvedByType) ||
+        !isAuthorResolutionActor(receipt.resolvedByNodeId, receipt.resolvedByType) ||
         receipt.clientMutationId !== expectedClientMutationId
     ) {
         fail('resolve review thread returned an invalid result');
@@ -299,16 +308,16 @@ function hasExpectedReply(thread: ReviewThread, replyId: string): boolean {
         (comment) =>
             comment.id === replyId &&
             comment.body === 'Done' &&
-            isAuthorBotActor(comment.authorLogin, comment.authorType)
+            isAuthorBotActor(comment.authorNodeId, comment.authorType)
     );
 }
 function validatedReplyMarkers(thread: ReviewThread): ReviewComment[] {
-    const owned = thread.comments.filter((comment) => isAuthorBotLogin(comment.authorLogin));
+    const owned = thread.comments.filter((comment) => isAuthorBotNodeId(comment.authorNodeId));
     for (const comment of owned) {
         if (
             !isDecimalId(comment.fullDatabaseId) ||
             comment.body !== 'Done' ||
-            !isAuthorBotActor(comment.authorLogin, comment.authorType)
+            !isAuthorBotActor(comment.authorNodeId, comment.authorType)
         ) {
             fail('owned Done reply marker is not an exact author-bot receipt');
         }
@@ -378,8 +387,8 @@ function deleteCreatedNoncanonicalReply(
 }
 function assertCompletedResolution(thread: ReviewThread, threadId: string): void {
     assertRootReviewer(thread, threadId);
-    if (!isAuthorResolutionActor(thread.resolvedByLogin, thread.resolvedByType)) {
-        fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_LOGIN}`);
+    if (!isAuthorResolutionActor(thread.resolvedByNodeId, thread.resolvedByType)) {
+        fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_NODE_ID}`);
     }
     requireOneReplyMarker(thread, threadId);
 }
@@ -387,9 +396,9 @@ function assertFinalResolution(thread: ReviewThread | null, threadId: string, re
     if (
         thread?.id !== threadId ||
         !thread.isResolved ||
-        !isAuthorResolutionActor(thread.resolvedByLogin, thread.resolvedByType)
+        !isAuthorResolutionActor(thread.resolvedByNodeId, thread.resolvedByType)
     ) {
-        fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_LOGIN}`);
+        fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_NODE_ID}`);
     }
     if (!hasExpectedReply(thread, replyId)) {
         fail(`review reply receipt ${replyId} is not present on thread ${threadId}`);
@@ -406,8 +415,8 @@ function assertResolvableThread(thread: ReviewThread | null, expectedThreadId: s
     assertRootReviewer(thread, expectedThreadId);
 }
 function assertRootReviewer(thread: ReviewThread, threadId: string): void {
-    if (!isReviewerBotActor(thread.rootAuthorLogin, thread.rootAuthorType)) {
-        fail(`review thread ${threadId} root comment is not authored by ${REVIEWER_BOT_LOGIN}`);
+    if (!isReviewerBotActor(thread.rootAuthorNodeId, thread.rootAuthorType)) {
+        fail(`review thread ${threadId} root comment is not authored by ${REVIEWER_BOT_NODE_ID}`);
     }
     if (
         typeof thread.rootCommentId !== 'string' ||
@@ -456,7 +465,7 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
     let head: string | undefined;
     for (;;) {
         const connection = cursor === undefined ? 'reviewThreads(first:100)' : 'reviewThreads(first:100,after:$cursor)';
-        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid ${connection}{nodes{id isResolved resolvedBy{login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid ${connection}{nodes{id isResolved resolvedBy{id login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -490,7 +499,7 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
             ): candidate is {
                 id?: unknown;
                 isResolved?: unknown;
-                resolvedBy?: { login?: unknown; __typename?: unknown } | null;
+                resolvedBy?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
             } =>
                 typeof candidate === 'object' &&
                 candidate !== null &&
@@ -502,6 +511,7 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
                 thread: inspectThreadComments(
                     requestedThreadId,
                     selected.isResolved,
+                    selected.resolvedBy?.id,
                     selected.resolvedBy?.login,
                     selected.resolvedBy?.__typename,
                     gh
@@ -522,6 +532,7 @@ export function inspectReviewThread(number: number, requestedThreadId: string, g
 function inspectThreadComments(
     threadId: string,
     isResolved: unknown,
+    resolvedByNodeId: unknown,
     resolvedByLogin: unknown,
     resolvedByType: unknown,
     gh: Gh
@@ -534,7 +545,7 @@ function inspectThreadComments(
     const comments: ReviewComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$threadId){... on PullRequestReviewThread{id ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `threadId=${threadId}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -576,10 +587,12 @@ function inspectThreadComments(
     return {
         id: threadId,
         isResolved,
+        resolvedByNodeId: typeof resolvedByNodeId === 'string' ? resolvedByNodeId : null,
         resolvedByLogin: typeof resolvedByLogin === 'string' ? resolvedByLogin : null,
         resolvedByType: typeof resolvedByType === 'string' ? resolvedByType : null,
         rootCommentId: root?.id ?? null,
         rootCommentFullDatabaseId: root?.fullDatabaseId ?? null,
+        rootAuthorNodeId: root?.authorNodeId ?? null,
         rootAuthorLogin: root?.authorLogin ?? null,
         rootAuthorType: root?.authorType ?? null,
         comments,
@@ -590,7 +603,7 @@ function toReviewComment(value: unknown): ReviewComment {
         id?: unknown;
         fullDatabaseId?: unknown;
         body?: unknown;
-        author?: { login?: unknown; __typename?: unknown } | null;
+        author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
     };
     if (typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId) || typeof comment.body !== 'string') {
         fail('invalid review comment');
@@ -599,6 +612,7 @@ function toReviewComment(value: unknown): ReviewComment {
         id: comment.id,
         fullDatabaseId: comment.fullDatabaseId,
         body: comment.body,
+        authorNodeId: typeof comment.author?.id === 'string' ? comment.author.id : null,
         authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
         authorType: typeof comment.author?.__typename === 'string' ? comment.author.__typename : null,
     };
@@ -606,7 +620,7 @@ function toReviewComment(value: unknown): ReviewComment {
 function mutationReply(threadId: string, gh: Gh): ReviewReply {
     const clientMutationId = replyClientMutationId(threadId);
     const query =
-        'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename}}}}';
+        'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}}}}}';
     const response = graphql(
         gh,
         query,
@@ -620,28 +634,36 @@ function mutationReply(threadId: string, gh: Gh): ReviewReply {
                     id?: unknown;
                     fullDatabaseId?: unknown;
                     body?: unknown;
-                    author?: { login?: unknown; __typename?: unknown } | null;
+                    author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
                 };
             };
         };
     };
     const comment = response.data?.addPullRequestReviewThreadReply?.comment;
+    const authorNodeId = typeof comment?.author?.id === 'string' ? comment.author.id : null;
     const authorLogin = typeof comment?.author?.login === 'string' ? comment.author.login : null;
     const authorType = typeof comment?.author?.__typename === 'string' ? comment.author.__typename : null;
     if (
         comment?.body !== 'Done' ||
         typeof comment.id !== 'string' ||
         !isDecimalId(comment.fullDatabaseId) ||
-        !isAuthorBotActor(authorLogin, authorType) ||
+        !isAuthorBotActor(authorNodeId, authorType) ||
         response.data?.addPullRequestReviewThreadReply?.clientMutationId !== clientMutationId
     ) {
         fail(`add review-thread reply returned an invalid result for ${threadId}`);
     }
-    return { id: comment.id, fullDatabaseId: comment.fullDatabaseId, authorLogin, authorType, clientMutationId };
+    return {
+        id: comment.id,
+        fullDatabaseId: comment.fullDatabaseId,
+        authorNodeId,
+        authorLogin,
+        authorType,
+        clientMutationId,
+    };
 }
 function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
     const clientMutationId = resolveClientMutationId(threadId);
-    const query = `mutation($threadId:ID!,$clientMutationId:String!){resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId}){clientMutationId thread{id isResolved resolvedBy{login __typename}}}}`;
+    const query = `mutation($threadId:ID!,$clientMutationId:String!){resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId}){clientMutationId thread{id isResolved resolvedBy{id login __typename}}}}`;
     const response = graphql(
         gh,
         query,
@@ -654,12 +676,13 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
                 thread?: {
                     id?: unknown;
                     isResolved?: unknown;
-                    resolvedBy?: { login?: unknown; __typename?: unknown } | null;
+                    resolvedBy?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
                 };
             };
         };
     };
     const receipt = response.data?.resolveReviewThread;
+    const resolvedByNodeId = receipt?.thread?.resolvedBy?.id;
     const resolvedByLogin = receipt?.thread?.resolvedBy?.login;
     if (
         receipt?.clientMutationId !== clientMutationId ||
@@ -669,11 +692,12 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
         fail(`resolveReviewThread returned an invalid result for ${threadId}`);
     }
     const resolvedByType = receipt?.thread?.resolvedBy?.__typename;
-    if (typeof resolvedByType !== 'string' || !isAuthorResolutionActor(resolvedByLogin, resolvedByType)) {
+    if (typeof resolvedByType !== 'string' || !isAuthorResolutionActor(resolvedByNodeId, resolvedByType)) {
         fail(`resolveReviewThread returned an invalid result for ${threadId}`);
     }
     return {
-        resolvedByLogin: authorBotLogin(resolvedByLogin),
+        resolvedByNodeId: authorBotNodeId(resolvedByNodeId),
+        resolvedByLogin: typeof resolvedByLogin === 'string' ? resolvedByLogin : '',
         resolvedByType,
         clientMutationId,
     };
@@ -681,7 +705,7 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
 export function deleteReply(replyId: string, gh: Gh): void {
     const response = graphql(
         gh,
-        'mutation($replyId:ID!,$clientMutationId:String!){deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReviewComment{id body author{login __typename}}}}',
+        'mutation($replyId:ID!,$clientMutationId:String!){deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReviewComment{id body author{login __typename ... on Bot{id}}}}}',
         ['-F', `replyId=${replyId}`, '-f', `clientMutationId=${replyId}`],
         'delete review reply'
     ) as {
@@ -691,7 +715,7 @@ export function deleteReply(replyId: string, gh: Gh): void {
                 pullRequestReviewComment?: {
                     id?: unknown;
                     body?: unknown;
-                    author?: { login?: unknown; __typename?: unknown } | null;
+                    author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
                 } | null;
             };
         };
@@ -702,7 +726,7 @@ export function deleteReply(replyId: string, gh: Gh): void {
         receipt.pullRequestReviewComment?.id !== replyId ||
         receipt.pullRequestReviewComment.body !== 'Done' ||
         !isAuthorBotActor(
-            receipt.pullRequestReviewComment.author?.login,
+            receipt.pullRequestReviewComment.author?.id,
             receipt.pullRequestReviewComment.author?.__typename
         )
     ) {
@@ -727,8 +751,8 @@ async function main(): Promise<number> {
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'author' });
     try {
-        if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
-            fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
+        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
         assertRequiredRepository(
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
@@ -736,7 +760,13 @@ async function main(): Promise<number> {
                 cwd: primaryRoot,
             })
         );
-        resolveReviewThread(parsed.number, parsed.threadId, parsed.head, auth.minted.login, shellPort(auth.session));
+        resolveReviewThread(
+            parsed.number,
+            parsed.threadId,
+            parsed.head,
+            auth.minted.actorNodeId,
+            shellPort(auth.session)
+        );
         return 0;
     } finally {
         auth.session.dispose();

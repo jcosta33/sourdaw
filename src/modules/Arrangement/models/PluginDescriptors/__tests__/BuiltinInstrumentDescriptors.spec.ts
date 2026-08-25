@@ -71,4 +71,10 @@ describe('BuiltinInstrumentDescriptors', () => {
         expect(radiationParameters).toHaveLength(2);
         expect(radiationParameters.map((parameter) => parameter.automatable)).toEqual([true, true]);
     });
+
+    it('keeps Grand Boule master travel inside the native safety clamp', () => {
+        const master = GRAND_BOULE_DESCRIPTOR.parameters.find((parameter) => parameter.id === 'masterGain');
+
+        expect(master).toMatchObject({ minValue: 0, maxValue: 1, defaultValue: 0.1 });
+    });
 });

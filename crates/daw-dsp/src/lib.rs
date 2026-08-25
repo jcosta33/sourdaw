@@ -3,7 +3,6 @@ pub mod crumbs;
 pub mod crust;
 pub mod fermenter;
 pub mod gluten;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod grand_boule;
 pub mod grinder;
 pub mod knead;

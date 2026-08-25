@@ -256,7 +256,7 @@ describe('WebLLM provider artifact admission', () => {
             initWebLlmEngine('Qwen3-1.7B-q4f16_1-MLC', {
                 downloadConsent: false,
             })
-        ).rejects.toThrow('Browser WebLLM model artifacts are not admitted in this release');
+        ).rejects.toThrow(/explicit.*consent/i);
 
         expect(createWebWorkerEngineMock).not.toHaveBeenCalled();
         expect(terminateWorkerMock).not.toHaveBeenCalled();
@@ -267,7 +267,7 @@ describe('WebLLM provider artifact admission', () => {
             initWebLlmEngine('mutable-or-unknown-model', {
                 downloadConsent: true,
             })
-        ).rejects.toThrow('Browser WebLLM model artifacts are not admitted in this release');
+        ).rejects.toThrow(/not admitted by this Sourdaw release/i);
 
         expect(createWebWorkerEngineMock).not.toHaveBeenCalled();
         expect(cacheEntries.size).toBe(0);

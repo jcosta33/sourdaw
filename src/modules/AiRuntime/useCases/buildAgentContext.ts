@@ -7,8 +7,16 @@ const MAX_CONTEXT_TARGETS = 64;
 const MAX_VALIDATION_FAILURES = 16;
 const MAX_SELECTED_CLIPS = 16;
 const MAX_IMPORTED_STRING_LENGTH = 512;
-const MAX_RECEIPT_SUMMARY_LENGTH = 16_384;
 const MAX_RECEIPTS = 16;
+/**
+ * Receipt summaries carry application-owned tool evidence, not imported project or prompt text, so
+ * they hold their own budget instead of the general imported-string bound. The budget is the total
+ * across every retained receipt, which keeps the worst-case message contribution identical to the
+ * previous MAX_RECEIPTS * MAX_IMPORTED_STRING_LENGTH aggregate while letting a single receipt spend
+ * the whole allowance. This constant is the only owner of that budget: callers pass whole summaries
+ * and read the reported `truncated` flag.
+ */
+const MAX_RECEIPT_EVIDENCE_LENGTH = 8_192;
 const MAX_MEASUREMENTS = 16;
 
 function isRelevantLock(
@@ -63,8 +71,12 @@ function canonicalJson(value: unknown): string {
     return JSON.stringify(value);
 }
 
-function boundedString(value: string, maxLength = MAX_IMPORTED_STRING_LENGTH): { value: string; truncated: boolean } {
+function boundedTo(value: string, maxLength: number): { value: string; truncated: boolean } {
     return { value: value.slice(0, maxLength), truncated: value.length > maxLength };
+}
+
+function boundedString(value: string): { value: string; truncated: boolean } {
+    return boundedTo(value, MAX_IMPORTED_STRING_LENGTH);
 }
 
 function digest(value: unknown): string {
@@ -202,6 +214,13 @@ function snapshotProjectData(projectData: ReturnType<typeof buildProjectData>) {
     };
 }
 
+// Section identity stays in the stored evidence snapshot for delta diffing. The
+// provider-bound payload grounds sections by name and beat range only, so raw
+// internal section ids never enter a provider request.
+function toProviderBoundSection(section: ReturnType<typeof buildProjectData>['sections'][number]) {
+    return { name: section.name, startBeat: section.startBeat, endBeat: section.endBeat };
+}
+
 function buildRevisionPayload(input: {
     projectData: ReturnType<typeof buildProjectData>;
     snapshot: AgentContextEvidence['snapshot'];
@@ -219,7 +238,7 @@ function buildRevisionPayload(input: {
     if (!compatiblePrior) {
         return {
             delta: { mode: 'full' as const, baseRevision: null, currentRevision: input.revision },
-            projectPayload: input.projectData,
+            projectPayload: { ...input.projectData, sections: input.projectData.sections.map(toProviderBoundSection) },
         };
     }
     const priorTargets = new Map(priorSnapshot.selectableTargets.map((target) => [target.id, target.digest]));
@@ -254,7 +273,7 @@ function buildRevisionPayload(input: {
                 : { selectedTrack: input.projectData.selectedTrack }),
             ...(changedTargets.length === 0 ? {} : { selectableTargets: changedTargets }),
             ...(removedTargetIds.length === 0 ? {} : { removedTargetIds }),
-            ...(changedSections.length === 0 ? {} : { sections: changedSections }),
+            ...(changedSections.length === 0 ? {} : { sections: changedSections.map(toProviderBoundSection) }),
             ...(removedSectionIds.length === 0 ? {} : { removedSectionIds }),
         },
     };
@@ -275,9 +294,14 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         revision,
     });
     const validationFailures = (input.validationFailures ?? []).slice(-MAX_VALIDATION_FAILURES);
-    const receipts = (input.receipts ?? []).slice(-MAX_RECEIPTS).map((receipt) => ({
+    const retainedReceipts = (input.receipts ?? []).slice(-MAX_RECEIPTS);
+    const receiptSummaryBudget =
+        retainedReceipts.length === 0
+            ? MAX_RECEIPT_EVIDENCE_LENGTH
+            : Math.floor(MAX_RECEIPT_EVIDENCE_LENGTH / retainedReceipts.length);
+    const receipts = retainedReceipts.map((receipt) => ({
         id: boundedString(receipt.id).value,
-        summary: boundedString(receipt.summary, MAX_RECEIPT_SUMMARY_LENGTH),
+        summary: boundedTo(receipt.summary, receiptSummaryBudget),
     }));
     const capabilitySchemas = (input.capabilitySchemas ?? []).slice(0, MAX_CONTEXT_TARGETS).map((schema) => ({
         name: boundedString(schema.name).value,

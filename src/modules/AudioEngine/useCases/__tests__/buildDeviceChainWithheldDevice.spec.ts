@@ -9,21 +9,8 @@ import { type NativeDspNode } from '../../repositories/deviceStrategy/nativeDspD
 import { buildDeviceChain } from '../buildDeviceChain';
 
 /**
- * What `buildDeviceChain` does with a device release admission refuses, for the
- * two properties the Grand Boule specs cannot reach.
- *
- * Both are load-bearing and both were previously unobservable, because
- * `grand-boule` is the only withheld type today and it is an instrument sitting
- * alone on its track. Under that one fixture the withheld stand-in could
- * declare `acceptsNotes: true` unconditionally and could be built at zero gain,
- * and every spec would still pass.
- *
- * The withheld type here is injected rather than real, on purpose. Withholding
- * is a product decision and its membership list changes; the reasoning in
- * [ADR 0032](../../../../../.agents/decisions/0032-withhold-grand-boule-from-release.md)
- * is about patent and provenance risk, which is not instrument-specific. The
- * next device withheld may well be an effect, and these are the two ways that
- * would go wrong.
+ * Synthetic effect and instrument holds pin both release-admission branches
+ * without coupling this test to the current release set.
  */
 
 const { mocks } = vi.hoisted(() => ({
@@ -38,10 +25,8 @@ vi.mock('#/infra/logger/appLogger', () => ({
 }));
 
 /**
- * One withheld effect and one withheld instrument, neither of them real. The
- * production set is deliberately not used: a fixture that named `grand-boule`
- * would stop testing the day it is released, and could never cover the effect
- * case at all.
+ * One synthetic withheld effect and instrument cover both branches without
+ * coupling the test to the current release set.
  */
 const WITHHELD_TYPES = new Set(['withheld-effect', 'withheld-instrument']);
 vi.mock('#/infra/release/deviceReleaseAdmission', () => ({

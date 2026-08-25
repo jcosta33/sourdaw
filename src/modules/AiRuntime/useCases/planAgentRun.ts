@@ -23,6 +23,14 @@ type PlanAgentRunInput = {
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
     providerProposal?: AgentRunProviderProposal;
+    /** Application-derived scope containing only the direct targets the provider was required to name. */
+    providerKnownScope?: AgentRunScope;
+    /**
+     * Target ids this batch mints for objects that do not exist yet. The application assigns them
+     * after the provider has already answered, so no proposal can name them and they are excluded
+     * from both sides of the scope comparison below.
+     */
+    applicationAssignedTargetIds?: readonly string[];
     /** Provider-originated actions cannot reach plan persistence without semantic evidence. */
     requireProviderProposal?: boolean;
     readyAssetIds?: readonly string[];
@@ -38,7 +46,56 @@ type PlanAgentRunResult =
     | { status: 'rejected'; reason: string };
 
 function sameScope(left: AgentRunScope, right: AgentRunScope): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    const hasExactIdSet = (leftIds: readonly string[], rightIds: readonly string[]): boolean => {
+        if (leftIds.length !== rightIds.length) {
+            return false;
+        }
+        const leftIdSet = new Set(leftIds);
+        const rightIdSet = new Set(rightIds);
+        return (
+            leftIdSet.size === leftIds.length &&
+            rightIdSet.size === rightIds.length &&
+            rightIds.every((id) => leftIdSet.has(id))
+        );
+    };
+    return (
+        hasExactIdSet(left.targetIds, right.targetIds) &&
+        hasExactIdSet(left.protectedTargetIds, right.protectedTargetIds) &&
+        JSON.stringify(left.targetRanges) === JSON.stringify(right.targetRanges) &&
+        JSON.stringify(left.protectedRanges) === JSON.stringify(right.protectedRanges)
+    );
+}
+
+function compareTargetIds(left: string, right: string): number {
+    if (left === right) {
+        return 0;
+    }
+    return left < right ? -1 : 1;
+}
+
+function compareRanges(
+    left: AgentRunScope['targetRanges'][number],
+    right: AgentRunScope['targetRanges'][number]
+): number {
+    return left.startBeat - right.startBeat || left.endBeat - right.endBeat;
+}
+
+/**
+ * The portion of a scope a provider can declare, in one canonical form: the ids the application
+ * mints for this batch are removed, every list is sorted, and both sides are rebuilt in the same
+ * key order. The application derives list order from its own batch compilation, so a provider
+ * cannot reproduce it; only membership carries authority, and sorting leaves membership strict
+ * because it preserves every entry, duplicates included.
+ */
+function getProviderKnowableScope(scope: AgentRunScope, applicationAssignedTargetIds: ReadonlySet<string>) {
+    return {
+        targetIds: scope.targetIds
+            .filter((targetId) => !applicationAssignedTargetIds.has(targetId))
+            .sort(compareTargetIds),
+        targetRanges: [...scope.targetRanges].sort(compareRanges),
+        protectedTargetIds: [...scope.protectedTargetIds].sort(compareTargetIds),
+        protectedRanges: [...scope.protectedRanges].sort(compareRanges),
+    };
 }
 
 function isComplex(input: PlanAgentRunInput): boolean {
@@ -124,7 +181,19 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
     ) {
         return { status: 'rejected', reason: 'Provider proposed an unsupported application capability.' };
     }
-    if (input.providerProposal?.scope && !sameScope(input.providerProposal.scope, input.scope)) {
+    const applicationAssignedTargetIds = new Set(input.applicationAssignedTargetIds ?? []);
+    const expectedProviderScope = input.providerKnownScope;
+    if (
+        input.providerProposal?.scope &&
+        !sameScope(
+            expectedProviderScope === undefined
+                ? getProviderKnowableScope(input.providerProposal.scope, applicationAssignedTargetIds)
+                : input.providerProposal.scope,
+            expectedProviderScope === undefined
+                ? getProviderKnowableScope(input.scope, applicationAssignedTargetIds)
+                : expectedProviderScope
+        )
+    ) {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };
     }
     const capabilities = deriveCapabilities(input);

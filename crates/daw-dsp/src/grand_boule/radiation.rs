@@ -1,6 +1,6 @@
 //! Bounded acoustic-radiation model for Grand Boule's lid and microphone view.
 //!
-//! The modal soundboard remains the instrument body. This stage shapes what a
+//! The finite FIR soundboard remains the instrument body. This stage shapes what a
 //! listener hears from that body: a continuous lid transfer and three named,
 //! deliberately parametric listening perspectives. It does not claim measured
 //! microphone brands or coordinates.

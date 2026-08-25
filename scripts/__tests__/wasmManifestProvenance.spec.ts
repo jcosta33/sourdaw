@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { readWasmPackageMetadata, validateWasmPackageMetadata } from '../verify-wasm-artifacts';
 import { wasmArtifacts, type WasmManifest, type WasmPackageManifest } from '../wasm-artifacts';
 
 /**
@@ -139,6 +141,25 @@ describe('parseRebuiltPackageIds', () => {
 
     it('rejects an unrecognised flag', () => {
         expect(() => wasmArtifacts.parseRebuiltPackageIds(['--everything'])).toThrow(/Unrecognised argument/);
+    });
+});
+
+describe('WASM package metadata', () => {
+    it('requires private packages with the Apache-2.0 license', () => {
+        expect(
+            validateWasmPackageMetadata('public/wasm/example/package.json', { private: true, license: 'MIT' })
+        ).toEqual(['public/wasm/example/package.json: internal WASM package must set license: Apache-2.0']);
+    });
+
+    it('rejects duplicate package metadata keys', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-wasm-package-metadata-'));
+        const path = join(root, 'package.json');
+        try {
+            writeFileSync(path, '{"private":false,"private":true,"license":"Apache-2.0"}\n');
+            expect(() => readWasmPackageMetadata(path)).toThrow(`${path}: duplicate key`);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });
 

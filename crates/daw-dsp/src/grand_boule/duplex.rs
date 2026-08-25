@@ -1,4 +1,4 @@
-//! Duplex-scale resonance bank (§7.2).
+//! Duplex-scale resonance bank.
 //!
 //! The duplex scale is the short segment of string between the bridge and
 //! the hitch pin (or capo d'astro). On a grand it is deliberately tuned to
@@ -6,8 +6,8 @@
 //! shimmer of high-frequency sympathetic resonance.
 //!
 //! We model it as a pair of very high-Q biquad resonators at 2× and 3× the
-//! fundamental frequency, active only for keys C4 and above (§7.2). Level
-//! is around −35 dB per the spec.
+//! fundamental frequency, active only for keys C4 and above, at roughly
+//! -35 dB.
 
 use super::parameters::{has_duplex_resonance, key_fundamental_hz};
 use crate::primitives::flush_denormal;

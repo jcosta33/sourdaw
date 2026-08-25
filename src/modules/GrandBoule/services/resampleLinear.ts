@@ -1,7 +1,7 @@
 /**
  * Service: linear sample-rate conversion for raw mono PCM.
  *
- * Grand Boule's hybrid sampled-attack pathway (§3.3) plays an attack-transient
+ * Grand Boule's sampled-attack pathway plays an attack-transient
  * clip back at the engine's sample rate. A clip authored at a different rate
  * (e.g. a 48 kHz capture loaded onto a 44.1 kHz engine) would otherwise be
  * replayed frame-for-frame and sound ~9 % sharp/flat. This converts the clip

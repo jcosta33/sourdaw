@@ -93,22 +93,49 @@ describe('downloadModel', () => {
         });
 
         await downloadModel({
-            modelId: 'ddsp-violin',
-            family: 'ddsp',
-            url: 'https://cdn.example.com/ddsp-violin.zip',
+            modelId: 'kokoro-compact',
+            family: 'kokoro',
+            url: 'https://cdn.example.com/kokoro-compact.zip',
             sizeBytes: 10_000,
         });
 
         expect(download_model_repo).toHaveBeenCalledWith({
             spec: {
-                modelId: 'ddsp-violin',
-                family: 'ddsp',
-                url: 'https://cdn.example.com/ddsp-violin.zip',
+                modelId: 'kokoro-compact',
+                family: 'kokoro',
+                url: 'https://cdn.example.com/kokoro-compact.zip',
                 sha256: undefined,
                 sizeBytes: 10_000,
             },
             onProgress: undefined,
         });
+    });
+
+    it('rejects arbitrary DDSP downloads before repository, status, or logging side effects', async () => {
+        const download_model_repo = vi.fn<DownloadModelRepo>().mockResolvedValue(undefined);
+        const get_storage_status = vi.fn<GetStorageStatus>().mockResolvedValue(storage_status);
+        const logger = create_logger_mock();
+        const state_before = modelRegistryStore.value;
+
+        injectDependencies(downloadModel, {
+            logger,
+            downloadModelRepo: download_model_repo,
+            getStorageStatus: get_storage_status,
+        });
+
+        await expect(
+            downloadModel({
+                modelId: 'attacker-controlled-model',
+                family: 'ddsp',
+                url: 'https://attacker.example/arbitrary-checkpoint.bin',
+                sizeBytes: 1,
+            })
+        ).rejects.toThrow(/dedicated DDSP instrument/i);
+
+        expect(download_model_repo).not.toHaveBeenCalled();
+        expect(get_storage_status).not.toHaveBeenCalled();
+        expect(logger.info).not.toHaveBeenCalled();
+        expect(modelRegistryStore.value).toBe(state_before);
     });
 
     it('propagates a repo failure and does NOT refresh storage usage', async () => {

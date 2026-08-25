@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID as AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
 import {
     githubTrackerIssuePort,
     inspectTrackerIssue,
@@ -87,6 +87,7 @@ function fakePort(initial: TrackerIssue[]) {
             const comment = {
                 id: `IC_${value.number}`,
                 body: commentBody,
+                authorNodeId: AUTHOR_BOT_LOGIN,
                 authorLogin: AUTHOR_BOT_LOGIN,
                 authorType: 'Bot',
             };
@@ -393,7 +394,7 @@ describe('tracker issue reconciliation', () => {
     it('rejects completion by a non-bot caller before inspecting the issue', () => {
         const { port, calls } = fakePort([issue(2372)]);
 
-        expect(() => completeTrackerIssue(2372, 'jcosta33', port)).toThrow(/authenticated author login/i);
+        expect(() => completeTrackerIssue(2372, 'BOT_other', port)).toThrow(/authenticated author actor/i);
         expect(calls).toEqual([]);
     });
 
@@ -416,6 +417,7 @@ describe('tracker issue reconciliation', () => {
             {
                 id: 'IC_835',
                 body: 'Superseded by #2372.',
+                authorNodeId: AUTHOR_BOT_LOGIN,
                 authorLogin: AUTHOR_BOT_LOGIN,
                 authorType: 'Bot',
             },
@@ -502,6 +504,7 @@ describe('tracker issue reconciliation', () => {
         const marker = {
             id: 'IC_835',
             body: 'Superseded by #2372.',
+            authorNodeId: AUTHOR_BOT_LOGIN,
             authorLogin: AUTHOR_BOT_LOGIN,
             authorType: 'Bot',
         };
@@ -524,6 +527,7 @@ describe('tracker issue reconciliation', () => {
         const marker = {
             id: 'IC_835',
             body: 'Superseded by #2372.',
+            authorNodeId: AUTHOR_BOT_LOGIN,
             authorLogin: AUTHOR_BOT_LOGIN,
             authorType: 'Bot',
         };
@@ -546,6 +550,7 @@ describe('tracker issue reconciliation', () => {
         const marker = {
             id: 'IC_835',
             body: 'Superseded by #2372.',
+            authorNodeId: AUTHOR_BOT_LOGIN,
             authorLogin: AUTHOR_BOT_LOGIN,
             authorType: 'Bot',
         };
@@ -568,6 +573,7 @@ describe('tracker issue reconciliation', () => {
         const foreignMarker = {
             id: 'IC_835_foreign',
             body: 'Superseded by #2372.',
+            authorNodeId: 'U_foreign',
             authorLogin: 'jcosta33',
             authorType: 'User',
         };
@@ -588,6 +594,7 @@ describe('tracker issue reconciliation', () => {
         port.comment = (_number, commentBody) => ({
             id: '',
             body: commentBody,
+            authorNodeId: AUTHOR_BOT_LOGIN,
             authorLogin: AUTHOR_BOT_LOGIN,
             authorType: 'Bot',
         });
@@ -618,8 +625,8 @@ describe('tracker issue reconciliation', () => {
     it('rejects any caller other than the authenticated author bot before inspection', () => {
         const { port, calls } = fakePort([issue(2372)]);
         expect(() =>
-            reconcileTrackerIssue({ issueNumber: 2372, expectedBodySha256: bodySha256, nextBody }, 'jcosta33', port)
-        ).toThrow(/authenticated author login/i);
+            reconcileTrackerIssue({ issueNumber: 2372, expectedBodySha256: bodySha256, nextBody }, 'BOT_other', port)
+        ).toThrow(/authenticated author actor/i);
         expect(calls).toEqual([]);
     });
 });

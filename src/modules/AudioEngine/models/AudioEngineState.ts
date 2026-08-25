@@ -322,7 +322,7 @@ export type BuiltinDeviceNode = {
             slide: number,
             sampleFrame?: number
         ) => void;
-        setParam: (name: string, value: number) => void;
+        setParam: (name: string, value: number, sampleFrame?: number) => void;
         setSustain: (position: number) => void;
         setUnaCorda: (engaged: boolean) => void;
         setSostenuto: (engaged: boolean) => void;
