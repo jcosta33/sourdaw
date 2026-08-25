@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type getVersionedCommandBatchCommitProof } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -90,8 +91,6 @@ const stemAction = {
         ],
     },
 } satisfies AppAction;
-const commandBatch = { serialized: 'command-batch', authority: { projectId: 'revision-1' } } as never;
-
 const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
 const grants = {
     allowedOperationPrefixes: ['togglePlayback'],
@@ -105,6 +104,25 @@ const grants = {
     remoteGeneration: false,
     autoCommit: false,
 };
+const commandBatch = {
+    serialized: 'command-batch',
+    authority: {
+        projectId: 'project:test',
+        baseRevision: 'revision-1',
+        scope,
+        grants,
+        budgets: {
+            maxCommands: 1,
+            maxCreatedTracks: 1,
+            maxDeletedObjects: 0,
+            maxAffectedTracks: 1,
+            maxAffectedClips: 1,
+            maxAutomationPoints: 0,
+            maxImportedAssets: 1,
+            maxRenderJobs: 0,
+        },
+    },
+} satisfies Parameters<typeof getVersionedCommandBatchCommitProof>[0];
 
 function seedRun(phase: 'planning' | 'waiting-for-approval' = 'planning'): void {
     agentRunLifecycle.create({
@@ -242,6 +260,7 @@ describe('executePromptActionGroup', () => {
                 })
             ).resolves.toEqual({ status });
 
+            expect(mocks.getVersionedCommandBatchCommitProof).toHaveBeenCalledExactlyOnceWith(commandBatch);
             expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
                 `stem-promotion:${RUN_ID}:${BATCH_ID}`,
                 [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }],

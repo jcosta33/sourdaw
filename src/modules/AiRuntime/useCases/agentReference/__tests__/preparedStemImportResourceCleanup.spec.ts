@@ -192,6 +192,7 @@ describe('prepared stem import resource cleanup', () => {
         await lease?.prepareForCommit?.(commitProofCommandBatch);
         expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
         expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.getVersionedCommandBatchCommitProof).toHaveBeenCalledExactlyOnceWith(commitProofCommandBatch);
 
         await lease?.commit?.();
         await lease?.retain?.();
