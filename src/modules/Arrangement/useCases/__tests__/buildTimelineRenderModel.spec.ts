@@ -150,11 +150,11 @@ describe('buildTimelineRenderModel', () => {
     it('isolates reactive track store listener failures and cleans up subscriptions', async () => {
         const { trackStore } = await import('../../stores/trackStore');
         const previous = trackStore.value;
-        const failingSubscriber = vi.fn<TrackStoreSubscribe>(() => {
+        const failingSubscriber = vi.fn<Parameters<TrackStoreSubscribe>[0]>(() => {
             throw new Error('legacy subscriber failed');
         });
         const laterSubscriber = vi.fn();
-        const failingReactSubscriber = vi.fn<TrackStoreSubscribeReact>(() => {
+        const failingReactSubscriber = vi.fn<Parameters<TrackStoreSubscribeReact>[0]>(() => {
             throw new Error('React subscriber failed');
         });
         const laterReactSubscriber = vi.fn();
