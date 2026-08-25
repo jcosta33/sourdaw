@@ -53,11 +53,13 @@ Hooks and **views** **do not** use `inject()`. They subscribe to stores via cont
 
 ## Error handling
 
-Use cases fail by throwing typed errors — classes extending `Error`, defined in the module's
-`errors/` folder or beside the code that raises them. Repositories translate I/O failures into
-typed errors at their boundary, so raw storage, network, and bridge failures never leak past the
-repository root. Presentation catches at the UI boundary and renders a structured failure state.
-Do not introduce `Result`-returning use cases; thrown typed errors are the contract.
+Use cases fail by throwing typed errors — classes extending `Error`, or tagged errors built with
+`createAppError` from `#/infra/errors` — defined in the module's `errors/` folder or beside the
+code that raises them. Repositories translate I/O failures into typed errors at their boundary, so
+raw storage, network, and bridge failures never leak past the repository root. Presentation
+catches at the UI boundary and renders a structured failure state. Do not introduce
+`Result`-returning use cases; thrown typed errors are the contract. A few legacy result-shaped
+returns predate this rule; migrate them opportunistically, but they are not defects by themselves.
 
 ---
 
