@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
+import { expectExternalProjectLink } from '../../__tests__/expectExternalProjectLink';
 import { AlphaNoticeDialog } from '../AlphaNoticeDialog';
 
 describe('AlphaNoticeDialog', () => {
@@ -23,19 +24,22 @@ describe('AlphaNoticeDialog', () => {
         expect(screen.getByText(/Alpha Version 0\.1\.0/)).toBeInTheDocument();
     });
 
-    it('renders the Discord join button', () => {
-        const windowOpen = vi.spyOn(window, 'open').mockImplementation(() => null);
+    it('routes feedback and bug reports to GitHub', () => {
         render(<AlphaNoticeDialog open onOpenChange={vi.fn()} />);
 
-        const discordBtn = screen.getByRole('button', { name: /Join the Bakery/ });
-        fireEvent.click(discordBtn);
-
-        expect(windowOpen).toHaveBeenCalledWith('https://discord.gg/bJHmmfY4', '_blank');
-        windowOpen.mockRestore();
+        expectExternalProjectLink(
+            screen.getByRole('link', { name: /Discussions/ }),
+            'https://github.com/jcosta33/sourdaw/discussions'
+        );
+        expectExternalProjectLink(
+            screen.getByRole('link', { name: /Report a bug/ }),
+            'https://github.com/jcosta33/sourdaw/issues'
+        );
     });
 
-    it('renders the explanatory body text mentioning the Talk to us button', () => {
+    it('renders the explanatory body text mentioning GitHub feedback routes', () => {
         render(<AlphaNoticeDialog open onOpenChange={vi.fn()} />);
-        expect(screen.getByText(/Talk to us/)).toBeInTheDocument();
+        expect(screen.getByText(/GitHub Discussion/)).toBeInTheDocument();
+        expect(screen.getByText(/GitHub Issues/)).toBeInTheDocument();
     });
 });
