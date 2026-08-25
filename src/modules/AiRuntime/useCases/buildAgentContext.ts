@@ -1,6 +1,7 @@
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
+import { buildLlmActionUserMessage, type LlmActionCapabilityData } from '../transformers/llmActionBridge';
 
 const MAX_CONTEXT_TARGETS = 64;
 const MAX_VALIDATION_FAILURES = 16;
@@ -46,7 +47,7 @@ type BuildAgentContextInput = {
     run?: { grants: AgentRunGrants; budgets: AgentRunBudgets };
     receipts?: Array<{ id: string; summary: string }>;
     capabilitySchemas?: Array<{ name: string; schemaVersion: number }>;
-    capabilityData?: unknown;
+    capabilityData?: LlmActionCapabilityData;
     validationFailures?: Array<{ code: string }>;
     measurements?: Array<{ name: string; value: number; unit: string }>;
     priorEvidence?: AgentContextEvidence | null;
@@ -144,9 +145,15 @@ function buildProjectData(context: ProjectContext) {
     const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId) ?? null;
     const selectableTargets = context.tracks.slice(0, MAX_CONTEXT_TARGETS).map((track) => ({
         id: track.id,
-        name: { trust: 'untrusted_imported_string', ...boundedString(track.name) },
+        name: { trust: 'untrusted_imported_string' as const, ...boundedString(track.name) },
         kind: track.kind,
         frozen: track.frozen ?? false,
+    }));
+    const sections = (context.sections ?? []).slice(0, MAX_CONTEXT_TARGETS).map((section) => ({
+        id: section.id,
+        name: { trust: 'untrusted_imported_string' as const, ...boundedString(section.name) },
+        startBeat: section.startBeat,
+        endBeat: section.endBeat,
     }));
     return {
         tempo: context.tempo,
@@ -154,12 +161,12 @@ function buildProjectData(context: ProjectContext) {
         selectedTrack: selectedTrack
             ? {
                   id: selectedTrack.id,
-                  name: { trust: 'untrusted_imported_string', ...boundedString(selectedTrack.name) },
+                  name: { trust: 'untrusted_imported_string' as const, ...boundedString(selectedTrack.name) },
                   kind: selectedTrack.kind,
                   frozen: selectedTrack.frozen ?? false,
                   clips: selectedTrack.clips.slice(0, MAX_SELECTED_CLIPS).map((clip) => ({
                       id: clip.id,
-                      name: { trust: 'untrusted_imported_string', ...boundedString(clip.name) },
+                      name: { trust: 'untrusted_imported_string' as const, ...boundedString(clip.name) },
                       locked: clip.locked ?? false,
                       startBeat: clip.startBeat,
                       endBeat: clip.endBeat,
@@ -168,8 +175,10 @@ function buildProjectData(context: ProjectContext) {
               }
             : null,
         selectableTargets,
+        sections,
         targetCount: context.tracks.length,
-        truncated: context.tracks.length > selectableTargets.length,
+        truncated:
+            context.tracks.length > selectableTargets.length || (context.sections?.length ?? 0) > sections.length,
     };
 }
 
@@ -181,12 +190,17 @@ function snapshotProjectData(projectData: ReturnType<typeof buildProjectData>) {
         id: target.id,
         digest: digest(target),
     }));
+    const sections = projectData.sections.map((section) => ({
+        id: section.id,
+        digest: digest(section),
+    }));
     return {
         identity: digest({
             tempo: projectData.tempo,
             timeSignature: projectData.timeSignature,
             selectedTrack,
             selectableTargets,
+            sections,
             targetCount: projectData.targetCount,
             truncated: projectData.truncated,
         }),
@@ -194,9 +208,17 @@ function snapshotProjectData(projectData: ReturnType<typeof buildProjectData>) {
         timeSignature: projectData.timeSignature,
         selectedTrack,
         selectableTargets,
+        sections,
         targetCount: projectData.targetCount,
         truncated: projectData.truncated,
     };
+}
+
+// Section identity stays in the stored evidence snapshot for delta diffing. The
+// provider-bound payload grounds sections by name and beat range only, so raw
+// internal section ids never enter a provider request.
+function toProviderBoundSection(section: ReturnType<typeof buildProjectData>['sections'][number]) {
+    return { name: section.name, startBeat: section.startBeat, endBeat: section.endBeat };
 }
 
 function buildRevisionPayload(input: {
@@ -216,7 +238,7 @@ function buildRevisionPayload(input: {
     if (!compatiblePrior) {
         return {
             delta: { mode: 'full' as const, baseRevision: null, currentRevision: input.revision },
-            projectPayload: input.projectData,
+            projectPayload: { ...input.projectData, sections: input.projectData.sections.map(toProviderBoundSection) },
         };
     }
     const priorTargets = new Map(priorSnapshot.selectableTargets.map((target) => [target.id, target.digest]));
@@ -227,6 +249,14 @@ function buildRevisionPayload(input: {
     const removedTargetIds = priorSnapshot.selectableTargets
         .filter((target) => !currentTargetIds.has(target.id))
         .map((target) => target.id);
+    const priorSections = new Map((priorSnapshot.sections ?? []).map((section) => [section.id, section.digest]));
+    const changedSections = input.projectData.sections.filter(
+        (section) => priorSections.get(section.id) !== digest(section)
+    );
+    const currentSectionIds = new Set((input.snapshot.sections ?? []).map((section) => section.id));
+    const removedSectionIds = (priorSnapshot.sections ?? [])
+        .filter((section) => !currentSectionIds.has(section.id))
+        .map((section) => section.id);
     return {
         delta: {
             mode: 'delta' as const,
@@ -243,6 +273,8 @@ function buildRevisionPayload(input: {
                 : { selectedTrack: input.projectData.selectedTrack }),
             ...(changedTargets.length === 0 ? {} : { selectableTargets: changedTargets }),
             ...(removedTargetIds.length === 0 ? {} : { removedTargetIds }),
+            ...(changedSections.length === 0 ? {} : { sections: changedSections.map(toProviderBoundSection) }),
+            ...(removedSectionIds.length === 0 ? {} : { removedSectionIds }),
         },
     };
 }
@@ -328,9 +360,18 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
+    const userMessage = buildLlmActionUserMessage({
+        prompt: input.prompt,
+        context: input.context,
+        projectRevision: input.projectRevision,
+        ...input.capabilityData,
+    });
+
+    const suffix = evidence.delta.mode === 'delta' ? '' : `\n\n${userMessage}`;
+
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
         evidence,
-        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}`,
+        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}${suffix}`,
     };
 }

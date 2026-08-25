@@ -1,9 +1,18 @@
 import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { captureCommandTargetFingerprints, commandBatchPreflightPort } from '#/modules/Command/useCases';
 import { captureProjectRevision, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 export function configureAiWorkflowCommandPreflightFixture(projectId?: string): void {
+    configureRuntimeGraphProjectRevisionValidator(
+        (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+    );
+    configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
     commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
         const documentFingerprints = captureCommandTargetFingerprints({
             document: projectDocument ?? getCrdtDoc('root'),
@@ -41,4 +50,6 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
 
 export function resetAiWorkflowCommandPreflightFixture(): void {
     commandBatchPreflightPort.setProvider(null);
+    configureRuntimeGraphProjectRevisionValidator(null);
+    configureRuntimeGraphTopologyValidator(null);
 }

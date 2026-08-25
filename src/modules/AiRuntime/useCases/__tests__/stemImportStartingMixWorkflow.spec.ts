@@ -864,7 +864,13 @@ describe('stem import and starting mix workflow', () => {
             status: 'cancelled',
         });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        expectPreparedStemResourcesReleased(1);
+        // Two cleanup owners each release the six prepared stems once: the
+        // cancellation-registered temporary-asset cleanup (the run-scoped
+        // safety net) and the pending-confirmation resource lease discard.
+        // Either can be the only owner present, so both fire here; the
+        // underlying buffer-cache removal and staging-lease release are
+        // idempotent, which keeps the double disposal safe.
+        expectPreparedStemResourcesReleased(2);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
@@ -880,7 +886,10 @@ describe('stem import and starting mix workflow', () => {
 
         expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        expectPreparedStemResourcesReleased(1);
+        // Same two-owner release contract as the cancellation test above:
+        // run-scoped temporary-asset cleanup plus confirmation-lease discard,
+        // each releasing the six stems once against idempotent repositories.
+        expectPreparedStemResourcesReleased(2);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 

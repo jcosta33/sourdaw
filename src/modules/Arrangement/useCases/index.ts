@@ -256,3 +256,4 @@ export { getArrangementHandlers } from './getArrangementHandlers';
 export { setDeviceState } from './device/setDeviceState';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
+export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';

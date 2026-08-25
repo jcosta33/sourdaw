@@ -760,13 +760,14 @@ describe('verse Hall send automation workflow', () => {
         });
         const collaboratorState = structuredClone(automationStore.value);
         const pastBeforeConflict = structuredClone(undoStore.value?.past);
-
         await undo();
 
         expect(automationStore.value).toEqual(collaboratorState);
         expect(undoStore.value?.past).toEqual(pastBeforeConflict);
         expect(undoStore.value?.future).toEqual([]);
 
+        // Once the collaborator edit is undone back to the committed state,
+        // the same grouped undo applies: retryability survives the divergence.
         automationStore.set(committed);
         await undo();
         expect(getSendLanes()).toEqual([]);

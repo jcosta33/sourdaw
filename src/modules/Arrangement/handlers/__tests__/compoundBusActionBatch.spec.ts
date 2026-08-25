@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -8,13 +12,19 @@ import {
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
-import { createCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRevision,
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
 import { ArrangementEventBus, setArrangementEventBus } from '../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
+import { runtimeGraphTopology } from '../../useCases/runtimeGraphTopology';
 
 const runtimeMocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
@@ -54,6 +64,10 @@ const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
 describe('compound bus AppAction batch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         createCrdtDoc('root');
@@ -70,6 +84,8 @@ describe('compound bus AppAction batch', () => {
     });
 
     afterEach(() => {
+        configureRuntimeGraphProjectRevisionValidator(null);
+        configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

@@ -29,6 +29,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
+import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -95,6 +96,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// The provider stub derives its plan from the serialized user message instead
+// of returning a canned one, so a capability-serialization regression fails
+// here rather than passing decoupled from the outbound request.
 function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
     const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
     const payload = match?.groups?.payload;
@@ -388,7 +392,7 @@ function getWebLlmUserMessage(): string {
 }
 
 function getWebLlmSystemPrompt(): string {
-    const systemPrompt: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[0];
+    const systemPrompt: unknown = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[0];
     if (typeof systemPrompt !== 'string') {
         throw new TypeError('Expected one WebLLM system prompt');
     }
@@ -747,6 +751,7 @@ describe('whole-project vibe-mix planning', () => {
         expect(providerRequest).toContain(PROMPT);
         expect(providerRequest).toContain('bus-drums');
         expect(providerRequest).toContain('section-chorus-two');
+        expect(providerRequest).toContain('baseRevision');
         expect(providerRequest).toContain('revision_and_selection');
         expect(providerRequest).toContain('application-tool-loop');
         expect(providerRequest).toContain('wholeProjectVibeMixCapability');
@@ -944,13 +949,14 @@ describe('whole-project vibe-mix planning', () => {
         });
         const collaboratorState = structuredClone(automationStore.value);
         const pastBeforeConflict = structuredClone(undoStore.value?.past);
-
         await undo();
 
         expect(automationStore.value).toEqual(collaboratorState);
         expect(undoStore.value?.past).toEqual(pastBeforeConflict);
         expect(undoStore.value?.future).toEqual([]);
 
+        // Once the collaborator edit is undone back to the committed state,
+        // the same grouped undo applies: retryability survives the divergence.
         automationStore.set(committed);
         await undo();
         expect(getGainLanes()).toEqual([]);
