@@ -1,0 +1,20 @@
+scripts/__tests__/releaseProof.spec.ts
+  s_a40848e8f8cca9::t_cf181a856fa37d 1724,2886,2914
+  s_a40848e8f8cca9::t_cf3812dd766a6a 2915-2931,2942
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "228c82f719256973aa589f21d671f51a82d61556",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
