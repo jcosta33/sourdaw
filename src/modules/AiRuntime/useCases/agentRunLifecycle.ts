@@ -13,6 +13,7 @@ import {
     type AgentRunGrants,
     type AgentRunPlan,
     type AgentRunPhase,
+    type AgentRunPreparedStemImportRecovery,
     type AgentRunProviderUsage,
     type AgentRunSagaStep,
     type AgentRunScope,
@@ -20,6 +21,8 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
+
+import { normalizeAgentFailure } from './agentErrorAndSaga';
 
 const DEFAULT_SCOPE: AgentRunScope = {
     targetIds: [],
@@ -199,6 +202,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         committedWork: [],
         retriableWork: [],
         temporaryAssets: [],
+        preparedStemImports: [],
         manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         workLeases: [],
         contextEvidence: null,
@@ -260,25 +264,30 @@ function recordAgentRunPlan(input: {
     plan?: AgentRunPlan;
     recordedAt?: number;
 }): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
-        ...run,
-        phase: 'planning',
-        revisions: { ...run.revisions, planned: input.revision },
-        scope: structuredClone(input.scope),
-        grants: structuredClone(input.grants),
-        budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
-        plan: structuredClone(
-            input.plan ??
-                createLegacyAgentRunPlan({
-                    summary: input.summary,
-                    commandIds: input.commandIds,
-                    serializedBatchIdentity: input.serializedBatchIdentity,
-                    applicationToolReceipts: input.applicationToolReceipts ?? [],
-                    revision: input.revision,
-                    scope: input.scope,
-                })
-        ),
-    }));
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
+        if (TERMINAL_PHASES.has(run.phase)) {
+            throw new Error(`Terminal agent run cannot record a plan: ${run.runId}`);
+        }
+        return {
+            ...run,
+            phase: 'planning',
+            revisions: { ...run.revisions, planned: input.revision },
+            scope: structuredClone(input.scope),
+            grants: structuredClone(input.grants),
+            budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
+            plan: structuredClone(
+                input.plan ??
+                    createLegacyAgentRunPlan({
+                        summary: input.summary,
+                        commandIds: input.commandIds,
+                        serializedBatchIdentity: input.serializedBatchIdentity,
+                        applicationToolReceipts: input.applicationToolReceipts ?? [],
+                        revision: input.revision,
+                        scope: input.scope,
+                    })
+            ),
+        };
+    });
 }
 
 function recordAgentRunDecision(input: { runId: string; decision: AgentRunDecision; recordedAt?: number }): AgentRun {
@@ -720,6 +729,89 @@ function registerAgentRunTemporaryAsset(input: {
     }));
 }
 
+function recordAgentRunPreparedStemImportRecovery(input: {
+    runId: string;
+    recovery: AgentRunPreparedStemImportRecovery;
+    recordedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
+        const resourceIds = new Set(input.recovery.resources.map((resource) => resource.audioBufferId));
+        const otherRecoveryResourceIds = new Set(
+            run.preparedStemImports
+                .filter((recovery) => recovery.batchId !== input.recovery.batchId)
+                .flatMap((recovery) => recovery.resources.map((resource) => resource.audioBufferId))
+        );
+        if (
+            resourceIds.size !== input.recovery.resources.length ||
+            input.recovery.resources.some((resource) => otherRecoveryResourceIds.has(resource.audioBufferId)) ||
+            input.recovery.resources.some(
+                (resource) =>
+                    !run.temporaryAssets.some(
+                        (asset) =>
+                            asset.assetId === resource.audioBufferId &&
+                            asset.kind === 'import' &&
+                            asset.cleanupOwner === 'stem-import-preparation' &&
+                            asset.status !== 'released'
+                    )
+            )
+        ) {
+            throw new Error(`Prepared stem recovery does not match live run assets: ${input.recovery.batchId}`);
+        }
+        return {
+            ...run,
+            preparedStemImports: [
+                ...run.preparedStemImports.filter((recovery) => recovery.batchId !== input.recovery.batchId),
+                structuredClone(input.recovery),
+            ],
+        };
+    });
+}
+
+function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchId: string }): AgentRun {
+    return updateAgentRun(input.runId, Date.now(), (run) => ({
+        ...run,
+        preparedStemImports: run.preparedStemImports.filter((recovery) => recovery.batchId !== input.batchId),
+    }));
+}
+
+function requireAgentRunPreparedStemManualRepair(input: {
+    runId: string;
+    assetIds: string[];
+    batchIds: string[];
+    requiredAt?: number;
+}): AgentRun {
+    const requiredAt = input.requiredAt ?? Date.now();
+    return updateAgentRun(input.runId, requiredAt, (run) => {
+        if (run.errors.some((error) => error.code === 'prepared-stem-recovery-metadata-missing')) {
+            return run;
+        }
+        return {
+            ...run,
+            errors: [
+                ...run.errors,
+                {
+                    ...normalizeAgentFailure({
+                        category: 'asset',
+                        source: 'restart-recovery',
+                        occurredAt: requiredAt,
+                        related: { workIds: input.batchIds, artifactIds: input.assetIds },
+                        retry: 'never',
+                        compensation: 'manual-repair',
+                        knownDomain: true,
+                    }),
+                    code: 'prepared-stem-recovery-metadata-missing',
+                },
+            ],
+            manualResume: {
+                required: true,
+                reason: 'Prepared stem cleanup identity is unavailable. Keep the staged media retained and inspect it manually.',
+                workIds: [...new Set([...run.manualResume.workIds, ...input.batchIds])],
+                requiredAt,
+            },
+        };
+    });
+}
+
 function releaseAgentRunTemporaryAsset(input: {
     runId: string;
     assetId: string;
@@ -929,6 +1021,7 @@ export const agentRunLifecycle = {
     create: createAgentRun,
     get: getAgentRun,
     forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
+    forgetPreparedStemImportRecovery: forgetAgentRunPreparedStemImportRecovery,
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,
@@ -940,6 +1033,7 @@ export const agentRunLifecycle = {
     recordPlan: recordAgentRunPlan,
     recordDecision: recordAgentRunDecision,
     recordProviderUsage: recordAgentRunProviderUsage,
+    recordPreparedStemImportRecovery: recordAgentRunPreparedStemImportRecovery,
     reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
     reserveBudget: reserveAgentRunBudget,
     reserveBudgetBatch: reserveAgentRunBudgetBatch,
@@ -949,6 +1043,7 @@ export const agentRunLifecycle = {
     prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
     requireManualResume: requireAgentRunManualResume,
+    requirePreparedStemManualRepair: requireAgentRunPreparedStemManualRepair,
     transitionPhase: transitionAgentRunPhase,
     updateBatchStatus: updateAgentRunBatchStatus,
 } as const;

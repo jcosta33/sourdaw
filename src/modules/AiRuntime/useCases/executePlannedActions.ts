@@ -34,6 +34,7 @@ type ExecutePlannedActionsInput = CommandBatchInput & {
     signal?: AbortSignal;
     successVerb?: 'Executed' | 'Confirmed';
     group?: ReturnType<typeof generateGroupId>;
+    onProjectCommitPrepared?: () => void;
 };
 
 type ExecutedAction = {
@@ -89,6 +90,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     };
     const batchResult = await executeVersionedCommandBatchEnvelope({
         ...input.commandBatch,
+        onProjectCommitPrepared: input.onProjectCommitPrepared,
         options: executionOptions,
     });
 

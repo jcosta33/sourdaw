@@ -114,7 +114,7 @@ vi.mock('../../../stores/timelineViewStore', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
-    injectPromptCommand: vi.fn(),
+    injectPromptDraft: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -433,11 +433,11 @@ describe('TrackListView', () => {
         expect(createFolder).toHaveBeenCalledWith('Folder 1');
     });
 
-    it('injects the auto-organize prompt on the AI button click', async () => {
-        const { injectPromptCommand } = await import('#/modules/AiRuntime/useCases');
+    it('seeds the canonical prompt draft without submitting the request', async () => {
+        const { injectPromptDraft } = await import('#/modules/AiRuntime/useCases');
         renderWithTooltip(<TrackListView />);
         fireEvent.click(screen.getByLabelText('Auto-organize with AI'));
-        expect(injectPromptCommand).toHaveBeenCalledWith(expect.stringContaining('Auto-organize'));
+        expect(injectPromptDraft).toHaveBeenCalledWith(expect.stringContaining('Auto-organize'));
     });
 
     it('hides children of a collapsed folder from the visible list', () => {

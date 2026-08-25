@@ -2,10 +2,13 @@ import { type AgentRun } from '../models/AgentRun';
 import { persistAgentRunState, readAgentRunState } from '../stores/agentRunStore';
 
 import { normalizeAgentFailure } from './agentErrorAndSaga';
+import { recoverPreparedStemImportResources } from './recoverPreparedStemImportResources';
 
 const TERMINAL_PHASES = new Set(['completed', 'failed', 'cancelled', 'partially-completed']);
 
-export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): { recoveredRunIds: string[] } {
+export async function recoverInterruptedAgentRuns(input?: {
+    recoveredAt?: number;
+}): Promise<{ recoveredRunIds: string[] }> {
     const recoveredAt = input?.recoveredAt ?? Date.now();
     const state = readAgentRunState();
     const recoveredRunIds: string[] = [];
@@ -84,5 +87,6 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
     if (recoveredRunIds.length > 0) {
         persistAgentRunState({ ...state, runs });
     }
+    await recoverPreparedStemImportResources();
     return { recoveredRunIds };
 }
