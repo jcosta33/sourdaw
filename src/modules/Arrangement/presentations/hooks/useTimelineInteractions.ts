@@ -592,6 +592,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         );
 
         if (targetTrack) {
+            // The row under the pointer; this block only runs when the pointer
+            // is over a track row, so the index always resolves.
+            const targetIndex = tracks.findIndex((track) => track.id === targetTrack.id);
             const selectedIds = clipSelectionStore.value?.selectedClipIds ?? [];
             const preview = clipDragPreviewRef.current;
             if (preview) {
@@ -608,10 +611,10 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 // track list clamps to the nearest edge track.
                 const destinationFor = (orig: ClipPreviewPosition): (typeof tracks)[number] => {
                     const origIndex = tracks.findIndex((track) => track.id === orig.trackId);
-                    if (origIndex < 0 || anchorIndex < 0) {
+                    if (origIndex < 0 || anchorIndex < 0 || targetIndex < 0) {
                         return targetTrack;
                     }
-                    const offset = trackHit.index - anchorIndex;
+                    const offset = targetIndex - anchorIndex;
                     const clamped = Math.max(0, Math.min(tracks.length - 1, origIndex + offset));
                     return tracks[clamped]!;
                 };
@@ -634,7 +637,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         // the preview never shows it landing somewhere it can't.
                         preview.positions.set(id, { ...orig });
                         rejected.add(id);
-                        rejectReason = rejectReason ?? clipDropRejectionReason(clipType, destination.kind);
+                        rejectReason = rejectReason ?? clipDropRejectionReason(destination.kind);
                         return;
                     }
                     const duration = orig.endBeat - orig.startBeat;
