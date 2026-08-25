@@ -208,6 +208,43 @@ describe('submitAdmittedPromptRequest', () => {
         );
     });
 
+    it('reports the real no-match terminal notification from the admitted use case', async () => {
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Arrange this project', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
+
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'completed' });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
+            []
+        );
+    });
+
+    it('reports the real planning-rejection notification from the admitted use case', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: 'Save the project',
+                requiresConfirmation: false,
+                rejectionReason: 'Action saveProject cannot be executed by AI because it does not report completion.',
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Save the project', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'rejected', runId: RUN_ID });
+
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'failed' });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'Command not executed: Action saveProject cannot be executed by AI because it does not report completion.',
+            []
+        );
+    });
+
     it('does not record or expose a plan after cancellation wins provider settlement', async () => {
         const controller = new AbortController();
         mocks.planPromptActions.mockImplementation(async (input) => {
