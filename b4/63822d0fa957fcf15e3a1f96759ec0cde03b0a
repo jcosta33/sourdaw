@@ -1,0 +1,101 @@
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_dbc8635433f8e4 867-873,889-892
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandPreflightFixture.ts
+  s_a40848e8f8cca9::t_dbc8635433f8e4 2-6,12-15,53-54
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_dbc8635433f8e4 70-79,81-87,89-95,97-103,353
+src/modules/AiRuntime/models/AgentContext.ts
+  s_a40848e8f8cca9::t_087b6bf21ec7de 27
+src/modules/AiRuntime/models/WorkflowCapability.ts
+  s_a40848e8f8cca9::t_fee99995325e15 35-36,39-57
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_ace4bf2f5f97a1 114,739-749,759,771
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_d9e7cd4fdcfa97 3177-3191,3212,3260-3266
+src/modules/AiRuntime/transformers/normalizeAgentPlanProposal.ts
+  s_a40848e8f8cca9::t_7f91deb54d4d9d 40
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_53c413615c62cc 16-25,27-33,35-41,73
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_610dcb31cb2f6b 1,29-38,40-46,48-54,87-90
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_f09275bf46a749 536,541
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_0baf010d779fef 958,963
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_4fdc417e10ea29 498,503
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_55b1d3ec76f1df 668,798-800,815-817,830,839,844-846,871-884,1017-1120
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_2fe275cb907412 755,760
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_a40848e8f8cca9::t_dcc4fff6926d84 258-297
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_360d3138440299 22,448,453,982,989
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_a40848e8f8cca9::t_26788dedc84b34 29-30,33,37,42
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_c7789b036adcdc 615,620
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_700c89f1719243 533,538
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_df4b4d03100659 419
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_a40848e8f8cca9::t_a6d59b70cb65cb 769-770
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_a40848e8f8cca9::t_7310246a13953a 32,99-101,395,754,958-959
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_7e6452dc960acf 609-623,4672-4673
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_91e8a0618e286e 514,519,525-528
+src/modules/AiRuntime/useCases/agentWorkBudget.ts
+  s_a40848e8f8cca9::t_3b57f3e586b771 50,53-56,60
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_379daae4835f29 80
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_a40848e8f8cca9::t_7f806f6bf2c0d1 4,50,148,152-157,164,169,178,180-181,193-196,203,211,217-223,241,252-259,276-277,363-371,375
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_7f90e72f17c822 559-560,564,833-845
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_2ebbab41144f12 49-51
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_59f7f8a6b66946 26,36,303-305,310-311,319,329,331-333
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_119dce5ec32617 4,13,16,254-255,292-341,347,409-412
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_8673b19432720f 86-98
+src/modules/Arrangement/handlers/__tests__/compoundBusActionBatch.spec.ts
+  s_a40848e8f8cca9::t_94e0dc8e9ac6a8 4-7,15-20,27,67-70,87-88
+src/modules/Arrangement/handlers/batchFeature/handleAddAdjustmentRegion.ts
+  s_a40848e8f8cca9::t_4e134021aa8aab 142
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_d0647ce59c6b3c 196-204,247-251
+src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts
+  s_a40848e8f8cca9::t_aec39fa6eff463 107-111
+src/modules/Arrangement/useCases/index.ts
+  s_a40848e8f8cca9::t_241d592be82dc0 259
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_a40848e8f8cca9::t_eb0ae20f5f5e27 486,488
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_a40848e8f8cca9::t_ce2caed270328e 603-607,1197,1201
+src/modules/AudioEngine/useCases/configureRuntimeGraphProjectRevisionValidator.ts
+  s_a40848e8f8cca9::t_cf2c7a9292ed0f 8-10
+src/modules/AudioEngine/useCases/configureRuntimeGraphTopologyValidator.ts
+  s_a40848e8f8cca9::t_9419fe4a06e51a 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b463822d0fa957fcf15e3a1f96759ec0cde03b0a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
