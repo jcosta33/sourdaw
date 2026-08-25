@@ -244,8 +244,7 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
         };
     },
     describe: () => ({ label: 'Discard imported stem set' }),
-    canReapplyAfterDivergence: (action) =>
-        Array.isArray(action.payload?.guards) && action.payload.guards.length > 0,
+    canReapplyAfterDivergence: (action) => Array.isArray(action.payload?.guards) && action.payload.guards.length > 0,
     validate: (action) =>
         typeof action.payload?.folderId === 'string' &&
         Array.isArray(action.payload?.stemTrackIds) &&
