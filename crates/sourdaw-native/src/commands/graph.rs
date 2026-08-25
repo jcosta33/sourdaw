@@ -120,7 +120,7 @@
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::scheduler::{
-    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, EFFECT_TABLE_CAPACITY,
+    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, EFFECT_TABLE_CAPACITY,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
@@ -884,10 +884,15 @@ fn push_automation(
 /// What one device maps onto natively. The scheduler's only built-in is the
 /// Knead engine; everything else in the project's native-DSP vocabulary is a
 /// WASM device the web runtime realises, with no `daw-engine` body yet.
+///
+/// The built-in instance is built here, on the mapping (control) thread,
+/// against the stream's `sample_rate`: the audio thread that applies the
+/// command installs or retires it and never constructs one (ADR 0020).
 fn map_device(
     device: &DevicePayload,
     registry: &mut GraphRegistry,
     contributes_audio: bool,
+    sample_rate: f32,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<Option<usize>, String> {
     if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
@@ -955,7 +960,7 @@ fn map_device(
     // batch put on one strip.
     ops.push(GraphCommand::AddDetachedEffect(
         effect_id,
-        BuiltinEffectType::Knead,
+        PluginCore::builtin(BuiltinEffectType::Knead, sample_rate),
     ));
     for (name, value) in &device.parameter_values {
         let param = DeviceParam::from_name(name)
@@ -1168,7 +1173,9 @@ fn map_command(
             let mut built_device_ids = Vec::new();
             let mut chain_index = 0usize;
             for device in devices {
-                let Some(effect_id) = map_device(device, registry, *contributes_audio, ops)? else {
+                let Some(effect_id) =
+                    map_device(device, registry, *contributes_audio, sample_rate, ops)?
+                else {
                     continue;
                 };
                 ops.push(insert_device_op(
@@ -1269,7 +1276,9 @@ fn map_command(
             let mut built_device_ids = Vec::new();
             let mut chain_index = 0usize;
             for device in devices {
-                let Some(effect_id) = map_device(device, registry, *contributes_audio, ops)? else {
+                let Some(effect_id) =
+                    map_device(device, registry, *contributes_audio, sample_rate, ops)?
+                else {
                     continue;
                 };
                 ops.push(insert_device_op(
@@ -1456,7 +1465,8 @@ fn map_command(
             // and the strip's report is exactly how that omission is
             // observable — the command never succeeds silently.
             touch(touched, track_id);
-            let Some(effect_id) = map_device(device, registry, strip.contributes_audio, ops)?
+            let Some(effect_id) =
+                map_device(device, registry, strip.contributes_audio, sample_rate, ops)?
             else {
                 return Ok(());
             };
