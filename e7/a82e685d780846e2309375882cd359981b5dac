@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_31af85757075f7 25-27,254
+  s_a40848e8f8cca9::t_9f282de105a973 253,255-256,278,283-284,286
+  s_a40848e8f8cca9::t_f2441ed9fd50b7 28,268-269,279-282,290,297-298
+  s_a40848e8f8cca9::t_d75a1fbbb4f0ea 292
+  s_a40848e8f8cca9::t_8a7877ad97c56a 59-82,239-243,245,265-267,270,285,287-289,291,293-296
+  s_a40848e8f8cca9::t_e4cdd935fc970a 299
+src/modules/Arrangement/handlers/device/__tests__/handleAddDevice.spec.ts
+  s_a40848e8f8cca9::t_9aed2ae6986698 255,257-265,286-291,309
+  s_a40848e8f8cca9::t_2d53dede018e88 292-299,304,308
+  s_a40848e8f8cca9::t_175b8e2b39cd68 231-246,248-251,253-254,256,266-285
+  s_a40848e8f8cca9::t_5e11ca97a9a3cc 300-303,305-307
+src/modules/Command/useCases/__tests__/loadExternalPluginVersionedRecovery.spec.ts
+  s_a40848e8f8cca9::t_822d99878a32fd 24-25,27,32-33,35,107-110,239-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "e7a82e685d780846e2309375882cd359981b5dac",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
