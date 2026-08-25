@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { commandBatchPreflightPort, commandTrackDefaultsPort } from '#/modules/Command/useCases';
+
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -464,6 +468,8 @@ function getPlannedRun() {
 describe('sendChatMessage retained-provider selection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        registerHandlerMap(getArrangementHandlers());
+        commandTrackDefaultsPort.setTrackColorProvider(() => '#123456');
         agentRunLifecycle.clear();
         plannedRunId = null;
         mocks.aiBackendPreference.value = 'auto';
@@ -485,6 +491,9 @@ describe('sendChatMessage retained-provider selection', () => {
     });
 
     afterEach(() => {
+        clearHandlerRegistry();
+        commandBatchPreflightPort.setProvider(null);
+        commandTrackDefaultsPort.setTrackColorProvider(null);
         agentRunLifecycle.clear();
     });
 
@@ -587,16 +596,48 @@ describe('sendChatMessage retained-provider selection', () => {
     });
 
     it('forwards a compiler-produced graph and provider-known scope into pending confirmation', async () => {
-        const commandBatch = configureCommandGraphForwarding('confirmation');
+        configureCommandGraphForwarding('confirmation');
+        const { compileAgentActionExecution } = await vi.importActual<typeof import('../compileAgentActionExecution')>(
+            '../compileAgentActionExecution'
+        );
+        const { parseVersionedCommandBatchEnvelope } =
+            await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+        mocks.compileAgentActionExecution.mockImplementation(compileAgentActionExecution);
+        mocks.parseVersionedCommandBatchEnvelope.mockImplementation(parseVersionedCommandBatchEnvelope);
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'revision-fixture',
+            projectInvariantsValid: true,
+            targetFingerprints: { 'track-kick': 'track-kick:fixture' },
+        }));
 
         await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
 
         expect(mocks.compileAgentActionExecution).toHaveBeenCalledWith(
             expect.objectContaining({ actionCommandGraph: commandGraphFixture.actionCommandGraph })
         );
-        expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledWith(
-            expect.objectContaining({ commandBatch, actions: commandGraphFixture.actions })
+        const confirmation = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        expect(confirmation).toEqual(expect.objectContaining({ actions: commandGraphFixture.actions }));
+        const parsed = parseVersionedCommandBatchEnvelope(
+            confirmation?.commandBatch.serialized ?? '',
+            confirmation?.commandBatch.authority
         );
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const [producer, dependent] = parsed.envelope.commands;
+        expect(dependent?.dependencyIds).toEqual([producer?.commandId]);
+        expect(parsed.envelope.batchLocalBindings).toEqual([
+            {
+                bindingId: '$drum-bus',
+                producerArgument: 'busId',
+                producerCommandId: producer?.commandId,
+            },
+        ]);
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
         expect(getPlannedRun()).toMatchObject({
             phase: 'waiting-for-approval',
             scope: { targetIds: commandGraphFixture.fullTargetIds },

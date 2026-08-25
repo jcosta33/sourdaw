@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
+import {
+    commandTrackDefaultsPort,
+    parseVersionedCommandBatchEnvelope,
+    parseVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -74,6 +78,7 @@ describe('compilePlannedActionCommandBatch', () => {
 
     afterEach(() => {
         clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
         midiStore.set(null);
     });
 
@@ -164,6 +169,49 @@ describe('compilePlannedActionCommandBatch', () => {
             ).toThrow('Action command graph contains an invalid batch-local producer');
         }
     );
+
+    it('binds a valid first-command batch-local producer to its compiled command', () => {
+        const busId = 'bus-first-producer';
+        commandTrackDefaultsPort.setTrackColorProvider(() => '#123456');
+        const result = compilePlannedActionCommandBatch({
+            actions: [{ type: 'createBus', payload: { name: 'First Producer Bus', busId } }],
+            actionCommandGraph: {
+                dependenciesByActionIndex: [[]],
+                batchLocalBindings: [
+                    { bindingId: '$first-producer', producerActionIndex: 0, producerArgument: 'busId' },
+                ],
+            },
+            actionLabels: ['Create First Producer Bus'],
+            autoCommit: false,
+            context: baseContext,
+            group: { groupId: 'group-first-producer', groupLabel: 'First producer binding' },
+            intent: 'Create a bus with a batch-local producer binding.',
+            mode: 'preview',
+            projectRevision: 'revision-1',
+            runId: 'run-first-producer',
+        });
+        const parsed = parseVersionedCommandEnvelope(result.commandEnvelopes[0] ?? '');
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const parsedBatch = parseVersionedCommandBatchEnvelope(
+            result.commandBatch.serialized,
+            result.commandBatch.authority
+        );
+        if (parsedBatch.status === 'invalid') {
+            throw new Error(parsedBatch.reason);
+        }
+        const [producer] = parsedBatch.envelope.commands;
+
+        expect(parsedBatch.envelope.batchLocalBindings).toEqual([
+            {
+                bindingId: '$first-producer',
+                producerArgument: 'busId',
+                producerCommandId: producer?.commandId,
+            },
+        ]);
+        expect(producer?.commandId).toBe(parsed.envelope.commandId);
+    });
 
     it('binds whole-lane automation transforms to the current lane size and owners', () => {
         const result = compile([{ type: 'thinAutomation', payload: { laneId: 'lane-1', tolerance: 0.05 } }], {
