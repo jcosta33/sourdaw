@@ -17,18 +17,18 @@ test.describe('Preferences — AI execution backend', () => {
         await launch_new_project(page);
     });
 
-    test('browser with no admitted local model exposes only the automatic backend', async ({ page }) => {
+    test('browser exposes admitted Browser WebLLM alongside the automatic backend', async ({ page }) => {
         const dialog = page.getByRole('dialog');
         await openPreferencesAi(page);
 
         const backend = dialog.getByRole('combobox', { name: 'AI execution backend' });
         const options = backend.locator('option');
-        await expect(options).toHaveCount(1);
+        await expect(options).toHaveCount(2);
         await expect(backend).toHaveValue('auto');
-        await expect(options).toHaveText(['Automatic']);
+        await expect(options).toHaveText(['Automatic', 'Browser WebLLM']);
         await expect(
             dialog.getByText(
-                'No local language model is admitted in this release. Hosted providers remain desktop-only.'
+                'Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts remotely.'
             )
         ).toBeVisible();
     });
