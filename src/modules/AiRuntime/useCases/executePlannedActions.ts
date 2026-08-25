@@ -9,10 +9,9 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 
-import { agentRunLifecycle } from './agentRunLifecycle';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
-import { recordAgentRunPendingEffectContinuation } from './recordAgentRunPendingEffectContinuation';
+import { prepareAgentRunPendingEffectContinuation } from './prepareAgentRunPendingEffectContinuation';
 import { recordAiActionGroup } from './recordAiActionGroup';
 
 type CommandBatchInput =
@@ -89,10 +88,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         shouldExecute,
         signal: input.signal,
         onProjectCommitCheckpoint: ({ receipt }: { receipt: VerifiedBatchReceipt }) => {
-            if (!agentRunLifecycle.get(receipt.runId)) {
-                return;
-            }
-            recordAgentRunPendingEffectContinuation({
+            return prepareAgentRunPendingEffectContinuation({
                 runId: receipt.runId,
                 receipt,
                 commandBatch: input.commandBatch,

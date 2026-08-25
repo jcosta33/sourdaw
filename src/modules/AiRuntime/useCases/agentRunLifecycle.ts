@@ -13,10 +13,12 @@ import {
     type AgentRunGrants,
     type AgentRunPlan,
     type AgentRunPendingEffectContinuation,
+    type AgentRunPendingEffectRecovery,
     type AgentRunPhase,
     type AgentRunProviderUsage,
     type AgentRunSagaStep,
     type AgentRunScope,
+    type AgentRunState,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
@@ -103,6 +105,28 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
     runs[index] = next;
     persistAgentRunState({ ...state, runs });
     return structuredClone(next);
+}
+
+function getPendingEffectRecoveryLedger(state: AgentRunState): AgentRunPendingEffectRecovery[] {
+    return state.pendingEffectRecoveryLedger ?? [];
+}
+
+function withPendingEffectRecoveryLedger(
+    state: AgentRunState,
+    pendingEffectRecoveryLedger: AgentRunPendingEffectRecovery[]
+): AgentRunState {
+    if (pendingEffectRecoveryLedger.length === 0) {
+        const { pendingEffectRecoveryLedger: _removed, ...withoutLedger } = state;
+        return withoutLedger;
+    }
+    return { ...state, pendingEffectRecoveryLedger };
+}
+
+function isPendingEffectRecovery(
+    recovery: AgentRunPendingEffectRecovery,
+    input: { runId: string; batchId: string }
+): boolean {
+    return recovery.runId === input.runId && recovery.batchId === input.batchId;
 }
 
 function createLegacyAgentRunPlan(input: {
@@ -594,17 +618,86 @@ function recordAgentRunPendingEffectContinuation(input: {
     runId: string;
     continuation: AgentRunPendingEffectContinuation;
     recordedAt?: number;
-}): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
-        ...run,
-        phase: run.committedWork.length > 0 ? 'partially-completed' : run.phase,
+}): AgentRun | null {
+    const recordedAt = input.recordedAt ?? Date.now();
+    const state = readAgentRunState();
+    const continuation = structuredClone(input.continuation);
+    const existingRecovery = getPendingEffectRecoveryLedger(state).find((recovery) =>
+        isPendingEffectRecovery(recovery, { runId: input.runId, batchId: continuation.batchId })
+    );
+    const pendingEffectRecoveryLedger = [
+        ...getPendingEffectRecoveryLedger(state).filter(
+            (recovery) => !isPendingEffectRecovery(recovery, { runId: input.runId, batchId: continuation.batchId })
+        ),
+        { ...structuredClone(continuation), runId: input.runId, checkpoint: 'durable' as const },
+    ];
+    const index = state.runs.findIndex((run) => run.runId === input.runId);
+    if (index < 0) {
+        if (existingRecovery) {
+            persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+            return null;
+        }
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const current = state.runs[index]!;
+    const next = {
+        ...current,
+        updatedAt: recordedAt,
+        phase: current.committedWork.length > 0 ? 'partially-completed' : current.phase,
         pendingEffectContinuations: [
-            ...run.pendingEffectContinuations.filter(
-                (continuation) => continuation.batchId !== input.continuation.batchId
-            ),
-            structuredClone(input.continuation),
+            ...current.pendingEffectContinuations.filter((candidate) => candidate.batchId !== continuation.batchId),
+            continuation,
         ],
-    }));
+    } satisfies AgentRun;
+    const runs = [...state.runs];
+    runs[index] = next;
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    return structuredClone(next);
+}
+
+function prepareAgentRunPendingEffectContinuation(input: {
+    runId: string;
+    continuation: AgentRunPendingEffectContinuation;
+}): void {
+    const state = readAgentRunState();
+    const existing = getPendingEffectRecoveryLedger(state).find((recovery) =>
+        isPendingEffectRecovery(recovery, { runId: input.runId, batchId: input.continuation.batchId })
+    );
+    if (existing?.checkpoint === 'durable') {
+        return;
+    }
+    const pendingEffectRecoveryLedger = [
+        ...getPendingEffectRecoveryLedger(state).filter(
+            (recovery) =>
+                !isPendingEffectRecovery(recovery, {
+                    runId: input.runId,
+                    batchId: input.continuation.batchId,
+                })
+        ),
+        { ...structuredClone(input.continuation), runId: input.runId, checkpoint: 'prepared' as const },
+    ];
+    persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+}
+
+function discardPreparedAgentRunPendingEffectContinuation(input: { runId: string; batchId: string }): void {
+    const state = readAgentRunState();
+    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
+        (recovery) => !isPendingEffectRecovery(recovery, input) || recovery.checkpoint !== 'prepared'
+    );
+    if (pendingEffectRecoveryLedger.length === getPendingEffectRecoveryLedger(state).length) {
+        return;
+    }
+    persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+}
+
+function getAgentRunPendingEffectRecovery(input: {
+    runId: string;
+    batchId: string;
+}): AgentRunPendingEffectRecovery | null {
+    const recovery = getPendingEffectRecoveryLedger(readAgentRunState()).find((candidate) =>
+        isPendingEffectRecovery(candidate, input)
+    );
+    return recovery ? structuredClone(recovery) : null;
 }
 
 function failAgentRunPendingEffectContinuation(input: {
@@ -612,13 +705,28 @@ function failAgentRunPendingEffectContinuation(input: {
     batchId: string;
     reason: string;
     failedAt?: number;
-}): AgentRun {
-    return updateAgentRun(input.runId, input.failedAt ?? Date.now(), (run) => ({
-        ...run,
-        pendingEffectContinuations: run.pendingEffectContinuations.map((continuation) =>
+}): AgentRun | null {
+    const failedAt = input.failedAt ?? Date.now();
+    const state = readAgentRunState();
+    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).map((recovery) =>
+        isPendingEffectRecovery(recovery, input) ? { ...recovery, lastError: input.reason } : recovery
+    );
+    const index = state.runs.findIndex((run) => run.runId === input.runId);
+    if (index < 0) {
+        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        return null;
+    }
+    const runs = [...state.runs];
+    const next = {
+        ...runs[index]!,
+        updatedAt: failedAt,
+        pendingEffectContinuations: runs[index]!.pendingEffectContinuations.map((continuation) =>
             continuation.batchId === input.batchId ? { ...continuation, lastError: input.reason } : continuation
         ),
-    }));
+    };
+    runs[index] = next;
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    return structuredClone(next);
 }
 
 function completeAgentRunPendingEffectContinuation(input: {
@@ -626,82 +734,101 @@ function completeAgentRunPendingEffectContinuation(input: {
     batchId: string;
     receiptIdentity: string;
     completedAt?: number;
-}): AgentRun {
+}): AgentRun | null {
     const completedAt = input.completedAt ?? Date.now();
-    return updateAgentRun(input.runId, completedAt, (run) => {
-        const completedContinuation = run.pendingEffectContinuations.find(
-            (continuation) => continuation.batchId === input.batchId
-        );
-        if (!completedContinuation) {
+    const state = readAgentRunState();
+    const completedRecovery = getPendingEffectRecoveryLedger(state).find((recovery) =>
+        isPendingEffectRecovery(recovery, input)
+    );
+    const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
+        (recovery) => !isPendingEffectRecovery(recovery, input)
+    );
+    const index = state.runs.findIndex((run) => run.runId === input.runId);
+    if (index < 0) {
+        if (!completedRecovery) {
             throw new Error(`Unknown pending effect continuation: ${input.batchId}`);
         }
-        const pendingEffectContinuations = run.pendingEffectContinuations.filter(
-            (continuation) => continuation.batchId !== input.batchId
-        );
-        const steps = run.saga.steps.map((step) =>
-            step.owner === 'external-effect' && step.workId === input.batchId
-                ? {
-                      ...step,
-                      receiptIdentity: input.receiptIdentity,
-                      state: 'committed' as const,
-                      updatedAt: completedAt,
-                  }
-                : step
-        );
-        const hasUnsettledSaga = steps.some(
-            (step) =>
-                step.state === 'pending' ||
-                step.state === 'external-pending' ||
-                step.state === 'uncompensated' ||
-                step.state === 'manual-repair'
-        );
-        const hasUnsettledWorkLease = run.workLeases.some((lease) => lease.terminalState === null);
-        const hasTemporaryAsset = run.temporaryAssets.some((asset) => asset.status !== 'released');
-        const hasIndependentManualResume =
-            run.manualResume.required && run.manualResume.workIds.some((workId) => workId !== input.batchId);
-        const hasRecoveryObligation =
-            hasUnsettledSaga ||
-            pendingEffectContinuations.length > 0 ||
-            hasUnsettledWorkLease ||
-            hasTemporaryAsset ||
-            hasIndependentManualResume;
-        const priorLedgerEntry =
-            run.receipts.find((receipt) => receipt.workId === input.batchId) ??
-            run.committedWork.find((work) => work.workId === input.batchId);
-        const completedLedgerEntry = {
-            workId: input.batchId,
-            receiptIdentity: input.receiptIdentity,
-            revertGroupId: priorLedgerEntry?.revertGroupId ?? null,
-            committedAt: priorLedgerEntry?.committedAt ?? completedAt,
-        };
-        const batches = run.batches.some((batch) => batch.batchId === input.batchId)
-            ? run.batches.map((batch) =>
-                  batch.batchId === input.batchId
-                      ? { ...batch, status: 'committed' as const, receiptIdentity: input.receiptIdentity }
-                      : batch
-              )
-            : [
-                  ...run.batches,
-                  {
-                      batchId: input.batchId,
-                      commandIds: completedContinuation.effects.map(({ commandId }) => commandId),
-                      status: 'committed' as const,
-                      receiptIdentity: input.receiptIdentity,
-                  },
-              ];
-        return {
-            ...run,
-            phase: hasRecoveryObligation ? run.phase : 'completed',
-            batches,
-            receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.batchId), completedLedgerEntry],
-            committedWork: [...run.committedWork.filter((work) => work.workId !== input.batchId), completedLedgerEntry],
-            pendingEffectContinuations,
-            manualResume: hasRecoveryObligation
-                ? run.manualResume
-                : { required: false, reason: null, workIds: [], requiredAt: null },
-            saga: { schemaVersion: 1, steps },
-        };
-    });
+        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        return null;
+    }
+    const run = structuredClone(state.runs[index]!);
+    const completedContinuation =
+        run.pendingEffectContinuations.find((continuation) => continuation.batchId === input.batchId) ??
+        completedRecovery;
+    if (!completedContinuation) {
+        throw new Error(`Unknown pending effect continuation: ${input.batchId}`);
+    }
+    const pendingEffectContinuations = run.pendingEffectContinuations.filter(
+        (continuation) => continuation.batchId !== input.batchId
+    );
+    const steps = run.saga.steps.map((step) =>
+        step.owner === 'external-effect' && step.workId === input.batchId
+            ? {
+                  ...step,
+                  receiptIdentity: input.receiptIdentity,
+                  state: 'committed' as const,
+                  updatedAt: completedAt,
+              }
+            : step
+    );
+    const hasUnsettledSaga = steps.some(
+        (step) =>
+            step.state === 'pending' ||
+            step.state === 'external-pending' ||
+            step.state === 'uncompensated' ||
+            step.state === 'manual-repair'
+    );
+    const hasUnsettledWorkLease = run.workLeases.some((lease) => lease.terminalState === null);
+    const hasTemporaryAsset = run.temporaryAssets.some((asset) => asset.status !== 'released');
+    const hasIndependentManualResume =
+        run.manualResume.required && run.manualResume.workIds.some((workId) => workId !== input.batchId);
+    const hasRecoveryObligation =
+        hasUnsettledSaga ||
+        pendingEffectContinuations.length > 0 ||
+        hasUnsettledWorkLease ||
+        hasTemporaryAsset ||
+        hasIndependentManualResume;
+    const priorLedgerEntry =
+        run.receipts.find((receipt) => receipt.workId === input.batchId) ??
+        run.committedWork.find((work) => work.workId === input.batchId);
+    const completedLedgerEntry = {
+        workId: input.batchId,
+        receiptIdentity: input.receiptIdentity,
+        revertGroupId: priorLedgerEntry?.revertGroupId ?? null,
+        committedAt: priorLedgerEntry?.committedAt ?? completedAt,
+    };
+    const batches = run.batches.some((batch) => batch.batchId === input.batchId)
+        ? run.batches.map((batch) =>
+              batch.batchId === input.batchId
+                  ? { ...batch, status: 'committed' as const, receiptIdentity: input.receiptIdentity }
+                  : batch
+          )
+        : [
+              ...run.batches,
+              {
+                  batchId: input.batchId,
+                  commandIds: completedContinuation.effects.map(({ commandId }) => commandId),
+                  status: 'committed' as const,
+                  receiptIdentity: input.receiptIdentity,
+              },
+          ];
+    const next = {
+        ...run,
+        updatedAt: completedAt,
+        phase: hasRecoveryObligation ? run.phase : 'completed',
+        batches,
+        receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.batchId), completedLedgerEntry],
+        committedWork: [...run.committedWork.filter((work) => work.workId !== input.batchId), completedLedgerEntry],
+        pendingEffectContinuations,
+        manualResume: hasRecoveryObligation
+            ? run.manualResume
+            : { required: false, reason: null, workIds: [], requiredAt: null },
+        saga: { schemaVersion: 1, steps },
+    } satisfies AgentRun;
+    const runs = [...state.runs];
+    runs[index] = next;
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    return structuredClone(next);
 }
 
 function recordAgentRunSagaCompensation(input: {
@@ -1044,6 +1171,7 @@ export const agentRunLifecycle = {
     claimDecisionResume: claimAgentRunDecisionResume,
     create: createAgentRun,
     get: getAgentRun,
+    getPendingEffectRecovery: getAgentRunPendingEffectRecovery,
     forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
@@ -1051,6 +1179,8 @@ export const agentRunLifecycle = {
     recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
     recordPendingEffectContinuation: recordAgentRunPendingEffectContinuation,
+    preparePendingEffectContinuation: prepareAgentRunPendingEffectContinuation,
+    discardPreparedPendingEffectContinuation: discardPreparedAgentRunPendingEffectContinuation,
     failPendingEffectContinuation: failAgentRunPendingEffectContinuation,
     completePendingEffectContinuation: completeAgentRunPendingEffectContinuation,
     recordSagaStep: recordAgentRunSagaStep,

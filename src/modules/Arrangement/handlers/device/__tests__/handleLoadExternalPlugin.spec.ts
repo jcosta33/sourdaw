@@ -214,7 +214,7 @@ describe('handleLoadExternalPlugin', () => {
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 9);
     });
 
-    it('keeps plugin activation unsettled when the native lifecycle reports failure', async () => {
+    it('classifies a retained native attach failure for whole-graph repair', async () => {
         const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
         const device = {
             id: 'device-1',
@@ -230,9 +230,11 @@ describe('handleLoadExternalPlugin', () => {
             .mockReturnValue({ tracks: [{ ...before, devices: [device] }] });
         mocks.addExternalDevice.mockReturnValue(device);
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
-        mocks.activateExternalPlugin
-            .mockResolvedValueOnce({ status: 'failed', stage: 'attach', reason: 'native engine unavailable' })
-            .mockResolvedValueOnce({ status: 'active' });
+        mocks.activateExternalPlugin.mockResolvedValue({
+            status: 'failed',
+            stage: 'attach',
+            reason: 'native engine unavailable',
+        });
 
         const result = await handleLoadExternalPlugin.execute({
             type: 'loadExternalPlugin',
@@ -243,7 +245,8 @@ describe('handleLoadExternalPlugin', () => {
         }
 
         await expect(result.afterCommit()).rejects.toThrow('native engine unavailable');
-        await expect(result.afterAmbiguousCommit?.()).resolves.toBeUndefined();
+        await expect(result.afterAmbiguousCommit?.()).rejects.toThrow('native engine unavailable');
+        expect(result.postCommitEffect).toEqual({ kind: 'runtime-graph', remediation: 'repair' });
         expect(mocks.activateExternalPlugin).toHaveBeenCalledTimes(2);
     });
 

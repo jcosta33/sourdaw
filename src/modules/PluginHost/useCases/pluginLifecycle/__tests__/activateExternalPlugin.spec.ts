@@ -7,6 +7,7 @@ import {
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { loadedExternalInstances } from '../loadedExternalInstances';
+import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { unloadPlugin } from '../unloadPlugin';
 
 import type { PluginLatencyChange } from '../../../repositories/pluginBridge/types';
@@ -141,6 +142,42 @@ describe('activateExternalPlugin', () => {
         // load-before-engine-start flow is not retried into a duplicate load.
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
         expect(mocks.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('repairs a retained attach failure by unloading and reusing the stable project instance identity', async () => {
+        mocks.loadPluginRepo
+            .mockResolvedValueOnce({
+                instance_id: 'inst-1',
+                latency_samples: 0,
+                latency_ms: 0,
+                engine_plugin_id: null,
+            })
+            .mockResolvedValueOnce({
+                instance_id: 'inst-1',
+                latency_samples: 0,
+                latency_ms: 0,
+                engine_plugin_id: 1000,
+            });
+        mocks.unloadPluginRepo.mockResolvedValueOnce([['inst-1'], []]);
+
+        await expect(activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' })).resolves.toMatchObject({
+            status: 'failed',
+            stage: 'attach',
+        });
+        await expect(activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' })).resolves.toMatchObject({
+            status: 'failed',
+            stage: 'attach',
+        });
+        expect(mocks.loadPluginRepo).toHaveBeenCalledOnce();
+
+        await resetExternalPluginRuntimeForGraphRebuild();
+
+        await expect(activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' })).resolves.toEqual({
+            status: 'active',
+        });
+        expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(1, 'p', 'inst-1');
+        expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(2, 'p', 'inst-1');
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith();
     });
 
     it('leaves the activation entry unqualified when the plugin is engine-attached', async () => {

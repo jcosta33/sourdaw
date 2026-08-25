@@ -911,7 +911,6 @@ describe('confirmPendingChatActions transaction admission', () => {
                 ]),
             },
         });
-
     });
 
     it('keeps a confirmed batch authorized when its owned storage commit moves the project revision', async () => {

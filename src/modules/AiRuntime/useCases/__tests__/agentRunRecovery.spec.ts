@@ -6,6 +6,7 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { createAgentSagaStep } from '../createAgentSagaStep';
+import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 
 const commandRecoveryMocks = vi.hoisted(() => ({
     executeVersionedCommandBatchEnvelope: vi.fn(),
@@ -387,7 +388,110 @@ describe('agent run recovery', () => {
         expect(sanitizeAgentRunState(crossKindState)).toEqual({
             schemaVersion: persistedState.schemaVersion,
             runs: [],
+            pendingEffectRecoveryLedger: persistedState.pendingEffectRecoveryLedger,
         });
+    });
+
+    it('keeps an unresolved recovery capsule after ordinary run history evicts its owner', async () => {
+        createAgentRun({
+            runId: 'run-retained-recovery',
+            request: 'Repair the retained runtime graph.',
+            mode: 'apply',
+            createdRevision: 'heads-retained',
+            createdAt: 1,
+        });
+        const pendingEffect = {
+            commandId: 'command-retained-recovery',
+            kind: 'runtime-graph' as const,
+            operation: 'setTrackGain',
+            reason: 'runtime graph repair interrupted',
+            remediation: 'repair' as const,
+            state: 'pending' as const,
+        };
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: 'run-retained-recovery',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-retained-recovery',
+                effects: [pendingEffect],
+                lastError: null,
+                receiptIdentity: '1:run-retained-recovery:batch-retained-recovery:partially-committed',
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"retained-recovery"}',
+            },
+            recordedAt: 2,
+        });
+        for (let index = 0; index < 50; index += 1) {
+            createAgentRun({
+                runId: `run-history-${String(index)}`,
+                request: `Ordinary retained history ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `heads-history-${String(index)}`,
+                createdAt: 10 + index,
+            });
+        }
+        expect(getAgentRun('run-retained-recovery')).toBeNull();
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue({
+            schemaVersion: 1,
+            runId: 'run-retained-recovery',
+            batchId: 'batch-retained-recovery',
+            outcome: 'committed',
+            pendingEffects: [],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-retained-recovery',
+                batchId: 'batch-retained-recovery',
+            })
+        ).resolves.toEqual({ status: 'recovered' });
+        expect(commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay).toHaveBeenCalledWith({
+            authority: createContinuationAuthority(),
+            serialized: '{"batch":"retained-recovery"}',
+        });
+    });
+
+    it('prunes a prepared capsule when project truth proves its checkpoint never committed', async () => {
+        createAgentRun({
+            runId: 'run-aborted-recovery',
+            request: 'Do not retain recovery for an aborted project write.',
+            mode: 'apply',
+            createdRevision: 'heads-aborted',
+            createdAt: 1,
+        });
+        agentRunLifecycle.preparePendingEffectContinuation({
+            runId: 'run-aborted-recovery',
+            continuation: {
+                authority: createContinuationAuthority(),
+                batchId: 'batch-aborted-recovery',
+                effects: [
+                    {
+                        commandId: 'command-aborted-recovery',
+                        kind: 'runtime-graph',
+                        operation: 'setTrackGain',
+                        reason: 'runtime graph repair interrupted',
+                        remediation: 'repair',
+                        state: 'pending',
+                    },
+                ],
+                lastError: null,
+                receiptIdentity: '1:run-aborted-recovery:batch-aborted-recovery:partially-committed',
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"aborted-recovery"}',
+            },
+        });
+        commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValue(null);
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-aborted-recovery',
+                batchId: 'batch-aborted-recovery',
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'The durable project checkpoint for this pending-effect continuation is unavailable.',
+        });
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
     });
 
     it('hydrates generic-only, mixed, and manual pending-effect continuations after restart', async () => {

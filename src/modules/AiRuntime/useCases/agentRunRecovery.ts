@@ -23,7 +23,10 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
         }
         recoveredRunIds.push(run.runId);
         const retainedEffectBatchIds = new Set(
-            run.pendingEffectContinuations.map((continuation) => continuation.batchId)
+            [
+                ...run.pendingEffectContinuations,
+                ...(state.pendingEffectRecoveryLedger ?? []).filter((recovery) => recovery.runId === run.runId),
+            ].map((continuation) => continuation.batchId)
         );
         const orphanedWorkIds = [
             ...run.workLeases

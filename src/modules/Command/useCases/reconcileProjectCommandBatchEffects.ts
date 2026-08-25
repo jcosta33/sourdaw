@@ -12,6 +12,7 @@ type PreviewActionHandler = Extract<ActionHandler, { previewExecution: 'isolated
 
 type ReconcileProjectCommandBatchEffectsInput = {
     envelope: VersionedCommandBatchEnvelope;
+    isProjectCurrent?: () => boolean;
     serializedReceipt: string;
     shouldReconcile?: () => boolean;
 };
@@ -202,6 +203,9 @@ export async function reconcileProjectCommandBatchEffects(
 
     try {
         if (runtimeRepairCommandIds.size > 0) {
+            if (input.isProjectCurrent?.() === false) {
+                return { status: 'failed', reason: 'The originating project changed before runtime recovery' };
+            }
             if (input.shouldReconcile?.() === false) {
                 return {
                     status: 'failed',
@@ -224,6 +228,9 @@ export async function reconcileProjectCommandBatchEffects(
             const reconcile = exactReconciliations.get(effect.commandId);
             if (!reconcile) {
                 return { status: 'failed', reason: pendingEffectCannotRetryReason(effect.kind) };
+            }
+            if (input.isProjectCurrent?.() === false) {
+                return { status: 'failed', reason: 'The originating project changed before external-effect recovery' };
             }
             if (input.shouldReconcile?.() === false) {
                 return {

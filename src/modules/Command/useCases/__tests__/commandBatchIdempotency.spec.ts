@@ -113,6 +113,8 @@ describe('command batch idempotency', () => {
     const durableStorageKey = 'sourdaw:command-batch-idempotency:v1';
     let mutationCount: number;
     let projectDocument: Record<string, unknown>;
+    let projectRevisionOverride: string | null;
+    let rejectInitialProjectCommit: boolean;
     let rejectProjectReceiptFinalization: boolean;
     let rejectReceiptPersistence: boolean;
     let runtimeEffectGate: Promise<void> | null;
@@ -131,6 +133,8 @@ describe('command batch idempotency', () => {
         commandBatchExecutionAuthorityPort.setProvider(() => true);
         clearHandlerRegistry();
         mutationCount = 0;
+        projectRevisionOverride = null;
+        rejectInitialProjectCommit = false;
         rejectProjectReceiptFinalization = false;
         rejectReceiptPersistence = false;
         runtimeEffectGate = null;
@@ -181,6 +185,9 @@ describe('command batch idempotency', () => {
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
             mutateDoc: ({ changeFn }) => {
+                if (rejectInitialProjectCommit && mutationCount === 0) {
+                    throw new Error('initial project commit unavailable');
+                }
                 if (rejectProjectReceiptFinalization && mutationCount === 1) {
                     throw new Error('project receipt finalization unavailable');
                 }
@@ -228,7 +235,7 @@ describe('command batch idempotency', () => {
                 },
             }),
         });
-        commandProjectRevisionPort.setProvider(() => revision(mutationCount));
+        commandProjectRevisionPort.setProvider(() => projectRevisionOverride ?? revision(mutationCount));
         commandBatchPreflightPort.setProvider(() => ({
             audioGraphValid: true,
             availableAssetHashes: [],
@@ -295,6 +302,28 @@ describe('command batch idempotency', () => {
         expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
         expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
+    });
+
+    it('discards caller recovery prepared for a project transaction that never commits', async () => {
+        rejectInitialProjectCommit = true;
+        const promote = vi.fn();
+        const discard = vi.fn();
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: {
+                onProjectCommitCheckpoint: () => ({ promote, discard }),
+            },
+        });
+
+        expect(result).toMatchObject({ status: 'failed', reason: 'initial project commit unavailable' });
+        expect(promote).not.toHaveBeenCalled();
+        expect(discard).toHaveBeenCalledOnce();
+        expect(mutationCount).toBe(0);
+        expect(runtimeEffectCount).toBe(0);
     });
 
     it('returns the prior receipt after the durable repository is recreated', async () => {
@@ -406,6 +435,130 @@ describe('command batch idempotency', () => {
         });
         expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
+    });
+
+    it('does not run retained effects after the originating project generation changes during lease admission', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        let effectAttempts = 0;
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    const applyRuntimeEffect = () => {
+                        effectAttempts += 1;
+                        throw new Error('runtime strip unavailable');
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: applyRuntimeEffect,
+                        afterAmbiguousCommit: applyRuntimeEffect,
+                    };
+                },
+            }),
+        });
+        const batch = compileBatch();
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        expect(first).toMatchObject({ status: 'committed-with-warning' });
+        expect(effectAttempts).toBe(2);
+
+        const lease = Promise.withResolvers<boolean>();
+        const leaseStarted = vi.fn();
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => {
+                leaseStarted();
+                return lease.promise;
+            },
+            release: () => Promise.resolve(),
+        });
+        const recovery = executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+        await vi.waitFor(() => expect(leaseStarted).toHaveBeenCalledOnce());
+        projectRevisionOverride = JSON.stringify({
+            documentIdentityEpoch: 2,
+            mutationEpoch: 0,
+            documents: [{ docId: 'root', heads: ['project-b'] }],
+        });
+        lease.resolve(true);
+
+        await expect(recovery).resolves.toMatchObject({
+            status: 'ambiguous',
+            reason: expect.stringContaining('originating project'),
+        });
+        expect(effectAttempts).toBe(2);
+    });
+
+    it('does not write recovery completion after the originating project generation changes during an effect', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        let effectAttempts = 0;
+        const recoveryEffect = Promise.withResolvers<void>();
+        const recoveryStarted = vi.fn();
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    const applyRuntimeEffect = async () => {
+                        effectAttempts += 1;
+                        if (effectAttempts <= 2) {
+                            throw new Error('runtime strip unavailable');
+                        }
+                        recoveryStarted();
+                        await recoveryEffect.promise;
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: applyRuntimeEffect,
+                        afterAmbiguousCommit: applyRuntimeEffect,
+                    };
+                },
+            }),
+        });
+        const batch = compileBatch();
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        expect(first).toMatchObject({ status: 'committed-with-warning' });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            release: () => Promise.resolve(),
+        });
+        const mutationsBeforeRecovery = mutationCount;
+
+        const recovery = executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+        await vi.waitFor(() => expect(recoveryStarted).toHaveBeenCalledOnce());
+        projectRevisionOverride = JSON.stringify({
+            documentIdentityEpoch: 2,
+            mutationEpoch: 0,
+            documents: [{ docId: 'root', heads: ['project-b'] }],
+        });
+        recoveryEffect.resolve();
+
+        await expect(recovery).resolves.toMatchObject({
+            status: 'ambiguous',
+            reason: expect.stringContaining('originating project'),
+        });
+        expect(effectAttempts).toBe(3);
+        expect(mutationCount).toBe(mutationsBeforeRecovery);
     });
 
     it('recovers only the failed runtime effect from a mixed batch without replaying project truth', async () => {

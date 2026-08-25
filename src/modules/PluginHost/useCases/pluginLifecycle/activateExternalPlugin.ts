@@ -15,6 +15,7 @@ import {
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { restorePluginState } from './restorePluginState';
+import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 
 type ActivateExternalPluginInput = {
@@ -68,6 +69,10 @@ export function activateExternalPlugin({
     stateChunk,
     onLatencyMs,
 }: ActivateExternalPluginInput): Promise<ExternalPluginActivationResult> {
+    const rebuildCompletion = pluginLifecycleScheduler.currentRebuildCompletion();
+    if (rebuildCompletion) {
+        return rebuildCompletion.then(() => activateExternalPlugin({ pluginId, instanceId, stateChunk, onLatencyMs }));
+    }
     const activationEpoch = externalPluginActivationEpoch.current;
     const activeTask = externalPluginActivationTasks.get(instanceId);
     if (activeTask) {
@@ -78,6 +83,13 @@ export function activateExternalPlugin({
         if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
             const restoreTask = restorePluginState(instanceId, stateChunk)
                 .then((): ExternalPluginActivationResult => {
+                    if (activationEpoch !== externalPluginActivationEpoch.current) {
+                        return {
+                            status: 'failed',
+                            stage: 'restore',
+                            reason: 'External plugin activation was superseded by a runtime graph rebuild',
+                        };
+                    }
                     setActivationStatus(instanceId, 'active');
                     return { status: 'active' };
                 })
@@ -119,6 +131,13 @@ export function activateExternalPlugin({
         let attachmentFailure: ExternalPluginActivationResult | null = null;
         try {
             const instance = await loadPlugin(pluginId, instanceId);
+            if (activationEpoch !== externalPluginActivationEpoch.current) {
+                return {
+                    status: 'failed',
+                    stage: 'attach',
+                    reason: 'External plugin activation was superseded by a runtime graph rebuild',
+                };
+            }
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
                 // it renders nothing. Recorded on the activation entry rather

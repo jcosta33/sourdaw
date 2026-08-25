@@ -45,7 +45,7 @@ import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
-import { recordAgentRunPendingEffectContinuation } from './recordAgentRunPendingEffectContinuation';
+import { prepareAgentRunPendingEffectContinuation } from './prepareAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -803,10 +803,7 @@ export async function confirmPendingChatActions(
             signal: aborter.signal,
             source: 'prompt' as const,
             onProjectCommitCheckpoint: ({ receipt }: { receipt: CommandVerifiedBatchReceipt }) => {
-                if (!agentRunLifecycle.get(confirmation.runId)) {
-                    return;
-                }
-                recordAgentRunPendingEffectContinuation({
+                return prepareAgentRunPendingEffectContinuation({
                     runId: confirmation.runId,
                     receipt,
                     commandBatch,

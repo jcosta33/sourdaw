@@ -18,6 +18,7 @@ import {
     type AgentRunPlan,
     type AgentRunPendingEffect,
     type AgentRunPendingEffectContinuation,
+    type AgentRunPendingEffectRecovery,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
@@ -30,6 +31,7 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 
 const MAX_RUNS = 50;
+const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_COLLECTION_LENGTH = 256;
 const MAX_TEXT_LENGTH = 128 * 1024;
 const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
@@ -290,6 +292,18 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
         authority,
         lastError,
     };
+}
+
+function readPendingEffectRecovery(value: unknown): AgentRunPendingEffectRecovery | null {
+    const continuation = readPendingEffectContinuation(value);
+    if (!continuation || !isRecord(value)) {
+        return null;
+    }
+    const runId = readString(value.runId);
+    if (runId === null || (value.checkpoint !== 'prepared' && value.checkpoint !== 'durable')) {
+        return null;
+    }
+    return { ...continuation, runId, checkpoint: value.checkpoint };
 }
 
 function readBatch(value: unknown): AgentRunBatch | null {
@@ -1549,7 +1563,36 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
         seenRunIds.add(run.runId);
         runs.push(run);
     }
-    return { schemaVersion: AGENT_RUN_SCHEMA_VERSION, runs };
+    const explicitRecoveries =
+        value.pendingEffectRecoveryLedger === undefined
+            ? []
+            : readCollection(value.pendingEffectRecoveryLedger, readPendingEffectRecovery);
+    if (explicitRecoveries === null || explicitRecoveries.length > MAX_PENDING_EFFECT_RECOVERIES) {
+        return createEmptyAgentRunState();
+    }
+    const recoveryById = new Map<string, AgentRunPendingEffectRecovery>();
+    for (const recovery of explicitRecoveries) {
+        const id = `${recovery.runId}\u0000${recovery.batchId}`;
+        if (recoveryById.has(id)) {
+            return createEmptyAgentRunState();
+        }
+        recoveryById.set(id, recovery);
+    }
+    for (const run of runs) {
+        for (const continuation of run.pendingEffectContinuations) {
+            const id = `${run.runId}\u0000${continuation.batchId}`;
+            if (!recoveryById.has(id)) {
+                recoveryById.set(id, { ...structuredClone(continuation), runId: run.runId, checkpoint: 'durable' });
+            }
+        }
+    }
+    const pendingEffectRecoveryLedger = [...recoveryById.values()];
+    if (pendingEffectRecoveryLedger.length > MAX_PENDING_EFFECT_RECOVERIES) {
+        return createEmptyAgentRunState();
+    }
+    return pendingEffectRecoveryLedger.length > 0
+        ? { schemaVersion: AGENT_RUN_SCHEMA_VERSION, runs, pendingEffectRecoveryLedger }
+        : { schemaVersion: AGENT_RUN_SCHEMA_VERSION, runs };
 }
 
 export const agentRunStore = createStore<AgentRunState>({
@@ -1570,6 +1613,11 @@ export function persistAgentRunState(state: AgentRunState): void {
     const sanitizedState = sanitizeAgentRunState(boundedState);
     if (sanitizedState.runs.length !== boundedState.runs.length) {
         throw new Error('Agent run state contains data outside the persistent schema bounds');
+    }
+    const requestedRecoveries = state.pendingEffectRecoveryLedger ?? [];
+    const sanitizedRecoveries = sanitizedState.pendingEffectRecoveryLedger ?? [];
+    if (requestedRecoveries.length > 0 && sanitizedRecoveries.length !== requestedRecoveries.length) {
+        throw new Error('Agent run pending-effect recovery ledger reached its persistent capacity');
     }
     if (!agentRunStore.trySet(sanitizedState)) {
         throw new Error('Agent run state could not be persisted locally');

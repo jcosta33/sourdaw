@@ -374,6 +374,11 @@ export type AgentRunPendingEffectContinuation = {
     lastError: string | null;
 };
 
+export type AgentRunPendingEffectRecovery = AgentRunPendingEffectContinuation & {
+    runId: string;
+    checkpoint: 'prepared' | 'durable';
+};
+
 export type AgentRunWorkOwnerKind = 'provider' | 'command' | 'render' | 'analysis' | 'cleanup';
 
 export type AgentRunWorkTerminalState = 'completed' | 'failed' | 'cancelled' | 'orphaned';
@@ -437,4 +442,6 @@ export type AgentRun = {
 export type AgentRunState = {
     schemaVersion: typeof AGENT_RUN_SCHEMA_VERSION;
     runs: AgentRun[];
+    /** Capacity-admitted recovery capabilities are retained independently of evictable run history. */
+    pendingEffectRecoveryLedger?: AgentRunPendingEffectRecovery[];
 };

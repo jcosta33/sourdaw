@@ -29,9 +29,7 @@ export async function recoverAgentRunPendingEffects(input: {
     runId: string;
     batchId: string;
 }): Promise<RecoverAgentRunPendingEffectsResult> {
-    const continuation = agentRunLifecycle
-        .get(input.runId)
-        ?.pendingEffectContinuations.find(({ batchId }) => batchId === input.batchId);
+    const continuation = agentRunLifecycle.getPendingEffectRecovery(input);
     if (!continuation) {
         return { status: 'missing' };
     }
@@ -42,7 +40,11 @@ export async function recoverAgentRunPendingEffects(input: {
     });
     if (!priorReceipt) {
         const reason = 'The durable project checkpoint for this pending-effect continuation is unavailable.';
-        agentRunLifecycle.failPendingEffectContinuation({ ...input, reason });
+        if (continuation.checkpoint === 'prepared') {
+            agentRunLifecycle.discardPreparedPendingEffectContinuation(input);
+        } else {
+            agentRunLifecycle.failPendingEffectContinuation({ ...input, reason });
+        }
         return { status: 'failed', reason };
     }
     if (priorReceipt.runId !== input.runId || priorReceipt.batchId !== input.batchId) {
@@ -56,6 +58,22 @@ export async function recoverAgentRunPendingEffects(input: {
             receiptIdentity: getReceiptIdentity(priorReceipt),
         });
         return { status: 'recovered' };
+    }
+    if (continuation.checkpoint === 'prepared') {
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: input.runId,
+            continuation: {
+                authority: continuation.authority,
+                batchId: continuation.batchId,
+                effects: structuredClone(priorReceipt.pendingEffects),
+                lastError: null,
+                receiptIdentity: getReceiptIdentity(priorReceipt),
+                recovery: priorReceipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
+                    ? 'manual-repair'
+                    : 'reconcile-batch',
+                serializedBatch: continuation.serializedBatch,
+            },
+        });
     }
     if (
         continuation.recovery === 'manual-repair' ||

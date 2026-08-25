@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { executeAppActionBatch, executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -161,7 +162,8 @@ describe('executePlannedActions', () => {
             }).status
         ).toBe('claimed');
         vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
-            options?.onProjectCommitCheckpoint?.({ receipt });
+            const preparation = options?.onProjectCommitCheckpoint?.({ receipt });
+            preparation?.promote({ receipt });
             throw new Error('simulated crash after durable project checkpoint');
         });
 
@@ -187,6 +189,46 @@ describe('executePlannedActions', () => {
             ],
             workLeases: [expect.objectContaining({ workId: receipt.batchId, terminalState: 'orphaned' })],
         });
+    });
+
+    it('removes a prepared recovery capsule when the owning project checkpoint aborts', async () => {
+        const receipt = {
+            ...idempotentReplayResult('partially-committed').receipt,
+            outcome: 'partially-committed' as const,
+            pendingEffects: [
+                {
+                    commandId: 'command-1',
+                    kind: 'runtime-graph' as const,
+                    operation: 'addDevice' as const,
+                    reason: 'runtime graph repair interrupted',
+                    remediation: 'repair' as const,
+                    state: 'pending' as const,
+                },
+            ],
+        };
+        agentRunLifecycle.create({
+            runId: receipt.runId,
+            request: 'Add a compressor',
+            mode: 'apply',
+            createdRevision: 'revision-1',
+            createdAt: 100,
+        });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
+            const preparation = options?.onProjectCommitCheckpoint?.({ receipt });
+            preparation?.discard();
+            return { status: 'failed' as const, reason: 'project commit unavailable', actions: [] as [] };
+        });
+
+        await expect(
+            executePlannedActions({
+                commandBatch,
+                prompt: 'Add a compressor',
+                actions: [action],
+                projectRevision: 'revision-1',
+            })
+        ).resolves.toEqual({ status: 'failed', reason: 'project commit unavailable' });
+        expect(readAgentRunState().pendingEffectRecoveryLedger).toBeUndefined();
+        expect(agentRunLifecycle.get(receipt.runId)?.pendingEffectContinuations).toEqual([]);
     });
 
     it('rejects legacy execution instead of dispatching an unbound action batch', async () => {
