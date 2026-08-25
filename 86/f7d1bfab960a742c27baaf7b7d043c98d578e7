@@ -1,0 +1,69 @@
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_a40848e8f8cca9::t_11265b8ed787b7 125
+src/modules/Project/useCases/projectPersistence/projectIdentityTransitionDependencies.ts
+  s_a40848e8f8cca9::t_11265b8ed787b7 7
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_734c204a7bc8cf 14
+src/modules/Collaboration/repositories/durableAssetOwnerHandoffLifecycle.ts
+  s_a40848e8f8cca9::t_51853420ef8158 38,56-57,67,131-132,149,161,183,278,294,305,408,418
+  s_a40848e8f8cca9::t_2db9ffcdf000c3 21,36,64-66,68-71,302-304,306-309,407,423
+  s_a40848e8f8cca9::t_37eb0256dec163 22,58,133,150,162,184,279,295
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_37eb0256dec163 124
+  s_a40848e8f8cca9::t_e78ba749d794a8 11,15,80,86,109,111,122-123,129-136,140-142,146,159,162,174,443,445,460,474-475
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_2fc9af4f1b127d 568,575,586,596,605
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_734c204a7bc8cf 40-43,99,121
+src/modules/Collaboration/repositories/durableAssetRecoveryFence.ts
+  s_a40848e8f8cca9::t_734c204a7bc8cf 1-6,17-18,20-23,27,29-33
+  s_a40848e8f8cca9::t_37eb0256dec163 7-16,19,24-26,28
+src/modules/Collaboration/repositories/durableAssetStageLifecycle.ts
+  s_a40848e8f8cca9::t_4f539a874e7971 156,246,260,268,285,294
+  s_a40848e8f8cca9::t_83615cf26341a6 18-19,155,178,223,291-293,295-299
+  s_a40848e8f8cca9::t_37eb0256dec163 261,269,286
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_db6f5fc257668a 575-580
+  s_a40848e8f8cca9::t_1025486a4a021c 63,182,199,203
+  s_a40848e8f8cca9::t_c9c5f1e2f77f31 74
+  s_a40848e8f8cca9::t_15eb9cf9e5d2c9 18-21,73,197-198,200-202,204-206,374,396-397,416,425,448-455,511,571-574
+  s_a40848e8f8cca9::t_b13277b1f6d84b 581
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_3d299bbabafa2c 26-29,351,618
+  s_a40848e8f8cca9::t_65adf4152e7988 387-388,393,395,397-398,417,421,437,455,458,463-467,472,475,477-478,489,493,504
+  s_a40848e8f8cca9::t_ae0e9e8f201d35 735,773,827,861,881
+  s_a40848e8f8cca9::t_5e9f79ddc10beb 505-506,510-590
+  s_a40848e8f8cca9::t_5cb13f7e96fe5e 507-509
+src/modules/Collaboration/repositories/durableAssetOwnershipLifecycle.ts
+  s_a40848e8f8cca9::t_37eb0256dec163 157
+  s_a40848e8f8cca9::t_9298ed3618e4ba 16,19,32,34,221,223,233,239,245,250-258,284,286
+  s_a40848e8f8cca9::t_3a1dd80e5aa6c4 156,158-161,224,234,240,246
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_d79a454cc707e6 24,700,727-732,746
+  s_a40848e8f8cca9::t_75388b38d7a9cc 142
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_a40848e8f8cca9::t_8ab8283916b306 47,142,296,309
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_11265b8ed787b7 294-295,309
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransaction.spec.ts
+  s_a40848e8f8cca9::t_8ab8283916b306 35-36,54
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  s_a40848e8f8cca9::t_a4a22d87726ad9 21,28,74,80-94,115,119,130,138,145,162,166,177-179,181,185
+  s_a40848e8f8cca9::t_d01876bb0366cc 158-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "86f7d1bfab960a742c27baaf7b7d043c98d578e7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
