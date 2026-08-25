@@ -67,10 +67,6 @@ vi.mock('../../stores/trackStore', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return { ...actual, trackStore: trackStoreMock };
 });
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return { ...actual, trackStore: trackStoreMock };
-});
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return { ...actual, transportStore: transportStoreMock, playheadPositionRef: { current: 0 } };
@@ -125,12 +121,12 @@ describe('buildTimelineRenderModel', () => {
         expect(subscriber).toHaveBeenCalledOnce();
         expect(subscriber).toHaveBeenCalledWith(next);
         expect(reactSubscriber).toHaveBeenCalledOnce();
-        expect(definingTrackStore.getSnapshot()).toBe(next);
-        expect(definingTrackStore.value).toBe(next);
+        expect(barrelTrackStore.getSnapshot()).toBe(next);
+        expect(barrelTrackStore.value).toBe(next);
 
         unsubscribe();
         unsubscribeReact();
-        definingTrackStore.set(previous);
+        barrelTrackStore.set(previous);
         expect(subscriber).toHaveBeenCalledOnce();
         expect(reactSubscriber).toHaveBeenCalledOnce();
         expect(definingTrackStore.getSnapshot()).toBe(previous);

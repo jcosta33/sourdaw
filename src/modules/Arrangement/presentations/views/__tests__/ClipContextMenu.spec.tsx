@@ -116,15 +116,6 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => {
     return { ...actual, trackStore };
 });
 
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    const { trackStore } = await import('../../../stores/trackStore');
-    return {
-        ...actual,
-        trackStore,
-    };
-});
-
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
@@ -229,8 +220,20 @@ describe('ClipContextMenu', () => {
             import('../../../stores/trackStore'),
             import('#/modules/Arrangement/stores'),
         ]);
+        const previous = definingTrackStore.value;
+        if (!previous) {
+            throw new Error('Expected the track fixture to contain a value');
+        }
+        const selected = { ...previous, selectedTrackId: 't1' };
 
         expect(barrelTrackStore).toBe(definingTrackStore);
+        definingTrackStore.set(selected);
+        expect(barrelTrackStore.value).toBe(selected);
+        expect(barrelTrackStore.getSnapshot()).toBe(selected);
+
+        barrelTrackStore.set(previous);
+        expect(definingTrackStore.value).toBe(previous);
+        expect(definingTrackStore.getSnapshot()).toBe(previous);
     });
 
     it('keeps both reactive track store subscriber channels on one snapshot', async () => {
