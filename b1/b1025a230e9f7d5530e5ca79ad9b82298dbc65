@@ -1,0 +1,38 @@
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_a40848e8f8cca9::t_94f4038f3d9725 1-5
+  s_a40848e8f8cca9::t_721f82d08779cd 29
+src/modules/PluginHost/useCases/pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild.ts
+  s_a40848e8f8cca9::t_721f82d08779cd 1-10
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_721f82d08779cd 12,15,91-100
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  s_a40848e8f8cca9::t_e44b9bf42f15be 90,94,99,102
+  s_a40848e8f8cca9::t_28c65e511d3fa3 11,24-26,73,107-114
+  s_a40848e8f8cca9::t_6591d29b16f314 74-75,115-116
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_28c65e511d3fa3 7-9,58,110,116-125,127-189
+  s_a40848e8f8cca9::t_4d6e88df74aa86 126
+  s_a40848e8f8cca9::t_f6de866ac6f48b 190-191
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_a40848e8f8cca9::t_28c65e511d3fa3 1-68
+src/modules/PluginHost/useCases/index.ts
+  s_a40848e8f8cca9::t_721f82d08779cd 25
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  s_a40848e8f8cca9::t_721f82d08779cd 3,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b1b1025a230e9f7d5530e5ca79ad9b82298dbc65",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
