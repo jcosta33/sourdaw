@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => {
         loadCrdtProject: vi.fn(() => Promise.resolve(true)),
         notifyUser: vi.fn(),
         persistCrdtProject: vi.fn(() => Promise.resolve()),
-        prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
+        prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
         projectCrdtToStores: vi.fn(),
         projectStoreValue: { value: { initialized: true, loading: false } },
         readLegacyChordTrackMigration: vi.fn(() => null),
@@ -130,7 +130,7 @@ describe('missing media on project load', () => {
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
-        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: vi.fn() });
+        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ cancel: vi.fn(), publish: vi.fn() });
         mocks.readLegacyChordTrackMigration.mockReturnValue(null);
         mocks.startCrdtAutoSave.mockReturnValue(vi.fn());
         mocks.trackStoreValue.value = null;
