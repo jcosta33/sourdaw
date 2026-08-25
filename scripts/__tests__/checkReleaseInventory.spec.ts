@@ -73,6 +73,25 @@ import { DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
+
+type FileIdentity = {
+    dev: bigint;
+    ino: bigint;
+};
+
+function captureFileIdentity(descriptor: number): FileIdentity {
+    const metadata = fstatSync(descriptor, { bigint: true });
+    return { dev: metadata.dev, ino: metadata.ino };
+}
+
+function descriptorHasFileIdentity(descriptor: number, identity: FileIdentity | undefined): boolean {
+    if (identity === undefined) {
+        return false;
+    }
+    const metadata = fstatSync(descriptor, { bigint: true });
+    return metadata.dev === identity.dev && metadata.ino === identity.ino;
+}
+
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
 const repositoryDawDspArtifacts = new Set(wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp')?.artifacts ?? []);
@@ -1429,7 +1448,7 @@ describe('release inventory', () => {
         const safeContents = 'inside legal bytes';
         const value = inventory();
         value.surfaces[0]!.digests = [`sha256:${sha256(safeContents)}:${path}`];
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let rewritten = false;
 
         try {
@@ -1441,13 +1460,13 @@ describe('release inventory', () => {
                 open(openPath, flags) {
                     const descriptor = openSync(openPath, flags);
                     if (openPath === filePath) {
-                        targetDescriptor = descriptor;
+                        targetIdentity = captureFileIdentity(descriptor);
                     }
                     return descriptor;
                 },
                 read(descriptor, buffer, offset, length, position) {
                     const bytesRead = readSync(descriptor, buffer, offset, length, position);
-                    if (descriptor === targetDescriptor && bytesRead > 0 && !rewritten) {
+                    if (descriptorHasFileIdentity(descriptor, targetIdentity) && bytesRead > 0 && !rewritten) {
                         writeFileSync(filePath, safeContents);
                         rewritten = true;
                     }

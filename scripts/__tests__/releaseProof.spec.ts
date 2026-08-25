@@ -83,6 +83,24 @@ type DesktopOptions = {
     symlink?: 'contained' | 'escaping' | 'none';
 };
 
+type FileIdentity = {
+    dev: bigint;
+    ino: bigint;
+};
+
+function captureFileIdentity(descriptor: number): FileIdentity {
+    const metadata = fstatSync(descriptor, { bigint: true });
+    return { dev: metadata.dev, ino: metadata.ino };
+}
+
+function descriptorHasFileIdentity(descriptor: number, identity: FileIdentity | undefined): boolean {
+    if (identity === undefined) {
+        return false;
+    }
+    const metadata = fstatSync(descriptor, { bigint: true });
+    return metadata.dev === identity.dev && metadata.ino === identity.ino;
+}
+
 function hash(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
@@ -676,32 +694,26 @@ describe('release proof', () => {
         const proofPath = join(fixture.candidate, 'release-proof.json');
         const originalProof = readFileSync(proofPath);
         let commitPath: string | undefined;
-        let proofDescriptor: number | undefined;
-        let commitDescriptor: number | undefined;
+        let proofIdentity: FileIdentity | undefined;
+        let commitIdentity: FileIdentity | undefined;
         let proofReads = 0;
         let commitReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
-                if (descriptor === proofDescriptor && path !== proofPath) {
-                    proofDescriptor = undefined;
-                }
-                if (descriptor === commitDescriptor && path !== commitPath) {
-                    commitDescriptor = undefined;
-                }
                 if (path === proofPath) {
-                    proofDescriptor = descriptor;
+                    proofIdentity = captureFileIdentity(descriptor);
                 } else if (path === commitPath) {
-                    commitDescriptor = descriptor;
+                    commitIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === proofDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, proofIdentity)) {
                     proofReads += 1;
                 }
-                if (descriptor === commitDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, commitIdentity)) {
                     commitReads += 1;
                 }
                 return readSync(descriptor, buffer, offset, length, position);
@@ -734,19 +746,19 @@ describe('release proof', () => {
         const fixture = createFixture();
         assemble(fixture);
         const proofPath = join(fixture.candidate, 'release-proof.json');
-        let proofDescriptor: number | undefined;
+        let proofIdentity: FileIdentity | undefined;
         let proofReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
                 if (path === proofPath) {
-                    proofDescriptor = descriptor;
+                    proofIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === proofDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, proofIdentity)) {
                     proofReads += 1;
                     if (proofReads === 1) {
                         truncateSync(proofPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
@@ -765,8 +777,8 @@ describe('release proof', () => {
         assemble(fixture);
         const proofPath = join(fixture.candidate, 'release-proof.json');
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
-        let proofDescriptor: number | undefined;
-        let manifestDescriptor: number | undefined;
+        let proofIdentity: FileIdentity | undefined;
+        let manifestIdentity: FileIdentity | undefined;
         let proofFlags: number | undefined;
         let proofReads = 0;
         let manifestReads = 0;
@@ -775,19 +787,19 @@ describe('release proof', () => {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
                 if (path === proofPath) {
-                    proofDescriptor = descriptor;
+                    proofIdentity = captureFileIdentity(descriptor);
                     proofFlags = flags;
                 } else if (path === manifestPath) {
-                    manifestDescriptor = descriptor;
+                    manifestIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === proofDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, proofIdentity)) {
                     proofReads += 1;
                 }
-                if (descriptor === manifestDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, manifestIdentity)) {
                     manifestReads += 1;
                 }
                 return readSync(descriptor, buffer, offset, length, position);
@@ -808,21 +820,19 @@ describe('release proof', () => {
         assemble(fixture);
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
         truncateSync(manifestPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
-        let manifestDescriptor: number | undefined;
+        let manifestIdentity: FileIdentity | undefined;
         let manifestReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
                 if (path === manifestPath) {
-                    manifestDescriptor = descriptor;
-                } else if (descriptor === manifestDescriptor) {
-                    manifestDescriptor = undefined;
+                    manifestIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === manifestDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, manifestIdentity)) {
                     manifestReads += 1;
                 }
                 return readSync(descriptor, buffer, offset, length, position);
@@ -877,21 +887,19 @@ describe('release proof', () => {
         const fixture = createFixture();
         assemble(fixture);
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
-        let manifestDescriptor: number | undefined;
+        let manifestIdentity: FileIdentity | undefined;
         let manifestReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
                 if (path === manifestPath) {
-                    manifestDescriptor = descriptor;
-                } else if (descriptor === manifestDescriptor) {
-                    manifestDescriptor = undefined;
+                    manifestIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === manifestDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, manifestIdentity)) {
                     manifestReads += 1;
                     if (manifestReads === 1) {
                         truncateSync(manifestPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
@@ -909,19 +917,19 @@ describe('release proof', () => {
         const fixture = createFixture();
         assemble(fixture);
         const path = join(fixture.candidate, 'web/contents/assets/app.js');
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let earlyEofReports = 0;
         const fileReader: ReleaseProofFileReader = {
             open(openPath, flags) {
                 const descriptor = openSync(openPath, flags);
                 if (openPath === path) {
-                    targetDescriptor = descriptor;
+                    targetIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === targetDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, targetIdentity)) {
                     if (earlyEofReports === 0) {
                         truncateSync(path, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
                         earlyEofReports += 1;
@@ -944,21 +952,19 @@ describe('release proof', () => {
         const source = proof(fixture).source as Record<string, unknown>;
         const sourceArchivePath = join(fixture.candidate, source.archivePath as string);
         const budget = readFileSync(proofPath).length + readFileSync(manifestPath).length;
-        let archiveDescriptor: number | undefined;
+        let archiveIdentity: FileIdentity | undefined;
         let archiveReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
                 if (path === sourceArchivePath) {
-                    archiveDescriptor = descriptor;
-                } else if (descriptor === archiveDescriptor) {
-                    archiveDescriptor = undefined;
+                    archiveIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === archiveDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, archiveIdentity)) {
                     archiveReads += 1;
                 }
                 return readSync(descriptor, buffer, offset, length, position);
@@ -979,22 +985,19 @@ describe('release proof', () => {
         const fixture = createFixture();
         assemble(fixture);
         const path = join(fixture.candidate, candidatePath);
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let targetReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(openPath, flags) {
                 const descriptor = openSync(openPath, flags);
-                if (descriptor === targetDescriptor && openPath !== path) {
-                    targetDescriptor = undefined;
-                }
                 if (openPath === path) {
-                    targetDescriptor = descriptor;
+                    targetIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === targetDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, targetIdentity)) {
                     targetReads += 1;
                     if (targetReads === 1) {
                         truncateSync(path, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
@@ -1039,19 +1042,19 @@ describe('release proof', () => {
             0
         );
         const exhaustedPath = join(fixture.candidate, 'web/contents', exhaustedMember);
-        let exhaustedDescriptor: number | undefined;
+        let exhaustedIdentity: FileIdentity | undefined;
         let exhaustedReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
                 if (path === exhaustedPath) {
-                    exhaustedDescriptor = descriptor;
+                    exhaustedIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === exhaustedDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, exhaustedIdentity)) {
                     exhaustedReads += 1;
                 }
                 return readSync(descriptor, buffer, offset, length, position);
@@ -1113,19 +1116,19 @@ describe('release proof', () => {
             0
         );
         const exhaustedPath = join(fixture.candidate, buildInputsPath, exhaustedInput);
-        let exhaustedDescriptor: number | undefined;
+        let exhaustedIdentity: FileIdentity | undefined;
         let exhaustedReads = 0;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
                 if (path === exhaustedPath) {
-                    exhaustedDescriptor = descriptor;
+                    exhaustedIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === exhaustedDescriptor) {
+                if (descriptorHasFileIdentity(descriptor, exhaustedIdentity)) {
                     exhaustedReads += 1;
                 }
                 return readSync(descriptor, buffer, offset, length, position);
@@ -1244,17 +1247,19 @@ describe('release proof', () => {
         assemble(fixture);
         const manifestPath = join(fixture.candidate, 'web/contents/web-artifact-manifest.json');
         const aliasPath = join(fixture.base, 'web-manifest-read.alias.json');
-        const descriptorPaths = new Map<number, string>();
+        let manifestIdentity: FileIdentity | undefined;
         let linked = false;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
-                descriptorPaths.set(descriptor, path);
+                if (path === manifestPath) {
+                    manifestIdentity = captureFileIdentity(descriptor);
+                }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptorPaths.get(descriptor) === manifestPath && !linked) {
+                if (descriptorHasFileIdentity(descriptor, manifestIdentity) && !linked) {
                     linkSync(manifestPath, aliasPath);
                     linked = true;
                 }
@@ -1310,19 +1315,19 @@ describe('release proof', () => {
         const fixture = createFixture();
         assemble(fixture);
         const path = join(fixture.candidate, candidatePath);
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let swapped = false;
         const fileReader: ReleaseProofFileReader = {
             open(openPath, flags) {
                 const descriptor = openSync(openPath, flags);
                 if (openPath === path) {
-                    targetDescriptor = descriptor;
+                    targetIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === targetDescriptor && !swapped) {
+                if (descriptorHasFileIdentity(descriptor, targetIdentity) && !swapped) {
                     swapped = true;
                     rmSync(path);
                     write(path, '{');
@@ -1342,20 +1347,20 @@ describe('release proof', () => {
         const original = readFileSync(path);
         const replacement = Buffer.from(original.toString('utf8').replace('current', 'raced!!'), 'utf8');
         const before = lstatSync(path, { bigint: true });
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let rewritten = false;
         const fileReader: ReleaseProofFileReader = {
             open(openPath, flags) {
                 const descriptor = openSync(openPath, flags);
                 if (openPath === path) {
-                    targetDescriptor = descriptor;
+                    targetIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
                 const bytesRead = readSync(descriptor, buffer, offset, length, position);
-                if (descriptor === targetDescriptor && bytesRead > 0 && !rewritten) {
+                if (descriptorHasFileIdentity(descriptor, targetIdentity) && bytesRead > 0 && !rewritten) {
                     writeFileSync(path, replacement);
                     rewritten = true;
                 }
@@ -1379,20 +1384,20 @@ describe('release proof', () => {
         const original = readFileSync(path);
         utimesSync(path, new Date(0), new Date(0));
         const before = lstatSync(path, { bigint: true });
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let rewritten = false;
         const fileReader: ReleaseProofFileReader = {
             open(openPath, flags) {
                 const descriptor = openSync(openPath, flags);
                 if (openPath === path) {
-                    targetDescriptor = descriptor;
+                    targetIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
                 const bytesRead = readSync(descriptor, buffer, offset, length, position);
-                if (descriptor === targetDescriptor && bytesRead > 0 && !rewritten) {
+                if (descriptorHasFileIdentity(descriptor, targetIdentity) && bytesRead > 0 && !rewritten) {
                     writeFileSync(path, original);
                     rewritten = true;
                 }
@@ -1416,7 +1421,7 @@ describe('release proof', () => {
         ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],
     ])('rejects a staged %s swapped during staging validation', (label, candidatePath) => {
         const fixture = createFixture();
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let swapped = false;
         const validator: ReleaseProofValidator = (options) => {
             const path = join(options.candidate, candidatePath);
@@ -1424,13 +1429,13 @@ describe('release proof', () => {
                 open(openPath, flags) {
                     const descriptor = openSync(openPath, flags);
                     if (openPath === path) {
-                        targetDescriptor = descriptor;
+                        targetIdentity = captureFileIdentity(descriptor);
                     }
                     return descriptor;
                 },
                 noFollowFlag: () => constants.O_NOFOLLOW,
                 read(descriptor, buffer, offset, length, position) {
-                    if (descriptor === targetDescriptor && !swapped) {
+                    if (descriptorHasFileIdentity(descriptor, targetIdentity) && !swapped) {
                         swapped = true;
                         rmSync(path);
                         write(path, '{');
@@ -2687,19 +2692,19 @@ with open(early, "r+b", buffering=0) as file:
     it('rejects a published file that grows past its descriptor limit while hashing', () => {
         const fixture = createFixture();
         const path = join(fixture.candidate, 'web/contents/assets/app.js');
-        let targetDescriptor: number | undefined;
+        let targetIdentity: FileIdentity | undefined;
         let mutated = false;
         const fileReader: ReleaseProofFileReader = {
             open(openPath, flags) {
                 const descriptor = openSync(openPath, flags);
                 if (openPath === path) {
-                    targetDescriptor = descriptor;
+                    targetIdentity = captureFileIdentity(descriptor);
                 }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === targetDescriptor && !mutated) {
+                if (descriptorHasFileIdentity(descriptor, targetIdentity) && !mutated) {
                     mutated = true;
                     truncateSync(path, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
                 }
@@ -2718,17 +2723,19 @@ with open(early, "r+b", buffering=0) as file:
         const fixture = createFixture();
         const victim = join(fixture.candidate, 'desktop/ELECTRON-SOURCES.json');
         const trigger = join(fixture.candidate, 'web/contents/web-artifact-manifest.json');
-        const descriptorPaths = new Map<number, string>();
+        let triggerIdentity: FileIdentity | undefined;
         let mutated = false;
         const fileReader: ReleaseProofFileReader = {
             open(path, flags) {
                 const descriptor = openSync(path, flags);
-                descriptorPaths.set(descriptor, path);
+                if (path === trigger) {
+                    triggerIdentity = captureFileIdentity(descriptor);
+                }
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptorPaths.get(descriptor) === trigger && !mutated) {
+                if (descriptorHasFileIdentity(descriptor, triggerIdentity) && !mutated) {
                     const bytes = readFileSync(victim);
                     bytes[0] = bytes[0] === 0x7b ? 0x5b : 0x7b;
                     writeFileSync(victim, bytes);
