@@ -279,8 +279,8 @@ expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
 expect(
     concurrency?.['cancel-in-progress'] ===
-        "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}",
-    'concurrency cancellation must include pull_request and pull_request_review without including schedule or workflow_dispatch'
+        "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
+    'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
 );
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",

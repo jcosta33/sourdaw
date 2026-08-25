@@ -42,9 +42,10 @@ permissions:
 
 concurrency:
   group: health-gates-${{ github.event.pull_request.number || github.ref }}
-  # Pull-request and review runs for the same PR supersede older work in that
-  # group. Scheduled and dispatched runs against main remain non-cancelling.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
+  # Pull-request runs and approved reviews supersede older work for that PR.
+  # Other review states skip validation and remain non-cancelling, as do
+  # scheduled and dispatched runs against main.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}
 
 env:
   NODE_VERSION: 24.19.0
