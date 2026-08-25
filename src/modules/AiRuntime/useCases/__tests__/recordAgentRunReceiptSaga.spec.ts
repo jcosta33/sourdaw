@@ -1,8 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
+import { agentRunWorkLease } from '../agentRunWorkLease';
+import { recordAgentRunPendingEffectContinuation } from '../recordAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
 
 type Receipt = Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt'];
@@ -205,6 +208,101 @@ describe('recordAgentRunReceiptSaga', () => {
                     expect.objectContaining({ stepId: `effect:batch-agent-effects:${genericEffect.commandId}` }),
                 ]),
             },
+        });
+    });
+
+    it('retains the exact continuation across a receipt-write crash without clearing independent restart work', () => {
+        const pendingEffect = {
+            commandId: '11111111-1111-4111-8111-111111111111',
+            kind: 'runtime-graph' as const,
+            operation: 'setTrackGain' as const,
+            reason: 'runtime graph repair remains pending',
+            remediation: 'repair' as const,
+            state: 'pending' as const,
+        };
+        const receipt = createReceipt([pendingEffect]);
+        expect(
+            agentRunWorkLease.claim({
+                runId: 'run-agent-effects',
+                workId: 'batch-agent-effects',
+                ownerKind: 'command',
+                cleanupOwner: 'command-executor',
+                idempotencyKey: 'command-batch',
+                receiptIdentity: 'command:run-agent-effects:batch-agent-effects',
+                idempotent: true,
+                retriable: false,
+                claimedAt: 103,
+            }).status
+        ).toBe('claimed');
+        expect(
+            agentRunWorkLease.claim({
+                runId: 'run-agent-effects',
+                workId: 'render-other',
+                ownerKind: 'render',
+                cleanupOwner: 'render-worker',
+                idempotencyKey: 'render-other',
+                receiptIdentity: 'render:other',
+                idempotent: true,
+                retriable: false,
+                claimedAt: 104,
+            }).status
+        ).toBe('claimed');
+        agentRunLifecycle.registerTemporaryAsset({
+            runId: 'run-agent-effects',
+            assetId: 'preview.wav',
+            kind: 'render',
+            cleanupOwner: 'render-worker',
+            createdAt: 105,
+        });
+        recordAgentRunPendingEffectContinuation({
+            runId: 'run-agent-effects',
+            receipt,
+            commandBatch: COMMAND_BATCH,
+            recordedAt: 106,
+        });
+        vi.spyOn(agentRunLifecycle, 'recordCommittedWork').mockImplementation(() => {
+            throw new Error('simulated crash before AgentRun receipt writes');
+        });
+
+        expect(() =>
+            recordAgentRunReceiptSaga({
+                runId: 'run-agent-effects',
+                receipt,
+                actions: ACTIONS,
+                completesRun: true,
+                commandBatch: COMMAND_BATCH,
+            })
+        ).toThrow('simulated crash before AgentRun receipt writes');
+        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: ['run-agent-effects'] });
+        expect(agentRunLifecycle.get('run-agent-effects')).toMatchObject({
+            phase: 'paused',
+            manualResume: { required: true, workIds: ['render-other'] },
+            pendingEffectContinuations: [
+                {
+                    batchId: 'batch-agent-effects',
+                    effects: [pendingEffect],
+                    serializedBatch: COMMAND_BATCH.serialized,
+                },
+            ],
+            temporaryAssets: [{ assetId: 'preview.wav', status: 'cleanup-pending' }],
+            workLeases: [
+                expect.objectContaining({ workId: 'batch-agent-effects', terminalState: 'orphaned' }),
+                expect.objectContaining({ workId: 'render-other', terminalState: 'orphaned' }),
+            ],
+        });
+
+        agentRunLifecycle.completePendingEffectContinuation({
+            runId: 'run-agent-effects',
+            batchId: 'batch-agent-effects',
+            receiptIdentity: '1:run-agent-effects:batch-agent-effects:committed',
+            completedAt: 201,
+        });
+
+        expect(agentRunLifecycle.get('run-agent-effects')).toMatchObject({
+            phase: 'paused',
+            manualResume: { required: true, workIds: ['render-other'] },
+            pendingEffectContinuations: [],
+            temporaryAssets: [{ assetId: 'preview.wav', status: 'cleanup-pending' }],
         });
     });
 });

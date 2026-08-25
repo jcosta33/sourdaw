@@ -273,6 +273,7 @@ export const handleAddDevice = createHandler<'addDevice'>({
             status: 'written' as const,
             afterCommit: applyRuntimeEffect,
             afterAmbiguousCommit: applyRuntimeEffect,
+            postCommitEffect: { kind: 'runtime-graph' as const, remediation: 'repair' as const },
         };
     },
     describe: (action) => {

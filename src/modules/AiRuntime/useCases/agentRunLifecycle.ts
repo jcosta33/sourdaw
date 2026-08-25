@@ -643,16 +643,29 @@ function completeAgentRunPendingEffectContinuation(input: {
                 : step
         );
         const hasUnsettledSaga = steps.some(
-            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+            (step) =>
+                step.state === 'pending' ||
+                step.state === 'external-pending' ||
+                step.state === 'uncompensated' ||
+                step.state === 'manual-repair'
         );
+        const hasUnsettledWorkLease = run.workLeases.some((lease) => lease.terminalState === null);
+        const hasTemporaryAsset = run.temporaryAssets.some((asset) => asset.status !== 'released');
+        const hasIndependentManualResume =
+            run.manualResume.required && run.manualResume.workIds.some((workId) => workId !== input.batchId);
+        const hasRecoveryObligation =
+            hasUnsettledSaga ||
+            pendingEffectContinuations.length > 0 ||
+            hasUnsettledWorkLease ||
+            hasTemporaryAsset ||
+            hasIndependentManualResume;
         return {
             ...run,
-            phase: !hasUnsettledSaga && pendingEffectContinuations.length === 0 ? 'completed' : run.phase,
+            phase: hasRecoveryObligation ? run.phase : 'completed',
             pendingEffectContinuations,
-            manualResume:
-                pendingEffectContinuations.length === 0 && !hasUnsettledSaga
-                    ? { required: false, reason: null, workIds: [], requiredAt: null }
-                    : run.manualResume,
+            manualResume: hasRecoveryObligation
+                ? run.manualResume
+                : { required: false, reason: null, workIds: [], requiredAt: null },
             saga: { schemaVersion: 1, steps },
         };
     });

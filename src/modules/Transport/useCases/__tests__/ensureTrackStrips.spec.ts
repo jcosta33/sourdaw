@@ -45,6 +45,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        subscribe: vi.fn(),
     },
     resolveEligibleDeviceWriteTarget: (deviceId: string) => {
         const track = mocks.trackStoreValue.value?.tracks.find((candidate) =>
@@ -92,6 +93,12 @@ vi.mock('#/modules/Routing/useCases', () => ({
 describe('ensureTrackStrips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.projectTrackToLiveStrip.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 1, projectRevision: 'project-1' },
+            runtimeRevision: 1,
+        });
     });
 
     it('bootstraps tracks and their components in the engine', () => {
@@ -231,6 +238,24 @@ describe('ensureTrackStrips', () => {
         expect(mocks.ensureBusStrip).not.toHaveBeenCalled();
         expect(mocks.setBusGain).not.toHaveBeenCalled();
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed strip obligation without publishing sidechain routing', () => {
+        mocks.trackStoreValue.value = {
+            selectedTrackId: null,
+            tracks: [createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' })],
+        };
+        mocks.projectTrackToLiveStrip.mockReturnValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'runtime graph revision is stale',
+        });
+
+        expect(ensureTrackStrips({ collectExternalPluginActivations: true })).toEqual({
+            status: 'failed',
+            reason: 'runtime graph revision is stale',
+        });
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
     });
 

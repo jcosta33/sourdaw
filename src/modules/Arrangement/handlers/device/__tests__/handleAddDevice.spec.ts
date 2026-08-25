@@ -167,6 +167,7 @@ describe('handleAddDevice', () => {
         }
 
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(result.postCommitEffect).toEqual({ kind: 'runtime-graph', remediation: 'repair' });
         result.afterCommit();
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
             expect.objectContaining({ operation: 'add-device' })

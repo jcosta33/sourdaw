@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { createAgentSagaStep } from './createAgentSagaStep';
+import { recordAgentRunPendingEffectContinuation } from './recordAgentRunPendingEffectContinuation';
 
 type VerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type CommandBatch = Pick<ReturnType<typeof compileVersionedCommandBatchEnvelope>, 'authority' | 'serialized'>;
@@ -174,20 +175,11 @@ export function recordAgentRunReceiptSaga(input: {
         });
     }
     if (pendingEffects.length > 0 && input.commandBatch) {
-        agentRunLifecycle.recordPendingEffectContinuation({
+        recordAgentRunPendingEffectContinuation({
             runId: input.runId,
             recordedAt,
-            continuation: {
-                authority: structuredClone(input.commandBatch.authority),
-                batchId: input.receipt.batchId,
-                effects: structuredClone(pendingEffects),
-                lastError: null,
-                recovery: pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
-                    ? 'manual-repair'
-                    : 'reconcile-batch',
-                receiptIdentity,
-                serializedBatch: input.commandBatch.serialized,
-            },
+            receipt: input.receipt,
+            commandBatch: input.commandBatch,
         });
     } else if (
         pendingEffects.length === 0 &&

@@ -14,6 +14,7 @@ import {
     type HandlerAfterCommit,
     type HandlerDescribeResult,
     type HandlerExecutionResult,
+    type HandlerPostCommitEffect,
 } from '#/utils/handlerContract';
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
@@ -108,6 +109,7 @@ type PreparedBatchAction = {
     afterAbort: HandlerAfterCommit | null;
     afterCommit: HandlerAfterCommit | null;
     afterAmbiguousCommit: HandlerAfterCommit | null;
+    postCommitEffect: HandlerPostCommitEffect | null;
     requiresAbortCompensation: boolean;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
@@ -161,6 +163,16 @@ function getPendingPostCommitEffect(
             state: declared.state,
         };
     }
+    if (prepared.postCommitEffect) {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: prepared.postCommitEffect.kind,
+            operation: prepared.action.type,
+            reason: failureReason(error),
+            remediation: prepared.postCommitEffect.remediation,
+            state: 'pending',
+        };
+    }
     return {
         commandId: prepared.envelope.commandId,
         kind: 'external-effect',
@@ -168,6 +180,24 @@ function getPendingPostCommitEffect(
         reason: failureReason(error),
         remediation: canReconcile ? 'reconcile' : 'manual-repair',
         state: 'pending',
+    };
+}
+
+function getPreparedPendingPostCommitEffect(prepared: PreparedBatchAction): PendingPostCommitEffect {
+    const base = {
+        commandId: prepared.envelope.commandId,
+        operation: prepared.action.type,
+        reason: 'Post-commit effect has not completed',
+        state: 'pending' as const,
+    };
+    if (prepared.postCommitEffect?.kind === 'runtime-graph') {
+        return { ...base, kind: 'runtime-graph', remediation: prepared.postCommitEffect.remediation };
+    }
+    return {
+        ...base,
+        kind: 'external-effect',
+        remediation:
+            prepared.postCommitEffect?.remediation ?? (prepared.afterAmbiguousCommit ? 'reconcile' : 'manual-repair'),
     };
 }
 
@@ -317,6 +347,7 @@ async function executePreparedBatch(
         }
         prepared.afterCommit = result?.afterCommit ?? null;
         prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
+        prepared.postCommitEffect = result?.postCommitEffect ?? null;
         executedActions.push(prepared);
     }
     assertExecutionAuthorized(shouldExecute);
@@ -662,6 +693,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     afterAbort: null,
                     afterCommit: null,
                     afterAmbiguousCommit: null,
+                    postCommitEffect: null,
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
                     description,
@@ -838,18 +870,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             try {
                 storageTransaction.scope(() => {
                     const pendingEffects = executedActions.flatMap((executed): PendingPostCommitEffect[] =>
-                        executed.afterCommit
-                            ? [
-                                  {
-                                      commandId: executed.envelope.commandId,
-                                      kind: 'external-effect',
-                                      operation: executed.action.type,
-                                      reason: 'Post-commit effect has not completed',
-                                      remediation: executed.afterAmbiguousCommit ? 'reconcile' : 'manual-repair',
-                                      state: 'pending',
-                                  },
-                              ]
-                            : []
+                        executed.afterCommit ? [getPreparedPendingPostCommitEffect(executed)] : []
                     );
                     options?.onProjectCommitPrepared?.({
                         status: 'committed',

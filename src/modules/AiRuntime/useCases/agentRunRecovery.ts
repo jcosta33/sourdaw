@@ -16,7 +16,7 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
         );
         if (
-            (TERMINAL_PHASES.has(run.phase) && !hasUnsettledSaga) ||
+            (TERMINAL_PHASES.has(run.phase) && !hasUnsettledLease && !hasLiveTemporaryAsset && !hasUnsettledSaga) ||
             (run.phase === 'paused' && !hasUnsettledLease && !hasLiveTemporaryAsset && !hasUnsettledSaga)
         ) {
             return run;
@@ -26,7 +26,9 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             run.pendingEffectContinuations.map((continuation) => continuation.batchId)
         );
         const orphanedWorkIds = [
-            ...run.workLeases.filter((lease) => lease.terminalState === null).map((lease) => lease.workId),
+            ...run.workLeases
+                .filter((lease) => lease.terminalState === null && !retainedEffectBatchIds.has(lease.workId))
+                .map((lease) => lease.workId),
             ...run.saga.steps
                 .filter(
                     (step) =>

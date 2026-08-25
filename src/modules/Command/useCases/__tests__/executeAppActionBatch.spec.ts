@@ -574,6 +574,43 @@ describe('executeAppActionBatch', () => {
         expect(afterCommit).toHaveBeenCalledOnce();
     });
 
+    it('checkpoints a declared runtime repair before its deferred effect runs', async () => {
+        const afterCommit = vi.fn();
+        const onProjectCommitPrepared = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({
+                    status: 'written',
+                    afterCommit,
+                    afterAmbiguousCommit: afterCommit,
+                    postCommitEffect: { kind: 'runtime-graph', remediation: 'repair' },
+                }),
+            }),
+        });
+
+        await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+            onProjectCommitPrepared,
+        });
+
+        expect(onProjectCommitPrepared).toHaveBeenCalledWith({
+            status: 'committed',
+            actions: expect.any(Array),
+            pendingEffects: [
+                {
+                    commandId: expect.any(String),
+                    kind: 'runtime-graph',
+                    operation: 'setEditingTool',
+                    reason: 'Post-commit effect has not completed',
+                    remediation: 'repair',
+                    state: 'pending',
+                },
+            ],
+        });
+        expect(onProjectCommitPrepared.mock.invocationCallOrder[0]).toBeLessThan(
+            afterCommit.mock.invocationCallOrder[0]!
+        );
+    });
+
     it('recovers a deferred-effect failure by reconciling durable truth', async () => {
         const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
         const reconcileRuntime = vi.fn();

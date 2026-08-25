@@ -45,6 +45,7 @@ import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
+import { recordAgentRunPendingEffectContinuation } from './recordAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -801,6 +802,16 @@ export async function confirmPendingChatActions(
             ...group,
             signal: aborter.signal,
             source: 'prompt' as const,
+            onProjectCommitCheckpoint: ({ receipt }: { receipt: CommandVerifiedBatchReceipt }) => {
+                if (!agentRunLifecycle.get(confirmation.runId)) {
+                    return;
+                }
+                recordAgentRunPendingEffectContinuation({
+                    runId: confirmation.runId,
+                    receipt,
+                    commandBatch,
+                });
+            },
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
                 if (!isConfirmationExecutionAuthorized(isProjectMutationAuthorized, aborter.signal)) {
@@ -869,6 +880,7 @@ export async function confirmPendingChatActions(
                 error: reason,
                 content: `The project change remains durably committed, but pending-effect reconciliation could not continue: ${reason}`,
             });
+            settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
             return createCommittedEffectFailureResult(priorVerifiedBatchReceipt, reason);
         }
         let canUpdateTrackedRun = true;
@@ -936,11 +948,7 @@ export async function confirmPendingChatActions(
 
     const batchFailedBeforeCommit =
         batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
-    if (
-        !recoveringPendingEffects &&
-        batchFailedBeforeCommit &&
-        !isProjectMutationAuthorized()
-    ) {
+    if (!recoveringPendingEffects && batchFailedBeforeCommit && !isProjectMutationAuthorized()) {
         return invalidatePendingConfirmation(confirmation);
     }
 

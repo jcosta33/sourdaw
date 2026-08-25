@@ -172,6 +172,20 @@ describe('activateExternalPlugin', () => {
         );
     });
 
+    it('returns a failure-bearing restore outcome and retries only the unsettled restore', async () => {
+        mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
+
+        await expect(
+            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+        ).resolves.toEqual({ status: 'failed', stage: 'restore', reason: 'Error: state chunk rejected' });
+        await expect(
+            activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', stateChunk: SAVED_CHUNK })
+        ).resolves.toEqual({ status: 'active' });
+
+        expect(mocks.loadPluginRepo).toHaveBeenCalledOnce();
+        expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(2);
+    });
+
     it('reports the activation latency in milliseconds to the injected sink', async () => {
         // The host already converted at the plugin's activation rate; the raw
         // sample count on the same DTO must not be what reaches the sink.

@@ -29,7 +29,10 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
     /** @deprecated A boolean is not proof of exact approval and never authorizes execution. */
     confirmed?: boolean;
     serialized: string;
-    options?: ExecuteOptions;
+    options?: ExecuteOptions & {
+        /** Persist caller-owned recovery state while the exact project checkpoint is being journaled. */
+        onProjectCommitCheckpoint?: (result: { receipt: ReturnType<typeof createVerifiedBatchReceipt> }) => void;
+    };
 };
 
 const PROJECT_COMMIT_RECOVERY_WARNING =
@@ -495,6 +498,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         state: 'effects-pending',
                         serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
                     });
+                    input.options?.onProjectCommitCheckpoint?.({ receipt: projectCommitRecovery.receipt });
                 },
                 prepareValidation: ({ allowCompatibleProjectDivergence }) =>
                     prepareCommandBatchPreflight(resolvedEnvelope, { allowCompatibleProjectDivergence }),
