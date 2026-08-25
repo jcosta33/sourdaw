@@ -233,6 +233,7 @@ function expectShardFailureWarning(step, slug, suite, shard) {
 }
 
 const events = workflow.on;
+const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
@@ -275,6 +276,11 @@ expect(events?.pull_request !== undefined, 'pull_request trigger must remain pre
 expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
 expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
+expect(
+    concurrency?.['cancel-in-progress'] ===
+        "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}",
+    'concurrency cancellation must include pull_request and pull_request_review without including schedule or workflow_dispatch'
+);
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
     'decide must run the heavy path only for approved pull_request_review submissions'

@@ -42,9 +42,9 @@ permissions:
 
 concurrency:
   group: health-gates-${{ github.event.pull_request.number || github.ref }}
-  # Superseded pull-request runs are cancelled; a scheduled or dispatched run
-  # against main is not, because there is nothing newer to supersede it.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Pull-request and review runs for the same PR supersede older work in that
+  # group. Scheduled and dispatched runs against main remain non-cancelling.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
 
 env:
   NODE_VERSION: 24.19.0
