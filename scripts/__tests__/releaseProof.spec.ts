@@ -18,7 +18,28 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const zipPayloadExpansionProbe = vi.hoisted(() => ({
+    archive: undefined as Buffer | undefined,
+    attempts: 0,
+}));
+
+vi.mock('fflate', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('fflate')>();
+
+    class ProbedUnzip extends actual.Unzip {
+        override push(chunk: Uint8Array, final?: boolean): void {
+            const archive = zipPayloadExpansionProbe.archive;
+            if (archive !== undefined && final === true && Buffer.from(chunk).equals(archive)) {
+                zipPayloadExpansionProbe.attempts += 1;
+            }
+            super.push(chunk, final);
+        }
+    }
+
+    return { ...actual, Unzip: ProbedUnzip };
+});
 
 import { readReleaseInventory, type ReleaseInventory } from '../checkReleaseInventory';
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from '../electronRuntimeContract';
@@ -452,6 +473,22 @@ function patchZipMetadata(
     const entryCount = bytes.readUInt16LE(end + 10);
     patch(bytes, bytes.readUInt32LE(end + 16), entryCount);
     writeFileSync(archive, bytes);
+}
+
+function expectZipMetadataRejectionBeforePayloadExpansion(
+    fixture: Fixture,
+    archive: string,
+    expectedError: string
+): void {
+    zipPayloadExpansionProbe.archive = readFileSync(archive);
+    zipPayloadExpansionProbe.attempts = 0;
+    try {
+        expect(validate(fixture)).toContain(expectedError);
+        expect(zipPayloadExpansionProbe.attempts).toBe(0);
+    } finally {
+        zipPayloadExpansionProbe.archive = undefined;
+        zipPayloadExpansionProbe.attempts = 0;
+    }
 }
 
 function replaceSourceArchiveWithGitMetadata(fixture: Fixture, marker: string, directory = '.git'): void {
@@ -1025,7 +1062,9 @@ describe('release proof', () => {
             bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
         });
         refreshWebArchiveHash(entry);
-        expect(validate(entry)).toContain(
+        expectZipMetadataRejectionBeforePayloadExpansion(
+            entry,
+            entryArchive,
             'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
@@ -1046,7 +1085,9 @@ describe('release proof', () => {
             }
         });
         refreshWebArchiveHash(aggregate);
-        expect(validate(aggregate)).toContain(
+        expectZipMetadataRejectionBeforePayloadExpansion(
+            aggregate,
+            aggregateArchive,
             'zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit'
         );
 
@@ -1059,7 +1100,9 @@ describe('release proof', () => {
             bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 10);
         });
         refreshWebArchiveHash(count);
-        expect(validate(count)).toContain(
+        expectZipMetadataRejectionBeforePayloadExpansion(
+            count,
+            countArchive,
             'zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit'
         );
 
