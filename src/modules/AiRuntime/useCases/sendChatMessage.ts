@@ -288,8 +288,14 @@ function getApplicationAssignedTargetIds(
     );
 }
 
+type ProviderKnownScopeInput = {
+    readonly targetRanges: readonly Readonly<AgentRunScope['targetRanges'][number]>[];
+    readonly protectedTargetIds: readonly string[];
+    readonly protectedRanges: readonly Readonly<AgentRunScope['protectedRanges'][number]>[];
+};
+
 function getProviderKnownScope(
-    scope: AgentRunScope,
+    scope: ProviderKnownScopeInput,
     providerKnownTargetIds: readonly string[] | undefined
 ): AgentRunScope | undefined {
     if (providerKnownTargetIds === undefined) {
