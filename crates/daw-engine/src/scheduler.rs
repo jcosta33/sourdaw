@@ -646,7 +646,8 @@ impl IdSlotIndex {
     /// `population` entries. Called once, off the callback.
     fn reserved(population: usize) -> Self {
         // Twice the rounded-up population caps the load factor at one half;
-        // the minimum keeps tiny tables (the bridge index) from degenerating.
+        // the floor keeps a one- or two-entry table from reserving a
+        // degenerate two- or four-bucket array.
         let buckets = (population.next_power_of_two() * 2).max(8);
         Self {
             buckets: vec![IndexBucket::EMPTY; buckets],
@@ -736,6 +737,24 @@ impl IdSlotIndex {
         };
         self.shift_cluster_after(hole);
         Some(slot)
+    }
+
+    /// The bucket an id currently occupies, or `None` when unmapped. Test
+    /// visibility only: pinning the backward-shift law needs to observe
+    /// bucket positions, which the slot-returning API deliberately hides.
+    #[cfg(test)]
+    fn bucket_of(&self, id: usize) -> Option<usize> {
+        let mut bucket = self.home(id);
+        loop {
+            let entry = self.buckets[bucket];
+            if entry.slot_plus_one == 0 {
+                return None;
+            }
+            if entry.id == id as u64 {
+                return Some(bucket);
+            }
+            bucket = (bucket + 1) & self.mask;
+        }
     }
 
     /// Knuth's Algorithm R: walk the occupied buckets past `hole`, moving
@@ -1579,25 +1598,31 @@ impl AudioScheduler {
 
     /// Append an effect and map its id at the slot it took. Callers have
     /// already refused a colliding id and a full table, so the mapping always
-    /// lands.
+    /// lands. The insert runs unconditionally and only its *result* is
+    /// asserted: burying it inside `debug_assert!` would skip the mapping in
+    /// release builds, empty the index there, and silently no-op every
+    /// per-id path.
     fn push_effect(&mut self, effect: ActiveEffect) {
         let slot = self.effects.len();
         let id = effect.id;
         self.effects.push(effect);
+        let inserted = self.effect_index.insert(id, slot);
         debug_assert!(
-            self.effect_index.insert(id, slot),
+            inserted,
             "push_effect is only reached after the collision check refused the id"
         );
     }
 
     /// Append a bridge and map its plugin id at the slot it took, on the same
-    /// precondition as [`Self::push_effect`].
+    /// precondition and the same unconditional-insert law as
+    /// [`Self::push_effect`].
     fn push_bridge(&mut self, bridge: PluginAudioBridge) {
         let slot = self.audio_bridges.len();
         let plugin_id = bridge.plugin_id;
         self.audio_bridges.push(bridge);
+        let inserted = self.bridge_index.insert(plugin_id, slot);
         debug_assert!(
-            self.bridge_index.insert(plugin_id, slot),
+            inserted,
             "push_bridge is only reached after the collision check refused the id"
         );
     }
@@ -3011,6 +3036,91 @@ mod tests {
     /// Deterministic structure check over a population with real churn: every
     /// surviving id resolves to the slot that actually holds it, with nothing
     /// timed.
+    /// Backward-shift deletion is only observable through a home-bucket
+    /// collision: within any single sequential id run, Fibonacci hashing
+    /// never puts two ids in one bucket, so a delete that left a hole
+    /// instead of shifting keeps every existing test green — and strands a
+    /// displaced live id in the mixed-id populations real sessions hold
+    /// (plugin-reserve ids, graph ids, crumbs ids). This test derives a
+    /// colliding pair from the index's own hash and mask — so it cannot rot
+    /// when the capacity changes — inserts both, deletes the first-inserted
+    /// (the one sitting in the shared home bucket), and requires the
+    /// displaced survivor to keep resolving at the slot that really holds
+    /// it. A hole-leaving delete fails here: probing the survivor stops at
+    /// the empty home bucket.
+    #[test]
+    fn a_delete_through_a_shared_home_bucket_keeps_the_displaced_id_resolvable() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+
+        // Smallest pair of distinct ids sharing a home bucket. Pigeonhole
+        // guarantees one within mask+1 ids; the derivation reads the live
+        // hash and mask rather than restating the constant.
+        let mut first_at_bucket = vec![usize::MAX; scheduler.effect_index.mask + 1];
+        let mut pair = None;
+        for id in 1usize.. {
+            let home = scheduler.effect_index.home(id);
+            if first_at_bucket[home] != usize::MAX {
+                pair = Some((first_at_bucket[home], id));
+                break;
+            }
+            first_at_bucket[home] = id;
+        }
+        let (first, second) =
+            pair.expect("a table of this many buckets collides within mask+1 ids");
+        assert_eq!(
+            scheduler.effect_index.home(first),
+            scheduler.effect_index.home(second),
+            "the derived pair must genuinely share a home bucket"
+        );
+        assert_ne!(first, second);
+
+        for id in [first, second] {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        // The first insert took the shared home bucket; the second probed one
+        // past it. That probe step is the load-bearing part: removing the
+        // home occupant must shift the survivor back, or its lookup ends at
+        // an empty bucket.
+        let home = scheduler.effect_index.home(first);
+        assert_eq!(
+            scheduler.effect_index.bucket_of(first),
+            Some(home),
+            "an insert into an empty index lands in its home bucket"
+        );
+        assert_eq!(
+            scheduler.effect_index.bucket_of(second),
+            Some((home + 1) & scheduler.effect_index.mask),
+            "the second insert must sit one probe past the shared home"
+        );
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(first))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(
+            scheduler.effect_index.bucket_of(second),
+            Some(home),
+            "the backward shift must move the displaced survivor into the vacated home"
+        );
+        let survivor_slot = scheduler
+            .effect_index
+            .lookup(second)
+            .expect("the survivor must resolve after the home occupant's removal");
+        assert_eq!(
+            scheduler.effects[survivor_slot].id, second,
+            "the slot the index names must actually hold the survivor"
+        );
+        assert_eq!(scheduler.effect_index.lookup(first), None);
+        assert_eq!(scheduler.effects.len(), 1);
+    }
+
     #[test]
     fn the_id_index_survives_remove_and_re_register_churn() {
         fn add(
