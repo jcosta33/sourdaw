@@ -5,6 +5,7 @@ export { restoreClipPitchAnalysis } from './restoreClipPitchAnalysis';
 export { hydrateKneadFromTrackStore } from './hydrateKneadFromTrackStore';
 export { syncKneadToEngine } from './syncKneadToEngine';
 export { updateClipKneadState } from './updateClipKneadState';
+export { updateTransientClipKneadState } from './updateTransientClipKneadState';
 
 // Pitch-edit dispatch + engine dependency injection — Knead owns the pitch
 // aggregate and its commit flow (ADR 0011 Wave 3). Value-only surface:
