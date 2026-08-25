@@ -1,0 +1,28 @@
+src/modules/Collaboration/repositories/durableAssetOwnerHandoffLifecycle.ts
+  s_a40848e8f8cca9::t_c8d646af333f19 419,422,426-431,436,445
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_01c3c602f33d43 932
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_c8d646af333f19 75
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_98e11612e4787f 444-487
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_c8d646af333f19 741-742
+  s_a40848e8f8cca9::t_48340d8ca704d0 743
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "094965d567b420c2eec075e464156d4c753a787f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
