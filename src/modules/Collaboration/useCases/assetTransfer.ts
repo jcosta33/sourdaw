@@ -750,7 +750,7 @@ export class AssetTransfer {
                     ]);
                     const recovery = await this.durableAssets.resumeRecoveries(
                         protectedRecoveryIds,
-                        durableAssetCommitProof.isProven,
+                        durableAssetCommitProof.getDisposition,
                         false,
                         recoveryFence
                     );

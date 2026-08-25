@@ -36,7 +36,7 @@ describe('durable asset ownership lifecycle', () => {
 
     beforeEach(() => {
         durableAssetIndexedDb.reset();
-        configureDurableAssetCommitProof({ isProven: () => false });
+        configureDurableAssetCommitProof({ getDisposition: () => 'unknown' });
         peer = makePeerManager();
         onAssetAvailable = vi.fn<(hash: string) => void>();
         onProgress = vi.fn<(hash: string, receivedChunks: number, totalChunks: number) => void>();
@@ -652,7 +652,9 @@ describe('durable asset ownership lifecycle', () => {
         );
         preparing.dispose();
 
-        configureDurableAssetCommitProof({ isProven: (candidate) => candidate.contentHash === proof.contentHash });
+        configureDurableAssetCommitProof({
+            getDisposition: (candidate) => (candidate.contentHash === proof.contentHash ? 'committed' : 'unknown'),
+        });
         const durableAssets = createDurableAssetRepository(projectOwner);
         const admitted = Promise.withResolvers<void>();
         const resumeRecoveries = vi
@@ -891,7 +893,9 @@ describe('durable asset ownership lifecycle', () => {
         );
         transfer.dispose();
 
-        configureDurableAssetCommitProof({ isProven: (candidate) => candidate.contentHash === proof.contentHash });
+        configureDurableAssetCommitProof({
+            getDisposition: (candidate) => (candidate.contentHash === proof.contentHash ? 'committed' : 'unknown'),
+        });
         const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
         await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER));
         await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
@@ -902,6 +906,81 @@ describe('durable asset ownership lifecycle', () => {
             status: 'already-promoted',
         });
         expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
+        recreated.dispose();
+    });
+
+    it('releases a prepared promotion from exact terminal non-commit proof after process death', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['project-terminal-noncommit'], { type: 'audio/wav' }),
+            'project-terminal-noncommit.wav',
+            'asset-stage-project-terminal-noncommit'
+        );
+        const proof = {
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:project-terminal-noncommit',
+            contentHash: `sha256:${'c'.repeat(64)}`,
+            runId: 'run-project-terminal-noncommit',
+            batchId: 'batch-project-terminal-noncommit',
+        };
+        await transfer.prepareDurablePromotionRecovery(
+            'stem-promotion:project-terminal-noncommit',
+            [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
+            proof
+        );
+        transfer.dispose();
+
+        configureDurableAssetCommitProof({
+            getDisposition: (candidate) =>
+                candidate.contentHash === proof.contentHash ? 'terminal-noncommit' : 'unknown',
+        });
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER));
+
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-terminal-conflict',
+        });
+        await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'missing-asset',
+        });
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(0);
+        recreated.dispose();
+    });
+
+    it('preserves a prepared promotion when its exact commit disposition is unknown after process death', async () => {
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['project-unknown-disposition'], { type: 'audio/wav' }),
+            'project-unknown-disposition.wav',
+            'asset-stage-project-unknown-disposition'
+        );
+        const proof = {
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:project-unknown-disposition',
+            contentHash: `sha256:${'d'.repeat(64)}`,
+            runId: 'run-project-unknown-disposition',
+            batchId: 'batch-project-unknown-disposition',
+        };
+        await transfer.prepareDurablePromotionRecovery(
+            'stem-promotion:project-unknown-disposition',
+            [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
+            proof
+        );
+        transfer.dispose();
+
+        configureDurableAssetCommitProof({ getDisposition: () => 'unknown' });
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER));
+
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            leaseState: 'staged',
+        });
+        await expect(recreated.reopenDurableAsset(staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'asset-not-owned',
+        });
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(1);
         recreated.dispose();
     });
 

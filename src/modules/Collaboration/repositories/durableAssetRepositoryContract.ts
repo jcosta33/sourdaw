@@ -37,6 +37,7 @@ export type DurableAssetCommitProof = {
     runId: string;
     batchId: string;
 };
+export type DurableAssetCommitDisposition = 'committed' | 'terminal-noncommit' | 'unknown';
 export type DurableAssetRecoveryFence = {
     readonly isCurrent: () => boolean;
     readonly signal: AbortSignal;
@@ -119,7 +120,9 @@ export type DurableAssetRepository = {
     completeCleanupRecovery: (recoveryId: string) => Promise<CompleteDurableAssetCleanupRecoveryResult>;
     resumeRecoveries: (
         protectedRecoveryIds?: ReadonlySet<string>,
-        isCommitProven?: (proof: DurableAssetCommitProof) => boolean,
+        getCommitDisposition?: (
+            proof: DurableAssetCommitProof
+        ) => DurableAssetCommitDisposition | Promise<DurableAssetCommitDisposition>,
         protectDefaultReleaseClaims?: boolean,
         fence?: DurableAssetRecoveryFence
     ) => Promise<ResumeDurableAssetRecoveriesResult>;

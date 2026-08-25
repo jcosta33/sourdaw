@@ -10,6 +10,7 @@ import {
 import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
 import { createDurableAssetRecoveryFenceGuard } from './durableAssetRecoveryFence';
 import {
+    type DurableAssetCommitDisposition,
     type DurableAssetFailure,
     type DurableAssetCommitProof,
     type DurableAssetRecoveryFence,
@@ -68,6 +69,21 @@ function bindingsAreContained(subset: readonly StagedAssetBinding[], superset: r
         superset.some(
             (candidate) => candidate.leaseId === binding.leaseId && candidate.expectedHash === binding.expectedHash
         )
+    );
+}
+
+function haveSameCommitProof(
+    left: DurableAssetCommitProof | undefined,
+    right: DurableAssetCommitProof | undefined
+): boolean {
+    return (
+        left !== undefined &&
+        right !== undefined &&
+        left.projectId === right.projectId &&
+        left.idempotencyKey === right.idempotencyKey &&
+        left.contentHash === right.contentHash &&
+        left.runId === right.runId &&
+        left.batchId === right.batchId
     );
 }
 
@@ -135,6 +151,57 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             throw error;
         }
         return null;
+    }
+
+    async function transitionPreparedPromotionToCleanup(
+        expected: PromotionRecoveryRecord,
+        fence?: DurableAssetRecoveryFence
+    ): Promise<PromotionRecoveryRecord | DurableAssetFailure> {
+        const recovery = createDurableAssetRecoveryFenceGuard(fence);
+        const database = await records.openDurableAssetDatabase();
+        const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readwrite');
+        const completion = records.awaitTransaction(transaction);
+        const store = transaction.objectStore(PROMOTION_RECOVERY_STORE);
+        const value = await records.readStoredValue(store, expected.recoveryId);
+        if (
+            !records.isPromotionRecoveryRecord(value) ||
+            value.ownerId !== ownerId ||
+            getRecoveryDisposition(value) !== 'promote' ||
+            getPromotionState(value) !== 'prepared' ||
+            value.preparedAt !== expected.preparedAt ||
+            !haveSameBindings(value.bindings, expected.bindings) ||
+            !haveSameCommitProof(value.commitProof, expected.commitProof)
+        ) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'failed', reason: 'owner-handoff-conflict' };
+        }
+        recovery.bind(transaction, completion);
+        if (!recovery.isCurrent()) {
+            recovery.abort(transaction);
+            await completion.catch(() => undefined);
+            return { status: 'failed', reason: 'owner-handoff-conflict' };
+        }
+        const cleanupRecord: PromotionRecoveryRecord = {
+            schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+            recoveryId: value.recoveryId,
+            ownerId,
+            leaseIds: [...value.leaseIds],
+            bindings: value.bindings.map((binding) => ({ ...binding })),
+            disposition: 'release',
+            recoveryKind: 'explicit',
+            preparedAt: value.preparedAt,
+        };
+        store.put(cleanupRecord);
+        try {
+            await completion;
+        } catch (error) {
+            if (!recovery.isCurrent()) {
+                return { status: 'failed', reason: 'owner-handoff-conflict' };
+            }
+            throw error;
+        }
+        return cleanupRecord;
     }
 
     async function completeRecord(record: PromotionRecoveryRecord, fence?: DurableAssetRecoveryFence) {
@@ -438,7 +505,9 @@ export function createDurableAssetPromotionRecoveryLifecycle(
 
         async resumeRecoveries(
             protectedRecoveryIds: ReadonlySet<string> = new Set(),
-            isCommitProven: (proof: DurableAssetCommitProof) => boolean = () => false,
+            getCommitDisposition: (
+                proof: DurableAssetCommitProof
+            ) => DurableAssetCommitDisposition | Promise<DurableAssetCommitDisposition> = () => 'unknown',
             protectDefaultReleaseClaims = false,
             fence?: DurableAssetRecoveryFence
         ) {
@@ -466,12 +535,23 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                 if (protectDefaultReleaseClaims && recovery.recoveryKind === 'default-release') {
                     continue;
                 }
+                let executableRecovery = recovery;
                 if (getRecoveryDisposition(recovery) === 'promote' && getPromotionState(recovery) !== 'committed') {
-                    if (!recovery.commitProof || !isCommitProven(recovery.commitProof)) {
+                    const commitDisposition = recovery.commitProof
+                        ? await getCommitDisposition(recovery.commitProof)
+                        : 'unknown';
+                    if (commitDisposition === 'unknown') {
                         continue;
                     }
+                    if (commitDisposition === 'terminal-noncommit') {
+                        const cleanup = await transitionPreparedPromotionToCleanup(recovery, fence);
+                        if ('status' in cleanup) {
+                            return cleanup;
+                        }
+                        executableRecovery = cleanup;
+                    }
                 }
-                const completed = await completeRecord(recovery, fence);
+                const completed = await completeRecord(executableRecovery, fence);
                 if (!recoveryFence.isCurrent()) {
                     return { status: 'cancelled' as const, ownerId };
                 }

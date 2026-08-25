@@ -19,8 +19,8 @@ import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommand
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
+import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
 import { getVersionedCommandBatchCommitProof } from '../getVersionedCommandBatchCommitProof';
-import { isVersionedCommandBatchCommitProven } from '../isVersionedCommandBatchCommitProven';
 import { persistProjectCommandBatchIdempotencyCheckpoint } from '../persistProjectCommandBatchIdempotencyCheckpoint';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
@@ -271,6 +271,24 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(0);
     });
 
+    it('distinguishes an exact terminal non-commit receipt from missing proof', async () => {
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { shouldExecute: () => false },
+        });
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+
+        expect(result.status).toBe('cancelled');
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('terminal-noncommit');
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: `sha256:${'f'.repeat(64)}` })
+        ).resolves.toBe('unknown');
+    });
+
     it('returns the prior verified receipt for an exact retry without repeating project or runtime effects', async () => {
         const batch = compileBatch();
 
@@ -366,7 +384,7 @@ describe('command batch idempotency', () => {
             serialized: batch.serialized,
         });
         const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
-        expect(isVersionedCommandBatchCommitProven(projectCommitProof)).toBe(true);
+        await expect(getVersionedCommandBatchCommitDisposition(projectCommitProof)).resolves.toBe('committed');
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'missing' }),
             claim: () => Promise.resolve({ status: 'claimed' }),

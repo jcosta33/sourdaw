@@ -67,7 +67,7 @@ const {
     configureDurableAssetCommitProofMock,
     getAssetTransferMock,
     getDurableProjectOwnerIdMock,
-    isVersionedCommandBatchCommitProvenMock,
+    getVersionedCommandBatchCommitDispositionMock,
     prepareOfflineLevainMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
@@ -99,7 +99,7 @@ const {
             resumeDurableOwnerRebindsAfterProjectLoad: vi.fn(() => Promise.resolve()),
         })),
         getDurableProjectOwnerIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
-        isVersionedCommandBatchCommitProvenMock: vi.fn(() => true),
+        getVersionedCommandBatchCommitDispositionMock: vi.fn(() => Promise.resolve('committed')),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -260,7 +260,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
-    isVersionedCommandBatchCommitProven: isVersionedCommandBatchCommitProvenMock,
+    getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
     getUndoRedoHandlers: sentinelHandlers('UndoRedo'),
@@ -631,7 +631,7 @@ describe('bootstrap', () => {
 
     it('binds durable asset admission to the Command commit proof', () => {
         expect(configureDurableAssetCommitProofMock).toHaveBeenCalledExactlyOnceWith({
-            isProven: isVersionedCommandBatchCommitProvenMock,
+            getDisposition: getVersionedCommandBatchCommitDispositionMock,
         });
     });
 

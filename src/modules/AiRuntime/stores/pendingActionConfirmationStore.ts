@@ -165,12 +165,87 @@ type PendingActionResourceLeaseEntry = {
 
 const pendingActionResourceLeases = new Map<string, PendingActionResourceLeaseEntry>();
 
+type DetachedPendingActionResourceCleanupEntry = {
+    lease: PendingActionResourceLease;
+    releaseInFlight: Promise<void> | null;
+    automaticAttempts: number;
+};
+
+const MAX_AUTOMATIC_DETACHED_RELEASE_ATTEMPTS = 2;
+const detachedPendingActionResourceCleanups = new Map<
+    PendingActionResourceLease,
+    DetachedPendingActionResourceCleanupEntry
+>();
+
 function reportResourceReleaseFailure(error: unknown): void {
     logger.error(
         new Error('Confirmed AI action resource cleanup failed; the durable lease remains retryable', {
             cause: error,
         })
     );
+}
+
+async function releaseDetachedPendingActionResource(entry: DetachedPendingActionResourceCleanupEntry): Promise<void> {
+    if (entry.releaseInFlight || !detachedPendingActionResourceCleanups.has(entry.lease)) {
+        return;
+    }
+    entry.automaticAttempts += 1;
+    try {
+        entry.releaseInFlight = Promise.resolve(entry.lease.release());
+    } catch (error) {
+        entry.releaseInFlight = Promise.reject(error);
+    }
+    try {
+        await entry.releaseInFlight;
+        detachedPendingActionResourceCleanups.delete(entry.lease);
+    } catch (error) {
+        reportResourceReleaseFailure(error);
+    } finally {
+        entry.releaseInFlight = null;
+    }
+    if (
+        detachedPendingActionResourceCleanups.has(entry.lease) &&
+        entry.automaticAttempts < MAX_AUTOMATIC_DETACHED_RELEASE_ATTEMPTS
+    ) {
+        queueMicrotask(() => {
+            void releaseDetachedPendingActionResource(entry);
+        });
+    }
+}
+
+function retainRejectedPendingActionResource(lease: PendingActionResourceLease): void {
+    const existing = detachedPendingActionResourceCleanups.get(lease);
+    const entry = existing ?? { lease, releaseInFlight: null, automaticAttempts: 0 };
+    detachedPendingActionResourceCleanups.set(lease, entry);
+    void releaseDetachedPendingActionResource(entry);
+}
+
+function retryDetachedPendingActionResourceCleanups(): void {
+    for (const entry of detachedPendingActionResourceCleanups.values()) {
+        if (entry.releaseInFlight) {
+            continue;
+        }
+        entry.automaticAttempts = 0;
+        void releaseDetachedPendingActionResource(entry);
+    }
+}
+
+function getPreparedResourceBytes(): number {
+    const leases = new Set([
+        ...[...pendingActionResourceLeases.values()].map((entry) => entry.lease),
+        ...detachedPendingActionResourceCleanups.keys(),
+    ]);
+    let total = 0;
+    for (const lease of leases) {
+        if (!Number.isSafeInteger(lease.bytes) || lease.bytes < 0) {
+            return MAX_PREPARED_RESOURCE_BYTES + 1;
+        }
+        total += lease.bytes;
+        if (total > MAX_PREPARED_RESOURCE_BYTES) {
+            return MAX_PREPARED_RESOURCE_BYTES + 1;
+        }
+    }
+    return total;
 }
 
 async function releasePendingActionResourceLease(confirmationId: string): Promise<void> {
@@ -224,23 +299,23 @@ type ProposePendingActionConfirmationInput = {
 export function proposePendingActionConfirmation(
     input: ProposePendingActionConfirmationInput
 ): PendingAppActionConfirmation | null {
+    retryDetachedPendingActionResourceCleanups();
     const state = pendingActionConfirmationStore.value;
     if (!state) {
-        void Promise.resolve(input.resourceLease?.release()).catch(reportResourceReleaseFailure);
+        if (input.resourceLease) {
+            retainRejectedPendingActionResource(input.resourceLease);
+        }
         return null;
     }
 
-    const preparedResourceBytes = [...pendingActionResourceLeases.values()].reduce(
-        (total, entry) => total + entry.lease.bytes,
-        0
-    );
+    const preparedResourceBytes = getPreparedResourceBytes();
     if (
         input.resourceLease &&
         (!Number.isSafeInteger(input.resourceLease.bytes) ||
             input.resourceLease.bytes < 0 ||
             preparedResourceBytes + input.resourceLease.bytes > MAX_PREPARED_RESOURCE_BYTES)
     ) {
-        void Promise.resolve(input.resourceLease.release()).catch(reportResourceReleaseFailure);
+        retainRejectedPendingActionResource(input.resourceLease);
         return null;
     }
 
@@ -485,6 +560,7 @@ export function clearPendingActionConfirmations(): void {
     for (const confirmationId of pendingActionResourceLeases.keys()) {
         void releasePendingActionResourceLease(confirmationId).catch(reportResourceReleaseFailure);
     }
+    retryDetachedPendingActionResourceCleanups();
     pendingActionConfirmationStore.set({ confirmations: [] });
 }
 

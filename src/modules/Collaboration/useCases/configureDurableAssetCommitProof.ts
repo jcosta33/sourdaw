@@ -1,17 +1,22 @@
-import { type DurableAssetCommitProof } from '../repositories/durableAssetRepository';
+import {
+    type DurableAssetCommitDisposition,
+    type DurableAssetCommitProof,
+} from '../repositories/durableAssetRepository';
 
 type DurableAssetCommitProofProvider = {
-    isProven: (proof: DurableAssetCommitProof) => boolean;
+    getDisposition: (
+        proof: DurableAssetCommitProof
+    ) => DurableAssetCommitDisposition | Promise<DurableAssetCommitDisposition>;
 };
 
-let provider: DurableAssetCommitProofProvider = { isProven: () => false };
+let provider: DurableAssetCommitProofProvider = { getDisposition: () => 'unknown' };
 
 export function configureDurableAssetCommitProof(nextProvider: DurableAssetCommitProofProvider): void {
     provider = nextProvider;
 }
 
 export const durableAssetCommitProof = {
-    isProven(proof: DurableAssetCommitProof): boolean {
-        return provider.isProven(proof);
+    getDisposition(proof: DurableAssetCommitProof): Promise<DurableAssetCommitDisposition> {
+        return Promise.resolve(provider.getDisposition(proof));
     },
 };

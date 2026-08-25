@@ -228,6 +228,43 @@ describe('pendingActionConfirmationStore', () => {
         expect(rejectedRelease).toHaveBeenCalledTimes(1);
     });
 
+    it('retries rejected resource cleanup in-process until the lease releases', async () => {
+        const retainedRelease = vi.fn();
+        const rejectedRelease = vi
+            .fn<() => Promise<void>>()
+            .mockRejectedValueOnce(new Error('durable cleanup preparation interrupted'))
+            .mockResolvedValueOnce(undefined);
+        const rejectedLease = { bytes: 1100 * 1024 * 1024, release: rejectedRelease };
+
+        expect(
+            proposePendingActionConfirmation({
+                id: 'retained-at-resource-ceiling',
+                prompt: 'retained',
+                assistantMessageId: 'message-retained-at-resource-ceiling',
+                actions: [{ type: 'createBus', payload: { name: 'Retained', busId: 'bus-retained' } }],
+                actionLabels: ['Retained'],
+                projectRevision: 'revision-retained-at-resource-ceiling',
+                resourceLease: { bytes: 1100 * 1024 * 1024, release: retainedRelease },
+            })
+        ).not.toBeNull();
+        expect(
+            proposePendingActionConfirmation({
+                id: 'rejected-at-resource-ceiling',
+                prompt: 'rejected',
+                assistantMessageId: 'message-rejected-at-resource-ceiling',
+                actions: [{ type: 'createBus', payload: { name: 'Rejected', busId: 'bus-rejected' } }],
+                actionLabels: ['Rejected'],
+                projectRevision: 'revision-rejected-at-resource-ceiling',
+                resourceLease: rejectedLease,
+            })
+        ).toBeNull();
+
+        await vi.waitFor(() => expect(rejectedRelease).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+        expect(rejectedRelease).toHaveBeenCalledTimes(2);
+        expect(retainedRelease).not.toHaveBeenCalled();
+    });
+
     it('retains a failed async release so cleanup can be retried', async () => {
         const release = vi
             .fn<() => Promise<void>>()

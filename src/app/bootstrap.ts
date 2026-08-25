@@ -82,7 +82,7 @@ import {
     setActionHistoryMetadataPort,
     commandProjectRevisionPort,
     commandProjectDivergencePort,
-    isVersionedCommandBatchCommitProven,
+    getVersionedCommandBatchCommitDisposition,
     commandTrackDefaultsPort,
     setCommandEventBus,
     syncActionReplayMetadata,
@@ -218,7 +218,7 @@ configureCollaborationAssetOwner({
     captureOwnerId: getDurableProjectOwnerId,
 });
 configureDurableAssetCommitProof({
-    isProven: isVersionedCommandBatchCommitProven,
+    getDisposition: getVersionedCommandBatchCommitDisposition,
 });
 void recoverInterruptedAgentRuns().catch((error: unknown) => {
     logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));

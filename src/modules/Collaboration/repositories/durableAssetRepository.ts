@@ -10,6 +10,7 @@ export { DEFAULT_STAGE_RECOVERY_PREFIX } from './durableAssetIndexedDb';
 export type {
     AbortDurableAssetOwnerHandoffResult,
     DurableAsset,
+    DurableAssetCommitDisposition,
     DurableAssetCommitProof,
     DurableAssetRecoveryFence,
     DurableAssetFailure,
