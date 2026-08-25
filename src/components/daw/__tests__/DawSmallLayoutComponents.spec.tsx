@@ -46,11 +46,13 @@ describe('DawPluginReadoutList — density variants', () => {
     it('default density uses gap-2', () => {
         const { container } = render(<DawPluginReadoutList>X</DawPluginReadoutList>);
         expect(container.firstChild).toHaveClass('gap-2');
+        expect(container.firstChild).not.toHaveClass('gap-1');
     });
 
     it('density=tight uses gap-1', () => {
         const { container } = render(<DawPluginReadoutList density="tight">X</DawPluginReadoutList>);
         expect(container.firstChild).toHaveClass('gap-1');
+        expect(container.firstChild).not.toHaveClass('gap-2');
     });
 
     it('renders children', () => {
