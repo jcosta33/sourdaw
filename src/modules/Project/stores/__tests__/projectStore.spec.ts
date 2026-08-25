@@ -121,6 +121,7 @@ describe('projectStore', () => {
             dirty: false,
             loading: true,
             identityMigrationPending: false,
+            identityPersistencePending: false,
             initialized: false,
         });
     });
@@ -137,6 +138,7 @@ describe('projectStore', () => {
             dirty: false,
             loading: true,
             identityMigrationPending: false,
+            identityPersistencePending: false,
             initialized: false,
         });
     });
@@ -155,6 +157,7 @@ describe('projectStore', () => {
                 dirty: false,
                 loading: true,
                 identityMigrationPending: false,
+                identityPersistencePending: false,
                 initialized: false,
             });
             expect(isCanonicalProjectId(projectStore.value?.projectId)).toBe(false);
@@ -226,6 +229,7 @@ describe('projectStore', () => {
             dirty: false,
             loading: true,
             identityMigrationPending: false,
+            identityPersistencePending: false,
             initialized: false,
         });
     });
@@ -236,6 +240,7 @@ describe('projectStore', () => {
             dirty: true,
             loading: false,
             identityMigrationPending: false,
+            identityPersistencePending: false,
             initialized: true,
         });
         await flush_pending_frame();
@@ -251,6 +256,7 @@ describe('projectStore', () => {
             dirty: true,
             loading: false,
             identityMigrationPending: false,
+            identityPersistencePending: false,
             initialized: true,
         });
     });
@@ -278,6 +284,7 @@ describe('projectStore', () => {
             dirty: false,
             loading: true,
             identityMigrationPending: false,
+            identityPersistencePending: false,
             keyRoot: defaultProjectStoreState.keyRoot,
             scaleName: valid_meta.scaleName,
             tuning: valid_meta.tuning,
@@ -324,6 +331,7 @@ describe('projectStore', () => {
                 dirty: false,
                 loading: true,
                 identityMigrationPending: false,
+                identityPersistencePending: false,
                 tuning: defaultProjectStoreState.tuning,
                 initialized: false,
             });
@@ -341,6 +349,7 @@ describe('projectStore', () => {
             dirty: false,
             loading: true,
             identityMigrationPending: false,
+            identityPersistencePending: false,
             initialized: false,
         });
         expect(mutation_count).toBe(0);

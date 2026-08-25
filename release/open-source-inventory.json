@@ -127,7 +127,7 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:f6c78ac5891e95105794a3d463af3e5ba7c98f657c6f2101cb859d13277abc52:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:0bad28098eb5fd190188a6d3a3c2eb36a110c53b0614e14b70ddd72ac60b5473:public/legal/DEPENDENCY-LICENSES.txt",
                 "sha256:362b8480e9be35c45a075a17d01b1b957e1ba92a423fa6fef7fda72cf1fb7614:release/dependency-license-proofs.json"
             ],
             "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
@@ -309,7 +309,7 @@
             "paths": ["Cargo.toml", "Cargo.lock", "crates/**"],
             "sources": ["Cargo.toml", "Cargo.lock"],
             "revisions": ["exact Cargo lock graph"],
-            "digests": ["sha256:f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5"],
+            "digests": ["sha256:bad8592c5c5d9104f7b79f57bf23564bfdf7ead00659e93c202d0a2a7662b34e"],
             "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
             "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
             "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
@@ -929,7 +929,7 @@
                 "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:9f068765d11d265fa8073dec8656dddc230f39879cf3060e5812c18feffd279d:grand-boule-live-runtime",
-                "tracked-set-sha256:4ae15d4874b32839c6e815ef63df4a08036f121d1160c61990fdae2ea7378a7e:grand-boule-project-state",
+                "tracked-set-sha256:97367eb5461cdf47aa8d0068b1d67a2b8da141483305977cdd51ab017e3064de:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
                 "tracked-set-sha256:6206e0fffd074f37e22b7860762547356c30b5405bbf5723fe7335c53e9d1224:grand-boule-release-proof"
             ],
@@ -1200,14 +1200,20 @@
                 "crates/daw-plugin-host/src/clap_host.rs",
                 "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
                 "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+                "src/modules/WorkspaceShell/presentations/projectLinks.ts",
                 "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx"
             ],
-            "sources": ["https://discord.gg/bJHmmfY4", "https://sourdaw.app"],
+            "sources": [
+                "https://github.com/jcosta33/sourdaw",
+                "https://github.com/jcosta33/sourdaw/discussions",
+                "https://github.com/jcosta33/sourdaw/issues",
+                "https://sourdaw.app"
+            ],
             "revisions": ["live project origins"],
             "digests": ["not-applicable:external-service"],
             "licenses": ["not-applicable:community-link"],
             "productSurfaces": ["alpha notice", "CLAP host metadata", "mobile gate", "status bar help"],
-            "evidence": ["Product surfaces link to the project site and Discord invite."],
+            "evidence": ["Product surfaces link to the project site, source, Discussions, and Issues."],
             "obligations": ["Keep public project links accurate and intentional."]
         },
         {
@@ -1272,7 +1278,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "f2a6dd4b978e5c9351d2086732a181a6e68d36672bf4618c7aee38ac33ddbfe5"
+            "sha256": "bad8592c5c5d9104f7b79f57bf23564bfdf7ead00659e93c202d0a2a7662b34e"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1567,6 +1573,12 @@
         {
             "surface": "project-source",
             "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/users/${slot}",
+            "templateSha256": "1f9fa25ac79d9ca6896d7b374ba392cc4aeabc57e1463a488bdf0c3100ca8dac"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
             "value": "https://github.com/${slot}.git",
             "templateSha256": "23b8ac49f564e78e90b87a229539dc6e2563b9a6f1a1b5d4f098b277a7240b8e"
         },
@@ -1723,18 +1735,18 @@
         },
         {
             "surface": "community-links",
-            "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
-            "value": "https://discord.gg/bJHmmfY4"
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw"
         },
         {
             "surface": "community-links",
-            "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
-            "value": "https://discord.gg/bJHmmfY4"
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw/discussions"
         },
         {
             "surface": "community-links",
-            "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-            "value": "https://discord.gg/bJHmmfY4"
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw/issues"
         },
         {
             "surface": "project-wasm",

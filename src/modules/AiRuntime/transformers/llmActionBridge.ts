@@ -9,6 +9,7 @@ import { type BassProcessingCopyCapability } from '../models/BassProcessingCopyC
 import { type DrumPreviewBranchesCapability } from '../models/DrumPreviewBranchesCapability';
 import { type DrumRenderComparisonCapability } from '../models/DrumRenderComparisonCapability';
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MidiOverlapTransformCapability } from '../models/MidiOverlapTransformCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -19,7 +20,6 @@ import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioC
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
-import { MAX_LLM_ACTIONS_PER_BATCH } from './llmActionLimits';
 import { type ToolCallResult } from './toolCallParser';
 
 type ExecutableTrackKind = 'audio' | 'midi' | 'folder';

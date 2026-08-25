@@ -18,6 +18,7 @@ import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/Agent
 import {
     type AgentRunBudgets,
     type AgentRunDecisionResume,
+    type AgentRunScope,
     type AgentRunWorkLease,
     type AgentRunWorkTerminalState,
 } from '../models/AgentRun';
@@ -287,6 +288,27 @@ function getApplicationAssignedTargetIds(
     );
 }
 
+type ProviderKnownScopeInput = {
+    readonly targetRanges: readonly Readonly<AgentRunScope['targetRanges'][number]>[];
+    readonly protectedTargetIds: readonly string[];
+    readonly protectedRanges: readonly Readonly<AgentRunScope['protectedRanges'][number]>[];
+};
+
+function getProviderKnownScope(
+    scope: ProviderKnownScopeInput,
+    providerKnownTargetIds: readonly string[] | undefined
+): AgentRunScope | undefined {
+    if (providerKnownTargetIds === undefined) {
+        return undefined;
+    }
+    return {
+        targetIds: [...providerKnownTargetIds],
+        targetRanges: scope.targetRanges.map((range) => ({ ...range })),
+        protectedTargetIds: [...scope.protectedTargetIds],
+        protectedRanges: scope.protectedRanges.map((range) => ({ ...range })),
+    };
+}
+
 const SELECTED_STEM_ASSETS_READY_ID = 'selected-stem-assets';
 
 function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly ExecutableRuntimeAction[]): string[] {
@@ -515,6 +537,7 @@ export async function sendChatMessage(
                     }
                     const plannedCommandBatch = compileAgentActionExecution({
                         actions: result.actions,
+                        actionCommandGraph: result.actionCommandGraph,
                         actionLabels: confirmationDescription.actionLabels,
                         context,
                         group: generateGroupId(userText),
@@ -561,6 +584,7 @@ export async function sendChatMessage(
                         requiresConfirmation: false,
                         applicationToolReceipts: result.applicationToolReceipts,
                         providerProposal: result.providerProposal,
+                        providerKnownScope: getProviderKnownScope(planScope, result.providerKnownTargetIds),
                         requireProviderProposal: result.executionMode === 'atomic',
                         applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedPlannedBatch.envelope),
                         readyAssetIds,
@@ -626,6 +650,7 @@ export async function sendChatMessage(
                 const commandGroup = generateGroupId(userText);
                 const compiledActionExecution = compileAgentActionExecution({
                     actions: result.actions,
+                    actionCommandGraph: result.actionCommandGraph,
                     actionLabels: confirmationDescription.actionLabels,
                     context,
                     group: commandGroup,
@@ -683,6 +708,10 @@ export async function sendChatMessage(
                     requiresConfirmation: compiledActionExecution.requiresConfirmation,
                     applicationToolReceipts: result.applicationToolReceipts,
                     providerProposal: result.providerProposal,
+                    providerKnownScope: getProviderKnownScope(
+                        commandBatch.authority.scope,
+                        result.providerKnownTargetIds
+                    ),
                     requireProviderProposal: result.executionMode === 'atomic',
                     applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedCommandBatch.envelope),
                     readyAssetIds,

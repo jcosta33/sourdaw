@@ -1,4 +1,4 @@
-import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+import { getAppActionStaticAuthority } from '#/modules/Command/useCases';
 import { projectShortMidiOverlapRemoval } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -6,7 +6,6 @@ import { getMidiArticulationSemanticChanges } from '../transformers/getMidiArtic
 
 export function getPlannedActionAffectedIds(action: AppAction): string[] {
     const affectedIds = new Set<string>();
-    const payload: Readonly<Record<string, unknown>> = action.payload ?? {};
     if (action.type === 'importStemSet') {
         affectedIds.add(action.payload.folderId);
         for (const stem of action.payload.stems) {
@@ -46,21 +45,6 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     }
     if (action.type === 'setDeviceParameter' && action.payload.expectedTrackId) {
         affectedIds.add(action.payload.expectedTrackId);
-    }
-    const groundingRules = getExecutableAppActionGroundingRules(action.type);
-    for (const targetRule of groundingRules?.targetRules ?? []) {
-        const value = payload[targetRule.argument];
-        if (typeof value === 'string') {
-            affectedIds.add(value);
-            continue;
-        }
-        if (Array.isArray(value)) {
-            for (const item of value) {
-                if (typeof item === 'string') {
-                    affectedIds.add(item);
-                }
-            }
-        }
     }
     if (action.type === 'createBus' && action.payload.busId) {
         affectedIds.add(action.payload.busId);
@@ -124,6 +108,9 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
         for (const change of changes ?? []) {
             affectedIds.add(change.targetNoteId);
         }
+    }
+    for (const targetId of getAppActionStaticAuthority(action)) {
+        affectedIds.add(targetId);
     }
     return [...affectedIds];
 }

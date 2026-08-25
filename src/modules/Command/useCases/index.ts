@@ -24,6 +24,7 @@ export { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
+export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';

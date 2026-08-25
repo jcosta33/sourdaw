@@ -110,14 +110,20 @@ async function activateNewProject({
     runCommittedStep('module store reset', () => resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true }));
     runCommittedStep('arrangement reset', () => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
     runCommittedStep('master track creation', () => addTrack({ name: 'Master', kind: 'master', select: false }));
+    let publishedProjectId: string | undefined;
     runCommittedStep('project metadata publication', () => {
-        projectStore.set(
-            createFreshProjectMetadata({
-                name,
-                loading: false,
-                initialized: true,
-            })
-        );
+        const metadata = createFreshProjectMetadata({
+            name,
+            loading: false,
+            initialized: true,
+        });
+        publishedProjectId = metadata.projectId;
+        projectStore.set({
+            ...metadata,
+            // Publication barrier: the minted identity is not durable until the
+            // initial compaction below persists it. Cleared only on that success.
+            identityPersistencePending: true,
+        });
     });
     runCommittedStep('project cache removal', removeProjectJson);
     runCommittedStep('runtime audio buffer reset', clearRuntimeCachedAudioBuffers);
@@ -126,6 +132,10 @@ async function activateNewProject({
 
     try {
         await compactProject();
+        const current = projectStore.value;
+        if (current?.identityPersistencePending && current.projectId === publishedProjectId) {
+            projectStore.set({ ...current, identityPersistencePending: false });
+        }
     } catch (error) {
         degraded = true;
         logger.warn('[newProject] Initial CRDT snapshot persistence failed:', error);
