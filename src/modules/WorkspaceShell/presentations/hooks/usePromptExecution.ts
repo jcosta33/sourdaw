@@ -65,6 +65,7 @@ type PromptAction = ReturnType<typeof resolvePresetActions>[number];
 
 type PromptPreview = {
     actions: PromptAction[];
+    actionCommandGraph?: Parameters<typeof executePromptActionGroup>[0]['actionCommandGraph'];
     actionLabels: string[];
     rawText: string;
     requiresConfirmation: boolean;
@@ -323,6 +324,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             } else if (result.actions.length > 0) {
                 await executePromptActionGroup({
                     actions: result.actions,
+                    actionCommandGraph: result.actionCommandGraph,
                     prompt: value,
                     projectRevision,
                     executionMode: result.executionMode,
@@ -364,6 +366,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         try {
             await executePromptActionGroup({
                 actions: proposal.actions,
+                actionCommandGraph: proposal.actionCommandGraph,
                 prompt: proposal.rawText,
                 projectRevision: proposal.projectRevision,
                 executionMode: proposal.executionMode,

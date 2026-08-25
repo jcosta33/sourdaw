@@ -131,4 +131,28 @@ describe('executableAppActionRegistry', () => {
         expect(descriptor?.intentPhrases).not.toContain('punch out');
         expect(descriptor?.intentPhrases).not.toContain('toggle punch');
     });
+
+    it('owns compound automation arrays, batch-local destinations, and adjustment-layer targets', () => {
+        expect(executableAppActionDescriptorByType.get('automateTrackGainRange')?.targetRules).toEqual([
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                promptRole: 'members',
+            },
+        ]);
+        expect(executableAppActionDescriptorByType.get('automateSendRanges')?.targetRules).toEqual([
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                dependsOn: 'busId',
+                promptRole: 'source',
+            },
+            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
+        ]);
+        expect(executableAppActionDescriptorByType.get('addAdjustmentRegion')?.targetRules).toEqual([
+            { argument: 'layerId', capability: 'adjustment-layer' },
+        ]);
+    });
 });

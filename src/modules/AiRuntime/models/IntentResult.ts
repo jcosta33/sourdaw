@@ -1,3 +1,4 @@
+import { type ActionCommandGraph } from './ActionCommandGraph';
 import { type AgentRunProviderProposal } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
@@ -12,6 +13,8 @@ export type IntentResult = {
     rejectionReason?: string;
     /** Provider-originated actions that require the atomic, compensable Command batch path. */
     executionMode?: 'atomic';
+    /** Application-validated dependency and batch-local producer metadata aligned to actions. */
+    actionCommandGraph?: ActionCommandGraph;
     /** Structured, inert explanation for a bounded whole-project proposal. */
     wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     preparationRequest?: 'stem-import';
@@ -20,4 +23,6 @@ export type IntentResult = {
     applicationToolReceipts?: ApplicationToolReceipt[];
     /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
     providerProposal?: AgentRunProviderProposal;
+    /** Direct stable targets proven from the provider's semantic list against one project snapshot. */
+    providerKnownTargetIds?: string[];
 };
