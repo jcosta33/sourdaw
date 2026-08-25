@@ -16,7 +16,8 @@ import {
     readSync,
     readdirSync,
     realpathSync,
-    rmSync,
+    renameSync,
+    rmdirSync,
     statSync,
     symlinkSync,
     utimesSync,
@@ -176,10 +177,8 @@ export type ReleaseProofPublisher = {
 export type ReleaseProofPublisherPreparer = () => ReleaseProofPublisher;
 
 export type ReleaseProofPublisherRunner = (
-    executable: string,
     source: string,
-    destination: string,
-    executableDescriptor: number
+    destination: string
 ) => { status: number | null; error?: Error; stderr: string };
 
 const releaseProofFileReader: ReleaseProofFileReader = {
@@ -188,75 +187,90 @@ const releaseProofFileReader: ReleaseProofFileReader = {
     read: (descriptor, buffer, offset, length, position) => readSync(descriptor, buffer, offset, length, position),
 };
 
-const ATOMIC_RENAME_HELPER_SOURCE = String.raw`
-#define _GNU_SOURCE
-#include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#if defined(__linux__)
-#include <sys/syscall.h>
-#include <unistd.h>
-#ifndef RENAME_NOREPLACE
-#define RENAME_NOREPLACE 1
-#endif
-#endif
-
-int publish_exclusive(const char *source, const char *destination) {
-#if defined(__APPLE__)
-    int result = renamex_np(source, destination, RENAME_EXCL);
-#elif defined(__linux__)
-    int result = syscall(SYS_renameat2, AT_FDCWD, source, AT_FDCWD, destination, RENAME_NOREPLACE);
-#else
-#error unsupported release proof publication platform
-#endif
-    if (result == 0) {
-        return 0;
-    }
-    int failure = errno;
-    perror("exclusive rename");
-    return failure == EEXIST ? 17 : 1;
-}
-`;
-
-const ATOMIC_RENAME_HELPER_BRIDGE = String.raw`
+const ATOMIC_RENAME_HELPER = String.raw`
 import ctypes
+import errno
 import os
 import sys
 
-publisher = ctypes.CDLL(sys.argv[1])
-publisher.publish_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
-publisher.publish_exclusive.restype = ctypes.c_int
-raise SystemExit(publisher.publish_exclusive(os.fsencode(sys.argv[2]), os.fsencode(sys.argv[3])))
+source = os.fsencode(sys.argv[1])
+destination = os.fsencode(sys.argv[2])
+libc = ctypes.CDLL(None, use_errno=True)
+if sys.platform == "darwin":
+    publish = libc.renamex_np
+    publish.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    publish.restype = ctypes.c_int
+    result = publish(source, destination, 4)
+elif sys.platform.startswith("linux"):
+    publish = libc.renameat2
+    publish.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    publish.restype = ctypes.c_int
+    result = publish(-100, source, -100, destination, 1)
+else:
+    raise SystemExit(69)
+if result == 0:
+    raise SystemExit(0)
+failure = ctypes.get_errno()
+os.write(2, ("exclusive rename: " + os.strerror(failure) + "\n").encode())
+raise SystemExit(17 if failure == errno.EEXIST else 1)
 `;
 
-const ATOMIC_RENAME_HELPER_LIMIT = 4 * 1024 * 1024;
-const ATOMIC_RENAME_CHILD_DESCRIPTOR = 3;
-const ATOMIC_RENAME_DESCRIPTOR_PATH = `/dev/fd/${String(ATOMIC_RENAME_CHILD_DESCRIPTOR)}`;
+const ATOMIC_RENAME_INTERPRETER = '/usr/bin/python3';
 
-function sha256Descriptor(descriptor: number, size: number): string {
-    const hash = createHash('sha256');
-    const chunk = Buffer.alloc(Math.min(HASH_CHUNK_BYTES, Math.max(1, size)));
-    let position = 0;
-    while (position < size) {
-        const bytesRead = readSync(descriptor, chunk, 0, Math.min(chunk.length, size - position), position);
-        if (bytesRead <= 0) {
-            throw new Error('atomic release proof publisher changed while its identity was checked');
-        }
-        hash.update(chunk.subarray(0, bytesRead));
-        position += bytesRead;
+const QUARANTINED_TREE_REMOVER = String.raw`
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+expected_dev = int(sys.argv[2])
+expected_ino = int(sys.argv[3])
+directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+def clear(directory):
+    for name in os.listdir(directory):
+        before = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if stat.S_ISDIR(before.st_mode):
+            child = os.open(name, directory_flags, dir_fd=directory)
+            try:
+                opened = os.fstat(child)
+                if opened.st_dev != before.st_dev or opened.st_ino != before.st_ino:
+                    raise RuntimeError("quarantined directory changed while opening")
+                clear(child)
+                after = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                if after.st_dev != opened.st_dev or after.st_ino != opened.st_ino:
+                    raise RuntimeError("quarantined directory changed before removal")
+                os.rmdir(name, dir_fd=directory)
+            finally:
+                os.close(child)
+        else:
+            os.unlink(name, dir_fd=directory)
+
+root_descriptor = os.open(root, directory_flags)
+try:
+    opened_root = os.fstat(root_descriptor)
+    if opened_root.st_dev != expected_dev or opened_root.st_ino != expected_ino:
+        raise RuntimeError("quarantine root identity changed")
+    clear(root_descriptor)
+finally:
+    os.close(root_descriptor)
+`;
+
+function assertTrustedAtomicRenameInterpreter(): void {
+    const interpreter = lstatSync(ATOMIC_RENAME_INTERPRETER);
+    if (!interpreter.isFile() || interpreter.uid !== 0 || (interpreter.mode & 0o022) !== 0) {
+        throw new Error('atomic release proof publication has no trusted system helper');
     }
-    return hash.digest('hex');
 }
 
 export function prepareAtomicDirectoryPublisher(
-    runner: ReleaseProofPublisherRunner = (executable, source, destination, executableDescriptor) => {
+    runner: ReleaseProofPublisherRunner = (source, destination) => {
         const result = spawnSync(
-            '/usr/bin/python3',
-            ['-I', '-S', '-c', ATOMIC_RENAME_HELPER_BRIDGE, executable, source, destination],
+            ATOMIC_RENAME_INTERPRETER,
+            ['-I', '-S', '-c', ATOMIC_RENAME_HELPER, source, destination],
             {
                 encoding: 'utf8',
                 env: { PATH: '/usr/bin:/bin' },
-                stdio: ['ignore', 'pipe', 'pipe', executableDescriptor],
             }
         );
         return {
@@ -269,152 +283,198 @@ export function prepareAtomicDirectoryPublisher(
     if (process.platform !== 'darwin' && process.platform !== 'linux') {
         throw new Error(`atomic release proof publication is unavailable on ${process.platform}`);
     }
-    const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-exclusive-rename-'));
-    const helperPath = join(helperRoot, 'rename-exclusive');
-    const rootIdentity = lstatSync(helperRoot);
-    let descriptor: number | undefined;
-    try {
-        const compiler = process.platform === 'darwin' ? '/usr/bin/xcrun' : '/usr/bin/cc';
-        const compilerArgs = [
-            ...(process.platform === 'darwin' ? ['clang'] : []),
-            '-x',
-            'c',
-            '-O2',
-            ...(process.platform === 'darwin' ? ['-dynamiclib'] : ['-shared', '-fPIC']),
-            '-o',
-            helperPath,
-            '-',
-        ];
-        const compiled = spawnSync(compiler, compilerArgs, {
-            encoding: 'utf8',
-            env: { PATH: '/usr/bin:/bin' },
-            input: ATOMIC_RENAME_HELPER_SOURCE,
-        });
-        if (compiled.status !== 0) {
-            throw new Error(
-                `atomic release proof publisher could not be prepared: ${compiled.error?.message ?? compiled.stderr.trim()}`
-            );
-        }
-        chmodSync(helperPath, 0o500);
-        const beforeOpen = lstatSync(helperPath);
-        descriptor = openSync(helperPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-        const opened = fstatSync(descriptor);
-        if (
-            !beforeOpen.isFile() ||
-            !opened.isFile() ||
-            beforeOpen.dev !== opened.dev ||
-            beforeOpen.ino !== opened.ino ||
-            opened.size <= 0 ||
-            opened.size > ATOMIC_RENAME_HELPER_LIMIT ||
-            (opened.mode & 0o777) !== 0o500
-        ) {
-            throw new Error('atomic release proof publisher has an unsafe compiled identity');
-        }
-        const identity = {
-            dev: opened.dev,
-            ino: opened.ino,
-            mode: opened.mode,
-            size: opened.size,
-            digest: sha256Descriptor(descriptor, opened.size),
-        };
-        chmodSync(helperRoot, 0o500);
-        let valid = true;
-        const invalidate = (): void => {
-            valid = false;
-            if (descriptor !== undefined) {
-                closeSync(descriptor);
-                descriptor = undefined;
-            }
-            try {
-                const currentRoot = lstatSync(helperRoot);
-                if (currentRoot.dev === rootIdentity.dev && currentRoot.ino === rootIdentity.ino) {
-                    chmodSync(helperRoot, 0o700);
-                    rmSync(helperRoot, { recursive: true, force: true });
-                }
-            } catch {
-                // The private helper was already removed or replaced and must not be followed.
-            }
-        };
-        const verifyIdentity = (): number => {
-            if (!valid || descriptor === undefined) {
+    assertTrustedAtomicRenameInterpreter();
+    let valid = true;
+    const invalidate = (): void => {
+        valid = false;
+    };
+    return {
+        publish(source, destination) {
+            if (!valid) {
                 throw new Error('atomic release proof publisher is unavailable');
             }
-            const current = fstatSync(descriptor);
-            const currentPath = lstatSync(helperPath);
-            const currentRoot = lstatSync(helperRoot);
-            if (
-                !current.isFile() ||
-                !currentPath.isFile() ||
-                !currentRoot.isDirectory() ||
-                current.dev !== identity.dev ||
-                current.ino !== identity.ino ||
-                current.mode !== identity.mode ||
-                current.size !== identity.size ||
-                currentPath.dev !== identity.dev ||
-                currentPath.ino !== identity.ino ||
-                currentPath.mode !== identity.mode ||
-                currentPath.size !== identity.size ||
-                currentRoot.dev !== rootIdentity.dev ||
-                currentRoot.ino !== rootIdentity.ino ||
-                (currentRoot.mode & 0o777) !== 0o500 ||
-                sha256Descriptor(descriptor, current.size) !== identity.digest
-            ) {
-                invalidate();
-                throw new Error('atomic release proof publisher identity changed during publication');
+            const published = runner(source, destination);
+            if (published.status === 17) {
+                throw new Error('release proof output appeared before atomic publication');
             }
-            return descriptor;
-        };
-        return {
-            publish(source, destination) {
-                const pinnedDescriptor = verifyIdentity();
-                const published = runner(ATOMIC_RENAME_DESCRIPTOR_PATH, source, destination, pinnedDescriptor);
-                verifyIdentity();
-                if (published.status === 17) {
-                    throw new Error('release proof output appeared before atomic publication');
-                }
-                if (published.status !== 0) {
-                    throw new Error(
-                        `atomic release proof publication failed: ${published.error?.message ?? published.stderr.trim()}`
-                    );
-                }
-            },
-            invalidate,
-            dispose: invalidate,
-        };
-    } catch (error) {
-        if (descriptor !== undefined) {
-            closeSync(descriptor);
-        }
-        try {
-            chmodSync(helperRoot, 0o700);
-            rmSync(helperRoot, { recursive: true, force: true });
-        } catch {
-            // Preparation already removed the private helper.
-        }
-        throw error;
-    }
+            if (published.status !== 0) {
+                throw new Error(
+                    `atomic release proof publication failed: ${published.error?.message ?? published.stderr.trim()}`
+                );
+            }
+        },
+        invalidate,
+        dispose: invalidate,
+    };
 }
 
 type DirectoryIdentity = {
-    dev: number;
-    ino: number;
+    dev: bigint;
+    ino: bigint;
 };
 
-function directoryByteIdentity(directory: string): ReadonlyArray<readonly [string, string]> {
+function directoryIdentity(path: string): DirectoryIdentity {
+    const metadata = lstatSync(path, { bigint: true });
+    return { dev: metadata.dev, ino: metadata.ino };
+}
+
+function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity): boolean {
+    return left.dev === right.dev && left.ino === right.ino;
+}
+
+function removeQuarantinedDirectoryTree(path: string, expectedIdentity?: DirectoryIdentity): boolean {
+    assertTrustedAtomicRenameInterpreter();
+    let identity = expectedIdentity;
+    if (identity === undefined) {
+        try {
+            identity = directoryIdentity(path);
+        } catch {
+            return false;
+        }
+    }
+    const quarantineRoot = mkdtempSync(join(dirname(path), `.${basename(path)}.cleanup-`));
+    const quarantinePayload = join(quarantineRoot, 'tree');
+    try {
+        renameSync(path, quarantinePayload);
+    } catch {
+        rmdirSync(quarantineRoot);
+        return false;
+    }
+    const moved = directoryIdentity(quarantinePayload);
+    if (!sameDirectoryIdentity(moved, identity)) {
+        try {
+            if (lstatSync(quarantinePayload).isDirectory()) {
+                mkdirSync(path);
+            } else {
+                closeSync(openSync(path, 'wx'));
+            }
+            renameSync(quarantinePayload, path);
+            rmdirSync(quarantineRoot);
+        } catch {
+            // Preserve the quarantined replacement when its original path cannot be restored safely.
+        }
+        return false;
+    }
+    const quarantineIdentity = directoryIdentity(quarantineRoot);
+    const removed = spawnSync(
+        ATOMIC_RENAME_INTERPRETER,
+        [
+            '-I',
+            '-S',
+            '-c',
+            QUARANTINED_TREE_REMOVER,
+            quarantineRoot,
+            String(quarantineIdentity.dev),
+            String(quarantineIdentity.ino),
+        ],
+        { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } }
+    );
+    if (removed.status !== 0) {
+        throw new Error(`quarantined directory cleanup failed: ${removed.error?.message ?? removed.stderr.trim()}`);
+    }
+    rmdirSync(quarantineRoot);
+    return true;
+}
+
+type DirectoryByteEntry = {
+    ctimeMs: number;
+    dev: string;
+    digest: string;
+    ino: string;
+    mtimeMs: number;
+    path: string;
+    size: number;
+};
+
+function directoryByteIdentity(
+    directory: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader
+): DirectoryByteEntry[] {
     const label = 'published release proof';
     const errors: string[] = [];
     const paths = listFiles(directory, label, errors);
-    const identity: Array<readonly [string, string]> = [];
+    const budget = candidateSnapshotBudget(fileReader);
+    const identity: DirectoryByteEntry[] = [];
     for (const path of paths) {
-        const digest = sha256ContainedRegularFile(
-            directory,
-            resolve(directory, ...path.split('/')),
-            RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes
-        );
-        if (digest === undefined) {
-            errors.push(`${label}: missing or unsafe ${path}`);
-        } else {
-            identity.push([path, digest]);
+        const absolute = resolve(directory, ...path.split('/'));
+        try {
+            const entry = withContainedRegularFile(
+                directory,
+                absolute,
+                RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+                (descriptor) => {
+                    const opened = fstatSync(descriptor, { bigint: true });
+                    const digest = digestCandidateDescriptor(
+                        descriptor,
+                        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+                        budget,
+                        fileReader
+                    );
+                    const closed = fstatSync(descriptor, { bigint: true });
+                    const finalPath = lstatSync(absolute);
+                    const finalIdentity = lstatSync(absolute, { bigint: true });
+                    if (
+                        closed.dev !== opened.dev ||
+                        closed.ino !== opened.ino ||
+                        closed.nlink !== 1n ||
+                        finalIdentity.dev !== opened.dev ||
+                        finalIdentity.ino !== opened.ino ||
+                        finalIdentity.nlink !== 1n ||
+                        BigInt(finalPath.size) !== closed.size
+                    ) {
+                        throw new Error(`${label} tree changed while hashing`);
+                    }
+                    return {
+                        ctimeMs: finalPath.ctimeMs,
+                        dev: String(finalIdentity.dev),
+                        digest,
+                        ino: String(finalIdentity.ino),
+                        mtimeMs: finalPath.mtimeMs,
+                        path,
+                        size: finalPath.size,
+                    };
+                },
+                fileReader
+            );
+            if (entry === undefined) {
+                errors.push(`${label}: missing or unsafe ${path}`);
+            } else {
+                identity.push(entry);
+            }
+        } catch (error) {
+            if (error instanceof FileReadLimitError) {
+                throw new TypeError(
+                    error.kind === 'aggregate'
+                        ? `${label}: cumulative byte limit exceeded`
+                        : `${label}: file exceeds the candidate file-size limit`,
+                    { cause: error }
+                );
+            }
+            throw error;
+        }
+    }
+    const finalPaths = listFiles(directory, label, errors);
+    if (!sameValue(paths, finalPaths)) {
+        errors.push(`${label} tree changed while hashing`);
+    }
+    for (const entry of identity) {
+        try {
+            const finalPath = lstatSync(resolve(directory, ...entry.path.split('/')));
+            const finalIdentity = lstatSync(resolve(directory, ...entry.path.split('/')), { bigint: true });
+            if (
+                String(finalIdentity.dev) !== entry.dev ||
+                String(finalIdentity.ino) !== entry.ino ||
+                finalIdentity.nlink !== 1n ||
+                finalPath.size !== entry.size ||
+                finalPath.mtimeMs !== entry.mtimeMs ||
+                finalPath.ctimeMs !== entry.ctimeMs
+            ) {
+                errors.push(`${label} tree changed while hashing`);
+                break;
+            }
+        } catch {
+            errors.push(`${label} tree changed while hashing`);
+            break;
         }
     }
     if (errors.length > 0) {
@@ -423,27 +483,19 @@ function directoryByteIdentity(directory: string): ReadonlyArray<readonly [strin
     return identity;
 }
 
-function removePublishedDirectoryIfIdentity(path: string, identity: DirectoryIdentity): void {
-    let current: ReturnType<typeof lstatSync>;
-    try {
-        current = lstatSync(path);
-    } catch {
-        // A missing or replaced destination is not the validated directory and must not be followed.
-        return;
-    }
-    if (current.isDirectory() && current.dev === identity.dev && current.ino === identity.ino) {
-        rmSync(path, { recursive: true, force: true });
-    }
-}
-
-function publishValidatedDirectory(publisher: ReleaseProofPublisher, source: string, destination: string): void {
+function publishValidatedDirectory(
+    publisher: ReleaseProofPublisher,
+    source: string,
+    destination: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader
+): void {
     const sourceMetadata = lstatSync(source);
     if (!sourceMetadata.isDirectory()) {
         publisher.invalidate();
         throw new Error('release proof publication source is not a directory');
     }
-    const sourceIdentity = { dev: sourceMetadata.dev, ino: sourceMetadata.ino };
-    const sourceBytes = directoryByteIdentity(source);
+    const sourceIdentity = directoryIdentity(source);
+    const sourceBytes = directoryByteIdentity(source, fileReader);
     try {
         publisher.publish(source, destination);
         if (existsSync(source)) {
@@ -457,13 +509,13 @@ function publishValidatedDirectory(publisher: ReleaseProofPublisher, source: str
         ) {
             throw new Error('atomic release proof publisher did not publish the validated directory identity');
         }
-        const destinationBytes = directoryByteIdentity(destination);
+        const destinationBytes = directoryByteIdentity(destination, fileReader);
         if (!sameValue(destinationBytes, sourceBytes)) {
             throw new Error('published directory bytes changed during publication');
         }
     } catch (error) {
         try {
-            removePublishedDirectoryIfIdentity(destination, sourceIdentity);
+            removeQuarantinedDirectoryTree(destination, sourceIdentity);
         } finally {
             publisher.invalidate();
         }
@@ -603,6 +655,9 @@ function digestCandidateDescriptor(
     consume: (bytes: Buffer) => void = () => undefined
 ): string {
     let observedSize = fstatSync(descriptor).size;
+    if (observedSize > maxBytes) {
+        throw new FileReadLimitError('file');
+    }
     if (observedSize > budget.remaining) {
         throw new FileReadLimitError('aggregate');
     }
@@ -618,8 +673,11 @@ function digestCandidateDescriptor(
             if (observedSize - position > budget.remaining) {
                 throw new FileReadLimitError('aggregate');
             }
-            if (position >= observedSize) {
+            if (position === observedSize) {
                 return hash.digest('hex');
+            }
+            if (position > observedSize) {
+                throw new Error('candidate descriptor changed while reading');
             }
         }
         const readLength = Math.min(chunk.length, observedSize - position, maxBytes - position, budget.remaining);
@@ -628,6 +686,16 @@ function digestCandidateDescriptor(
             throw new FileReadLimitError('file');
         }
         if (bytesRead === 0) {
+            const finalSize = fstatSync(descriptor).size;
+            if (finalSize > maxBytes) {
+                throw new FileReadLimitError('file');
+            }
+            if (finalSize - position > budget.remaining) {
+                throw new FileReadLimitError('aggregate');
+            }
+            if (finalSize !== position) {
+                throw new Error('candidate descriptor reported EOF before all bytes were consumed');
+            }
             return hash.digest('hex');
         }
         const bytes = chunk.subarray(0, bytesRead);
@@ -1267,6 +1335,7 @@ function streamTarArchive(
     let total = 0;
     const input = openSync(path, 'r');
     const outputs = new Set<number>();
+    const destinationIdentity = destination === undefined ? undefined : directoryIdentity(destination);
     try {
         const parser = new TarParser({
             file: path,
@@ -1358,7 +1427,7 @@ function streamTarArchive(
         return entries.filter((entry) => entry.path.length > 0);
     } catch (error) {
         if (destination !== undefined) {
-            rmSync(destination, { recursive: true, force: true });
+            removeQuarantinedDirectoryTree(destination, destinationIdentity);
         }
         throw error;
     } finally {
@@ -1533,6 +1602,7 @@ function streamZipArchive(
     const linkTargets = new Map<string, Buffer>();
     const seen = new Set<string>();
     const outputs = new Set<number>();
+    const destinationIdentity = options.destination === undefined ? undefined : directoryIdentity(options.destination);
     let aggregateBytes = 0;
     let failure: Error | undefined;
     try {
@@ -1673,7 +1743,7 @@ function streamZipArchive(
         return { entries, hashes, linkTargets };
     } catch (error) {
         if (options.destination !== undefined) {
-            rmSync(options.destination, { recursive: true, force: true });
+            removeQuarantinedDirectoryTree(options.destination, destinationIdentity);
         }
         throw error;
     } finally {
@@ -1824,6 +1894,7 @@ function validateGitArchive(
     }
 
     const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-release-tree-'));
+    const temporaryIdentity = directoryIdentity(temporary);
     try {
         extractTarArchive(archive, temporary);
         const sourceRoot = join(temporary, prefix);
@@ -1871,7 +1942,7 @@ function validateGitArchive(
     } catch {
         errors.push(`${label} archive tree could not be verified`);
     } finally {
-        rmSync(temporary, { recursive: true, force: true });
+        removeQuarantinedDirectoryTree(temporary, temporaryIdentity);
     }
 }
 
@@ -2310,6 +2381,7 @@ function desktopSnapshot(archive: string): DesktopSnapshot {
         errors.push('desktop archive must contain exactly one top-level Sourdaw.app');
     }
     const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-desktop-proof-'));
+    const temporaryIdentity = directoryIdentity(temporary);
     try {
         if (errors.length === 0) {
             try {
@@ -2367,7 +2439,7 @@ function desktopSnapshot(archive: string): DesktopSnapshot {
             ffmpegSha256: sha256File(ffmpeg),
         };
     } finally {
-        rmSync(temporary, { recursive: true, force: true });
+        removeQuarantinedDirectoryTree(temporary, temporaryIdentity);
     }
 }
 
@@ -2948,6 +3020,7 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         errors.push('release proof paths must be unique');
     }
     const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-snapshot-'));
+    const snapshotRootIdentity = directoryIdentity(snapshotRoot);
     try {
         validateSourceManifest(
             options.candidate,
@@ -2988,7 +3061,7 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         validateCandidateCensus(options.candidate, proof, { buildInputs, webFiles }, errors);
         return errors;
     } finally {
-        rmSync(snapshotRoot, { recursive: true, force: true });
+        removeQuarantinedDirectoryTree(snapshotRoot, snapshotRootIdentity);
     }
 }
 
@@ -3138,7 +3211,7 @@ function removeIgnoredOutput(root: string, path: string): void {
     if (ignored.status !== 0) {
         throw new Error(`refusing to clear non-ignored build output ${path}`);
     }
-    rmSync(resolve(root, ...path.split('/')), { recursive: true, force: true });
+    removeQuarantinedDirectoryTree(resolve(root, ...path.split('/')));
 }
 
 function clearWebBuildOutputs(root: string): void {
@@ -3226,7 +3299,9 @@ export function assembleReleaseProof(
     }
     mkdirSync(dirname(output), { recursive: true });
     const candidate = mkdtempSync(join(dirname(output), `.${basename(output)}.tmp-`));
+    const candidateIdentity = directoryIdentity(candidate);
     let publicationCandidate: string | undefined;
+    let publicationCandidateIdentity: DirectoryIdentity | undefined;
     let publisher: ReleaseProofPublisher | undefined;
     try {
         const sourceDir = join(candidate, 'source');
@@ -3433,8 +3508,9 @@ export function assembleReleaseProof(
         assertBuildState(root, revision);
         publisher = publisherPreparer();
         publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
+        publicationCandidateIdentity = directoryIdentity(publicationCandidate);
         snapshotCandidateTree(candidate, publicationCandidate, publicationFileReader);
-        rmSync(candidate, { recursive: true, force: true });
+        removeQuarantinedDirectoryTree(candidate, candidateIdentity);
         const publicationErrors = validateReleaseProof({
             root,
             candidate: publicationCandidate,
@@ -3445,11 +3521,11 @@ export function assembleReleaseProof(
         if (publicationErrors.length > 0) {
             throw new Error(publicationErrors.join('\n'));
         }
-        publishValidatedDirectory(publisher, publicationCandidate, output);
+        publishValidatedDirectory(publisher, publicationCandidate, output, publicationFileReader);
     } catch (error) {
-        rmSync(candidate, { recursive: true, force: true });
+        removeQuarantinedDirectoryTree(candidate, candidateIdentity);
         if (publicationCandidate !== undefined) {
-            rmSync(publicationCandidate, { recursive: true, force: true });
+            removeQuarantinedDirectoryTree(publicationCandidate, publicationCandidateIdentity);
         }
         throw error;
     } finally {
