@@ -700,7 +700,7 @@ describe('parsePromptToActions', () => {
             payload: { trackId: createdBusId, gain: 0.8 },
         });
         expect(result.providerProposal?.scope.targetIds).toEqual([]);
-        expect(result.verifiedProviderProposalScope?.targetIds).toEqual([]);
+        expect(result.providerKnownTargetIds).toEqual([]);
 
         const actionLabels = ['Create Drum Bus', 'Set Drum Bus gain'];
         registerHandlerMap(getArrangementHandlers());
@@ -738,7 +738,12 @@ describe('parsePromptToActions', () => {
             budgets: { limits: compiled.commandBatch.authority.budgets, consumed: {} },
             requiresConfirmation: compiled.requiresConfirmation,
             providerProposal: result.providerProposal,
-            verifiedProviderProposalScope: result.verifiedProviderProposalScope,
+            providerKnownScope: {
+                targetIds: [...(result.providerKnownTargetIds ?? [])],
+                targetRanges: [...compiled.commandBatch.authority.scope.targetRanges],
+                protectedTargetIds: [...compiled.commandBatch.authority.scope.protectedTargetIds],
+                protectedRanges: [...compiled.commandBatch.authority.scope.protectedRanges],
+            },
             requireProviderProposal: true,
         };
         expect(planAgentRun(planInput)).toMatchObject({ status: 'planned' });

@@ -1,6 +1,5 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 
-import { type AgentRunScope } from '../../models/AgentRun';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
@@ -20,7 +19,7 @@ type BridgeSharedVocalFxBusesPlanResult =
           status: 'accepted';
           actions: RuntimeAction[];
           identities: BatchLocalActionIdentity[];
-          verifiedProviderProposalScope: AgentRunScope;
+          providerKnownTargetIds: string[];
       };
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -207,17 +206,12 @@ export function bridgeSharedVocalFxBusesPlan({
             { actionType: 'createBus' as const, actionOrdinal: index, busId, initialGain: 1 },
             { actionType: 'addDevice' as const, actionOrdinal: index, deviceId },
         ]),
-        verifiedProviderProposalScope: {
-            targetIds: [
-                ...new Set(
-                    scope.capability.effectGroups.flatMap((group) =>
-                        group.sources.flatMap((source) => [source.deviceId, source.trackId])
-                    )
-                ),
-            ],
-            targetRanges: [],
-            protectedTargetIds: scope.capability.protectedObjects.map((target) => target.id),
-            protectedRanges: [],
-        },
+        providerKnownTargetIds: [
+            ...new Set(
+                scope.capability.effectGroups.flatMap((group) =>
+                    group.sources.flatMap((source) => [source.deviceId, source.trackId])
+                )
+            ),
+        ],
     };
 }

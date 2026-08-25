@@ -1,6 +1,5 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 
-import { type AgentRunScope } from '../../models/AgentRun';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
@@ -21,7 +20,7 @@ type BridgeBackingVocalPlatePlanResult =
           actions: RuntimeAction[];
           identities: BatchLocalActionIdentity[];
           renderTailSeconds: number;
-          verifiedProviderProposalScope: AgentRunScope;
+          providerKnownTargetIds: string[];
       };
 
 const EX_01_ONLY_TOOL_NAMES = new Set(['automateSendRanges', 'renderProjectSections']);
@@ -163,14 +162,6 @@ export function bridgeBackingVocalPlatePlan({
             { actionType: 'addDevice', actionOrdinal: 1, deviceId: plateDeviceId },
         ],
         renderTailSeconds: values.renderTailSeconds,
-        verifiedProviderProposalScope: {
-            targetIds: [...removableReverbIds, ...trackIds],
-            targetRanges: scope.capability.chorusSections.map((section) => ({
-                startBeat: section.startBeat,
-                endBeat: section.endBeat,
-            })),
-            protectedTargetIds: scope.capability.protectedObjects.map((object) => object.id),
-            protectedRanges: [],
-        },
+        providerKnownTargetIds: [...removableReverbIds, ...trackIds],
     };
 }

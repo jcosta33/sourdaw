@@ -2100,7 +2100,7 @@ describe('compileArbitraryCommandList', () => {
             validateArbitraryCommandListEvidence({
                 evidence: result.compilerEvidence!,
                 calls: result.compilerEvidence!.commands,
-                context,
+                context: clipContext,
                 revision: 'revision-1',
             }).status
         ).toBe('accepted');

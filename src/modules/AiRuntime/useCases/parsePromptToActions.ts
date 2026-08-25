@@ -624,7 +624,8 @@ export const parsePromptToActions = inject({ logger })(
                     const effectiveProviderProposal =
                         providerProposal === null ||
                         bridged.actionCommandGraph === undefined ||
-                        compiledList.compilerEvidence !== undefined
+                        compiledList.compilerEvidence !== undefined ||
+                        bridged.providerKnownTargetIds !== undefined
                             ? providerProposal
                             : {
                                   ...providerProposal,
@@ -651,9 +652,15 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
-                        ...(compiledList.compilerEvidence === undefined
+                        ...(compiledList.compilerEvidence === undefined && bridged.providerKnownTargetIds === undefined
                             ? {}
-                            : { providerKnownTargetIds: [...compiledList.compilerEvidence.providerKnownTargetIds] }),
+                            : {
+                                  providerKnownTargetIds: [
+                                      ...(compiledList.compilerEvidence?.providerKnownTargetIds ??
+                                          bridged.providerKnownTargetIds ??
+                                          []),
+                                  ],
+                              }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                     };
                 }

@@ -97,6 +97,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
     actionCommandGraph?: ActionCommandGraph;
+    providerKnownTargetIds?: string[];
 };
 
 type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
@@ -4076,6 +4077,7 @@ export function bridgeGroundedLlmToolCalls({
         return {
             actions: sharedVocalFxBusesPlan.actions,
             batchLocalActionIdentities: sharedVocalFxBusesPlan.identities,
+            providerKnownTargetIds: sharedVocalFxBusesPlan.providerKnownTargetIds,
             rejections: [],
         };
     }
@@ -4092,6 +4094,7 @@ export function bridgeGroundedLlmToolCalls({
             actions: drumRenderComparisonPlan.actions,
             appOwnedRenderTailSeconds: drumRenderComparisonPlan.renderTailSeconds,
             batchLocalActionIdentities: drumRenderComparisonPlan.identities,
+            providerKnownTargetIds: drumRenderComparisonPlan.providerKnownTargetIds,
             rejections: [],
         };
     }
@@ -4108,6 +4111,7 @@ export function bridgeGroundedLlmToolCalls({
             actions: backingVocalPlatePlan.actions,
             appOwnedRenderTailSeconds: backingVocalPlatePlan.renderTailSeconds,
             batchLocalActionIdentities: backingVocalPlatePlan.identities,
+            providerKnownTargetIds: backingVocalPlatePlan.providerKnownTargetIds,
             rejections: [],
         };
     }

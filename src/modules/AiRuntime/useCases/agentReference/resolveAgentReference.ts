@@ -241,7 +241,7 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
                 isAgentReferenceCapabilityCandidate({
                     capability: input.capability,
                     context: input.context,
-                    ...(input.dependencyId === undefined ? {} : { dependencyId: input.dependencyId }),
+                    dependencyId: track.id,
                     id: device.id,
                 })
                     ? [
