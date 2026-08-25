@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { executePromptActionGroup } from '../executePromptActionGroup';
@@ -46,6 +47,11 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
 const RUN_ID = 'prompt-run-1';
 const BATCH_ID = 'batch-1';
 const IDEMPOTENCY_KEY = 'batch-key-1';
+const BASE_REVISION = JSON.stringify({
+    documentIdentityEpoch: 1,
+    mutationEpoch: 0,
+    documents: [{ docId: 'root', heads: ['head-0'] }],
+});
 const action = { type: 'togglePlayback' } satisfies AppAction;
 type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 const stemAction = {
@@ -75,8 +81,6 @@ const stemAction = {
         ],
     },
 } satisfies AppAction;
-const commandBatch = { serialized: 'command-batch', authority: { projectId: 'revision-1' } } as never;
-
 const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
 const grants = {
     allowedOperationPrefixes: ['togglePlayback'],
@@ -90,6 +94,25 @@ const grants = {
     remoteGeneration: false,
     autoCommit: false,
 };
+const commandBatch = {
+    serialized: 'command-batch',
+    authority: {
+        projectId: 'revision-1',
+        baseRevision: BASE_REVISION,
+        scope,
+        grants,
+        budgets: {
+            maxCommands: 1,
+            maxCreatedTracks: 0,
+            maxDeletedObjects: 0,
+            maxAffectedTracks: 0,
+            maxAffectedClips: 0,
+            maxAutomationPoints: 0,
+            maxImportedAssets: 0,
+            maxRenderJobs: 0,
+        },
+    },
+} as never;
 
 function seedRun(phase: 'planning' | 'waiting-for-approval' = 'planning'): void {
     agentRunLifecycle.create({
@@ -423,6 +446,64 @@ describe('executePromptActionGroup', () => {
             }
         }
     );
+
+    it('persists the exact command batch for pending-effect continuation after a committed receipt', async () => {
+        const pendingEffect = {
+            commandId: 'command-1',
+            kind: 'runtime-graph' as const,
+            operation: 'togglePlayback' as const,
+            reason: 'runtime graph repair remains pending',
+            remediation: 'repair' as const,
+            state: 'pending' as const,
+        };
+        const receipt = {
+            ...verifiedReceipt(),
+            outcome: 'partially-committed' as const,
+            atomicity: 'durable-atomic-with-non-atomic-effects' as const,
+            commandOutcomes: [
+                {
+                    commandId: pendingEffect.commandId,
+                    operation: pendingEffect.operation,
+                    outcome: 'committed' as const,
+                    affectedIds: [],
+                    compensationAvailable: true,
+                },
+            ],
+            pendingEffects: [pendingEffect],
+            warnings: ['A post-commit effect remains pending.'],
+            compensation: { available: true, commandIds: [pendingEffect.commandId] },
+        } satisfies VerifiedReceipt;
+        seedRun();
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            receipt,
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: [action],
+                prompt: 'Play',
+                projectRevision: 'revision-1',
+                ...admitted(),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        const expectedContinuation = {
+            batchId: BATCH_ID,
+            effects: [pendingEffect],
+            recovery: 'reconcile-batch',
+            serializedBatch: commandBatch.serialized,
+            authority: commandBatch.authority,
+        };
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'partially-completed',
+            pendingEffectContinuations: [expectedContinuation],
+        });
+        expect(readAgentRunState().runs.find((run) => run.runId === RUN_ID)).toMatchObject({
+            pendingEffectContinuations: [expectedContinuation],
+        });
+    });
 
     it.each([
         {
