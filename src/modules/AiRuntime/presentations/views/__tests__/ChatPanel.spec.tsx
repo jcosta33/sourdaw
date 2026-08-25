@@ -272,7 +272,31 @@ describe('ChatPanel', () => {
             runId: 'decision-run',
             alternativeId: 'keep-tempo',
         });
-        expect(await screen.findByRole('status')).toHaveTextContent('Resuming with Keep the current tempo.');
+        expect(await screen.findByText('Started replacement agent run resumed-run.')).toBeInTheDocument();
+    });
+
+    it('replaces the provisional resume status with the public rejection reason', async () => {
+        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([
+            {
+                runId: 'decision-run',
+                allowedActions: { resume: true },
+                resumeRejectionReason: null,
+                decision: {
+                    reason: 'Choose the bounded interpretation before the run can continue.',
+                    alternatives: [{ id: 'keep-tempo', label: 'Keep the current tempo', changesAuthority: false }],
+                },
+            },
+        ]);
+        (agentRunControls.resumeDecision as ReturnType<typeof vi.fn>).mockResolvedValue({
+            status: 'rejected',
+            reason: 'The pending decision is unavailable or already consumed.',
+        });
+
+        render(<ChatPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Select Keep the current tempo' }));
+
+        expect(await screen.findByText('The pending decision is unavailable or already consumed.')).toBeInTheDocument();
     });
 
     it('keeps unavailable decisions visible but disabled with their public rejection reason', () => {

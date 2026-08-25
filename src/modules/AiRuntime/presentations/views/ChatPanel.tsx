@@ -318,7 +318,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
 
         setDecisionStatusMessage(`Resuming with ${alternative.label}.`);
         const result = await agentRunControls.resumeDecision({ runId, alternativeId });
-        if (result.status === 'rejected') {
+        if (result.status === 'resumed') {
+            setDecisionStatusMessage(`Started replacement agent run ${result.runId}.`);
+        } else {
             setDecisionStatusMessage(result.reason);
         }
     };
