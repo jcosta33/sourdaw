@@ -1,0 +1,118 @@
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_8ce6d50344a466 18,28-29,231,293-316,975-1057,1268,1285,1295
+src/modules/Command/useCases/isAppActionCommittedError.ts
+  s_a40848e8f8cca9::t_a4149930488067 3
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_8ce6d50344a466 317-328,447
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_8ce6d50344a466 9,23,684-747,1483,1606
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_ce69b98bdd8d4b 461
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_8ce6d50344a466 47,50-51
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_6662fbbd90efe2 552-583
+  s_a40848e8f8cca9::t_c652f6b18f0a6e 39
+  s_a40848e8f8cca9::t_dcdf1e6da6f85d 585
+src/modules/Command/useCases/getVersionedCommandBatchIdempotentReplay.ts
+  s_a40848e8f8cca9::t_85f681284faa33 13-19
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_c652f6b18f0a6e 27,50,232,237,265,296,324-326,847,980,1127,1158
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_8ce6d50344a466 17,46,51,53-54,57,112-118,121-155,158-159,478-659
+  s_a40848e8f8cca9::t_b25df59832576d 119-120
+  s_a40848e8f8cca9::t_f6f7b2994d0a10 1103
+  s_a40848e8f8cca9::t_867e327ec5e1b7 660
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_00c8d1ff59c2d6 111
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_b348561e2be214 211,213
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_c5f55ef0adb9db 148-150,451,459,461-469
+src/modules/AiRuntime/useCases/__tests__/agentErrorAndSaga.spec.ts
+  s_a40848e8f8cca9::t_a5713ebb2d4d2d 110,160-162,174,204
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_bb63641a88c4a9 1-51
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_493db80f1f1c82 219,315,330,985,1026
+src/modules/AiRuntime/useCases/__tests__/cancelAgentRun.spec.ts
+  s_a40848e8f8cca9::t_f52c71d263ae11 289
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_b57d901b7ae702 310-332
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_8c317c5c96735e 5-6,8,11,14-19,22-23,26,33-153,157-169,172-179,181-186,188-189,191-192,195-239,241-253,256-265,267-476,478-542,544-570,574-612,615-652
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_2be33a09c8a7e0 1,7-11,25-39,43,46-55,57-64,194-282
+src/modules/AiRuntime/useCases/__tests__/promptDraft.spec.ts
+  s_a40848e8f8cca9::t_581a61e6d8eab7 1,3-4,6,8-9,11-12,14-15,17-20,22,25-29,33-37,40,42-43
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_a40848e8f8cca9::t_06536bfc51bcc2 1-330
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_a40848e8f8cca9::t_8d6769a114c2d3 1-369
+src/modules/AiRuntime/useCases/agentReference/__tests__/createStemImportConfirmationResourceLease.spec.ts
+  s_a40848e8f8cca9::t_6b96d700bfad0c 1-74
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_8f224e3efab470 6,17,73-280
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_f67cdd34ff7e46 1-2,5,7-11,19-21,23-29
+src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_1b1289ad590beb 1-6,10,15-31,37-63,66,69,76-202,210-264,267,269,271-280,287-334,339-342,344
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_ce977a790fb59a 5,9-11,112
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_b679687e0d53d4 38,101
+src/modules/AiRuntime/useCases/executePromptActionGroup.ts
+  s_a40848e8f8cca9::t_2fdb6a1657d211 1-6,10,12-15,17,19-20,29-34,37-130,132-133,135-249,253-304,306-363,365-372,374-378,380,382,384-388,390,392-395,397,399
+src/modules/AiRuntime/useCases/injectPromptDraft.ts
+  s_a40848e8f8cca9::t_eaade1789eb45c 1,3-5
+src/modules/AiRuntime/useCases/injectVoicePromptDraft.ts
+  s_a40848e8f8cca9::t_886665c9c965fe 1,5
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_ae0a64f317007a 8,17,55-84,108,111,157-197
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_b7233ccd7f4e3d 19,119-193,288,393-398,409-411,564-573
+src/modules/AiRuntime/useCases/onPromptDraft.ts
+  s_a40848e8f8cca9::t_fbd314c4aaee42 1-7
+src/modules/AiRuntime/useCases/onVoicePromptDraft.ts
+  s_a40848e8f8cca9::t_5540bfa63df467 1,5
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_bcb2ad866330a8 91-104,191,205,221,228,242
+src/modules/AiRuntime/useCases/promptInjectionState.ts
+  s_a40848e8f8cca9::t_7f6584dc906b16 1
+src/modules/AiRuntime/useCases/reconcilePreparedStemImportRecovery.ts
+  s_a40848e8f8cca9::t_1ff460dfa27475 1-46
+src/modules/AiRuntime/useCases/recordAgentProviderUsage.ts
+  s_a40848e8f8cca9::t_2c630b16b45d42 1-53
+src/modules/AiRuntime/useCases/recoverPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_c9e326fb5ae939 1-38
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_e02d8134120e62 77,389,546,596,674,787,891-894,1660,1696
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_a40848e8f8cca9::t_57d2909395e520 1-307
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_a40848e8f8cca9::t_a45287d5544691 28,247
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_a40848e8f8cca9::t_f7b4dfcbcfb34d 117,436-437,440
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_f6503b329f986e 627,642-652,720-721,731
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_9f768fc9ec144c 8,14,28-30,32-37,39,51,68-70,72,134-138,144-149,153,157-161,164,174,176,178,182,189,193,196-260,279-294,356-357,366,371-372,374,381,413,418,432-433,447,468,487,498,549,566,569,576-583,586-587,600-605,614,616,632,647,657,660-661,673-674,685,699-700,713-714,722,733-734,740-743,757-758,764-766,782-820,839,842-843,846,849,868-869,889-960,1024,1068,1088,1106
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_971fca3c828e1a 7,12,68-69,72-93,140-151,215,226,269,271-273,276-291,301-303,320,322,325-337,362,371,387,393
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "cb12760f55856b65a5d040bca95776b9a8394bbd",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
