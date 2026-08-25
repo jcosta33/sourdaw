@@ -120,7 +120,7 @@
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::scheduler::{
-    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, EFFECT_TABLE_CAPACITY,
+    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
@@ -932,12 +932,16 @@ fn map_device(
         }
     }
 
-    // The scheduler's effect table is fixed at `EFFECT_TABLE_CAPACITY` and
-    // every native device in the project — track chain or bus chain — holds
-    // one of its slots, while the timeline admits far more chain slots than
-    // that. Refusing at map time is what turns a device that would silently
-    // vanish into one that reports it could not be added: the batch fails,
-    // its working registry clone is discarded, and no chain entry is written.
+    // The scheduler's effect table is shared by every population that
+    // registers into it — the project's chain devices, engine-owned plugins,
+    // the crumbs capture slot — and its timeline term is the chain-slot
+    // budget the strip admission rules themselves enforce: tracks and buses
+    // are counted, and each chain is capped per strip. This bound is the
+    // project-wide belt over those per-strip caps: while they hold it is
+    // unreachable, and a device that slips past them must still refuse here —
+    // refusing at map time is what turns a device that would silently vanish
+    // into one that reports it could not be added: the batch fails, its
+    // working registry clone is discarded, and no chain entry is written.
     //
     // This bound covers the project's *devices* only, and it names the device
     // that hit it. The table is shared with engine-owned plugins and the
@@ -946,9 +950,10 @@ fn map_device(
     // whole population before it publishes anything, and refuses it whole
     // otherwise. Whichever bound is tighter fires first; neither is the only
     // one, and neither may be widened into a second partial count.
-    if registry.devices.len() == EFFECT_TABLE_CAPACITY {
+    if registry.devices.len() >= TIMELINE_CHAIN_SLOT_BUDGET {
         return Err(format!(
-            "device '{}': the project holds its maximum of {EFFECT_TABLE_CAPACITY} native devices",
+            "device '{}': the project holds its maximum of {TIMELINE_CHAIN_SLOT_BUDGET} native \
+             devices",
             device.id
         ));
     }
@@ -2951,67 +2956,140 @@ mod tests {
         );
     }
 
-    /// Every native device the project holds — on any track or bus — occupies
-    /// one slot of the scheduler's fixed effect table, and the timeline admits
-    /// many more chain slots than that table has. The batch refuses past the
-    /// ceiling and names it. The engine's own refusal cannot stand in for this
-    /// one: it is a counter on the audio callback, so the chain splice that
-    /// follows would land with no instance behind it and the batch would
-    /// report a device the user cannot hear.
+    /// The whole device budget the timeline admits is reachable through real
+    /// batches: 128 track chains of 32 plus 64 bus chains of 32. The budget
+    /// was once a flat 128 that four-devices-on-32-tracks exhausted, so the
+    /// fill proves the product's own strip rules and the table's timeline term
+    /// agree. One batch per strip, its mapped ops dropped: a knead device's
+    /// instance is built per batch and freed with it, so the fill's peak is
+    /// one strip's worth of engines, not the budget's.
     #[test]
-    fn a_device_past_the_project_wide_device_ceiling_refuses_the_batch() {
-        let mut commands: Vec<Value> = Vec::new();
-        let mut built = 0usize;
-        let mut track = 0usize;
-        while built < EFFECT_TABLE_CAPACITY {
-            let count = MAX_TRACK_DEVICES.min(EFFECT_TABLE_CAPACITY - built);
-            let devices: Vec<Value> = (0..count)
-                .map(|index| {
-                    json!({ "id": format!("d-{track}-{index}"), "type": "knead",
-                            "bypassed": false, "parameterValues": {} })
+    fn a_project_the_timeline_admits_fills_the_whole_device_budget() {
+        let mut registry = GraphRegistry::default();
+        let strip_batch = |track: bool, index: usize| {
+            let strip = format!("{}{index}", if track { "t" } else { "b" });
+            let devices: Vec<Value> = (0..MAX_TRACK_DEVICES)
+                .map(|device| {
+                    json!({ "id": format!("d-{strip}-{device}"),
+                            "type": "knead", "bypassed": false, "parameterValues": {} })
                 })
                 .collect();
-            commands.push(json!({
-                "kind": "create-track-strip", "trackId": format!("t{track}"), "name": "T",
-                "state": strip_state(1.0), "devices": devices,
-                "honorMuted": true, "contributesAudio": true
-            }));
-            built += count;
-            track += 1;
-        }
+            if track {
+                batch(json!([{
+                    "kind": "create-track-strip", "trackId": strip, "name": "T",
+                    "state": strip_state(1.0), "devices": devices,
+                    "honorMuted": true, "contributesAudio": true
+                }]))
+            } else {
+                batch(json!([{
+                    "kind": "create-bus-strip", "busId": strip, "name": "T",
+                    "state": strip_state(1.0), "devices": devices,
+                    "honorMuted": true, "contributesAudio": true
+                }]))
+            }
+        };
 
+        for track in 0..MAX_TIMELINE_TRACKS {
+            map_batch(
+                &strip_batch(true, track),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+            )
+            .expect("a track strip inside the timeline's limits must map");
+        }
+        for bus in 0..MAX_TIMELINE_BUSES {
+            map_batch(
+                &strip_batch(false, bus),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+            )
+            .expect("a bus strip inside the timeline's limits must map");
+        }
+        assert_eq!(registry.devices.len(), TIMELINE_CHAIN_SLOT_BUDGET);
+
+        // Every strip is full and both strip counts are at their limits, so a
+        // further strip is refused by the strip admission rules — the ceiling
+        // a user actually reaches, named in its own terms.
+        let mut working = registry.clone();
+        let refusal = map_batch(
+            &batch(json!([{
+                "kind": "create-track-strip", "trackId": "t-overflow", "name": "T",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-overflow", "type": "knead", "bypassed": false,
+                               "parameterValues": {} } ],
+                "honorMuted": true, "contributesAudio": true
+            }])),
+            &mut working,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a strip past the timeline's strip limits must refuse the batch");
+        assert!(
+            refusal.contains(&MAX_TIMELINE_TRACKS.to_string()) && refusal.contains("tracks"),
+            "the refusal must name the strip ceiling it hit, got: {refusal}"
+        );
+        assert_eq!(registry.devices.len(), TIMELINE_CHAIN_SLOT_BUDGET);
+    }
+
+    /// Every native device the project holds — on any track or bus — occupies
+    /// one slot of the scheduler's fixed effect table, whose timeline term is
+    /// the strip rules' own chain-slot budget. The project-wide bound in
+    /// `map_device` is a belt over those per-strip caps: while they hold it is
+    /// unreachable, so the registry here is filled to the budget the way a
+    /// strip-cap regression would, against a strip that still has chain room —
+    /// only the project-wide bound is left to catch this. The engine's own
+    /// refusal cannot stand in for it: it is a counter on the audio callback,
+    /// so the chain splice that follows would land with no instance behind it
+    /// and the batch would report a device the user cannot hear.
+    #[test]
+    fn a_device_past_the_project_wide_device_ceiling_refuses_the_batch() {
         let mut registry = GraphRegistry::default();
         map_batch(
-            &batch(json!(commands)),
+            &batch(json!([{
+                "kind": "create-track-strip", "trackId": "t1", "name": "T",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-live", "type": "knead", "bypassed": false,
+                               "parameterValues": {} } ],
+                "honorMuted": true, "contributesAudio": true
+            }])),
             &mut registry,
             &sample_pool(),
             48_000.0,
         )
-        .expect("a project that fills the table exactly must map");
-        assert_eq!(registry.devices.len(), EFFECT_TABLE_CAPACITY);
+        .expect("a strip with chain room must map");
+        // Synthetic fill to the budget, as if the per-strip caps had admitted
+        // more than the budget holds.
+        while registry.devices.len() < TIMELINE_CHAIN_SLOT_BUDGET {
+            let index = registry.devices.len();
+            registry.devices.insert(
+                format!("d-fill-{index}"),
+                DeviceEntry {
+                    native_effect_id: FIRST_GRAPH_EFFECT_ID + index,
+                    strip_id: "t1".to_string(),
+                },
+            );
+        }
 
-        // A fresh strip, so the per-strip chain ceiling cannot be what
-        // refuses: only the project-wide one is left to catch this.
         let overflow = batch(json!([
-            { "kind": "create-track-strip", "trackId": format!("t{track}"), "name": "T",
-              "state": strip_state(1.0),
-              "devices": [ { "id": "d-overflow", "type": "knead", "bypassed": false,
-                             "parameterValues": {} } ],
-              "honorMuted": true, "contributesAudio": true }
+            { "kind": "insert-device", "trackId": "t1", "index": 1,
+              "device": { "id": "d-overflow", "type": "knead", "bypassed": false,
+                          "parameterValues": {} } }
         ]));
         let mut working = registry.clone();
         let refusal = map_batch(&overflow, &mut working, &sample_pool(), 48_000.0)
             .expect_err("a device past the project-wide ceiling must refuse the batch");
 
         assert!(
-            refusal.contains(&EFFECT_TABLE_CAPACITY.to_string())
+            refusal.contains(&TIMELINE_CHAIN_SLOT_BUDGET.to_string())
                 && refusal.contains("native devices"),
             "the refusal must name the ceiling it hit, got: {refusal}"
         );
         // The committed registry never saw the refused batch, so the chain the
         // engine renders and the chain the registry believes in still agree.
-        assert_eq!(registry.devices.len(), EFFECT_TABLE_CAPACITY);
-        assert!(!registry.strips.contains_key(&format!("t{track}")));
+        assert_eq!(registry.devices.len(), TIMELINE_CHAIN_SLOT_BUDGET);
+        assert!(!registry.devices.contains_key("d-overflow"));
     }
 
     #[test]

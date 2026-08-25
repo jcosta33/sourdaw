@@ -18,6 +18,7 @@ use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsParam, SampleId};
 use daw_engine::audio_bridge::MAX_BLOCK_FRAMES;
+use daw_engine::scheduler::CRUMBS_CAPTURE_RESERVE;
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -162,6 +163,31 @@ pub struct LoopPointDetectionResult {
 
 // ── Commands ───────────────────────────────────────────────────────────
 
+/// Refuse when the session already holds its ceiling of live crumbs
+/// instances.
+///
+/// Each live instance holds one capture slot of the shared effect table and
+/// one bridge for its record feed. The app renders exactly one Crumbs panel,
+/// and re-pointing it tears the old instance down asynchronously while the new
+/// one is already being created, so two can be live at once and three are not
+/// reachable from the UI — the ceiling (`CRUMBS_CAPTURE_RESERVE`) states that
+/// bound, and it is enforced here, control-side, where the refusal reaches the
+/// panel instead of dying as a counter on the audio callback that leaves
+/// armed recording capturing silence with nothing saying why.
+fn ensure_crumbs_capture_headroom(state: &CrumbsState) -> Result<(), String> {
+    let instances = state
+        .instances
+        .lock()
+        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+
+    if instances.len() >= CRUMBS_CAPTURE_RESERVE {
+        return Err(format!(
+            "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+        ));
+    }
+    Ok(())
+}
+
 /// Create a new crumbs engine instance.
 pub async fn create_crumbs(
     instance_id: String,
@@ -169,6 +195,12 @@ pub async fn create_crumbs(
     state: &CrumbsState,
     app_state: &AppState,
 ) -> Result<(), String> {
+    // Checked and released before the engine lock is taken: the instances
+    // lock must never be held while waiting on the engine lock, because
+    // `destroy_crumbs` takes them in the opposite order and the re-point
+    // overlap is exactly a concurrent create/destroy pair.
+    ensure_crumbs_capture_headroom(state)?;
+
     let (tx, rx) = rtrb::RingBuffer::new(128);
     // Commit-handoff rings (ledger #568): the engine hands committed takes
     // out in O(1); drain_pending_recording_commits completes them off the
@@ -178,47 +210,52 @@ pub async fn create_crumbs(
     let metering = Arc::new(CrumbsMetering::default());
     let engine = CrumbsEngine::with_metering(sample_rate, metering.clone());
 
-    let mut engine_guard = app_state
-        .engine
-        .lock()
-        .map_err(|e| format!("Failed to lock engine: {e}"))?;
-
-    let engine_plugin_id = if let Some(ref mut engine_handle) = *engine_guard {
-        // Reserve the id up front and register an audio bridge alongside the
-        // slot (mirrors the CLAP path in plugins.rs): the bridge is the only
-        // channel that carries real audio from the app into the native
-        // engine — the slot feeds incoming bridge blocks to the engine's
-        // record input before rendering, so without it armed recording can
-        // only ever capture silence.
-        //
-        // The capture slot takes a slot of the same shared effect table the
-        // project's devices and its plugins fill, so refuse before the id is
-        // reserved and the bridge is published. The audio thread's refusal is
-        // a counter nothing here can read, and a capture slot refused there
-        // leaves armed recording capturing silence with nothing saying why.
-        engine_handle.ensure_effect_table_headroom(1)?;
-
-        let id = engine_handle.reserve_plugin_id();
-        let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
-        let mut engine = engine;
-        engine.enable_commit_handoff();
-        let slot = CrumbsPluginSlot {
-            engine,
-            command_rx: rx,
-            commit_tx,
-            recycle_rx,
-        };
-        engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
-
-        let mut feed = app_state
-            .audio_bridges
+    // Scoped so the engine and bridge-feed guards release before the
+    // instances lock below, on the same ordering law as the headroom check
+    // above.
+    let engine_plugin_id = {
+        let mut engine_guard = app_state
+            .engine
             .lock()
-            .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-        feed.bridges.insert(id, bridge_handle);
+            .map_err(|e| format!("Failed to lock engine: {e}"))?;
 
-        id
-    } else {
-        return Err("Native engine not running".to_string());
+        if let Some(ref mut engine_handle) = *engine_guard {
+            // Reserve the id up front and register an audio bridge alongside the
+            // slot (mirrors the CLAP path in plugins.rs): the bridge is the only
+            // channel that carries real audio from the app into the native
+            // engine — the slot feeds incoming bridge blocks to the engine's
+            // record input before rendering, so without it armed recording can
+            // only ever capture silence.
+            //
+            // The capture slot takes a slot of the same shared effect table the
+            // project's devices and its plugins fill, so refuse before the id is
+            // reserved and the bridge is published. The audio thread's refusal is
+            // a counter nothing here can read, and a capture slot refused there
+            // leaves armed recording capturing silence with nothing saying why.
+            engine_handle.ensure_effect_table_headroom(1)?;
+
+            let id = engine_handle.reserve_plugin_id();
+            let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
+            let mut engine = engine;
+            engine.enable_commit_handoff();
+            let slot = CrumbsPluginSlot {
+                engine,
+                command_rx: rx,
+                commit_tx,
+                recycle_rx,
+            };
+            engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
+
+            let mut feed = app_state
+                .audio_bridges
+                .lock()
+                .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
+            feed.bridges.insert(id, bridge_handle);
+
+            id
+        } else {
+            return Err("Native engine not running".to_string());
+        }
     };
 
     let mut instances = state
@@ -876,6 +913,47 @@ mod tests {
         );
         assert_eq!(json["sampleRate"], 48_000);
         assert!(json.get("decode_warning_count").is_none());
+    }
+
+    /// The session limit on live crumbs instances is refused control-side, at
+    /// the ceiling, in the wording that names it. A third instance is not
+    /// reachable from the UI — the panel is a singleton and its re-point
+    /// overlap is two — but a stray create (a double init, a retry racing a
+    /// slow destroy) must refuse where the panel can report it, not as a
+    /// capture-slot refusal on the callback that leaves recording armed and
+    /// capturing silence with nothing saying why.
+    #[test]
+    fn a_create_past_the_crumbs_capture_ceiling_is_refused_with_the_limit_named() {
+        let state = CrumbsState::default();
+        assert!(ensure_crumbs_capture_headroom(&state).is_ok());
+
+        {
+            let mut instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            for index in 0..CRUMBS_CAPTURE_RESERVE {
+                let (instance, _commit_tx, _recycle_rx, _cmd_rx) = instance_with_rings();
+                instances.insert(format!("instance-{index}"), instance);
+            }
+        }
+
+        let refusal = ensure_crumbs_capture_headroom(&state)
+            .expect_err("a session at the capture ceiling must refuse another instance");
+        assert_eq!(
+            refusal,
+            format!(
+                "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+            )
+        );
+
+        // Destroying is what makes room: one below the ceiling admits again.
+        state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .remove("instance-0");
+        assert!(ensure_crumbs_capture_headroom(&state).is_ok());
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData

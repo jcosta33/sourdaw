@@ -9,6 +9,7 @@ use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
+use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
 use daw_plugin_host::scanner::{self, PluginFormat, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
@@ -678,6 +679,14 @@ pub async fn load_plugin(
                         ));
                     }
 
+                    // The session limit on engine-owned hosted instances comes
+                    // first, before anything is registered: the effect table's
+                    // hosted-plugin reserve and the bridge table — one bridge
+                    // per instance — are sized to exactly this number, so a
+                    // load past it must refuse here, where the error reaches
+                    // the user rather than dying as a counter on the callback.
+                    ensure_hosted_plugin_session_headroom(state)?;
+
                     // The scheduler's effect table is shared with the project's
                     // native devices and the crumbs capture slot, so a plugin
                     // can be refused by a table this path never populated.
@@ -774,6 +783,31 @@ fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> R
 
     if plugins.contains_key(instance_id) || engine_plugins.contains_key(instance_id) {
         return Err(format!("Plugin instance already exists: {instance_id}"));
+    }
+    Ok(())
+}
+
+/// Refuse when the session already holds its ceiling of engine-owned hosted
+/// instances.
+///
+/// Nothing native enumerates hosted instances — the map is unbounded, keyed by
+/// instance id — so the ceiling is stated by the engine
+/// (`HOSTED_PLUGIN_RESERVE`) and enforced here, control-side, where the
+/// refusal reaches the user. The effect table's hosted-plugin reserve and the
+/// bridge table (one bridge per instance) are sized to exactly this number, so
+/// a load past it must never reach the audio thread: its refusal is a counter
+/// the loader cannot read, and the plugin it refused would sit in the rack
+/// passing dry audio forever.
+fn ensure_hosted_plugin_session_headroom(state: &AppState) -> Result<(), String> {
+    let engine_plugins = state
+        .engine_plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+
+    if engine_plugins.len() >= HOSTED_PLUGIN_RESERVE {
+        return Err(format!(
+            "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
+        ));
     }
     Ok(())
 }
@@ -2147,6 +2181,37 @@ mod tests {
             error.starts_with("Failed to load CLAP plugin at /plugins/aaaa1111.clap:"),
             "the load must get past the registry read and fail at the library, got: {error}"
         );
+    }
+
+    /// The session limit on engine-owned hosted instances is refused
+    /// control-side, at the ceiling, in the wording that names it. Past the
+    /// limit the effect table's hosted-plugin reserve and the bridge table
+    /// have no slot left, and the audio thread's own refusal is a counter
+    /// nothing propagates — the plugin would load, open its editor, and pass
+    /// dry audio forever, which is what this guard exists to prevent.
+    #[test]
+    fn a_load_past_the_hosted_plugin_session_ceiling_is_refused_with_the_limit_named() {
+        let state = AppState::default();
+        for index in 0..HOSTED_PLUGIN_RESERVE {
+            insert_engine_owned_fixture(&state, &format!("instance-{index}"), Vec::new());
+        }
+
+        let refusal = ensure_hosted_plugin_session_headroom(&state)
+            .expect_err("a session at the ceiling must refuse the next instance");
+        assert_eq!(
+            refusal,
+            format!(
+                "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
+            )
+        );
+
+        // Unloading is what makes room: one below the ceiling admits again.
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available")
+            .remove("instance-0");
+        assert!(ensure_hosted_plugin_session_headroom(&state).is_ok());
     }
 
     /// An empty descriptor id used to be replaced by the display name, which is

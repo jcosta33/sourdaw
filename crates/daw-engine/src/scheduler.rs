@@ -14,7 +14,8 @@ use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
     ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
     RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineGraph,
-    TimelineRtDiagnosticsSnapshot, TimelineTrack,
+    TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
+    MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
@@ -516,25 +517,84 @@ struct ActiveEffect {
 
 pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 257;
 
-/// The fixed capacity of the scheduler's effect table, and with it the number
-/// of devices a project may hold natively at once. The table is built once
-/// with this capacity and never grown: a push past it is refused and counted —
-/// growing the vector inside the audio deadline is the allocation ADR 0020
-/// forbids, and `ActiveEffect` is large enough (its plugin core, MIDI buffer,
-/// and parameter queue all live inline) that both the reservation and the
-/// memmove `remove_effect` performs scale with it, so the ceiling cannot
-/// simply be raised to cover every chain slot the timeline admits.
+/// The chain slots the timeline itself admits: every track's device chain
+/// plus every bus's. The strip admission rules enforce this product-wide —
+/// tracks and buses are counted, and each chain is capped at
+/// [`MAX_TRACK_DEVICES`]/[`MAX_BUS_DEVICES`] — so this is the ceiling on the
+/// table's timeline population, derived rather than chosen.
+pub const TIMELINE_CHAIN_SLOT_BUDGET: usize =
+    MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES;
+
+/// The session's reserve for engine-owned hosted plugin instances: the
+/// `AddPlugin`/`AddPluginWithBridge` registrations `load_plugin` makes, one
+/// per external-plugin device in the project.
+///
+/// No ceiling on them is enumerable from this crate: the host holds them in an
+/// unbounded map keyed by instance id, and an external-plugin device list has
+/// no per-strip cap of its own. So the engine states the limit itself: 128
+/// instances at once, the number the bridge table has enforced since bridges
+/// existed, now named here and checked control-side by `load_plugin`
+/// (`sourdaw-native`) where the refusal reaches the user instead of dying as
+/// a counter on the callback. A session past 128 hosted plugins is past any
+/// professional session's scale — each instance is a native plugin library
+/// plus roughly 288 KiB of bridge rings — and the refusal names the limit.
+pub const HOSTED_PLUGIN_RESERVE: usize = 128;
+
+/// The session's reserve for Crumbs input-capture slots: the
+/// `AddPluginWithBridge` registration `create_crumbs` makes for the panel's
+/// record feed, one per live instance.
+///
+/// The app renders exactly one Crumbs panel, and re-pointing it at another
+/// device tears the old instance down asynchronously while the new one is
+/// already being created, so two slots can be live at once and three are not
+/// reachable from the UI. `create_crumbs` (`sourdaw-native`) checks the bound
+/// control-side, so the third concurrent instance is refused where the error
+/// is legible rather than counted on the callback.
+pub const CRUMBS_CAPTURE_RESERVE: usize = 2;
+
+/// The fixed capacity of the scheduler's effect table. Every registration the
+/// product can hold at once shares this one table, and the capacity is the
+/// sum of its three populations, each bounded by a named term:
+///
+/// - the timeline's chain devices, at [`TIMELINE_CHAIN_SLOT_BUDGET`] — the
+///   product's own strip admission rules;
+/// - engine-owned hosted plugin instances, at [`HOSTED_PLUGIN_RESERVE`];
+/// - Crumbs input-capture slots, at [`CRUMBS_CAPTURE_RESERVE`].
+///
+/// Sizing against what the product permits is the contract: the table once
+/// held a flat 128 while the timeline admitted 6144 chain slots, so a project
+/// four-devices-deep on 32 tracks exhausted it, and with it full the Crumbs
+/// panel could not even open. The reserve terms state their own bounds where
+/// no code enumerates them, so the ceiling is discoverable before it is hit.
+///
+/// The table is built once with this capacity and never grown: a push past it
+/// is refused and counted — growing the vector inside the audio deadline is
+/// the allocation ADR 0020 forbids, and `ActiveEffect` is large enough (its
+/// plugin core, MIDI buffer, and parameter queue all live inline) that both
+/// the reservation and the memmove `remove_effect` performs scale with it,
+/// which is why the ceiling stops at what the product permits rather than
+/// somewhere beyond it.
 ///
 /// The audio thread's refusal is the last line, not the reported one: it is a
 /// counter, and a device refused there is a device the user never sees in the
-/// chain. Control-side callers must hold the project below this ceiling
+/// chain. Control-side callers must hold the session below this ceiling
 /// themselves, where a refusal can be returned — which is why the constant is
 /// public.
-pub const EFFECT_TABLE_CAPACITY: usize = 128;
+pub const EFFECT_TABLE_CAPACITY: usize =
+    TIMELINE_CHAIN_SLOT_BUDGET + HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
 
-/// The fixed capacity of the bridge table, on the same contract as
-/// [`EFFECT_TABLE_CAPACITY`].
-pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize = 128;
+/// The fixed capacity of the bridge table. Bridges exist only for the two
+/// registrations that carry one — hosted plugin instances and Crumbs capture
+/// slots — so the table is sized to exactly their reserves; timeline chain
+/// devices never take a bridge.
+///
+/// The shared effect-table ledger must remain the binding ceiling: a
+/// registration the ledger admitted that the bridge table then refused would
+/// die as a counter on the callback — the exact failure the ledger exists to
+/// remove — so the host enforces each reserve control-side and this table is
+/// sized to hold whatever those checks admit.
+pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize =
+    HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
 
 /// Everything the audio thread gives up for reclamation off the callback.
 ///
@@ -2579,6 +2639,37 @@ mod tests {
         assert_eq!(BuiltinEffectType::from_name("not-a-real-effect"), None);
     }
 
+    /// The capacity is a sum of the populations that fill the table, not a
+    /// number: raise a timeline limit or a reserve and the table must follow,
+    /// or a project the product admits silently overflows the ceiling again —
+    /// the flat 128 this replaced was exactly that drift. The arithmetic is
+    /// written raw here, not through the budget constant, so editing a
+    /// timeline limit without resizing the table fails this test rather than
+    /// the user's session.
+    #[test]
+    fn the_effect_table_capacity_is_the_sum_of_the_populations_it_holds() {
+        assert_eq!(
+            TIMELINE_CHAIN_SLOT_BUDGET,
+            MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES
+        );
+        assert_eq!(
+            EFFECT_TABLE_CAPACITY,
+            MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES
+                + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES
+                + HOSTED_PLUGIN_RESERVE
+                + CRUMBS_CAPTURE_RESERVE
+        );
+        // Bridges exist only for the two non-timeline registrations, so the
+        // bridge table covers exactly their reserves: no less, or the ledger
+        // would admit registrations the bridge table silently refuses on the
+        // callback; no more, or the bridge table would stop mirroring the
+        // populations it actually holds.
+        assert_eq!(
+            AUDIO_BRIDGE_TABLE_CAPACITY,
+            HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE
+        );
+    }
+
     /// A built-in add past the table's capacity is refused rather than grown,
     /// and the instance the command carried is handed off rather than freed
     /// on the callback: it exists from the control-side push, so a refusal
@@ -2587,9 +2678,16 @@ mod tests {
     #[test]
     fn an_effect_past_the_tables_capacity_is_refused_rather_than_grown() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        // The fill is `AddPlugin` boxes — one small allocation each — so a
+        // capacity-sized fill stays cheap; a `KneadEngine` per slot would be
+        // half a megabyte of buffers times thousands of slots. The ceiling
+        // counts registrations, not kinds.
         for id in 0..EFFECT_TABLE_CAPACITY {
             command_tx
-                .push(GraphCommand::AddEffect(id, knead_instance()))
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
                 .unwrap();
             scheduler.update_graph();
         }
@@ -2680,9 +2778,13 @@ mod tests {
     #[test]
     fn a_plugin_with_bridge_is_refused_when_only_the_effect_table_is_full() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        // Cheap fill, as above: the arm under test sees only a full table.
         for id in 0..EFFECT_TABLE_CAPACITY {
             command_tx
-                .push(GraphCommand::AddEffect(id, knead_instance()))
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
                 .unwrap();
             scheduler.update_graph();
         }

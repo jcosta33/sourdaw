@@ -735,6 +735,7 @@ mod tests {
     use crate::plugin_slot::NativePlugin;
     use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand, PluginCore};
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
+    use crate::EngineHandle;
     use rtrb::{Consumer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
@@ -964,6 +965,20 @@ mod tests {
         count
     }
 
+    /// Fill the ledger with `count` registrations the cheap way: hosted
+    /// plugin boxes, one small allocation each. A fill through `add_effect`
+    /// builds a real `KneadEngine` per slot — half a megabyte of buffers — so
+    /// a capacity-sized fill of those is gigabytes, and the ledger counts a
+    /// registration identically whichever population made it. None of the
+    /// tests that fill this way read the instances back.
+    fn fill_with_cheap_registrations(engine: &mut EngineHandle, count: usize) {
+        for id in 0..count {
+            engine
+                .add_plugin_with_id(900_000 + id, Box::new(OverwritingPlugin))
+                .expect("a registration inside the table's capacity must land");
+        }
+    }
+
     /// The scheduler holds *one* effect table and three producers fill it: the
     /// project's graph devices, engine-owned plugin instances, and the crumbs
     /// capture slot. A ceiling that counts one of them bounds a strict subset
@@ -973,20 +988,17 @@ mod tests {
     /// opens its editor, still moves its knobs, and passes dry audio forever
     /// with nothing anywhere saying it was refused.
     ///
-    /// Fill the table entirely with graph devices, then ask for a plugin: the
-    /// registration has to fail control-side, where `load_plugin` propagates
-    /// the error to the user, and has to put nothing on the ring for the
-    /// callback to refuse.
+    /// Fill the table entirely, then ask for one more: the registration has
+    /// to fail control-side, where `load_plugin` propagates the error to the
+    /// user, and has to put nothing on the ring for the callback to refuse.
+    /// The fill's population is immaterial to the ledger, so it uses the
+    /// cheap plugin fill.
     #[test]
     fn a_plugin_past_the_shared_effect_table_is_refused_before_it_is_registered() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY {
-            engine
-                .add_effect(id, "knead")
-                .expect("a device inside the table's capacity must register");
-        }
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
 
         // The pre-check a producer with state to unwind consults *before* it
@@ -1025,9 +1037,7 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY - 1 {
-            engine.add_effect(id, "knead").expect("device registers");
-        }
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
         let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         engine
             .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
@@ -1058,12 +1068,10 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY {
-            let (bridge, _bridge_handle) = create_audio_bridge(9_000 + id);
-            engine
-                .add_plugin_with_bridge(9_000 + id, Box::new(OverwritingPlugin), bridge)
-                .expect("a plugin inside the table's capacity must register");
-        }
+        // The unbridged fill is the cheap one and exercises the same ledger:
+        // what matters is that the table is full, not which population filled
+        // it — a bridged fill would also cost ~288 KiB of rings per slot.
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         assert_eq!(drained(&mut command_rx), EFFECT_TABLE_CAPACITY);
 
         let refusal = engine
@@ -1092,9 +1100,7 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY {
-            engine.add_effect(id, "knead").expect("device registers");
-        }
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         // The retirement below has to be one the callback would really apply:
         // `RemoveTrackDeviceRetired` frees a slot only when the strip it names
         // holds the effect it names, so effect 0 is spliced onto a track
