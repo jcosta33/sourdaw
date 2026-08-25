@@ -1,0 +1,40 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_0c78aeaf3767f7 69,101,383,388,558,564-576,581-603
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_7db88a68645184 347,360-409,434
+  s_a40848e8f8cca9::t_036f29aa1cd8c5 410-411
+src/modules/Project/useCases/projectPersistence/projectIdentityTransitionDependencies.ts
+  s_a40848e8f8cca9::t_885d46f1f28e67 4-7
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_4e012d8b025db7 270-271
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_64769199d6ccf6 138-142,700-705,710-714,723-726,736
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_2eac99d8ca1cb7 932
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_a40848e8f8cca9::t_885d46f1f28e67 17,118-125
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_20e8629b535837 302-305
+  s_a40848e8f8cca9::t_0bb4bed41cd4e3 130,218,293-297,306-308
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_a40848e8f8cca9::t_7812b1d869b483 293-302,304-309
+  s_a40848e8f8cca9::t_b341b7ad399ee8 17-18,20-21,23-28,46-48,95-101,139-141
+  s_a40848e8f8cca9::t_bf14a0abe573a5 22
+  s_a40848e8f8cca9::t_ab18f72c4f87f1 303,310-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "87f1eb2545c998554d575e1f134facdb4fd638fd",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
