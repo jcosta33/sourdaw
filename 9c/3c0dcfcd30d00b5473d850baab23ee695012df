@@ -1,0 +1,64 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_31404d2bc15f0f 1203,1206-1211,1216,1261,1738-1739,1743-1744,1748-1749
+  s_a40848e8f8cca9::t_faf97ba6731333 929
+.github/workflows/health-gates.yml
+  s_a40848e8f8cca9::t_7b1234ec47a819 83-86
+crates/daw-engine/src/lib.rs
+  s_a40848e8f8cca9::t_109e00a415e303 738,968-981,991-995,1001,1040,1071-1074,1103-1115
+crates/daw-engine/src/scheduler.rs
+  s_a40848e8f8cca9::t_985a823d0c9040 17-18,520-584,588,591-696,698-813,983-986,988-990,1057,1059,1237-1249,1256,1275,1299-1300,1305,1315,1326,1334-1337,1386-1389,1501-1504,1547-1556,1569,1605-1607,1609-1648,1681,1687,1696-1700,1704-1715,1717-1725,1728,1730-1735,1794-1797,1802-1804,1987,1989,1997,1999,2035-2042,2063,2141,2143-2145,2148,2150,2161,2165-2168,2934-3317,3326-3329,3332-3335,3426,3429-3432,3769-3829
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_a40848e8f8cca9::t_4138dac1d6dc57 21,166-195,203-217,227-232,234-267,269-272,927-1031
+crates/sourdaw-native/src/commands/graph.rs
+  s_a40848e8f8cca9::t_0f3add139f37e4 123,935-944,953,955-956,2959-2965,2967-2982,2985-3007,3009-3018,3020-3055,3058-3064,3069-3081,3084-3086,3093,3099-3100
+crates/sourdaw-native/src/commands/plugins.rs
+  s_a40848e8f8cca9::t_c82bc518fe7645 12,613-632,717-725,735,742-751,814-872,2244-2393
+scripts/checkVitestCollectionScope.ts
+  s_a40848e8f8cca9::t_aa2ccf706044f7 15,23-30,37,46,57-58,60-67,124,126,132-153,225,227-228,244-292
+server/__tests__/collab-server.spec.ts
+  s_a40848e8f8cca9::t_e25751f0a9c568 5,40
+server/package-lock.json
+  s_a40848e8f8cca9::t_08fc5d571037f2 15,820-823,825,827-831,833-859,862-865,867
+server/package.json
+  s_a40848e8f8cca9::t_30bfd89c9051b6 8,17
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_a40848e8f8cca9::t_06711c6f16f331 1933-1937
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_a40848e8f8cca9::t_c07ca1d2f8e502 7,326-354,357-358,452,484
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_a40848e8f8cca9::t_e8723c74990355 127-170,703,718,907,1090-1091,1114,1156,1178,1198
+src/modules/WorkspaceShell/presentations/__tests__/expectExternalProjectLink.ts
+  s_a40848e8f8cca9::t_d8fd1a2df6ec76 1-7
+src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx
+  s_a40848e8f8cca9::t_afc03335586ecc 3-4,9-10,73-74,78-90,92-103,108,115
+src/modules/WorkspaceShell/presentations/components/MobileGate.tsx
+  s_a40848e8f8cca9::t_2450b41537f8c1 3-4,8,10,135-158
+src/modules/WorkspaceShell/presentations/components/__tests__/AlphaNoticeDialog.spec.tsx
+  s_a40848e8f8cca9::t_0fd5c83bfadb0c 4,27,30-37,40,42-43
+src/modules/WorkspaceShell/presentations/components/__tests__/MobileGate.spec.tsx
+  s_a40848e8f8cca9::t_28f87fe3614fcb 4,90,96-103
+src/modules/WorkspaceShell/presentations/projectLinks.ts
+  s_a40848e8f8cca9::t_2e2f078f7f6a12 1-5
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_a40848e8f8cca9::t_66eae091a6447f 3,12-18,30,245-281
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_a40848e8f8cca9::t_7f4dea709e474d 1,6,266-289
+vite.config.ts
+  s_a40848e8f8cca9::t_a6e2044c5a6047 73-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "9c3c0dcfcd30d00b5473d850baab23ee695012df",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
