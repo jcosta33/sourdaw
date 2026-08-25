@@ -84,6 +84,66 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// The provider stub derives its plan from the serialized user message instead
+// of returning a canned one, so a capability-serialization regression fails
+// here rather than passing decoupled from the outbound request.
+function createProviderPlanFromUserMessage(userMessage: string) {
+    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
+    const contextJson = match?.groups?.contextJson;
+    if (!contextJson) {
+        throw new TypeError('Expected serialized project context in provider request');
+    }
+    const context: unknown = JSON.parse(contextJson);
+    if (!isRecord(context)) {
+        throw new TypeError('Expected object-shaped project context');
+    }
+    const capability = context.wholeProjectVibeMixCapability;
+    if (!isRecord(capability) || capability.actionType !== 'automateTrackGainRange') {
+        throw new TypeError('Expected app-owned whole-project vibe-mix capability');
+    }
+    const targetSection = capability.targetSection;
+    const exactTargetIds = capability.exactTargetIds;
+    const allowedRelativeGainDbValues = capability.allowedRelativeGainDbValues;
+    if (
+        !isRecord(targetSection) ||
+        typeof targetSection.name !== 'string' ||
+        !Array.isArray(exactTargetIds) ||
+        !exactTargetIds.every((trackId) => typeof trackId === 'string') ||
+        !Array.isArray(allowedRelativeGainDbValues) ||
+        allowedRelativeGainDbValues.length !== 1 ||
+        typeof allowedRelativeGainDbValues[0] !== 'number'
+    ) {
+        throw new TypeError('Expected exact target and bounded gain candidates');
+    }
+    return [
+        {
+            name: capability.actionType,
+            arguments: {
+                trackIds: exactTargetIds,
+                sectionName: targetSection.name,
+                gainDb: allowedRelativeGainDbValues[0],
+            },
+        },
+    ];
+}
+
+function getHostedUserMessage(requestBody: string): string {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    for (const message of request.messages) {
+        if (isRecord(message) && message.role === 'user' && typeof message.content === 'string') {
+            return message.content;
+        }
+    }
+    throw new TypeError('Expected one hosted provider user message');
+}
+
 function createTrack(id: string, name: string, kind: Track['kind']): Track {
     return {
         id,
@@ -188,24 +248,32 @@ describe('whole-project vibe-mix planning', () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         vi.mocked(generateWebLlmCompletion).mockReset();
-        vi.mocked(generateWebLlmCompletion).mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+        vi.mocked(generateWebLlmCompletion).mockImplementation((_systemPrompt: string, userMessage: string) =>
+            Promise.resolve(JSON.stringify(createProviderPlanFromUserMessage(userMessage)))
         );
+        runtimeMocks.fetch.mockImplementation((_input, init) => {
+            if (typeof init?.body !== 'string') {
+                throw new TypeError('Expected hosted provider request body');
+            }
+            const derivedPlan = createProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: derivedPlan.map((call) => ({
+                                        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                    })),
+                                },
+                            },
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                )
+            );
+        });
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -672,6 +740,7 @@ describe('whole-project vibe-mix planning', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        const committed = structuredClone(automationStore.value);
         const drumLane = getGainLanes().find((lane) => lane.trackId === 'bus-drums');
         if (!drumLane) {
             throw new Error('Expected Drum Bus gain automation lane');
@@ -699,5 +768,12 @@ describe('whole-project vibe-mix planning', () => {
         expect(automationStore.value).toEqual(collaboratorState);
         expect(undoStore.value?.past).toEqual(pastBeforeConflict);
         expect(undoStore.value?.future).toEqual([]);
+
+        // Once the collaborator edit is undone back to the committed state,
+        // the same grouped undo applies: retryability survives the divergence.
+        automationStore.set(committed);
+        await undo();
+        expect(getGainLanes()).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(1);
     });
 });

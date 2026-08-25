@@ -22,7 +22,7 @@ import {
     type ModelProviderStreamIdentity,
 } from '../../models/ModelProviderProtocol';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
-import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
+import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
@@ -233,21 +233,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         toolSchemas: actionTools,
                         prompt: toolSelectionPrompt,
                     });
-                    const workflowActionToolNames = new Set<string>([
-                        ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
-                        'automateTrackGainRange',
-                        'automateSendRange',
-                        'muteTrack',
-                        'unmuteTrack',
-                        'setTrackPan',
-                        'removeTrack',
-                        'soloTrack',
-                        'unsoloTrack',
-                        'setDeviceParameter',
-                    ]);
                     const workflowActionTools =
                         workflowSelectionTools.length > 0
-                            ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
+                            ? actionTools.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
                             : [];
                     const mandatoryToolNames = new Set(
                         [...workflowSelectionTools, ...applicationTools, ...workflowActionTools].map(

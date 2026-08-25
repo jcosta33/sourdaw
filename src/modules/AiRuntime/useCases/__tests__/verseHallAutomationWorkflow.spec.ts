@@ -522,6 +522,7 @@ describe('verse Hall send automation workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        const committed = structuredClone(automationStore.value);
         const leadLane = getSendLanes()[0];
         if (!leadLane) {
             throw new Error('Expected Lead Vocal Hall automation lane');
@@ -545,5 +546,12 @@ describe('verse Hall send automation workflow', () => {
         expect(automationStore.value).toEqual(collaboratorState);
         expect(undoStore.value?.past).toEqual(pastBeforeConflict);
         expect(undoStore.value?.future).toEqual([]);
+
+        // Once the collaborator edit is undone back to the committed state,
+        // the same grouped undo applies: retryability survives the divergence.
+        automationStore.set(committed);
+        await undo();
+        expect(getSendLanes()).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(1);
     });
 });

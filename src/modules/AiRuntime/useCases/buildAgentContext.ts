@@ -1,7 +1,7 @@
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
-import { buildLlmActionUserMessage } from '../transformers/llmActionBridge';
+import { buildLlmActionUserMessage, type LlmActionCapabilityData } from '../transformers/llmActionBridge';
 
 const MAX_CONTEXT_TARGETS = 64;
 const MAX_VALIDATION_FAILURES = 16;
@@ -39,7 +39,7 @@ type BuildAgentContextInput = {
     run?: { grants: AgentRunGrants; budgets: AgentRunBudgets };
     receipts?: Array<{ id: string; summary: string }>;
     capabilitySchemas?: Array<{ name: string; schemaVersion: number }>;
-    capabilityData?: unknown;
+    capabilityData?: LlmActionCapabilityData;
     validationFailures?: Array<{ code: string }>;
     measurements?: Array<{ name: string; value: number; unit: string }>;
     priorEvidence?: AgentContextEvidence | null;
@@ -336,26 +336,11 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
-    const rawCapabilityData =
-        typeof input.capabilityData === 'object' && input.capabilityData !== null
-            ? (input.capabilityData as Record<string, unknown>)
-            : {};
     const userMessage = buildLlmActionUserMessage({
         prompt: input.prompt,
         context: input.context,
         projectRevision: input.projectRevision,
-        articulationTransferCapability: rawCapabilityData.articulationTransferCapability as never,
-        backingVocalPlateCapability: rawCapabilityData.backingVocalPlateCapability as never,
-        bassProcessingCopyCapability: rawCapabilityData.bassProcessingCopyCapability as never,
-        drumRoutingCapability: rawCapabilityData.drumRoutingCapability as never,
-        drumRenderComparisonCapability: rawCapabilityData.drumRenderComparisonCapability as never,
-        drumPreviewBranchesCapability: rawCapabilityData.drumPreviewBranchesCapability as never,
-        midiOverlapTransformCapability: rawCapabilityData.midiOverlapTransformCapability as never,
-        sidechainRoutingCapability: rawCapabilityData.sidechainRoutingCapability as never,
-        sharedVocalFxBusesCapability: rawCapabilityData.sharedVocalFxBusesCapability as never,
-        stemImportCapability: rawCapabilityData.stemImportCapability as never,
-        syncopatedArpeggioCapability: rawCapabilityData.syncopatedArpeggioCapability as never,
-        wholeProjectVibeMixCapability: rawCapabilityData.wholeProjectVibeMixCapability as never,
+        ...input.capabilityData,
     });
 
     const suffix = evidence.delta.mode === 'delta' ? '' : `\n\n${userMessage}`;

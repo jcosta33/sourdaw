@@ -63,17 +63,29 @@ const providerPlan = [
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
+    const appliedGraphDelta = () => ({
+        acceptance: 'accepted' as const,
+        application: 'applied' as const,
+        correlation: { appRevision: 1, projectRevision: 'rev-1' },
+        runtimeRevision: 1,
+    });
+    const needsReconcileGraphDelta = (reason: string) => ({
+        acceptance: 'accepted' as const,
+        application: 'needs-reconcile' as const,
+        compensation: 'failed' as const,
+        correlation: { appRevision: 1, projectRevision: 'rev-1' },
+        reason,
+        runtimeRevision: 1,
+    });
     return {
         addDeviceToStrip: vi.fn(),
-        applyRuntimeGraphDelta: vi.fn(() => ({ accepted: true, acceptance: 'accepted', application: 'applied' })),
+        applyRuntimeGraphDelta: vi.fn(appliedGraphDelta),
+        appliedGraphDelta,
         backend,
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
-        initializeTrackStripFromSnapshot: vi.fn(() => ({
-            accepted: true,
-            acceptance: 'accepted',
-            initialization: 'initialized',
-        })),
+        initializeTrackStripFromSnapshot: vi.fn(appliedGraphDelta),
+        needsReconcileGraphDelta,
         removeDeviceFromStrip: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
         updateDeviceParam: vi.fn(),
@@ -173,11 +185,7 @@ describe('bass compressor prompt workflow', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.applyRuntimeGraphDelta.mockReset();
-        runtimeMocks.applyRuntimeGraphDelta.mockReturnValue({
-            accepted: true,
-            acceptance: 'accepted',
-            application: 'applied',
-        });
+        runtimeMocks.applyRuntimeGraphDelta.mockReturnValue(runtimeMocks.appliedGraphDelta());
         runtimeMocks.updateDeviceParam.mockReset();
         runtimeMocks.removeDeviceFromStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
@@ -542,7 +550,7 @@ describe('bass compressor prompt workflow', () => {
         expect(getConfirmation()?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
     });
 
-    it('compensates the first runtime insertion when the later target chain conflicts', async () => {
+    it('invalidates the proposal when a later target chain changed after approval', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
@@ -574,7 +582,7 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('atomically compensates runtime topology when a later insertion fails', async () => {
+    it('applies no project, runtime, or undo change when the proposal is invalidated before execution', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
@@ -604,7 +612,7 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('uses device-scoped abort cleanup when the inserted chain changes before a later conflict', async () => {
+    it('preserves collaborator edits on both target chains when the proposal is invalidated before execution', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
@@ -644,15 +652,12 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('reports a manual-repair failure when device-scoped abort cleanup cannot remove the runtime node', async () => {
+    it('reports manual-repair guidance when a runtime insertion needs reconcile after project commit', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
-        runtimeMocks.applyRuntimeGraphDelta.mockImplementation(() => ({
-            accepted: true,
-            acceptance: 'accepted',
-            application: 'diverged',
-            reason: 'runtime graph removal failed; manual repair is required',
-        }));
+        runtimeMocks.applyRuntimeGraphDelta.mockImplementation(() =>
+            runtimeMocks.needsReconcileGraphDelta('runtime graph removal failed; manual repair is required')
+        );
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
@@ -660,20 +665,18 @@ describe('bass compressor prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
+        expect(receipt?.content).toContain('requires repair');
         expect(receipt?.content.toLowerCase()).toContain('manual repair');
     });
 
-    it('uses one strict runtime cleanup owner so a partial graph-removal failure stays observable', async () => {
+    it('surfaces the failing runtime delta reason in the receipt when the later insertion still applies', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         runtimeMocks.applyRuntimeGraphDelta
-            .mockImplementationOnce(() => ({
-                accepted: true,
-                acceptance: 'accepted',
-                application: 'diverged',
-                reason: 'partial TrackNode removal failed; manual repair is required',
-            }))
-            .mockImplementationOnce(() => ({ accepted: true, acceptance: 'accepted', application: 'applied' }));
+            .mockImplementationOnce(() =>
+                runtimeMocks.needsReconcileGraphDelta('partial TrackNode removal failed; manual repair is required')
+            )
+            .mockImplementationOnce(() => runtimeMocks.appliedGraphDelta());
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
@@ -719,9 +722,8 @@ describe('bass compressor prompt workflow', () => {
         const confirmation = getConfirmation();
         await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
         runtimeMocks.applyRuntimeGraphDelta.mockImplementation(() => ({
-            accepted: false,
-            acceptance: 'rejected',
-            application: 'not-applied',
+            acceptance: 'rejected' as const,
+            application: 'not-applied' as const,
             reason: 'persistent runtime teardown failure',
         }));
 
