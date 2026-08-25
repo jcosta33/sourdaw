@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type getVersionedCommandBatchCommitProof } from '#/modules/Command/useCases';
+import { type AppAction, type StemImportTrackSnapshot } from '#/utils/handlerContract';
+
 const mocks = vi.hoisted(() => ({
     cancelDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'cancelled' }),
     commitDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'committed' }),
@@ -52,8 +55,69 @@ const stems = [
         audioBufferId: 'decoded-buffer-1',
         assetHash: 'hash-staged-asset-1',
         assetLeaseId: 'staged-asset-1',
+        clipId: 'clip-staged-asset-1',
+        decodedBytes: 2_048,
+        durationSeconds: 12,
+        role: 'other',
+        sourceBytes: 1_024,
+        sourceName: 'stem.wav',
+        sourceTempo: 120,
+        stemId: 'stem-staged-asset-1',
+        trackGain: 1,
+        trackId: 'track-staged-asset-1',
+        trackName: 'Stem',
+        trackPan: 0,
     },
-] as never;
+] satisfies StemImportTrackSnapshot[];
+
+const importStemSetAction = {
+    type: 'importStemSet',
+    payload: {
+        folderId: 'folder-stem-import',
+        groupName: 'Imported stems',
+        projectTempo: 120,
+        selectionId: 'selection-stem-import',
+        stems,
+    },
+} satisfies Extract<AppAction, { type: 'importStemSet' }>;
+
+const importStemSetActions = [importStemSetAction] satisfies readonly AppAction[];
+
+const commitProofCommandBatch = {
+    authority: {
+        baseRevision: 'revision-stem-import',
+        budgets: {
+            maxAffectedClips: 1,
+            maxAffectedTracks: 1,
+            maxAutomationPoints: 0,
+            maxCommands: 1,
+            maxCreatedTracks: 1,
+            maxDeletedObjects: 0,
+            maxImportedAssets: 1,
+            maxRenderJobs: 0,
+        },
+        grants: {
+            allowedOperationPrefixes: ['importStemSet'],
+            audioUpload: true,
+            autoCommit: false,
+            create: true,
+            delete: false,
+            file: true,
+            master: false,
+            remoteGeneration: false,
+            routing: false,
+            tempo: false,
+        },
+        projectId: 'project:test',
+        scope: {
+            protectedRanges: [],
+            protectedTargetIds: [],
+            targetIds: ['track-staged-asset-1'],
+            targetRanges: [],
+        },
+    },
+    serialized: 'serialized',
+} satisfies Parameters<typeof getVersionedCommandBatchCommitProof>[0];
 
 describe('prepared stem import resource cleanup', () => {
     beforeEach(() => {
@@ -111,9 +175,7 @@ describe('prepared stem import resource cleanup', () => {
         mocks.completeDurableCleanupRecovery
             .mockResolvedValueOnce({ status: 'failed', reason: 'transaction-aborted' })
             .mockResolvedValueOnce({ status: 'completed' });
-        const lease = createStemImportConfirmationResourceLease([
-            { type: 'importStemSet', payload: { stems } },
-        ] as never);
+        const lease = createStemImportConfirmationResourceLease(importStemSetActions);
 
         await expect(lease?.release()).rejects.toThrow('cleanup remains pending');
         await expect(lease?.release()).resolves.toBeUndefined();
@@ -125,12 +187,9 @@ describe('prepared stem import resource cleanup', () => {
     });
 
     it('makes prepared promotion executable only after the confirmation supplies commit proof', async () => {
-        const lease = createStemImportConfirmationResourceLease(
-            [{ type: 'importStemSet', payload: { stems } }] as never,
-            'stem-promotion:receipt-bound'
-        );
+        const lease = createStemImportConfirmationResourceLease(importStemSetActions, 'stem-promotion:receipt-bound');
 
-        await lease?.prepareForCommit?.({ serialized: 'serialized', authority: {} as never });
+        await lease?.prepareForCommit?.(commitProofCommandBatch);
         expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
         expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
 
@@ -161,11 +220,11 @@ describe('prepared stem import resource cleanup', () => {
         });
         preparedStemImportResources.register({ runId: 'stem-concurrent-cancel', stems });
         const lease = createStemImportConfirmationResourceLease(
-            [{ type: 'importStemSet', payload: { stems } }] as never,
+            importStemSetActions,
             'stem-promotion:concurrent-cancel',
             'stem-concurrent-cancel'
         );
-        await lease?.prepareForCommit?.({ serialized: 'serialized', authority: {} as never });
+        await lease?.prepareForCommit?.(commitProofCommandBatch);
 
         await Promise.all([
             agentRunCancellation.cancel({ runId: 'stem-concurrent-cancel', reason: 'User cancelled.' }),
