@@ -5,10 +5,11 @@ import { fileURLToPath } from 'node:url';
 
 import {
     REQUIRED_REPOSITORY,
-    REVIEWER_BOT_LOGIN,
+    REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    isReviewerBotNodeId,
     originMainBlob,
     parseJson,
     resolvePrimaryRoot,
@@ -56,7 +57,7 @@ export type PublishReviewPort = {
         event: ReviewEvent;
         body: string;
         comments: ReviewComment[];
-    }) => { id: number; login: string };
+    }) => { id: number; actorNodeId: string; login: string };
     log: (message: string) => void;
 };
 
@@ -116,8 +117,8 @@ export function publishReview(number: number, port: PublishReviewPort): number {
         body: document.body,
         comments: document.comments,
     });
-    if (posted.login !== REVIEWER_BOT_LOGIN) {
-        fail(`review was posted as ${posted.login}, not ${REVIEWER_BOT_LOGIN}`);
+    if (!isReviewerBotNodeId(posted.actorNodeId)) {
+        fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${REVIEWER_BOT_NODE_ID}`);
     }
     port.log(String(posted.id));
     return posted.id;
@@ -153,7 +154,11 @@ export function shellPort(
             ),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         postReview: ({ number, commitId, event, body, comments }) => {
-            const response = parseJson<{ id: number; state?: string; user?: { login?: string } }>(
+            const response = parseJson<{
+                id: number;
+                state?: string;
+                user?: { node_id?: string; login?: string };
+            }>(
                 gh(
                     ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
                     JSON.stringify({
@@ -179,7 +184,11 @@ export function shellPort(
                     `review ${response.id} requested ${event} but GitHub recorded ${response.state ?? 'no state'}; refusing to report success`
                 );
             }
-            return { id: response.id, login: response.user?.login ?? '' };
+            return {
+                id: response.id,
+                actorNodeId: response.user?.node_id ?? '',
+                login: response.user?.login ?? '',
+            };
         },
         log: (message) => {
             console.log(message);
@@ -239,8 +248,8 @@ async function main(): Promise<number> {
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
     try {
-        if (auth.minted.login !== REVIEWER_BOT_LOGIN) {
-            fail(`minted login ${auth.minted.login} is not ${REVIEWER_BOT_LOGIN}`);
+        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
         }
         const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
             env: auth.session.env,

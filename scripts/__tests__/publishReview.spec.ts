@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { REVIEWER_BOT_LOGIN, type GhSession } from '../githubAppIdentity.ts';
+import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     parsePublishReviewArgs,
     parseReviewDocument,
@@ -22,6 +22,7 @@ function fakePort(
         laterHead?: string;
         json?: unknown;
         missing?: boolean;
+        actorNodeId?: string;
         login?: string;
     } = {}
 ) {
@@ -46,7 +47,11 @@ function fakePort(
         },
         postReview: (review) => {
             calls.push(`post:${review.commitId}:${review.event}:${review.body}`);
-            return { id: 99, login: input.login ?? REVIEWER_BOT_LOGIN };
+            return {
+                id: 99,
+                actorNodeId: input.actorNodeId ?? REVIEWER_BOT_NODE_ID,
+                login: input.login ?? 'renamed-reviewer[bot]',
+            };
         },
         log: (message) => logs.push(message),
     };
@@ -71,6 +76,13 @@ describe('review publish', () => {
         publishReview(42, port);
 
         expect(calls[1]).toContain('REQUEST_CHANGES:Please fix the merge gate.');
+    });
+
+    it('rejects the renamed reviewer login when the posted review has the wrong actor ID', () => {
+        const { port, logs } = fakePort({ actorNodeId: 'BOT_wrong', login: 'renamed-reviewer[bot]' });
+
+        expect(() => publishReview(42, port)).toThrow(/review was posted by actor BOT_wrong/);
+        expect(logs).toEqual([]);
     });
 
     it('refuses a moved head before posting', () => {
@@ -132,7 +144,11 @@ describe('shellPort postReview state verification', () => {
     }
 
     it('fails loudly, naming both the requested event and the recorded state, when GitHub coerces the review', () => {
-        const capture = fakeCapture({ id: 4985383093, state: 'APPROVED', user: { login: REVIEWER_BOT_LOGIN } });
+        const capture = fakeCapture({
+            id: 4985383093,
+            state: 'APPROVED',
+            user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+        });
         const port = shellPort(session, process.cwd(), capture);
 
         expect(() =>
@@ -141,21 +157,30 @@ describe('shellPort postReview state verification', () => {
     });
 
     it('posts successfully when the recorded state agrees with the requested event', () => {
-        const capture = fakeCapture({ id: 42, state: 'CHANGES_REQUESTED', user: { login: REVIEWER_BOT_LOGIN } });
+        const capture = fakeCapture({
+            id: 42,
+            state: 'CHANGES_REQUESTED',
+            user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+        });
         const port = shellPort(session, process.cwd(), capture);
 
         expect(
             port.postReview({ number: 42, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
-        ).toEqual({ id: 42, login: REVIEWER_BOT_LOGIN });
+        ).toEqual({ id: 42, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' });
     });
 
     it('posts successfully when APPROVE is recorded as APPROVED', () => {
-        const capture = fakeCapture({ id: 43, state: 'APPROVED', user: { login: REVIEWER_BOT_LOGIN } });
+        const capture = fakeCapture({
+            id: 43,
+            state: 'APPROVED',
+            user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+        });
         const port = shellPort(session, process.cwd(), capture);
 
         expect(port.postReview({ number: 42, commitId: 'sha', event: 'APPROVE', body: '', comments: [] })).toEqual({
             id: 43,
-            login: REVIEWER_BOT_LOGIN,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            login: 'renamed-reviewer[bot]',
         });
     });
 });

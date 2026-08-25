@@ -3,15 +3,15 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
 import {
-    AUTHOR_BOT_LOGIN,
-    REVIEWER_BOT_LOGIN,
+    AUTHOR_BOT_NODE_ID,
+    REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
     authenticateTrackerAuthor,
     gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
-    isAuthorBotLogin,
-    isReviewerBotLogin,
+    isAuthorBotNodeId,
+    isReviewerBotNodeId,
     REQUIRED_BASE_BRANCH,
     REQUIRED_REPOSITORY,
     resolvePrimaryRoot,
@@ -73,6 +73,7 @@ export type DeliveryPort = {
 export type DeliveryReceiptComment = {
     id: string;
     body: string;
+    authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
     createdAt: string;
@@ -115,7 +116,9 @@ function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | und
 
 function validateReview(number: number, review: ReviewState): void {
     if (review.latestReviewerStateOnHead !== 'APPROVED') {
-        fail(`PR #${number} is not approved by ${REVIEWER_BOT_LOGIN} on the current head`);
+        fail(
+            `PR #${number} is not approved by the required reviewer actor ${REVIEWER_BOT_NODE_ID} on the current head`
+        );
     }
     if (review.unresolvedThreads > 0) {
         fail(`PR #${number} has ${review.unresolvedThreads} unresolved review thread(s)`);
@@ -175,7 +178,7 @@ function deliveryReceiptCandidates(
 ): DeliveryReceiptComment[] {
     const candidates: DeliveryReceiptComment[] = [];
     for (const comment of comments) {
-        if (!isAuthorBotLogin(comment.authorLogin)) {
+        if (!isAuthorBotNodeId(comment.authorNodeId)) {
             continue;
         }
         const payload = parseDeliveryReceipt(comment.body);
@@ -197,7 +200,7 @@ function assertOwnedDeliveryReceipt(
 ): void {
     if (
         comment.id === '' ||
-        !isAuthorBotLogin(comment.authorLogin) ||
+        !isAuthorBotNodeId(comment.authorNodeId) ||
         comment.authorType !== 'Bot' ||
         comment.createdAt === '' ||
         comment.createdAt !== comment.updatedAt ||
@@ -444,7 +447,7 @@ function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
     const comment = value as {
         node_id?: unknown;
         body?: unknown;
-        user?: { login?: unknown; type?: unknown } | null;
+        user?: { node_id?: unknown; login?: unknown; type?: unknown } | null;
         created_at?: unknown;
         updated_at?: unknown;
     };
@@ -459,6 +462,7 @@ function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
     return {
         id: comment.node_id,
         body: comment.body,
+        authorNodeId: typeof comment.user?.node_id === 'string' ? comment.user.node_id : null,
         authorLogin: typeof comment.user?.login === 'string' ? comment.user.login : null,
         authorType: typeof comment.user?.type === 'string' ? comment.user.type : null,
         createdAt: comment.created_at,
@@ -516,7 +520,7 @@ export function shellPort(
                 `PR #${number}`
             ),
         reviewState: (number, expectedHead) => {
-            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
+            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{id login} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{
                 data?: {
                     repository?: {
@@ -525,7 +529,7 @@ export function shellPort(
                                 nodes: Array<{
                                     state: string;
                                     submittedAt?: string | null;
-                                    author: { login: string } | null;
+                                    author: { id: string; login: string } | null;
                                     commit: { oid: string } | null;
                                 }>;
                                 pageInfo: { hasPreviousPage: boolean };
@@ -565,7 +569,7 @@ export function shellPort(
                     candidate.state !== 'DISMISSED' &&
                     candidate.state !== 'PENDING' &&
                     candidate.commit?.oid === expectedHead &&
-                    isReviewerBotLogin(candidate.author?.login)
+                    isReviewerBotNodeId(candidate.author?.id)
             );
             onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
             return {
@@ -689,7 +693,7 @@ export function parseCliArgs(args: string[]): { number?: number; help: boolean }
 }
 
 export type DeliveryAuthentication = {
-    minted: { token: string; login: string; permissions: Record<string, string> };
+    minted: { token: string; login: string; actorNodeId: string; permissions: Record<string, string> };
     session: { configDir: string; env: NodeJS.ProcessEnv; dispose: () => void };
 };
 
@@ -700,7 +704,7 @@ export type DeliveryCoordinatorDependencies = {
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
     deliveryPort: (repository: string, authentication: DeliveryAuthentication, primaryRoot: string) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
-    completeIssue: (issueNumber: number, login: string, port: ReconcileTrackerIssuePort) => void;
+    completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
     deliver: (number: number, port: DeliveryPort, tracker: TrackerCompletionPort) => void;
 };
 
@@ -739,8 +743,8 @@ export async function coordinateDelivery(
     const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
     let trackerAuth: DeliveryAuthentication | undefined;
     try {
-        if (authorAuth.minted.login !== AUTHOR_BOT_LOGIN) {
-            fail(`minted login ${authorAuth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
+        if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
+            fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
         const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
         assertRequiredRepository(repository);
@@ -749,7 +753,7 @@ export async function coordinateDelivery(
         const trackerPort = dependencies.trackerPort(authenticatedTracker.session);
         dependencies.deliver(number, dependencies.deliveryPort(repository, authorAuth, primaryRoot), {
             complete: (issueNumber) =>
-                dependencies.completeIssue(issueNumber, authenticatedTracker.minted.login, trackerPort),
+                dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
         });
     } finally {
         trackerAuth?.session.dispose();
