@@ -1,0 +1,52 @@
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_f0e1a021d695b7 240-250,311
+  s_a40848e8f8cca9::t_f1450ca7d881f6 168-179,188-239,307
+  s_a40848e8f8cca9::t_ce06a7ed5cf856 302,305-306,318,563
+src/modules/Collaboration/repositories/durableAssetRepository.ts
+  s_a40848e8f8cca9::t_3be0f0a8b0b613 13
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_e707f2e1364e3b 85,221
+src/modules/Command/useCases/getVersionedCommandBatchCommitDisposition.ts
+  s_a40848e8f8cca9::t_deb98e177a3441 20,51-53
+  s_a40848e8f8cca9::t_f0e1a021d695b7 55-57
+  s_a40848e8f8cca9::t_e707f2e1364e3b 1,12-19,21-50,54,58-59,62-65,67
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_3be0f0a8b0b613 753
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_0081d669da68c3 22,274-289
+  s_a40848e8f8cca9::t_f0e1a021d695b7 387
+  s_a40848e8f8cca9::t_9c8526e0e5653c 290-291
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_a40848e8f8cca9::t_deb98e177a3441 263-264
+  s_a40848e8f8cca9::t_00284348c199cf 231-262,265-267
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_00284348c199cf 912-931,936-947,984-986
+  s_a40848e8f8cca9::t_2a9a84da3fd57f 39,655,657,896,898,932-935
+  s_a40848e8f8cca9::t_deb98e177a3441 656,897,948-983
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_e707f2e1364e3b 56
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_3be0f0a8b0b613 40,123-125
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_78dacc77a87e05 13,75-89,156-206,508-510,538,540-543,546-552,554
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_2a9a84da3fd57f 70,102,263,634
+src/modules/Collaboration/useCases/configureDurableAssetCommitProof.ts
+  s_a40848e8f8cca9::t_3be0f0a8b0b613 1-4,7-9,12,19-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "db953220f914349e1ff9fdffe9b3284e1b1c4071",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
