@@ -86,12 +86,19 @@ describe('MobileGate — mobile view content', () => {
         expect(screen.getByText(/larger screen/i)).toBeTruthy();
     });
 
-    it('renders a Discord CTA button', () => {
+    it('routes feedback and bug reports to GitHub', () => {
         render(
             <MobileGate>
                 <span />
             </MobileGate>
         );
-        expect(screen.getByRole('button', { name: /discord/i })).toBeTruthy();
+        expect(screen.getByRole('link', { name: /Discussions/ })).toHaveAttribute(
+            'href',
+            'https://github.com/jcosta33/sourdaw/discussions'
+        );
+        expect(screen.getByRole('link', { name: /Report a bug/ })).toHaveAttribute(
+            'href',
+            'https://github.com/jcosta33/sourdaw/issues'
+        );
     });
 });

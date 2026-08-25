@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -260,6 +260,30 @@ describe('StatusBar', () => {
 
             expect(open).toHaveBeenCalledWith('/legal/THIRD-PARTY-NOTICES.md', '_blank');
             open.mockRestore();
+        });
+    });
+
+    describe('project links', () => {
+        it('keeps source, discussions, and bug reporting in one compact menu', async () => {
+            renderWithTooltip(<StatusBar />);
+
+            fireEvent.pointerDown(screen.getByRole('button', { name: 'Project links' }), { pointerId: 1 });
+            await waitFor(() => {
+                expect(screen.getByRole('menuitem', { name: 'Source' })).toBeInTheDocument();
+            });
+
+            expect(screen.getByRole('menuitem', { name: 'Source' })).toHaveAttribute(
+                'href',
+                'https://github.com/jcosta33/sourdaw'
+            );
+            expect(screen.getByRole('menuitem', { name: 'Discussions' })).toHaveAttribute(
+                'href',
+                'https://github.com/jcosta33/sourdaw/discussions'
+            );
+            expect(screen.getByRole('menuitem', { name: 'Report a bug' })).toHaveAttribute(
+                'href',
+                'https://github.com/jcosta33/sourdaw/issues'
+            );
         });
     });
 });
