@@ -4,6 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -22,6 +23,7 @@ import { LEGACY_MIDI_PROBABILITY_SEED, midiStore, type MidiStoreState } from '#/
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
 import { handleDiscardImportedStemSet, handleImportStemSet } from '../handleImportStemSet';
@@ -184,6 +186,55 @@ function validateDiscard(inverse: DiscardImportedStemSetAction): boolean | undef
     return handleDiscardImportedStemSet.validate?.(inverse, { actions: [inverse], actionIndex: 0 });
 }
 
+function seedUnrelatedProjectTruth(): void {
+    const clip = ClipDummy.create({
+        id: 'clip-existing-midi',
+        trackId: 'track-existing-midi',
+        name: 'Existing MIDI',
+        type: 'midi',
+        audioBufferId: undefined,
+    });
+    const track = TrackDummy.create({
+        id: 'track-existing-midi',
+        name: 'Existing MIDI',
+        kind: 'midi',
+        clips: [clip],
+    });
+    const automation: AutomationStoreState = {
+        lanes: [
+            {
+                id: 'automation-existing-midi-volume',
+                trackId: track.id,
+                clipId: clip.id,
+                parameterId: 'volume',
+                parameterName: 'Volume',
+                points: [{ id: 'point-existing-midi', beat: 1, value: 0.75, curve: 'linear', tension: 0 }],
+                objects: [],
+                visible: true,
+                enabled: true,
+                collapsed: false,
+                minValue: 0,
+                maxValue: 1,
+            },
+        ],
+    };
+
+    trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+    setMidiStoreState({
+        ...emptyMidiStoreState,
+        notesByClipId: {
+            [clip.id]: [{ id: 'note-existing-midi', pitch: 64, startBeat: 1, duration: 2, velocity: 96 }],
+        },
+        ccByClipId: {
+            [clip.id]: [{ id: 'cc-existing-midi', controller: 1, value: 0.5, beat: 1, channel: 0 }],
+        },
+        pitchBendByClipId: {
+            [clip.id]: [{ id: 'bend-existing-midi', value: 0.25, beat: 1, channel: 0 }],
+        },
+    });
+    automationStore.set(automation);
+}
+
 describe('handleImportStemSet', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -203,6 +254,7 @@ describe('handleImportStemSet', () => {
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         setMidiStoreState(emptyMidiStoreState);
+        automationStore.set({ lanes: [] });
     });
 
     afterEach(() => {
@@ -211,12 +263,19 @@ describe('handleImportStemSet', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         setMidiStoreState(emptyMidiStoreState);
+        automationStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
 
     it('admits a guarded stem import into an atomic batch and undo executes the inverse exactly', async () => {
+        seedUnrelatedProjectTruth();
+        const preImportTruth = {
+            arrangement: structuredClone(requireTrackState()),
+            midi: structuredClone(requireMidiState()),
+            automation: structuredClone(automationStore.value),
+        };
         const action = createStemImportAction();
         const preApplyInverse = describeImportInverse(action);
 
@@ -229,6 +288,7 @@ describe('handleImportStemSet', () => {
 
         expect(result).toMatchObject({ status: 'committed' });
         expect(requireTrackState().tracks.map((track) => track.id)).toEqual([
+            'track-existing-midi',
             'folder-starter-stems',
             'track-kick',
             'track-vocal',
@@ -239,7 +299,12 @@ describe('handleImportStemSet', () => {
 
         await undo();
 
-        expect(requireTrackState().tracks).toEqual([]);
+        expect(requireTrackState()).toEqual(preImportTruth.arrangement);
+        expect(requireMidiState()).toEqual(preImportTruth.midi);
+        expect(automationStore.value).toEqual(preImportTruth.automation);
+        expect(requireTrackState().tracks.map((track) => track.id)).not.toEqual(
+            expect.arrayContaining(['folder-starter-stems', 'track-kick', 'track-vocal'])
+        );
         expect(mocks.promoteStagedAsset).toHaveBeenCalledTimes(2);
         expect(mocks.publishTrackRemoved).toHaveBeenCalledTimes(3);
     });
