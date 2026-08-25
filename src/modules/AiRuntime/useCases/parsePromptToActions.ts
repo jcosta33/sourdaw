@@ -6,6 +6,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
@@ -87,7 +88,7 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
             };
         }
         const commands = proposal.arguments.commands;
-        if (commands.length === 0 || commands.length > 32) {
+        if (commands.length === 0 || commands.length > MAX_LLM_ACTIONS_PER_BATCH) {
             return {
                 status: 'invalid' as const,
                 reason: 'Provider command batch proposal exceeds the command budget.',
@@ -621,7 +622,9 @@ export const parsePromptToActions = inject({ logger })(
                     }
 
                     const effectiveProviderProposal =
-                        providerProposal === null || bridged.actionCommandGraph === undefined
+                        providerProposal === null ||
+                        bridged.actionCommandGraph === undefined ||
+                        compiledList.compilerEvidence !== undefined
                             ? providerProposal
                             : {
                                   ...providerProposal,
@@ -648,6 +651,9 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
+                        ...(compiledList.compilerEvidence === undefined
+                            ? {}
+                            : { providerKnownTargetIds: [...compiledList.compilerEvidence.providerKnownTargetIds] }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                     };
                 }

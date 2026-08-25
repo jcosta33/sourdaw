@@ -1,5 +1,6 @@
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
 
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
@@ -126,7 +127,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                 commands: {
                     type: 'array',
                     minItems: 1,
-                    maxItems: 32,
+                    maxItems: MAX_LLM_ACTIONS_PER_BATCH,
                     items: {
                         type: 'object',
                         properties: {

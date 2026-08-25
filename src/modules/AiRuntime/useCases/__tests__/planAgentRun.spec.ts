@@ -233,6 +233,109 @@ describe('planAgentRun', () => {
 
     it.each([
         {
+            label: 'track removal cascade',
+            action: { type: 'removeTrack' },
+            actionLabel: 'Remove Kick',
+            providerTargetIds: ['track-kick'],
+            applicationTargetIds: ['track-kick', 'clip-kick', 'device-kick', 'track-bus'],
+        },
+        {
+            label: 'duplicate-track dynamic effects',
+            action: { type: 'duplicateTrack' },
+            actionLabel: 'Duplicate Kick',
+            providerTargetIds: ['track-kick'],
+            applicationTargetIds: ['track-kick', 'track-kick-copy', 'clip-kick'],
+        },
+    ])('accepts exact provider-known scope while retaining full $label authority', (testCase) => {
+        const providerKnownScope = {
+            targetIds: testCase.providerTargetIds,
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        };
+        const result = planAgentRun({
+            request: testCase.actionLabel,
+            revision: 'heads-dynamic-effects',
+            actions: [testCase.action],
+            actionLabels: [testCase.actionLabel],
+            scope: {
+                ...providerKnownScope,
+                targetIds: testCase.applicationTargetIds,
+            },
+            providerKnownScope,
+            grants: {
+                allowedOperationPrefixes: [testCase.action.type],
+                create: testCase.action.type === 'duplicateTrack',
+                delete: testCase.action.type === 'removeTrack',
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: true,
+            providerProposal: providerProposal({
+                scope: providerKnownScope,
+                capabilityIds: [testCase.action.type],
+            }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'planned',
+            plan: { scope: { targetIds: testCase.applicationTargetIds } },
+        });
+    });
+
+    it.each([
+        { label: 'omits', providerTargetIds: [] },
+        { label: 'adds', providerTargetIds: ['track-kick', 'track-hat'] },
+    ])('rejects a provider proposal that $label a direct target', ({ providerTargetIds }) => {
+        const providerKnownScope = {
+            targetIds: ['track-kick'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        };
+        const result = planAgentRun({
+            request: 'Remove Kick',
+            revision: 'heads-direct-scope',
+            actions: [{ type: 'removeTrack' }],
+            actionLabels: ['Remove Kick'],
+            scope: {
+                ...providerKnownScope,
+                targetIds: ['track-kick', 'clip-kick', 'device-kick'],
+            },
+            providerKnownScope,
+            grants: {
+                allowedOperationPrefixes: ['removeTrack'],
+                create: false,
+                delete: true,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: true,
+            providerProposal: providerProposal({
+                scope: { ...providerKnownScope, targetIds: providerTargetIds },
+                capabilityIds: ['removeTrack'],
+            }),
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') })
+        );
+    });
+
+    it.each([
+        {
             label: 'provider scope',
             applicationTargetIds: ['bass-1', 'drum-bus'],
             providerTargetIds: ['bass-1', 'bass-1'],

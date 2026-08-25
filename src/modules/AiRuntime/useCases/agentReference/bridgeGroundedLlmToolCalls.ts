@@ -5,6 +5,7 @@ import {
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
@@ -14,7 +15,6 @@ import {
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
-import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';

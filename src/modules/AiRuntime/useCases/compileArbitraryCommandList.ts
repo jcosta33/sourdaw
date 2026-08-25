@@ -66,6 +66,7 @@ export type ArbitraryCommandListEvidence = {
     schemaVersion: 1;
     snapshotRevision: string;
     proposalScope: AgentPlanProposal['scope'];
+    providerKnownTargetIds: string[];
     selectors: ArbitraryCommandListSelectorEvidence[];
     items: CompiledItemEvidence[];
     commands: ToolCallResult[];
@@ -241,6 +242,7 @@ function getCanonicalCommandIdentity(command: ToolCallResult): string {
 
 type MutationIdentityRule = {
     arguments: readonly { argument: string; cardinality?: 'many' }[];
+    destructive?: false;
     fallbackArguments?: readonly { argument: string; cardinality?: 'many' }[];
     resourceFamily?: string;
     resourceReferenceOnly?: true;
@@ -305,8 +307,8 @@ function getMutationWriteIdentities(
 function getMutationResourceWriteIdentities(
     mutationIdentityRules: readonly MutationIdentityRule[],
     arguments_: Readonly<Record<string, unknown>>
-): string[] | null {
-    const resourceWriteIdentities: string[] = [];
+): Array<{ identity: string; destructive?: false }> | null {
+    const resourceWriteIdentities: Array<{ identity: string; destructive?: false }> = [];
     for (const rule of mutationIdentityRules) {
         if (rule.resourceFamily === undefined) {
             continue;
@@ -316,9 +318,10 @@ function getMutationResourceWriteIdentities(
             return null;
         }
         resourceWriteIdentities.push(
-            ...expandedIdentityValues.map((mutationIdentity) =>
-                canonicalJson({ resourceFamily: rule.resourceFamily, mutationIdentity })
-            )
+            ...expandedIdentityValues.map((mutationIdentity) => ({
+                identity: canonicalJson({ resourceFamily: rule.resourceFamily, mutationIdentity }),
+                ...(rule.destructive === false ? { destructive: false as const } : {}),
+            }))
         );
     }
     return resourceWriteIdentities;
@@ -328,47 +331,100 @@ function materializeMutationIdentityArguments(
     command: ToolCallResult,
     context: ProjectContext
 ): Readonly<Record<string, unknown>> {
-    if (command.name !== 'addSidechainRoute' && command.name !== 'removeSidechainRoute') {
-        return command.arguments;
-    }
-
-    const sourceTrackId = command.arguments.sourceTrackId;
-    const suppliedTargetTrackId = command.arguments.targetTrackId;
-    const suppliedTargetDeviceId = command.arguments.targetDeviceId;
-    const targetTrackIdFromDevice =
-        typeof suppliedTargetDeviceId === 'string'
-            ? context.tracks.find((track) => track.devices.some((device) => device.id === suppliedTargetDeviceId))?.id
-            : undefined;
-    const targetTrackId = targetTrackIdFromDevice ?? suppliedTargetTrackId;
-    if (typeof targetTrackId !== 'string') {
-        return command.arguments;
-    }
-
-    const existingRouteDeviceIds =
-        typeof sourceTrackId === 'string'
-            ? (context.sidechainRoutes ?? [])
-                  .filter((route) => route.sourceTrackId === sourceTrackId && route.targetTrackId === targetTrackId)
-                  .map((route) => route.targetDeviceId)
-            : [];
-    const supportedTargetDeviceIds =
-        context.tracks
-            .find((track) => track.id === targetTrackId)
-            ?.devices.filter((device) => getSidechainTargetCapability(device.type) !== null)
-            .map((device) => device.id) ?? [];
-    let targetDeviceId: string | undefined;
-    if (typeof suppliedTargetDeviceId === 'string') {
-        targetDeviceId = suppliedTargetDeviceId;
-    } else if (existingRouteDeviceIds.length === 1) {
-        targetDeviceId = existingRouteDeviceIds[0];
-    } else if (supportedTargetDeviceIds.length === 1) {
-        targetDeviceId = supportedTargetDeviceIds[0];
-    }
-
-    return {
-        ...command.arguments,
-        targetTrackId,
-        ...(targetDeviceId === undefined ? {} : { targetDeviceId }),
+    const materializedArguments: Record<string, unknown> = { ...command.arguments };
+    const parentTrackIds = new Set<string>();
+    const addTrackId = (value: unknown): void => {
+        if (typeof value === 'string' && value.length > 0) {
+            parentTrackIds.add(value);
+        }
     };
+    const addTrackIds = (value: unknown): void => {
+        if (Array.isArray(value)) {
+            for (const trackId of value) {
+                addTrackId(trackId);
+            }
+        }
+    };
+
+    if (['removeDevice', 'setDeviceParameter', 'bypassDevice'].includes(command.name)) {
+        const deviceId = command.arguments.deviceId;
+        if (typeof deviceId === 'string') {
+            addTrackId(context.tracks.find((track) => track.devices.some((device) => device.id === deviceId))?.id);
+        }
+    }
+
+    if (
+        [
+            'addAutomationPoint',
+            'setAutomationLaneEnabled',
+            'scaleAutomation',
+            'stretchAutomation',
+            'invertAutomation',
+            'reverseAutomation',
+            'thinAutomation',
+            'quantizeAutomation',
+        ].includes(command.name)
+    ) {
+        const laneId = command.arguments.laneId;
+        if (typeof laneId === 'string') {
+            addTrackId((context.automationLanes ?? []).find((lane) => lane.id === laneId)?.trackId);
+        }
+    }
+
+    if (['addSend', 'setSend', 'removeSend'].includes(command.name)) {
+        addTrackId(command.arguments.trackId);
+        addTrackId(command.arguments.busId);
+    }
+    if (['automateSendRange', 'automateSendRanges'].includes(command.name)) {
+        addTrackIds(command.arguments.trackIds);
+        addTrackId(command.arguments.busId);
+    }
+
+    if (command.name === 'addSidechainRoute' || command.name === 'removeSidechainRoute') {
+        const sourceTrackId = command.arguments.sourceTrackId;
+        const suppliedTargetTrackId = command.arguments.targetTrackId;
+        const suppliedTargetDeviceId = command.arguments.targetDeviceId;
+        const targetTrackIdFromDevice =
+            typeof suppliedTargetDeviceId === 'string'
+                ? context.tracks.find((track) => track.devices.some((device) => device.id === suppliedTargetDeviceId))
+                      ?.id
+                : undefined;
+        const targetTrackId = targetTrackIdFromDevice ?? suppliedTargetTrackId;
+        if (typeof targetTrackId === 'string') {
+            materializedArguments.targetTrackId = targetTrackId;
+            const existingRouteDeviceIds =
+                typeof sourceTrackId === 'string'
+                    ? (context.sidechainRoutes ?? [])
+                          .filter(
+                              (route) => route.sourceTrackId === sourceTrackId && route.targetTrackId === targetTrackId
+                          )
+                          .map((route) => route.targetDeviceId)
+                    : [];
+            const supportedTargetDeviceIds =
+                context.tracks
+                    .find((track) => track.id === targetTrackId)
+                    ?.devices.filter((device) => getSidechainTargetCapability(device.type) !== null)
+                    .map((device) => device.id) ?? [];
+            let targetDeviceId: string | undefined;
+            if (typeof suppliedTargetDeviceId === 'string') {
+                targetDeviceId = suppliedTargetDeviceId;
+            } else if (existingRouteDeviceIds.length === 1) {
+                targetDeviceId = existingRouteDeviceIds[0];
+            } else if (supportedTargetDeviceIds.length === 1) {
+                targetDeviceId = supportedTargetDeviceIds[0];
+            }
+            if (targetDeviceId !== undefined) {
+                materializedArguments.targetDeviceId = targetDeviceId;
+            }
+        }
+        addTrackId(sourceTrackId);
+        addTrackId(targetTrackId);
+    }
+
+    if (parentTrackIds.size > 0) {
+        materializedArguments.parentTrackIds = [...parentTrackIds];
+    }
+    return materializedArguments;
 }
 
 function getMutationIdentityLabel(
@@ -427,9 +483,10 @@ function checkCommandWriteConflict(input: {
     }
     const destructive = /^remove|^delete/u.test(input.command.name);
     if (
-        mutationResourceWriteIdentities.some((identity) => {
-            const priorWrite = input.mutationResourceWrites.get(identity);
-            return priorWrite !== undefined && (destructive || priorWrite.destructive);
+        mutationResourceWriteIdentities.some((write) => {
+            const priorWrite = input.mutationResourceWrites.get(write.identity);
+            const currentDestructive = write.destructive ?? destructive;
+            return priorWrite !== undefined && (currentDestructive || priorWrite.destructive);
         })
     ) {
         return {
@@ -440,8 +497,8 @@ function checkCommandWriteConflict(input: {
     for (const identity of mutationWriteIdentities) {
         input.targetCommandArguments.set(identity, commandKey);
     }
-    for (const identity of mutationResourceWriteIdentities) {
-        input.mutationResourceWrites.set(identity, { destructive });
+    for (const write of mutationResourceWriteIdentities) {
+        input.mutationResourceWrites.set(write.identity, { destructive: write.destructive ?? destructive });
     }
     return { status: 'accepted', commandKey };
 }
@@ -971,6 +1028,7 @@ export function compileArbitraryCommandList(input: {
                       schemaVersion: 1,
                       snapshotRevision: input.revision,
                       proposalScope: structuredClone(plan.scope),
+                      providerKnownTargetIds: [...orderedTargetIds],
                       selectors: structuredClone(evidence),
                       items: structuredClone(compiledItems),
                       commands: structuredClone(commands),

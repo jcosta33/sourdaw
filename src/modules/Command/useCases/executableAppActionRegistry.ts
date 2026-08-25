@@ -43,6 +43,7 @@ export type ExecutableAppActionMutationIdentityArgument = {
 
 export type ExecutableAppActionMutationIdentityRule = {
     arguments: readonly ExecutableAppActionMutationIdentityArgument[];
+    destructive?: false;
     fallbackArguments?: readonly ExecutableAppActionMutationIdentityArgument[];
     resourceFamily?: string;
     resourceReferenceOnly?: true;
@@ -2345,14 +2346,27 @@ const TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackId' }], resourc
 const TRACK_RESOURCE_REFERENCE_IDENTITY = [
     { arguments: [{ argument: 'trackId' }], resourceFamily: 'track', resourceReferenceOnly: true },
 ] as const;
+const PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = [
+    {
+        arguments: [{ argument: 'parentTrackIds', cardinality: 'many' }],
+        destructive: false,
+        resourceFamily: 'track',
+        resourceReferenceOnly: true,
+    },
+] as const;
 const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' }] as const;
 const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
-const DEVICE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' }] as const;
+const DEVICE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const DEVICE_PARAMETER_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const SEND_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const TRACK_OUTPUT_MUTATION_IDENTITY = [
     ...TRACK_MUTATION_IDENTITY,
@@ -2366,9 +2380,17 @@ const AUTOMATED_SEND_MUTATION_IDENTITY = [
     {
         arguments: [{ argument: 'trackIds', cardinality: 'many' }, { argument: 'busId' }],
     },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const AUTOMATED_TRACK_MUTATION_IDENTITY = [{ arguments: [{ argument: 'trackIds', cardinality: 'many' }] }] as const;
-const AUTOMATION_LANE_MUTATION_IDENTITY = [{ arguments: [{ argument: 'laneId' }] }] as const;
+const AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY = [
+    { arguments: [{ argument: 'laneId' }], resourceFamily: 'automation-lane', resourceReferenceOnly: true },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const AUTOMATION_LANE_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'laneId' }] },
+    ...AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const AUTOMATION_LANE_CREATION_IDENTITY = [
     { arguments: [{ argument: 'trackId' }, { argument: 'parameterId' }] },
 ] as const;
@@ -2387,6 +2409,7 @@ const SIDECHAIN_ROUTE_RESOURCE_REFERENCE_IDENTITY = [
         resourceFamily: 'sidechain-route',
         resourceReferenceOnly: true,
     },
+    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY = [
     {
@@ -2485,7 +2508,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     automateSendRanges: AUTOMATED_SEND_MUTATION_IDENTITY,
     renderProjectSections: NO_MUTATION_IDENTITY,
     addAutomationLane: AUTOMATION_LANE_CREATION_IDENTITY,
-    addAutomationPoint: NO_MUTATION_IDENTITY,
+    addAutomationPoint: AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY,
     setAutomationLaneEnabled: AUTOMATION_LANE_MUTATION_IDENTITY,
     setAutomationMode: TRACK_MUTATION_IDENTITY,
     scaleAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,

@@ -23,6 +23,8 @@ type PlanAgentRunInput = {
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
     providerProposal?: AgentRunProviderProposal;
+    /** Application-derived scope containing only the direct targets the provider was required to name. */
+    providerKnownScope?: AgentRunScope;
     /**
      * Target ids this batch mints for objects that do not exist yet. The application assigns them
      * after the provider has already answered, so no proposal can name them and they are excluded
@@ -180,11 +182,16 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
         return { status: 'rejected', reason: 'Provider proposed an unsupported application capability.' };
     }
     const applicationAssignedTargetIds = new Set(input.applicationAssignedTargetIds ?? []);
+    const expectedProviderScope = input.providerKnownScope;
     if (
         input.providerProposal?.scope &&
         !sameScope(
-            getProviderKnowableScope(input.providerProposal.scope, applicationAssignedTargetIds),
-            getProviderKnowableScope(input.scope, applicationAssignedTargetIds)
+            expectedProviderScope === undefined
+                ? getProviderKnowableScope(input.providerProposal.scope, applicationAssignedTargetIds)
+                : input.providerProposal.scope,
+            expectedProviderScope === undefined
+                ? getProviderKnowableScope(input.scope, applicationAssignedTargetIds)
+                : expectedProviderScope
         )
     ) {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };

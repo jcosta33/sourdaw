@@ -23,4 +23,6 @@ export type IntentResult = {
     applicationToolReceipts?: ApplicationToolReceipt[];
     /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
     providerProposal?: AgentRunProviderProposal;
+    /** Direct stable targets proven from the provider's semantic list against one project snapshot. */
+    providerKnownTargetIds?: string[];
 };

@@ -23,6 +23,12 @@ describe('getExecutableAppActionGroundingRules', () => {
     });
 
     it('owns mutation identity independently from capability targets', () => {
+        const parentTrackReference = {
+            arguments: [{ argument: 'parentTrackIds', cardinality: 'many' as const }],
+            destructive: false as const,
+            resourceFamily: 'track',
+            resourceReferenceOnly: true as const,
+        };
         expect(getExecutableAppActionGroundingRules('setTrackOutput')).toMatchObject({
             targetRules: [
                 { argument: 'outputId', capability: 'output' },
@@ -39,12 +45,14 @@ describe('getExecutableAppActionGroundingRules', () => {
         });
         expect(getExecutableAppActionGroundingRules('setDeviceParameter')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('automateTrackGainRange')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
         ]);
         expect(getExecutableAppActionGroundingRules('addSend')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('moveClip')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
@@ -75,6 +83,7 @@ describe('getExecutableAppActionGroundingRules', () => {
                 resourceFamily: 'sidechain-route',
                 resourceReferenceOnly: true,
             },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('removeSidechainRoute')?.mutationIdentityRules).toEqual([
             {
@@ -82,6 +91,7 @@ describe('getExecutableAppActionGroundingRules', () => {
                 resourceFamily: 'sidechain-route',
                 resourceReferenceOnly: true,
             },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('setTrackGain')?.mutationIdempotent).toBe(true);
         expect(getExecutableAppActionGroundingRules('splitClip')?.mutationIdempotent).toBe(false);
@@ -93,9 +103,11 @@ describe('getExecutableAppActionGroundingRules', () => {
         ]);
         expect(getExecutableAppActionGroundingRules('removeDevice')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('removeSend')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('removeSection')?.mutationIdentityRules).toEqual([
             {

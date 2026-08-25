@@ -449,6 +449,7 @@ describe('parsePromptToActions', () => {
         }
         expect(result.rejectionReason).toBeUndefined();
         expect(result.requiresConfirmation).toBe(true);
+        expect(result.providerKnownTargetIds).toEqual(['track-vocals', 'track-guitar']);
     });
 
     it('materializes compiler-owned binding scope and preserves its action graph', async () => {
@@ -524,7 +525,8 @@ describe('parsePromptToActions', () => {
             type: 'setTrackGain',
             payload: { trackId: createdBusId, gain: 0.8 },
         });
-        expect(result.providerProposal?.scope.targetIds).toEqual([createdBusId]);
+        expect(result.providerProposal?.scope.targetIds).toEqual([]);
+        expect(result.providerKnownTargetIds).toEqual([]);
     });
 
     it('rejects a selected application-expanded workflow before its compiler graph can reach partial acceptance', async () => {

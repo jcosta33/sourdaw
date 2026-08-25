@@ -104,6 +104,209 @@ describe('compileArbitraryCommandList', () => {
         commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
+    it('rejects an expanded semantic list above the runtime execution budget', () => {
+        const trackIds = Array.from({ length: 25 }, (_, index) => `track-budget-${String(index)}`);
+        const budgetContext = {
+            ...context,
+            tracks: trackIds.map((id, index) => ({
+                ...context.tracks[0]!,
+                id,
+                name: `Budget Track ${String(index)}`,
+            })),
+        };
+
+        expect(
+            compileArbitraryCommandList({
+                context: budgetContext,
+                revision: 'revision-command-budget',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan(trackIds),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'mute-all-budget-tracks',
+                                        name: 'muteTrack',
+                                        arguments: { muted: true },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { kind: 'audio' },
+                                            quantity: { unit: 'targets', exactly: 25 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list does not match the versioned application contract.',
+        });
+    });
+
+    it.each([
+        { family: 'device', order: 'parent-first' },
+        { family: 'device', order: 'child-first' },
+        { family: 'send', order: 'parent-first' },
+        { family: 'send', order: 'child-first' },
+        { family: 'automation-lane', order: 'parent-first' },
+        { family: 'automation-lane', order: 'child-first' },
+        { family: 'sidechain', order: 'parent-first' },
+        { family: 'sidechain', order: 'child-first' },
+    ] as const)('rejects removeTrack with a $family child mutation when $order', ({ family, order }) => {
+        const conflictContext = {
+            ...context,
+            automationLanes: [
+                {
+                    id: 'lane-kick-gain',
+                    trackId: 'track-kick',
+                    parameterId: 'gain',
+                    name: 'Kick Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [],
+                },
+            ],
+            sidechainRoutes: [
+                {
+                    id: 'route-kick-hat',
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-hat',
+                    targetDeviceId: 'compressor-hat',
+                    targetParameterId: 'sidechain',
+                    gain: 1,
+                },
+            ],
+            tracks: [
+                ...context.tracks.map((track) =>
+                    track.id === 'track-kick'
+                        ? {
+                              ...track,
+                              sends: [{ busId: 'track-hat', level: 0.5, preFader: false }],
+                              deviceCount: 1,
+                              devices: [
+                                  {
+                                      id: 'device-kick',
+                                      name: 'Kick EQ',
+                                      type: 'builtin-eq',
+                                      bypassed: false,
+                                      parameters: [deviceParameter('gain')],
+                                  },
+                              ],
+                          }
+                        : {
+                              ...track,
+                              deviceCount: 1,
+                              devices: [
+                                  {
+                                      id: 'compressor-hat',
+                                      name: 'Hat Compressor',
+                                      type: 'builtin-sidechain-compressor',
+                                      bypassed: false,
+                                      parameters: [deviceParameter('threshold')],
+                                  },
+                              ],
+                          }
+                ),
+                { ...context.tracks[0]!, id: 'track-send-bus', name: 'Send Bus', kind: 'bus' as const },
+            ],
+        };
+        const removeTrack = {
+            id: 'remove-kick',
+            name: 'removeTrack',
+            arguments: {},
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track' as const,
+                where: { name: 'Kick' },
+                quantity: { unit: 'targets' as const, exactly: 1 },
+            },
+        };
+        const childByFamily = {
+            device: {
+                id: 'bypass-kick-device',
+                name: 'bypassDevice',
+                arguments: { bypassed: true },
+                selector: {
+                    targetArgument: 'deviceId',
+                    entity: 'device' as const,
+                    where: { name: 'Kick EQ' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
+            send: {
+                id: 'adjust-kick-send',
+                name: 'setSend',
+                arguments: { trackId: 'track-kick', level: 0.25 },
+                selector: {
+                    targetArgument: 'busId',
+                    entity: 'track' as const,
+                    where: { name: 'Send Bus' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
+            'automation-lane': {
+                id: 'disable-kick-lane',
+                name: 'setAutomationLaneEnabled',
+                arguments: { enabled: false },
+                selector: {
+                    targetArgument: 'laneId',
+                    entity: 'automation-lane' as const,
+                    where: { name: 'Kick Gain' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
+            sidechain: {
+                id: 'remove-kick-sidechain',
+                name: 'removeSidechainRoute',
+                arguments: { targetTrackId: 'track-hat' },
+                selector: {
+                    targetArgument: 'sourceTrackId',
+                    entity: 'track' as const,
+                    where: { name: 'Kick' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
+        } as const;
+        const child = childByFamily[family];
+        const targetIdsByFamily = {
+            device: ['track-kick', 'device-kick'],
+            send: ['track-kick', 'track-send-bus'],
+            'automation-lane': ['track-kick', 'lane-kick-gain'],
+            sidechain: ['track-kick', 'track-hat'],
+        } as const;
+        const items =
+            order === 'parent-first'
+                ? [removeTrack, { ...child, dependsOn: ['remove-kick'] }]
+                : [child, { ...removeTrack, dependsOn: [child.id] }];
+
+        expect(
+            compileArbitraryCommandList({
+                context: conflictContext,
+                revision: `revision-${family}-${order}`,
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan([...targetIdsByFamily[family]]),
+                            list: { schemaVersion: 1, items },
+                        },
+                    },
+                ],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list contains contradictory mutation resources.',
+        });
+    });
+
     it('carries every direct secondary target through exact compiler and command-batch planning scope', () => {
         const routingContext = {
             ...context,
@@ -2677,6 +2880,17 @@ describe('compileArbitraryCommandList', () => {
                         ...result.compilerEvidence.commands,
                         { name: 'muteTrack', arguments: { trackId: 'track-hat', muted: true } },
                     ],
+                },
+                calls: result.compilerEvidence.commands,
+                context,
+                revision: 'revision-1',
+            }).status
+        ).toBe('rejected');
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: {
+                    ...result.compilerEvidence,
+                    providerKnownTargetIds: ['track-hat'],
                 },
                 calls: result.compilerEvidence.commands,
                 context,
