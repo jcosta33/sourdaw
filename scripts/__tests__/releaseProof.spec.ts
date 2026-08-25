@@ -1,5 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import {
     chmodSync,
     constants,
@@ -17,6 +18,7 @@ import {
     rmSync,
     symlinkSync,
     truncateSync,
+    utimesSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1895,6 +1897,7 @@ describe('release proof', () => {
         );
         expect(readFileSync(join(fixture.candidate, 'marker'), 'utf8')).toBe(marker);
         expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
+        expect(readdirSync(fixture.base).some((name) => name.includes('.publication-helper-'))).toBe(false);
     });
 
     it('uses the fixed system publisher even when PATH contains helper shims', () => {
@@ -2073,6 +2076,103 @@ describe('release proof', () => {
         ).toThrow('release proof publication source changed before atomic publication');
         expect(replacementVisible).toBe(false);
         expect(existsSync(fixture.candidate)).toBe(false);
+        expect(readdirSync(fixture.base).some((name) => name.includes('.publication-helper-'))).toBe(false);
+    });
+
+    it('publishes validated earlier bytes when their source changes while a later file is inspected', async () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-multifile-publication-'));
+        fixtureRoots.push(base);
+        const source = mkdtempSync(join(base, '.source-'));
+        const destination = join(base, 'published');
+        write(join(source, 'first-slot'), '');
+        write(join(source, 'second-slot'), '');
+        const [earlyName, laterName] = JSON.parse(
+            execFileSync(
+                '/usr/bin/python3',
+                ['-I', '-S', '-c', 'import json, os, sys; print(json.dumps(os.listdir(sys.argv[1])))', source],
+                {
+                    encoding: 'utf8',
+                }
+            )
+        ) as [string, string];
+        const earlyPath = join(source, earlyName);
+        const laterPath = join(source, laterName);
+        const expectedEarly = 'expected!';
+        const laterBytes = 256 * 1024 * 1024;
+        write(earlyPath, expectedEarly);
+        truncateSync(laterPath, laterBytes);
+        utimesSync(laterPath, new Date(0), new Date());
+        const sourceIdentity = lstatSync(source, { bigint: true });
+        const earlyIdentity = lstatSync(earlyPath, { bigint: true });
+        const laterIdentity = lstatSync(laterPath, { bigint: true });
+        const zeros = Buffer.alloc(1024 * 1024);
+        const laterDigest = createHash('sha256');
+        for (let remaining = laterBytes; remaining > 0; remaining -= zeros.length) {
+            laterDigest.update(zeros.subarray(0, Math.min(remaining, zeros.length)));
+        }
+        const mutator = spawn(
+            '/usr/bin/python3',
+            [
+                '-I',
+                '-S',
+                '-c',
+                String.raw`
+import os
+import sys
+import time
+
+early = os.fsencode(sys.argv[1])
+later = os.fsencode(sys.argv[2])
+initial_atime = int(sys.argv[3])
+deadline = time.monotonic() + 5
+while os.stat(later).st_atime_ns == initial_atime:
+    if time.monotonic() >= deadline:
+        raise SystemExit(2)
+    time.sleep(0.001)
+with open(early, "r+b", buffering=0) as file:
+    file.write(b"attacker!")
+    os.fsync(file.fileno())
+`,
+                earlyPath,
+                laterPath,
+                String(laterIdentity.atimeNs),
+            ],
+            { stdio: 'ignore' }
+        );
+        const publisher = prepareAtomicDirectoryPublisher();
+        try {
+            publisher.publish(
+                source,
+                destination,
+                { dev: String(sourceIdentity.dev), ino: String(sourceIdentity.ino) },
+                [
+                    {
+                        ctimeNs: String(earlyIdentity.ctimeNs),
+                        dev: String(earlyIdentity.dev),
+                        digest: hashValue(expectedEarly),
+                        ino: String(earlyIdentity.ino),
+                        mtimeNs: String(earlyIdentity.mtimeNs),
+                        path: earlyName,
+                        size: expectedEarly.length,
+                    },
+                    {
+                        ctimeNs: String(laterIdentity.ctimeNs),
+                        dev: String(laterIdentity.dev),
+                        digest: laterDigest.digest('hex'),
+                        ino: String(laterIdentity.ino),
+                        mtimeNs: String(laterIdentity.mtimeNs),
+                        path: laterName,
+                        size: laterBytes,
+                    },
+                ]
+            );
+            const [exitCode] = (await once(mutator, 'exit')) as [number | null];
+            expect(exitCode).toBe(0);
+            expect(readFileSync(join(destination, earlyName), 'utf8')).toBe(expectedEarly);
+            expect(readdirSync(base).some((name) => name.includes('.publication-helper-'))).toBe(false);
+        } finally {
+            publisher.dispose();
+        }
     });
 
     it('rejects and invalidates a publisher that reports success without moving the validated directory', () => {
@@ -2250,6 +2350,40 @@ describe('release proof', () => {
         ).toThrow('published directory bytes changed during publication');
         expect(invalidated).toBe(true);
         expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('preserves a published quarantine when an independently added child is not in its owned manifest', () => {
+        const fixture = createFixture();
+        const marker = 'independent child';
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
+            publish(source, destination) {
+                renameSync(source, destination);
+                write(join(destination, 'independent-child'), marker);
+            },
+            invalidate: () => undefined,
+            dispose: () => undefined,
+        });
+        let message = '';
+
+        try {
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                undefined,
+                publisherPreparer
+            );
+        } catch (error) {
+            message = error instanceof Error ? error.message : String(error);
+        }
+
+        const cleanupRoot = readdirSync(fixture.base).find((entry) => entry.startsWith('.candidate.cleanup-'));
+        expect(cleanupRoot).toBeDefined();
+        const preserved = join(fixture.base, cleanupRoot ?? '', 'tree');
+        expect(message).toContain(`unexpected output preserved at ${preserved}`);
+        expect(readFileSync(join(preserved, 'independent-child'), 'utf8')).toBe(marker);
     });
 
     it('rejects a replaced publisher without deleting the unowned output it moved', () => {
