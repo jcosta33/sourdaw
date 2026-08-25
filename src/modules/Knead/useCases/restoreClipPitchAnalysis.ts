@@ -3,6 +3,8 @@ import { type KneadPitchBlobSnapshot, type PitchContourSnapshot } from '#/utils/
 
 import { kneadStore, type NoteBlob } from '../stores/kneadStore';
 
+import { projectClipKneadState } from './projectClipKneadState';
+
 type RestoreClipPitchAnalysisInput = {
     blobs?: KneadPitchBlobSnapshot[];
     contour?: PitchContourSnapshot;
@@ -69,8 +71,10 @@ export function restoreClipPitchAnalysis(clipId: string, { blobs, contour }: Res
 
     // Blobs are mirrored onto the clip's own `kneadState`, which is what persistence
     // and collaboration read; leaving that mirror on the post-commit empty list would
-    // undo the edit on screen and put it straight back on the next load.
+    // undo the edit on screen and put it straight back on the next load. The
+    // store-shaped state is projected onto the declared clip shape (#2571), same as
+    // every persisting Knead write.
     if (restoredClipState) {
-        updateClipInStore(clipId, (clip) => ({ ...clip, kneadState: restoredClipState }));
+        updateClipInStore(clipId, (clip) => ({ ...clip, kneadState: projectClipKneadState(restoredClipState) }));
     }
 }
