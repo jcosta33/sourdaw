@@ -36,6 +36,9 @@ type NotificationEvents = {
     'ui.prompt': PromptPayload;
 };
 
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
 const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
@@ -52,7 +55,12 @@ describe('handleAddClip atomic integration', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
-        setNotificationEventBus(createEventBus<NotificationEvents>());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -66,6 +74,7 @@ describe('handleAddClip atomic integration', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
         Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -133,10 +142,17 @@ describe('handleAddClip atomic integration', () => {
             },
         });
 
+        expect(notifications).toEqual([]);
         await undo();
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Editable' }]);
         expect(midiStore.value!.notesByClipId[created.id]).toMatchObject([{ id: 'external-note' }]);
+        expect(notifications).toEqual([
+            {
+                message: 'Cannot undo "Add clip "Editable"": project state has changed',
+                level: 'warning',
+            },
+        ]);
 
         midiStore.set({
             ...midiStore.value!,
