@@ -24,6 +24,12 @@ triple_buffer = "9.0.0"
 # Windows build with mismatched COM types; after either dependency changes,
 # verify one family remains and cross-check daw-engine for
 # x86_64-pc-windows-msvc.
+[dev-dependencies]
+# The allocation guard for the audio-callback command drain
+# (`scheduler` test module). Already in the workspace lockfile through
+# daw-dsp and proof-chamber, so this adds no new external package.
+assert_no_alloc = "1.1"
+
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",
