@@ -691,7 +691,7 @@ export const getSortedTracks = (tracks: Track[], strategy: 'name' | 'date'): Tra
 
 // Module store singleton (preferred)
 import { createStore } from '#/infra/store/createStore';
-export const appStore = createStore<AppState>({ initialData: { /* ... */ } });
+export const appStore = createStore<AppState>({ initialData: {/* ... */} });
 
 // Adapter pattern (transformer layer maps DTO → domain)
 type ApiUser = { user_id: number; full_name: string };
@@ -709,6 +709,48 @@ Guidelines:
 - Avoid ternaries in complex logic; prefer early returns or helper variables/functions.
 - Never use short-circuit invocation `(fn && fn())`.
 - Keep patterns framework-agnostic; React is only for rendering and wiring.
+
+## Code craft
+
+The conventions in this file follow one doctrine: write the simplest code that expresses the
+intent. Clever code is a defect even when it works — if the reader has to decode a construct,
+rewrite it with the plainer one.
+
+- **Functional by default.** Pure functions, immutable data, and composition over classes and
+  mutation. Mutable state belongs in stores at the documented boundaries, not scattered across
+  object graphs.
+- **Semantic decomposition.** Small functions, each named for the one thing it does. A block that
+  needs a comment to be understood gets extracted and named instead.
+- **Happy path top to bottom.** Guard clauses and early returns over nesting, as covered under
+  _Prefer explicit control flow_ above.
+
+```typescript
+// ❌ Bad: a comment propping up an anonymous block
+export const renderMixdown = async (project: Project): Promise<void> => {
+    // Render each track, sum the buffers, then write the mixdown file.
+    const buffers = await Promise.all(project.tracks.map(renderTrack));
+    await writeMixdownFile(sumBuffers(buffers));
+};
+
+// ✅ Good: extracted and named; the code says what the comment said
+export const renderMixdown = async (project: Project): Promise<void> => {
+    const mixdown = await mixProjectTracks(project.tracks);
+    await writeMixdownFile(mixdown);
+};
+```
+
+### Comments
+
+A comment explains what the code cannot make self-explanatory: the why, or non-obvious mechanics
+such as real-time constraints, hardware quirks, or a spec mandate. A comment narrating what simple
+code does is a smell — rename or extract until it is unnecessary, then delete it. No commented-out
+code and no changelog comments: git is the history.
+
+### Folder-level knowledge
+
+A significant module or large folder carries an `AGENTS.md` with the critical knowledge a future
+agent needs to work there safely. A change that alters what such a file describes updates that
+file in the same change.
 
 ## Lint-aligned conventions
 
