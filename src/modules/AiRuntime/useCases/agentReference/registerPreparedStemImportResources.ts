@@ -203,7 +203,6 @@ function retainPreparedStemImportResourcesForRecovery(input: {
             runId: input.runId,
             assetId: stem.audioBufferId,
             cleanupOwner: CLEANUP_OWNER,
-            cleanup: () => preparedStemImportCleanup.discard([stem]),
         });
     }
 }

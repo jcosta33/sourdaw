@@ -93,6 +93,13 @@ export function createStemImportConfirmationResourceLease(
                     .discard({ runId, stems })
                     .catch(reportPreparedStemImportResourceReleaseFailure);
             },
+            releaseBestEffort: async () => {
+                try {
+                    await preparedStemImportResources.discard({ runId, stems });
+                } catch (error) {
+                    reportPreparedStemImportResourceReleaseFailure(error);
+                }
+            },
         };
     }
 

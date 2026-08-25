@@ -3,10 +3,12 @@ import { captureProjectRevision, getCrdtDoc } from '#/modules/CrdtDocument/useCa
 
 export function configureAiWorkflowCommandPreflightFixture(projectId?: string): void {
     commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
-        const targetFingerprints = captureCommandTargetFingerprints({
-            document: projectDocument ?? getCrdtDoc('root'),
-            targetIds,
-        });
+        const targetFingerprints: Record<string, string> = {
+            ...captureCommandTargetFingerprints({
+                document: projectDocument ?? getCrdtDoc('root'),
+                targetIds,
+            }),
+        };
         for (const systemTargetId of ['master', 'hw_out']) {
             if (targetIds.includes(systemTargetId)) {
                 targetFingerprints[systemTargetId] = `system-output:${systemTargetId}`;
