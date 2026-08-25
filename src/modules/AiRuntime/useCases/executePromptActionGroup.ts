@@ -9,6 +9,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentRunPhase, type AgentRunWorkTerminalState } from '../models/AgentRun';
 
+import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
@@ -262,7 +263,62 @@ export async function executePromptActionGroup(
             }),
         };
     })();
+    const importedStemsHavePartialDurableBindings = importedStems.some(
+        (stem) => Boolean(stem.assetLeaseId) !== Boolean(stem.assetHash)
+    );
+    if (importedStemsHavePartialDurableBindings) {
+        const reason = 'Prepared stem durable asset binding is incomplete.';
+        if (settleCommand('failed')) {
+            agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
+            transitionRunIfLive(input.runId, 'failed');
+        }
+        await discardImportedStems();
+        notifyAiChange(`Command not executed: ${reason}`, []);
+        return { status: 'failed' };
+    }
+    const importedStemsHaveDurableBindings =
+        importedStems.length > 0 && importedStems.every((stem) => stem.assetLeaseId && stem.assetHash);
+    const importedStemResourceLease = importedStemsHaveDurableBindings
+        ? createStemImportConfirmationResourceLease(
+              input.actions,
+              `stem-promotion:${input.runId}:${envelope.batchId}`,
+              input.runId
+          )
+        : undefined;
+    const releaseImportedStems = async (): Promise<void> => {
+        if (importedStemResourceLease) {
+            await importedStemResourceLease.release();
+            return;
+        }
+        await discardImportedStems();
+    };
+    const releaseImportedStemsAfterPrimaryFailure = async (primaryError: unknown): Promise<void> => {
+        try {
+            await releaseImportedStems();
+        } catch (cleanupError) {
+            throw new AggregateError([primaryError, cleanupError], getErrorMessage(primaryError), {
+                cause: cleanupError,
+            });
+        }
+    };
+    const completeCommittedImportedStemPromotion = async (): Promise<string | null> => {
+        if (!importedStemResourceLease) {
+            preparedStemImportResources.release({ runId: input.runId, stems: importedStems });
+            return null;
+        }
+        try {
+            await importedStemResourceLease.commit?.();
+            await importedStemResourceLease.retain?.();
+            return null;
+        } catch (error) {
+            logger.error(new Error('Committed stem asset promotion recovery remains pending', { cause: error }));
+            return 'Committed stem asset promotion remains pending and will be retried through durable recovery.';
+        }
+    };
     const retainImportedStemsForRecovery = async (): Promise<void> => {
+        if (importedStemResourceLease) {
+            return;
+        }
         preparedStemImportResources.retainForRecovery({
             runId: input.runId,
             stems: importedStems,
@@ -272,6 +328,7 @@ export async function executePromptActionGroup(
     };
     let execution: Awaited<ReturnType<typeof executePlannedActions>>;
     try {
+        await importedStemResourceLease?.prepareForCommit?.(commandBatch);
         agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'executing' });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,
@@ -282,12 +339,6 @@ export async function executePromptActionGroup(
             ...input,
             group,
             commandBatch,
-            onProjectCommitPrepared: () =>
-                preparedStemImportResources.protect({
-                    runId: input.runId,
-                    stems: importedStems,
-                    recovery: { batchId: envelope.batchId, commandBatch },
-                }),
         });
     } catch (error) {
         const reason = getErrorMessage(error);
@@ -295,7 +346,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
-        await discardImportedStems();
+        await releaseImportedStemsAfterPrimaryFailure(error);
         notifyAiChange(`Command not executed: ${reason}`, []);
         throw error;
     } finally {
@@ -332,7 +383,6 @@ export async function executePromptActionGroup(
             return { status: 'ambiguous' };
         }
         const leaseSettlement = settleCommittedCommandLease(commandLease);
-        preparedStemImportResources.release({ runId: input.runId, stems: importedStems });
         const receiptIdentity = getReceiptIdentity(execution.receipt);
         const receiptPersistenceWarning = recordCommittedCommandWarningSafe({
             runId: input.runId,
@@ -341,6 +391,7 @@ export async function executePromptActionGroup(
             ...(execution.status === 'committed' ? { committedRevision: captureProjectRevision() } : {}),
             completesRun: leaseSettlement.accepted,
         });
+        const resourcePromotionWarning = await completeCommittedImportedStemPromotion();
         if (!leaseSettlement.accepted && receiptPersistenceWarning === null) {
             try {
                 transitionRunIfLive(input.runId, 'partially-completed');
@@ -355,7 +406,7 @@ export async function executePromptActionGroup(
         reportCommittedWarning({
             executionKind: execution.status === 'committed' ? 'project' : 'runtime',
             receiptIdentity,
-            warnings: [leaseSettlement.warning, receiptPersistenceWarning].filter(
+            warnings: [leaseSettlement.warning, receiptPersistenceWarning, resourcePromotionWarning].filter(
                 (warning): warning is string => warning !== null
             ),
             actionTypes: execution.actions.map((entry) => entry.actionType),
@@ -364,7 +415,7 @@ export async function executePromptActionGroup(
     }
 
     if (execution.status === 'cancelled') {
-        await discardImportedStems();
+        await releaseImportedStems();
         await cancelCommand();
         notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
         return { status: 'cancelled' };
@@ -375,7 +426,7 @@ export async function executePromptActionGroup(
             agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'failed' });
             transitionRunIfLive(input.runId, 'failed');
         }
-        await discardImportedStems();
+        await releaseImportedStems();
         notifyAiChange(`Command not executed: ${execution.reason}`, []);
         return { status: 'failed' };
     }
@@ -394,7 +445,7 @@ export async function executePromptActionGroup(
         agentRunLifecycle.updateBatchStatus({ runId: input.runId, batchId: envelope.batchId, status: 'no-op' });
         agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'completed' });
     }
-    await discardImportedStems();
+    await releaseImportedStems();
     notifyAiChange('No project changes were needed.', []);
     return { status: 'no-op' };
 }
