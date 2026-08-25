@@ -1644,7 +1644,7 @@ describe('compileArbitraryCommandList', () => {
                                   name: 'Kick Compressor',
                                   type: 'builtin-compressor',
                                   bypassed: false,
-                                  parameters: [deviceParameter('threshold')],
+                                  parameters: [],
                               },
                           ],
                       }
@@ -1664,7 +1664,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['device-kick-compressor', 'threshold']),
+                        plan: plan(['device-kick-compressor']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1753,7 +1753,7 @@ describe('compileArbitraryCommandList', () => {
                                   name: 'Kick Compressor',
                                   type: 'builtin-compressor',
                                   bypassed: false,
-                                  parameters: [deviceParameter('threshold'), deviceParameter('ratio')],
+                                  parameters: [],
                               },
                           ],
                       }
@@ -1773,7 +1773,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['device-kick-compressor', 'threshold', 'ratio']),
+                        plan: plan(['device-kick-compressor']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -1825,7 +1825,7 @@ describe('compileArbitraryCommandList', () => {
                         name: `${track.name} Compressor`,
                         type: 'builtin-compressor',
                         bypassed: false,
-                        parameters: [deviceParameter('threshold')],
+                        parameters: [],
                     },
                 ],
             })),
@@ -1837,7 +1837,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-kick-compressor', 'track-hat-compressor', 'threshold']),
+                        plan: plan(['track-kick-compressor', 'track-hat-compressor']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -2447,7 +2447,7 @@ describe('compileArbitraryCommandList', () => {
                                   name: 'Kick Compressor',
                                   type: 'builtin-compressor',
                                   bypassed: false,
-                                  parameters: [deviceParameter('threshold')],
+                                  parameters: [],
                               },
                           ],
                       }
@@ -2467,7 +2467,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['device-kick-compressor', 'threshold']),
+                        plan: plan(['device-kick-compressor']),
                         list: {
                             schemaVersion: 1,
                             items: [

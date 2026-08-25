@@ -24,6 +24,7 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
+import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import { estimateCompiledProviderRequestTokenCeiling } from '../models/ModelProviderBudgetEstimate';
 import {
@@ -273,6 +274,45 @@ function recordApplicationToolOnlyPlan(input: {
     });
 }
 
+/**
+ * The ids this batch mints for objects that do not exist yet. The compiled envelope records them as
+ * the `targets-absent` precondition, so a provider proposal authored before compilation cannot name
+ * them and the plan's scope comparison must not demand it.
+ */
+function getApplicationAssignedTargetIds(
+    envelope: Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope']
+): string[] {
+    return envelope.preconditions.flatMap((precondition) =>
+        precondition.kind === 'targets-absent' ? [...(precondition.targetIds ?? [])] : []
+    );
+}
+
+const SELECTED_STEM_ASSETS_READY_ID = 'selected-stem-assets';
+
+function getApplicationReadyAssetIdsForPlan(runId: string, actions: readonly ExecutableRuntimeAction[]): string[] {
+    const selectedStems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
+    const selectedStemAssetIds = selectedStems.map((stem) => stem.audioBufferId);
+    if (selectedStemAssetIds.length === 0) {
+        return [];
+    }
+
+    const livePreparedStemAssetIds = new Set(
+        agentRunLifecycle
+            .get(runId)
+            ?.temporaryAssets.flatMap((asset) =>
+                asset.kind === 'import' && asset.status === 'live' ? [asset.assetId] : []
+            ) ?? []
+    );
+    if (
+        livePreparedStemAssetIds.size !== selectedStemAssetIds.length ||
+        selectedStemAssetIds.some((assetId) => !livePreparedStemAssetIds.has(assetId))
+    ) {
+        return [];
+    }
+
+    return [SELECTED_STEM_ASSETS_READY_ID, ...new Set(selectedStems.map((stem) => stem.stemId))];
+}
+
 export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
@@ -440,6 +480,7 @@ export async function sendChatMessage(
             }
 
             if (result.actions.length > 0) {
+                const readyAssetIds = getApplicationReadyAssetIdsForPlan(runId, result.actions);
                 // Manually inject messages for Fast-Path execution
                 const userMsgId = `msg-${crypto.randomUUID()}`;
                 appendChatMessage({
@@ -472,7 +513,7 @@ export async function sendChatMessage(
                     if (!admittedRun) {
                         throw new Error('Agent run disappeared before plan materialization.');
                     }
-                    const plannedAuthority = compileAgentActionExecution({
+                    const plannedCommandBatch = compileAgentActionExecution({
                         actions: result.actions,
                         actionCommandGraph: result.actionCommandGraph,
                         actionLabels: confirmationDescription.actionLabels,
@@ -485,7 +526,15 @@ export async function sendChatMessage(
                         mode: 'apply',
                         protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                         trustCeiling: options?.trustCeiling,
-                    }).commandBatch.authority;
+                    }).commandBatch;
+                    const plannedAuthority = plannedCommandBatch.authority;
+                    const parsedPlannedBatch = parseVersionedCommandBatchEnvelope(
+                        plannedCommandBatch.serialized,
+                        plannedAuthority
+                    );
+                    if (parsedPlannedBatch.status === 'invalid') {
+                        throw new Error(parsedPlannedBatch.reason);
+                    }
                     const planScope = {
                         targetIds: [...plannedAuthority.scope.targetIds],
                         targetRanges: plannedAuthority.scope.targetRanges.map((range) => ({ ...range })),
@@ -514,6 +563,8 @@ export async function sendChatMessage(
                         applicationToolReceipts: result.applicationToolReceipts,
                         providerProposal: result.providerProposal,
                         requireProviderProposal: result.executionMode === 'atomic',
+                        applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedPlannedBatch.envelope),
+                        readyAssetIds,
                     });
                     if (plannedRun.status === 'needs-user-decision') {
                         createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -596,6 +647,10 @@ export async function sendChatMessage(
                 if (parsedCommandBatch.status === 'invalid') {
                     throw new Error(parsedCommandBatch.reason);
                 }
+                const admittedRun = agentRunLifecycle.get(runId);
+                if (!admittedRun) {
+                    throw new Error('Agent run disappeared before plan materialization.');
+                }
                 const commandIds = parsedCommandBatch.envelope.commands.map((command) => command.commandId);
                 assertResumedProposalIdentity(options?.resume, {
                     actions: result.actions,
@@ -626,11 +681,13 @@ export async function sendChatMessage(
                         remoteGeneration: commandBatch.authority.grants.remoteGeneration,
                         autoCommit: commandBatch.authority.grants.autoCommit,
                     },
-                    budgets: { limits: { ...commandBatch.authority.budgets }, consumed: {} },
+                    budgets: admittedRun.budgets,
                     requiresConfirmation: compiledActionExecution.requiresConfirmation,
                     applicationToolReceipts: result.applicationToolReceipts,
                     providerProposal: result.providerProposal,
                     requireProviderProposal: result.executionMode === 'atomic',
+                    applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedCommandBatch.envelope),
+                    readyAssetIds,
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();
@@ -640,10 +697,6 @@ export async function sendChatMessage(
                         reason: plannedRun.decision.reason,
                         workIds: [],
                     });
-                    const admittedRun = agentRunLifecycle.get(runId);
-                    if (!admittedRun) {
-                        throw new Error('Agent run disappeared before decision persistence.');
-                    }
                     agentRunLifecycle.recordDecision({
                         runId,
                         decision: {
@@ -718,10 +771,7 @@ export async function sendChatMessage(
                         remoteGeneration: commandBatch.authority.grants.remoteGeneration,
                         autoCommit: commandBatch.authority.grants.autoCommit,
                     },
-                    budgets: {
-                        limits: { ...commandBatch.authority.budgets },
-                        consumed: {},
-                    },
+                    budgets: admittedRun.budgets,
                     plan: {
                         ...plannedRun.plan,
                         commandIds,

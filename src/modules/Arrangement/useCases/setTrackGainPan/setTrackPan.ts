@@ -18,8 +18,10 @@ const PAN_FIELD_FULL_SCALE = 50;
 /**
  * `isTransient` skips persistence, not recording, and not the engine — see
  * `setTrackGain` for why a ride has to reach the automation lane sample by
- * sample while project truth waits for the committed value, and why the Toaster
- * pad mirror travels with the engine call rather than with the store write.
+ * sample while project truth waits for the committed value. The Toaster pad
+ * pan mirror travels with the engine call rather than with the store write
+ * for the same reason: a drag has to sound continuous while the thumb is
+ * down, not step to the new pan the instant it lifts.
  *
  * **The lane is normalised; the track field is not.** `Track.pan` runs
  * -50..50, but every authority on the *lane* runs -1..1: `addAutomationLane`
