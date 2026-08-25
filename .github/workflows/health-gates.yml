@@ -19,10 +19,13 @@ name: Health gates
 #
 # `gate` is the stable workflow summary. It depends on every job whose result
 # currently decides that summary, and passes when each either succeeded or was
-# legitimately skipped. It is not currently required by the branch ruleset:
-# pull-request-controlled workflow contexts must never be required. A direct
-# requirement naming a filtered job would also sit pending forever on any pull
-# request that skips it. Do not rename `gate`.
+# legitimately skipped. It is informational today: the live ruleset requires no
+# status checks. GitHub can require workflow job checks, but Sourdaw deliberately
+# keeps pull-request-editable workflows out of merge authority; that is this
+# repository's trust policy, not a GitHub platform restriction. A required check
+# from a workflow skipped by trigger-level path, branch, or commit-message
+# filters remains pending; `gate` only makes conditional job skips resolve. Do
+# not rename `gate`.
 #
 # Runners are standard GitHub-hosted labels only. Public repositories bill
 # nothing for those; larger and GPU runners bill even here.
@@ -647,10 +650,9 @@ jobs:
     #
     # `unit` and `e2e` are deliberately absent. They run, and their results are
     # visible on the pull request, but they do not decide this summary yet. The
-    # explicit non-gating admission ledger in healthGatesWorkflow.spec.ts guards
-    # that state. Promotion changes both this `needs` list and that contract
-    # guard, after the applicable admission condition below is met; it is not a
-    # one-line switch. Red is a reason to fix the thing and then promote it,
+    # test pins the current non-gating job list, not a claimed future admission
+    # policy. Promotion updates both that list and this `needs` list; it is not
+    # a one-line switch. Red is a reason to fix the thing and then promote it,
     # never a reason to leave it ungated.
     #
     # The unit suite has an existing-main baseline failure. Gating on it now

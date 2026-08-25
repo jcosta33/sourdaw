@@ -32,10 +32,11 @@ const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
-const CURRENT_NON_GATING_ADMISSION_LEDGER = {
-    unit: 'promote once the main baseline is green and deterministic',
-    e2e: 'promote once the suite is green without third-party runtime downloads',
-} as const;
+const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
+const CURRENT_NON_GATING_JOB_WIRING = {
+    unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
+    e2e: { needs: 'decide', if: "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'" },
+} satisfies Record<(typeof CURRENT_NON_GATING_JOBS)[number], Readonly<{ needs: string; if: string }>>;
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const workflowSource = readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8');
@@ -180,9 +181,14 @@ function assertJobGraph(candidate: UnknownRecord): void {
             throw new Error(`gate must depend on ${job}`);
         }
     }
-    for (const job of Object.keys(CURRENT_NON_GATING_ADMISSION_LEDGER)) {
+    for (const job of CURRENT_NON_GATING_JOBS) {
+        const nonGatingJob = jobAt(candidate, job);
+        const expectedWiring = CURRENT_NON_GATING_JOB_WIRING[job];
+        if (nonGatingJob.needs !== expectedWiring.needs || nonGatingJob.if !== expectedWiring.if) {
+            throw new Error(`${job} must retain its current decide dependency and scope condition`);
+        }
         if (gateNeeds.includes(job)) {
-            throw new Error(`${job} remains non-gating until its admission condition is met`);
+            throw new Error(`${job} is currently non-gating`);
         }
     }
 }
@@ -310,21 +316,27 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('keeps the current fast, heavy, and non-gating admission policy', () => {
+    it('keeps the current fast, heavy, and non-gating job list', () => {
         expect(() => assertJobGraph(workflow)).not.toThrow();
         const disconnected = asRecord(structuredClone(workflow), 'disconnected security workflow');
         jobAt(disconnected, 'secrets').needs = 'build';
         expect(() => assertJobGraph(disconnected)).toThrow('security scans must depend directly on decide');
+        const disconnectedUnit = asRecord(structuredClone(workflow), 'disconnected unit workflow');
+        jobAt(disconnectedUnit, 'unit').needs = 'static';
+        expect(() => assertJobGraph(disconnectedUnit)).toThrow(
+            'unit must retain its current decide dependency and scope condition'
+        );
+        const ungatedE2eScope = asRecord(structuredClone(workflow), 'ungated e2e scope workflow');
+        jobAt(ungatedE2eScope, 'e2e').if = "needs.decide.outputs.e2e == 'true'";
+        expect(() => assertJobGraph(ungatedE2eScope)).toThrow(
+            'e2e must retain its current decide dependency and scope condition'
+        );
         const prematureUnitGate = asRecord(structuredClone(workflow), 'premature unit gate workflow');
         arrayAt(jobAt(prematureUnitGate, 'gate'), 'needs').push('unit');
-        expect(() => assertJobGraph(prematureUnitGate)).toThrow(
-            'unit remains non-gating until its admission condition is met'
-        );
+        expect(() => assertJobGraph(prematureUnitGate)).toThrow('unit is currently non-gating');
         const prematureE2eGate = asRecord(structuredClone(workflow), 'premature e2e gate workflow');
         arrayAt(jobAt(prematureE2eGate, 'gate'), 'needs').push('e2e');
-        expect(() => assertJobGraph(prematureE2eGate)).toThrow(
-            'e2e remains non-gating until its admission condition is met'
-        );
+        expect(() => assertJobGraph(prematureE2eGate)).toThrow('e2e is currently non-gating');
     });
 
     it('requires every gate dependency to have succeeded or been skipped', () => {
