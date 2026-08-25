@@ -610,6 +610,16 @@ pub async fn load_plugin(
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
 
+    // The session limit on engine-owned hosted instances comes before any
+    // engine dependency and before the plugin library is even constructed:
+    // the effect table's hosted-plugin reserve and the bridge table — one
+    // bridge per instance — are sized to exactly this number, so a load past
+    // it must refuse here, where the error reaches the user rather than dying
+    // as a counter on the callback. Checked against the instance map, which
+    // counts the session's hosted instances whether or not a stream is
+    // currently running — the limit is the session's, not the stream's.
+    ensure_hosted_plugin_session_headroom(state)?;
+
     match host_backend(&entry.format)? {
         HostBackend::Clap => {
             // A CLAP id is the descriptor's own reverse-DNS identifier and the
@@ -678,14 +688,6 @@ pub async fn load_plugin(
                             name
                         ));
                     }
-
-                    // The session limit on engine-owned hosted instances comes
-                    // first, before anything is registered: the effect table's
-                    // hosted-plugin reserve and the bridge table — one bridge
-                    // per instance — are sized to exactly this number, so a
-                    // load past it must refuse here, where the error reaches
-                    // the user rather than dying as a counter on the callback.
-                    ensure_hosted_plugin_session_headroom(state)?;
 
                     // The scheduler's effect table is shared with the project's
                     // native devices and the crumbs capture slot, so a plugin
@@ -2183,14 +2185,15 @@ mod tests {
         );
     }
 
-    /// The session limit on engine-owned hosted instances is refused
-    /// control-side, at the ceiling, in the wording that names it. Past the
-    /// limit the effect table's hosted-plugin reserve and the bridge table
-    /// have no slot left, and the audio thread's own refusal is a counter
-    /// nothing propagates — the plugin would load, open its editor, and pass
-    /// dry audio forever, which is what this guard exists to prevent.
+    /// The session-limit predicate itself, at the ceiling, in the wording
+    /// that names it: past the limit the effect table's hosted-plugin reserve
+    /// and the bridge table have no slot left, and the audio thread's own
+    /// refusal is a counter nothing propagates — the plugin would load, open
+    /// its editor, and pass dry audio forever. The predicate is only half the
+    /// guarantee; the load path's call is pinned by
+    /// `load_plugin_refuses_at_the_hosted_session_ceiling_before_loading_the_library`.
     #[test]
-    fn a_load_past_the_hosted_plugin_session_ceiling_is_refused_with_the_limit_named() {
+    fn the_hosted_plugin_session_ceiling_predicate_refuses_with_the_limit_named() {
         let state = AppState::default();
         for index in 0..HOSTED_PLUGIN_RESERVE {
             insert_engine_owned_fixture(&state, &format!("instance-{index}"), Vec::new());
@@ -2212,6 +2215,43 @@ mod tests {
             .expect("engine_plugins lock should be available")
             .remove("instance-0");
         assert!(ensure_hosted_plugin_session_headroom(&state).is_ok());
+    }
+
+    /// Wiring: the ceiling the predicate states is the one the load path
+    /// itself enforces, before the plugin library is even constructed. A
+    /// session at the ceiling loading a resolvable registry entry must get
+    /// the ceiling message — with the call unwired, this same load proceeds
+    /// to the library and fails as "Failed to load CLAP plugin at ...", so
+    /// the exact message pins the call site.
+    #[test]
+    fn load_plugin_refuses_at_the_hosted_session_ceiling_before_loading_the_library() {
+        let state = AppState::default();
+        for index in 0..HOSTED_PLUGIN_RESERVE {
+            insert_engine_owned_fixture(&state, &format!("instance-{index}"), Vec::new());
+        }
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let error = crate::block_on_test(load_plugin(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("over-ceiling-instance".to_string()),
+            &state,
+        ))
+        .expect_err("a load at the hosted session ceiling must refuse");
+
+        assert_eq!(
+            error,
+            format!(
+                "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
+            ),
+            "the refusal must be the ceiling's own message, not a later failure"
+        );
     }
 
     /// An empty descriptor id used to be replaced by the display name, which is

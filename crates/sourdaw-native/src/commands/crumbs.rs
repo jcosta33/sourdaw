@@ -169,11 +169,14 @@ pub struct LoopPointDetectionResult {
 /// Each live instance holds one capture slot of the shared effect table and
 /// one bridge for its record feed. The app renders exactly one Crumbs panel,
 /// and re-pointing it tears the old instance down asynchronously while the new
-/// one is already being created, so two can be live at once and three are not
-/// reachable from the UI — the ceiling (`CRUMBS_CAPTURE_RESERVE`) states that
-/// bound, and it is enforced here, control-side, where the refusal reaches the
-/// panel instead of dying as a counter on the audio callback that leaves
-/// armed recording capturing silence with nothing saying why.
+/// one is already being created, so two can be live at once. The gate this
+/// enforces is the instance map itself: a destroy removes its map entry
+/// before the engine slot's retirement has drained, so re-points inside that
+/// teardown window can admit a third engine slot past this check — at that
+/// extreme the engine's own callback-time capacity check is the last line.
+/// Inside the gate, the refusal reaches the panel instead of dying as a
+/// counter on the audio callback that leaves armed recording capturing
+/// silence with nothing saying why.
 ///
 /// Takes the map `create_crumbs` already holds: the check and the insert stay
 /// inside that one critical section, so a create that parked mid-registration
@@ -921,15 +924,13 @@ mod tests {
         assert!(json.get("decode_warning_count").is_none());
     }
 
-    /// The session limit on live crumbs instances is refused control-side, at
-    /// the ceiling, in the wording that names it. A third instance is not
-    /// reachable from the UI — the panel is a singleton and its re-point
-    /// overlap is two — but a stray create (a double init, a retry racing a
-    /// slow destroy) must refuse where the panel can report it, not as a
+    /// The session-limit predicate itself, at the ceiling, in the wording
+    /// that names it: a stray create (a double init, a retry racing a slow
+    /// destroy) must refuse where the panel can report it, not as a
     /// capture-slot refusal on the callback that leaves recording armed and
-    /// capturing silence with nothing saying why. The decision is exercised
-    /// exactly as `create_crumbs` applies it: against the map under the lock
-    /// it holds across registration.
+    /// capturing silence with nothing saying why. The predicate is only half
+    /// the guarantee; the create path's call is pinned by
+    /// `create_crumbs_refuses_at_the_capture_ceiling_before_touching_the_engine`.
     #[test]
     fn a_create_past_the_crumbs_capture_ceiling_is_refused_with_the_limit_named() {
         let state = CrumbsState::default();
@@ -980,6 +981,52 @@ mod tests {
                 .expect("crumbs state lock should be available");
             assert!(ensure_crumbs_capture_headroom(&instances).is_ok());
         }
+    }
+
+    /// Wiring: the ceiling the predicate states is the one `create_crumbs`
+    /// itself enforces, before any engine dependency — the check runs ahead
+    /// of the engine lock. A state at the ceiling must refuse with the
+    /// ceiling message; with the call unwired, this same state has no engine
+    /// and would fail later as "Native engine not running", so the exact
+    /// message pins the call site.
+    #[test]
+    fn create_crumbs_refuses_at_the_capture_ceiling_before_touching_the_engine() {
+        let state = CrumbsState::default();
+        {
+            let mut instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            for index in 0..CRUMBS_CAPTURE_RESERVE {
+                let (instance, _commit_tx, _recycle_rx, _cmd_rx) = instance_with_rings();
+                instances.insert(format!("instance-{index}"), instance);
+            }
+        }
+
+        let app_state = AppState::default();
+        let refusal = crate::block_on_test(create_crumbs(
+            "instance-overflow".to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect_err("a create at the capture ceiling must refuse");
+
+        assert_eq!(
+            refusal,
+            format!(
+                "the session holds its maximum of {CRUMBS_CAPTURE_RESERVE} live crumbs instances"
+            ),
+            "the refusal must be the ceiling's own message, not the missing engine's"
+        );
+
+        // Nothing was created past the refusal.
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        assert_eq!(instances.len(), CRUMBS_CAPTURE_RESERVE);
+        assert!(!instances.contains_key("instance-overflow"));
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData

@@ -546,10 +546,14 @@ pub const HOSTED_PLUGIN_RESERVE: usize = 128;
 ///
 /// The app renders exactly one Crumbs panel, and re-pointing it at another
 /// device tears the old instance down asynchronously while the new one is
-/// already being created, so two slots can be live at once and three are not
-/// reachable from the UI. `create_crumbs` (`sourdaw-native`) checks the bound
-/// control-side, so the third concurrent instance is refused where the error
-/// is legible rather than counted on the callback.
+/// already being created, so two slots can be live at once. The gate the
+/// reserve enforces is the host's instance map: `create_crumbs`
+/// (`sourdaw-native`) refuses while the map holds the reserve's count.
+/// Because a destroy removes its map entry before the engine slot's
+/// retirement has drained, re-points inside that teardown window can admit a
+/// third engine slot past the gate — at that extreme the engine's own
+/// callback-time capacity check is the last line, as it is for every
+/// population.
 pub const CRUMBS_CAPTURE_RESERVE: usize = 2;
 
 /// The fixed capacity of the scheduler's effect table. Every registration the
@@ -707,11 +711,17 @@ impl IdSlotIndex {
     fn set_slot(&mut self, id: usize, slot: usize) {
         let mut bucket = self.home(id);
         loop {
-            debug_assert!(
-                self.buckets[bucket].slot_plus_one != 0,
-                "repointing an id the index does not hold"
-            );
-            if self.buckets[bucket].id == id as u64 {
+            let entry = self.buckets[bucket];
+            if entry.slot_plus_one == 0 {
+                // Unreachable while the callers' invariants hold — a repoint
+                // only ever names an id the index holds. Terminating here
+                // anyway keeps a breached invariant bounded on the audio
+                // callback: no repoint, no spin, with the debug assert as the
+                // loud debug-mode signal.
+                debug_assert!(false, "repointing an id the index does not hold");
+                return;
+            }
+            if entry.id == id as u64 {
                 self.buckets[bucket].slot_plus_one = slot as u32 + 1;
                 return;
             }
@@ -3119,6 +3129,105 @@ mod tests {
         );
         assert_eq!(scheduler.effect_index.lookup(first), None);
         assert_eq!(scheduler.effects.len(), 1);
+    }
+
+    /// The shift's false arm — a candidate whose probe path did NOT cross the
+    /// hole must stay put — is as load-bearing as the moving arm, and no
+    /// single-home cluster ever executes it: every candidate there shares the
+    /// hole's home and always moves. This test builds a mixed cluster, the
+    /// shape real sessions produce by mixing id populations: two ids sharing
+    /// home bucket b, plus an id whose own home is b+1. Deleting through b
+    /// walks one candidate of each kind — the mover (shared home b, sitting
+    /// at b+2) and the stayer (home b+1, sitting at b+1, whose path never
+    /// crossed b) — and requires each to do its own thing. The cluster is
+    /// derived from the index's own hash and mask, so the test cannot rot
+    /// when the capacity changes.
+    #[test]
+    fn a_delete_through_a_mixed_cluster_moves_only_the_entries_whose_probe_path_crossed_the_hole() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+
+        // Scan ids into their home buckets, then find a bucket holding two
+        // ids whose neighbour bucket holds one: that is the mixed cluster.
+        let mask = scheduler.effect_index.mask;
+        let bucket_count = mask + 1;
+        let mut ids_per_bucket: Vec<Vec<usize>> = vec![Vec::new(); bucket_count];
+        for id in 1..=(bucket_count * 4) {
+            ids_per_bucket[scheduler.effect_index.home(id)].push(id);
+        }
+        let mut chosen = None;
+        for bucket in 0..bucket_count {
+            let adjacent = (bucket + 1) & mask;
+            if let (Some(mover_home_sharer), Some(displaced), Some(stayer)) = (
+                ids_per_bucket[bucket].first().copied(),
+                ids_per_bucket[bucket].get(1).copied(),
+                ids_per_bucket[adjacent].first().copied(),
+            ) {
+                chosen = Some((mover_home_sharer, displaced, stayer));
+                break;
+            }
+        }
+        let (shared_a, shared_b, native_neighbor) = chosen.expect(
+            "four rounds of ids over the buckets hold a shared home next to an occupied neighbour",
+        );
+        let home = scheduler.effect_index.home(shared_a);
+        assert_eq!(scheduler.effect_index.home(shared_b), home);
+        assert_eq!(
+            scheduler.effect_index.home(native_neighbor),
+            (home + 1) & mask
+        );
+
+        // Insertion lays the cluster out as [home]=shared_a,
+        // [home+1]=native_neighbor (its own home, taken first), and
+        // [home+2]=shared_b (displaced past both by its shared home).
+        for id in [shared_a, native_neighbor, shared_b] {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        let after_home = (home + 1) & mask;
+        let past_neighbor = (home + 2) & mask;
+        assert_eq!(scheduler.effect_index.bucket_of(shared_a), Some(home));
+        assert_eq!(
+            scheduler.effect_index.bucket_of(native_neighbor),
+            Some(after_home)
+        );
+        assert_eq!(
+            scheduler.effect_index.bucket_of(shared_b),
+            Some(past_neighbor)
+        );
+
+        // Delete the shared-home occupant: the hole at `home` is crossed by
+        // shared_b's probe path (it must move back) and not by
+        // native_neighbor's (it never probed past its own home, so moving it
+        // would strand it behind its home).
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(shared_a))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(
+            scheduler.effect_index.bucket_of(native_neighbor),
+            Some(after_home),
+            "the neighbour at its own home must stay exactly where it is"
+        );
+        assert_eq!(
+            scheduler.effect_index.bucket_of(shared_b),
+            Some(home),
+            "the displaced sharer must move into the vacated home"
+        );
+        for survivor in [native_neighbor, shared_b] {
+            let slot = scheduler
+                .effect_index
+                .lookup(survivor)
+                .expect("every survivor must resolve through the shifted cluster");
+            assert_eq!(scheduler.effects[slot].id, survivor);
+        }
+        assert_eq!(scheduler.effect_index.lookup(shared_a), None);
+        assert_eq!(scheduler.effects.len(), 2);
     }
 
     #[test]
