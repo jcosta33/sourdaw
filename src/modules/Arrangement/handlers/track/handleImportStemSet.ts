@@ -201,6 +201,15 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         };
     },
     isNoop: isImportedStemSetApplied,
+    canReapplyAfterDivergence: (action) =>
+        typeof action.payload?.folderId === 'string' &&
+        Array.isArray(action.payload?.stems) &&
+        action.payload.stems.length > 0,
+    validate: (action) =>
+        typeof action.payload?.folderId === 'string' &&
+        typeof action.payload?.groupName === 'string' &&
+        Array.isArray(action.payload?.stems) &&
+        action.payload.stems.length > 0,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
@@ -243,6 +252,11 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
         };
     },
     describe: () => ({ label: 'Discard imported stem set' }),
+    canReapplyAfterDivergence: (action) => Array.isArray(action.payload?.guards) && action.payload.guards.length > 0,
+    validate: (action) =>
+        typeof action.payload?.folderId === 'string' &&
+        Array.isArray(action.payload?.stemTrackIds) &&
+        Array.isArray(action.payload?.guards),
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,

@@ -1,7 +1,16 @@
+import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { captureCommandTargetFingerprints, commandBatchPreflightPort } from '#/modules/Command/useCases';
 import { captureProjectRevision, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 export function configureAiWorkflowCommandPreflightFixture(projectId?: string): void {
+    configureRuntimeGraphProjectRevisionValidator(
+        (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+    );
+    configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
     commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
         const targetFingerprints: Record<string, string> = {
             ...captureCommandTargetFingerprints({
@@ -28,4 +37,6 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
 
 export function resetAiWorkflowCommandPreflightFixture(): void {
     commandBatchPreflightPort.setProvider(null);
+    configureRuntimeGraphProjectRevisionValidator(null);
+    configureRuntimeGraphTopologyValidator(null);
 }

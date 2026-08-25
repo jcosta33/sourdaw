@@ -111,9 +111,9 @@ function readRanges(value: unknown, allowPointRange: boolean): Array<{ startBeat
             !isRecord(candidate) ||
             typeof candidate.startBeat !== 'number' ||
             !Number.isFinite(candidate.startBeat) ||
+            candidate.startBeat < 0 ||
             typeof candidate.endBeat !== 'number' ||
             !Number.isFinite(candidate.endBeat) ||
-            candidate.startBeat < 0 ||
             (allowPointRange ? candidate.endBeat < candidate.startBeat : candidate.endBeat <= candidate.startBeat)
         ) {
             return null;
@@ -736,6 +736,17 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             const digest = readString(candidate.digest);
             return id === null || digest === null ? null : { id, digest };
         });
+        const sections =
+            rawSnapshot.sections === undefined
+                ? undefined
+                : readCollection(rawSnapshot.sections, (candidate) => {
+                      if (!isRecord(candidate)) {
+                          return null;
+                      }
+                      const id = readString(candidate.id);
+                      const digest = readString(candidate.digest);
+                      return id === null || digest === null ? null : { id, digest };
+                  });
         if (
             identity === null ||
             typeof rawSnapshot.tempo !== 'number' ||
@@ -745,6 +756,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             !rawSnapshot.timeSignature.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
             selectedTrack === undefined ||
             selectableTargets === null ||
+            sections === null ||
             readNonNegativeInteger(rawSnapshot.targetCount) === null ||
             typeof rawSnapshot.truncated !== 'boolean'
         ) {
@@ -756,6 +768,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             timeSignature: [rawSnapshot.timeSignature[0], rawSnapshot.timeSignature[1]] as [number, number],
             selectedTrack,
             selectableTargets,
+            ...(sections === undefined ? {} : { sections }),
             targetCount: readNonNegativeInteger(rawSnapshot.targetCount)!,
             truncated: rawSnapshot.truncated,
         };
