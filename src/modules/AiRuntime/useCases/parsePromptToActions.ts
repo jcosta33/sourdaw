@@ -30,6 +30,7 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
+import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
@@ -676,25 +677,41 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
-                    const effectiveProviderProposal =
-                        providerProposal === null ||
-                        bridged.actionCommandGraph === undefined ||
-                        compiledList.compilerEvidence !== undefined
-                            ? providerProposal
-                            : {
-                                  ...providerProposal,
-                                  scope: {
-                                      ...providerProposal.scope,
-                                      targetIds: [
-                                          ...new Set([
-                                              ...providerProposal.scope.targetIds,
-                                              ...(bridged.batchLocalActionIdentities ?? []).flatMap((identity) =>
-                                                  identity.actionType === 'createBus' ? [identity.busId] : []
-                                              ),
-                                          ]),
-                                      ],
-                                  },
-                              };
+                    const verifiedProviderProposalScope = composeVerifiedProviderProposalScope({
+                        actions: guarded.actions,
+                        compilerEvidence: compiledList.compilerEvidence,
+                        context,
+                        prompt,
+                        workflowCapabilityId,
+                        workflowScope: bridged.verifiedProviderProposalScope,
+                    });
+                    let effectiveProviderProposal = providerProposal;
+                    if (effectiveProviderProposal !== null && verifiedProviderProposalScope !== undefined) {
+                        effectiveProviderProposal = {
+                            ...effectiveProviderProposal,
+                            scope: verifiedProviderProposalScope,
+                        };
+                    }
+                    if (
+                        effectiveProviderProposal !== null &&
+                        bridged.actionCommandGraph !== undefined &&
+                        compiledList.compilerEvidence === undefined
+                    ) {
+                        effectiveProviderProposal = {
+                            ...effectiveProviderProposal,
+                            scope: {
+                                ...effectiveProviderProposal.scope,
+                                targetIds: [
+                                    ...new Set([
+                                        ...effectiveProviderProposal.scope.targetIds,
+                                        ...(bridged.batchLocalActionIdentities ?? []).flatMap((identity) =>
+                                            identity.actionType === 'createBus' ? [identity.busId] : []
+                                        ),
+                                    ]),
+                                ],
+                            },
+                        };
+                    }
 
                     return {
                         actions: guarded.actions,

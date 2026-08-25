@@ -5,6 +5,7 @@ import {
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
+import { type AgentRunScope } from '../../models/AgentRun';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
@@ -97,6 +98,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
     actionCommandGraph?: ActionCommandGraph;
+    verifiedProviderProposalScope?: AgentRunScope;
 };
 
 type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
@@ -3578,8 +3580,8 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
     const groundedArguments = { ...call.arguments };
-    const bulkDeviceInsertionTargetIds =
-        call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
+    const bulkDeviceInsertionScope =
+        call.name === 'addDevice' ? getBulkDeviceInsertionTrackScope(prompt, context) : null;
     const bulkMutedEmptyTrackDeletionTargetIds =
         call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
     const drumRoutingScope =
@@ -3646,12 +3648,28 @@ function groundToolCall({
             continue;
         }
         if (
-            bulkDeviceInsertionTargetIds &&
+            bulkDeviceInsertionScope &&
             call.name === 'addDevice' &&
             targetRule.argument === 'trackId' &&
             typeof assertedValue === 'string' &&
-            bulkDeviceInsertionTargetIds.includes(assertedValue)
+            bulkDeviceInsertionScope.targetIds.includes(assertedValue)
         ) {
+            continue;
+        }
+        if (bulkDeviceInsertionScope && call.name === 'addDevice' && targetRule.argument === 'afterDeviceId') {
+            const trackId = groundedArguments.trackId;
+            const anchor =
+                typeof trackId === 'string'
+                    ? bulkDeviceInsertionScope.anchors.find((candidate) => candidate.trackId === trackId)
+                    : undefined;
+            if (anchor === undefined || assertedValue !== anchor.afterDeviceId) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Provider afterDeviceId does not match the application-resolved insertion anchor'
+                );
+            }
+            groundedArguments.afterDeviceId = anchor.afterDeviceId;
             continue;
         }
         if (
@@ -4522,6 +4540,88 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
+    let verifiedProviderProposalScope: AgentRunScope | undefined;
+    if (bassProcessingCopyScope.status === 'request') {
+        verifiedProviderProposalScope = {
+            targetIds: [
+                ...new Set([
+                    ...bassProcessingCopyScope.entries.flatMap((entry) => [
+                        entry.layer.id,
+                        ...entry.layer.affectedTrackIds,
+                    ]),
+                    bassProcessingCopyScope.targetSection.id,
+                ]),
+            ],
+            targetRanges: bassProcessingCopyScope.entries.map((entry) => ({
+                startBeat: entry.targetRegion.startBeat,
+                endBeat: entry.targetRegion.endBeat,
+            })),
+            protectedTargetIds: bassProcessingCopyScope.protectedObjects.map((object) => object.id),
+            protectedRanges: [],
+        };
+    } else if (articulationTransferScope.status === 'request') {
+        verifiedProviderProposalScope = {
+            targetIds: [
+                ...new Set(
+                    articulationTransferScope.clipPairs.flatMap((pair) => [
+                        pair.trackId,
+                        pair.sourceClipId,
+                        pair.targetClipId,
+                    ])
+                ),
+            ],
+            targetRanges: articulationTransferScope.clipPairs.map((pair) => ({
+                startBeat: Math.min(...pair.notePairs.map((notePair) => notePair.relativeStartBeat)),
+                endBeat: Math.max(...pair.notePairs.map((notePair) => notePair.relativeStartBeat)),
+            })),
+            protectedTargetIds: [
+                ...articulationTransferScope.protectedClipIds,
+                ...articulationTransferScope.clipPairs.map((pair) => `${pair.targetClipId}:non-articulation`),
+            ],
+            protectedRanges: [],
+        };
+    } else if (midiOverlapTransformScope.status === 'request') {
+        verifiedProviderProposalScope = {
+            targetIds: midiOverlapTransformScope.entries.flatMap((entry) => [entry.clipId, entry.trackId]),
+            targetRanges: midiOverlapTransformScope.entries.map((entry) => ({
+                startBeat: Math.min(...entry.expectedNotes.map((note) => note.startBeat)),
+                endBeat: Math.max(...entry.expectedNotes.map((note) => note.startBeat)),
+            })),
+            protectedTargetIds: midiOverlapTransformScope.protectedObjects.map((object) => object.id),
+            protectedRanges: [],
+        };
+    } else if (syncopatedArpeggioScope.status === 'request') {
+        verifiedProviderProposalScope = {
+            targetIds: [syncopatedArpeggioScope.trackId, syncopatedArpeggioScope.clipId],
+            targetRanges: [],
+            protectedTargetIds: syncopatedArpeggioScope.protectedObjects.map((object) => object.id),
+            protectedRanges: [],
+        };
+    } else if (drumPreviewBranchesScope.status === 'request') {
+        verifiedProviderProposalScope = {
+            targetIds: [
+                drumPreviewBranchesScope.snare.trackId,
+                drumPreviewBranchesScope.hiHat.trackId,
+                drumPreviewBranchesScope.snare.clipId,
+                drumPreviewBranchesScope.hiHat.clipId,
+            ],
+            targetRanges: [
+                {
+                    startBeat: drumPreviewBranchesScope.section.startBeat,
+                    endBeat: drumPreviewBranchesScope.section.endBeat,
+                },
+            ],
+            protectedTargetIds: drumPreviewBranchesScope.protectedObjects.map((object) => object.id),
+            protectedRanges: [],
+        };
+    } else if (drumRoutingScope.status === 'request') {
+        verifiedProviderProposalScope = {
+            targetIds: [drumRoutingScope.busId, ...drumRoutingScope.targetIds],
+            targetRanges: [],
+            protectedTargetIds: [drumRoutingScope.protectedReturnId],
+            protectedRanges: [],
+        };
+    }
     const glueAnalysis = analyzeGluePrompt(prompt, context);
     const providerGlueCalls = calls.filter((call) => call.name === 'glueClips');
     if (glueAnalysis.status === 'invalid') {
@@ -4786,6 +4886,7 @@ export function bridgeGroundedLlmToolCalls({
             ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
             ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
             ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
+            ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
             ...(rejections.length === 0 && compilerActionCommandGraph !== undefined
                 ? { actionCommandGraph: compilerActionCommandGraph }
                 : {}),
@@ -4802,6 +4903,7 @@ export function bridgeGroundedLlmToolCalls({
         ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
         ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
         batchLocalActionIdentities,
+        ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
         ...(compilerActionCommandGraph === undefined ? {} : { actionCommandGraph: compilerActionCommandGraph }),
         rejections,
     };

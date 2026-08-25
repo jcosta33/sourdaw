@@ -1,7 +1,6 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
-import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     parseSemanticCommandList,
@@ -65,7 +64,6 @@ type CompiledItemEvidence = {
 export type ArbitraryCommandListEvidence = {
     schemaVersion: 1;
     snapshotRevision: string;
-    proposalScope: AgentPlanProposal['scope'];
     providerKnownTargetIds: string[];
     selectors: ArbitraryCommandListSelectorEvidence[];
     items: CompiledItemEvidence[];
@@ -172,7 +170,6 @@ function parseIdList(value: unknown, label: string): string[] | RejectedCompilat
 function resolveSelector(input: {
     candidates: readonly Candidate[];
     selector: SemanticCommandListSelector;
-    protectedTargetIds: ReadonlySet<string>;
     itemId: string;
 }): { stableIds: string[]; evidence: ArbitraryCommandListSelectorEvidence } | RejectedCompilation {
     const where = input.selector.where ?? {};
@@ -189,10 +186,7 @@ function resolveSelector(input: {
         );
     });
     const explicitlyExcludedIds = input.selector.excludeIds ?? [];
-    const excludedIds = new Set([...explicitlyExcludedIds, ...input.protectedTargetIds]);
-    const protectedExclusions = candidates
-        .filter((candidate) => input.protectedTargetIds.has(candidate.id))
-        .map((candidate) => candidate.id);
+    const excludedIds = new Set(explicitlyExcludedIds);
     const stableIds = candidates.filter((candidate) => !excludedIds.has(candidate.id)).map((candidate) => candidate.id);
     if (stableIds.length !== input.selector.quantity.exactly) {
         return {
@@ -206,21 +200,13 @@ function resolveSelector(input: {
             itemId: input.itemId,
             stableIds,
             excludedIds: [...explicitlyExcludedIds],
-            protectedExclusions,
+            protectedExclusions: [],
             preconditions: stableIds.map((stableId) => {
                 const candidate = candidates.find((entry) => entry.id === stableId);
                 return { stableId, fingerprint: JSON.stringify(candidate) };
             }),
         },
     };
-}
-
-function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stableIds: readonly string[]): boolean {
-    if (plan === null || plan.scope.targetIds.length !== stableIds.length) {
-        return false;
-    }
-    const proposedIds = new Set(plan.scope.targetIds);
-    return proposedIds.size === stableIds.length && stableIds.every((id) => proposedIds.has(id));
 }
 
 function canonicalJson(value: unknown): string {
@@ -591,7 +577,6 @@ function validateTargetArgumentsWithoutSelectors(input: {
     item: SemanticCommandListItem;
     itemsById: ReadonlyMap<string, SemanticCommandListItem>;
     producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
-    protectedTargetIds: ReadonlySet<string>;
     selectorArgument?: string;
     selectorStableIds?: readonly string[];
     targetRules: readonly {
@@ -691,7 +676,7 @@ function validateTargetArgumentsWithoutSelectors(input: {
                 })
             )
         );
-        if (!isEligible || stableIds.some((stableId) => input.protectedTargetIds.has(stableId))) {
+        if (!isEligible) {
             return {
                 status: 'rejected',
                 reason: `Direct command target ${targetRule.argument} is outside the command capability contract.`,
@@ -782,7 +767,6 @@ export function compileArbitraryCommandList(input: {
     }
     const items = sortedItems.items;
     const candidates = collectCandidates(input.context);
-    const protectedTargetIds = new Set(plan?.scope.protectedTargetIds ?? []);
     const commands: ToolCallResult[] = [];
     const evidence: ArbitraryCommandListSelectorEvidence[] = [];
     const compiledItems: CompiledItemEvidence[] = [];
@@ -830,7 +814,6 @@ export function compileArbitraryCommandList(input: {
                 item,
                 itemsById,
                 producersByBinding,
-                protectedTargetIds,
                 targetRules: rules.targetRules,
             });
             if (targetValidation.status === 'rejected') {
@@ -898,7 +881,7 @@ export function compileArbitraryCommandList(input: {
         if (selector.targetArgument in item.arguments) {
             return { status: 'rejected', reason: 'Provider may not supply target IDs for a semantic bulk selector.' };
         }
-        const resolved = resolveSelector({ candidates, selector, protectedTargetIds, itemId: item.id });
+        const resolved = resolveSelector({ candidates, selector, itemId: item.id });
         if ('status' in resolved) {
             return resolved;
         }
@@ -907,7 +890,6 @@ export function compileArbitraryCommandList(input: {
             item,
             itemsById,
             producersByBinding,
-            protectedTargetIds,
             selectorArgument: selector.targetArgument,
             selectorStableIds: resolved.stableIds,
             targetRules: rules.targetRules,
@@ -1026,12 +1008,6 @@ export function compileArbitraryCommandList(input: {
             ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
     }
-    if (!hasExactScope(plan, orderedTargetIds)) {
-        return {
-            status: 'rejected',
-            reason: 'Structured command list resolved scope does not exactly match the provider proposal.',
-        };
-    }
     return {
         status: 'accepted',
         snapshotRevision: input.revision,
@@ -1042,7 +1018,6 @@ export function compileArbitraryCommandList(input: {
                 : {
                       schemaVersion: 1,
                       snapshotRevision: input.revision,
-                      proposalScope: structuredClone(plan.scope),
                       providerKnownTargetIds: [...orderedTargetIds],
                       selectors: structuredClone(evidence),
                       items: structuredClone(compiledItems),

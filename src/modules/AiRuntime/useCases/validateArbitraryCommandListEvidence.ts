@@ -176,7 +176,6 @@ export function validateArbitraryCommandListEvidence(input: {
         };
     }
     const candidatesById = new Map(collectCandidates(input.context).map((candidate) => [candidate.id, candidate]));
-    const protectedTargetIds = new Set(evidence.proposalScope.protectedTargetIds);
     const selectorByItemId = new Map<string, ArbitraryCommandListSelectorEvidence>();
     for (const selector of evidence.selectors) {
         if (selectorByItemId.has(selector.itemId) || selector.stableIds.length === 0) {
@@ -187,7 +186,6 @@ export function validateArbitraryCommandListEvidence(input: {
         }
         if (
             new Set(selector.stableIds).size !== selector.stableIds.length ||
-            selector.stableIds.some((stableId) => protectedTargetIds.has(stableId)) ||
             selector.preconditions.length !== selector.stableIds.length ||
             !selector.stableIds.every((stableId, index) => {
                 const candidate = candidatesById.get(stableId);
@@ -198,7 +196,7 @@ export function validateArbitraryCommandListEvidence(input: {
                     precondition.fingerprint === JSON.stringify(candidate)
                 );
             }) ||
-            selector.protectedExclusions.some((stableId) => !protectedTargetIds.has(stableId)) ||
+            selector.protectedExclusions.length > 0 ||
             new Set(selector.excludedIds).size !== selector.excludedIds.length
         ) {
             return { status: 'rejected', reason: 'Structured command compiler evidence preconditions no longer hold.' };
@@ -420,7 +418,6 @@ export function validateArbitraryCommandListEvidence(input: {
                     directTarget.cardinality !== (directRule.cardinality === 'many' ? 'many' : 'one') ||
                     directTarget.stableIds.length === 0 ||
                     new Set(directTarget.stableIds).size !== directTarget.stableIds.length ||
-                    directTarget.stableIds.some((stableId) => protectedTargetIds.has(stableId)) ||
                     (directRule.dependsOn !== undefined &&
                         dependencyIds.length === 0 &&
                         capabilityRequiresConcreteDependency(directRule.capability)) ||
@@ -546,8 +543,7 @@ export function validateArbitraryCommandListEvidence(input: {
     }
     if (
         commandCursor !== evidence.commands.length ||
-        !hasExactStableIdSet(evidence.providerKnownTargetIds, resolvedTargetIds) ||
-        !hasExactStableIdSet(evidence.proposalScope.targetIds, evidence.providerKnownTargetIds)
+        !hasExactStableIdSet(evidence.providerKnownTargetIds, resolvedTargetIds)
     ) {
         return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
     }

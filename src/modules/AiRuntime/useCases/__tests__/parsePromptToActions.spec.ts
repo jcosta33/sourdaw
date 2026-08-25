@@ -427,9 +427,9 @@ describe('parsePromptToActions', () => {
                                 objective: 'Mute all audio tracks.',
                                 constraints: [],
                                 scope: {
-                                    targetIds: ['track-vocals', 'track-guitar'],
+                                    targetIds: ['provider-invented'],
                                     targetRanges: [],
-                                    protectedTargetIds: [],
+                                    protectedTargetIds: ['track-vocals'],
                                     protectedRanges: [],
                                 },
                                 capabilityIds: [],
@@ -470,6 +470,12 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBeUndefined();
         expect(result.requiresConfirmation).toBe(true);
         expect(result.providerKnownTargetIds).toEqual(['track-vocals', 'track-guitar']);
+        expect(result.providerProposal?.scope).toEqual({
+            targetIds: ['track-vocals', 'track-guitar'],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        });
     });
 
     it('materializes compiler-owned binding scope and preserves its action graph', async () => {

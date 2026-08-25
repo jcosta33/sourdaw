@@ -193,10 +193,6 @@ describe('sidechain device ownership', () => {
                         : target
                 ),
             })),
-            proposalScope: {
-                ...compiled.compilerEvidence.proposalScope,
-                targetIds: ['track-kick', 'track-bass', 'device-vocals-compressor'],
-            },
             providerKnownTargetIds: ['track-bass', 'track-kick', 'device-vocals-compressor'],
         };
 

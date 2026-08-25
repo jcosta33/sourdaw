@@ -882,7 +882,7 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects an ambiguous repeated EQ anchor on a target track', async () => {
+    it('keeps the exact application-resolved EQ anchor when the target has a repeated EQ', async () => {
         const state = trackStore.value;
         if (!state) {
             throw new Error('Expected track state');
@@ -898,7 +898,18 @@ describe('bass compressor prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(getConfirmation()).toBeNull();
+        expect(getConfirmation()?.actions).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    type: 'addDevice',
+                    payload: expect.objectContaining({
+                        trackId: 'track-bass-di',
+                        afterDeviceId: 'device-bass-di-eq',
+                        expectedDeviceIds: [...BASS_DI_DEVICE_IDS, 'device-bass-di-eq-2'],
+                    }),
+                }),
+            ])
+        );
         expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
     });
 
