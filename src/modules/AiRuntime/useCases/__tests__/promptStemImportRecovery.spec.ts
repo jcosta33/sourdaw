@@ -418,6 +418,28 @@ describe('prompt stem import recovery', () => {
                 ],
             }),
         ]);
+
+        const firstReloadedCapsule = readReloadedAgentRunState().preparedStemImportRecoveryLedger?.[0];
+        if (!firstReloadedCapsule) {
+            throw new TypeError('Expected the manual-repair capsule after first recovery');
+        }
+        vi.resetModules();
+        const { recoverInterruptedAgentRuns: recoverAfterSecondReload } = await import('../agentRunRecovery');
+        const { readAgentRunState: readSecondReloadedAgentRunState } = await import('../../stores/agentRunStore');
+
+        await recoverAfterSecondReload({ recoveredAt: 576 });
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(readSecondReloadedAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+            expect.objectContaining({
+                runId: firstReloadedCapsule.runId,
+                batchId: firstReloadedCapsule.batchId,
+                serializedCommandBatch: firstReloadedCapsule.serializedCommandBatch,
+                status: 'manual-repair',
+                resources: firstReloadedCapsule.resources,
+            }),
+        ]);
     });
 
     it('fails closed after reload when a legacy prepared stem asset has no recovery metadata', async () => {

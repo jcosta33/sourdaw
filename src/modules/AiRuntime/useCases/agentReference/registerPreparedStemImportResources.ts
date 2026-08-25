@@ -28,6 +28,7 @@ type PreparedStemImportRegistration = {
 };
 const registrations = new Map<string, PreparedStemImportRegistration>();
 type PreparedStemImportRecoveryResult = { status: 'discarded' | 'missing' | 'retained' | 'transferred' };
+type PreparedStemImportDiscardAuthority = 'generic-release' | 'verified-noncommit';
 const reconciliations = new Map<string, Promise<PreparedStemImportRecoveryResult>>();
 
 function key(runId: string, assetId: string): string {
@@ -229,7 +230,7 @@ async function reconcilePreparedStemImportResourcesOnce(input: {
         retainPreparedStemImportResourcesForRecovery({ runId: input.runId, stems });
         return { status: 'retained' };
     }
-    await discardRegisteredPreparedStemImportResources({ runId: input.runId, stems });
+    await discardPreparedStemImportResourcesAfterVerifiedNoncommit({ runId: input.runId, stems });
     return { status: 'discarded' };
 }
 
@@ -281,14 +282,20 @@ function releasePreparedStemImportResources(input: {
     forgetSettledRecoveries(input.runId, settledBatchIds);
 }
 
-async function discardRegisteredPreparedStemImportResources(input: {
-    runId: string;
-    stems: readonly PreparedStemImportResource[];
-}): Promise<void> {
+async function discardPreparedStemImportResourcesWithAuthority(
+    input: {
+        runId: string;
+        stems: readonly PreparedStemImportResource[];
+    },
+    authority: PreparedStemImportDiscardAuthority
+): Promise<void> {
     const settledBatchIds = new Set<string>();
     for (const stem of input.stems) {
         const registrationKey = key(input.runId, stem.audioBufferId);
         const registration = registrations.get(registrationKey);
+        if (registration?.protected && authority === 'generic-release') {
+            continue;
+        }
         if (registration?.recovery) {
             settledBatchIds.add(registration.recovery.batchId);
         }
@@ -328,6 +335,20 @@ async function discardRegisteredPreparedStemImportResources(input: {
         }
     }
     forgetSettledRecoveries(input.runId, settledBatchIds);
+}
+
+function discardRegisteredPreparedStemImportResources(input: {
+    runId: string;
+    stems: readonly PreparedStemImportResource[];
+}): Promise<void> {
+    return discardPreparedStemImportResourcesWithAuthority(input, 'generic-release');
+}
+
+function discardPreparedStemImportResourcesAfterVerifiedNoncommit(input: {
+    runId: string;
+    stems: readonly PreparedStemImportResource[];
+}): Promise<void> {
+    return discardPreparedStemImportResourcesWithAuthority(input, 'verified-noncommit');
 }
 
 export const preparedStemImportResources = {

@@ -166,6 +166,27 @@ describe('agentRunStore', () => {
 
     it('refuses a new unresolved capsule instead of evicting recovery at capacity', () => {
         const admittedCapsules = Array.from({ length: 256 }, (_, index) => createPreparedStemRecoveryCapsule(index));
+        const emptyState = { schemaVersion: 1, runs: [] };
+
+        expect(
+            sanitizeAgentRunState({
+                ...emptyState,
+                preparedStemImportRecoveryLedger: admittedCapsules,
+            })
+        ).toEqual({
+            ...emptyState,
+            preparedStemImportRecoveryLedger: admittedCapsules,
+        });
+        expect(
+            sanitizeAgentRunState({
+                ...emptyState,
+                preparedStemImportRecoveryLedger: [
+                    ...admittedCapsules,
+                    createPreparedStemRecoveryCapsule(admittedCapsules.length),
+                ],
+            })
+        ).toEqual(emptyState);
+
         persistAgentRunState({
             schemaVersion: 1,
             runs: [],
