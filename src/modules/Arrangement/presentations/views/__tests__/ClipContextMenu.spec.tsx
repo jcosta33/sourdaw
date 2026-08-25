@@ -226,14 +226,18 @@ describe('ClipContextMenu', () => {
         }
         const selected = { ...previous, selectedTrackId: 't1' };
 
-        expect(barrelTrackStore).toBe(definingTrackStore);
-        definingTrackStore.set(selected);
-        expect(barrelTrackStore.value).toBe(selected);
-        expect(barrelTrackStore.getSnapshot()).toBe(selected);
+        try {
+            expect(barrelTrackStore).toBe(definingTrackStore);
+            definingTrackStore.set(selected);
+            expect(barrelTrackStore.value).toBe(selected);
+            expect(barrelTrackStore.getSnapshot()).toBe(selected);
 
-        barrelTrackStore.set(previous);
-        expect(definingTrackStore.value).toBe(previous);
-        expect(definingTrackStore.getSnapshot()).toBe(previous);
+            barrelTrackStore.set(previous);
+            expect(definingTrackStore.value).toBe(previous);
+            expect(definingTrackStore.getSnapshot()).toBe(previous);
+        } finally {
+            definingTrackStore.set(previous);
+        }
     });
 
     it('keeps both reactive track store subscriber channels on one snapshot', async () => {
@@ -248,20 +252,26 @@ describe('ClipContextMenu', () => {
         const unsubscribeReact = trackStore.subscribeReact(reactSubscriber);
         const selected = { ...previous, selectedTrackId: 't1' };
 
-        trackStore.set(selected);
-        expect(subscriber).toHaveBeenCalledOnce();
-        expect(subscriber).toHaveBeenCalledWith(selected);
-        expect(reactSubscriber).toHaveBeenCalledOnce();
-        expect(trackStore.getSnapshot()).toBe(selected);
-        expect(trackStore.value).toBe(selected);
+        try {
+            trackStore.set(selected);
+            expect(subscriber).toHaveBeenCalledOnce();
+            expect(subscriber).toHaveBeenCalledWith(selected);
+            expect(reactSubscriber).toHaveBeenCalledOnce();
+            expect(trackStore.getSnapshot()).toBe(selected);
+            expect(trackStore.value).toBe(selected);
 
-        unsubscribe();
-        unsubscribeReact();
-        trackStore.set(previous);
-        expect(subscriber).toHaveBeenCalledOnce();
-        expect(reactSubscriber).toHaveBeenCalledOnce();
-        expect(trackStore.getSnapshot()).toBe(previous);
-        expect(trackStore.value).toBe(previous);
+            unsubscribe();
+            unsubscribeReact();
+            trackStore.set(previous);
+            expect(subscriber).toHaveBeenCalledOnce();
+            expect(reactSubscriber).toHaveBeenCalledOnce();
+            expect(trackStore.getSnapshot()).toBe(previous);
+            expect(trackStore.value).toBe(previous);
+        } finally {
+            unsubscribe();
+            unsubscribeReact();
+            trackStore.set(previous);
+        }
     });
 
     it('should render without crashing', () => {

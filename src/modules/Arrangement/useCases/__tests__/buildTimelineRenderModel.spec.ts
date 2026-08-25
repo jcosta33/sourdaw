@@ -116,21 +116,27 @@ describe('buildTimelineRenderModel', () => {
         const unsubscribeReact = definingTrackStore.subscribeReact(reactSubscriber);
         const next: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
 
-        expect(barrelTrackStore).toBe(definingTrackStore);
-        definingTrackStore.set(next);
-        expect(subscriber).toHaveBeenCalledOnce();
-        expect(subscriber).toHaveBeenCalledWith(next);
-        expect(reactSubscriber).toHaveBeenCalledOnce();
-        expect(barrelTrackStore.getSnapshot()).toBe(next);
-        expect(barrelTrackStore.value).toBe(next);
+        try {
+            expect(barrelTrackStore).toBe(definingTrackStore);
+            definingTrackStore.set(next);
+            expect(subscriber).toHaveBeenCalledOnce();
+            expect(subscriber).toHaveBeenCalledWith(next);
+            expect(reactSubscriber).toHaveBeenCalledOnce();
+            expect(barrelTrackStore.getSnapshot()).toBe(next);
+            expect(barrelTrackStore.value).toBe(next);
 
-        unsubscribe();
-        unsubscribeReact();
-        barrelTrackStore.set(previous);
-        expect(subscriber).toHaveBeenCalledOnce();
-        expect(reactSubscriber).toHaveBeenCalledOnce();
-        expect(definingTrackStore.getSnapshot()).toBe(previous);
-        expect(definingTrackStore.value).toBe(previous);
+            unsubscribe();
+            unsubscribeReact();
+            barrelTrackStore.set(previous);
+            expect(subscriber).toHaveBeenCalledOnce();
+            expect(reactSubscriber).toHaveBeenCalledOnce();
+            expect(definingTrackStore.getSnapshot()).toBe(previous);
+            expect(definingTrackStore.value).toBe(previous);
+        } finally {
+            unsubscribe();
+            unsubscribeReact();
+            definingTrackStore.set(previous);
+        }
     });
 
     it('returns a model with tracks from the injected track store', () => {
