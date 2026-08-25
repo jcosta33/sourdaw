@@ -6,6 +6,7 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type AgentSectionRenderArtifact } from '#/modules/AudioRendering/models/AgentSectionRenderArtifact';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -31,7 +32,7 @@ import {
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
-import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+import { type ActionHandler, type AppAction, type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -39,6 +40,8 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
+    updatePendingActionConfirmationStatus,
+    updatePendingActionFollowUp,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
@@ -50,6 +53,22 @@ import {
 } from './aiWorkflowCommandPreflightFixture';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
+type RenderProjectSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
+
+type RenderRetryInput = {
+    jobs: readonly RenderProjectSectionJobSnapshot[];
+    sourceRevision: string;
+};
+
+const renderRecoveryMocks = vi.hoisted(() => ({
+    artifacts: [] as AgentSectionRenderArtifact[],
+    retry: vi.fn<(input: RenderRetryInput) => Promise<void>>(),
+}));
+
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    getAgentSectionRenderArtifacts: () => renderRecoveryMocks.artifacts,
+    retryAgentProjectSectionRenders: renderRecoveryMocks.retry,
+}));
 
 describe('confirmPendingChatActions transaction admission', () => {
     beforeEach(() => {
@@ -65,6 +84,8 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearAiHistory();
         agentRunLifecycle.clear();
         clearPendingActionConfirmations();
+        renderRecoveryMocks.artifacts = [];
+        renderRecoveryMocks.retry.mockReset();
         resetCrdtProjectAuthority('AI confirmation admission');
         createCrdtDoc('independent');
         createCrdtDoc('owned');
@@ -102,6 +123,117 @@ describe('confirmPendingChatActions transaction admission', () => {
         commandBatchPreviewPort.setRecoveryProvider(null);
         commandProjectRevisionPort.setProvider(null);
         commandProjectDivergencePort.setProvider(null);
+    });
+
+    it('retries incomplete section renders in budget without replaying committed project actions', async () => {
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>();
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: () => true,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const projectRevision = captureProjectRevision();
+        const projectAction = {
+            type: 'setTempo',
+            payload: { bpm: 132 },
+        } satisfies SetTempoAction;
+        const renderAction = {
+            type: 'renderProjectSections',
+            payload: {
+                sectionIds: ['section-chorus'],
+                jobs: [
+                    {
+                        jobId: 'render-chorus',
+                        sectionId: 'section-chorus',
+                        sectionName: 'Chorus',
+                        startBeat: 32,
+                        endBeat: 48,
+                        sampleRate: 48_000,
+                        tailSeconds: 1,
+                    },
+                ],
+            },
+        } satisfies RenderProjectSectionsAction;
+        agentRunLifecycle.create({
+            runId: 'confirmation-render-retry',
+            request: 'Render the chorus.',
+            mode: 'macro',
+            createdRevision: projectRevision,
+            budgets: { limits: { maxRenderJobs: 2 }, consumed: {} },
+        });
+        proposePendingActionConfirmation({
+            id: 'confirmation-render-retry',
+            runId: 'confirmation-render-retry',
+            prompt: 'Render the chorus.',
+            assistantMessageId: 'assistant-1',
+            actions: [projectAction, renderAction],
+            actionLabels: ['Set tempo to 132 BPM', 'Render Chorus'],
+            projectRevision,
+        });
+        updatePendingActionConfirmationStatus({
+            confirmationId: 'confirmation-render-retry',
+            status: 'executed',
+        });
+        updatePendingActionFollowUp({
+            confirmationId: 'confirmation-render-retry',
+            error: 'The initial render was interrupted.',
+            projectRevision,
+            status: 'retryable',
+        });
+        renderRecoveryMocks.retry.mockImplementation(async ({ jobs, sourceRevision }) => {
+            renderRecoveryMocks.artifacts = jobs.map((job) => ({
+                owner: 'agent-section-render',
+                retention: 'session',
+                ...job,
+                sourceRevision,
+                renderedAt: 1,
+                durationSeconds: 1,
+                frameCount: 48_000,
+                channelCount: 2,
+                byteSize: 384_000,
+                warnings: [],
+                buffer: {} as AudioBuffer,
+            }));
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-render-retry' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(renderRecoveryMocks.retry).toHaveBeenCalledWith({
+            jobs: renderAction.payload.jobs,
+            sourceRevision: projectRevision,
+        });
+        expect(execute).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get('confirmation-render-retry')?.budgetAttempts).toEqual([
+            expect.objectContaining({
+                attemptId: 'render-retry:confirmation-render-retry:1',
+                category: 'maxRenderJobs',
+                reserved: 1,
+                actual: 1,
+                final: true,
+            }),
+        ]);
+        expect(getPendingActionConfirmation('confirmation-render-retry')).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'complete',
+            error: null,
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'complete',
+            content: expect.stringContaining('without replaying project actions'),
+        });
     });
 
     it('invalidates a confirmed action when the project changes while batch admission is waiting', async () => {

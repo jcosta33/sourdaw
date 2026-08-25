@@ -17,6 +17,9 @@ mod primitives {
 #[path = "dsp_cost_reduction_goldens/shadow/mod.rs"]
 mod shadow;
 
+#[path = "support/retained_signal.rs"]
+mod retained_signal;
+
 use daw_dsp::grand_boule::mechanical_noise::{MechanicalNoise, NoiseEvent};
 use daw_dsp::grand_boule::string::ModalString;
 use daw_dsp::grand_boule::voice::{
@@ -29,6 +32,51 @@ use shadow::grand_boule::voice::{
 };
 use shadow::grinder::engine::GrinderEngine as ReferenceGrinderEngine;
 use shadow::modal_string::ModalString as ReferenceModalString;
+use retained_signal::Contract;
+
+const SERIAL_CONTRACT: Contract = Contract {
+    peak: 0.515_945_196_151_733_4,
+    rms: 0.143_552_243_153_985_2,
+    projections: [
+        -0.040_942_879_282_910_294,
+        -0.010_198_204_019_696_426,
+        -0.039_743_450_272_362_35,
+        0.004_656_999_393_152_554,
+    ],
+};
+
+const DUAL_AMP_CONTRACT: Contract = Contract {
+    peak: 0.603_328_943_252_563_5,
+    rms: 0.164_024_649_460_511_65,
+    projections: [
+        -0.024_683_128_235_638_934,
+        -0.055_704_666_543_982_664,
+        0.005_817_914_126_775_449,
+        -0.013_701_024_808_456_948,
+    ],
+};
+
+const CAPTURE_CONTRACT: Contract = Contract {
+    peak: 0.565_128_207_206_726_1,
+    rms: 0.141_212_598_528_000_86,
+    projections: [
+        -0.008_040_537_570_336_73,
+        0.017_527_487_064_845_623,
+        0.007_775_847_597_784_735,
+        0.023_986_268_655_465_187,
+    ],
+};
+
+const MODAL_STRING_CONTRACT: Contract = Contract {
+    peak: 7.244_800_508_487_97e-5,
+    rms: 6.740_421_661_263_019e-6,
+    projections: [
+        0.003_475_431_486_146_232_4,
+        0.053_907_726_732_634_74,
+        0.008_875_824_585_744_877,
+        0.027_794_146_127_891_797,
+    ],
+};
 
 fn hash_samples(samples: &[f32]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
@@ -130,6 +178,7 @@ fn serial_routing_output_is_unchanged_by_gating_the_dual_amp_chain() {
     let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
     let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
     assert_equivalent_renders(&optimized, &reference);
+    retained_signal::assert_matches_contract(&optimized, &SERIAL_CONTRACT, "serial routing");
 }
 
 /// F9: DualAmp uses both amp chains in the optimized and pre-F9 engines. Fresh
@@ -140,6 +189,7 @@ fn direct_dual_amp_output_is_unchanged_by_serial_gating() {
     let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
     let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
     assert_equivalent_renders(&optimized, &reference);
+    retained_signal::assert_matches_contract(&optimized, &DUAL_AMP_CONTRACT, "dual-amp routing");
 }
 
 /// F9: Serial routing freezes the optimized dual chain while the pre-F9 shadow
@@ -178,6 +228,7 @@ fn capture_mode_output_is_unchanged_by_gating_the_circuit_preamp() {
     let optimized = grinder_render(GrinderEngine::new(48_000.0), &params, 4096);
     let reference = grinder_render(ReferenceGrinderEngine::new(48_000.0), &params, 4096);
     assert_equivalent_renders(&optimized, &reference);
+    retained_signal::assert_matches_contract(&optimized, &CAPTURE_CONTRACT, "capture mode");
 }
 
 /// F14: burst coefficients moved out of the per-sample loop. This arithmetic
@@ -332,4 +383,5 @@ fn modal_string_renders_identically_when_the_zeroed_prefix_is_skipped() {
     }
 
     assert_equivalent_renders(&optimized_render, &reference_render);
+    retained_signal::assert_matches_contract(&optimized_render, &MODAL_STRING_CONTRACT, "modal bass note");
 }

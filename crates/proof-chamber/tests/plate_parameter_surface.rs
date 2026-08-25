@@ -32,6 +32,9 @@
 
 use proof_chamber::ProofChamberInstance;
 
+#[path = "support/plate_fine_structure.rs"]
+mod plate_fine_structure;
+
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
 const PLATE: f32 = 0.0;
@@ -572,6 +575,26 @@ fn the_untouched_plate_keeps_its_cross_platform_level_energy_and_start_shape() {
         &shape(&output),
         &UNTOUCHED_PLATE_SHAPE,
         "the untouched plate",
+    );
+    plate_fine_structure::assert_matches(&output, "the untouched plate");
+}
+
+#[test]
+fn the_fine_structure_anchor_rejects_polarity_and_one_sample_timing_changes() {
+    let output = render(&[]);
+    plate_fine_structure::assert_matches(&output, "the retained plate render");
+
+    let negated: Vec<f32> = output.iter().map(|sample| -*sample).collect();
+    assert!(
+        !plate_fine_structure::matches(&negated),
+        "the signed fine-structure anchor admitted a polarity inversion"
+    );
+
+    let mut shifted = vec![0.0; output.len()];
+    shifted[1..].copy_from_slice(&output[..output.len() - 1]);
+    assert!(
+        !plate_fine_structure::matches(&shifted),
+        "the signed fine-structure anchor admitted a one-sample delay"
     );
 }
 

@@ -565,7 +565,7 @@ describe('health gates workflow contract', () => {
         expect(workflowDocument.errors).toEqual([]);
         const events = recordAt(workflow, 'on');
 
-        expect(recordAt(events, 'pull_request_review').types).toEqual(['submitted', 'dismissed']);
+        expect(recordAt(events, 'pull_request_review').types).toEqual(['submitted']);
         expect(Object.hasOwn(events, 'pull_request')).toBe(true);
         expect(Object.hasOwn(events, 'schedule')).toBe(true);
         expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(true);
