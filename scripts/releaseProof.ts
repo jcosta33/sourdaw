@@ -20,6 +20,7 @@ import {
     rmdirSync,
     statSync,
     symlinkSync,
+    unlinkSync,
     utimesSync,
     writeFileSync,
     writeSync,
@@ -157,13 +158,18 @@ export type ReleaseProofFileReader = {
 type VerifiedCandidateFile = {
     candidatePath: string;
     digest: string;
-    snapshotPath: string;
+    snapshotDescriptor: number;
+    snapshotIdentity: BigIntStats;
+    snapshotRead: ReleaseProofFileReader['read'];
 };
 
 type CandidateSnapshotBudget = {
+    descriptors: Set<number>;
     limit: number;
     remaining: number;
 };
+
+type ReadableFile = string | VerifiedCandidateFile;
 
 type CandidateCensusMaps = {
     buildInputs?: Record<string, string>;
@@ -240,16 +246,19 @@ import json
 import os
 import stat
 import sys
-import tempfile
 
 source = os.fsencode(sys.argv[1])
 destination = os.fsencode(sys.argv[2])
 expected_dev = int(sys.argv[3])
 expected_ino = int(sys.argv[4])
+expected_parent_dev = int(sys.argv[5])
+expected_parent_ino = int(sys.argv[6])
 expected_files = {entry["path"]: entry for entry in json.load(sys.stdin)}
 directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 source_file_flags = os.O_RDONLY | os.O_NOFOLLOW
 destination_file_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+destination_parent = os.path.dirname(destination)
+destination_name = os.path.basename(destination)
 
 expected_directories = set()
 for path in expected_files:
@@ -276,7 +285,9 @@ observed_files = set()
 observed_directories = set()
 created_entries = {}
 staging = None
+staging_name = None
 staging_descriptor = None
+parent_descriptor = None
 receipt_emitted = False
 
 def owned_entry(path, metadata, kind):
@@ -375,16 +386,27 @@ def copy_tree(source_directory, destination_directory, prefix=""):
             fail(18)
         observed_files.add(relative)
 
+parent_descriptor = os.open(destination_parent, directory_flags)
+parent_metadata = os.fstat(parent_descriptor)
+if parent_metadata.st_dev != expected_parent_dev or parent_metadata.st_ino != expected_parent_ino:
+    raise SystemExit(21)
+
 source_descriptor = os.open(source, directory_flags)
 try:
     source_metadata = os.fstat(source_descriptor)
     if source_metadata.st_dev != expected_dev or source_metadata.st_ino != expected_ino:
         raise SystemExit(18)
-    staging = tempfile.mkdtemp(
-        prefix=b"." + os.path.basename(destination) + b".publication-helper-",
-        dir=os.path.dirname(destination),
-    )
-    staging_descriptor = os.open(staging, directory_flags)
+    for _ in range(128):
+        staging_name = b"." + destination_name + b".publication-helper-" + os.urandom(12).hex().encode()
+        try:
+            os.mkdir(staging_name, 0o700, dir_fd=parent_descriptor)
+            break
+        except FileExistsError:
+            staging_name = None
+    if staging_name is None:
+        fail(1)
+    staging = os.path.join(destination_parent, staging_name)
+    staging_descriptor = os.open(staging_name, directory_flags, dir_fd=parent_descriptor)
     copy_tree(source_descriptor, staging_descriptor)
 except SystemExit:
     raise
@@ -398,28 +420,36 @@ if observed_files != set(expected_files) or observed_directories != expected_dir
 staging_metadata = os.fstat(staging_descriptor)
 os.close(staging_descriptor)
 staging_descriptor = None
+current_parent = os.stat(destination_parent, follow_symlinks=False)
+if current_parent.st_dev != expected_parent_dev or current_parent.st_ino != expected_parent_ino:
+    fail(21)
 libc = ctypes.CDLL(None, use_errno=True)
 if sys.platform == "darwin":
-    publish = libc.renamex_np
-    publish.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    publish = libc.renameatx_np
+    publish.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
     publish.restype = ctypes.c_int
-    result = publish(staging, destination, 4)
+    result = publish(parent_descriptor, staging_name, parent_descriptor, destination_name, 4)
 elif sys.platform.startswith("linux"):
     publish = libc.renameat2
     publish.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
     publish.restype = ctypes.c_int
-    result = publish(-100, staging, -100, destination, 1)
+    result = publish(parent_descriptor, staging_name, parent_descriptor, destination_name, 1)
 else:
     fail(69)
 if result == 0:
-    destination_metadata = os.lstat(destination)
+    destination_metadata = os.stat(destination_name, dir_fd=parent_descriptor, follow_symlinks=False)
     if destination_metadata.st_dev != staging_metadata.st_dev or destination_metadata.st_ino != staging_metadata.st_ino:
         raise SystemExit(19)
+    current_parent = os.stat(destination_parent, follow_symlinks=False)
+    if current_parent.st_dev != expected_parent_dev or current_parent.st_ino != expected_parent_ino:
+        raise SystemExit(21)
     emit_receipt(destination, destination_metadata)
+    os.close(parent_descriptor)
     raise SystemExit(0)
 failure = ctypes.get_errno()
 os.write(2, ("exclusive rename: " + os.strerror(failure) + "\n").encode())
 emit_receipt(staging, staging_metadata)
+os.close(parent_descriptor)
 raise SystemExit(17 if failure == errno.EEXIST else 1)
 `;
 
@@ -649,11 +679,23 @@ export function prepareAtomicDirectoryPublisher(runner?: ReleaseProofPublisherRu
             if (!valid) {
                 throw new Error('atomic release proof publisher is unavailable');
             }
+            const destinationParentIdentity = openedDirectoryIdentity(dirname(destination));
             const request = { source, destination, identity, files };
             const published = publishRunner(request, () => {
                 const result = spawnSync(
                     interpreter,
-                    ['-I', '-S', '-c', ATOMIC_RENAME_HELPER, source, destination, identity.dev, identity.ino],
+                    [
+                        '-I',
+                        '-S',
+                        '-c',
+                        ATOMIC_RENAME_HELPER,
+                        source,
+                        destination,
+                        identity.dev,
+                        identity.ino,
+                        String(destinationParentIdentity.dev),
+                        String(destinationParentIdentity.ino),
+                    ],
                     {
                         encoding: 'utf8',
                         env: { PATH: '/usr/bin:/bin' },
@@ -700,6 +742,9 @@ export function prepareAtomicDirectoryPublisher(runner?: ReleaseProofPublisherRu
             if (published.status === 19) {
                 throw new Error('atomic release proof publisher moved an unexpected directory identity');
             }
+            if (published.status === 21) {
+                throw new Error('release proof publication destination parent changed before atomic publication');
+            }
             if (published.status !== 0) {
                 throw new Error(
                     `atomic release proof publication failed: ${published.error?.message ?? published.stderr.trim()}`
@@ -724,6 +769,24 @@ type DirectoryIdentity = {
 function directoryIdentity(path: string): DirectoryIdentity {
     const metadata = lstatSync(path, { bigint: true });
     return { dev: metadata.dev, ino: metadata.ino };
+}
+
+function openedDirectoryIdentity(path: string): DirectoryIdentity {
+    const noFollowFlag = Reflect.get(constants, 'O_NOFOLLOW');
+    const directoryFlag = Reflect.get(constants, 'O_DIRECTORY');
+    if (typeof noFollowFlag !== 'number' || noFollowFlag === 0 || typeof directoryFlag !== 'number') {
+        throw new Error('atomic release proof publication cannot bind the destination parent');
+    }
+    const descriptor = openSync(path, constants.O_RDONLY | noFollowFlag | directoryFlag);
+    try {
+        const metadata = fstatSync(descriptor, { bigint: true });
+        if (!metadata.isDirectory()) {
+            throw new Error('atomic release proof publication destination parent is not a directory');
+        }
+        return { dev: metadata.dev, ino: metadata.ino };
+    } finally {
+        closeSync(descriptor);
+    }
 }
 
 function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity): boolean {
@@ -1142,7 +1205,7 @@ function candidateSnapshotBudget(fileReader: ReleaseProofFileReader): CandidateS
         requested === undefined || !Number.isSafeInteger(requested)
             ? RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes
             : Math.max(0, Math.min(requested, RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes));
-    return { limit, remaining: limit };
+    return { descriptors: new Set<number>(), limit, remaining: limit };
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -1157,24 +1220,59 @@ function sha256Bytes(value: Buffer): string {
     return createHash('sha256').update(value).digest('hex');
 }
 
-function sha256File(path: string): string {
-    const descriptor = openSync(path, 'r');
-    try {
-        const hash = createHash('sha256');
-        const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
-        let position = 0;
-        let bytesRead: number;
-        do {
-            bytesRead = readSync(descriptor, chunk, 0, chunk.length, position);
-            if (bytesRead > 0) {
-                hash.update(chunk.subarray(0, bytesRead));
-                position += bytesRead;
-            }
-        } while (bytesRead > 0);
-        return hash.digest('hex');
-    } finally {
-        closeSync(descriptor);
+function sha256Descriptor(descriptor: number, read: NonNullable<ReleaseProofFileReader['read']> = readSync): string {
+    const hash = createHash('sha256');
+    const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
+    let position = 0;
+    let bytesRead: number;
+    do {
+        bytesRead = read(descriptor, chunk, 0, chunk.length, position);
+        if (bytesRead > 0) {
+            hash.update(chunk.subarray(0, bytesRead));
+            position += bytesRead;
+        }
+    } while (bytesRead > 0);
+    return hash.digest('hex');
+}
+
+function withReadableFile<Result>(file: ReadableFile, consume: (descriptor: number) => Result): Result {
+    if (typeof file === 'string') {
+        const descriptor = openSync(file, 'r');
+        try {
+            return consume(descriptor);
+        } finally {
+            closeSync(descriptor);
+        }
     }
+    const before = fstatSync(file.snapshotDescriptor, { bigint: true });
+    if (
+        !sameRegularFileSnapshot(before, file.snapshotIdentity) ||
+        (before.nlink !== 0n &&
+            sha256Descriptor(file.snapshotDescriptor, file.snapshotRead ?? readSync) !== file.digest)
+    ) {
+        throw new Error('captured release proof file changed before semantic validation');
+    }
+    const result = consume(file.snapshotDescriptor);
+    const after = fstatSync(file.snapshotDescriptor, { bigint: true });
+    if (!sameRegularFileSnapshot(after, file.snapshotIdentity)) {
+        throw new Error('captured release proof file changed during semantic validation');
+    }
+    return result;
+}
+
+function readableFileLabel(file: ReadableFile): string {
+    return typeof file === 'string' ? file : file.candidatePath;
+}
+
+function withReadableFilePath<Result>(file: ReadableFile, consume: (path: string) => Result): Result {
+    if (typeof file === 'string') {
+        return consume(file);
+    }
+    return withReadableFile(file, () => consume(`/dev/fd/${String(file.snapshotDescriptor)}`));
+}
+
+function sha256File(file: ReadableFile): string {
+    return withReadableFile(file, (descriptor) => sha256Descriptor(descriptor));
 }
 
 function sameFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
@@ -1268,7 +1366,12 @@ function sha256ContainedRegularFile(
         path,
         maxBytes,
         (descriptor) =>
-            digestCandidateDescriptor(descriptor, maxBytes, { limit: maxBytes, remaining: maxBytes }, fileReader),
+            digestCandidateDescriptor(
+                descriptor,
+                maxBytes,
+                { descriptors: new Set<number>(), limit: maxBytes, remaining: maxBytes },
+                fileReader
+            ),
         fileReader
     );
 }
@@ -1355,21 +1458,28 @@ function snapshotCandidateFile(
     maxBytes: number,
     budget: CandidateSnapshotBudget,
     fileReader: ReleaseProofFileReader
-): { digest: string; snapshotPath: string } | undefined {
+): { descriptor: number; digest: string; identity: BigIntStats } | undefined {
     const snapshotPath = join(snapshotRoot, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
     return withContainedRegularFile(
         root,
         path,
         maxBytes,
         (descriptor) => {
-            const output = openSync(snapshotPath, 'wx');
+            const output = openSync(snapshotPath, 'wx+');
+            let retained = false;
             try {
                 const digest = digestCandidateDescriptor(descriptor, maxBytes, budget, fileReader, (bytes) => {
                     writeCandidateSnapshotBytes(output, bytes, fileReader);
                 });
-                return { digest, snapshotPath };
+                unlinkSync(snapshotPath);
+                const identity = fstatSync(output, { bigint: true });
+                budget.descriptors.add(output);
+                retained = true;
+                return { descriptor: output, digest, identity };
             } finally {
-                closeSync(output);
+                if (!retained) {
+                    closeSync(output);
+                }
             }
         },
         fileReader
@@ -1507,11 +1617,47 @@ function readJson(
     );
 }
 
-function readCommitObject(root: string, path: string, label: string, errors: string[]): Buffer | undefined {
+function readVerifiedFile(file: VerifiedCandidateFile, maxBytes: number, label: string): Buffer {
+    return withReadableFile(file, (descriptor) => {
+        const size = fstatSync(descriptor).size;
+        if (size > maxBytes) {
+            throw new TypeError(`${label} exceeds the ${String(maxBytes)}-byte read limit`);
+        }
+        const value = Buffer.alloc(size);
+        let position = 0;
+        while (position < size) {
+            const bytesRead = (file.snapshotRead ?? readSync)(descriptor, value, position, size - position, position);
+            if (bytesRead === 0) {
+                throw new Error(`${label} changed while reading`);
+            }
+            position += bytesRead;
+        }
+        return value;
+    });
+}
+
+function readVerifiedCommitObject(file: VerifiedCandidateFile, label: string, errors: string[]): Buffer | undefined {
     try {
-        return readBoundedFile(root, path, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes, `${label} commit object`);
+        return readVerifiedFile(file, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes, `${label} commit object`);
     } catch (error) {
         errors.push(error instanceof Error ? error.message : `${label} commit object cannot be read`);
+        return undefined;
+    }
+}
+
+function readVerifiedJson(file: VerifiedCandidateFile, label: string, errors: string[]): JsonRecord | undefined {
+    try {
+        const value = parseJsonWithUniqueKeys(
+            readVerifiedFile(file, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, label).toString('utf8'),
+            file.candidatePath
+        );
+        if (!isRecord(value)) {
+            errors.push(`${label}: JSON root must be an object`);
+            return undefined;
+        }
+        return value;
+    } catch (error) {
+        errors.push(`${label}: malformed JSON (${error instanceof Error ? error.message : String(error)})`);
         return undefined;
     }
 }
@@ -1602,7 +1748,7 @@ function verifyFileHash(
         errors.push(`${label}: file is missing`);
         return undefined;
     }
-    let snapshot: { digest: string; snapshotPath: string } | undefined;
+    let snapshot: { descriptor: number; digest: string; identity: BigIntStats } | undefined;
     try {
         snapshot = snapshotCandidateFile(root, path, snapshotRoot, maxBytes, budget, fileReader);
     } catch (error) {
@@ -1623,7 +1769,13 @@ function verifyFileHash(
     if (snapshot.digest !== hash) {
         errors.push(`${label}: digest mismatch`);
     }
-    return { candidatePath: path, digest: snapshot.digest, snapshotPath: snapshot.snapshotPath };
+    return {
+        candidatePath: path,
+        digest: snapshot.digest,
+        snapshotDescriptor: snapshot.descriptor,
+        snapshotIdentity: snapshot.identity,
+        snapshotRead: fileReader.read,
+    };
 }
 
 function listFiles(root: string, label: string, errors: string[], allowContainedLinks = false): string[] {
@@ -1976,9 +2128,20 @@ function archivePathContainsGitMetadata(path: string): boolean {
 }
 
 function streamTarArchive(
-    path: string,
+    file: ReadableFile,
     destination?: string,
     limits: ArchiveLimits = RELEASE_PROOF_ARCHIVE_LIMITS
+): ArchiveEntry[] {
+    return withReadableFilePath(file, (path) =>
+        streamTarArchivePath(path, readableFileLabel(file), destination, limits)
+    );
+}
+
+function streamTarArchivePath(
+    path: string,
+    label: string,
+    destination: string | undefined,
+    limits: ArchiveLimits
 ): ArchiveEntry[] {
     const entries: ArchiveEntry[] = [];
     let total = 0;
@@ -1987,7 +2150,7 @@ function streamTarArchive(
     const destinationIdentity = destination === undefined ? undefined : directoryIdentity(destination);
     try {
         const parser = new TarParser({
-            file: path,
+            file: label,
             strict: true,
             maxMetaEntrySize: Math.min(RELEASE_PROOF_TYPE_LIMITS.jsonBytes, limits.entryBytes),
             onReadEntry(entry) {
@@ -2091,7 +2254,7 @@ function streamTarArchive(
     }
 }
 
-function tarEntries(path: string, errors: string[]): ArchiveEntry[] {
+function tarEntries(path: ReadableFile, errors: string[]): ArchiveEntry[] {
     try {
         return streamTarArchive(path);
     } catch (error) {
@@ -2108,10 +2271,14 @@ function readZipBuffer(descriptor: number, length: number, position: number): Bu
 }
 
 function zipEntries(
-    path: string,
+    file: ReadableFile,
     errors: string[],
     limits: ArchiveLimits = RELEASE_PROOF_ARCHIVE_LIMITS
 ): ArchiveEntry[] {
+    return withReadableFilePath(file, (path) => zipEntriesPath(path, errors, limits));
+}
+
+function zipEntriesPath(path: string, errors: string[], limits: ArchiveLimits): ArchiveEntry[] {
     let descriptor: number | undefined;
     try {
         const size = statSync(path).size;
@@ -2239,7 +2406,7 @@ function zipEntries(
 }
 
 function streamZipArchive(
-    archive: string,
+    archiveFile: ReadableFile,
     declaredEntries: readonly ArchiveEntry[],
     options: {
         destination?: string;
@@ -2247,6 +2414,19 @@ function streamZipArchive(
         rejectGitMetadata?: boolean;
         limits?: ArchiveLimits;
     } = {}
+): ZipArchiveRead {
+    return withReadableFilePath(archiveFile, (archive) => streamZipArchivePath(archive, declaredEntries, options));
+}
+
+function streamZipArchivePath(
+    archive: string,
+    declaredEntries: readonly ArchiveEntry[],
+    options: {
+        destination?: string;
+        hashFiles?: boolean;
+        rejectGitMetadata?: boolean;
+        limits?: ArchiveLimits;
+    }
 ): ZipArchiveRead {
     const limits = options.limits ?? RELEASE_PROOF_ARCHIVE_LIMITS;
     const declaredByPath = new Map(declaredEntries.map((entry) => [entry.path, entry]));
@@ -2410,7 +2590,7 @@ function streamZipArchive(
     }
 }
 
-function archiveEntries(path: string, type: 'tar' | 'zip', errors: string[]): ArchiveEntry[] {
+function archiveEntries(path: ReadableFile, type: 'tar' | 'zip', errors: string[]): ArchiveEntry[] {
     return type === 'tar' ? tarEntries(path, errors) : zipEntries(path, errors);
 }
 
@@ -2494,7 +2674,7 @@ function materializeZipLinks(destination: string, targets: ReadonlyMap<string, B
     }
 }
 
-function extractTarArchive(path: string, destination: string): void {
+function extractTarArchive(path: ReadableFile, destination: string): void {
     try {
         streamTarArchive(path, destination);
     } catch {
@@ -2525,7 +2705,7 @@ function commitTree(
 }
 
 function validateGitArchive(
-    archive: string,
+    archive: ReadableFile,
     commitObject: Buffer,
     expectedRevision: string,
     prefixName: string,
@@ -2603,13 +2783,63 @@ function validateGitArchive(
     }
 }
 
-function archiveFileBytes(archive: string, prefix: string, path: string): Buffer | undefined {
+function archiveFileBytes(
+    archive: ReadableFile,
+    prefix: string,
+    paths: readonly string[]
+): ReadonlyMap<string, Buffer> {
     try {
-        return execFileSync('tar', ['-xOzf', archive, `${prefix}/${path}`], {
-            maxBuffer: RELEASE_PROOF_TYPE_LIMITS.buildInputBytes,
+        return withReadableFile(archive, (descriptor) => {
+            const expected = new Map(paths.map((path) => [`${prefix}/${path}`, path]));
+            const captured = new Map<string, Buffer>();
+            let failure: Error | undefined;
+            const parser = new TarParser({
+                file: readableFileLabel(archive),
+                strict: true,
+                maxMetaEntrySize: RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
+                onReadEntry(entry) {
+                    const path = expected.get(normalizedArchivePath(entry.path));
+                    if (path === undefined || entry.type !== 'File') {
+                        entry.resume();
+                        return;
+                    }
+                    const chunks: Buffer[] = [];
+                    let size = 0;
+                    entry.on('data', (chunk: Buffer) => {
+                        size += chunk.length;
+                        if (size > RELEASE_PROOF_TYPE_LIMITS.buildInputBytes) {
+                            failure = new Error('archived build input exceeds the read limit');
+                            return;
+                        }
+                        chunks.push(Buffer.from(chunk));
+                    });
+                    entry.on('end', () => {
+                        if (failure === undefined) {
+                            captured.set(path, Buffer.concat(chunks, size));
+                        }
+                    });
+                    entry.resume();
+                },
+            });
+            const size = fstatSync(descriptor).size;
+            let position = 0;
+            while (position < size) {
+                const chunk = Buffer.allocUnsafe(Math.min(HASH_CHUNK_BYTES, size - position));
+                const bytesRead = readSync(descriptor, chunk, 0, chunk.length, position);
+                if (bytesRead === 0) {
+                    throw new Error('TAR archive is truncated');
+                }
+                parser.write(chunk.subarray(0, bytesRead));
+                position += bytesRead;
+            }
+            parser.end();
+            if (failure !== undefined) {
+                throw failure;
+            }
+            return captured;
         });
     } catch {
-        return undefined;
+        return new Map<string, Buffer>();
     }
 }
 
@@ -2659,25 +2889,14 @@ function validateSourceManifest(
         snapshotBudget,
         fileReader
     );
-    const commitObject =
-        commitPath === undefined
-            ? undefined
-            : readCommitObject(snapshotRoot, commitPath.snapshotPath, 'source', errors);
+    const commitObject = commitPath === undefined ? undefined : readVerifiedCommitObject(commitPath, 'source', errors);
     if (archive !== undefined && commitObject !== undefined) {
-        validateGitArchive(
-            archive.snapshotPath,
-            commitObject,
-            expectedRevision,
-            'sourdaw',
-            SOURCE_REQUIRED_PATHS,
-            'source',
-            errors
-        );
+        validateGitArchive(archive, commitObject, expectedRevision, 'sourdaw', SOURCE_REQUIRED_PATHS, 'source', errors);
     }
     if (manifestPath === undefined) {
         return;
     }
-    const manifest = readJsonForValidation(snapshotRoot, manifestPath.snapshotPath, 'source manifest', errors);
+    const manifest = readVerifiedJson(manifestPath, 'source manifest', errors);
     if (manifest === undefined) {
         return;
     }
@@ -2697,7 +2916,7 @@ function validateSourceManifest(
     }
 }
 
-function validateWebArchive(path: string, errors: string[]): ZipArchiveRead | undefined {
+function validateWebArchive(path: ReadableFile, errors: string[]): ZipArchiveRead | undefined {
     const errorCount = errors.length;
     const entries = archiveEntries(path, 'zip', errors);
     validateArchivePaths(entries, 'web archive', errors);
@@ -2763,11 +2982,11 @@ function validateWebManifest(
         fileReader
     );
     const contentsPath = candidatePath(candidate, web.contentsPath, 'web.contentsPath', errors);
-    const archive = archivePath === undefined ? undefined : validateWebArchive(archivePath.snapshotPath, errors);
+    const archive = archivePath === undefined ? undefined : validateWebArchive(archivePath, errors);
     if (contentsPath === undefined || manifestPath === undefined) {
         return undefined;
     }
-    const manifest = readJsonForValidation(snapshotRoot, manifestPath.snapshotPath, 'web manifest', errors);
+    const manifest = readVerifiedJson(manifestPath, 'web manifest', errors);
     if (manifest === undefined) {
         return undefined;
     }
@@ -3030,7 +3249,7 @@ function requiredFuseClaims(): Record<string, boolean> {
     return Object.fromEntries([...REQUIRED_FUSES].map(([fuse, enabled]) => [FuseV1Options[fuse], enabled]));
 }
 
-function desktopSnapshot(archive: string): DesktopSnapshot {
+function desktopSnapshot(archive: ReadableFile): DesktopSnapshot {
     const errors: string[] = [];
     const entries = archiveEntries(archive, 'zip', errors);
     validateArchivePaths(entries, 'desktop archive', errors, true);
@@ -3135,7 +3354,7 @@ function expectedDesktopMaterial(runtimeContract: ElectronRuntimeContract): Json
 
 function validateDesktopArchiveContents(
     root: string,
-    artifact: string,
+    artifact: ReadableFile,
     artifactSha256: unknown,
     manifest: JsonRecord,
     runtimeContract: ElectronRuntimeContract,
@@ -3258,11 +3477,11 @@ function validateBuildMaterial(
     const electronCommit =
         paths.electronCommit === undefined
             ? undefined
-            : readCommitObject(snapshotRoot, paths.electronCommit.snapshotPath, 'Electron source', errors);
+            : readVerifiedCommitObject(paths.electronCommit, 'Electron source', errors);
     const ffmpegCommit =
         paths.ffmpegCommit === undefined
             ? undefined
-            : readCommitObject(snapshotRoot, paths.ffmpegCommit.snapshotPath, 'FFmpeg source', errors);
+            : readVerifiedCommitObject(paths.ffmpegCommit, 'FFmpeg source', errors);
     const electronTree =
         electronCommit === undefined
             ? undefined
@@ -3273,7 +3492,7 @@ function validateBuildMaterial(
             : commitTree(ffmpegCommit, runtimeContract.ffmpeg.revision, 'FFmpeg source', errors);
     if (paths.electronArchive !== undefined && electronCommit !== undefined) {
         validateGitArchive(
-            paths.electronArchive.snapshotPath,
+            paths.electronArchive,
             electronCommit,
             runtimeContract.revision,
             'electron',
@@ -3284,7 +3503,7 @@ function validateBuildMaterial(
     }
     if (paths.ffmpegArchive !== undefined && ffmpegCommit !== undefined) {
         validateGitArchive(
-            paths.ffmpegArchive.snapshotPath,
+            paths.ffmpegArchive,
             ffmpegCommit,
             runtimeContract.ffmpeg.revision,
             'ffmpeg',
@@ -3296,12 +3515,7 @@ function validateBuildMaterial(
     if (paths.buildManifest === undefined || paths.buildInputs === undefined) {
         return undefined;
     }
-    const build = readJsonForValidation(
-        snapshotRoot,
-        paths.buildManifest.snapshotPath,
-        'FFmpeg build material',
-        errors
-    );
+    const build = readVerifiedJson(paths.buildManifest, 'FFmpeg build material', errors);
     if (build === undefined) {
         return undefined;
     }
@@ -3344,8 +3558,9 @@ function validateBuildMaterial(
     );
     if (paths.electronArchive !== undefined) {
         const prefix = `electron-${runtimeContract.revision}`;
+        const archivedInputs = archiveFileBytes(paths.electronArchive, prefix, ELECTRON_FFMPEG_BUILD_INPUTS);
         for (const path of ELECTRON_FFMPEG_BUILD_INPUTS) {
-            const archived = archiveFileBytes(paths.electronArchive.snapshotPath, prefix, path);
+            const archived = archivedInputs.get(path);
             if (archived === undefined || sha256Bytes(archived) !== verifiedInputs[path]) {
                 errors.push(`Electron FFmpeg build input ${path} does not match the source archive`);
             }
@@ -3490,12 +3705,7 @@ function validateDesktop(
     const manifest =
         contentsManifestPath === undefined
             ? undefined
-            : readJsonForValidation(
-                  snapshotRoot,
-                  contentsManifestPath.snapshotPath,
-                  'desktop contents manifest',
-                  errors
-              );
+            : readVerifiedJson(contentsManifestPath, 'desktop contents manifest', errors);
     if (manifest !== undefined) {
         if (manifest.sourceRevision !== expectedRevision) {
             errors.push('desktop contents manifest revision does not match candidate revision');
@@ -3503,7 +3713,7 @@ function validateDesktop(
         if (artifactPath !== undefined) {
             validateDesktopArchiveContents(
                 root,
-                artifactPath.snapshotPath,
+                artifactPath,
                 desktop.artifactSha256,
                 manifest,
                 runtimeContract,
@@ -3521,7 +3731,7 @@ function validateDesktop(
     const actualRuntime =
         runtimeManifestPath === undefined
             ? undefined
-            : readJsonForValidation(snapshotRoot, runtimeManifestPath.snapshotPath, 'desktop runtime manifest', errors);
+            : readVerifiedJson(runtimeManifestPath, 'desktop runtime manifest', errors);
     if (
         expectedRuntime !== undefined &&
         actualRuntime !== undefined &&
@@ -3718,6 +3928,9 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         validateCandidateCensus(options.candidate, proof, { buildInputs, webFiles }, errors);
         return errors;
     } finally {
+        for (const descriptor of snapshotBudget.descriptors) {
+            closeSync(descriptor);
+        }
         const cleanup = removeOwnedPath(snapshotRoot, snapshotRootIdentity);
         if (cleanup.state === 'preserved') {
             errors.push(`release proof validation snapshot replacement preserved at ${cleanup.path}`);

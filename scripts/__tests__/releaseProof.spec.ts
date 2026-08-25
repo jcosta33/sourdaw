@@ -6,6 +6,7 @@ import {
     constants,
     cpSync,
     existsSync,
+    fstatSync,
     linkSync,
     lstatSync,
     mkdirSync,
@@ -1467,58 +1468,93 @@ describe('release proof', () => {
         expect(existsSync(fixture.candidate)).toBe(false);
     });
 
-    it('never opens, reads, or publishes a replacement swapped during snapshot capture', () => {
+    it('keeps semantic validation on the captured snapshot when its pathname is replaced', () => {
         const fixture = createFixture();
-        const candidateSuffix = 'web/contents/web-artifact-manifest.json';
-        let capturedDescriptor: number | undefined;
-        let capturedOpens = 0;
-        let replacementOpens = 0;
-        let capturedReads = 0;
-        let swappedPath: string | undefined;
-        let capturedFlags: number | undefined;
+        assemble(fixture);
+        const candidatePath = join(fixture.candidate, 'web/contents/web-artifact-manifest.json');
+        let captureIdentity: { dev: bigint; ino: bigint } | undefined;
+        let capturedSnapshotIdentity: { dev: bigint; ino: bigint } | undefined;
+        let capturedSnapshotReads = 0;
+        let capturingTarget = false;
+        let replacementIdentity: { dev: bigint; ino: bigint } | undefined;
+        let replacementOpenAttempts = 0;
+        let replacementReads = 0;
+        let snapshotPath: string | undefined;
+        let swapped = false;
         const snapshotFileReader: ReleaseProofFileReader = {
             open(path, flags) {
-                if (path.endsWith(candidateSuffix) && swappedPath === undefined) {
-                    capturedFlags = flags;
-                    const descriptor = openSync(path, flags);
-                    capturedDescriptor = descriptor;
-                    capturedOpens += 1;
-                    swappedPath = path;
-                    rmSync(path);
-                    write(path, '{');
-                    return descriptor;
+                if (path === snapshotPath) {
+                    replacementOpenAttempts += 1;
                 }
-                if (path === swappedPath) {
-                    replacementOpens += 1;
+                const descriptor = openSync(path, flags);
+                if (path === candidatePath) {
+                    const metadata = fstatSync(descriptor, { bigint: true });
+                    captureIdentity = { dev: metadata.dev, ino: metadata.ino };
+                    capturingTarget = true;
                 }
-                return openSync(path, flags);
+                return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
             read(descriptor, buffer, offset, length, position) {
-                if (descriptor === capturedDescriptor) {
-                    capturedReads += 1;
+                const metadata = fstatSync(descriptor, { bigint: true });
+                if (
+                    replacementIdentity !== undefined &&
+                    metadata.dev === replacementIdentity.dev &&
+                    metadata.ino === replacementIdentity.ino
+                ) {
+                    replacementReads += 1;
+                }
+                if (
+                    capturedSnapshotIdentity !== undefined &&
+                    metadata.dev === capturedSnapshotIdentity.dev &&
+                    metadata.ino === capturedSnapshotIdentity.ino
+                ) {
+                    capturedSnapshotReads += 1;
                 }
                 return readSync(descriptor, buffer, offset, length, position);
             },
+            snapshotWrite(descriptor, buffer, offset, length) {
+                const written = writeSync(descriptor, buffer, offset, length);
+                if (capturingTarget && !swapped) {
+                    const snapshotRoot = readdirSync(tmpdir(), { withFileTypes: true })
+                        .filter(
+                            (entry) => entry.isDirectory() && entry.name.startsWith('sourdaw-release-proof-snapshot-')
+                        )
+                        .map((entry) => join(tmpdir(), entry.name))
+                        .find((root) =>
+                            readdirSync(root).some((name) => {
+                                const metadata = lstatSync(join(root, name), { bigint: true });
+                                const opened = fstatSync(descriptor, { bigint: true });
+                                return metadata.dev === opened.dev && metadata.ino === opened.ino;
+                            })
+                        );
+                    expect(snapshotRoot).toBeDefined();
+                    const opened = fstatSync(descriptor, { bigint: true });
+                    snapshotPath = readdirSync(snapshotRoot!)
+                        .map((name) => join(snapshotRoot!, name))
+                        .find((path) => {
+                            const metadata = lstatSync(path, { bigint: true });
+                            return metadata.dev === opened.dev && metadata.ino === opened.ino;
+                        });
+                    expect(snapshotPath).toBeDefined();
+                    capturedSnapshotIdentity = { dev: opened.dev, ino: opened.ino };
+                    renameSync(snapshotPath!, `${snapshotPath!}.captured`);
+                    write(snapshotPath!, '{');
+                    const replacement = lstatSync(snapshotPath!, { bigint: true });
+                    replacementIdentity = { dev: replacement.dev, ino: replacement.ino };
+                    swapped = true;
+                    capturingTarget = false;
+                }
+                return written;
+            },
         };
 
-        expect(() =>
-            assemble(
-                fixture,
-                fixtureBuildRunner(fixture),
-                () => undefined,
-                readReleaseInventory,
-                undefined,
-                snapshotFileReader
-            )
-        ).toThrow('release proof candidate snapshot: missing or unsafe web/contents/web-artifact-manifest.json');
-
-        expect(capturedOpens).toBe(1);
-        expect(capturedReads).toBe(1);
-        expect(replacementOpens).toBe(0);
-        expect(capturedFlags).toBeDefined();
-        expect((capturedFlags ?? 0) & constants.O_NOFOLLOW).not.toBe(0);
-        expect(existsSync(fixture.candidate)).toBe(false);
+        expect(validate(fixture, snapshotFileReader)).toBe('');
+        expect(swapped).toBe(true);
+        expect(captureIdentity).toBeDefined();
+        expect(capturedSnapshotReads).toBeGreaterThan(0);
+        expect(replacementOpenAttempts).toBe(0);
+        expect(replacementReads).toBe(0);
     });
 
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
@@ -2389,6 +2425,52 @@ describe('release proof', () => {
             if (capturedSource !== undefined) {
                 rmSync(capturedSource, { recursive: true, force: true });
             }
+        }
+    });
+
+    it('rejects a destination parent swapped after publication authority is captured', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-parent-swap-'));
+        fixtureRoots.push(base);
+        const sourceParent = join(base, 'source-parent');
+        const destinationParent = join(base, 'destination-parent');
+        const capturedParent = join(base, 'captured-destination-parent');
+        const source = join(sourceParent, 'source');
+        const destination = join(destinationParent, 'published');
+        mkdirSync(source, { recursive: true });
+        mkdirSync(destinationParent);
+        const sourceFile = join(source, 'marker');
+        write(sourceFile, 'validated bytes');
+        const sourceIdentity = lstatSync(source, { bigint: true });
+        const fileIdentity = lstatSync(sourceFile, { bigint: true });
+        const publisher = prepareAtomicDirectoryPublisher((_request, runTrustedPublisher) => {
+            renameSync(destinationParent, capturedParent);
+            mkdirSync(destinationParent);
+            return runTrustedPublisher();
+        });
+
+        try {
+            expect(() =>
+                publisher.publish(
+                    source,
+                    destination,
+                    { dev: String(sourceIdentity.dev), ino: String(sourceIdentity.ino) },
+                    [
+                        {
+                            ctimeNs: String(fileIdentity.ctimeNs),
+                            dev: String(fileIdentity.dev),
+                            digest: hash(sourceFile),
+                            ino: String(fileIdentity.ino),
+                            mtimeNs: String(fileIdentity.mtimeNs),
+                            path: 'marker',
+                            size: Number(fileIdentity.size),
+                        },
+                    ]
+                )
+            ).toThrow('release proof publication destination parent changed before atomic publication');
+            expect(existsSync(destination)).toBe(false);
+            expect(existsSync(join(capturedParent, 'published'))).toBe(false);
+        } finally {
+            publisher.dispose();
         }
     });
 
