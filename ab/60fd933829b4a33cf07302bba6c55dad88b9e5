@@ -1,0 +1,32 @@
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_a40848e8f8cca9::t_11ebcf7ea9be78 3-7,112
+.github/workflows/health-gates.yml
+  s_a40848e8f8cca9::t_71601d9f85ce71 46
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_a40848e8f8cca9::t_af773dcdba8490 1,39
+tests/e2e/browserAiHardware.ts
+  s_a40848e8f8cca9::t_11ebcf7ea9be78 17-31
+  s_a40848e8f8cca9::t_2fdc2dc0e84042 39-54,56,58,60,62-66,68-77
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_a40848e8f8cca9::t_2fdc2dc0e84042 6,14-15,48-52,62,121-130,266-267,269-278,280-292,369-372,380,382-393,473,502-503,505-519,524-533,540-552
+  s_a40848e8f8cca9::t_40de4552fb6a03 46,60-61,268,471,504
+  s_a40848e8f8cca9::t_cfc0ff92a40bcb 521-522,553
+  s_a40848e8f8cca9::t_11ebcf7ea9be78 9-13,279,520,523
+  s_a40848e8f8cca9::t_71601d9f85ce71 534-539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "ab60fd933829b4a33cf07302bba6c55dad88b9e5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
