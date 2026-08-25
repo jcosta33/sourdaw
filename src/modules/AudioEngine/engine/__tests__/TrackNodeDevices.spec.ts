@@ -124,45 +124,50 @@ function installDeferredWasmDevice({
         }
         return generation;
     };
-    mocks.findReleasedWasmDescriptor.mockReturnValue({
-        requiresContent,
-        matches: () => true,
-        create: (deps: {
-            onLoaded: (finalDn: BuiltinDeviceNode) => void;
-            onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
-            onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
-            onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
-            signal?: AbortSignal;
-            trackId?: string;
-            deviceId: string;
-            deviceType: string;
-            parameterIds?: readonly string[];
-        }) => {
-            const placeholderNode = createMockAudioNode('gain');
-            const placeholder: BuiltinDeviceNode = {
-                deviceId,
-                type: deviceType,
-                nodes: [placeholderNode],
-                inputNode: placeholderNode,
-                outputNode: placeholderNode,
-                controller,
-            };
-            const load = Promise.withResolvers<void>();
-            generations.push({
-                load,
-                onLoaded: deps.onLoaded,
-                onContentLoadSettled: deps.onContentLoadSettled,
-                onRuntimeFailure: deps.onRuntimeFailure,
-                onRuntimeRecovery: deps.onRuntimeRecovery,
-                placeholder,
-                signal: deps.signal,
-                trackId: deps.trackId,
-                deviceId: deps.deviceId,
-                deviceType: deps.deviceType,
-                parameterIds: deps.parameterIds ?? [],
-            });
-            return { placeholder, loadPromise: load.promise };
-        },
+    mocks.findReleasedWasmDescriptor.mockImplementation((requestedDeviceType: string) => {
+        if (requestedDeviceType !== deviceType) {
+            return undefined;
+        }
+        return {
+            requiresContent,
+            matches: () => true,
+            create: (deps: {
+                onLoaded: (finalDn: BuiltinDeviceNode) => void;
+                onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
+                onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
+                onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
+                signal?: AbortSignal;
+                trackId?: string;
+                deviceId: string;
+                deviceType: string;
+                parameterIds?: readonly string[];
+            }) => {
+                const placeholderNode = createMockAudioNode('gain');
+                const placeholder: BuiltinDeviceNode = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [placeholderNode],
+                    inputNode: placeholderNode,
+                    outputNode: placeholderNode,
+                    controller,
+                };
+                const load = Promise.withResolvers<void>();
+                generations.push({
+                    load,
+                    onLoaded: deps.onLoaded,
+                    onContentLoadSettled: deps.onContentLoadSettled,
+                    onRuntimeFailure: deps.onRuntimeFailure,
+                    onRuntimeRecovery: deps.onRuntimeRecovery,
+                    placeholder,
+                    signal: deps.signal,
+                    trackId: deps.trackId,
+                    deviceId: deps.deviceId,
+                    deviceType: deps.deviceType,
+                    parameterIds: deps.parameterIds ?? [],
+                });
+                return { placeholder, loadPromise: load.promise };
+            },
+        };
     });
     return {
         get generationCount(): number {
@@ -695,7 +700,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('makes a content-free async device playable after its graph rebuild', async () => {
-            const deferred = installDeferredWasmDevice({ requiresContent: false });
+            const deferred = installDeferredWasmDevice({ deviceType: 'fermenter', requiresContent: false });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
             const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
 
@@ -710,7 +715,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('restores the loading bypass when a promoted async node cannot join the graph', async () => {
-            const deferred = installDeferredWasmDevice({ requiresContent: false });
+            const deferred = installDeferredWasmDevice({ deviceType: 'fermenter', requiresContent: false });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
             const onDeviceRemoved = vi.fn();
             const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics, onDeviceRemoved }));
@@ -899,6 +904,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, onDeviceLoaded }));
 
             track.addDevice('wasm-1', 'levain');
+            expect(mocks.findReleasedWasmDescriptor).toHaveBeenCalledWith('levain');
             track.updateParam('wasm-1', 'gain', 0.25);
             track.updateParam('wasm-1', 'tone', 0.75);
             track.updateBypass('wasm-1', true);
@@ -1081,7 +1087,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.getDeviceLoadState('grinder-1')).toBe('failed');
             const diagnostics = readinessDiagnostics.snapshot();
             const failedDevice = diagnostics.devices.find((device) => device.deviceId === 'grinder-1');
-            expect(diagnostics.counts).toMatchObject({ requested: 4, playableReady: 2, failed: 2 });
+            // Both synchronous gains and both content-settled grinder generations became playable.
+            expect(diagnostics.counts).toMatchObject({ requested: 4, playableReady: 4, failed: 2 });
             expect(failedDevice).toMatchObject({ deviceId: 'grinder-1', status: 'failed', failureStage: 'runtime' });
         });
 
@@ -1104,7 +1111,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('keeps a live device with failed content observable until removal', () => {
-            const deferred = installDeferredWasmDevice();
+            const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
             const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
             track.addDevice('wasm-1', 'builtin-crumbs');
@@ -1146,7 +1153,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('aborts a timed-out content load after publishing its node', async () => {
-            const deferred = installDeferredWasmDevice();
+            const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
             const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
             track.addDevice('wasm-1', 'builtin-crumbs');
@@ -1168,7 +1175,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('classifies a timeout before the published node joins the graph', () => {
-            const deferred = installDeferredWasmDevice();
+            const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
             const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
             track.addDevice('wasm-1', 'builtin-crumbs');
@@ -1188,6 +1195,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const order: string[] = [];
             const deferred = installDeferredWasmDevice({
                 deviceId: 'proof-1',
+                deviceType: 'proof',
                 controller: { setParam: (name, value) => pendingParams.push([name, value]) },
                 beforeLoaded: (finalDn) => {
                     for (const [name, value] of pendingParams) {
