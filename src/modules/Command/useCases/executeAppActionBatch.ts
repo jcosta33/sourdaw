@@ -163,10 +163,20 @@ function getPendingPostCommitEffect(
             state: declared.state,
         };
     }
-    if (prepared.postCommitEffect) {
+    if (prepared.postCommitEffect?.kind === 'runtime-graph') {
         return {
             commandId: prepared.envelope.commandId,
-            kind: prepared.postCommitEffect.kind,
+            kind: 'runtime-graph',
+            operation: prepared.action.type,
+            reason: failureReason(error),
+            remediation: prepared.postCommitEffect.remediation,
+            state: 'pending',
+        };
+    }
+    if (prepared.postCommitEffect?.kind === 'external-effect') {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: 'external-effect',
             operation: prepared.action.type,
             reason: failureReason(error),
             remediation: prepared.postCommitEffect.remediation,

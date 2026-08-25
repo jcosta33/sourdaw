@@ -629,6 +629,12 @@ function completeAgentRunPendingEffectContinuation(input: {
 }): AgentRun {
     const completedAt = input.completedAt ?? Date.now();
     return updateAgentRun(input.runId, completedAt, (run) => {
+        const completedContinuation = run.pendingEffectContinuations.find(
+            (continuation) => continuation.batchId === input.batchId
+        );
+        if (!completedContinuation) {
+            throw new Error(`Unknown pending effect continuation: ${input.batchId}`);
+        }
         const pendingEffectContinuations = run.pendingEffectContinuations.filter(
             (continuation) => continuation.batchId !== input.batchId
         );
@@ -659,9 +665,36 @@ function completeAgentRunPendingEffectContinuation(input: {
             hasUnsettledWorkLease ||
             hasTemporaryAsset ||
             hasIndependentManualResume;
+        const priorLedgerEntry =
+            run.receipts.find((receipt) => receipt.workId === input.batchId) ??
+            run.committedWork.find((work) => work.workId === input.batchId);
+        const completedLedgerEntry = {
+            workId: input.batchId,
+            receiptIdentity: input.receiptIdentity,
+            revertGroupId: priorLedgerEntry?.revertGroupId ?? null,
+            committedAt: priorLedgerEntry?.committedAt ?? completedAt,
+        };
+        const batches = run.batches.some((batch) => batch.batchId === input.batchId)
+            ? run.batches.map((batch) =>
+                  batch.batchId === input.batchId
+                      ? { ...batch, status: 'committed' as const, receiptIdentity: input.receiptIdentity }
+                      : batch
+              )
+            : [
+                  ...run.batches,
+                  {
+                      batchId: input.batchId,
+                      commandIds: completedContinuation.effects.map(({ commandId }) => commandId),
+                      status: 'committed' as const,
+                      receiptIdentity: input.receiptIdentity,
+                  },
+              ];
         return {
             ...run,
             phase: hasRecoveryObligation ? run.phase : 'completed',
+            batches,
+            receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.batchId), completedLedgerEntry],
+            committedWork: [...run.committedWork.filter((work) => work.workId !== input.batchId), completedLedgerEntry],
             pendingEffectContinuations,
             manualResume: hasRecoveryObligation
                 ? run.manualResume

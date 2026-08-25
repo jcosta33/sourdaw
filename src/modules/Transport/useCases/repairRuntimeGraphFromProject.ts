@@ -14,11 +14,14 @@ import { panicYeastRuntime } from './transportControls/panicYeastRuntime';
 /** Rebuilds runtime truth from the project while preserving one coherent transport state. */
 export async function repairRuntimeGraphFromProject(): Promise<void> {
     const transport = getTransportState();
-    if (transport?.isRecording) {
+    if (!transport) {
+        throw new Error('Runtime graph repair requires initialized transport state');
+    }
+    if (transport.isRecording) {
         throw new Error('Runtime graph repair is unavailable while recording');
     }
-    const wasPlaying = transport?.isPlaying === true;
-    const resumePosition = wasPlaying ? playheadPositionRef.current : transport?.playheadPosition;
+    const wasPlaying = transport.isPlaying;
+    const resumePosition = wasPlaying ? playheadPositionRef.current : transport.playheadPosition;
     if (wasPlaying) {
         stopPlayheadScheduler();
         stopAllScheduled();

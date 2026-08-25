@@ -468,6 +468,24 @@ describe('agent run recovery', () => {
             },
         ];
         for (const [index, continuation] of continuations.entries()) {
+            const partialReceiptIdentity = `1:run-persisted-runtime-effects:${continuation.batchId}:partially-committed`;
+            agentRunLifecycle.recordBatch({
+                runId: 'run-persisted-runtime-effects',
+                batch: {
+                    batchId: continuation.batchId,
+                    commandIds: continuation.effects.map(({ commandId }) => commandId),
+                    status: 'committed',
+                    receiptIdentity: partialReceiptIdentity,
+                },
+                recordedAt: 105 + index,
+            });
+            agentRunLifecycle.recordCommittedWork({
+                runId: 'run-persisted-runtime-effects',
+                workId: continuation.batchId,
+                receiptIdentity: partialReceiptIdentity,
+                completesRun: false,
+                committedAt: 106 + index,
+            });
             for (const [effectIndex, effect] of continuation.effects.entries()) {
                 agentRunLifecycle.recordSagaStep({
                     runId: 'run-persisted-runtime-effects',
@@ -476,7 +494,7 @@ describe('agent run recovery', () => {
                         order: index * 2 + effectIndex,
                         owner: 'external-effect',
                         workId: continuation.batchId,
-                        receiptIdentity: `1:run-persisted-runtime-effects:${continuation.batchId}:partially-committed`,
+                        receiptIdentity: partialReceiptIdentity,
                         state: 'external-pending',
                         relatedArtifactIds: [],
                         updatedAt: 110 + index,
@@ -492,7 +510,7 @@ describe('agent run recovery', () => {
                     effects: structuredClone(continuation.effects),
                     lastError: null,
                     recovery: continuation.recovery,
-                    receiptIdentity: `1:run-persisted-runtime-effects:${continuation.batchId}:partially-committed`,
+                    receiptIdentity: partialReceiptIdentity,
                     serializedBatch: continuation.serializedBatch,
                 },
                 recordedAt: 120 + index,
@@ -579,6 +597,50 @@ describe('agent run recovery', () => {
                     serializedBatch: '{"batch":"manual-effect"}',
                 },
             ],
+            batches: expect.arrayContaining([
+                expect.objectContaining({
+                    batchId: 'batch-generic-effect',
+                    status: 'committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-mixed-effects',
+                    status: 'committed',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            receipts: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            committedWork: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:partially-committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
             saga: {
                 steps: expect.arrayContaining([
                     expect.objectContaining({ workId: 'batch-generic-effect', state: 'external-pending' }),
@@ -631,6 +693,48 @@ describe('agent run recovery', () => {
                         'At least one retained external effect requires manual repair and cannot be retried exactly.',
                 },
             ],
+            batches: expect.arrayContaining([
+                expect.objectContaining({
+                    batchId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                }),
+                expect.objectContaining({
+                    batchId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            receipts: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
+            committedWork: expect.arrayContaining([
+                expect.objectContaining({
+                    workId: 'batch-generic-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-generic-effect:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-mixed-effects',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-mixed-effects:committed',
+                }),
+                expect.objectContaining({
+                    workId: 'batch-manual-effect',
+                    receiptIdentity: '1:run-persisted-runtime-effects:batch-manual-effect:partially-committed',
+                }),
+            ]),
             saga: {
                 steps: expect.arrayContaining([
                     expect.objectContaining({

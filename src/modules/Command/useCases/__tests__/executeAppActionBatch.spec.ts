@@ -611,6 +611,40 @@ describe('executeAppActionBatch', () => {
         );
     });
 
+    it('checkpoints a declared external reconciliation with its exact receipt contract', async () => {
+        const afterCommit = vi.fn();
+        const onProjectCommitPrepared = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({
+                    status: 'written',
+                    afterCommit,
+                    afterAmbiguousCommit: afterCommit,
+                    postCommitEffect: { kind: 'external-effect', remediation: 'reconcile' },
+                }),
+            }),
+        });
+
+        await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+            onProjectCommitPrepared,
+        });
+
+        expect(onProjectCommitPrepared).toHaveBeenCalledWith({
+            status: 'committed',
+            actions: expect.any(Array),
+            pendingEffects: [
+                {
+                    commandId: expect.any(String),
+                    kind: 'external-effect',
+                    operation: 'setEditingTool',
+                    reason: 'Post-commit effect has not completed',
+                    remediation: 'reconcile',
+                    state: 'pending',
+                },
+            ],
+        });
+    });
+
     it('recovers a deferred-effect failure by reconciling durable truth', async () => {
         const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
         const reconcileRuntime = vi.fn();

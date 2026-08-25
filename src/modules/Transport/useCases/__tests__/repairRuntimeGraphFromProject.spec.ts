@@ -114,4 +114,15 @@ describe('repairRuntimeGraphFromProject', () => {
         expect(mocks.ensureTrackStrips).not.toHaveBeenCalled();
         expect(mocks.startPlayheadScheduler).not.toHaveBeenCalled();
     });
+
+    it('fails closed when transport runtime state is unavailable', async () => {
+        mocks.getTransportState.mockReturnValue(null);
+
+        await expect(repairRuntimeGraphFromProject()).rejects.toThrow(
+            'Runtime graph repair requires initialized transport state'
+        );
+
+        expect(mocks.resetExternalPluginRuntimeForGraphRebuild).not.toHaveBeenCalled();
+        expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
+    });
 });
