@@ -14,9 +14,13 @@ import { type KneadClipState, type NoteBlob } from '../stores/kneadStore';
  * Knead-owned fields. Projecting at every persisting write makes a fresh edit and
  * a projection produce the same value.
  *
- * The declared type is the contract: a key added to `ClipKneadState` or
- * `ClipKneadBlob` fails to compile here until this projection carries it, and a
- * key added to the store state simply never reaches project truth.
+ * The declared type is the contract, with one limit: a key `ClipKneadState` or
+ * `ClipKneadBlob` REQUIRES fails to compile here until this projection carries
+ * it, but a merely OPTIONAL key compiles silently when missing — the write path
+ * then drops a field the document normalizer keeps (`originalPitchCenterCents`
+ * on `ClipKneadBlob` is exactly that pattern). An optional declared key must be
+ * added to this projection by hand. A key added to the store state simply never
+ * reaches project truth.
  */
 function projectKneadBlob(blob: NoteBlob): ClipKneadBlob {
     return {

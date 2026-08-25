@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { updateClipInStore } from '#/modules/Arrangement/stores';
+import { type Clip, updateClipInStore } from '#/modules/Arrangement/stores';
 
 import {
     defaultKneadState,
@@ -15,6 +15,23 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return { ...actual, updateClipInStore: vi.fn() };
 });
+
+function baseClip(): Clip {
+    return {
+        id: 'clip-1',
+        trackId: 'track-1',
+        name: 'Take',
+        startBeat: 0,
+        endBeat: 4,
+        type: 'audio',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ffffff',
+        locked: false,
+        muted: false,
+    };
+}
 
 function contour(lastTimeMs: number): PitchContour {
     return {
@@ -100,11 +117,25 @@ describe('clearClipPitchAnalysis', () => {
     });
 
     // The clip's own `kneadState` is what persistence and collaboration read. A
-    // Knead-store-only clear would come back on the next load.
-    it('mirrors the cleared blobs onto the clip', () => {
+    // Knead-store-only clear would come back on the next load. The mirrored value
+    // is the declared `ClipKneadState` shape (#2571), not the store-shaped state
+    // the clear built — reverting the projection would put the 7-key store shape
+    // back on the clip.
+    it('mirrors the cleared blobs onto the clip as the declared ClipKneadState shape', () => {
         clearClipPitchAnalysis('clip-1');
 
-        expect(updateClipInStore).toHaveBeenCalledWith('clip-1', expect.any(Function));
+        expect(updateClipInStore).toHaveBeenCalledTimes(1);
+        const [clipId, updater] = vi.mocked(updateClipInStore).mock.calls[0]!;
+        expect(clipId).toBe('clip-1');
+
+        const persisted = updater(baseClip());
+        expect(persisted.kneadState?.blobs).toEqual([]);
+        expect(Object.keys(persisted.kneadState!).sort()).toEqual([
+            'blobs',
+            'formantPreserve',
+            'humanizePercent',
+            'retuneSpeedMs',
+        ]);
     });
 
     it('does not touch the clip when there were no blobs to clear', () => {
