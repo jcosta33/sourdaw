@@ -80,6 +80,10 @@ jobs:
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
+              - 'package.json'
+              - 'vite.config.ts'
+              - 'scripts/checkVitestCollectionScope.ts'
+              - '.github/workflows/health-gates.yml'
             e2e:
               - 'src/**'
               - 'public/**'
@@ -281,7 +285,7 @@ jobs:
       - name: Run shard
         env:
           VITEST_MAX_WORKERS: 4
-        run: pnpm test:run --shard=${{ matrix.shard }}/4
+        run: pnpm run test:run --shard=${{ matrix.shard }}/4
 
   build:
     name: Production build

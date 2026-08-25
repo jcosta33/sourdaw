@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useTimelineInteractions } from '../useTimelineInteractions';
 
+type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
+
 // Massive mock list
 type MockStoreBox = { value: Record<string, unknown> };
 const mocks = vi.hoisted(
@@ -193,7 +195,7 @@ vi.mock('../../../stores/trackStore', () => ({
         // yeastStore subscribes to trackStore at module init (via the
         // Collaboration use-cases importOriginal chain); the box must offer
         // the subscription surface or suite collection crashes.
-        subscribe: vi.fn(() => () => {}),
+        subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
 }));
 vi.mock('../../../useCases/clipSelection/toggleClipInSelection', () => ({

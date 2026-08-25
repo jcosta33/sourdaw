@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
+import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProjectContext } from '../getProjectContext';
@@ -244,6 +246,65 @@ function createGlueProviderContext(): ProjectContext {
     };
 }
 
+const stemImportPromptScope = {
+    capability: {
+        schemaVersion: 1,
+        baseRevision: 'revision-stem-import',
+        actionType: 'importStemSet',
+        selectionId: 'selection-stems',
+        projectTempo: 120,
+        stems: [
+            { stemId: 'stem-kick', sourceName: 'Kick.wav', durationSeconds: 126, detectedTempo: 120 },
+            { stemId: 'stem-bass', sourceName: 'Bass.wav', durationSeconds: 126, detectedTempo: 120 },
+        ],
+        allowedRoles: ['kick', 'bass'],
+        constraints: {
+            requireCompleteSelection: true,
+            preserveExistingProject: true,
+            requireFreshConfirmation: true,
+            providerCannotAssignProjectIds: true,
+        },
+    },
+    actionSeed: {
+        selectionId: 'selection-stems',
+        groupName: 'Imported Stems',
+        projectTempo: 120,
+        folderId: 'folder-imported-stems',
+        stems: [
+            {
+                stemId: 'stem-kick',
+                sourceName: 'Kick.wav',
+                role: 'other',
+                sourceTempo: 120,
+                durationSeconds: 126,
+                sourceBytes: 1024,
+                decodedBytes: 4096,
+                audioBufferId: 'buffer-kick',
+                trackId: 'track-kick',
+                trackName: 'Kick',
+                trackGain: 1,
+                trackPan: 0,
+                clipId: 'clip-kick',
+            },
+            {
+                stemId: 'stem-bass',
+                sourceName: 'Bass.wav',
+                role: 'other',
+                sourceTempo: 120,
+                durationSeconds: 126,
+                sourceBytes: 2048,
+                decodedBytes: 8192,
+                audioBufferId: 'buffer-bass',
+                trackId: 'track-bass',
+                trackName: 'Bass',
+                trackGain: 1,
+                trackPan: 0,
+                clipId: 'clip-bass',
+            },
+        ],
+    },
+} satisfies StemImportPromptScope;
+
 describe('parsePromptToActions', () => {
     beforeEach(() => {
         agentRunLifecycle.clear();
@@ -388,6 +449,162 @@ describe('parsePromptToActions', () => {
         }
         expect(result.rejectionReason).toBeUndefined();
         expect(result.requiresConfirmation).toBe(true);
+        expect(result.providerKnownTargetIds).toEqual(['track-vocals', 'track-guitar']);
+    });
+
+    it('materializes compiler-owned binding scope and preserves its action graph', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['createBus', 'setTrackGain'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Create and gain a drum bus.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['createBus', 'setTrackGain'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate the dependency graph.'],
+                                stoppingConditions: ['Stop if the revision changes.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'create-drum-bus',
+                                        name: 'createBus',
+                                        arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                                    },
+                                    {
+                                        id: 'gain-drum-bus',
+                                        name: 'setTrackGain',
+                                        arguments: { trackId: '$drum-bus', gain: 0.8 },
+                                        dependsOn: ['create-drum-bus'],
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'Create a Drum Bus, then set its gain to 0.8.',
+            baseContext,
+            undefined,
+            'revision-binding'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actionCommandGraph).toEqual({
+            dependenciesByActionIndex: [[], [0]],
+            batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
+        });
+        const createdBusId = result.actions[0]?.type === 'createBus' ? result.actions[0].payload.busId : undefined;
+        expect(createdBusId).toMatch(/^bus-ai-/u);
+        expect(result.actions[1]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: createdBusId, gain: 0.8 },
+        });
+        expect(result.providerProposal?.scope.targetIds).toEqual([]);
+        expect(result.providerKnownTargetIds).toEqual([]);
+    });
+
+    it('rejects a selected application-expanded workflow before its compiler graph can reach partial acceptance', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setMetronomeEnabled'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'selectWorkflowCapability',
+                        arguments: { capabilityId: 'shared-vocal-fx-buses' },
+                    },
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Enable the metronome.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['setMetronomeEnabled'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate the command graph.'],
+                                stoppingConditions: ['Stop if graph preservation is unavailable.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'enable-metronome',
+                                        name: 'setMetronomeEnabled',
+                                        arguments: { enabled: true },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'Enable the metronome while preparing shared vocal FX buses.',
+            baseContext,
+            undefined,
+            'revision-specialized-graph'
+        );
+
+        expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith(
+            expect.objectContaining({
+                calls: [{ name: 'setMetronomeEnabled', arguments: { enabled: true } }],
+                compilerEvidence: expect.objectContaining({
+                    snapshotRevision: 'revision-specialized-graph',
+                }),
+                workflowCapabilityId: 'shared-vocal-fx-buses',
+            })
+        );
+        expect(result).toMatchObject({
+            actions: [],
+            requiresConfirmation: false,
+            rejectionReason:
+                'Provider action rejected: <batch>: Compiler command graphs cannot enter application-expanded specialized workflows',
+        });
+        expect(result.actionCommandGraph).toBeUndefined();
     });
 
     it('rejects a fast-path plan before confirmation when it conflicts with locked production intent', async () => {
@@ -555,6 +772,87 @@ describe('parsePromptToActions', () => {
         expect(result.applicationToolReceipts).toMatchObject([
             { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
+    });
+
+    it('carries the normalized provider proposal for an accepted stem-import workflow action', async () => {
+        const expectedProviderProposal = {
+            semantic: { classification: 'complex', uncertainty: [] },
+            objective: 'Import the prepared stems and create the starting mix.',
+            constraints: ['Use only the prepared stem selection.'],
+            scope: {
+                targetIds: ['selection-stems'],
+                targetRanges: [],
+                protectedTargetIds: ['track-existing'],
+                protectedRanges: [],
+            },
+            capabilityIds: ['importStemSet'],
+            assetIds: ['stem-kick', 'stem-bass'],
+            alternatives: [],
+            validationStrategy: ['Validate the prepared stem selection before confirmation.'],
+            stoppingConditions: ['Stop before mutation if the prepared selection no longer matches.'],
+        } satisfies AgentRunProviderProposal;
+        const providerPlanWithRawOnlyField = {
+            ...expectedProviderProposal,
+            rawProviderOnlyField: 'must not be forwarded as authority',
+        };
+        const stemImportCommand = {
+            name: 'importStemSet',
+            arguments: {
+                selectionId: 'selection-stems',
+                groupName: 'Imported Stems',
+                stems: [
+                    { stemId: 'stem-kick', role: 'kick' },
+                    { stemId: 'stem-bass', role: 'bass' },
+                ],
+            },
+        };
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['importStemSet'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'selectWorkflowCapability',
+                        arguments: { capabilityId: 'stem-import-starting-mix' },
+                    },
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [stemImportCommand],
+                            plan: providerPlanWithRawOnlyField,
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'Import the prepared stems and build a starting mix',
+            baseContext,
+            undefined,
+            'revision-stem-import',
+            stemImportPromptScope
+        );
+
+        expect(result.actions).toHaveLength(1);
+        expect(result.actions[0]).toMatchObject({
+            type: 'importStemSet',
+            payload: {
+                selectionId: 'selection-stems',
+                groupName: 'Imported Stems',
+            },
+        });
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+        expect(result.workflowCapabilityId).toBe('stem-import-starting-mix');
+        expect(result.providerProposal).toEqual(expectedProviderProposal);
     });
 
     it('proposes an explicit provider time-signature command as one confirmable atomic action', async () => {

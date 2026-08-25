@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus, setDeviceParameter } from '#/modules/Arrangement/useCases';
+import {
+    getArrangementHandlers,
+    runtimeGraphTopology,
+    setArrangementEventBus,
+    setDeviceParameter,
+} from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     recordAutomationValue,
@@ -21,12 +30,14 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -60,7 +71,9 @@ const INITIAL_PARAMETERS = {
     'comp-makeup': 3,
 };
 
-const providerPlan = [
+type ProviderCall = { name: string; arguments: Record<string, unknown> };
+
+const providerPlan: ProviderCall[] = [
     {
         name: 'setDeviceParameter',
         arguments: { deviceId: COMPRESSOR_ID, paramId: 'comp-threshold', value: -18 },
@@ -69,7 +82,7 @@ const providerPlan = [
         name: 'setDeviceParameter',
         arguments: { deviceId: COMPRESSOR_ID, paramId: 'comp-ratio', value: 4 },
     },
-] as const;
+];
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -119,6 +132,201 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+}
+
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getHostedUserMessage(body: string): string {
+    const request: unknown = JSON.parse(body);
+    if (!isRecord(request) || !isUnknownArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    const userMessage = request.messages.find(
+        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
+    );
+    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return userMessage.content;
+}
+
+function getCommandBatchScope(): {
+    targetIds: string[];
+    targetRanges: [];
+    protectedTargetIds: string[];
+    protectedRanges: [];
+} {
+    return {
+        targetIds: ['track-bass-di', COMPRESSOR_ID, 'comp-threshold', 'comp-ratio'],
+        targetRanges: [],
+        protectedTargetIds: [
+            `${COMPRESSOR_ID}:comp-attack`,
+            `${COMPRESSOR_ID}:comp-release`,
+            `${COMPRESSOR_ID}:comp-makeup`,
+        ],
+        protectedRanges: [],
+    };
+}
+
+function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Set only the Bass DI compressor threshold and ratio to the requested values.',
+                    constraints: ['Leave attack, release, and makeup gain unchanged.'],
+                    scope: getCommandBatchScope(),
+                    capabilityIds: ['setDeviceParameter'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate the exact compressor identity, parameter set, and values.'],
+                    stoppingConditions: ['Stop if application validation fails.'],
+                },
+            },
+        },
+    ];
+}
+
+function catalogDiscoveryPlan(): ProviderCall[] {
+    return [
+        {
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['setDeviceParameter'] },
+        },
+    ];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!isUnknownArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const payload = summary.value.split('\n').at(-1);
+    const parsed: unknown = payload ? JSON.parse(payload) : null;
+    if (!isRecord(parsed) || !isUnknownArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchema(userMessage: string): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !isUnknownArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const schema = discoveryReceipt.data.items.find(
+        (item) =>
+            isRecord(item) &&
+            isRecord(item.function) &&
+            item.function.name === 'setDeviceParameter' &&
+            isRecord(item.function.parameters)
+    );
+    if (!schema) {
+        throw new TypeError('Expected disclosed setDeviceParameter command schema');
+    }
+}
+
+function createTurnTrackedWebLlmResponder(
+    buildPlan: (userMessage: string) => ProviderCall[] = () => providerPlan
+): (systemPrompt: string, userMessage: string) => Promise<string> {
+    let turn = 0;
+    return (_systemPrompt, userMessage) => {
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (turn === 1) {
+            return Promise.resolve(JSON.stringify(catalogDiscoveryPlan()));
+        }
+        assertDiscoveredCommandSchema(userMessage);
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(buildPlan(userMessage))));
+    };
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let turn = 0;
+    return (_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        const userMessage = getHostedUserMessage(init.body);
+        if (turn === 1) {
+            return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan()));
+        }
+        assertDiscoveredCommandSchema(userMessage);
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(providerPlan)));
+    };
+}
 
 function createDevice(
     id: string,
@@ -242,24 +450,8 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         for (const [paramId, value] of Object.entries(INITIAL_PARAMETERS)) {
             runtimeMocks.runtimeParameterValues.set(paramId, value);
         }
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder());
+        runtimeMocks.fetch.mockImplementation(createTurnTrackedHostedResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -282,6 +474,11 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
         const bassDi = createTrack('track-bass-di', 'Bass DI');
@@ -332,13 +529,12 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         });
         await sendChatMessage(PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
-        expect(providerRequest).toContain(PROMPT);
-        expect(providerRequest).toContain(COMPRESSOR_ID);
-        expect(providerRequest).toContain('comp-threshold');
-        expect(providerRequest).toContain('"unit":"dB"');
-        expect(providerRequest).toContain('"value":-24');
-        expect(providerRequest).toContain('"value":2');
+        const providerRequests = vi.mocked(generateWebLlmCompletion).mock.calls.map(([, userMessage]) => userMessage);
+        expect(providerRequests).toHaveLength(2);
+        expect(providerRequests[0]).toContain(PROMPT);
+        expect(providerRequests[0]).toContain('user_request:');
+        expect(providerRequests[1]).toContain('relevant_evidence:');
+        assertDiscoveredCommandSchema(providerRequests[1] ?? '');
 
         const confirmation = getConfirmation();
         expect(confirmation?.actions).toEqual([
@@ -486,9 +682,17 @@ describe('Bass DI compressor parameter prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
-        expect(typeof body).toBe('string');
-        expect(body).toContain('device-bass-di-compressor');
+        const providerRequests = runtimeMocks.fetch.mock.calls.map(([, init]) => {
+            if (typeof init?.body !== 'string') {
+                throw new TypeError('Expected hosted provider request body');
+            }
+            return getHostedUserMessage(init.body);
+        });
+        expect(providerRequests).toHaveLength(2);
+        expect(providerRequests[0]).toContain(PROMPT);
+        expect(providerRequests[0]).toContain('user_request:');
+        expect(providerRequests[1]).toContain('relevant_evidence:');
+        assertDiscoveredCommandSchema(providerRequests[1] ?? '');
         expect(getConfirmation()?.actions).toEqual(createGuardedActions());
 
         const confirmation = getConfirmation();
@@ -505,33 +709,39 @@ describe('Bass DI compressor parameter prompt workflow', () => {
     });
 
     it.each([
-        ['omission', JSON.stringify([providerPlan[0]])],
+        ['omission', [providerPlan[0]!]],
         [
             'enlargement',
-            JSON.stringify([
+            [
                 ...providerPlan,
                 {
                     name: 'setDeviceParameter',
                     arguments: { deviceId: COMPRESSOR_ID, paramId: 'comp-attack', value: 30 },
                 },
-            ]),
+            ],
         ],
         [
             'out-of-bounds value',
-            JSON.stringify([
+            [
                 {
                     name: 'setDeviceParameter',
                     arguments: { deviceId: COMPRESSOR_ID, paramId: 'comp-threshold', value: -80 },
                 },
-                providerPlan[1],
-            ]),
+                providerPlan[1]!,
+            ],
         ],
         [
             'non-finite value',
-            '[{"name":"setDeviceParameter","arguments":{"deviceId":"device-bass-di-compressor","paramId":"comp-threshold","value":null}},{"name":"setDeviceParameter","arguments":{"deviceId":"device-bass-di-compressor","paramId":"comp-ratio","value":4}}]',
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: COMPRESSOR_ID, paramId: 'comp-threshold', value: null },
+                },
+                providerPlan[1]!,
+            ],
         ],
-    ])('rejects provider %s before confirmation or mutation', async (_label, response) => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(response);
+    ])('rejects provider %s before confirmation or mutation', async (_label, responsePlan) => {
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder(() => responsePlan));
         const before = structuredClone(trackStore.value);
 
         await sendChatMessage(PROMPT);

@@ -56,7 +56,7 @@ const baseMapping: MidiMapping = {
 
 describe('handleMidiMessage', () => {
     const deps = {
-        clampTrackGain: vi.fn((_trackId: string, gain: number) => gain),
+        clampTrackGain: vi.fn((gain: number) => gain),
         setTrackGainArrangement: vi.fn(),
         setTrackPanArrangement: vi.fn(),
         setDeviceParameter: vi.fn(),
@@ -71,7 +71,7 @@ describe('handleMidiMessage', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        deps.clampTrackGain.mockImplementation((_trackId: string, gain: number) => gain);
+        deps.clampTrackGain.mockImplementation((gain: number) => gain);
         deps.getTransportIsPlaying.mockReturnValue(false);
         deps.getTransportPlayheadPosition.mockReturnValue(0);
         deps.getAllTracks.mockReturnValue([]);
@@ -105,13 +105,14 @@ describe('handleMidiMessage', () => {
         expect(deps.engineSetTrackGain).toHaveBeenCalledWith('track1', 1);
     });
 
-    it('sends the store and the engine the same resolved gain when the track has a ceiling below the mapping', () => {
+    it('sends the store and the engine the same resolved gain when the mapping overruns the fader ceiling', () => {
         // The engine-side call lands second and does not clamp on its own, so
         // the raw scaled value used to overwrite the clamped one the store-side
-        // call had just installed: on a Toaster-pad-mirrored track the audio ran
-        // above the pad's unity while the project recorded unity. Both calls now
-        // take one resolved value, so they cannot disagree.
-        deps.clampTrackGain.mockImplementation((_trackId: string, gain: number) => Math.min(gain, 1));
+        // call had just installed: the audio node ran above the ceiling the
+        // project had just recorded, and the two disagreed until something else
+        // rewrote the node. Both calls now take one resolved value, so they
+        // cannot disagree.
+        deps.clampTrackGain.mockImplementation((gain: number) => Math.min(gain, 1));
         midiLearnStore.set({
             mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, maxValue: 2 }],

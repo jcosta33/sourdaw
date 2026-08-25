@@ -9,8 +9,14 @@ import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProj
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
-const { cancelPendingAudioBufferImport, prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
+const {
+    cancelPendingAudioBufferImport,
+    cancelPreparedBuffers,
+    prepareCachedAudioBuffersFromIdb,
+    publishPreparedBuffers,
+} = vi.hoisted(() => ({
     cancelPendingAudioBufferImport: vi.fn(),
+    cancelPreparedBuffers: vi.fn(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
 }));
@@ -43,7 +49,10 @@ describe('switchArrangement', () => {
         vi.clearAllMocks();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
-        prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: publishPreparedBuffers });
+        prepareCachedAudioBuffersFromIdb.mockResolvedValue({
+            cancel: cancelPreparedBuffers,
+            publish: publishPreparedBuffers,
+        });
     });
 
     it('does not call transport or persistence collaborators when switching to the active arrangement', async () => {
@@ -154,6 +163,7 @@ describe('switchArrangement', () => {
         await expect(switchArrangement(target.id)).rejects.toBe(stopError);
 
         expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(cancelPreparedBuffers).toHaveBeenCalledOnce();
         expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
     });
 
@@ -178,6 +188,7 @@ describe('switchArrangement', () => {
         await switching;
 
         expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(cancelPreparedBuffers).toHaveBeenCalledOnce();
         expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
     });
 
@@ -262,7 +273,8 @@ describe('switchArrangement', () => {
         prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
             () =>
                 new Promise((resolve) => {
-                    completePreparation = () => resolve({ publish: publishPreparedBuffers });
+                    completePreparation = () =>
+                        resolve({ cancel: cancelPreparedBuffers, publish: publishPreparedBuffers });
                 })
         );
 
@@ -288,7 +300,8 @@ describe('switchArrangement', () => {
         prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
             () =>
                 new Promise((resolve) => {
-                    completePreparation = () => resolve({ publish: publishPreparedBuffers });
+                    completePreparation = () =>
+                        resolve({ cancel: cancelPreparedBuffers, publish: publishPreparedBuffers });
                 })
         );
 

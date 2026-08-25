@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { expectExternalProjectLink } from '../../__tests__/expectExternalProjectLink';
 import { StatusBar } from '../StatusBar';
 
 const undoState = vi.hoisted(() => ({
@@ -260,6 +261,30 @@ describe('StatusBar', () => {
 
             expect(open).toHaveBeenCalledWith('/legal/THIRD-PARTY-NOTICES.md', '_blank');
             open.mockRestore();
+        });
+    });
+
+    describe('project links', () => {
+        it('keeps source, discussions, and bug reporting in one compact menu', async () => {
+            renderWithTooltip(<StatusBar />);
+
+            fireEvent.pointerDown(screen.getByRole('button', { name: 'Project links' }), { pointerId: 1 });
+            await waitFor(() => {
+                expect(screen.getByRole('menuitem', { name: 'Source' })).toBeInTheDocument();
+            });
+
+            expectExternalProjectLink(
+                screen.getByRole('menuitem', { name: 'Source' }),
+                'https://github.com/jcosta33/sourdaw'
+            );
+            expectExternalProjectLink(
+                screen.getByRole('menuitem', { name: 'Discussions' }),
+                'https://github.com/jcosta33/sourdaw/discussions'
+            );
+            expectExternalProjectLink(
+                screen.getByRole('menuitem', { name: 'Report a bug' }),
+                'https://github.com/jcosta33/sourdaw/issues'
+            );
         });
     });
 });

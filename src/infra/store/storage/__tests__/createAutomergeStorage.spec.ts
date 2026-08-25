@@ -7,6 +7,7 @@ import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
+    getCurrentAutomergeStorageMutationOwner,
     runWithAutomergeStorageTransaction,
 } from '../createAutomergeStorage';
 
@@ -319,6 +320,44 @@ describe('createAutomergeStorage', () => {
             { docId: 'root', message: undefined, snapshotTransaction: undefined },
         ]);
         expect(doc.independent).toEqual({ count: 2 });
+    });
+
+    it('retains exact write ownership when delayed commits are flushed outside their creation scope', () => {
+        const { doc, port } = createTestPort();
+        const observedOwners: Array<object | undefined> = [];
+        configureAutomergeStoragePort({
+            ...port,
+            mutateDoc: (input) => {
+                observedOwners.push(getCurrentAutomergeStorageMutationOwner());
+                port.mutateDoc(input);
+            },
+        });
+        const scopedStorage = createAutomergeStorage<{ count: number }>('root', 'scoped');
+        const unscopedStorage = createAutomergeStorage<{ count: number }>('root', 'unscoped');
+        let scopedOwner: object | undefined;
+
+        const scopedTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            scopedOwner = getCurrentAutomergeStorageMutationOwner();
+            scopedStorage.set({ count: 1 });
+        });
+        expect(observedOwners).toEqual([]);
+        scopedTransaction.commit();
+
+        expect(scopedOwner).toBeDefined();
+        expect(observedOwners).toEqual([scopedOwner]);
+
+        unscopedStorage.set({ count: 2 });
+        let flushCallerOwner: object | undefined;
+        const flushCaller = runWithAutomergeStorageTransaction(undefined, () => {
+            flushCallerOwner = getCurrentAutomergeStorageMutationOwner();
+            flushAutomergeStorageWrites();
+        });
+        flushCaller.abort();
+
+        expect(flushCallerOwner).toBeDefined();
+        expect(flushCallerOwner).not.toBe(scopedOwner);
+        expect(observedOwners).toEqual([scopedOwner, undefined]);
+        expect(doc).toEqual({ scoped: { count: 1 }, unscoped: { count: 2 } });
     });
 
     it('does not coalesce writes with different snapshot owners in one adapter', () => {

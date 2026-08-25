@@ -7,6 +7,15 @@ const MAX_VALIDATION_FAILURES = 16;
 const MAX_SELECTED_CLIPS = 16;
 const MAX_IMPORTED_STRING_LENGTH = 512;
 const MAX_RECEIPTS = 16;
+/**
+ * Receipt summaries carry application-owned tool evidence, not imported project or prompt text, so
+ * they hold their own budget instead of the general imported-string bound. The budget is the total
+ * across every retained receipt, which keeps the worst-case message contribution identical to the
+ * previous MAX_RECEIPTS * MAX_IMPORTED_STRING_LENGTH aggregate while letting a single receipt spend
+ * the whole allowance. This constant is the only owner of that budget: callers pass whole summaries
+ * and read the reported `truncated` flag.
+ */
+const MAX_RECEIPT_EVIDENCE_LENGTH = 8_192;
 const MAX_MEASUREMENTS = 16;
 
 function isRelevantLock(
@@ -61,8 +70,12 @@ function canonicalJson(value: unknown): string {
     return JSON.stringify(value);
 }
 
+function boundedTo(value: string, maxLength: number): { value: string; truncated: boolean } {
+    return { value: value.slice(0, maxLength), truncated: value.length > maxLength };
+}
+
 function boundedString(value: string): { value: string; truncated: boolean } {
-    return { value: value.slice(0, MAX_IMPORTED_STRING_LENGTH), truncated: value.length > MAX_IMPORTED_STRING_LENGTH };
+    return boundedTo(value, MAX_IMPORTED_STRING_LENGTH);
 }
 
 function digest(value: unknown): string {
@@ -249,9 +262,14 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         revision,
     });
     const validationFailures = (input.validationFailures ?? []).slice(-MAX_VALIDATION_FAILURES);
-    const receipts = (input.receipts ?? []).slice(-MAX_RECEIPTS).map((receipt) => ({
+    const retainedReceipts = (input.receipts ?? []).slice(-MAX_RECEIPTS);
+    const receiptSummaryBudget =
+        retainedReceipts.length === 0
+            ? MAX_RECEIPT_EVIDENCE_LENGTH
+            : Math.floor(MAX_RECEIPT_EVIDENCE_LENGTH / retainedReceipts.length);
+    const receipts = retainedReceipts.map((receipt) => ({
         id: boundedString(receipt.id).value,
-        summary: boundedString(receipt.summary),
+        summary: boundedTo(receipt.summary, receiptSummaryBudget),
     }));
     const capabilitySchemas = (input.capabilitySchemas ?? []).slice(0, MAX_CONTEXT_TARGETS).map((schema) => ({
         name: boundedString(schema.name).value,

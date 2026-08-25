@@ -214,6 +214,15 @@ describe('project license', () => {
         );
     });
 
+    it('uses supplied safe inventory contents for the project-license marker scan', () => {
+        rmSync(join(root, 'release/open-source-inventory.json'));
+        const inventoryContents = 'pending:OS-10-project-grant';
+
+        expect(validateProjectLicense(root, cargo, inventoryContents)).toContain(
+            'release/open-source-inventory.json: stale project-license marker pending:OS-10-project-grant'
+        );
+    });
+
     it('renders dependency identities and deduplicated exact legal files', () => {
         const legalFile = { label: 'LICENSE', sha256: 'a'.repeat(64), contents: 'exact terms\n' };
         const records: DependencyLicenseRecord[] = [

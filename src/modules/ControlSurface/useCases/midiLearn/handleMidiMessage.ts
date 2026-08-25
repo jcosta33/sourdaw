@@ -37,7 +37,7 @@ export function handleMidiMessage(channel: number, cc: number, value: number, no
                     // it lands second, so passing the raw scaled value there put
                     // the audio node above the ceiling the project had just
                     // recorded.
-                    const gain = deps.clampTrackGain(mapping.trackId, scaled);
+                    const gain = deps.clampTrackGain(scaled);
                     deps.setTrackGainArrangement(mapping.trackId, gain);
                     deps.engineSetTrackGain(mapping.trackId, gain);
                 }

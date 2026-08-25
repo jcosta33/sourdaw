@@ -66,6 +66,12 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 function makeProject(): ProjectStoreState {
     return {
         name: 'My Song',
+        // A canonical identity is the steady-state precondition: every project
+        // created or loaded by this build carries one. Without it,
+        // migrateActiveProjectIdentity (the real one runs in this spec) mints
+        // and persists an identity before serialization, so the
+        // build → persist → capture ordering asserted below no longer holds.
+        projectId: '11111111-2222-4333-8444-555555555555',
         createdAt: 1700000000000,
         updatedAt: 1700000000000,
         dirty: true,

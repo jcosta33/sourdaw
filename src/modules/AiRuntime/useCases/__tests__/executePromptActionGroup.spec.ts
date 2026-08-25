@@ -66,6 +66,29 @@ describe('executePromptActionGroup', () => {
         );
     });
 
+    it('passes compiler dependencies and batch-local bindings into command-batch compilation', async () => {
+        const busId = 'bus-ai-drum';
+        const actions = [
+            { type: 'createBus', payload: { name: 'Drum Bus', busId } },
+            { type: 'setTrackGain', payload: { trackId: busId, gain: 0.8, expectedGain: 1 } },
+        ] satisfies AppAction[];
+        const actionCommandGraph = {
+            dependenciesByActionIndex: [[], [0]],
+            batchLocalBindings: [{ bindingId: '$drum-bus', producerActionIndex: 0, producerArgument: 'busId' }],
+        } as const;
+
+        await executePromptActionGroup({
+            actions,
+            actionCommandGraph,
+            prompt: 'Create a Drum Bus, then set its gain to 0.8.',
+            projectRevision: 'revision-1',
+        });
+
+        expect(vi.mocked(compilePlannedActionCommandBatch)).toHaveBeenCalledWith(
+            expect.objectContaining({ actions, actionCommandGraph })
+        );
+    });
+
     it('rejects actions outside the approved command boundary before compilation or dispatch', async () => {
         await executePromptActionGroup({
             actions: [{ type: 'removeAllTracks' }],

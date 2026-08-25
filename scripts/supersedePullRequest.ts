@@ -2,12 +2,12 @@
 import { fileURLToPath } from 'node:url';
 
 import {
-    AUTHOR_BOT_LOGIN,
+    AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
-    isAuthorBotLogin,
+    isAuthorBotNodeId,
     originMainBlob,
     parseGraphqlResponse,
     resolvePrimaryRoot,
@@ -20,6 +20,7 @@ export type IssueComment = {
     id: string;
     fullDatabaseId: string;
     body: string;
+    authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
 };
@@ -80,11 +81,11 @@ export function supersedePullRequest(
     oldNumber: number,
     expectedHead: string,
     replacementNumber: number,
-    authorLogin: string,
+    authorNodeId: string,
     port: SupersedePullRequestPort
 ): string {
-    if (authorLogin !== AUTHOR_BOT_LOGIN) {
-        fail(`authenticated author login ${authorLogin} is not ${AUTHOR_BOT_LOGIN}`);
+    if (!isAuthorBotNodeId(authorNodeId)) {
+        fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
     }
     if (oldNumber === replacementNumber) {
         fail('replacement pull request must differ from the old pull request');
@@ -277,22 +278,22 @@ function commentClientMutationId(number: number, body: string): string {
 function closeClientMutationId(pullRequestId: string): string {
     return `supersede-close:${pullRequestId}`;
 }
-function isAuthorBotActor(login: unknown, type: unknown): boolean {
-    return type === 'Bot' && typeof login === 'string' && isAuthorBotLogin(login);
+function isAuthorBotActor(nodeId: unknown, type: unknown): boolean {
+    return type === 'Bot' && typeof nodeId === 'string' && isAuthorBotNodeId(nodeId);
 }
 function hasExpectedComment(comments: IssueComment[], id: string, body: string): boolean {
     return comments.some(
         (comment) =>
-            comment.id === id && comment.body === body && isAuthorBotActor(comment.authorLogin, comment.authorType)
+            comment.id === id && comment.body === body && isAuthorBotActor(comment.authorNodeId, comment.authorType)
     );
 }
 function validatedCommentMarkers(comments: IssueComment[], body: string): IssueComment[] {
-    const owned = comments.filter((comment) => isAuthorBotLogin(comment.authorLogin));
+    const owned = comments.filter((comment) => isAuthorBotNodeId(comment.authorNodeId));
     for (const comment of owned) {
         if (
             !isDecimalId(comment.fullDatabaseId) ||
             comment.body !== body ||
-            !isAuthorBotActor(comment.authorLogin, comment.authorType)
+            !isAuthorBotActor(comment.authorNodeId, comment.authorType)
         ) {
             fail('owned supersession marker is not an exact author-bot receipt');
         }
@@ -412,7 +413,7 @@ function assertCommentReceipt(value: AddedIssueCommentReceipt, expectedClientMut
         typeof value.id !== 'string' ||
         value.id === '' ||
         !isDecimalId(value.fullDatabaseId) ||
-        !isAuthorBotActor(value.authorLogin, value.authorType) ||
+        !isAuthorBotActor(value.authorNodeId, value.authorType) ||
         value.clientMutationId !== expectedClientMutationId
     ) {
         fail('add supersession comment returned an invalid result');
@@ -503,7 +504,7 @@ export function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] 
     const comments: IssueComment[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){id ... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login __typename}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($subjectId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){node(id:$subjectId){id ... on PullRequest{${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `subjectId=${subjectId}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -547,7 +548,7 @@ function toIssueComment(value: unknown): IssueComment {
         id?: unknown;
         fullDatabaseId?: unknown;
         body?: unknown;
-        author?: { login?: unknown; __typename?: unknown } | null;
+        author?: { id?: unknown; login?: unknown; __typename?: unknown } | null;
     };
     if (typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId) || typeof comment.body !== 'string') {
         fail('invalid issue comment');
@@ -556,13 +557,14 @@ function toIssueComment(value: unknown): IssueComment {
         id: comment.id,
         fullDatabaseId: comment.fullDatabaseId,
         body: comment.body,
+        authorNodeId: typeof comment.author?.id === 'string' ? comment.author.id : null,
         authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
         authorType: typeof comment.author?.__typename === 'string' ? comment.author.__typename : null,
     };
 }
 function addComment(subjectId: string, body: string, clientMutationId: string, gh: Gh): AddedIssueCommentReceipt {
     const query =
-        'mutation($subjectId:ID!,$body:String!,$clientMutationId:String!){addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId}){clientMutationId commentEdge{node{id fullDatabaseId body author{login __typename}}}}}';
+        'mutation($subjectId:ID!,$body:String!,$clientMutationId:String!){addComment(input:{subjectId:$subjectId,body:$body,clientMutationId:$clientMutationId}){clientMutationId commentEdge{node{id fullDatabaseId body author{login __typename ... on Bot{id}}}}}}';
     const response = graphql(
         gh,
         query,
@@ -631,8 +633,8 @@ async function main(): Promise<number> {
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'author' });
     try {
-        if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
-            fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
+        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
         assertRequiredRepository(
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
@@ -644,7 +646,7 @@ async function main(): Promise<number> {
             parsed.oldNumber,
             parsed.head,
             parsed.replacementNumber,
-            auth.minted.login,
+            auth.minted.actorNodeId,
             shellPort(auth.session)
         );
         return 0;

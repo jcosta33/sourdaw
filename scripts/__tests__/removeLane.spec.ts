@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { supersessionCommentBody } from '../prContract.ts';
 import {
     parseWorktrees,
@@ -52,7 +52,8 @@ function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
 function supersessionReceipt(replacement = 99, overrides: Partial<IssueComment> = {}): IssueComment {
     return {
         body: supersessionCommentBody(replacement),
-        authorLogin: AUTHOR_BOT_LOGIN,
+        authorNodeId: AUTHOR_BOT_NODE_ID,
+        authorLogin: 'renamed-author[bot]',
         authorType: 'Bot',
         ...overrides,
     };
@@ -278,7 +279,13 @@ describe('lane removal', () => {
             'closed carrying a receipt nobody trusted wrote',
             {
                 pullRequests: [supersededPullRequest()],
-                comments: [supersessionReceipt(99, { authorLogin: 'drive-by', authorType: 'User' })],
+                comments: [
+                    supersessionReceipt(99, {
+                        authorNodeId: 'U_drive-by',
+                        authorLogin: 'drive-by',
+                        authorType: 'User',
+                    }),
+                ],
             },
             /closed without a supersession receipt/,
         ],
@@ -286,7 +293,7 @@ describe('lane removal', () => {
             'closed carrying a receipt from a different installed app',
             {
                 pullRequests: [supersededPullRequest()],
-                comments: [supersessionReceipt(99, { authorLogin: 'other-app[bot]' })],
+                comments: [supersessionReceipt(99, { authorNodeId: 'BOT_other', authorLogin: 'other-app[bot]' })],
             },
             /closed without a supersession receipt/,
         ],
@@ -502,7 +509,12 @@ describe('lane-removal shell boundary', () => {
                 }
                 if (args.includes('repos/jcosta33/sourdaw/issues/42/comments?per_page=100')) {
                     return JSON.stringify([
-                        [{ body: 'Superseded by #99.', user: { login: 'jcosta33-author[bot]', type: 'Bot' } }],
+                        [
+                            {
+                                body: 'Superseded by #99.',
+                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                            },
+                        ],
                         [{ body: 'drive by', user: null }],
                     ]);
                 }
@@ -516,8 +528,13 @@ describe('lane-removal shell boundary', () => {
         const port = shellPort(shell);
 
         expect(port.comments(42)).toEqual([
-            { body: 'Superseded by #99.', authorLogin: 'jcosta33-author[bot]', authorType: 'Bot' },
-            { body: 'drive by', authorLogin: null, authorType: null },
+            {
+                body: 'Superseded by #99.',
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+                authorLogin: 'renamed-author[bot]',
+                authorType: 'Bot',
+            },
+            { body: 'drive by', authorNodeId: null, authorLogin: null, authorType: null },
         ]);
         // GitHub reports a merged pull request as `closed`; only `merged_at` says it landed.
         expect(port.replacement(99)).toEqual({ number: 99, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' });

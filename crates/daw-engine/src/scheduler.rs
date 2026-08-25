@@ -14,7 +14,8 @@ use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
     ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
     RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineGraph,
-    TimelineRtDiagnosticsSnapshot, TimelineTrack,
+    TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
+    MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
@@ -68,6 +69,14 @@ pub enum MidiFxKind {
     VelocityScaler,
 }
 
+/// The pre-built built-in instance an `AddEffect`/`AddDetachedEffect` test
+/// sender pushes: built on the test (control) side, as the real senders build
+/// theirs, never by the drain that applies the command.
+#[cfg(test)]
+fn knead_instance() -> PluginCore {
+    PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
+}
+
 /// A built-in effect the graph can register, addressed without a name for the
 /// reason given on [`crate::timeline::AutomationTarget`]: a command carrying a
 /// `String` type name would have its allocation freed on the audio thread when
@@ -101,11 +110,17 @@ impl BuiltinEffectType {
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
     // Built-in effects
-    /// Register a built-in effect on the master insert chain — the crate's
+    /// Register a built-in effect, already built control-side
+    /// ([`PluginCore::builtin`]), on the master insert chain — the crate's
     /// original chain, and where the plugin-bridge path still runs a built-in
     /// it registers standalone.
-    AddEffect(usize, BuiltinEffectType),
-    /// Register a built-in effect detached from every chain.
+    ///
+    /// The command owns the instance from the push to the apply, on the same
+    /// contract as [`GraphCommand::AddPlugin`]: the audio thread installs it
+    /// or retires it, and never constructs or frees one (ADR 0020).
+    AddEffect(usize, PluginCore),
+    /// Register a built-in effect, already built control-side, detached from
+    /// every chain.
     ///
     /// The graph transport's form: its effect exists only once the
     /// `InsertTrackDevice`/`InsertBusDevice` that follows it lands, and the
@@ -113,7 +128,7 @@ pub enum GraphCommand {
     /// the two. An effect registered onto the master chain in that window
     /// would render one block of the *entire mix* through a device the user
     /// put on one strip; a detached one renders nowhere until it is placed.
-    AddDetachedEffect(usize, BuiltinEffectType),
+    AddDetachedEffect(usize, PluginCore),
     SetParam(usize, DeviceParam, f32),
     SetBypass(usize, bool),
 
@@ -415,9 +430,34 @@ impl GraphCommand {
     }
 }
 
-enum PluginCore {
+/// A processing instance the graph can run: a built-in engine or a hosted
+/// native plugin.
+///
+/// Public only because [`GraphCommand::AddEffect`] and
+/// [`GraphCommand::AddDetachedEffect`] carry it across the command ring, so
+/// a control-side caller builds one before pushing. The instance is
+/// constructed on the control thread against the stream's negotiated sample
+/// rate — `KneadEngine::new` alone performs some twenty zero-filled heap
+/// allocations — and the audio thread that receives it may neither construct
+/// one nor free it (ADR 0020): it installs the instance into the effect
+/// table, or hands it back over the retirement channel, and nothing else.
+pub enum PluginCore {
     Knead(KneadEngine),
     Native(Box<dyn NativePlugin>),
+}
+
+impl PluginCore {
+    /// Build the built-in instance `plugin_type` names, on the control
+    /// thread. This is the constructor side of the
+    /// [`BuiltinEffectType`] name mapping: every sender that resolves a wire
+    /// name builds its instance here, against the sample rate the stream
+    /// actually opened at, so no two producers can construct the same
+    /// built-in against different clocks.
+    pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
+        match plugin_type {
+            BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
+        }
+    }
 }
 
 /// Map an addressed device parameter onto the matching `KneadEngine` setter.
@@ -477,25 +517,407 @@ struct ActiveEffect {
 
 pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 257;
 
-/// The fixed capacity of the scheduler's effect table, and with it the number
-/// of devices a project may hold natively at once. The table is built once
-/// with this capacity and never grown: a push past it is refused and counted —
-/// growing the vector inside the audio deadline is the allocation ADR 0020
-/// forbids, and `ActiveEffect` is large enough (its plugin core, MIDI buffer,
-/// and parameter queue all live inline) that both the reservation and the
-/// memmove `remove_effect` performs scale with it, so the ceiling cannot
-/// simply be raised to cover every chain slot the timeline admits.
+/// The chain slots the timeline itself admits: every track's device chain
+/// plus every bus's. The strip admission rules enforce this product-wide —
+/// tracks and buses are counted, and each chain is capped at
+/// [`MAX_TRACK_DEVICES`]/[`MAX_BUS_DEVICES`] — so this is the ceiling on the
+/// table's timeline population, derived rather than chosen.
+pub const TIMELINE_CHAIN_SLOT_BUDGET: usize =
+    MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES;
+
+/// The session's reserve for engine-owned hosted plugin instances: the
+/// `AddPlugin`/`AddPluginWithBridge` registrations `load_plugin` makes, one
+/// per external-plugin device in the project.
+///
+/// No ceiling on them is enumerable from this crate: the host holds them in an
+/// unbounded map keyed by instance id, and an external-plugin device list has
+/// no per-strip cap of its own. So the engine states the limit itself: 128
+/// instances at once, the number the bridge table has enforced since bridges
+/// existed, now named here and checked control-side by `load_plugin`
+/// (`sourdaw-native`) where the refusal reaches the user instead of dying as
+/// a counter on the callback. A session past 128 hosted plugins is past any
+/// professional session's scale — each instance is a native plugin library
+/// plus roughly 288 KiB of bridge rings — and the refusal names the limit.
+pub const HOSTED_PLUGIN_RESERVE: usize = 128;
+
+/// The session's reserve for Crumbs input-capture slots: the
+/// `AddPluginWithBridge` registration `create_crumbs` makes for the panel's
+/// record feed, one per live instance.
+///
+/// The app renders exactly one Crumbs panel, and re-pointing it at another
+/// device tears the old instance down asynchronously while the new one is
+/// already being created, so two slots can be live at once. The gate the
+/// reserve enforces is the host's instance map: `create_crumbs`
+/// (`sourdaw-native`) refuses while the map holds the reserve's count.
+/// Because a destroy removes its map entry before the engine slot's
+/// retirement has drained, re-points inside that teardown window can admit a
+/// third engine slot past the gate — at that extreme the engine's own
+/// callback-time capacity check is the last line, as it is for every
+/// population.
+pub const CRUMBS_CAPTURE_RESERVE: usize = 2;
+
+/// The fixed capacity of the scheduler's effect table. Every registration the
+/// product can hold at once shares this one table, and the capacity is the
+/// sum of its three populations, each bounded by a named term:
+///
+/// - the timeline's chain devices, at [`TIMELINE_CHAIN_SLOT_BUDGET`] — the
+///   product's own strip admission rules;
+/// - engine-owned hosted plugin instances, at [`HOSTED_PLUGIN_RESERVE`];
+/// - Crumbs input-capture slots, at [`CRUMBS_CAPTURE_RESERVE`].
+///
+/// Sizing against what the product permits is the contract: the table once
+/// held a flat 128 while the timeline admitted 6144 chain slots, so a project
+/// four-devices-deep on 32 tracks exhausted it, and with it full the Crumbs
+/// panel could not even open. The reserve terms state their own bounds where
+/// no code enumerates them, so the ceiling is discoverable before it is hit.
+///
+/// The table is built once with this capacity and never grown: a push past it
+/// is refused and counted — growing the vector inside the audio deadline is
+/// the allocation ADR 0020 forbids — and `ActiveEffect` is large enough (its
+/// plugin core, MIDI buffer, and parameter queue all live inline) that the
+/// reservation itself scales with the ceiling, which is why the ceiling stops
+/// at what the product permits rather than somewhere beyond it. Every
+/// per-id operation over a table this size is O(1) by construction: the
+/// [`IdSlotIndex`] resolves ids to slots, and `remove_effect` swaps the
+/// table's tail into the vacated slot instead of moving the inline entries
+/// behind it, so no memmove of `ActiveEffect`s ever runs on the callback at
+/// any population this ceiling admits.
 ///
 /// The audio thread's refusal is the last line, not the reported one: it is a
 /// counter, and a device refused there is a device the user never sees in the
-/// chain. Control-side callers must hold the project below this ceiling
+/// chain. Control-side callers must hold the session below this ceiling
 /// themselves, where a refusal can be returned — which is why the constant is
 /// public.
-pub const EFFECT_TABLE_CAPACITY: usize = 128;
+pub const EFFECT_TABLE_CAPACITY: usize =
+    TIMELINE_CHAIN_SLOT_BUDGET + HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
 
-/// The fixed capacity of the bridge table, on the same contract as
-/// [`EFFECT_TABLE_CAPACITY`].
-pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize = 128;
+/// The fixed capacity of the bridge table. Bridges exist only for the two
+/// registrations that carry one — hosted plugin instances and Crumbs capture
+/// slots — so the table is sized to exactly their reserves; timeline chain
+/// devices never take a bridge.
+///
+/// The reserves are enforced by map-gated control-side checks, and the maps
+/// count entries, not live bridges. Bridges sit outside those gates in the
+/// teardown conditions the reserve docs disclose: a destroy removes its map
+/// entry before the removal is pushed, and between that push and its
+/// application on the callback the bridge is draining but uncounted — a
+/// gate-admitted create's registration can already be in the ring beside its
+/// removal; and a removal whose push failed leaks the engine slot and its
+/// bridge-table entry past the gate permanently. In those states the table
+/// holds checks-admitted bridges plus ones the gates can no longer see, and a
+/// registration both gates admitted can still reach this capacity arm on the
+/// callback, where its refusal is a counter nothing hands back — the exact
+/// failure the effect-table ledger exists to remove, binding here at the
+/// reserves' sum, 6144 slots sooner than the effect table's own last line.
+/// That callback-time bridge-table refusal is the last line for this table,
+/// named as such, exactly as the effect table's docs name theirs; the gates
+/// above are what keep it out of ordinary sessions.
+pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize =
+    HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
+
+/// One node of [`IdSlotIndex`]'s fixed-depth binary radix trie. Child and slot
+/// handles are one-based, keeping zero available as the empty sentinel.
+#[derive(Clone, Copy, Default)]
+struct RadixNode {
+    children: [u32; 2],
+    slot_plus_one: u32,
+    next_free: u32,
+}
+
+/// A fixed-preallocated id-to-slot trie for callback lookup and mutation.
+///
+/// Every operation follows at most `usize::BITS` id bits. Nodes are allocated
+/// only from storage reserved before the callback starts; deletion prunes dead
+/// suffixes into a free list, so churn reuses nodes rather than consuming the
+/// reservation. This makes lookup, insert, and set-slot bounded by one radix
+/// walk and delete by a lookup plus a reverse pruning walk.
+struct IdSlotIndex {
+    nodes: Vec<RadixNode>,
+    free_head: u32,
+    #[cfg(test)]
+    last_delete_steps: usize,
+}
+
+impl IdSlotIndex {
+    fn reserved(population: usize) -> Self {
+        let node_capacity = 1 + population * usize::BITS as usize;
+        let mut nodes = Vec::with_capacity(node_capacity);
+        nodes.push(RadixNode::default());
+        Self {
+            nodes,
+            free_head: 0,
+            #[cfg(test)]
+            last_delete_steps: 0,
+        }
+    }
+
+    #[inline]
+    fn bit_at(id: usize, depth: u32) -> usize {
+        ((id >> (usize::BITS - 1 - depth)) & 1) as usize
+    }
+
+    #[inline]
+    fn child_index(node: &RadixNode, bit: usize) -> Option<usize> {
+        let child = node.children[bit];
+        if child == 0 {
+            None
+        } else {
+            Some(child as usize - 1)
+        }
+    }
+
+    #[inline]
+    fn lookup(&self, id: usize) -> Option<usize> {
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            let bit = Self::bit_at(id, depth);
+            node_index = Self::child_index(&self.nodes[node_index], bit)?;
+        }
+        let slot_plus_one = self.nodes[node_index].slot_plus_one;
+        if slot_plus_one == 0 {
+            None
+        } else {
+            Some(slot_plus_one as usize - 1)
+        }
+    }
+
+    fn insert(&mut self, id: usize, slot: usize) -> bool {
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            let bit = Self::bit_at(id, depth);
+            let child = self.nodes[node_index].children[bit];
+            node_index = if child == 0 {
+                let child_index = self.take_node();
+                self.nodes[node_index].children[bit] = child_index as u32 + 1;
+                child_index
+            } else {
+                child as usize - 1
+            };
+        }
+        let node = &mut self.nodes[node_index];
+        if node.slot_plus_one != 0 {
+            return false;
+        }
+        node.slot_plus_one = slot as u32 + 1;
+        true
+    }
+
+    fn set_slot(&mut self, id: usize, slot: usize) {
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            let bit = Self::bit_at(id, depth);
+            let Some(child) = Self::child_index(&self.nodes[node_index], bit) else {
+                debug_assert!(false, "repointing an id the index does not hold");
+                return;
+            };
+            node_index = child;
+        }
+        let node = &mut self.nodes[node_index];
+        debug_assert!(
+            node.slot_plus_one != 0,
+            "repointing an id the index does not hold"
+        );
+        if node.slot_plus_one != 0 {
+            node.slot_plus_one = slot as u32 + 1;
+        }
+    }
+
+    fn delete(&mut self, id: usize) -> Option<usize> {
+        let mut path = [0usize; usize::BITS as usize];
+        let mut node_index = 0;
+        for depth in 0..usize::BITS {
+            path[depth as usize] = node_index;
+            let bit = Self::bit_at(id, depth);
+            node_index = Self::child_index(&self.nodes[node_index], bit)?;
+        }
+        let slot_plus_one = self.nodes[node_index].slot_plus_one;
+        if slot_plus_one == 0 {
+            return None;
+        }
+        self.nodes[node_index].slot_plus_one = 0;
+
+        let mut steps = usize::BITS as usize;
+        for depth in (0..usize::BITS).rev() {
+            let child = node_index;
+            if self.nodes[child].slot_plus_one != 0 || self.nodes[child].children != [0, 0] {
+                break;
+            }
+            let parent = path[depth as usize];
+            let bit = Self::bit_at(id, depth);
+            self.nodes[parent].children[bit] = 0;
+            self.release_node(child);
+            node_index = parent;
+            steps += 1;
+        }
+        #[cfg(test)]
+        {
+            self.last_delete_steps = steps;
+        }
+        Some(slot_plus_one as usize - 1)
+    }
+
+    fn take_node(&mut self) -> usize {
+        if self.free_head != 0 {
+            let node_index = self.free_head as usize - 1;
+            self.free_head = self.nodes[node_index].next_free;
+            self.nodes[node_index] = RadixNode::default();
+            return node_index;
+        }
+        debug_assert!(
+            self.nodes.len() < self.nodes.capacity(),
+            "radix reservation exhausted"
+        );
+        let node_index = self.nodes.len();
+        self.nodes.push(RadixNode::default());
+        node_index
+    }
+
+    fn release_node(&mut self, node_index: usize) {
+        self.nodes[node_index] = RadixNode {
+            next_free: self.free_head,
+            ..RadixNode::default()
+        };
+        self.free_head = node_index as u32 + 1;
+    }
+}
+
+/// A fixed-capacity unordered slot set with O(1) insertion, removal, and
+/// swap-remove relocation. It is used only for work whose ordering is not
+/// observable: parameter queues and pending-MIDI cleanup.
+struct SlotWorkSet {
+    slots: Vec<usize>,
+    positions: Vec<u32>,
+}
+
+impl SlotWorkSet {
+    fn reserved(capacity: usize) -> Self {
+        Self {
+            slots: Vec::with_capacity(capacity),
+            positions: vec![0; capacity],
+        }
+    }
+
+    fn insert(&mut self, slot: usize) {
+        if self.positions[slot] != 0 {
+            return;
+        }
+        debug_assert!(
+            self.slots.len() < self.slots.capacity(),
+            "work set exhausted"
+        );
+        self.slots.push(slot);
+        self.positions[slot] = self.slots.len() as u32;
+    }
+
+    fn remove(&mut self, slot: usize) {
+        let position = self.positions[slot];
+        if position == 0 {
+            return;
+        }
+        let index = position as usize - 1;
+        let moved = self.slots.pop().expect("work-set position names a slot");
+        if index < self.slots.len() {
+            self.slots[index] = moved;
+            self.positions[moved] = index as u32 + 1;
+        }
+        self.positions[slot] = 0;
+    }
+
+    fn move_slot(&mut self, from: usize, to: usize) {
+        if from == to || self.positions[from] == 0 {
+            return;
+        }
+        let position = self.positions[from];
+        self.slots[position as usize - 1] = to;
+        self.positions[to] = position;
+        self.positions[from] = 0;
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct MasterLink {
+    previous: u32,
+    next: u32,
+    member: bool,
+}
+
+/// An intrusive, slot-addressed master insert chain. Its links live beside the
+/// table rather than in effects, so an effect swap only repairs constant-size
+/// link endpoints and never changes audible insertion order.
+struct MasterWorkList {
+    links: Vec<MasterLink>,
+    head: u32,
+    tail: u32,
+}
+
+impl MasterWorkList {
+    fn reserved(capacity: usize) -> Self {
+        Self {
+            links: vec![MasterLink::default(); capacity],
+            head: 0,
+            tail: 0,
+        }
+    }
+
+    fn append(&mut self, slot: usize) {
+        if self.links[slot].member {
+            return;
+        }
+        let handle = slot as u32 + 1;
+        self.links[slot] = MasterLink {
+            previous: self.tail,
+            next: 0,
+            member: true,
+        };
+        if self.tail == 0 {
+            self.head = handle;
+        } else {
+            self.links[self.tail as usize - 1].next = handle;
+        }
+        self.tail = handle;
+    }
+
+    fn remove(&mut self, slot: usize) {
+        let link = self.links[slot];
+        if !link.member {
+            return;
+        }
+        if link.previous == 0 {
+            self.head = link.next;
+        } else {
+            self.links[link.previous as usize - 1].next = link.next;
+        }
+        if link.next == 0 {
+            self.tail = link.previous;
+        } else {
+            self.links[link.next as usize - 1].previous = link.previous;
+        }
+        self.links[slot] = MasterLink::default();
+    }
+
+    fn move_slot(&mut self, from: usize, to: usize) {
+        if from == to {
+            return;
+        }
+        let link = self.links[from];
+        self.links[from] = MasterLink::default();
+        if !link.member {
+            return;
+        }
+        let handle = to as u32 + 1;
+        self.links[to] = link;
+        if link.previous == 0 {
+            self.head = handle;
+        } else {
+            self.links[link.previous as usize - 1].next = handle;
+        }
+        if link.next == 0 {
+            self.tail = handle;
+        } else {
+            self.links[link.next as usize - 1].previous = handle;
+        }
+    }
+}
 
 /// Everything the audio thread gives up for reclamation off the callback.
 ///
@@ -665,7 +1087,20 @@ impl ActiveEffect {
 
 pub struct AudioScheduler {
     effects: Vec<ActiveEffect>,
+    /// Effect id → slot into `effects`, so per-id resolution is O(1) on the
+    /// callback. Maintained only by the registration and removal arms; see
+    /// [`IdSlotIndex`] for the capacity and allocation contract.
+    effect_index: IdSlotIndex,
+    /// Slots whose fixed parameter queues are non-empty.
+    parameter_work: SlotWorkSet,
+    /// Slots that may need detached-MIDI cleanup without walking the table.
+    pending_midi_work: SlotWorkSet,
+    /// The explicit, deterministic order of master insert processing.
+    master_work: MasterWorkList,
     audio_bridges: Vec<PluginAudioBridge>,
+    /// Plugin id → slot into `audio_bridges`, on the same contract as
+    /// `effect_index`.
+    bridge_index: IdSlotIndex,
     timeline: TimelineGraph,
     /// Absolute frame of the next block's first sample. It advances only while
     /// the transport is playing, so a clip start and a parameter stamp mean
@@ -689,6 +1124,16 @@ pub struct AudioScheduler {
     /// Fenced batches applied whole, for [`GraphProgressSnapshot`].
     batches_applied: u64,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    #[cfg(test)]
+    rt_work: RtWorkCounters,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct RtWorkCounters {
+    parameter_table_visits: usize,
+    master_table_visits: usize,
+    pending_midi_work_visits: usize,
 }
 
 impl AudioScheduler {
@@ -732,7 +1177,12 @@ impl AudioScheduler {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
             effects: Vec::with_capacity(EFFECT_TABLE_CAPACITY),
+            effect_index: IdSlotIndex::reserved(EFFECT_TABLE_CAPACITY),
+            parameter_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
             audio_bridges: Vec::with_capacity(AUDIO_BRIDGE_TABLE_CAPACITY),
+            bridge_index: IdSlotIndex::reserved(AUDIO_BRIDGE_TABLE_CAPACITY),
             timeline: TimelineGraph::new(),
             playhead_frames: 0,
             command_rx: Some(command_rx),
@@ -750,6 +1200,8 @@ impl AudioScheduler {
             timeline_rt_diagnostics_tx,
             batches_applied: 0,
             graph_progress_tx,
+            #[cfg(test)]
+            rt_work: RtWorkCounters::default(),
         }
     }
 
@@ -794,6 +1246,16 @@ impl AudioScheduler {
     #[cfg(test)]
     pub(crate) fn effect_table_len(&self) -> usize {
         self.effects.len()
+    }
+
+    #[cfg(test)]
+    fn reset_rt_work_counters(&mut self) {
+        self.rt_work = RtWorkCounters::default();
+    }
+
+    #[cfg(test)]
+    fn rt_work_counters(&self) -> RtWorkCounters {
+        self.rt_work
     }
 
     /// Absolute frame of the next block's first sample.
@@ -893,13 +1355,11 @@ impl AudioScheduler {
     fn apply_command(&mut self, cmd: GraphCommand) -> Option<RetiredGraphObjects> {
         {
             let retired = match cmd {
-                GraphCommand::AddEffect(id, plugin_type) => {
-                    self.add_builtin_effect(id, plugin_type, EffectPlacement::MasterChain);
-                    None
+                GraphCommand::AddEffect(id, instance) => {
+                    self.add_builtin_effect(id, instance, EffectPlacement::MasterChain)
                 }
-                GraphCommand::AddDetachedEffect(id, plugin_type) => {
-                    self.add_builtin_effect(id, plugin_type, EffectPlacement::Detached);
-                    None
+                GraphCommand::AddDetachedEffect(id, instance) => {
+                    self.add_builtin_effect(id, instance, EffectPlacement::Detached)
                 }
                 #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
@@ -912,21 +1372,26 @@ impl AudioScheduler {
                     )
                 }
                 GraphCommand::SetParam(id, param, value) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        match &mut effect.instance {
-                            PluginCore::Knead(engine) => apply_knead_param(engine, param, value),
-                            PluginCore::Native(_) => {
-                                // `SetParam` only has a mapped target for the
-                                // built-in Knead effect today; a native
-                                // plugin's parameters are not routed here.
-                                self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                    if let Some(slot) = self.effect_index.lookup(id) {
+                        if let Some(effect) = self.effects.get_mut(slot) {
+                            match &mut effect.instance {
+                                PluginCore::Knead(engine) => {
+                                    apply_knead_param(engine, param, value)
+                                }
+                                PluginCore::Native(_) => {
+                                    // `SetParam` only has a mapped target for
+                                    // the built-in Knead effect today; a
+                                    // native plugin's parameters are not
+                                    // routed here.
+                                    self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                                }
                             }
                         }
                     }
                     None
                 }
                 GraphCommand::SetBypass(id, bypassed) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                    if let Some(effect) = self.effect_mut(id) {
                         effect.bypassed = bypassed;
                     }
                     None
@@ -945,8 +1410,7 @@ impl AudioScheduler {
                             PluginCore::Native(plugin),
                         )))
                     } else {
-                        self.effects
-                            .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.push_effect(ActiveEffect::new(id, PluginCore::Native(plugin)));
                         None
                     }
                 }
@@ -970,14 +1434,13 @@ impl AudioScheduler {
                             Some(bridge),
                         )
                     } else {
-                        self.effects
-                            .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
-                        self.audio_bridges.push(bridge);
+                        self.push_effect(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.push_bridge(bridge);
                         None
                     }
                 }
                 GraphCommand::AddMidiFx(id, fx_kind) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                    if let Some(effect) = self.effect_mut(id) {
                         let fx: Box<dyn MidiFx> = match fx_kind {
                             MidiFxKind::Arpeggiator => Box::new(Arpeggiator::default()),
                             MidiFxKind::VelocityScaler => Box::new(VelocityScaler::default()),
@@ -987,7 +1450,7 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::RemoveMidiFx(id, index) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                    if let Some(effect) = self.effect_mut(id) {
                         if index < effect.midi_fx.len() {
                             Some(RetiredGraphObjects::midi_fx(effect.midi_fx.remove(index)))
                         } else {
@@ -998,7 +1461,7 @@ impl AudioScheduler {
                     }
                 }
                 GraphCommand::SetMidiFxParam(id, index, name, value) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                    if let Some(effect) = self.effect_mut(id) {
                         if let Some(fx) = effect.midi_fx.get_mut(index) {
                             fx.set_param(&name, value);
                         }
@@ -1006,8 +1469,11 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::SendMidiNote(id, event) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        effect.enqueue_midi(event, &mut self.midi_rt_diagnostics);
+                    if let Some(slot) = self.effect_index.lookup(id) {
+                        if let Some(effect) = self.effects.get_mut(slot) {
+                            effect.enqueue_midi(event, &mut self.midi_rt_diagnostics);
+                            self.pending_midi_work.insert(slot);
+                        }
                     }
                     None
                 }
@@ -1056,12 +1522,10 @@ impl AudioScheduler {
                         // is single-valued, so detaching one that some other
                         // chain is running would silence a live device.
                         for entry in track.device_chain() {
-                            if let Some(effect) = self
-                                .effects
-                                .iter_mut()
-                                .find(|e| e.id == entry.effect_id && e.placement == placed_on)
-                            {
-                                effect.placement = EffectPlacement::Detached;
+                            if let Some(slot) = self.effect_index.lookup(entry.effect_id) {
+                                if self.effects[slot].placement == placed_on {
+                                    self.place_effect(entry.effect_id, EffectPlacement::Detached);
+                                }
                             }
                         }
                         RetiredGraphObjects::timeline(RetiredTimelineObject::Track(track))
@@ -1173,12 +1637,10 @@ impl AudioScheduler {
                         // they stop processing rather than falling back onto
                         // the master mix.
                         for entry in bus.device_chain() {
-                            if let Some(effect) = self
-                                .effects
-                                .iter_mut()
-                                .find(|e| e.id == entry.effect_id && e.placement == placed_on)
-                            {
-                                effect.placement = EffectPlacement::Detached;
+                            if let Some(slot) = self.effect_index.lookup(entry.effect_id) {
+                                if self.effects[slot].placement == placed_on {
+                                    self.place_effect(entry.effect_id, EffectPlacement::Detached);
+                                }
                             }
                         }
                         RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(bus))
@@ -1221,18 +1683,18 @@ impl AudioScheduler {
                     value,
                     at_frame,
                 } => {
-                    match self
-                        .effects
-                        .iter_mut()
-                        .find(|effect| effect.id == effect_id)
-                    {
-                        Some(effect) => {
-                            if !effect.pending_params.schedule(DeviceParamEvent {
-                                param,
-                                value,
-                                at_frame,
-                            }) {
-                                self.timeline.record_automation_queue_overflow();
+                    match self.effect_index.lookup(effect_id) {
+                        Some(slot) => {
+                            if let Some(effect) = self.effects.get_mut(slot) {
+                                if !effect.pending_params.schedule(DeviceParamEvent {
+                                    param,
+                                    value,
+                                    at_frame,
+                                }) {
+                                    self.timeline.record_automation_queue_overflow();
+                                } else {
+                                    self.parameter_work.insert(slot);
+                                }
                             }
                         }
                         None => self.timeline.record_unknown_target(),
@@ -1245,7 +1707,7 @@ impl AudioScheduler {
                         self.timeline.record_capacity_refusal();
                         Some(RetiredGraphObjects::removed(None, Some(bridge), None))
                     } else {
-                        self.audio_bridges.push(bridge);
+                        self.push_bridge(bridge);
                         None
                     }
                 }
@@ -1281,52 +1743,104 @@ impl AudioScheduler {
         }
     }
 
+    /// Whether an id already names a live effect, resolved through the id
+    /// index: batch admission asks this once per registering command, and a
+    /// table scan per command made a project-sized batch quadratic.
     fn effect_id_exists(&self, id: usize) -> bool {
-        self.effects.iter().any(|effect| effect.id == id)
+        self.effect_index.lookup(id).is_some()
     }
 
-    /// Register a built-in effect at the given placement, counting a refusal
-    /// instead when the id already names a live effect or the effect table is
-    /// full.
+    /// Resolve an effect id to a mutable borrow through the id index — the
+    /// one per-id resolution every addressed command arm uses, O(1) where
+    /// each used to scan the table.
+    fn effect_mut(&mut self, id: usize) -> Option<&mut ActiveEffect> {
+        let slot = self.effect_index.lookup(id)?;
+        self.effects.get_mut(slot)
+    }
+
+    /// Append an effect and map its id at the slot it took. Callers have
+    /// already refused a colliding id and a full table, so the mapping always
+    /// lands. The insert runs unconditionally and only its *result* is
+    /// asserted: burying it inside `debug_assert!` would skip the mapping in
+    /// release builds, empty the index there, and silently no-op every
+    /// per-id path.
+    fn push_effect(&mut self, effect: ActiveEffect) {
+        let slot = self.effects.len();
+        let id = effect.id;
+        let placement = effect.placement;
+        self.effects.push(effect);
+        let inserted = self.effect_index.insert(id, slot);
+        debug_assert!(
+            inserted,
+            "push_effect is only reached after the collision check refused the id"
+        );
+        if placement == EffectPlacement::MasterChain {
+            self.master_work.append(slot);
+        }
+    }
+
+    /// Append a bridge and map its plugin id at the slot it took, on the same
+    /// precondition and the same unconditional-insert law as
+    /// [`Self::push_effect`].
+    fn push_bridge(&mut self, bridge: PluginAudioBridge) {
+        let slot = self.audio_bridges.len();
+        let plugin_id = bridge.plugin_id;
+        self.audio_bridges.push(bridge);
+        let inserted = self.bridge_index.insert(plugin_id, slot);
+        debug_assert!(
+            inserted,
+            "push_bridge is only reached after the collision check refused the id"
+        );
+    }
+
+    /// Register a built-in effect — whose instance the command carried
+    /// already built, constructed control-side — at the given placement,
+    /// counting a refusal instead when the id already names a live effect or
+    /// the effect table is full.
     ///
-    /// Both refusals are decided *before* the instance exists, and that order
-    /// is the contract. Unlike `AddPlugin`, whose instance is built control-
-    /// side and merely carried across the ring, a built-in is constructed
-    /// here, on the audio thread: `KneadEngine::new` allocates and zeroes its
-    /// analysis and overlap buffers. Constructing one only to hand it
-    /// straight back over the retirement channel would put exactly the heap
-    /// traffic ADR 0020 forbids inside the audio deadline, on the path whose
-    /// whole purpose is to refuse. A refused built-in therefore costs
-    /// nothing and retires nothing — there is no object to hand off.
+    /// Nothing on this path constructs or frees (ADR 0020): on success the
+    /// carried instance moves into the effect table, and on either refusal it
+    /// moves into the retirement channel exactly as `AddPlugin`'s carried
+    /// plugin does — dropping it here would free its engine's buffers on the
+    /// callback, the same heap traffic building it there used to cost. The
+    /// refusal checks still decide first, so the retirement the caller
+    /// observes is an instance the table never held.
     fn add_builtin_effect(
         &mut self,
         id: usize,
-        plugin_type: BuiltinEffectType,
+        instance: PluginCore,
         placement: EffectPlacement,
-    ) {
+    ) -> Option<RetiredGraphObjects> {
         if self.effect_id_exists(id) {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
-            return;
+            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
+                id, instance, placement,
+            )));
         }
         if self.effects.len() == EFFECT_TABLE_CAPACITY {
             self.timeline.record_capacity_refusal();
-            return;
+            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
+                id, instance, placement,
+            )));
         }
-        let instance = match plugin_type {
-            BuiltinEffectType::Knead => PluginCore::Knead(KneadEngine::new(self.sample_rate)),
-        };
-        self.effects
-            .push(ActiveEffect::with_placement(id, instance, placement));
+        self.push_effect(ActiveEffect::with_placement(id, instance, placement));
+        None
     }
 
     /// Record where an effect now runs, after a chain has accepted it.
     fn place_effect(&mut self, effect_id: usize, placement: EffectPlacement) {
-        if let Some(effect) = self
-            .effects
-            .iter_mut()
-            .find(|effect| effect.id == effect_id)
-        {
-            effect.placement = placement;
+        if let Some(slot) = self.effect_index.lookup(effect_id) {
+            let prior = self.effects[slot].placement;
+            if prior == placement {
+                return;
+            }
+            if prior == EffectPlacement::MasterChain {
+                self.master_work.remove(slot);
+            }
+            self.effects[slot].placement = placement;
+            if placement == EffectPlacement::MasterChain {
+                self.master_work.append(slot);
+            }
         }
     }
 
@@ -1334,26 +1848,53 @@ impl AudioScheduler {
     /// named chain that still holds it: an effect's placement is single-valued,
     /// so releasing one some other chain is running would move a live device.
     fn release_effect(&mut self, effect_id: usize, held_by: EffectPlacement) {
-        if let Some(effect) = self
-            .effects
-            .iter_mut()
-            .find(|effect| effect.id == effect_id && effect.placement == held_by)
-        {
-            effect.placement = EffectPlacement::MasterChain;
+        let Some(slot) = self.effect_index.lookup(effect_id) else {
+            return;
+        };
+        if self.effects[slot].placement == held_by {
+            self.place_effect(effect_id, EffectPlacement::MasterChain);
         }
     }
 
+    /// Remove an effect in O(1): the id index names its slot, the entry swaps
+    /// with the table's tail instead of compacting the ~5.9 KiB entries
+    /// behind it, and the moved entry's mapping is repointed at the slot it
+    /// now occupies. A strip teardown batches up to
+    /// `MAX_*_DEVICES` of these behind one fence, applied in one callback —
+    /// at the derived capacity a compaction removal there was memmoving tens
+    /// of megabytes inside the deadline; this moves one entry.
+    ///
+    /// Table order is not load-bearing: chains name effects by id in their
+    /// own order, every addressed command resolves through the id index, and
+    /// the one iteration that reads slot order — the master insert loop —
+    /// states its order contract on itself.
     fn remove_effect(&mut self, id: usize) -> Option<ActiveEffect> {
-        let index = self.effects.iter().position(|effect| effect.id == id)?;
-        Some(self.effects.remove(index))
+        let slot = self.effect_index.delete(id)?;
+        let old_tail = self.effects.len() - 1;
+        self.parameter_work.remove(slot);
+        self.pending_midi_work.remove(slot);
+        self.master_work.remove(slot);
+        let removed = self.effects.swap_remove(slot);
+        // The swap moved the table's tail into `slot` unless the removed
+        // entry was itself the tail; that entry's mapping still points at the
+        // tail position, so repoint it before anyone resolves the id.
+        if let Some(moved) = self.effects.get(slot) {
+            self.effect_index.set_slot(moved.id, slot);
+            self.parameter_work.move_slot(old_tail, slot);
+            self.pending_midi_work.move_slot(old_tail, slot);
+            self.master_work.move_slot(old_tail, slot);
+        }
+        Some(removed)
     }
 
+    /// Remove a bridge on the same swap-remove law as [`Self::remove_effect`].
     fn remove_audio_bridge(&mut self, plugin_id: usize) -> Option<PluginAudioBridge> {
-        let index = self
-            .audio_bridges
-            .iter()
-            .position(|bridge| bridge.plugin_id == plugin_id)?;
-        Some(self.audio_bridges.remove(index))
+        let slot = self.bridge_index.delete(plugin_id)?;
+        let removed = self.audio_bridges.swap_remove(slot);
+        if let Some(moved) = self.audio_bridges.get(slot) {
+            self.bridge_index.set_slot(moved.plugin_id, slot);
+        }
+        Some(removed)
     }
 
     fn flush_pending_retirement(&mut self) -> bool {
@@ -1412,13 +1953,17 @@ impl AudioScheduler {
         let blocks_per_period = callback_frames.div_ceil(RENDER_QUANTUM_FRAMES);
         let target_depth_blocks = (blocks_per_period * 2 + 2).min(RING_CAPACITY);
 
+        // The bridge table holds at most `AUDIO_BRIDGE_TABLE_CAPACITY`
+        // entries, so walking it in order is bounded and may stay linear;
+        // what must not be linear is the per-bridge effect resolution, which
+        // goes through the id index.
         for bridge in &mut self.audio_bridges {
             let plugin_id = bridge.plugin_id;
 
             let effect = self
-                .effects
-                .iter_mut()
-                .find(|effect| effect.id == plugin_id);
+                .effect_index
+                .lookup(plugin_id)
+                .and_then(|slot| self.effects.get_mut(slot));
 
             // A bridge with no plugin able to process its audio — no effect
             // under that id at all (registered on its own through
@@ -1548,6 +2093,23 @@ impl AudioScheduler {
             diagnostics.record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
             diagnostics.record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
         }
+        self.remove_empty_pending_midi_work();
+    }
+
+    fn remove_empty_pending_midi_work(&mut self) {
+        let mut index = 0;
+        while index < self.pending_midi_work.slots.len() {
+            let slot = self.pending_midi_work.slots[index];
+            #[cfg(test)]
+            {
+                self.rt_work.pending_midi_work_visits += 1;
+            }
+            if self.effects[slot].pending_midi.is_empty() {
+                self.pending_midi_work.remove(slot);
+            } else {
+                index += 1;
+            }
+        }
     }
 
     /// Land every time-stamped device-parameter change the block has reached.
@@ -1560,7 +2122,20 @@ impl AudioScheduler {
         }
 
         let last_frame = block_start + (frames - 1) as u64;
-        for effect in &mut self.effects {
+        #[cfg(test)]
+        let mut visits = 0;
+        let mut work_index = 0;
+        while work_index < self.parameter_work.slots.len() {
+            let slot = self.parameter_work.slots[work_index];
+            debug_assert!(
+                slot < self.effects.len(),
+                "parameter work points beyond the effect table"
+            );
+            #[cfg(test)]
+            {
+                visits += 1;
+            }
+            let effect = &mut self.effects[slot];
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match &mut effect.instance {
                     PluginCore::Knead(engine) => {
@@ -1573,6 +2148,15 @@ impl AudioScheduler {
                     }
                 }
             }
+            if effect.pending_params.is_empty() {
+                self.parameter_work.remove(slot);
+            } else {
+                work_index += 1;
+            }
+        }
+        #[cfg(test)]
+        {
+            self.rt_work.parameter_table_visits += visits;
         }
     }
 
@@ -1601,7 +2185,9 @@ impl AudioScheduler {
         let Self {
             timeline,
             effects,
+            effect_index,
             audio_bridges,
+            bridge_index,
             midi_rt_diagnostics,
             transport,
             sample_rate,
@@ -1609,7 +2195,9 @@ impl AudioScheduler {
         } = self;
         let mut devices = TrackDeviceChain {
             effects,
+            effect_index,
             audio_bridges,
+            bridge_index,
             midi_rt_diagnostics,
             transport: *transport,
             sample_rate: *sample_rate,
@@ -1645,7 +2233,20 @@ impl AudioScheduler {
         self.apply_due_device_params(block_start, frames);
         self.render_timeline(block_start, frames, left, right);
 
-        for effect in &mut self.effects {
+        // The master list carries insertion order explicitly. It is independent
+        // of the effect table's swap-remove slots, so a teardown cannot change
+        // the order in which surviving master inserts process.
+        #[cfg(test)]
+        let mut master_visits = 0;
+        let mut master = self.master_work.head;
+        while master != 0 {
+            let slot = master as usize - 1;
+            master = self.master_work.links[slot].next;
+            #[cfg(test)]
+            {
+                master_visits += 1;
+            }
+            let effect = &mut self.effects[slot];
             // A bridged plugin is driven by `process_audio_bridges` above, from
             // real worklet audio. This standalone chain runs over zeroed
             // scratch, so processing a bridged plugin here would push phantom
@@ -1665,11 +2266,7 @@ impl AudioScheduler {
             // once full and records `scheduler_event_buffer_overflows` — so
             // leaving it alone is a deliberate, observable tradeoff, not an
             // unbounded leak.
-            if self
-                .audio_bridges
-                .iter()
-                .any(|bridge| bridge.plugin_id == effect.id)
-            {
+            if self.bridge_index.lookup(effect.id).is_some() {
                 continue;
             }
 
@@ -1736,6 +2333,33 @@ impl AudioScheduler {
             }
         }
 
+        // The master list intentionally contains only master members. Detached
+        // effects still need their unbridged MIDI discarded, but following the
+        // compact pending set keeps that cleanup proportional to queued events
+        // rather than the table's capacity. Bridged effects stay untouched:
+        // their bridge owns the unfed/bypassed retention decision.
+        self.remove_empty_pending_midi_work();
+        let mut pending_index = 0;
+        while pending_index < self.pending_midi_work.slots.len() {
+            let slot = self.pending_midi_work.slots[pending_index];
+            #[cfg(test)]
+            {
+                self.rt_work.pending_midi_work_visits += 1;
+            }
+            let effect = &mut self.effects[slot];
+            let bridged = self.bridge_index.lookup(effect.id).is_some();
+            if !bridged && effect.placement == EffectPlacement::Detached {
+                effect.pending_midi.clear();
+                self.pending_midi_work.remove(slot);
+            } else {
+                pending_index += 1;
+            }
+        }
+        #[cfg(test)]
+        {
+            self.rt_work.master_table_visits += master_visits;
+        }
+
         self.timeline
             .apply_master_gain(block_start, frames, left, right);
 
@@ -1747,12 +2371,16 @@ impl AudioScheduler {
 
 /// Runs one track's device chain over that track's signal.
 ///
-/// The effects stay in the scheduler's id-addressed table alongside their
+/// The effects stay in the scheduler's id-indexed table alongside their
 /// bridges and their MIDI state, so the graph borrows them for the length of
-/// one render rather than owning them.
+/// one render rather than owning them — and resolves each chain entry by id
+/// in O(1), because this runs once per device per callback and a table scan
+/// per entry was the cost the derived capacity made deadline-fatal.
 struct TrackDeviceChain<'a> {
     effects: &'a mut Vec<ActiveEffect>,
+    effect_index: &'a IdSlotIndex,
     audio_bridges: &'a [PluginAudioBridge],
+    bridge_index: &'a IdSlotIndex,
     midi_rt_diagnostics: &'a mut ActiveMidiRtDiagnostics,
     transport: TransportState,
     sample_rate: f32,
@@ -1763,19 +2391,14 @@ impl DeviceChain for TrackDeviceChain<'_> {
         // A bridged plugin is driven from the app's own audio in
         // `process_audio_bridges`. Running it here as well would push the
         // track's signal through the same stateful instance on a second path.
-        if self
-            .audio_bridges
-            .iter()
-            .any(|bridge| bridge.plugin_id == effect_id)
-        {
+        if self.bridge_index.lookup(effect_id).is_some() {
             return;
         }
 
-        let Some(effect) = self
-            .effects
-            .iter_mut()
-            .find(|effect| effect.id == effect_id)
-        else {
+        let Some(slot) = self.effect_index.lookup(effect_id) else {
+            return;
+        };
+        let Some(effect) = self.effects.get_mut(slot) else {
             return;
         };
 
@@ -1885,6 +2508,11 @@ mod tests {
         panic_on_drop: bool,
     }
 
+    struct AffinePlugin {
+        factor: f32,
+        offset: f32,
+    }
+
     fn drop_tracking_plugin(
         dropped_tx: &mpsc::Sender<thread::ThreadId>,
         panic_on_drop: bool,
@@ -1953,6 +2581,27 @@ mod tests {
         }
     }
 
+    impl NativePlugin for AffinePlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for sample in 0..num_samples {
+                left[sample] = left[sample] * self.factor + self.offset;
+                right[sample] = right[sample] * self.factor + self.offset;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "affine-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
     impl NativePlugin for MidiRecordingPlugin {
         fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
 
@@ -1996,6 +2645,343 @@ mod tests {
         let (retired_tx, retired_rx) = RingBuffer::new(16);
         let scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
         (command_tx, scheduler, retired_rx)
+    }
+
+    #[test]
+    fn id_slot_index_deletion_prunes_shared_radix_paths_without_losing_survivors() {
+        let mut index = IdSlotIndex::reserved(256);
+        let shared_prefix = usize::MAX << 8;
+        let ids: Vec<_> = (0..128).map(|suffix| shared_prefix | suffix).collect();
+        for (slot, id) in ids.iter().copied().enumerate() {
+            assert!(index.insert(id, slot + 1_000));
+        }
+        let allocated = index.nodes.len();
+
+        for ordinal in (0..64).step_by(2) {
+            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        }
+        for ordinal in 64..128 {
+            assert_eq!(index.delete(ids[ordinal]), Some(ordinal + 1_000));
+        }
+        assert!(
+            index.last_delete_steps <= 2 * usize::BITS as usize,
+            "deletion must stay within the fixed radix walk; observed {} steps",
+            index.last_delete_steps
+        );
+
+        for (ordinal, id) in ids.iter().copied().enumerate() {
+            let expected = if (ordinal < 64 && ordinal % 2 == 0) || ordinal >= 64 {
+                None
+            } else {
+                Some(ordinal + 1_000)
+            };
+            assert_eq!(
+                index.lookup(id),
+                expected,
+                "shared-prefix id {id:#x} must retain its own mapping across churn"
+            );
+        }
+
+        // Refill a fully removed shared-prefix branch. This would grow the node
+        // store if deletion left dead paths behind; it also makes every
+        // surviving mapping contend with reused radix nodes.
+        for ordinal in 64..128 {
+            assert!(index.insert(ids[ordinal], ordinal + 1_000));
+        }
+        assert_eq!(
+            index.nodes.len(),
+            allocated,
+            "pruned shared-prefix paths must be reused instead of growing under churn"
+        );
+        for (ordinal, id) in ids.into_iter().enumerate() {
+            let expected = if ordinal < 64 && ordinal % 2 == 0 {
+                None
+            } else {
+                Some(ordinal + 1_000)
+            };
+            assert_eq!(
+                index.lookup(id),
+                expected,
+                "removed ids must stay absent and every survivor must retain its original slot"
+            );
+        }
+    }
+
+    #[test]
+    fn sparse_process_block_visits_only_active_parameter_and_master_work() {
+        let population = 1_024;
+        let (mut command_tx, command_rx) = RingBuffer::new(population + 8);
+        let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        for id in 0..population {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in 0..population {
+            scheduler.place_effect(id, EffectPlacement::Detached);
+        }
+
+        scheduler.reset_rt_work_counters();
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters::default(),
+            "an idle table must not become callback work"
+        );
+    }
+
+    #[test]
+    fn sparse_device_parameter_work_visits_only_the_queued_effect_and_releases_its_slot() {
+        let population = 1_024;
+        let (mut command_tx, command_rx) = RingBuffer::new(population + 8);
+        let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        command_tx
+            .push(GraphCommand::AddEffect(0, knead_instance()))
+            .unwrap();
+        for id in 1..population {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in 1..population {
+            scheduler.place_effect(id, EffectPlacement::Detached);
+        }
+        command_tx
+            .push(GraphCommand::AutomateDeviceParam {
+                effect_id: 0,
+                param: DeviceParam::ShiftSemitones,
+                value: 7.0,
+                at_frame: 0,
+            })
+            .unwrap();
+        scheduler.update_graph();
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.reset_rt_work_counters();
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters {
+                parameter_table_visits: 1,
+                master_table_visits: 1,
+                pending_midi_work_visits: 0,
+            }
+        );
+
+        scheduler.reset_rt_work_counters();
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters {
+                parameter_table_visits: 0,
+                master_table_visits: 1,
+                pending_midi_work_visits: 0,
+            },
+            "an empty parameter queue must leave the compact work set"
+        );
+    }
+
+    #[test]
+    fn sparse_pending_midi_cleanup_visits_only_its_work_set() {
+        let population = 1_024;
+        let (mut command_tx, command_rx) = RingBuffer::new(population + 8);
+        let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        for id in 0..population {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in 0..population {
+            scheduler.place_effect(id, EffectPlacement::Detached);
+        }
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                population - 1,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        scheduler.reset_rt_work_counters();
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(
+            scheduler.rt_work_counters(),
+            RtWorkCounters {
+                pending_midi_work_visits: 2,
+                ..RtWorkCounters::default()
+            },
+            "one pending detached event needs one empty check and one cleanup visit, never a table walk"
+        );
+        assert!(scheduler.effects[population - 1].pending_midi.is_empty());
+        assert_eq!(scheduler.pending_midi_work.positions[population - 1], 0);
+    }
+
+    #[test]
+    fn master_work_preserves_explicit_order_across_place_release_bridge_remove_and_slot_move() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(20);
+        for (id, plugin) in [
+            (
+                10,
+                Box::new(AffinePlugin {
+                    factor: 2.0,
+                    offset: 1.0,
+                }) as Box<dyn NativePlugin>,
+            ),
+            (
+                30,
+                Box::new(AffinePlugin {
+                    factor: 5.0,
+                    offset: 3.0,
+                }) as Box<dyn NativePlugin>,
+            ),
+        ] {
+            command_tx
+                .push(GraphCommand::AddPlugin(id, plugin))
+                .unwrap();
+        }
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                20,
+                Box::new(AffinePlugin {
+                    factor: 11.0,
+                    offset: 7.0,
+                }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        let mut left = [1.0; 1];
+        let mut right = [1.0; 1];
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [18.0]);
+
+        scheduler.place_effect(10, EffectPlacement::Track(1));
+        scheduler.release_effect(10, EffectPlacement::Track(1));
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(
+            left,
+            [17.0],
+            "release appends after existing master members"
+        );
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(30))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(
+            left,
+            [3.0],
+            "swap-moving id 10 must preserve its list position"
+        );
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(20))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(
+            left,
+            [3.0],
+            "removing a bridged member must not disturb id 10"
+        );
+        assert_eq!(
+            scheduler.master_work.head, 1,
+            "the remaining master member is id 10"
+        );
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                40,
+                Box::new(AffinePlugin {
+                    factor: 7.0,
+                    offset: 4.0,
+                }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [25.0], "id 40 is the tail after id 10");
+
+        // Remove the tail itself, then render the complete surviving chain.
+        // Adding another effect must reuse that vacated table and link slot
+        // without leaving a stale tail endpoint behind.
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(40))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [3.0], "only id 10 survives the tail removal");
+        assert_eq!(scheduler.master_work.head, 1);
+        assert_eq!(scheduler.master_work.tail, 1);
+        assert_eq!(scheduler.master_work.links[0].next, 0);
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                50,
+                Box::new(AffinePlugin {
+                    factor: 4.0,
+                    offset: 2.0,
+                }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        left[0] = 1.0;
+        right[0] = 1.0;
+        scheduler.process_block(&mut left, &mut right, 1);
+        assert_eq!(left, [14.0], "the reused tail slot appends after id 10");
+        assert_eq!(scheduler.master_work.head, 1);
+        assert_eq!(scheduler.master_work.tail, 2);
+        assert_eq!(scheduler.master_work.links[0].previous, 0);
+        assert_eq!(scheduler.master_work.links[0].next, 2);
+        assert!(scheduler.master_work.links[0].member);
+        assert_eq!(scheduler.master_work.links[1].previous, 1);
+        assert_eq!(scheduler.master_work.links[1].next, 0);
+        assert!(scheduler.master_work.links[1].member);
     }
 
     fn reclaim_on_background_thread(retired: RetiredGraphObjects) -> thread::ThreadId {
@@ -2393,7 +3379,7 @@ mod tests {
     fn add_plugin_with_a_colliding_id_is_rejected_and_does_not_duplicate_the_effect() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
+            .push(GraphCommand::AddEffect(7, knead_instance()))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), 1);
@@ -2423,7 +3409,7 @@ mod tests {
     fn add_plugin_with_bridge_with_a_colliding_id_retires_both_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
+            .push(GraphCommand::AddEffect(7, knead_instance()))
             .unwrap();
         scheduler.update_graph();
 
@@ -2455,7 +3441,7 @@ mod tests {
     fn set_param_maps_addresses_onto_the_knead_engine_and_counts_unrouted_native_targets() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
+            .push(GraphCommand::AddEffect(7, knead_instance()))
             .unwrap();
         scheduler.update_graph();
 
@@ -2493,31 +3479,30 @@ mod tests {
         );
     }
 
-    /// `AddEffect`, `AddDetachedEffect` and `SetParam` carry no owning payload
-    /// onto the audio thread: consuming one of them there would free it inside
-    /// the deadline (ADR 0020). Reading each payload *out of a shared
-    /// reference to the command* is what pins that — moving out of a `&`
-    /// compiles only while the payload is `Copy`, so reverting either add's
-    /// type or `SetParam`'s parameter to a `String` fails this test at compile
+    /// `SetParam` carries no owning payload onto the audio thread: consuming
+    /// it there would free it inside the deadline (ADR 0020). Reading the
+    /// parameter *out of a shared reference to the command* is what pins
+    /// that — moving out of a `&` compiles only while the payload is `Copy`,
+    /// so reverting the parameter to a `String` fails this test at compile
     /// time rather than leaving a `Copy` bound on some other type still
     /// satisfied.
     ///
-    /// This is a property of these three commands, not of the whole
-    /// vocabulary. `SetMidiFxParam` still carries a `String` its arm consumes
-    /// by value, and `AddMidiFx` still boxes an arpeggiator and pushes it into
-    /// a `Vec::new()` on the callback. Both are dormant — no `EngineHandle`
-    /// method sends either and no native caller exists, so only in-crate tests
-    /// reach them — and they are tracked in #2548. Widening this test to the
-    /// vocabulary is that issue's work, not this test's claim.
+    /// `AddEffect` and `AddDetachedEffect` used to share this pin as
+    /// `Copy` type addresses; they now carry the built-in instance itself,
+    /// pre-built control-side, and their contract — the drain installs it or
+    /// retires it, never constructs or frees it — is pinned at run time by
+    /// the allocation guards in [`mod apply_alloc_guards`], which fire on a
+    /// constructor call as reliably as on a `String` drop.
+    ///
+    /// This is a property of these commands, not of the whole vocabulary.
+    /// `SetMidiFxParam` still carries a `String` its arm consumes by value,
+    /// and `AddMidiFx` still boxes an arpeggiator and pushes it into a
+    /// `Vec::new()` on the callback. Both are dormant — no `EngineHandle`
+    /// method sends either and no native caller exists, so only in-crate
+    /// tests reach them — and they are tracked in #2548. Widening this test
+    /// to the vocabulary is that issue's work, not this test's claim.
     #[test]
-    fn the_effect_type_and_parameter_payloads_are_copy_addresses() {
-        fn copied_effect_type(command: &GraphCommand) -> Option<BuiltinEffectType> {
-            match command {
-                GraphCommand::AddEffect(_, plugin_type)
-                | GraphCommand::AddDetachedEffect(_, plugin_type) => Some(*plugin_type),
-                _ => None,
-            }
-        }
+    fn the_set_param_payload_is_a_copy_address() {
         fn copied_param(command: &GraphCommand) -> Option<DeviceParam> {
             match command {
                 GraphCommand::SetParam(_, param, _) => Some(*param),
@@ -2525,17 +3510,6 @@ mod tests {
             }
         }
 
-        assert_eq!(
-            copied_effect_type(&GraphCommand::AddEffect(1, BuiltinEffectType::Knead)),
-            Some(BuiltinEffectType::Knead)
-        );
-        assert_eq!(
-            copied_effect_type(&GraphCommand::AddDetachedEffect(
-                1,
-                BuiltinEffectType::Knead
-            )),
-            Some(BuiltinEffectType::Knead)
-        );
         assert_eq!(
             copied_param(&GraphCommand::SetParam(1, DeviceParam::ShiftSemitones, 0.0)),
             Some(DeviceParam::ShiftSemitones)
@@ -2553,16 +3527,246 @@ mod tests {
         assert_eq!(BuiltinEffectType::from_name("not-a-real-effect"), None);
     }
 
-    /// A built-in add past the table's capacity is refused before its engine
-    /// is built, so the refusal allocates nothing and has nothing to retire; a
-    /// native plugin arrives already built from the control side, so its
-    /// refusal still hands the instance off.
+    /// The capacity is a sum of the populations that fill the table, not a
+    /// number: raise a timeline limit or a reserve and the table must follow,
+    /// or a project the product admits silently overflows the ceiling again —
+    /// the flat 128 this replaced was exactly that drift. The arithmetic is
+    /// written raw here, not through the budget constant, so editing a
+    /// timeline limit without resizing the table fails this test rather than
+    /// the user's session.
+    #[test]
+    fn the_effect_table_capacity_is_the_sum_of_the_populations_it_holds() {
+        assert_eq!(
+            TIMELINE_CHAIN_SLOT_BUDGET,
+            MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES
+        );
+        assert_eq!(
+            EFFECT_TABLE_CAPACITY,
+            MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES
+                + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES
+                + HOSTED_PLUGIN_RESERVE
+                + CRUMBS_CAPTURE_RESERVE
+        );
+        // Bridges exist only for the two non-timeline registrations, so the
+        // bridge table covers exactly their reserves: no less, or the ledger
+        // would admit registrations the bridge table silently refuses on the
+        // callback; no more, or the bridge table would stop mirroring the
+        // populations it actually holds.
+        assert_eq!(
+            AUDIO_BRIDGE_TABLE_CAPACITY,
+            HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE
+        );
+    }
+
+    /// The id index and the table must agree through a swap-remove: the entry
+    /// that moved from the tail into the vacated slot resolves at its new
+    /// slot, and the removed id resolves nowhere — not through a stale bucket
+    /// and not after a later registration reuses the id. This pins the
+    /// structure an O(n) per-lookup regression would have to break: every
+    /// assertion reads the index and the table together.
+    #[test]
+    fn an_id_index_lookup_resolves_the_swapped_entry_at_its_new_slot() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        for id in [10, 11, 12] {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        assert_eq!(scheduler.effect_index.lookup(10), Some(0));
+        assert_eq!(scheduler.effect_index.lookup(11), Some(1));
+        assert_eq!(scheduler.effect_index.lookup(12), Some(2));
+
+        // Remove the middle entry: the tail swaps into slot 1.
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(11))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.effects.len(), 2);
+        assert_eq!(scheduler.effects[1].id, 12, "the tail swaps into the hole");
+        assert_eq!(
+            scheduler.effect_index.lookup(12),
+            Some(1),
+            "the moved entry must resolve at its new slot"
+        );
+        assert_eq!(scheduler.effect_index.lookup(10), Some(0));
+        assert_eq!(
+            scheduler.effect_index.lookup(11),
+            None,
+            "a removed id must not resolve through the shifted cluster"
+        );
+
+        // A later registration under the removed id is a fresh mapping at the
+        // table's tail, not a resurrection of the stale bucket.
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                11,
+                Box::new(FakeNativePlugin { value: 0.0 }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        assert_eq!(scheduler.effect_index.lookup(11), Some(2));
+        assert_eq!(scheduler.effects[2].id, 11);
+    }
+
+    /// The bridge index follows the same swap-remove law for the bridge
+    /// table, and a bridged registration removes both of its entries
+    /// together: a removed plugin id resolves in neither table, and the
+    /// bridge that swapped into the vacated slot resolves at that slot.
+    #[test]
+    fn the_bridge_index_resolves_the_swapped_bridge_at_its_new_slot() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        for id in [30, 31] {
+            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(id);
+            command_tx
+                .push(GraphCommand::AddPluginWithBridge(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                    bridge,
+                ))
+                .unwrap();
+            scheduler.update_graph();
+        }
+        assert_eq!(scheduler.bridge_index.lookup(30), Some(0));
+        assert_eq!(scheduler.bridge_index.lookup(31), Some(1));
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(30))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.audio_bridges.len(), 1);
+        assert_eq!(scheduler.audio_bridges[0].plugin_id, 31);
+        assert_eq!(scheduler.bridge_index.lookup(31), Some(0));
+        assert_eq!(scheduler.bridge_index.lookup(30), None);
+        assert_eq!(scheduler.effect_index.lookup(30), None);
+        assert_eq!(scheduler.effect_index.lookup(31), Some(0));
+    }
+
+    #[test]
+    fn radix_deletion_prunes_and_reuses_nodes_without_stale_aliases() {
+        let mut index = IdSlotIndex::reserved(4);
+        for (slot, id) in [0usize, usize::MAX, 1 << (usize::BITS - 1), 17]
+            .into_iter()
+            .enumerate()
+        {
+            assert!(index.insert(id, slot));
+        }
+        let allocated = index.nodes.len();
+        assert_eq!(index.delete(usize::MAX), Some(1));
+        assert_eq!(index.lookup(usize::MAX), None);
+        assert_eq!(index.lookup(0), Some(0));
+        assert_eq!(index.lookup(1 << (usize::BITS - 1)), Some(2));
+        assert!(index.insert(usize::MAX - 1, 1));
+        assert_eq!(index.lookup(usize::MAX - 1), Some(1));
+        assert_eq!(index.nodes.len(), allocated, "pruned nodes must be reused");
+        assert!(
+            !index.insert(usize::MAX - 1, 3),
+            "a duplicate cannot alias a slot"
+        );
+        assert_eq!(
+            index.lookup(usize::MAX - 1),
+            Some(1),
+            "a rejected duplicate must leave the original slot mapping intact"
+        );
+    }
+
+    #[test]
+    fn the_id_index_survives_remove_and_re_register_churn() {
+        fn add(
+            command_tx: &mut rtrb::Producer<GraphCommand>,
+            scheduler: &mut AudioScheduler,
+            id: usize,
+        ) {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
+                .unwrap();
+            scheduler.update_graph();
+        }
+
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        for id in 0..512 {
+            add(&mut command_tx, &mut scheduler, id + 5_000);
+        }
+        // The retirement ring is small and each removal hands one object off,
+        // so the reclaimer role is played inline: drain after every step, as
+        // the real reclaimer does, or retirement backpressure suspends the
+        // drain and the command ring fills.
+        for id in (0..512).step_by(2) {
+            command_tx
+                .push(GraphCommand::RemovePluginWithBridge(id + 5_000))
+                .unwrap();
+            scheduler.update_graph();
+            while retired_rx.pop().is_ok() {}
+        }
+        for id in 0..256 {
+            add(&mut command_tx, &mut scheduler, id + 7_000);
+        }
+
+        assert_eq!(scheduler.effects.len(), 512);
+
+        for id in 0..512 {
+            let mapped = scheduler.effect_index.lookup(id + 5_000);
+            if id % 2 == 0 {
+                assert_eq!(
+                    mapped,
+                    None,
+                    "removed id {} must stay unmapped after the churn",
+                    id + 5_000
+                );
+            } else {
+                let slot = mapped.expect("a live id must resolve after the churn");
+                assert_eq!(
+                    scheduler.effects[slot].id,
+                    id + 5_000,
+                    "a live id must resolve at the slot holding it"
+                );
+            }
+        }
+        for id in 0..256 {
+            let slot = scheduler
+                .effect_index
+                .lookup(id + 7_000)
+                .expect("a re-registered id must resolve");
+            assert_eq!(scheduler.effects[slot].id, id + 7_000);
+        }
+        // Table and index agree slot for slot, and each live id names exactly
+        // one slot.
+        let mut seen = std::collections::HashSet::new();
+        for (slot, effect) in scheduler.effects.iter().enumerate() {
+            assert_eq!(scheduler.effect_index.lookup(effect.id), Some(slot));
+            assert!(
+                seen.insert(effect.id),
+                "each live id must occupy exactly one slot"
+            );
+        }
+    }
+
+    /// A built-in add past the table's capacity is refused rather than grown,
+    /// and the instance the command carried is handed off rather than freed
+    /// on the callback: it exists from the control-side push, so a refusal
+    /// must retire it exactly as `AddPlugin`'s refusal retires its carried
+    /// plugin.
     #[test]
     fn an_effect_past_the_tables_capacity_is_refused_rather_than_grown() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        // The fill is `AddPlugin` boxes — one small allocation each — so a
+        // capacity-sized fill stays cheap; a `KneadEngine` per slot would be
+        // half a megabyte of buffers times thousands of slots. The ceiling
+        // counts registrations, not kinds.
         for id in 0..EFFECT_TABLE_CAPACITY {
             command_tx
-                .push(GraphCommand::AddEffect(id, BuiltinEffectType::Knead))
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
                 .unwrap();
             scheduler.update_graph();
         }
@@ -2573,20 +3777,21 @@ mod tests {
         command_tx
             .push(GraphCommand::AddEffect(
                 EFFECT_TABLE_CAPACITY,
-                BuiltinEffectType::Knead,
+                knead_instance(),
             ))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
         assert_eq!(scheduler.effects.capacity(), EFFECT_TABLE_CAPACITY);
         assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
-        // Nothing crosses the retirement channel, because nothing was built:
-        // a retirement here is the receipt for a `KneadEngine` the callback
-        // allocated and zeroed only to throw away (ADR 0020).
-        assert!(
-            retired_rx.pop().is_err(),
-            "a refused built-in must not construct an engine to hand back"
-        );
+        // The refused built-in arrived carrying its instance, so the refusal
+        // hands that instance off — dropping it here would free the engine's
+        // buffers on the callback (ADR 0020).
+        assert!(retired_rx
+            .pop()
+            .expect("the refused built-in must hand its carried instance off")
+            .effect
+            .is_some());
 
         // The same full table refuses a native plugin on its own arm.
         command_tx
@@ -2605,21 +3810,22 @@ mod tests {
             .is_some());
     }
 
-    /// The id-collision refusal is decided on the same side of the
-    /// construction as the capacity refusal: a built-in whose id is already
-    /// taken never reaches `KneadEngine::new`, so it neither allocates on the
-    /// callback nor produces a retirement.
+    /// The id-collision refusal retires the carried instance on the same
+    /// contract as the capacity refusal: a built-in crosses the ring already
+    /// built, so refusing it leaves an instance in hand whose buffers must
+    /// be freed off the callback, and whose engine must not displace the
+    /// live effect holding the id.
     #[test]
-    fn a_colliding_builtin_add_is_refused_before_its_engine_is_built() {
+    fn a_colliding_builtin_add_retires_its_carried_instance_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, BuiltinEffectType::Knead))
+            .push(GraphCommand::AddEffect(7, knead_instance()))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), 1);
 
         command_tx
-            .push(GraphCommand::AddDetachedEffect(7, BuiltinEffectType::Knead))
+            .push(GraphCommand::AddDetachedEffect(7, knead_instance()))
             .unwrap();
         scheduler.update_graph();
 
@@ -2636,10 +3842,11 @@ mod tests {
                 .effect_id_collisions,
             1
         );
-        assert!(
-            retired_rx.pop().is_err(),
-            "a refused built-in must not construct an engine to hand back"
-        );
+        assert!(retired_rx
+            .pop()
+            .expect("the refused built-in must hand its carried instance off")
+            .effect
+            .is_some());
     }
 
     /// A full effect table refuses `AddPluginWithBridge` on its own, with the
@@ -2650,9 +3857,13 @@ mod tests {
     #[test]
     fn a_plugin_with_bridge_is_refused_when_only_the_effect_table_is_full() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        // Cheap fill, as above: the arm under test sees only a full table.
         for id in 0..EFFECT_TABLE_CAPACITY {
             command_tx
-                .push(GraphCommand::AddEffect(id, BuiltinEffectType::Knead))
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(FakeNativePlugin { value: 0.0 }),
+                ))
                 .unwrap();
             scheduler.update_graph();
         }
@@ -2851,6 +4062,336 @@ mod tests {
             (midi_capacity - 1) * midi_capacity / 2
         );
         assert!(scheduler.effects[0].pending_midi.is_empty());
+    }
+
+    /// Allocation guards for the command drain the audio callback runs.
+    ///
+    /// `update_graph` is the callback's apply path, and ADR 0020 forbids it
+    /// to allocate or free: the tables it pushes into are reserved at
+    /// construction, every owning payload arrives already built, and every
+    /// refusal hands its payload off over the retirement ring rather than
+    /// dropping it. These guards install [`assert_no_alloc::AllocDisabler`]
+    /// as the test binary's global allocator — it intercepts `alloc` and
+    /// `dealloc` alike, so a constructor call and a destructor free on the
+    /// drain both abort the process — and run the real drain inside
+    /// `assert_no_alloc` while every legitimate allocation (building the
+    /// instance, boxing the plugin, sizing the rings) stays outside it.
+    ///
+    /// The interceptor exists only in debug builds (`disable_release` is on
+    /// by default, so in release `assert_no_alloc(f)` is literally `f()`),
+    /// which is why the whole module is `#[cfg(debug_assertions)]`.
+    ///
+    /// The guards cover the built-in add arms (issue #2547: the apply used to
+    /// construct `KneadEngine` — some twenty zero-filled heap allocations —
+    /// on the callback) and, on the same law, the already-repaired
+    /// `AddPlugin`/`AddPluginWithBridge` arms.
+    #[cfg(debug_assertions)]
+    mod apply_alloc_guards {
+        use assert_no_alloc::{assert_no_alloc, AllocDisabler};
+        use rtrb::RingBuffer;
+
+        use super::*;
+
+        #[global_allocator]
+        static ALLOCATOR: AllocDisabler = AllocDisabler;
+
+        #[test]
+        fn swap_removed_tail_relocates_both_work_sets_before_they_process_without_allocating() {
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let received_event_count = Arc::new(AtomicUsize::new(0));
+            let received_channel_sum = Arc::new(AtomicUsize::new(0));
+            command_tx
+                .push(GraphCommand::AddEffect(1, knead_instance()))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    2,
+                    Box::new(MidiRecordingPlugin {
+                        received_event_count: Arc::clone(&received_event_count),
+                        received_channel_sum: Arc::clone(&received_channel_sum),
+                    }),
+                ))
+                .unwrap();
+            scheduler.update_graph();
+            command_tx
+                .push(GraphCommand::AutomateDeviceParam {
+                    effect_id: 2,
+                    param: DeviceParam::ShiftSemitones,
+                    value: 3.0,
+                    at_frame: 0,
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SendMidiNote(
+                    2,
+                    MidiNoteEvent {
+                        note: 60,
+                        velocity: 100,
+                        channel: 0,
+                        is_note_on: true,
+                        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                        project_probability_seed: 0,
+                        clip_id_hash: 0,
+                        event_id_hash: 0,
+                        absolute_occurrence_index: 0,
+                    },
+                ))
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // Remove the front while the tail is in both compact work sets.
+            // Neither queue may be consumed before swap-remove relocates it.
+            command_tx.push(GraphCommand::RemovePlugin(1)).unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+            assert_eq!(scheduler.effect_index.lookup(2), Some(0));
+            assert_eq!(scheduler.effects[0].id, 2);
+            assert_eq!(scheduler.parameter_work.positions[0], 1);
+            assert_eq!(scheduler.pending_midi_work.positions[0], 1);
+            assert_eq!(scheduler.parameter_work.positions[1], 0);
+            assert_eq!(scheduler.pending_midi_work.positions[1], 0);
+
+            let mut left = [0.0; 4];
+            let mut right = [0.0; 4];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, 4);
+            });
+            assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+            assert_eq!(received_channel_sum.load(Ordering::Relaxed), 0);
+            assert_eq!(
+                scheduler
+                    .midi_rt_diagnostics
+                    .snapshot()
+                    .unmapped_set_param_calls,
+                1
+            );
+            assert_eq!(scheduler.parameter_work.positions[0], 0);
+            assert_eq!(scheduler.pending_midi_work.positions[0], 0);
+        }
+
+        #[test]
+        fn add_effect_and_add_detached_effect_install_the_carried_instance_without_allocating() {
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            // Built and pushed control-side: these allocations are the ones
+            // the issue moved off the callback.
+            command_tx
+                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(8, knead_instance()))
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // The guarded drain did real work: both ids are live, each as the
+            // Knead built-in at its own placement, and nothing was retired.
+            assert_eq!(scheduler.effects.len(), 2);
+            assert_eq!(scheduler.effects[0].id, 7);
+            assert_eq!(scheduler.effects[0].placement, EffectPlacement::MasterChain);
+            assert_eq!(scheduler.effects[1].id, 8);
+            assert_eq!(scheduler.effects[1].placement, EffectPlacement::Detached);
+            assert!(matches!(
+                scheduler.effects[0].instance,
+                PluginCore::Knead(_)
+            ));
+            assert!(matches!(
+                scheduler.effects[1].instance,
+                PluginCore::Knead(_)
+            ));
+        }
+
+        #[test]
+        fn a_refused_builtin_add_hands_its_carried_instance_off_without_allocating() {
+            // Id collision: the instance exists from the control-side push,
+            // so the refusal must retire it — dropping it on the apply would
+            // free the engine's buffers inside the deadline.
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            command_tx
+                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .unwrap();
+            scheduler.update_graph();
+            command_tx
+                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            assert_eq!(
+                scheduler.effects.len(),
+                1,
+                "the live effect must not be displaced by the refused one"
+            );
+            assert_eq!(
+                scheduler
+                    .midi_rt_diagnostics
+                    .snapshot()
+                    .effect_id_collisions,
+                1
+            );
+            let retired = retired_rx
+                .pop()
+                .expect("the refused built-in must hand its carried instance off");
+            assert!(retired.effect.is_some());
+            drop(retired);
+
+            // Capacity: a table filled outside the guard refuses one more
+            // built-in inside it, retiring the carried instance. The filler
+            // is `AddPlugin` so the fill itself stays cheap; what the table
+            // holds is invisible to the ceiling being hit.
+            let (mut command_tx, command_rx) = RingBuffer::new(EFFECT_TABLE_CAPACITY + 8);
+            let (retired_tx, mut retired_rx) = RingBuffer::new(EFFECT_TABLE_CAPACITY + 8);
+            let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+            for id in 0..EFFECT_TABLE_CAPACITY {
+                command_tx
+                    .push(GraphCommand::AddPlugin(
+                        id,
+                        Box::new(FakeNativePlugin { value: 0.0 }),
+                    ))
+                    .unwrap();
+            }
+            scheduler.update_graph();
+            assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+            command_tx
+                .push(GraphCommand::AddEffect(
+                    EFFECT_TABLE_CAPACITY,
+                    knead_instance(),
+                ))
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
+            assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
+            let retired = retired_rx
+                .pop()
+                .expect("the refused built-in must hand its carried instance off");
+            assert!(retired.effect.is_some());
+        }
+
+        /// A strip teardown arrives as a fenced batch of removals applied in
+        /// one callback, and removal is exactly where the table's size used
+        /// to be the deadline: a compaction removal memmoved every inline
+        /// `ActiveEffect` behind the vacated slot. The fill and the fence sit
+        /// outside the guard (control-side pushes allocate their boxes); the
+        /// guarded drain is the callback's work alone. Removal ids run
+        /// front-to-back, the worst case for swap-remove churn — every
+        /// removal moves the table's tail — and the guard proves that move is
+        /// the only one: no allocation, and by construction no compaction.
+        #[test]
+        fn a_fenced_teardown_of_a_large_table_applies_without_allocating() {
+            let (mut command_tx, command_rx) = RingBuffer::new(EFFECT_TABLE_CAPACITY + 8);
+            let (retired_tx, mut retired_rx) = RingBuffer::new(EFFECT_TABLE_CAPACITY + 8);
+            let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+
+            let fill = 2_048;
+            for id in 0..fill {
+                command_tx
+                    .push(GraphCommand::AddPlugin(
+                        id,
+                        Box::new(FakeNativePlugin { value: 0.0 }),
+                    ))
+                    .unwrap();
+            }
+            scheduler.update_graph();
+            assert_eq!(scheduler.effects.len(), fill);
+
+            let removals = 1_024;
+            command_tx
+                .push(GraphCommand::BeginBatch { commands: removals })
+                .unwrap();
+            for id in 0..removals {
+                command_tx
+                    .push(GraphCommand::RemovePluginWithBridge(id))
+                    .unwrap();
+            }
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // The teardown shrank the table by exactly the batch, and every
+            // survivor still resolves through the index at the slot that
+            // really holds it — the state a compaction would also have
+            // produced, minus the memmove the guard just proved absent.
+            assert_eq!(scheduler.effects.len(), fill - removals);
+            for (slot, effect) in scheduler.effects.iter().enumerate() {
+                assert_eq!(scheduler.effect_index.lookup(effect.id), Some(slot));
+            }
+            for id in 0..removals {
+                assert_eq!(scheduler.effect_index.lookup(id), None);
+            }
+
+            // One retirement crossed the ring per removed effect.
+            let mut retired_count = 0;
+            while retired_rx.pop().is_ok() {
+                retired_count += 1;
+            }
+            assert_eq!(retired_count, removals);
+        }
+
+        #[test]
+        fn add_plugin_and_add_plugin_with_bridge_apply_without_allocating() {
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    41,
+                    Box::new(FakeNativePlugin { value: 0.25 }),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddPluginWithBridge(
+                    42,
+                    Box::new(FakeNativePlugin { value: 0.25 }),
+                    bridge,
+                ))
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            assert_eq!(scheduler.effects.len(), 2);
+            assert_eq!(scheduler.audio_bridges.len(), 1);
+
+            // The already-repaired arms stay guarded: a collision refusal
+            // hands its carried plugin off allocation-free.
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    41,
+                    Box::new(FakeNativePlugin { value: 0.25 }),
+                ))
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            assert_eq!(
+                scheduler.effects.len(),
+                2,
+                "the refused plugin must not insert a second entry"
+            );
+            assert_eq!(
+                scheduler
+                    .midi_rt_diagnostics
+                    .snapshot()
+                    .effect_id_collisions,
+                1
+            );
+            let retired = retired_rx
+                .pop()
+                .expect("the refused plugin must be handed off");
+            assert!(retired.effect.is_some());
+        }
     }
 }
 
@@ -3646,7 +5187,7 @@ mod timeline_tests {
     fn a_stamped_device_parameter_lands_on_the_block_that_reaches_it() {
         let mut harness = Harness::new(16);
         harness.playing();
-        harness.send(GraphCommand::AddEffect(7, BuiltinEffectType::Knead));
+        harness.send(GraphCommand::AddEffect(7, knead_instance()));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 7,
             param: DeviceParam::ShiftSemitones,
@@ -3798,7 +5339,7 @@ mod timeline_tests {
         // master chain, the knead engine would run over the whole mix here
         // (its latency alone replaces the 0.5 constant); detached, it runs
         // nowhere.
-        harness.send(GraphCommand::AddDetachedEffect(7, BuiltinEffectType::Knead));
+        harness.send(GraphCommand::AddDetachedEffect(7, knead_instance()));
         assert_eq!(
             harness.scheduler.effects[0].placement,
             EffectPlacement::Detached

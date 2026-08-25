@@ -28,6 +28,7 @@ function prepareRemoveShortMidiOverlaps(action: Extract<AppAction, { type: 'remo
         trackId: action.payload.expectedTrackId,
         expectedTrackFrozen: action.payload.expectedTrackFrozen,
         expectedClipLocked: action.payload.expectedClipLocked,
+        expectedTempo: action.payload.expectedTempo,
     };
     return {
         description: {
@@ -47,10 +48,7 @@ function prepareRemoveShortMidiOverlaps(action: Extract<AppAction, { type: 'remo
                     clipId: action.payload.clipId,
                     notes: projected.notes,
                     expectedNotes: action.payload.expectedNotes,
-                    noteTransformReplayGuard: {
-                        ...eligibilityGuard,
-                        expectedTempo: action.payload.expectedTempo,
-                    },
+                    noteTransformReplayGuard: eligibilityGuard,
                 },
             },
         },

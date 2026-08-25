@@ -35,7 +35,11 @@ export { importCachedAudioBuffers } from './importCachedAudioBuffers';
 export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
+export { persistPreparedAudioBuffer } from './persistPreparedAudioBuffer';
+export { reclaimPreparedAudioBufferOrphans } from './reclaimPreparedAudioBufferOrphans';
+export { releasePreparedAudioBuffer } from './releasePreparedAudioBuffer';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
+export { reopenPreparedAudioBuffer } from './reopenPreparedAudioBuffer';
 export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
@@ -153,3 +157,4 @@ export { createRuntimeGraphTopologyFingerprint } from './createRuntimeGraphTopol
 export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';
 export { initializeTrackStripFromSnapshot } from './initializeTrackStripFromSnapshot';
+export { matchesRuntimeDeviceChainTopology } from './matchesRuntimeDeviceChainTopology';

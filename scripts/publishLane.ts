@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-    AUTHOR_BOT_LOGIN,
+    AUTHOR_BOT_NODE_ID,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
     REQUIRED_BASE_BRANCH,
@@ -13,6 +13,7 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticatePublishingAuthor,
+    isAuthorBotNodeId,
     gitAuthenticatedArgs,
     githubAuthorizationGitEnv,
     originMainBlob,
@@ -949,8 +950,8 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
             }
         );
         assertRequiredRepository(repository);
-        if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
-            fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
+        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
         publishLane(
             parsed.issue,

@@ -135,7 +135,9 @@ describe('application-owned tool loop', () => {
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
         const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
-        expect(continuationMessage).toContain('"callId":"provider-query-1"');
+        // The receipt-loop summary is JSON text embedded as a string value inside the outer
+        // structured message, so its own quotes are escaped once by the outer JSON.stringify.
+        expect(continuationMessage).toContain('\\"callId\\":\\"provider-query-1\\"');
         expect(continuationMessage).toContain('revision-2');
         expect(continuationMessage).toContain('project-summary');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
@@ -143,6 +145,57 @@ describe('application-owned tool loop', () => {
             { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
             { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
+    });
+
+    it('admits a command batch proposal that repeats an action name with different arguments', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-1',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'propose-1',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [
+                                { name: 'setTempo', arguments: { bpm: 120 } },
+                                { name: 'setTempo', arguments: { bpm: 140 } },
+                            ],
+                        },
+                    },
+                ],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-repeated-names',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [
+                            { name: 'setTempo', arguments: { bpm: 120 } },
+                            { name: 'setTempo', arguments: { bpm: 140 } },
+                        ],
+                    },
+                },
+            ],
+        });
     });
 
     it('executes resolve, history, and capability reads as bounded application-owned receipts in one safe-read turn', async () => {
@@ -271,7 +324,22 @@ describe('application-owned tool loop', () => {
         expect(schemas.map((schema) => schema.function.name)).toEqual(
             expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
         );
-        expect(schemas).toHaveLength(8);
+        expect(
+            schemas
+                .map((schema) => schema.function.name)
+                .slice()
+                .sort()
+        ).toEqual([
+            'agent.capabilities',
+            'agent.catalog.discover',
+            'analysis.request',
+            'command.batch.propose',
+            'command.history',
+            'device.factory-manifest.read',
+            'project.query',
+            'project.resolve',
+            'render.request',
+        ]);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
         expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
 

@@ -64,7 +64,7 @@ function readJson<TResult>(path: string): TResult {
     return parseJsonWithUniqueKeys<TResult>(readFileSync(path, 'utf8'), path);
 }
 
-export function validateProjectLicense(root: string, cargo: CargoMetadata): string[] {
+export function validateProjectLicense(root: string, cargo: CargoMetadata, inventoryContents?: string): string[] {
     const errors: string[] = [];
     for (const path of ['LICENSE', 'server/LICENSE']) {
         if (sha256(resolve(root, path)) !== PROJECT_APACHE_LICENSE_SHA256) {
@@ -127,7 +127,10 @@ export function validateProjectLicense(root: string, cargo: CargoMetadata): stri
         'scripts/checkLevainProvenance.ts',
         'scripts/checkReleaseInventory.ts',
     ]) {
-        const contents = readFileSync(resolve(root, path), 'utf8');
+        const contents =
+            path === 'release/open-source-inventory.json' && inventoryContents !== undefined
+                ? inventoryContents
+                : readFileSync(resolve(root, path), 'utf8');
         for (const marker of RETIRED_PROJECT_LICENSE_MARKERS) {
             if (contents.includes(marker)) {
                 errors.push(`${path}: stale project-license marker ${marker}`);
@@ -161,7 +164,8 @@ export function validateServerThirdPartyNotices(root: string, expected: string):
 
 export function checkProjectLicense(
     root: string,
-    artifactBuilder: (root: string) => DependencyLicenseArtifacts = buildDependencyLicenseArtifacts
+    artifactBuilder: (root: string) => DependencyLicenseArtifacts = buildDependencyLicenseArtifacts,
+    inventoryContents?: string
 ): void {
     const cargo = parseJsonWithUniqueKeys<CargoMetadata>(
         execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1'], {
@@ -172,7 +176,7 @@ export function checkProjectLicense(
     );
     const artifacts = artifactBuilder(root);
     const errors = [
-        ...validateProjectLicense(root, cargo),
+        ...validateProjectLicense(root, cargo, inventoryContents),
         ...validateDependencyLicenseReport(root, artifacts.report),
         ...validateServerThirdPartyNotices(root, artifacts.serverNotices),
     ];

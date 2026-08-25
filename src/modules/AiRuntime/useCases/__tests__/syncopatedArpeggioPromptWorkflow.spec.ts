@@ -8,7 +8,7 @@ import {
     type Clip,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -26,6 +26,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -53,7 +54,6 @@ const runtimeMocks = vi.hoisted(() => ({
     backend: { value: 'webllm' },
     fetch: vi.fn<typeof fetch>(),
     generateWebLlmCompletion: vi.fn<(systemPrompt: string, userMessage: string) => Promise<string>>(),
-    transformPlan: { value: (plan: ProviderCall[]) => plan },
 }));
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -140,14 +140,34 @@ function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
 
-function createProviderPlan(userMessage: string): ProviderCall[] {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context');
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
     }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    if (typeof schemas.availableCapabilities !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(schemas.availableCapabilities);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
+function createProviderPlan(userMessage: string): ProviderCall[] {
+    const context = getProviderContext(userMessage);
+    if (typeof context.projectRevision !== 'string') {
         throw new TypeError('Expected revision-bound project context');
     }
     const capability = context.syncopatedArpeggioCapability;
@@ -172,6 +192,179 @@ function createProviderPlan(userMessage: string): ProviderCall[] {
     ];
 }
 
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchema(userMessage: string): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items) ||
+        !discovery.data.items.some(
+            (item) =>
+                isRecord(item) &&
+                isRecord(item.function) &&
+                item.function.name === 'arpeggiate' &&
+                isRecord(item.function.parameters)
+        )
+    ) {
+        throw new TypeError('Expected disclosed arpeggiate schema receipt');
+    }
+}
+
+function getArpeggioPlanScope(userMessage: string) {
+    const context = getProviderContext(userMessage);
+    const capability = context.syncopatedArpeggioCapability;
+    if (
+        !isRecord(capability) ||
+        capability.baseRevision !== context.projectRevision ||
+        !isRecord(capability.target) ||
+        typeof capability.target.trackId !== 'string' ||
+        typeof capability.target.clipId !== 'string' ||
+        !Array.isArray(capability.target.chordWindows) ||
+        !Array.isArray(capability.protectedClipIds)
+    ) {
+        throw new TypeError('Expected complete revision-bound arpeggio scope');
+    }
+    const starts: number[] = [];
+    const ends: number[] = [];
+    for (const window of capability.target.chordWindows) {
+        if (!isRecord(window) || typeof window.startBeat !== 'number' || typeof window.endBeat !== 'number') {
+            throw new TypeError('Expected exact arpeggio chord windows');
+        }
+        starts.push(window.startBeat);
+        ends.push(window.endBeat - 0.25);
+    }
+    if (starts.length === 0) {
+        throw new TypeError('Expected non-empty arpeggio chord windows');
+    }
+    return {
+        targetIds: [capability.target.trackId, capability.target.clipId],
+        targetRanges: [{ startBeat: Math.min(...starts), endBeat: Math.max(...ends) }],
+        protectedTargetIds: capability.protectedClipIds,
+        protectedRanges: [],
+    };
+}
+
+function asCommandBatchProposal(userMessage: string, commands: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands,
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Add the exact application-projected syncopated arpeggio.',
+                    constraints: ['Preserve source notes, voicing, velocities, expression, and harmonic boundaries.'],
+                    scope: getArpeggioPlanScope(userMessage),
+                    capabilityIds: ['arpeggiate'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate selected clip identity, chord windows, and protected clips.'],
+                    stoppingConditions: ['Stop if selection, note topology, lock state, or protection changes.'],
+                },
+            },
+        },
+    ];
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function createWebLlmResponder(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan) {
+    let awaitingReceipt = false;
+    return (_systemPrompt: string, userMessage: string) => {
+        if (!awaitingReceipt) {
+            awaitingReceipt = true;
+            return Promise.resolve(
+                JSON.stringify([
+                    { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['arpeggiate'] } },
+                ])
+            );
+        }
+        awaitingReceipt = false;
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = transformPlan(createProviderPlan(userMessage));
+        return Promise.resolve(
+            JSON.stringify(
+                withWorkflowCapabilitySelection('syncopated-arpeggio', asCommandBatchProposal(userMessage, plan))
+            )
+        );
+    };
+}
+
+function createHostedResponder(
+    transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan
+): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let awaitingReceipt = false;
+    return (_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        if (!awaitingReceipt) {
+            awaitingReceipt = true;
+            return Promise.resolve(
+                toolCallsResponse([
+                    { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['arpeggiate'] } },
+                ])
+            );
+        }
+        awaitingReceipt = false;
+        const userMessage = getHostedUserMessage(init.body);
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = transformPlan(createProviderPlan(userMessage));
+        return Promise.resolve(
+            toolCallsResponse(
+                withWorkflowCapabilitySelection('syncopated-arpeggio', asCommandBatchProposal(userMessage, plan))
+            )
+        );
+    };
+}
+
 function getHostedUserMessage(body: string): string {
     const request: unknown = JSON.parse(body);
     if (!isRecord(request) || !isUnknownArray(request.messages)) {
@@ -188,32 +381,7 @@ function getHostedUserMessage(body: string): string {
 
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
-    runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'syncopated-arpeggio',
-            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
-        );
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
-    });
+    runtimeMocks.fetch.mockImplementation(createHostedResponder());
 }
 
 function getConfirmationId(): string {
@@ -240,17 +408,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'syncopated-arpeggio',
-                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
-            )
-        );
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createWebLlmResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -272,6 +430,8 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({
             tracks: [
                 createTrack('track-chords', 'Chords', 'clip-chords'),
@@ -423,12 +583,14 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
 
     it('rejects provider target or policy enlargement before confirmation', async () => {
         const original = structuredClone(midiStore.value?.notesByClipId);
-        runtimeMocks.transformPlan.value = (plan) => [
-            {
-                ...plan[0]!,
-                arguments: { ...plan[0]!.arguments, clipId: 'clip-lead', gate: 100 },
-            },
-        ];
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(
+            createWebLlmResponder((plan) => [
+                {
+                    ...plan[0]!,
+                    arguments: { ...plan[0]!.arguments, clipId: 'clip-lead', gate: 100 },
+                },
+            ])
+        );
 
         await sendChatMessage(PROMPT);
 

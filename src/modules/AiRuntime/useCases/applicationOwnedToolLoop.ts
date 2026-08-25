@@ -5,6 +5,8 @@ import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Pro
 
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
+import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -705,10 +707,10 @@ function validateCommandBatchProposal(
     const commands: unknown[] = hasPrimitiveCommands
         ? (call.arguments.commands as unknown[])
         : (list!.items as unknown[]);
-    if (commands.length === 0 || commands.length > 32) {
+    const commandLimit = hasPrimitiveCommands ? MAX_LLM_ACTIONS_PER_BATCH : SEMANTIC_COMMAND_LIST_MAX_ITEMS;
+    if (commands.length === 0 || commands.length > commandLimit) {
         return 'Provider command proposal exceeds the command budget.';
     }
-    const names = new Set<string>();
     for (const command of commands) {
         if (!isRecord(command)) {
             return 'Provider command proposal does not match the strict catalog contract.';
@@ -723,8 +725,7 @@ function validateCommandBatchProposal(
             typeof command.name !== 'string' ||
             command.name.length === 0 ||
             command.name.length > 128 ||
-            !isRecord(command.arguments) ||
-            (hasPrimitiveCommands && names.has(command.name))
+            !isRecord(command.arguments)
         ) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
@@ -743,7 +744,6 @@ function validateCommandBatchProposal(
         } catch {
             return 'Provider command proposal referenced an unavailable catalog command.';
         }
-        names.add(command.name);
     }
     return null;
 }

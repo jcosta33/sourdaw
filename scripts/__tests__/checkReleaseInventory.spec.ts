@@ -1,6 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { constants, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    constants,
+    linkSync,
+    mkdirSync,
+    mkdtempSync,
+    openSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1066,6 +1076,37 @@ describe('release inventory', () => {
         }
     });
 
+    it('rejects a contained symlink substituted between the precheck and open', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-symlink-swap-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const targetPath = join(root, 'public/legal/target.txt');
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'contained legal bytes');
+            linkSync(filePath, targetPath);
+            const readFile = {
+                open: (openPath: string) => {
+                    rmSync(filePath);
+                    symlinkSync(targetPath, filePath);
+                    return openSync(openPath, constants.O_RDONLY);
+                },
+                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('reads scanned text from its opened file when the path swaps to an outside symlink', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-swap-'));
         const root = join(base, 'repository');
@@ -1160,6 +1201,33 @@ describe('release inventory', () => {
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
         } finally {
             rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not open an untracked required snapshot path', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-required-snapshot-'));
+        const trackedPath = 'provider.ts';
+        const requiredPath = REQUIRED_SNAPSHOT_PATHS[0];
+
+        try {
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(root, requiredPath), 'untracked required snapshot');
+            let opens = 0;
+            const readFile = {
+                open: (path: string) => {
+                    opens += 1;
+                    return openSync(path, constants.O_RDONLY);
+                },
+                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [trackedPath], readFile);
+
+            expect(opens).toBe(0);
+            expect(changed.fileDigests[requiredPath]).toBeUndefined();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
         }
     });
 
@@ -1980,14 +2048,20 @@ describe('release inventory', () => {
         );
     });
 
-    it('runs the project-license preflight before loading the inventory', () => {
+    it('passes the captured inventory marker scan to the project-license preflight', () => {
         let called = false;
+        const capturedInventory = inventory();
 
         expect(() =>
-            checkReleaseInventory('/inventory-is-not-read', () => {
-                called = true;
-                throw new Error('project license preflight sentinel');
-            })
+            checkReleaseInventory(
+                '/inventory-is-not-read',
+                (_root, inventoryContents) => {
+                    called = true;
+                    expect(inventoryContents).toBe(JSON.stringify(capturedInventory));
+                    throw new Error('project license preflight sentinel');
+                },
+                capturedInventory
+            )
         ).toThrow('project license preflight sentinel');
         expect(called).toBe(true);
     });

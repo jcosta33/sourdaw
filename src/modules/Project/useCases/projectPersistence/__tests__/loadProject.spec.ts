@@ -10,6 +10,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
+import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 
@@ -28,7 +29,8 @@ const mocks = vi.hoisted(() => ({
     persistCrdtProject: vi.fn(() => Promise.resolve()),
     projectCrdtToStores: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
-    prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
+    cancelPreparedBuffers: vi.fn(),
+    prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
     resetModuleStores: vi.fn(),
     readLegacyChordTrackMigration: vi.fn(),
     stopActiveAutoSave: vi.fn(),
@@ -83,7 +85,10 @@ describe('loadProject', () => {
         mocks.createCrdtProject.mockResolvedValue(undefined);
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
-        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: vi.fn() });
+        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({
+            cancel: mocks.cancelPreparedBuffers,
+            publish: vi.fn(),
+        });
         mocks.readLegacyChordTrackMigration.mockReturnValue(null);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
@@ -254,5 +259,19 @@ describe('loadProject', () => {
 
         await expect(loadProject()).rejects.toBe(failure);
         expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('cancels a prepared buffer candidate when a newer project load supersedes it before publication', async () => {
+        mocks.prepareCachedAudioBuffersFromIdb.mockImplementationOnce(async () => {
+            const newerLoad = runProjectLoadTransaction();
+            await newerLoad.prepare();
+            newerLoad.activate();
+            return { cancel: mocks.cancelPreparedBuffers, publish: vi.fn() };
+        });
+
+        await expect(loadProject()).resolves.toBe(false);
+
+        expect(mocks.cancelPreparedBuffers).toHaveBeenCalledOnce();
+        expect(projectCrdtToStores).not.toHaveBeenCalled();
     });
 });

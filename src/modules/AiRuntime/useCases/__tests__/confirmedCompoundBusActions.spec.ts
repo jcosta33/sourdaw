@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    getArrangementHandlers,
+    projectTrackToLiveStrip,
+    runtimeGraphTopology,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -32,6 +41,7 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -154,6 +164,10 @@ function createCompoundActions(includeConflictingSend = false): ExecutableRuntim
     return actions;
 }
 
+function hasTrackId(payload: { trackId: string | null }): payload is { trackId: string } {
+    return typeof payload.trackId === 'string';
+}
+
 function createRepeatedMuteCompilerContext(): ProjectContext {
     return {
         tempo: 120,
@@ -196,51 +210,118 @@ function createRepeatedMuteCompilerContext(): ProjectContext {
     };
 }
 
-function compileRepeatedMuteActions(): ExecutableRuntimeAction[] {
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function consumeCatalogReceipt(receiptContext: string | null): void {
+    if (!receiptContext) {
+        throw new Error('Expected command catalog receipt before the proposal turn.');
+    }
+    const parsed: unknown = JSON.parse(receiptContext.split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new Error('Expected serialized application tool receipts.');
+    }
+    const discovery = parsed.receipts.find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items) ||
+        !discovery.data.items.some(
+            (item) =>
+                isRecord(item) &&
+                isRecord(item.function) &&
+                item.function.name === 'muteTrack' &&
+                isRecord(item.function.parameters)
+        )
+    ) {
+        throw new Error('Expected a complete disclosed muteTrack schema receipt.');
+    }
+}
+
+async function compileRepeatedMuteActions(): Promise<ExecutableRuntimeAction[]> {
     const compilerContext = createRepeatedMuteCompilerContext();
+    const planning = await runApplicationOwnedToolLoop({
+        loopId: 'confirmed-compound-repeated-mute',
+        terminalToolNames: new Set(['command.batch.propose']),
+        requestTurn: ({ receiptContext, turn }) => {
+            if (turn === 1) {
+                return Promise.resolve({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['muteTrack'] },
+                        },
+                    ],
+                });
+            }
+            if (turn !== 2) {
+                throw new Error('Expected exactly two provider turns.');
+            }
+            consumeCatalogReceipt(receiptContext);
+            return Promise.resolve({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Mute the exact Vocals track through one canonical repeated command.',
+                                constraints: ['Do not target any other track or range.'],
+                                scope: {
+                                    targetIds: ['track-vocals'],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['muteTrack'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [
+                                    'Resolve the exact Vocals selector and canonicalize repeated writes.',
+                                ],
+                                stoppingConditions: ['Stop if the selector does not resolve to exactly one track.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'mute-vocals',
+                                        name: 'muteTrack',
+                                        arguments: { muted: true },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { name: 'Vocals' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                        repeat: { count: 2 },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+        },
+    });
+    if (planning.status !== 'complete' || planning.turns !== 2 || planning.receipts.length !== 1) {
+        throw new Error('Expected a two-turn catalog discovery and proposal outcome.');
+    }
     const result = compileArbitraryCommandList({
         context: compilerContext,
         revision: 'revision-repeated-mute',
-        calls: [
-            {
-                name: 'command.batch.propose',
-                arguments: {
-                    plan: {
-                        semantic: { classification: 'simple', uncertainty: [] },
-                        objective: 'Mute vocals.',
-                        constraints: [],
-                        scope: {
-                            targetIds: ['track-vocals'],
-                            targetRanges: [],
-                            protectedTargetIds: [],
-                            protectedRanges: [],
-                        },
-                        capabilityIds: [],
-                        assetIds: [],
-                        alternatives: [],
-                        validationStrategy: [],
-                        stoppingConditions: [],
-                    },
-                    list: {
-                        schemaVersion: 1,
-                        items: [
-                            {
-                                id: 'mute-vocals',
-                                name: 'muteTrack',
-                                arguments: { muted: true },
-                                selector: {
-                                    targetArgument: 'trackId',
-                                    entity: 'track',
-                                    where: { name: 'Vocals' },
-                                    quantity: { unit: 'targets', exactly: 1 },
-                                },
-                                repeat: { count: 2 },
-                            },
-                        ],
-                    },
-                },
-            },
-        ],
+        calls: planning.toolCalls,
     });
     if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
         throw new Error('Expected repeated mute command compilation.');
@@ -352,6 +433,10 @@ describe('confirmed compound bus actions', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
@@ -359,7 +444,14 @@ describe('confirmed compound bus actions', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
-        setArrangementEventBus({ emit: () => Promise.resolve() });
+        setArrangementEventBus({
+            emit: (event, payload) => {
+                if (event === 'track.added' && hasTrackId(payload)) {
+                    projectTrackToLiveStrip({ trackId: payload.trackId });
+                }
+                return Promise.resolve();
+            },
+        });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const vocals = createVocalsTrack();
         trackStore.set({ tracks: [vocals], selectedTrackId: vocals.id, ghostClips: [] });
@@ -408,7 +500,8 @@ describe('confirmed compound bus actions', () => {
 
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(BUS_ID, expect.any(String));
+        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.removeTrackStrip).toHaveBeenCalledWith(BUS_ID);
         expect(runtimeMocks.engineRemoveSend).toHaveBeenCalledWith('track-vocals', BUS_ID);
     });
 
@@ -429,7 +522,7 @@ describe('confirmed compound bus actions', () => {
 
     it('commits a compiler-canonical repeated write as one receipt and one undo-redo group', async () => {
         registerCanonicalMuteHandler();
-        const actions = compileRepeatedMuteActions();
+        const actions = await compileRepeatedMuteActions();
         expect(actions).toEqual([
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
         ]);
@@ -461,7 +554,7 @@ describe('confirmed compound bus actions', () => {
 
     it('does not write a canonical repeated batch after a competing track update', async () => {
         registerCanonicalMuteHandler();
-        const actions = compileRepeatedMuteActions();
+        const actions = await compileRepeatedMuteActions();
         propose(actions, 'confirmation-repeated-mute-conflict');
         const vocals = trackStore.value?.tracks.find((track) => track.id === 'track-vocals');
         if (!vocals) {
@@ -479,7 +572,7 @@ describe('confirmed compound bus actions', () => {
 
     it('does not write a canonical repeated batch after its confirmation snapshot is stale', async () => {
         registerCanonicalMuteHandler();
-        const actions = compileRepeatedMuteActions();
+        const actions = await compileRepeatedMuteActions();
         propose(actions, 'confirmation-repeated-mute-stale');
         mutateCrdtDoc<Record<string, unknown>>({
             id: 'root',

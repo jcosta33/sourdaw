@@ -18,6 +18,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -170,11 +171,19 @@ function addSecondMidiAndAudioTracks(): void {
                     { id: 'brass-source', pitch: 48, startBeat: 2, duration: 1, velocity: 118 },
                     { articulation: 'marcato' }
                 ),
+                Object.assign(
+                    { id: 'brass-source-late', pitch: 55, startBeat: 6, duration: 1, velocity: 106 },
+                    { articulation: 'staccato' }
+                ),
             ],
             'brass-chorus-two': [
                 Object.assign(
                     { id: 'brass-target', pitch: 50, startBeat: 2, duration: 1, velocity: 68 },
                     { articulation: 'legato' }
+                ),
+                Object.assign(
+                    { id: 'brass-target-late', pitch: 57, startBeat: 6, duration: 1, velocity: 75 },
+                    { articulation: 'sustain' }
                 ),
             ],
         },
@@ -185,14 +194,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function createProviderPlan(userMessage: string) {
-    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
-    const contextJson = match?.groups?.contextJson;
-    if (!contextJson) {
-        throw new TypeError('Expected serialized project context');
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
     }
-    const context: unknown = JSON.parse(contextJson);
-    if (!isRecord(context) || typeof context.projectRevision !== 'string') {
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const schemas = getProviderSection(userMessage, 'capability_schemas');
+    if (typeof schemas.availableCapabilities !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const capabilities: unknown = JSON.parse(schemas.availableCapabilities);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected object-shaped available capabilities');
+    }
+    return { ...capabilities, projectRevision: getProviderSection(userMessage, 'revision_and_selection').revision };
+}
+
+function createProviderPlan(userMessage: string) {
+    const context = getProviderContext(userMessage);
+    if (typeof context.projectRevision !== 'string') {
         throw new TypeError('Expected revision-bound project context');
     }
     const capability = context.articulationTransferCapability;
@@ -214,6 +243,208 @@ function createProviderPlan(userMessage: string) {
     });
 }
 
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchema(userMessage: string): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items) ||
+        !discovery.data.items.some(
+            (item) =>
+                isRecord(item) &&
+                isRecord(item.function) &&
+                item.function.name === 'copyMidiArticulations' &&
+                isRecord(item.function.parameters)
+        )
+    ) {
+        throw new TypeError('Expected disclosed copyMidiArticulations schema receipt');
+    }
+}
+
+function getArticulationPlanScope(userMessage: string) {
+    const context = getProviderContext(userMessage);
+    const capability = context.articulationTransferCapability;
+    if (
+        !isRecord(capability) ||
+        capability.baseRevision !== context.projectRevision ||
+        !Array.isArray(capability.clipPairs) ||
+        !Array.isArray(capability.protectedClipIds)
+    ) {
+        throw new TypeError('Expected complete revision-bound articulation-transfer scope');
+    }
+    const targetIds: string[] = [];
+    const targetRanges: Array<{ startBeat: number; endBeat: number }> = [];
+    const protectedTargetIds = capability.protectedClipIds.flatMap((id) => (typeof id === 'string' ? [id] : []));
+    for (const pair of capability.clipPairs) {
+        if (
+            !isRecord(pair) ||
+            typeof pair.trackId !== 'string' ||
+            typeof pair.sourceClipId !== 'string' ||
+            typeof pair.targetClipId !== 'string' ||
+            !Array.isArray(pair.notePairs)
+        ) {
+            throw new TypeError('Expected exact articulation-transfer clip and note pairs');
+        }
+        targetIds.push(pair.trackId, pair.sourceClipId, pair.targetClipId);
+        const noteStarts: number[] = [];
+        for (const notePair of pair.notePairs) {
+            if (
+                !isRecord(notePair) ||
+                typeof notePair.sourceNoteId !== 'string' ||
+                typeof notePair.targetNoteId !== 'string' ||
+                typeof notePair.relativeStartBeat !== 'number'
+            ) {
+                throw new TypeError('Expected exact articulation-transfer note-pair timing');
+            }
+            noteStarts.push(notePair.relativeStartBeat);
+        }
+        if (noteStarts.length === 0) {
+            throw new TypeError('Expected articulation-transfer note-pair timing');
+        }
+        targetRanges.push({
+            startBeat: Math.min(...noteStarts),
+            endBeat: Math.max(...noteStarts),
+        });
+        protectedTargetIds.push(`${pair.targetClipId}:non-articulation`);
+    }
+    return {
+        targetIds: [...new Set(targetIds)],
+        targetRanges,
+        protectedTargetIds,
+        protectedRanges: [],
+    };
+}
+
+function asCommandBatchProposal(
+    userMessage: string,
+    commands: readonly { name: string; arguments: Record<string, string> }[]
+) {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands,
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Copy articulations across the exact app-owned Chorus One to Chorus Two clip pairs.',
+                    constraints: ['Preserve pitch, velocity, timing, expression, and every protected clip.'],
+                    scope: getArticulationPlanScope(userMessage),
+                    capabilityIds: ['copyMidiArticulations'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [
+                        'Validate revision, exact clip pairs, note topology, and articulation support.',
+                    ],
+                    stoppingConditions: ['Stop if any clip, note, device, or protection precondition changes.'],
+                },
+            },
+        },
+    ];
+}
+
+function toolCallsResponse(calls: readonly { name: string; arguments: Record<string, unknown> }[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function createWebLlmResponder() {
+    let awaitingReceipt = false;
+    return (_systemPrompt: string, userMessage: string) => {
+        if (!awaitingReceipt) {
+            awaitingReceipt = true;
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['copyMidiArticulations'] },
+                    },
+                ])
+            );
+        }
+        awaitingReceipt = false;
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = runtimeMocks.transformPlan.value(createProviderPlan(userMessage));
+        return Promise.resolve(
+            JSON.stringify(
+                withWorkflowCapabilitySelection('articulation-transfer', asCommandBatchProposal(userMessage, plan))
+            )
+        );
+    };
+}
+
+function createHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let awaitingReceipt = false;
+    return (_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        if (!awaitingReceipt) {
+            awaitingReceipt = true;
+            return Promise.resolve(
+                toolCallsResponse([
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['copyMidiArticulations'] },
+                    },
+                ])
+            );
+        }
+        awaitingReceipt = false;
+        const userMessage = getHostedUserMessage(init.body);
+        assertDiscoveredCommandSchema(userMessage);
+        const plan = runtimeMocks.transformPlan.value(createProviderPlan(userMessage));
+        return Promise.resolve(
+            toolCallsResponse(
+                withWorkflowCapabilitySelection('articulation-transfer', asCommandBatchProposal(userMessage, plan))
+            )
+        );
+    };
+}
+
 function getHostedUserMessage(body: string): string {
     const request: unknown = JSON.parse(body);
     if (!isRecord(request) || !Array.isArray(request.messages)) {
@@ -230,32 +461,7 @@ function getHostedUserMessage(body: string): string {
 
 function useHostedFixture(): void {
     runtimeMocks.backend.value = 'cloud';
-    runtimeMocks.fetch.mockImplementation((_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const plan = withWorkflowCapabilitySelection(
-            'articulation-transfer',
-            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
-        );
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: plan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
-    });
+    runtimeMocks.fetch.mockImplementation(createHostedResponder());
 }
 
 function getConfirmationId(): string {
@@ -268,19 +474,11 @@ function getConfirmationId(): string {
 describe('MF-03 articulation transfer prompt workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
-        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(
-                JSON.stringify(
-                    withWorkflowCapabilitySelection(
-                        'articulation-transfer',
-                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
-                    )
-                )
-            )
-        );
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createWebLlmResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -313,7 +511,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             notesByClipId: {
                 'clip-chorus-one': [
                     Object.assign(
-                        { id: 'source-high', pitch: 67, startBeat: 0, duration: 1, velocity: 96 },
+                        { id: 'source-high', pitch: 67, startBeat: 4, duration: 1, velocity: 96 },
                         { articulation: 'marcato' }
                     ),
                     Object.assign(
@@ -327,7 +525,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                         { articulation: 'legato' }
                     ),
                     Object.assign(
-                        { id: 'target-high', pitch: 69, startBeat: 0, duration: 1, velocity: 84 },
+                        { id: 'target-high', pitch: 69, startBeat: 4, duration: 1, velocity: 84 },
                         { articulation: 'sustain' }
                     ),
                 ],
@@ -403,7 +601,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             {
                 id: 'target-high',
                 pitch: 69,
-                startBeat: 0,
+                startBeat: 4,
                 duration: 1,
                 velocity: 84,
                 articulation: 'marcato',
@@ -457,7 +655,56 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 }),
             }),
         ]);
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(1);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('normalizes a single-onset articulation-transfer target range', async () => {
+        const state = midiStore.value!;
+        midiStore.set({
+            ...state,
+            notesByClipId: {
+                ...state.notesByClipId,
+                'clip-chorus-one': [
+                    Object.assign(
+                        { id: 'source-low', pitch: 60, startBeat: 0, duration: 1, velocity: 110 },
+                        { articulation: 'staccato' }
+                    ),
+                ],
+                'clip-chorus-two': [
+                    Object.assign(
+                        { id: 'target-low', pitch: 62, startBeat: 0, duration: 1, velocity: 72 },
+                        { articulation: 'legato' }
+                    ),
+                ],
+            },
+        });
+
+        await sendChatMessage(PROMPT);
+
+        const confirmationId = getConfirmationId();
+        expect(confirmationId).not.toBe('');
+        expect(getPendingActionConfirmation(confirmationId)?.actions).toEqual([
+            expect.objectContaining({
+                type: 'copyMidiArticulations',
+                payload: expect.objectContaining({
+                    sourceClipId: 'clip-chorus-one',
+                    targetClipId: 'clip-chorus-two',
+                    notePairs: [{ sourceNoteId: 'source-low', targetNoteId: 'target-low' }],
+                }),
+            }),
+        ]);
+
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({ status: 'executed' });
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']).toEqual([
+            {
+                id: 'target-low',
+                pitch: 62,
+                startBeat: 0,
+                duration: 1,
+                velocity: 72,
+                articulation: 'staccato',
+            },
+        ]);
     });
 
     it('includes every unambiguous MIDI chorus pair and protects audio clips and non-articulation fields', async () => {
@@ -510,6 +757,14 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 duration: 1,
                 velocity: 68,
                 articulation: 'marcato',
+            },
+            {
+                id: 'brass-target-late',
+                pitch: 57,
+                startBeat: 6,
+                duration: 1,
+                velocity: 75,
+                articulation: 'staccato',
             },
         ]);
     });
@@ -703,10 +958,9 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ...state,
             notesByClipId: {
                 ...state.notesByClipId,
-                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) => ({
-                    ...note,
-                    articulation: 'sforzando',
-                })),
+                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) =>
+                    note.id === 'brass-source' ? { ...note, articulation: 'sforzando' } : note
+                ),
             },
         });
 
@@ -718,6 +972,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
+            'sustain',
         ]);
         expect(undoStore.value).toEqual(historyBeforeConflict);
 
@@ -726,10 +981,9 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ...conflictedState,
             notesByClipId: {
                 ...conflictedState.notesByClipId,
-                'brass-chorus-one': conflictedState.notesByClipId['brass-chorus-one']!.map((note) => ({
-                    ...note,
-                    articulation: 'marcato',
-                })),
+                'brass-chorus-one': conflictedState.notesByClipId['brass-chorus-one']!.map((note) =>
+                    note.id === 'brass-source' ? { ...note, articulation: 'marcato' } : note
+                ),
             },
         });
         await redo();
@@ -739,6 +993,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'marcato',
+            'staccato',
         ]);
     });
 
@@ -801,6 +1056,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'marcato',
+            'staccato',
         ]);
         expect(undoStore.value).toEqual(historyBeforeConflict);
 
@@ -812,6 +1068,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
+            'sustain',
         ]);
     });
 
@@ -855,10 +1112,9 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             ...state,
             notesByClipId: {
                 ...state.notesByClipId,
-                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) => ({
-                    ...note,
-                    articulation: 'sforzando',
-                })),
+                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) =>
+                    note.id === 'brass-source' ? { ...note, articulation: 'sforzando' } : note
+                ),
             },
         });
 
@@ -870,6 +1126,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
+            'sustain',
         ]);
         expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
             status: 'failed',

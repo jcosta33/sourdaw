@@ -16,6 +16,9 @@ import type { TransportState } from '#/modules/Transport/stores';
 import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TrackStoreState } from '../../stores/trackStore';
 
+type TrackStoreSubscribe = (typeof import('../../stores/trackStore'))['trackStore']['subscribe'];
+type TrackStoreSubscribeReact = (typeof import('../../stores/trackStore'))['trackStore']['subscribeReact'];
+
 const {
     trackStoreMock,
     transportStoreMock,
@@ -24,7 +27,40 @@ const {
     clipSelectionStoreMock,
     preferencesStoreMock,
 } = vi.hoisted(() => ({
-    trackStoreMock: { value: null as TrackStoreState | null, set: vi.fn() },
+    trackStoreMock: (() => {
+        const subscribers = new Set<Parameters<TrackStoreSubscribe>[0]>();
+        const reactSubscribers = new Set<Parameters<TrackStoreSubscribeReact>[0]>();
+        const mock = {
+            value: null as TrackStoreState | null,
+            set: vi.fn((value: TrackStoreState | null) => {
+                mock.value = value;
+                for (const callback of subscribers) {
+                    try {
+                        callback(value);
+                    } catch {
+                        // Listener failures must not prevent later listeners from being notified.
+                    }
+                }
+                for (const listener of reactSubscribers) {
+                    try {
+                        listener();
+                    } catch {
+                        // Listener failures must not prevent later listeners from being notified.
+                    }
+                }
+            }),
+            subscribe: vi.fn<TrackStoreSubscribe>((callback) => {
+                subscribers.add(callback);
+                return () => subscribers.delete(callback);
+            }),
+            subscribeReact: vi.fn<TrackStoreSubscribeReact>((listener) => {
+                reactSubscribers.add(listener);
+                return () => reactSubscribers.delete(listener);
+            }),
+            getSnapshot: vi.fn(() => mock.value),
+        };
+        return mock;
+    })(),
     transportStoreMock: { value: null as Partial<TransportState> | null, set: vi.fn() },
     timelineViewStoreMock: { value: null as Partial<TimelineViewState> | null, set: vi.fn() },
     midiStoreMock: { value: null as MidiStoreState | null, set: vi.fn() },
@@ -76,6 +112,90 @@ vi.mock('../../stores/activeRecordingRef', async (importOriginal) => {
 });
 
 describe('buildTimelineRenderModel', () => {
+    it('keeps the shared track fixture reactive through both read channels', async () => {
+        const [{ trackStore: definingTrackStore }, { trackStore: barrelTrackStore }] = await Promise.all([
+            import('../../stores/trackStore'),
+            import('#/modules/Arrangement/stores'),
+        ]);
+        const previous = definingTrackStore.value;
+        const subscriber = vi.fn();
+        const reactSubscriber = vi.fn();
+        const unsubscribe = definingTrackStore.subscribe(subscriber);
+        const unsubscribeReact = definingTrackStore.subscribeReact(reactSubscriber);
+        const next: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+
+        try {
+            expect(barrelTrackStore).toBe(definingTrackStore);
+            definingTrackStore.set(next);
+            expect(subscriber).toHaveBeenCalledOnce();
+            expect(subscriber).toHaveBeenCalledWith(next);
+            expect(reactSubscriber).toHaveBeenCalledOnce();
+            expect(barrelTrackStore.getSnapshot()).toBe(next);
+            expect(barrelTrackStore.value).toBe(next);
+
+            unsubscribe();
+            unsubscribeReact();
+            barrelTrackStore.set(previous);
+            expect(subscriber).toHaveBeenCalledOnce();
+            expect(reactSubscriber).toHaveBeenCalledOnce();
+            expect(definingTrackStore.getSnapshot()).toBe(previous);
+            expect(definingTrackStore.value).toBe(previous);
+        } finally {
+            unsubscribe();
+            unsubscribeReact();
+            definingTrackStore.set(previous);
+        }
+    });
+
+    it('isolates reactive track store listener failures and cleans up subscriptions', async () => {
+        const { trackStore } = await import('../../stores/trackStore');
+        const previous = trackStore.value;
+        const failingSubscriber = vi.fn<Parameters<TrackStoreSubscribe>[0]>(() => {
+            throw new Error('legacy subscriber failed');
+        });
+        const laterSubscriber = vi.fn();
+        const failingReactSubscriber = vi.fn<Parameters<TrackStoreSubscribeReact>[0]>(() => {
+            throw new Error('React subscriber failed');
+        });
+        const laterReactSubscriber = vi.fn();
+        const next: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+
+        let unsubscribeFailing: (() => void) | undefined;
+        let unsubscribeLater: (() => void) | undefined;
+        let unsubscribeFailingReact: (() => void) | undefined;
+        let unsubscribeLaterReact: (() => void) | undefined;
+
+        try {
+            unsubscribeFailing = trackStore.subscribe(failingSubscriber);
+            unsubscribeLater = trackStore.subscribe(laterSubscriber);
+            unsubscribeFailingReact = trackStore.subscribeReact(failingReactSubscriber);
+            unsubscribeLaterReact = trackStore.subscribeReact(laterReactSubscriber);
+
+            expect(() => trackStore.set(next)).not.toThrow();
+            expect(failingSubscriber).toHaveBeenCalledOnce();
+            expect(laterSubscriber).toHaveBeenCalledOnce();
+            expect(failingReactSubscriber).toHaveBeenCalledOnce();
+            expect(laterReactSubscriber).toHaveBeenCalledOnce();
+
+            unsubscribeFailing();
+            unsubscribeLater();
+            unsubscribeFailingReact();
+            unsubscribeLaterReact();
+            trackStore.set(previous);
+
+            expect(failingSubscriber).toHaveBeenCalledOnce();
+            expect(laterSubscriber).toHaveBeenCalledOnce();
+            expect(failingReactSubscriber).toHaveBeenCalledOnce();
+            expect(laterReactSubscriber).toHaveBeenCalledOnce();
+        } finally {
+            unsubscribeFailing?.();
+            unsubscribeLater?.();
+            unsubscribeFailingReact?.();
+            unsubscribeLaterReact?.();
+            trackStore.set(previous);
+        }
+    });
+
     it('returns a model with tracks from the injected track store', () => {
         trackStoreMock.value = {
             tracks: [

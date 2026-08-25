@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { type Store } from '#/infra/store/types';
 
+import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
 import { setAutoScroll } from '../../../stores/timelineViewStore';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
@@ -325,16 +326,39 @@ describe('TimelineSurface', () => {
     });
 });
 
-// Minimal track fixture for the marquee/zoom coverage: only the fields the
-// render-model reads (id, kind, height, clips).
-const makeTrack = (overrides: Partial<{ id: string; kind: string; height: number }> = {}) =>
-    ({
-        id: 't1',
-        kind: 'midi',
+const makeClip = (overrides: Partial<Clip> = {}): Clip => ({
+    id: 'clip-1',
+    trackId: 't1',
+    name: 'Clip',
+    startBeat: 0,
+    endBeat: 1,
+    type: 'midi',
+    fadeInBeats: 0,
+    fadeOutBeats: 0,
+    gain: 1,
+    color: '#ffffff',
+    locked: false,
+    muted: false,
+    ...overrides,
+});
+
+// Use the production Track factory so reactive subscribers receive the complete
+// project shape, including the device chain read by Yeast.
+const makeTrack = (overrides: Partial<Pick<Track, 'id' | 'kind' | 'height' | 'clips'>> = {}): Track => {
+    const id = overrides.id ?? 't1';
+    const kind = overrides.kind ?? 'midi';
+    return {
+        ...createTrack({
+            id,
+            name: 'Track',
+            kind,
+            initialDeviceId: `${id}-device`,
+            initialAlternativeId: `${id}-alternative`,
+        }),
         height: 48,
-        clips: [],
         ...overrides,
-    }) as never;
+    };
+};
 
 describe('TimelineSurface — marquee selection box', () => {
     beforeEach(() => {
@@ -428,7 +452,7 @@ describe('TimelineSurface — zoom & scroll handlers', () => {
         zoomHandlers.trackStoreRef.current?.set({
             tracks: [
                 makeTrack({ id: 'a' }),
-                { ...(makeTrack({ id: 'b' }) as object), clips: [{ endBeat: 100 }] } as never,
+                makeTrack({ id: 'b', clips: [makeClip({ id: 'clip-b', trackId: 'b', endBeat: 100 })] }),
             ],
             selectedTrackId: null,
         });
@@ -460,7 +484,7 @@ describe('TimelineSurface — zoom & scroll handlers', () => {
 
     it('zoom-to-fit bails out when all clips end at or before beat 0', () => {
         zoomHandlers.trackStoreRef.current?.set({
-            tracks: [{ ...(makeTrack({ id: 'a' }) as object), clips: [{ endBeat: 0 }] } as never],
+            tracks: [makeTrack({ id: 'a', clips: [makeClip({ id: 'clip-a', trackId: 'a', endBeat: 0 })] })],
             selectedTrackId: null,
         });
         renderWithTooltip(<TimelineSurface />);

@@ -21,6 +21,13 @@ type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['exec
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
 
 const chatGenerationState = vi.hoisted(() => ({ value: false }));
+const projectMutationAuthorization = vi.hoisted(() => {
+    const isAuthorized = vi.fn<() => boolean>(() => true);
+    return {
+        capture: vi.fn<() => () => boolean>(() => isAuthorized),
+        isAuthorized,
+    };
+});
 
 const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-1' },
@@ -39,6 +46,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
 }));
 
@@ -179,6 +187,9 @@ describe('pending chat action confirmation', () => {
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.projectRevision.value = 'revision-1';
+        projectMutationAuthorization.isAuthorized.mockImplementation(
+            () => mocks.projectRevision.value === 'revision-1'
+        );
         chatGenerationState.value = false;
     });
 
@@ -200,6 +211,7 @@ describe('pending chat action confirmation', () => {
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
 
         expect(result).toEqual({ status: 'executed' });
+        expect(projectMutationAuthorization.capture).toHaveBeenCalledOnce();
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
             groupId: 'group-1',
@@ -276,6 +288,28 @@ describe('pending chat action confirmation', () => {
 
         expect(result.status).toBe('invalidated');
         expect(getPendingActionConfirmation('confirm-racing')?.status).toBe('invalidated');
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+    });
+
+    it('invalidates an app-action proposal when mutation authorization is revoked during batch admission', async () => {
+        mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
+            projectMutationAuthorization.isAuthorized.mockReturnValue(false);
+            if (!options?.shouldExecute?.()) {
+                return Promise.resolve({
+                    status: 'cancelled',
+                    reason: 'Batch execution authority was revoked',
+                    actions: [],
+                });
+            }
+            return Promise.resolve({ status: 'no-op', actions: [] });
+        });
+        proposePendingAppAction('confirm-authorization-revoked');
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-authorization-revoked' });
+
+        expect(result.status).toBe('invalidated');
+        expect(projectMutationAuthorization.isAuthorized).toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirm-authorization-revoked')?.status).toBe('invalidated');
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
     });
 

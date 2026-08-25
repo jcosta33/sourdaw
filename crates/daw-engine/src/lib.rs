@@ -19,7 +19,7 @@ use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
     graph_progress_channel, BuiltinEffectType, GraphCommand, GraphProgressReader,
-    GraphProgressSnapshot, RetiredGraphObjects, EFFECT_TABLE_CAPACITY,
+    GraphProgressSnapshot, PluginCore, RetiredGraphObjects, EFFECT_TABLE_CAPACITY,
 };
 use std::sync::mpsc::Sender;
 use timeline::{
@@ -307,10 +307,24 @@ impl EngineHandle {
     /// side: the command that crosses the ring may not carry a heap allocation
     /// onto the audio thread (ADR 0020), so an unknown name is refused where
     /// it can be reported rather than counted on the callback after the fact.
+    ///
+    /// The instance itself is also built here, on the same contract as the
+    /// `Box<dyn NativePlugin>` that [`Self::add_plugin`] carries: the audio
+    /// thread that applies the command installs or retires it and never
+    /// constructs one (`KneadEngine::new` performs its heap allocations on
+    /// this thread instead). It is built against `self.sample_rate` — the
+    /// rate the stream that this handle commands actually opened at — and
+    /// that rate cannot be stale or missing: an `EngineHandle` exists only
+    /// after the stream build reported it, so there is no handle to call this
+    /// on before the negotiation, exactly as there is no handle to push an
+    /// `AddPlugin` onto before one exists.
     pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
         let plugin_type = BuiltinEffectType::from_name(plugin_type)
             .ok_or_else(|| format!("unknown built-in effect type '{plugin_type}'"))?;
-        self.push(GraphCommand::AddEffect(id, plugin_type))
+        self.push(GraphCommand::AddEffect(
+            id,
+            PluginCore::builtin(plugin_type, self.sample_rate),
+        ))
     }
 
     /// Update an effect parameter natively. The name resolves to a fixed-size
@@ -678,8 +692,8 @@ fn effect_table_full_error() -> String {
 /// it needs a real output device — and it is also the only part a command test
 /// does not exercise: a command's whole journey is the ring between this handle
 /// and [`scheduler::AudioScheduler`], which a test can drive directly.
-#[cfg(test)]
-fn engine_handle_for_command_capture(
+#[cfg(any(test, feature = "command-capture-fixture"))]
+pub fn engine_handle_for_command_capture(
     capacity: usize,
 ) -> (
     EngineHandle,
@@ -719,11 +733,19 @@ mod tests {
     };
     use crate::audio_bridge::create_audio_bridge;
     use crate::plugin_slot::NativePlugin;
-    use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand};
+    use crate::scheduler::{AudioScheduler, BuiltinEffectType, GraphCommand, PluginCore};
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
+    use crate::EngineHandle;
     use rtrb::{Consumer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
+
+    /// The pre-built instance a detached-effect batch carries, built here on
+    /// the control side exactly as [`crate::EngineHandle::add_effect`] builds
+    /// its own — the rate below is the one the capture handle reports.
+    fn knead_instance() -> PluginCore {
+        PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
+    }
 
     /// Overwrites whatever it is handed, so a block it never touched is
     /// distinguishable from one it processed.
@@ -856,7 +878,8 @@ mod tests {
             "a refused name must not cross the ring"
         );
 
-        // The known names still do — as the addresses the scheduler applies.
+        // The known names still do — carrying the instance the control side
+        // built, for the scheduler to install rather than construct.
         engine
             .add_effect(7, "knead")
             .expect("knead is a built-in type");
@@ -865,7 +888,7 @@ mod tests {
             .expect("shift_semitones is a knead parameter");
         assert!(matches!(
             command_rx.pop(),
-            Ok(GraphCommand::AddEffect(id, BuiltinEffectType::Knead)) if id == 7
+            Ok(GraphCommand::AddEffect(id, PluginCore::Knead(_))) if id == 7
         ));
         assert!(matches!(
             command_rx.pop(),
@@ -942,6 +965,20 @@ mod tests {
         count
     }
 
+    /// Fill the ledger with `count` registrations the cheap way: hosted
+    /// plugin boxes, one small allocation each. A fill through `add_effect`
+    /// builds a real `KneadEngine` per slot — half a megabyte of buffers — so
+    /// a capacity-sized fill of those is gigabytes, and the ledger counts a
+    /// registration identically whichever population made it. None of the
+    /// tests that fill this way read the instances back.
+    fn fill_with_cheap_registrations(engine: &mut EngineHandle, count: usize) {
+        for id in 0..count {
+            engine
+                .add_plugin_with_id(900_000 + id, Box::new(OverwritingPlugin))
+                .expect("a registration inside the table's capacity must land");
+        }
+    }
+
     /// The scheduler holds *one* effect table and three producers fill it: the
     /// project's graph devices, engine-owned plugin instances, and the crumbs
     /// capture slot. A ceiling that counts one of them bounds a strict subset
@@ -951,20 +988,17 @@ mod tests {
     /// opens its editor, still moves its knobs, and passes dry audio forever
     /// with nothing anywhere saying it was refused.
     ///
-    /// Fill the table entirely with graph devices, then ask for a plugin: the
-    /// registration has to fail control-side, where `load_plugin` propagates
-    /// the error to the user, and has to put nothing on the ring for the
-    /// callback to refuse.
+    /// Fill the table entirely, then ask for one more: the registration has
+    /// to fail control-side, where `load_plugin` propagates the error to the
+    /// user, and has to put nothing on the ring for the callback to refuse.
+    /// The fill's population is immaterial to the ledger, so it uses the
+    /// cheap plugin fill.
     #[test]
     fn a_plugin_past_the_shared_effect_table_is_refused_before_it_is_registered() {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY {
-            engine
-                .add_effect(id, "knead")
-                .expect("a device inside the table's capacity must register");
-        }
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
 
         // The pre-check a producer with state to unwind consults *before* it
@@ -1003,9 +1037,7 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY - 1 {
-            engine.add_effect(id, "knead").expect("device registers");
-        }
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
         let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         engine
             .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
@@ -1036,18 +1068,16 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY {
-            let (bridge, _bridge_handle) = create_audio_bridge(9_000 + id);
-            engine
-                .add_plugin_with_bridge(9_000 + id, Box::new(OverwritingPlugin), bridge)
-                .expect("a plugin inside the table's capacity must register");
-        }
+        // The unbridged fill is the cheap one and exercises the same ledger:
+        // what matters is that the table is full, not which population filled
+        // it — a bridged fill would also cost ~288 KiB of rings per slot.
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         assert_eq!(drained(&mut command_rx), EFFECT_TABLE_CAPACITY);
 
         let refusal = engine
             .send_graph_batch(vec![GraphCommand::AddDetachedEffect(
                 2_000_000,
-                BuiltinEffectType::Knead,
+                knead_instance(),
             )])
             .expect_err("a batch that cannot fit the shared table must be refused");
         assert!(
@@ -1070,14 +1100,19 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        for id in 0..EFFECT_TABLE_CAPACITY {
-            engine.add_effect(id, "knead").expect("device registers");
-        }
-        // The retirement below has to be one the callback would really apply:
-        // `RemoveTrackDeviceRetired` frees a slot only when the strip it names
-        // holds the effect it names, so effect 0 is spliced onto a track
-        // first. Naming a track that was never added would leave the ordering
-        // assertion watching the ledger agree with itself.
+        fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
+        // The retirement below has to be one the callback would really apply,
+        // on both ends: `RemoveTrackDeviceRetired` frees a slot only when the
+        // strip it names holds the effect it names, and the effect has to be
+        // one the table really holds — the cheap fill's hosted ids never join
+        // a chain, so a retirement naming one of them would free nothing on
+        // the callback while the ledger still decremented, and the ordering
+        // assertion would bless a stream the callback refuses. Effect 0 is
+        // registered for real, then spliced onto a track, so the retirement
+        // is genuine on both ends.
+        engine
+            .add_plugin_with_id(0, Box::new(OverwritingPlugin))
+            .expect("the last slot takes the spliced effect");
         engine.add_track(1).expect("the track registers");
         engine
             .insert_track_device(
@@ -1093,7 +1128,7 @@ mod tests {
 
         engine
             .send_graph_batch(vec![
-                GraphCommand::AddDetachedEffect(2_000_000, BuiltinEffectType::Knead),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
                 GraphCommand::RemoveTrackDeviceRetired {
                     track_id: 1,
                     effect_id: 0,
@@ -1108,7 +1143,7 @@ mod tests {
                     track_id: 1,
                     effect_id: 0,
                 },
-                GraphCommand::AddDetachedEffect(2_000_000, BuiltinEffectType::Knead),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
             ])
             .expect("retiring first frees the slot the registration needs");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);

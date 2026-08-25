@@ -4,7 +4,10 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 
-import { type DeviceChainRuntimeDeltaSuperseded } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
+import {
+    type DeviceChainRuntimeDeltaDischarged,
+    type DeviceChainRuntimeDeltaSuperseded,
+} from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { handleAddDevice } from '../handleAddDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +47,12 @@ const supersededAddDelta: DeviceChainRuntimeDeltaSuperseded = {
     acceptance: 'superseded',
     application: 'not-applied',
     reason: 'Track t1 left project truth before its add-device delta was submitted',
+};
+
+const dischargedAddDelta: DeviceChainRuntimeDeltaDischarged = {
+    acceptance: 'superseded',
+    application: 'discharged',
+    reason: 'Live runtime already matches the authoritative final device chain for track t1',
 };
 
 describe('handleAddDevice', () => {
@@ -142,8 +151,15 @@ describe('handleAddDevice', () => {
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
         } as const;
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
-        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
+        const committedDevice = {
+            id: 'device-1',
+            type: 'builtin-compressor',
+            parameterValues: { threshold: -12 },
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] })
+            .mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [committedDevice] }] });
+        mocks.writeDeviceToProject.mockReturnValue(committedDevice);
 
         const result = handleAddDevice.execute(action);
         if (!result || result instanceof Promise || result.status !== 'written' || !result.afterCommit) {
@@ -398,9 +414,101 @@ describe('handleAddDevice', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
+    it('finishes parameter initialization when a grouped topology step was already discharged', async () => {
+        const committedDevice = {
+            id: 'device-1',
+            type: 'builtin-compressor',
+            parameterValues: { threshold: -12 },
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] })
+            .mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [committedDevice] }] });
+        mocks.writeDeviceToProject.mockReturnValue(committedDevice);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(dischargedAddDelta);
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
+            })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(3);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'device-1', 'threshold', -12);
+    });
+
+    it('skips parameter initialization when a discharged add was later removed from the authoritative track', async () => {
+        const committedDevice = {
+            id: 'device-1',
+            type: 'builtin-compressor',
+            parameterValues: { threshold: -12 },
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] })
+            .mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
+        mocks.writeDeviceToProject.mockReturnValue(committedDevice);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(dischargedAddDelta);
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
+            })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(3);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('skips parameter initialization when a discharged add was replaced with a different runtime identity', async () => {
+        const committedDevice = {
+            id: 'device-1',
+            type: 'external-plugin',
+            parameterValues: { mix: 0.2 },
+            externalPluginId: 'plugin-1',
+            externalInstanceId: 'instance-1',
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] })
+            .mockReturnValue({
+                tracks: [
+                    {
+                        id: 't1',
+                        kind: 'audio',
+                        devices: [{ ...committedDevice, externalInstanceId: 'instance-2' }],
+                    },
+                ],
+            });
+        mocks.writeDeviceToProject.mockReturnValue(committedDevice);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(dischargedAddDelta);
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'external-plugin', deviceId: 'device-1' },
+            })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(3);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
     it('reports clean command success only after an applied runtime delta', async () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
-        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
+        const committedDevice = {
+            id: 'device-1',
+            type: 'builtin-compressor',
+            parameterValues: { threshold: -12 },
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] })
+            .mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [committedDevice] }] });
+        mocks.writeDeviceToProject.mockReturnValue(committedDevice);
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
         registerHandlerMap({ addDevice: handleAddDevice });
 
@@ -413,6 +521,7 @@ describe('handleAddDevice', () => {
 
         expect(undoStore.value?.past).toHaveLength(1);
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(3);
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'device-1', 'threshold', -12);
     });
 });

@@ -1,7 +1,7 @@
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -19,6 +19,49 @@ const pendingGuards = new WeakMap<
     object,
     Array<{ trackId: string; generatedMidiStateGuard: GeneratedMidiStateGuard }>
 >();
+
+type ImportedStemSetGuardPhase = 'pre-import' | 'post-import';
+
+type DiscardImportedStemSetAction = Extract<AppAction, { type: 'discardImportedStemSet' }>;
+
+function isDiscardImportedStemSetDivergenceSafe(
+    action: DiscardImportedStemSetAction,
+    phase: ImportedStemSetGuardPhase
+): boolean {
+    const targetIds = [action.payload.folderId, ...action.payload.stemTrackIds];
+    if (
+        new Set(targetIds).size !== targetIds.length ||
+        action.payload.guards.length !== targetIds.length ||
+        !action.payload.guards.every((entry, index) => entry.trackId === targetIds[index])
+    ) {
+        return false;
+    }
+
+    const state = getTrackStoreState();
+    if (!state) {
+        return false;
+    }
+
+    if (phase === 'pre-import') {
+        const targetsAreAbsent = targetIds.every((trackId) => !state.tracks.some((track) => track.id === trackId));
+        const guardsArePlaceholders = action.payload.guards.every(
+            ({ generatedMidiStateGuard }) =>
+                generatedMidiStateGuard.entityJson === '' && generatedMidiStateGuard.midiByClipIdJson === '{}'
+        );
+        return targetsAreAbsent && guardsArePlaceholders;
+    }
+
+    return action.payload.guards.every((entry) =>
+        isGeneratedMidiStateCurrent({
+            entityId: entry.trackId,
+            entityType: 'track',
+            guard: entry.generatedMidiStateGuard,
+            ...(entry.trackId === action.payload.folderId
+                ? { allowedReferencingTrackIds: action.payload.stemTrackIds }
+                : {}),
+        })
+    );
+}
 
 function getFailureDetail(error: unknown): string {
     if (error instanceof AggregateError) {
@@ -156,17 +199,14 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
 });
 
 export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSet'>({
+    canReapplyAfterDivergence: (action) =>
+        isDiscardImportedStemSetDivergenceSafe(action, 'pre-import') ||
+        isDiscardImportedStemSetDivergenceSafe(action, 'post-import'),
+    validate: (action) =>
+        isDiscardImportedStemSetDivergenceSafe(action, 'pre-import') ||
+        isDiscardImportedStemSetDivergenceSafe(action, 'post-import'),
     execute: (action) => {
-        const allowedChildren = action.payload.stemTrackIds;
-        const guardsValid = action.payload.guards.every((entry) =>
-            isGeneratedMidiStateCurrent({
-                entityId: entry.trackId,
-                entityType: 'track',
-                guard: entry.generatedMidiStateGuard,
-                ...(entry.trackId === action.payload.folderId ? { allowedReferencingTrackIds: allowedChildren } : {}),
-            })
-        );
-        if (!guardsValid) {
+        if (!isDiscardImportedStemSetDivergenceSafe(action, 'post-import')) {
             return { status: 'conflict' };
         }
 

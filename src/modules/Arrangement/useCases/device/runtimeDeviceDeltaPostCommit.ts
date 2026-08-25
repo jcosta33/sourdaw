@@ -1,20 +1,22 @@
 import {
     type ApplyDeviceChainRuntimeDeltaResult,
+    type DeviceChainRuntimeDeltaDischarged,
     type DeviceChainRuntimeDeltaSuperseded,
 } from './applyDeviceChainRuntimeDelta';
+
+type DeviceChainRuntimeDeltaWithoutFailure = DeviceChainRuntimeDeltaSuperseded | DeviceChainRuntimeDeltaDischarged;
 
 /**
  * Every device-chain outcome that still owes the caller runtime work.
  *
- * `superseded` is excluded deliberately. A void delta is not a failure, and a
- * caller that hands one to `getRuntimeDeviceDeltaPostCommitFailure` would turn
- * a removal that already happened into a demand for manual repair — so the type
- * refuses it and the caller has to decide what a superseded delta means before
- * it can ask whether the delta failed.
+ * `superseded` is excluded deliberately. Neither a void removed-host delta nor
+ * an exact live-chain discharge is a failure. The type refuses both so callers
+ * must decide whether their remaining parameter/plugin obligations still run
+ * before asking whether the topology step failed.
  */
 export type RuntimeDeviceDeltaFailure = Exclude<
     ApplyDeviceChainRuntimeDeltaResult,
-    Readonly<{ acceptance: 'accepted'; application: 'applied' }> | DeviceChainRuntimeDeltaSuperseded
+    Readonly<{ acceptance: 'accepted'; application: 'applied' }> | DeviceChainRuntimeDeltaWithoutFailure
 >;
 
 type RuntimeDeltaSubject = 'Device' | 'Preset';
@@ -43,7 +45,7 @@ export class RuntimeDeviceDeltaPostCommitError extends Error {
  * enforces it.
  */
 export function getRuntimeDeviceDeltaPostCommitFailure(
-    result: Exclude<ApplyDeviceChainRuntimeDeltaResult, DeviceChainRuntimeDeltaSuperseded>,
+    result: Exclude<ApplyDeviceChainRuntimeDeltaResult, DeviceChainRuntimeDeltaWithoutFailure>,
     subject: RuntimeDeltaSubject = 'Device'
 ): RuntimeDeviceDeltaPostCommitError | undefined {
     if (result.acceptance === 'accepted' && result.application === 'applied') {

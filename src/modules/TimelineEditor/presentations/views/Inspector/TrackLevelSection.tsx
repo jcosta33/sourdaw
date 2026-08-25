@@ -4,8 +4,9 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
-import { getTrackFaderCeiling, setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
+import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
 import { MidiLearnButton } from '#/modules/ControlSurface/presentations/views';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
@@ -56,13 +57,12 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                         <Row justify="center" className="w-full px-1">
                             {/*
                              * Percent of unity, so the readout above and this
-                             * control share one scale. The travel is the
-                             * writer's own ceiling — `getTrackFaderCeiling`, the
-                             * same bound `ExpandedChannelStrip` applies — rather
-                             * than a flat 100: a track pushed into the fader's
-                             * `+6 dB` of headroom from the mixer reads `150%`
-                             * here, and a control that stopped at 100 would
-                             * write that make-up gain away on first touch.
+                             * control share one scale. The travel is the fader
+                             * law's own ceiling rather than a flat 100: a track
+                             * pushed into the fader's `+6 dB` of headroom from
+                             * the mixer reads `150%` here, and a control that
+                             * stopped at 100 would write that make-up gain away
+                             * on first touch.
                              *
                              * These two handlers deliberately call `setTrackGain`
                              * rather than `executeAppAction`: an Inspector gain
@@ -86,7 +86,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                                         setTrackGain(track.id, value / 100, false);
                                     }
                                 }}
-                                max={getTrackFaderCeiling(track.id) * 100}
+                                max={FADER_MAX_GAIN * 100}
                                 step={1}
                                 aria-label={`${track.name} gain`}
                                 data-testid="inspector-track-gain"

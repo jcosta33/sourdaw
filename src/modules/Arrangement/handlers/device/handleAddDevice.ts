@@ -3,7 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
-import { type Device } from '../../stores/trackStore';
+import { type Device, type Track } from '../../stores/trackStore';
 import { writeDeviceToProject } from '../../useCases/device/addDevice';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import {
@@ -120,6 +120,25 @@ function resolveDeviceIndex(action: AddDeviceAction, context?: HandlerValidation
     return { status: 'resolved', deviceIndex };
 }
 
+function getUniqueCurrentTrack(trackId: string): Track | null {
+    const owners = (getTrackStoreState()?.tracks ?? []).filter((track) => track.id === trackId);
+    return owners.length === 1 ? owners[0]! : null;
+}
+
+function isCommittedDeviceStillAuthoritative(trackId: string, committedDevice: Device): boolean {
+    const currentTrack = getUniqueCurrentTrack(trackId);
+    if (!currentTrack) {
+        return false;
+    }
+    return currentTrack.devices.some(
+        (candidate) =>
+            candidate.id === committedDevice.id &&
+            candidate.type === committedDevice.type &&
+            candidate.externalPluginId === committedDevice.externalPluginId &&
+            candidate.externalInstanceId === committedDevice.externalInstanceId
+    );
+}
+
 export const handleAddDevice = createHandler<'addDevice'>({
     validate: (action, context) => resolveDeviceIndex(action, context).status === 'resolved',
     execute: (action, context) => {
@@ -178,6 +197,7 @@ export const handleAddDevice = createHandler<'addDevice'>({
         };
         let postCommitFailure:
             RuntimeDeviceDeltaPostCommitError | RuntimeTrackStripInitializationPostCommitError | undefined;
+        let parameterInitializationSettled = false;
         function applyRuntimeEffect(): void {
             if (postCommitFailure) {
                 throw postCommitFailure;
@@ -205,22 +225,37 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 }
                 return;
             }
-            const result = applyDeviceChainRuntimeDelta({ before: committedBefore, after, operation: 'add-device' });
+            const result = applyDeviceChainRuntimeDelta({
+                before: committedBefore,
+                after,
+                operation: 'add-device',
+                batchContext: context,
+            });
             // The host track left project truth after this delta was compiled —
             // a later action in the same commit removed it. Nothing is owed:
             // that action's teardown owns the strip, and the parameter writes
             // below would target a device on a track that no longer exists.
-            if (result.acceptance === 'superseded') {
+            if (result.acceptance === 'superseded' && result.application === 'not-applied') {
                 return;
             }
-            const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
-            if (runtimeFailure) {
-                postCommitFailure = runtimeFailure;
-                throw postCommitFailure;
+            if (result.acceptance !== 'superseded') {
+                const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
+                if (runtimeFailure) {
+                    postCommitFailure = runtimeFailure;
+                    throw postCommitFailure;
+                }
+            }
+            if (parameterInitializationSettled) {
+                return;
+            }
+            if (!isCommittedDeviceStillAuthoritative(after.id, committedDevice)) {
+                parameterInitializationSettled = true;
+                return;
             }
             for (const [parameterId, value] of Object.entries(committedDevice.parameterValues)) {
                 updateDeviceParam(after.id, committedDevice.id, parameterId, value);
             }
+            parameterInitializationSettled = true;
         }
         return {
             status: 'written' as const,

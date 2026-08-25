@@ -29,7 +29,7 @@ function normalizeScope(value: unknown): AgentRunScope | null {
     }
     const targetIds = normalizeTextList(value.targetIds, MAX_SCOPE_IDS);
     const protectedTargetIds = normalizeTextList(value.protectedTargetIds, MAX_SCOPE_IDS);
-    const normalizeRanges = (ranges: unknown) => {
+    const normalizeRanges = (ranges: unknown, allowPointRange: boolean) => {
         if (!Array.isArray(ranges) || ranges.length > MAX_SCOPE_IDS) {
             return null;
         }
@@ -39,14 +39,15 @@ function normalizeScope(value: unknown): AgentRunScope | null {
             Number.isFinite(range.startBeat) &&
             typeof range.endBeat === 'number' &&
             Number.isFinite(range.endBeat) &&
-            range.endBeat > range.startBeat
+            range.startBeat >= 0 &&
+            (allowPointRange ? range.endBeat >= range.startBeat : range.endBeat > range.startBeat)
                 ? { startBeat: range.startBeat, endBeat: range.endBeat }
                 : null
         );
         return normalized.every((range) => range !== null) ? normalized : null;
     };
-    const targetRanges = normalizeRanges(value.targetRanges);
-    const protectedRanges = normalizeRanges(value.protectedRanges);
+    const targetRanges = normalizeRanges(value.targetRanges, true);
+    const protectedRanges = normalizeRanges(value.protectedRanges, false);
     return targetIds && protectedTargetIds && targetRanges && protectedRanges
         ? { targetIds, targetRanges, protectedTargetIds, protectedRanges }
         : null;
