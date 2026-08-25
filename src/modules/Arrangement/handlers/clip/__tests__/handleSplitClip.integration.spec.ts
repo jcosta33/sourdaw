@@ -4,7 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppActionBatch,
@@ -166,12 +166,16 @@ describe('handleSplitClip atomic integration', () => {
     });
 
     it('keeps the split and undo entry when right-side MIDI changed externally', async () => {
+        const originalClips = structuredClone(trackStore.value!.tracks[0]!.clips);
+        const originalNotesByClipId = structuredClone(midiStore.value!.notesByClipId);
+
         await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } }], {
             source: 'prompt',
             requireCompensation: true,
         });
         const rightClip = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id !== 'clip-1')!;
         const rightNotes = midiStore.value!.notesByClipId[rightClip.id]!;
+        const preparedRightNoteVelocity = rightNotes[0]!.velocity;
         midiStore.set({
             ...midiStore.value!,
             notesByClipId: {
@@ -187,8 +191,25 @@ describe('handleSplitClip atomic integration', () => {
             'Cannot undo "Split clip "Intro" (clip-1) at beat 4": project state has changed'
         );
 
+        expect(undoStore.value!.past).toHaveLength(1);
+        expect(undoStore.value!.future).toHaveLength(0);
         expect(trackStore.value!.tracks[0]!.clips).toHaveLength(2);
         expect(midiStore.value!.notesByClipId[rightClip.id]![0]!.velocity).toBe(12);
+
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                [rightClip.id]: [{ ...rightNotes[0]!, velocity: preparedRightNoteVelocity }, ...rightNotes.slice(1)],
+            },
+        });
+
+        await undo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(originalClips);
+        expect(midiStore.value!.notesByClipId).toEqual(originalNotesByClipId);
+        expect(undoStore.value!.past).toHaveLength(0);
+        expect(undoStore.value!.future).toHaveLength(1);
     });
 
     it.each(['tempo-first', 'split-first'] as const)(
