@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
     constants,
     linkSync,
+    lstatSync,
     mkdirSync,
     mkdtempSync,
     openSync,
@@ -11,6 +12,7 @@ import {
     rmSync,
     symlinkSync,
     truncateSync,
+    utimesSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1384,6 +1386,59 @@ describe('release inventory', () => {
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not admit same-inode same-size same-byte path-addressed digest rewrites during read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-byte-rewrite-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.txt';
+        const filePath = join(root, path);
+        const safeContents = 'inside legal bytes';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${sha256(safeContents)}:${path}`];
+        let targetDescriptor: number | undefined;
+        let rewritten = false;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, safeContents);
+            utimesSync(filePath, new Date(0), new Date(0));
+            const before = lstatSync(filePath, { bigint: true });
+            const readFile: RepositorySnapshotFileReader = {
+                open(openPath, flags) {
+                    const descriptor = openSync(openPath, flags);
+                    if (openPath === filePath) {
+                        targetDescriptor = descriptor;
+                    }
+                    return descriptor;
+                },
+                read(descriptor, buffer, offset, length, position) {
+                    const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                    if (descriptor === targetDescriptor && bytesRead > 0 && !rewritten) {
+                        writeFileSync(filePath, safeContents);
+                        rewritten = true;
+                    }
+                    return bytesRead;
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(rewritten).toBe(true);
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+            const after = lstatSync(filePath, { bigint: true });
+            expect(after.dev).toBe(before.dev);
+            expect(after.ino).toBe(before.ino);
+            expect(after.size).toBe(before.size);
+            expect(readFileSync(filePath, 'utf8')).toBe(safeContents);
+            expect(after.mtimeNs).not.toBe(before.mtimeNs);
+            expect(after.ctimeNs).not.toBe(before.ctimeNs);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }

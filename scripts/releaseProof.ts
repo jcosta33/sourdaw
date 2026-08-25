@@ -865,6 +865,7 @@ function throwAfterOwnedPathCleanup(error: unknown, result: OwnedPathCleanupResu
 }
 
 type DirectoryByteEntry = ReleaseProofPublicationFile;
+type DirectoryByteCensusEntry = Pick<DirectoryByteEntry, 'digest' | 'path' | 'size'>;
 
 type ValidatedDirectorySnapshot = {
     bytes: DirectoryByteEntry[];
@@ -873,10 +874,11 @@ type ValidatedDirectorySnapshot = {
     path: string;
 };
 
-function sameDirectoryBytes(left: readonly DirectoryByteEntry[], right: readonly DirectoryByteEntry[]): boolean {
-    const bytes = (
-        entries: readonly DirectoryByteEntry[]
-    ): Array<Pick<DirectoryByteEntry, 'digest' | 'path' | 'size'>> =>
+function sameDirectoryBytes(
+    left: readonly DirectoryByteCensusEntry[],
+    right: readonly DirectoryByteCensusEntry[]
+): boolean {
+    const bytes = (entries: readonly DirectoryByteCensusEntry[]): DirectoryByteCensusEntry[] =>
         entries.map(({ digest, path, size }) => ({ digest, path, size }));
     return sameValue(bytes(left), bytes(right));
 }
@@ -1667,7 +1669,7 @@ function snapshotCandidateTree(
     candidate: string,
     snapshot: string,
     fileReader: ReleaseProofFileReader = releaseProofFileReader
-): void {
+): DirectoryByteCensusEntry[] {
     const label = 'release proof candidate snapshot';
     const errors: string[] = [];
     const paths = listFiles(candidate, label, errors);
@@ -1675,6 +1677,7 @@ function snapshotCandidateTree(
         throw new Error(errors.join('\n'));
     }
     const budget = candidateSnapshotBudget(fileReader);
+    const census: DirectoryByteCensusEntry[] = [];
     for (const path of paths) {
         const source = resolve(candidate, ...path.split('/'));
         const destination = resolve(snapshot, ...path.split('/'));
@@ -1686,23 +1689,35 @@ function snapshotCandidateTree(
             (descriptor) => {
                 const output = openSync(destination, 'wx');
                 try {
-                    digestCandidateDescriptor(
+                    let size = 0;
+                    const digest = digestCandidateDescriptor(
                         descriptor,
                         RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
                         budget,
                         fileReader,
-                        (bytes) => writeSync(output, bytes)
+                        (bytes) => {
+                            let offset = 0;
+                            while (offset < bytes.length) {
+                                const written = writeSync(output, bytes, offset, bytes.length - offset);
+                                if (written === 0) {
+                                    throw new Error(`${label}: failed to copy ${path}`);
+                                }
+                                offset += written;
+                            }
+                            size += bytes.length;
+                        }
                     );
-                    return true;
+                    return { digest, path, size };
                 } finally {
                     closeSync(output);
                 }
             },
             fileReader
         );
-        if (copied !== true) {
+        if (copied === undefined) {
             throw new Error(`${label}: missing or unsafe ${path}`);
         }
+        census.push(copied);
     }
     const snapshotErrors: string[] = [];
     const snapshotPaths = listFiles(snapshot, label, snapshotErrors);
@@ -1712,6 +1727,7 @@ function snapshotCandidateTree(
     if (!sameValue(paths, snapshotPaths)) {
         throw new Error('release proof candidate census changed while creating the publication snapshot');
     }
+    return census;
 }
 
 function stringMap(value: unknown, label: string, errors: string[]): Record<string, string> {
@@ -4157,7 +4173,10 @@ export function assembleReleaseProof(
         publisher = publisherPreparer();
         publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
         publicationCandidateIdentity = directoryIdentity(publicationCandidate);
-        snapshotCandidateTree(candidate, publicationCandidate, publicationFileReader);
+        const publicationCensus = snapshotCandidateTree(candidate, publicationCandidate, publicationFileReader);
+        if (!sameDirectoryBytes(publicationCensus, releaseGateCandidate.bytes)) {
+            throw new Error('release proof publication snapshot does not match the release-gated candidate');
+        }
         assertOwnedPathCleanup(removeOwnedPath(candidate, candidateIdentity), 'release proof assembly candidate');
         const semanticCandidate = validatePublicationCandidate(
             {

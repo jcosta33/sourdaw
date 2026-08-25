@@ -1311,6 +1311,45 @@ describe('release proof', () => {
         expect(after.size).toBe(before.size);
     });
 
+    it('rejects a same-inode same-size same-byte candidate rewrite after snapshot capture', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const path = join(fixture.candidate, 'web/contents/assets/app.js');
+        const original = readFileSync(path);
+        utimesSync(path, new Date(0), new Date(0));
+        const before = lstatSync(path, { bigint: true });
+        let targetDescriptor: number | undefined;
+        let rewritten = false;
+        const fileReader: ReleaseProofFileReader = {
+            open(openPath, flags) {
+                const descriptor = openSync(openPath, flags);
+                if (openPath === path) {
+                    targetDescriptor = descriptor;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                if (descriptor === targetDescriptor && bytesRead > 0 && !rewritten) {
+                    writeFileSync(path, original);
+                    rewritten = true;
+                }
+                return bytesRead;
+            },
+        };
+
+        expect(validate(fixture, fileReader)).toContain('web contents: missing or unsafe assets/app.js');
+        expect(rewritten).toBe(true);
+        const after = lstatSync(path, { bigint: true });
+        expect(after.dev).toBe(before.dev);
+        expect(after.ino).toBe(before.ino);
+        expect(after.size).toBe(before.size);
+        expect(readFileSync(path)).toEqual(original);
+        expect(after.mtimeNs).not.toBe(before.mtimeNs);
+        expect(after.ctimeNs).not.toBe(before.ctimeNs);
+    });
+
     it.each([
         ['web manifest', 'web/contents/web-artifact-manifest.json'],
         ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],
@@ -1836,6 +1875,62 @@ describe('release proof', () => {
         expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate, readReleaseInventory, validator)).toThrow(
             'release proof candidate changed during release gate'
         );
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('does not publish a self-consistent candidate rewrite made at publisher preparation', () => {
+        const fixture = createFixture();
+        let mutableCandidate: string | undefined;
+        let prepared = false;
+        let publicationCallbacks = 0;
+        const validator: ReleaseProofValidator = (options) => {
+            mutableCandidate = options.candidate;
+            return validateReleaseProof(options);
+        };
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+            prepared = true;
+            if (mutableCandidate === undefined) {
+                throw new Error('staging validation did not expose its candidate');
+            }
+            const contents = join(mutableCandidate, 'web/contents');
+            const app = join(contents, 'assets/app.js');
+            write(app, 'console.log("rewritten-at-publisher-preparation");');
+            const manifestPath = join(contents, 'web-artifact-manifest.json');
+            const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { files: Record<string, string> };
+            manifest.files['assets/app.js'] = hash(app);
+            writeJson(manifestPath, manifest);
+            const archive = join(mutableCandidate, 'web/sourdaw-web.zip');
+            rmSync(archive);
+            execFileSync('zip', ['-X', '-q', archive, '-@'], {
+                cwd: contents,
+                input: `${listFixtureFiles(contents).join('\n')}\n`,
+            });
+            const proofPath = join(mutableCandidate, 'release-proof.json');
+            const value = JSON.parse(readFileSync(proofPath, 'utf8')) as {
+                web: { archiveSha256: string; manifestSha256: string };
+            };
+            value.web.manifestSha256 = hash(manifestPath);
+            value.web.archiveSha256 = hash(archive);
+            writeJson(proofPath, value);
+            return prepareAtomicDirectoryPublisher((_request, runTrustedPublisher) => {
+                publicationCallbacks += 1;
+                return runTrustedPublisher();
+            });
+        };
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                validator,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('release proof publication snapshot does not match the release-gated candidate');
+        expect(prepared).toBe(true);
+        expect(publicationCallbacks).toBe(0);
         expect(existsSync(fixture.candidate)).toBe(false);
     });
 
