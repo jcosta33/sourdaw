@@ -2,15 +2,23 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import {
+    type ArrowFunction,
+    type FunctionDeclaration,
+    type FunctionExpression,
     type Node,
     ScriptKind,
     ScriptTarget,
     createSourceFile,
     forEachChild,
+    isArrowFunction,
+    isBlock,
     isCallExpression,
+    isFunctionDeclaration,
+    isFunctionExpression,
     isIdentifier,
     isPropertyAccessExpression,
     isShorthandPropertyAssignment,
+    isVariableDeclaration,
 } from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -994,6 +1002,57 @@ function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDef
 
 const DEVICE_DATA_PROPERTIES = new Set(['devices', 'parameterValues']);
 
+type LocalUpdater = ArrowFunction | FunctionDeclaration | FunctionExpression;
+type LexicalScope = {
+    readonly parent: LexicalScope | null;
+    readonly bindings: Map<string, LocalUpdater | null>;
+};
+
+function addLocalBinding(scope: LexicalScope, name: string, updater: LocalUpdater | null): void {
+    scope.bindings.set(name, scope.bindings.has(name) ? null : updater);
+}
+
+function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
+    const scopeByNode = new Map<Node, LexicalScope>();
+    const rootScope: LexicalScope = { parent: null, bindings: new Map() };
+    const visit = (node: Node, scope: LexicalScope): void => {
+        scopeByNode.set(node, scope);
+        if (isFunctionDeclaration(node) && node.name) {
+            addLocalBinding(scope, node.name.text, node);
+        }
+        if (isVariableDeclaration(node) && isIdentifier(node.name)) {
+            const initializer = node.initializer;
+            const updater =
+                initializer && (isArrowFunction(initializer) || isFunctionExpression(initializer)) ? initializer : null;
+            addLocalBinding(scope, node.name.text, updater);
+        }
+
+        let childScope = scope;
+        if (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node)) {
+            childScope = { parent: scope, bindings: new Map() };
+            for (const parameter of node.parameters) {
+                if (isIdentifier(parameter.name)) {
+                    addLocalBinding(childScope, parameter.name.text, null);
+                }
+            }
+        } else if (isBlock(node)) {
+            childScope = { parent: scope, bindings: new Map() };
+        }
+        forEachChild(node, (child) => visit(child, childScope));
+    };
+    visit(sourceFile, rootScope);
+    return scopeByNode;
+}
+
+function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): LocalUpdater | null {
+    for (let current = scope; current; current = current.parent) {
+        if (current.bindings.has(name)) {
+            return current.bindings.get(name) ?? null;
+        }
+    }
+    return null;
+}
+
 function isDeviceDataMutationCall(node: Node): boolean {
     if (!isCallExpression(node)) {
         return false;
@@ -1017,6 +1076,7 @@ function countDeviceDataShorthandWrites(file: ProductionSource): number {
         true,
         file.path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
     );
+    const scopeByNode = indexLocalUpdaters(sourceFile);
     const writes = new Set<Node>();
     // A shorthand property is counted only beneath an owning project mutation.
     // Object binding patterns such as `const { devices } = track` are different
@@ -1032,6 +1092,12 @@ function countDeviceDataShorthandWrites(file: ProductionSource): number {
         if (isDeviceDataMutationCall(node) && isCallExpression(node)) {
             for (const argument of node.arguments) {
                 collectWrites(argument);
+                if (isIdentifier(argument)) {
+                    const updater = resolveLocalUpdater(argument.text, scopeByNode.get(node));
+                    if (updater?.body) {
+                        collectWrites(updater.body);
+                    }
+                }
             }
         }
         forEachChild(node, visit);
@@ -1118,6 +1184,21 @@ describe('device write boundary closure', () => {
         ).toBe(0);
     });
 
+    it('resolves only the nearest local updater declaration', () => {
+        expect(
+            countDeviceDataShorthandWrites({
+                path: 'src/modules/Arrangement/localUpdater.ts',
+                source: 'const devices = []; function replace(current) { return { ...current, devices }; } updateTrack("track", replace);',
+            })
+        ).toBe(1);
+        expect(
+            countDeviceDataShorthandWrites({
+                path: 'src/modules/Arrangement/shadowedUpdater.ts',
+                source: 'const devices = []; const replace = (current) => ({ ...current, devices }); { const replace = (current) => ({ ...current }); updateTrack("track", replace); }',
+            })
+        ).toBe(0);
+    });
+
     it.each([
         {
             name: 'an aliased persistence/runtime writer',
@@ -1158,6 +1239,11 @@ describe('device write boundary closure', () => {
             name: 'a direct devices writer',
             path: 'src/modules/Arrangement/newDeviceWriter.ts',
             source: 'const devices = []; updateTrack("track", (current) => ({ ...current, devices }));',
+        },
+        {
+            name: 'an extracted direct devices writer',
+            path: 'src/modules/Arrangement/newExtractedDeviceWriter.ts',
+            source: 'const devices = []; const replace = (current) => ({ ...current, devices }); updateTrack("track", replace);',
         },
         {
             name: 'a direct parameterValues writer',
