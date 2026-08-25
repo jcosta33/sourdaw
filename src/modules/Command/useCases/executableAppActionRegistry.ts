@@ -15,6 +15,7 @@ export type ExecutableAppActionTargetCapability =
     | 'output'
     | 'device-host-track'
     | 'device'
+    | 'sidechain-capable-device'
     | 'device-parameter'
     | 'adjustment-layer'
     | 'vca-group'
@@ -157,13 +158,23 @@ const sendTargetRules = [
     },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
-const sidechainTargetRules = [
+const sidechainRouteTargetRules = [
     { argument: 'targetTrackId', capability: 'routable-source', promptRole: 'destination' },
     {
         argument: 'sourceTrackId',
         capability: 'routable-source',
         distinctFrom: 'targetTrackId',
         promptRole: 'source',
+    },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const sidechainAddTargetRules = [
+    ...sidechainRouteTargetRules,
+    {
+        argument: 'targetDeviceId',
+        capability: 'sidechain-capable-device',
+        dependsOn: 'targetTrackId',
+        optional: true,
     },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
@@ -1912,7 +1923,7 @@ export const executableAppActionDescriptors = [
         description:
             'Route one source track into a supported sidechain compressor on a distinct target track; use targetDeviceId when an app-owned capability enumerates an exact device.',
         intentPhrases: ['add sidechain', 'create sidechain', 'route sidechain', 'sidechain'],
-        targetRules: sidechainTargetRules,
+        targetRules: sidechainAddTargetRules,
         parameters: {
             properties: {
                 sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
@@ -1927,7 +1938,7 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description: 'Remove the single existing sidechain route between two distinct tracks.',
         intentPhrases: ['remove sidechain', 'delete sidechain', 'disconnect sidechain'],
-        targetRules: sidechainTargetRules,
+        targetRules: sidechainRouteTargetRules,
         parameters: {
             properties: {
                 sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },

@@ -30,6 +30,7 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
     confirmed?: boolean;
     serialized: string;
     options?: ExecuteOptions;
+    onProjectCommitPrepared?: () => void;
 };
 
 const PROJECT_COMMIT_RECOVERY_WARNING =
@@ -464,29 +465,29 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     (!requiresDurableExecutionAuthority || commandBatchExecutionAuthorityPort.canExecute()) &&
                     (callerShouldExecute?.() ?? true),
                 onProjectCommitPrepared: (committedResult) => {
-                    if (idempotencyContentHash === null) {
-                        return;
+                    if (idempotencyContentHash !== null) {
+                        const recoveryResult = {
+                            status: 'committed-with-warning' as const,
+                            actions: committedResult.actions,
+                            warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                            warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                        };
+                        projectCommitRecovery.receipt = createVerifiedBatchReceipt({
+                            envelope: resolvedEnvelope,
+                            observedBaseRevision,
+                            receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                            resultingRevision: null,
+                            result: recoveryResult,
+                        });
+                        recordProjectCommandBatchIdempotencyCheckpoint({
+                            projectId: parsed.envelope.projectId,
+                            idempotencyKey: parsed.envelope.idempotencyKey,
+                            contentHash: idempotencyContentHash,
+                            state: 'effects-pending',
+                            serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
+                        });
                     }
-                    const recoveryResult = {
-                        status: 'committed-with-warning' as const,
-                        actions: committedResult.actions,
-                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                        warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
-                    };
-                    projectCommitRecovery.receipt = createVerifiedBatchReceipt({
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
-                        resultingRevision: null,
-                        result: recoveryResult,
-                    });
-                    recordProjectCommandBatchIdempotencyCheckpoint({
-                        projectId: parsed.envelope.projectId,
-                        idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
-                        state: 'effects-pending',
-                        serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
-                    });
+                    input.onProjectCommitPrepared?.();
                 },
                 prepareValidation: ({ allowCompatibleProjectDivergence }) =>
                     prepareCommandBatchPreflight(resolvedEnvelope, { allowCompatibleProjectDivergence }),

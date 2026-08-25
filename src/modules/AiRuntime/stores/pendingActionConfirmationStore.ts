@@ -145,6 +145,9 @@ const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 type PendingActionResourceLease = {
     bytes: number;
     release: () => void;
+    protect?: () => void;
+    retain?: () => void;
+    transfer?: () => void;
 };
 
 const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>();
@@ -445,7 +448,7 @@ export function clearPendingActionConfirmations(): void {
 
 type SettlePendingActionResourceLeaseInput = {
     confirmationId: string;
-    disposition: 'discard' | 'retain';
+    disposition: 'discard' | 'retain' | 'transfer';
 };
 
 export function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): void {
@@ -453,5 +456,15 @@ export function settlePendingActionResourceLease(input: SettlePendingActionResou
         releasePendingActionResourceLease(input.confirmationId);
         return;
     }
+    const lease = pendingActionResourceLeases.get(input.confirmationId);
     pendingActionResourceLeases.delete(input.confirmationId);
+    if (input.disposition === 'retain') {
+        lease?.retain?.();
+        return;
+    }
+    lease?.transfer?.();
+}
+
+export function protectPendingActionResourceLease(confirmationId: string): void {
+    pendingActionResourceLeases.get(confirmationId)?.protect?.();
 }
