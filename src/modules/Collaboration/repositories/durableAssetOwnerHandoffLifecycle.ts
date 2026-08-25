@@ -21,6 +21,7 @@ import { createDurableAssetRecordAccess } from './durableAssetRecordAccess';
 import { type RebindDurableAssetOwnerResult } from './durableAssetRepositoryContract';
 
 const records = createDurableAssetRecordAccess();
+type OwnerRebindAttemptResult = RebindDurableAssetOwnerResult | { status: 'cancelled'; ownerId: string };
 
 function haveSameStringSet(left: readonly string[], right: readonly string[]): boolean {
     const leftSet = new Set(left);
@@ -28,7 +29,11 @@ function haveSameStringSet(left: readonly string[], right: readonly string[]): b
     return leftSet.size === rightSet.size && [...leftSet].every((value) => rightSet.has(value));
 }
 
-async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
+async function commitOwnerRebind(
+    previousOwnerId: string,
+    nextOwnerId: string,
+    shouldContinue: () => boolean = () => true
+): Promise<OwnerRebindAttemptResult> {
     if (nextOwnerId === previousOwnerId) {
         const database = await records.openDurableAssetDatabase();
         const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readwrite');
@@ -45,6 +50,11 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
                 transaction.abort();
                 await completion.catch(() => undefined);
                 return { status: 'failed', reason: 'owner-handoff-conflict' };
+            }
+            if (!shouldContinue()) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'cancelled', ownerId: nextOwnerId };
             }
             store.delete(previousOwnerId);
         }
@@ -108,6 +118,11 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         // Queue deletion inside this same transaction before any later awaits
         // can leave an otherwise empty handoff transaction inactive. A later
         // validation failure aborts and rolls this mutation back atomically.
+        if (!shouldContinue()) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'cancelled', ownerId: nextOwnerId };
+        }
         handoffStore.delete(previousOwnerId);
     }
     const authorityEpoch = records.isOwnerAuthorityRecord(authorityValue) ? authorityValue.epoch : 0;
@@ -120,6 +135,11 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         await completion.catch(() => undefined);
         return { status: 'failed', reason: 'owner-handoff-conflict' };
     }
+    if (!shouldContinue()) {
+        transaction.abort();
+        await completion.catch(() => undefined);
+        return { status: 'cancelled', ownerId: nextOwnerId };
+    }
     authorityStore.put({
         schemaVersion: OWNER_AUTHORITY_SCHEMA_VERSION,
         ownerId: previousOwnerId,
@@ -127,6 +147,11 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
         epoch: authorityEpoch + 1,
     } satisfies OwnerAuthorityRecord);
     if (nextAuthority === undefined) {
+        if (!shouldContinue()) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'cancelled', ownerId: nextOwnerId };
+        }
         authorityStore.put({
             schemaVersion: OWNER_AUTHORITY_SCHEMA_VERSION,
             ownerId: nextOwnerId,
@@ -143,6 +168,11 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
             transaction.abort();
             await completion.catch(() => undefined);
             return { status: 'failed', reason: 'corrupt-record' };
+        }
+        if (!shouldContinue()) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'cancelled', ownerId: nextOwnerId };
         }
         promotionStore.put({ ...recovery, ownerId: nextOwnerId } satisfies PromotionRecoveryRecord);
     }
@@ -234,6 +264,11 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
                   lease.ownerId === previousOwnerId ? { ...lease, ownerId: nextOwnerId } : lease
               )
             : asset.activeLeases;
+        if (!shouldContinue()) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'cancelled', ownerId: nextOwnerId };
+        }
         assetStore.put({
             ...asset,
             ownerIds: ownsAsset
@@ -245,6 +280,11 @@ async function commitOwnerRebind(previousOwnerId: string, nextOwnerId: string): 
     }
     for (const lease of leaseValues as LeaseRecord[]) {
         if (lease.ownerId === previousOwnerId) {
+            if (!shouldContinue()) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'cancelled', ownerId: nextOwnerId };
+            }
             leaseStore.put({ ...lease, ownerId: nextOwnerId } satisfies LeaseRecord);
         }
     }
@@ -313,8 +353,12 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
             };
         },
 
-        commitOwnerRebind(nextOwnerId: string) {
-            return commitOwnerRebind(ownerId, nextOwnerId);
+        async commitOwnerRebind(nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
+            const result = await commitOwnerRebind(ownerId, nextOwnerId);
+            if (result.status === 'cancelled') {
+                throw new Error('Unfenced durable owner rebind was unexpectedly cancelled');
+            }
+            return result;
         },
 
         async abortOwnerRebind(nextOwnerId: string) {
@@ -342,7 +386,7 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
             return { status: 'aborted' as const, previousOwnerId: ownerId, ownerId: nextOwnerId };
         },
 
-        async resumeOwnerRebinds() {
+        async resumeOwnerRebinds(shouldContinue: () => boolean = () => true) {
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(OWNER_HANDOFF_STORE, 'readonly');
             const completion = records.awaitTransaction(transaction);
@@ -352,9 +396,15 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
             if (values.some((value) => !records.isOwnerHandoffRecord(value))) {
                 return { status: 'failed' as const, reason: 'corrupt-record' as const };
             }
+            if (!shouldContinue()) {
+                return { status: 'cancelled' as const, ownerId };
+            }
             const reboundHashes = new Set<string>();
             for (const handoff of values as OwnerHandoffRecord[]) {
-                const result = await commitOwnerRebind(handoff.previousOwnerId, ownerId);
+                const result = await commitOwnerRebind(handoff.previousOwnerId, ownerId, shouldContinue);
+                if (result.status === 'cancelled') {
+                    return result;
+                }
                 if (result.status === 'failed') {
                     return result;
                 }

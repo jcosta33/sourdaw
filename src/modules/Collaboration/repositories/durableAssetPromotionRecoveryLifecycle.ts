@@ -72,11 +72,16 @@ function bindingsAreContained(subset: readonly StagedAssetBinding[], superset: r
 /** Own crash-restart promotion or cleanup of exact durable leases without replaying their caller. */
 export function createDurableAssetPromotionRecoveryLifecycle(
     ownerId: string,
-    promoteStagedAsset: (leaseId: string, expectedHash: string) => Promise<PromoteStagedAssetResult>,
+    promoteStagedAsset: (
+        leaseId: string,
+        expectedHash: string,
+        shouldContinue?: () => boolean
+    ) => Promise<PromoteStagedAssetResult>,
     reopenDurableAsset: (hash: string) => Promise<ReopenDurableAssetResult>,
     releaseStagedAssets: (
         bindings: readonly StagedAssetBinding[],
-        cleanupRecoveryId?: string
+        cleanupRecoveryId?: string,
+        shouldContinue?: () => boolean
     ) => Promise<ReleaseStagedAssetsResult>
 ) {
     async function readRecovery(recoveryId: string): Promise<PromotionRecoveryRecord | DurableAssetFailure | null> {
@@ -97,7 +102,10 @@ export function createDurableAssetPromotionRecoveryLifecycle(
         return value;
     }
 
-    async function deleteRecovery(recoveryId: string): Promise<DurableAssetFailure | null> {
+    async function deleteRecovery(
+        recoveryId: string,
+        shouldContinue: () => boolean = () => true
+    ): Promise<DurableAssetFailure | null> {
         const database = await records.openDurableAssetDatabase();
         const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readwrite');
         const completion = records.awaitTransaction(transaction);
@@ -108,14 +116,22 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             await completion.catch(() => undefined);
             return { status: 'failed', reason: 'corrupt-record' };
         }
+        if (!shouldContinue()) {
+            transaction.abort();
+            await completion.catch(() => undefined);
+            return { status: 'failed', reason: 'owner-handoff-conflict' };
+        }
         store.delete(recoveryId);
         await completion;
         return null;
     }
 
-    async function completeRecord(record: PromotionRecoveryRecord) {
+    async function completeRecord(record: PromotionRecoveryRecord, shouldContinue: () => boolean = () => true) {
+        if (!shouldContinue()) {
+            return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+        }
         if (getRecoveryDisposition(record) === 'release') {
-            const released = await releaseStagedAssets(record.bindings, record.recoveryId);
+            const released = await releaseStagedAssets(record.bindings, record.recoveryId, shouldContinue);
             if (released.status === 'failed') {
                 return released;
             }
@@ -128,7 +144,10 @@ export function createDurableAssetPromotionRecoveryLifecycle(
         }
         const promotedHashes = new Set<string>();
         for (const binding of record.bindings) {
-            const promoted = await promoteStagedAsset(binding.leaseId, binding.expectedHash);
+            if (!shouldContinue()) {
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+            }
+            const promoted = await promoteStagedAsset(binding.leaseId, binding.expectedHash, shouldContinue);
             if (promoted.status === 'failed') {
                 if (promoted.reason !== 'unknown-lease') {
                     return promoted;
@@ -140,7 +159,7 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             }
             promotedHashes.add(binding.expectedHash);
         }
-        const deletionFailure = await deleteRecovery(record.recoveryId);
+        const deletionFailure = await deleteRecovery(record.recoveryId, shouldContinue);
         if (deletionFailure) {
             return deletionFailure;
         }
@@ -408,7 +427,8 @@ export function createDurableAssetPromotionRecoveryLifecycle(
         async resumeRecoveries(
             protectedRecoveryIds: ReadonlySet<string> = new Set(),
             isCommitProven: (proof: DurableAssetCommitProof) => boolean = () => false,
-            protectDefaultReleaseClaims = false
+            protectDefaultReleaseClaims = false,
+            shouldContinue: () => boolean = () => true
         ) {
             const database = await records.openDurableAssetDatabase();
             const transaction = database.transaction(PROMOTION_RECOVERY_STORE, 'readonly');
@@ -424,6 +444,9 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             }
             const promotedHashes = new Set<string>();
             for (const recovery of values as PromotionRecoveryRecord[]) {
+                if (!shouldContinue()) {
+                    return { status: 'cancelled' as const, ownerId };
+                }
                 if (protectedRecoveryIds.has(recovery.recoveryId)) {
                     continue;
                 }
@@ -435,7 +458,10 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                         continue;
                     }
                 }
-                const completed = await completeRecord(recovery);
+                const completed = await completeRecord(recovery, shouldContinue);
+                if (!shouldContinue()) {
+                    return { status: 'cancelled' as const, ownerId };
+                }
                 if (completed.status === 'failed') {
                     return completed;
                 }

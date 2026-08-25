@@ -46,7 +46,9 @@ export type CommitDurableAssetPromotionRecoveryResult =
 export type CancelDurableAssetPromotionRecoveryResult =
     { status: 'cancelled' | 'missing'; recoveryId: string } | DurableAssetFailure;
 export type ResumeDurableAssetRecoveriesResult =
-    { status: 'resumed'; ownerId: string; recoveryCount: number; promotedHashes: string[] } | DurableAssetFailure;
+    | { status: 'resumed'; ownerId: string; recoveryCount: number; promotedHashes: string[] }
+    | { status: 'cancelled'; ownerId: string }
+    | DurableAssetFailure;
 export type CompleteDurableAssetCleanupRecoveryResult =
     { status: 'completed' | 'missing'; recoveryId: string; releasedHashes: string[] } | DurableAssetFailure;
 export type ReleasedStagedAsset = Exclude<ReleaseStagedAssetResult, DurableAssetFailure>;
@@ -66,6 +68,7 @@ export type ResumeDurableAssetOwnerHandoffsResult =
           previousOwnerIds: string[];
           reboundHashes: string[];
       }
+    | { status: 'cancelled'; ownerId: string }
     | DurableAssetFailure;
 export type ReleaseDurableAssetOwnerResult = {
     status: 'released';
@@ -89,7 +92,7 @@ export type DurableAssetRepository = {
     prepareOwnerRebind: (nextOwnerId: string) => Promise<PrepareDurableAssetOwnerHandoffResult>;
     abortOwnerRebind: (nextOwnerId: string) => Promise<AbortDurableAssetOwnerHandoffResult>;
     commitOwnerRebind: (nextOwnerId: string) => Promise<RebindDurableAssetOwnerResult>;
-    resumeOwnerRebinds: () => Promise<ResumeDurableAssetOwnerHandoffsResult>;
+    resumeOwnerRebinds: (shouldContinue?: () => boolean) => Promise<ResumeDurableAssetOwnerHandoffsResult>;
     preparePromotionRecovery: (
         recoveryId: string,
         bindings: readonly StagedAssetBinding[],
@@ -110,7 +113,8 @@ export type DurableAssetRepository = {
     resumeRecoveries: (
         protectedRecoveryIds?: ReadonlySet<string>,
         isCommitProven?: (proof: DurableAssetCommitProof) => boolean,
-        protectDefaultReleaseClaims?: boolean
+        protectDefaultReleaseClaims?: boolean,
+        shouldContinue?: () => boolean
     ) => Promise<ResumeDurableAssetRecoveriesResult>;
     subscribeInvalidation: (listener: (event: AssetInvalidation) => void) => () => void;
 };

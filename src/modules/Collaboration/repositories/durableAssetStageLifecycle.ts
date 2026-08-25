@@ -150,7 +150,8 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
             return { status: 'opened' as const, ...records.asDurableAsset(asset) };
         },
 
-        async promoteStagedAsset(leaseId: string, expectedHash: string) {
+        async promoteStagedAsset(leaseId: string, expectedHash: string, shouldContinue?: () => boolean) {
+            const recoveryIsCurrent = shouldContinue ?? (() => true);
             const lease = await records.readLease(leaseId);
             if ('status' in lease) {
                 return lease;
@@ -172,7 +173,9 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                 if (!verified.ownerIds.includes(ownerId)) {
                     return { status: 'failed' as const, reason: 'corrupt-record' as const };
                 }
-                await receipts.compactTerminalLeaseReceipts(ownerId);
+                if (shouldContinue === undefined) {
+                    await receipts.compactTerminalLeaseReceipts(ownerId);
+                }
                 return {
                     status: 'already-promoted' as const,
                     leaseId,
@@ -215,7 +218,9 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                     return { status: 'failed' as const, reason: 'corrupt-record' as const };
                 }
                 await completion;
-                await receipts.compactTerminalLeaseReceipts(ownerId);
+                if (shouldContinue === undefined) {
+                    await receipts.compactTerminalLeaseReceipts(ownerId);
+                }
                 return {
                     status: 'already-promoted' as const,
                     leaseId,
@@ -249,8 +254,18 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                     return { status: 'failed' as const, reason: 'corrupt-record' as const };
                 }
                 if (recovery.recoveryKind === 'default-release') {
+                    if (!recoveryIsCurrent()) {
+                        transaction.abort();
+                        await completion.catch(() => undefined);
+                        return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+                    }
                     recoveryStore.delete(recovery.recoveryId);
                 }
+            }
+            if (!recoveryIsCurrent()) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
             }
             assetStore.put({
                 ...currentAsset,
@@ -264,9 +279,16 @@ export function createDurableAssetStageLifecycle(ownerId: string) {
                     ),
                 ],
             } satisfies AssetRecord);
+            if (!recoveryIsCurrent()) {
+                transaction.abort();
+                await completion.catch(() => undefined);
+                return { status: 'failed' as const, reason: 'owner-handoff-conflict' as const };
+            }
             leaseStore.put({ ...currentLease, state: 'promoted', terminalAt: Date.now() } satisfies LeaseRecord);
             await completion;
-            await receipts.compactTerminalLeaseReceipts(ownerId);
+            if (shouldContinue === undefined) {
+                await receipts.compactTerminalLeaseReceipts(ownerId);
+            }
             return { status: 'promoted' as const, leaseId, ...records.asDurableAsset(currentAsset) };
         },
     };

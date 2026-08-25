@@ -26,8 +26,10 @@ const receipts = createDurableAssetReceiptRetention();
 async function releaseStagedAssetSet(
     ownerId: string,
     bindings: readonly StagedAssetBinding[],
-    cleanupRecoveryId?: string
+    cleanupRecoveryId?: string,
+    shouldContinue?: () => boolean
 ): Promise<ReleaseStagedAssetsResult> {
+    const recoveryIsCurrent = shouldContinue ?? (() => true);
     const uniqueBindings = new Map<string, StagedAssetBinding>();
     for (const binding of bindings) {
         const existing = uniqueBindings.get(binding.leaseId);
@@ -209,6 +211,9 @@ async function releaseStagedAssetSet(
     }
 
     for (const [hash, asset] of nextAssets) {
+        if (!recoveryIsCurrent()) {
+            return fail('owner-handoff-conflict');
+        }
         if (asset) {
             assetStore.put(asset);
         } else {
@@ -216,16 +221,27 @@ async function releaseStagedAssetSet(
         }
     }
     for (const lease of nextLeases.values()) {
+        if (!recoveryIsCurrent()) {
+            return fail('owner-handoff-conflict');
+        }
         leaseStore.put(lease);
     }
     if (cleanupRecoveryId !== undefined) {
+        if (!recoveryIsCurrent()) {
+            return fail('owner-handoff-conflict');
+        }
         promotionStore.delete(cleanupRecoveryId);
     }
     for (const recoveryId of defaultCleanupRecoveryIds) {
+        if (!recoveryIsCurrent()) {
+            return fail('owner-handoff-conflict');
+        }
         promotionStore.delete(recoveryId);
     }
     await completion;
-    await receipts.compactTerminalLeaseReceipts(ownerId);
+    if (shouldContinue === undefined) {
+        await receipts.compactTerminalLeaseReceipts(ownerId);
+    }
     for (const release of releases) {
         if (release.status === 'released' && !release.ownerRetained) {
             records.notifyInvalidation(release.assetRemoved ? { hash: release.hash } : { hash: release.hash, ownerId });
@@ -246,8 +262,12 @@ export function createDurableAssetOwnershipLifecycle(ownerId: string) {
             return release ?? { status: 'failed' as const, reason: 'corrupt-record' as const };
         },
 
-        releaseStagedAssets(bindings: readonly StagedAssetBinding[], cleanupRecoveryId?: string) {
-            return releaseStagedAssetSet(ownerId, bindings, cleanupRecoveryId);
+        releaseStagedAssets(
+            bindings: readonly StagedAssetBinding[],
+            cleanupRecoveryId?: string,
+            shouldContinue?: () => boolean
+        ) {
+            return releaseStagedAssetSet(ownerId, bindings, cleanupRecoveryId, shouldContinue);
         },
 
         async releaseOwnedAsset(hash: string) {

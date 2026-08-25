@@ -144,6 +144,8 @@ type DurableAssetStageOptions = {
     protectAcrossTransfer?: boolean;
 };
 
+class DurableOwnerRecoveryCancelled extends Error {}
+
 /**
  * Content-addressed asset transfer over WebRTC data channels.
  *
@@ -699,10 +701,16 @@ export class AssetTransfer {
 
     /** Resume target-keyed owner handoffs only while the exact persisted project load stays authoritative. */
     async resumeDurableOwnerRebindsAfterProjectLoad(authority: DurableOwnerRecoveryAuthority): Promise<void> {
-        await this.runOwnerOperation(async () => undefined, {
-            resumeOwnerRebinds: true,
-            recoveryAuthority: authority,
-        });
+        try {
+            await this.runOwnerOperation(async () => undefined, {
+                resumeOwnerRebinds: true,
+                recoveryAuthority: authority,
+            });
+        } catch (error) {
+            if (!(error instanceof DurableOwnerRecoveryCancelled)) {
+                throw error;
+            }
+        }
     }
 
     private runOwnerOperation<Result>(
@@ -723,10 +731,14 @@ export class AssetTransfer {
                 const recoveryIsAuthorized = () =>
                     !options.recoveryAuthority ||
                     (options.recoveryAuthority.ownerId === this.ownerId && options.recoveryAuthority.isCurrent());
+                const recoveryFence = options.recoveryAuthority ? recoveryIsAuthorized : undefined;
                 if (options.resumeOwnerRebinds && this.ownerRecoveryPending && recoveryIsAuthorized()) {
-                    const recovery = await this.durableAssets.resumeOwnerRebinds();
+                    const recovery = await this.durableAssets.resumeOwnerRebinds(recoveryFence);
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);
+                    }
+                    if (recovery.status === 'cancelled' || !recoveryIsAuthorized()) {
+                        throw new DurableOwnerRecoveryCancelled();
                     }
                     for (const previousOwnerId of recovery.previousOwnerIds) {
                         rebindLiveStageRecoveries(previousOwnerId, recovery.ownerId);
@@ -740,10 +752,15 @@ export class AssetTransfer {
                     ]);
                     const recovery = await this.durableAssets.resumeRecoveries(
                         protectedRecoveryIds,
-                        durableAssetCommitProof.isProven
+                        durableAssetCommitProof.isProven,
+                        false,
+                        recoveryFence
                     );
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset promotion recovery failed: ${recovery.reason}`);
+                    }
+                    if (recovery.status === 'cancelled' || !recoveryIsAuthorized()) {
+                        throw new DurableOwnerRecoveryCancelled();
                     }
                 }
                 return operation(this.durableAssets);
