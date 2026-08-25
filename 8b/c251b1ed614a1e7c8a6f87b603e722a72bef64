@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_5b13f3bb27eaee 272-274,277-281
+  s_a40848e8f8cca9::t_97d24b7dc72b4c 58,311
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_64c70e8f628076 149,153,519-527,546
+  s_a40848e8f8cca9::t_ed1664760aee0f 548
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_3f83993ab79a6d 46-50,52-54,56-58,63-67,69-71
+  s_a40848e8f8cca9::t_700a57144c4830 68
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_260cd123e065a2 223
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_b40bb888527ecd 87,99
+  s_a40848e8f8cca9::t_67557ea76220f9 29
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_047ee2a4893781 1,15,17-21,39,46,50-66,84-99,102
+  s_a40848e8f8cca9::t_92d35f374838d1 10-14,16,22-38,40-45,47-49,67-68,70-72,74-77
+  s_a40848e8f8cca9::t_85af09396818cf 78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "8bc251b1ed614a1e7c8a6f87b603e722a72bef64",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
