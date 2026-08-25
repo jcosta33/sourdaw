@@ -21,19 +21,18 @@ import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt'
 import { reconcileProjectCommandBatchEffects } from '../reconcileProjectCommandBatchEffects';
 
 const mocks = vi.hoisted(() => ({
-    desktopInvoke: vi.fn(),
-    desktopListen: vi.fn(() => Promise.resolve(() => undefined)),
+    activateExternalPlugin: vi.fn(),
+    clearLoadedExternalPlugins: vi.fn(),
     findSupportedPlugin: vi.fn(),
+    resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
 }));
 
-vi.mock('#/utils/desktopBridge', () => ({
-    desktopInvoke: mocks.desktopInvoke,
-    desktopListen: mocks.desktopListen,
-    isDesktopRuntime: () => true,
-}));
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    activateExternalPlugin: mocks.activateExternalPlugin,
+    clearLoadedExternalPlugins: mocks.clearLoadedExternalPlugins,
     findSupportedPlugin: mocks.findSupportedPlugin,
+    resetExternalPluginRuntimeForGraphRebuild: mocks.resetExternalPluginRuntimeForGraphRebuild,
 }));
 
 const baseRevision = JSON.stringify({
@@ -89,28 +88,6 @@ describe('loadExternalPlugin versioned recovery', () => {
     });
 
     it('rebuilds a failed attachment from project truth with the stable persisted instance id', async () => {
-        const loadedInstanceIds: string[] = [];
-        mocks.desktopInvoke.mockImplementation((command: string, args?: Record<string, unknown>) => {
-            if (command === 'load_plugin') {
-                const instanceId = String(args?.instanceId);
-                loadedInstanceIds.push(instanceId);
-                return Promise.resolve({
-                    instance_id: instanceId,
-                    plugin_id: 'plugin-1',
-                    name: 'External Compressor',
-                    parameters: [],
-                    is_active: loadedInstanceIds.length > 1,
-                    latency_samples: 0,
-                    latency_ms: 0,
-                    engine_plugin_id: loadedInstanceIds.length > 1 ? 1000 : null,
-                });
-            }
-            if (command === 'unload_plugin') {
-                return Promise.resolve([['plugin-1-stable-instance'], []]);
-            }
-            return Promise.reject(new Error(`Unexpected desktop command: ${command}`));
-        });
-
         const persistedDevice = {
             id: 'device-external-stable',
             name: 'External Compressor',
@@ -127,6 +104,10 @@ describe('loadExternalPlugin versioned recovery', () => {
             ghostClips: [],
         });
         flushAutomergeStorageWrites();
+        mocks.activateExternalPlugin
+            .mockResolvedValueOnce({ status: 'failed', stage: 'attach', reason: 'native engine unavailable' })
+            .mockResolvedValueOnce({ status: 'active' });
+        mocks.resetExternalPluginRuntimeForGraphRebuild.mockResolvedValue(undefined);
         await expect(
             activateExternalPlugin({
                 pluginId: persistedDevice.externalPluginId,
@@ -255,7 +236,15 @@ describe('loadExternalPlugin versioned recovery', () => {
 
         expect(createRecovery).not.toHaveBeenCalled();
         expect(repairRuntimeFromProject).toHaveBeenCalledOnce();
-        expect(loadedInstanceIds).toEqual([persistedDevice.externalInstanceId, persistedDevice.externalInstanceId]);
+        expect(mocks.resetExternalPluginRuntimeForGraphRebuild).toHaveBeenCalledOnce();
+        expect(mocks.activateExternalPlugin).toHaveBeenNthCalledWith(1, {
+            pluginId: persistedDevice.externalPluginId,
+            instanceId: persistedDevice.externalInstanceId,
+        });
+        expect(mocks.activateExternalPlugin).toHaveBeenNthCalledWith(2, {
+            pluginId: persistedDevice.externalPluginId,
+            instanceId: persistedDevice.externalInstanceId,
+        });
         expect(getTrackStoreState()?.tracks[0]?.devices).toEqual([persistedDevice]);
     });
 });

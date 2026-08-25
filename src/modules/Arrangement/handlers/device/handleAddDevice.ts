@@ -22,6 +22,10 @@ type RuntimeTrackStripInitializationFailure = Exclude<
     RuntimeTrackStripInitializationResult,
     Readonly<{ acceptance: 'accepted'; application: 'applied' }>
 >;
+type ExternalPluginActivation = Parameters<
+    NonNullable<Parameters<typeof projectTrackToLiveStrip>[0]['onExternalPluginActivation']>
+>[0];
+type FailedExternalPluginActivation = Extract<Awaited<ExternalPluginActivation>, { status: 'failed' }>;
 
 class RuntimeTrackStripInitializationPostCommitError extends Error {
     public readonly outcome: RuntimeTrackStripInitializationFailure;
@@ -47,6 +51,30 @@ class RuntimeTrackStripInitializationPostCommitError extends Error {
             kind: 'runtime-graph',
             reason: outcome.reason,
             remediation,
+            state: 'pending',
+        });
+    }
+}
+
+class RuntimeExternalPluginActivationPostCommitError extends Error {
+    public readonly activation: FailedExternalPluginActivation;
+    public readonly pendingEffect: Readonly<{
+        kind: 'runtime-graph';
+        reason: string;
+        remediation: 'repair';
+        state: 'pending';
+    }>;
+    public readonly remediation = 'repair' as const;
+
+    constructor(trackId: string, activation: FailedExternalPluginActivation) {
+        const reason = `External plugin activation for promoted track ${trackId} failed during ${activation.stage}: ${activation.reason}`;
+        super(`${reason}. The project commit succeeded and requires runtime graph repair.`);
+        this.name = 'RuntimeExternalPluginActivationPostCommitError';
+        this.activation = activation;
+        this.pendingEffect = Object.freeze({
+            kind: 'runtime-graph',
+            reason,
+            remediation: 'repair',
             state: 'pending',
         });
     }
@@ -208,9 +236,13 @@ export const handleAddDevice = createHandler<'addDevice'>({
             ],
         };
         let postCommitFailure:
-            RuntimeDeviceDeltaPostCommitError | RuntimeTrackStripInitializationPostCommitError | undefined;
+            | RuntimeDeviceDeltaPostCommitError
+            | RuntimeTrackStripInitializationPostCommitError
+            | RuntimeExternalPluginActivationPostCommitError
+            | AggregateError
+            | undefined;
         let parameterInitializationSettled = false;
-        function applyRuntimeEffect(): void {
+        async function applyRuntimeEffect(): Promise<void> {
             if (postCommitFailure) {
                 throw postCommitFailure;
             }
@@ -218,6 +250,10 @@ export const handleAddDevice = createHandler<'addDevice'>({
             const activatesFolderStrip = !wasLive && after.kind === 'folder' && shouldCreateLiveTrackStrip(after);
             if (!wasLive) {
                 if (activatesFolderStrip) {
+                    const activationTasks: Array<{
+                        activation: ExternalPluginActivation;
+                        trackId: string;
+                    }> = [];
                     const promotedTrackIds = [
                         after.id,
                         ...(getTrackStoreState()?.tracks ?? []).flatMap((child) =>
@@ -226,13 +262,40 @@ export const handleAddDevice = createHandler<'addDevice'>({
                     ];
                     for (const trackId of promotedTrackIds) {
                         const initializationFailure = getRuntimeTrackStripInitializationPostCommitFailure(
-                            projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true }),
+                            projectTrackToLiveStrip({
+                                trackId,
+                                activateDormantExternalPlugins: true,
+                                onExternalPluginActivation: (activation) =>
+                                    activationTasks.push({ activation, trackId }),
+                            }),
                             trackId
                         );
                         if (initializationFailure) {
                             postCommitFailure = initializationFailure;
                             throw postCommitFailure;
                         }
+                    }
+                    const activationOutcomes = await Promise.all(
+                        activationTasks.map(async ({ activation, trackId }) => ({
+                            activation: await activation,
+                            trackId,
+                        }))
+                    );
+                    const activationFailures = activationOutcomes.flatMap(({ activation, trackId }) =>
+                        activation.status === 'failed'
+                            ? [new RuntimeExternalPluginActivationPostCommitError(trackId, activation)]
+                            : []
+                    );
+                    if (activationFailures.length > 0) {
+                        const activationFailure =
+                            activationFailures.length === 1
+                                ? activationFailures[0]!
+                                : new AggregateError(
+                                      activationFailures,
+                                      'Promoted external plugin activations require runtime graph repair'
+                                  );
+                        postCommitFailure = activationFailure;
+                        throw activationFailure;
                     }
                 }
                 return;
