@@ -1,0 +1,21 @@
+AGENTS.md
+  s_a40848e8f8cca9::t_9926f288307064 286-290,384-386
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_9926f288307064 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b6dbd7d60e2cb36a987d1c85934897186c216433",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
