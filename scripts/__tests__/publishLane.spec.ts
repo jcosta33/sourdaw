@@ -109,6 +109,7 @@ type FakeInput = {
     /** Per-lookup answers, so a pull request can close between the authorizing query and the push. */
     existingByCall?: Array<number | undefined>;
     existingBody?: unknown;
+    existingTitle?: unknown;
     issueExists?: boolean;
 };
 
@@ -148,6 +149,7 @@ function fakePort(input: FakeInput = {}) {
                 ? undefined
                 : {
                       number,
+                      title: input.existingTitle === undefined ? DEFAULT_SUBJECT : input.existingTitle,
                       body:
                           input.existingBody === undefined
                               ? composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS)
@@ -159,9 +161,9 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`create:${branch}:${title}:${body.includes('Closes #12') ? 'closes' : 'missing'}`);
             return 88;
         },
-        updatePullRequest: (number, { title, body }) => {
+        updatePullRequest: (number, { body }) => {
             bodies.push(body);
-            calls.push(`edit:${number}:${title}`);
+            calls.push(`edit:${number}`);
         },
         // Logging is ordered against the mutating calls, so it shares their ledger.
         log: (message) => {
@@ -423,7 +425,7 @@ describe('lane publish', () => {
 
         expect(publishLane(12, port)).toBe(41);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
-        expect(calls).toContain('edit:41:feat(vcs): add identities');
+        expect(calls).toContain('edit:41');
     });
 
     it('refuses to open a pull request without explicit test instructions', () => {
@@ -507,7 +509,7 @@ describe('lane publish', () => {
         expect(publishLane(12, port)).toBe(41);
 
         expect(calls).toContain('push:agent/12/work');
-        expect(calls).toContain('edit:41:feat(vcs): add identities');
+        expect(calls).toContain('edit:41');
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
@@ -663,6 +665,14 @@ describe('lane publish', () => {
         const { port, calls } = fakePort({ existing: 41, existingBody: null });
 
         expect(() => publishLane(12, port)).toThrow(/body is unreadable/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('refuses an existing pull request whose title is unreadable', () => {
+        const { port, calls } = fakePort({ existing: 41, existingTitle: null });
+
+        expect(() => publishLane(12, port)).toThrow(/title is unreadable/);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
@@ -930,6 +940,19 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.includes('feat(foo): bar'))).toBe(true);
     });
 
+    it('does not retitle an existing pull request when the lane subject changes', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            subject: 'feat(foo): a later commit',
+        });
+
+        publishLane(12, port);
+
+        expect(calls).toContain('edit:41');
+        expect(calls.some((call) => call.includes('feat(foo): a later commit'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
@@ -1044,7 +1067,7 @@ describe('lane publish', () => {
         }
     });
 
-    it('requests headRefName, isCrossRepository, and the body the update path must preserve', () => {
+    it('requests headRefName, isCrossRepository, the title, and the body the update path must preserve', () => {
         expect(existingOpenPullRequestArgs('agent/12/work')).toEqual([
             'pr',
             'list',
@@ -1055,7 +1078,7 @@ describe('lane publish', () => {
             '--state',
             'open',
             '--json',
-            'number,headRefName,isCrossRepository,body',
+            'number,headRefName,isCrossRepository,title,body',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
     });
@@ -1066,16 +1089,18 @@ describe('lane publish', () => {
                 number: 41,
                 headRefName: 'agent/12/work',
                 isCrossRepository: false,
+                title: 'feat(vcs): add identities',
                 body: '### 📌 Related tickets & additional notes\nCloses #12',
                 ...overrides,
             };
         }
 
-        it('accepts an exact same-repo head match, and carries its body forward', () => {
+        it('accepts an exact same-repo head match, and carries its title and body forward', () => {
             expect(matchingOpenPullRequest([row()], 'agent/12/work')).toEqual({
                 number: 41,
                 headRefName: 'agent/12/work',
                 isCrossRepository: false,
+                title: 'feat(vcs): add identities',
                 body: '### 📌 Related tickets & additional notes\nCloses #12',
             });
         });

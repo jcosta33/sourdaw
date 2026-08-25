@@ -43,7 +43,7 @@ export type PublishWorktree = {
     lockReason?: string;
 };
 
-export type ExistingPullRequest = { number: number; body: unknown };
+export type ExistingPullRequest = { number: number; title: unknown; body: unknown };
 
 export const PUBLISH_LANE_USAGE =
     'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>]';
@@ -99,7 +99,7 @@ export type PublishLanePort = {
     push: (lane: string, branch: string, headSha: string) => void;
     existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
     createPullRequest: (input: { branch: string; title: string; body: string }) => number;
-    updatePullRequest: (number: number, input: { title: string; body: string }) => void;
+    updatePullRequest: (number: number, input: { body: string }) => void;
     log: (message: string) => void;
 };
 
@@ -504,9 +504,9 @@ function pullRequestNumber(lane: ResolvedLane, write: PullRequestWrite | undefin
     }
     const { existing, ...content } = write;
     if (existing === undefined) {
-        return port.createPullRequest({ branch: lane.branch, ...content });
+        return port.createPullRequest({ branch: lane.branch, title: content.title, body: content.body });
     }
-    port.updatePullRequest(existing.number, content);
+    port.updatePullRequest(existing.number, { body: content.body });
     return existing.number;
 }
 
@@ -546,11 +546,11 @@ function pullRequestWrite(
     if (lane.legacy) {
         return undefined;
     }
-    const title = port.laneSubject(lane.path, baseSha, headSha);
-    if (title === undefined) {
+    const laneSubject = port.laneSubject(lane.path, baseSha, headSha);
+    if (laneSubject === undefined) {
         fail(`${lane.branch} ${NO_LANE_SUBJECT_FAILURE}`);
     }
-    assertConventionalSubject(title, 'pull-request title');
+    assertConventionalSubject(laneSubject, 'pull-request title');
     // The update path overwrites the whole body, so an argumentless run on an issue lane would
     // strip `Closes #<issue>` off a pull request that already carried it. The resolved lane's own
     // branch is the issue of record; `None.` is only for a lane that genuinely has no issue.
@@ -561,6 +561,10 @@ function pullRequestWrite(
     const existing = port.existingOpenPullRequest(lane.branch);
     if (existing !== undefined && typeof existing.body !== 'string') {
         fail('existing pull-request body is unreadable');
+    }
+    const existingTitle = existing?.title;
+    if (existing !== undefined && typeof existingTitle !== 'string') {
+        fail('existing pull-request title is unreadable');
     }
     const existingRelationship =
         existing === undefined
@@ -587,9 +591,16 @@ function pullRequestWrite(
         }
         resolvedSummary = whatFromBody(existing.body);
     }
+    const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
     return {
-        title,
-        body: composePublishBody(laneIssue, title, resolvedSummary, resolvedTestInstructions, resolvedRelationship),
+        title: laneSubject,
+        body: composePublishBody(
+            laneIssue,
+            pullRequestTitle,
+            resolvedSummary,
+            resolvedTestInstructions,
+            resolvedRelationship
+        ),
         existing,
     };
 }
@@ -611,13 +622,13 @@ function legacyPullRequestNumber(lane: ResolvedLane, existing: ExistingPullReque
 }
 
 /**
- * The pull-request title is squash-merged onto `main`, so it has to name the lane's work. Keeping a
- * published lane current means merging `origin/main` into it — rebasing would force a
- * non-fast-forward push — which leaves HEAD a merge commit, so HEAD alone titles the pull request
- * after the merge that carried it. Both halves of this argument list are load-bearing:
+ * The pull-request title is squash-merged onto `main`, so the opening write has to name the lane's
+ * work. Later publishes leave that title: a follow-up commit must not retitle the pull request, and
+ * merging `origin/main` in leaves HEAD a merge commit that must not either. This walk still picks
+ * the opening title and still refuses a lane whose only commits above `origin/main` are merges.
  * `--no-merges` skips the merge commits, and the pinned-base range keeps the walk inside the lane's
  * own commits. Without the range, a lane commit older than `origin/main`'s tip loses the date sort
- * and the title comes from a commit `main` already has.
+ * and the opening title comes from a commit `main` already has.
  */
 function laneSubjectArgs(baseSha: string, headSha: string): string[] {
     return ['log', '-1', '--format=%s', '--no-merges', `${baseSha}..${headSha}`];
@@ -762,8 +773,8 @@ export function shellPort(
             }
             return number;
         },
-        updatePullRequest: (number, { title, body }) => {
-            ghRun(['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--title', title, '--body', body]);
+        updatePullRequest: (number, { body }) => {
+            ghRun(['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body]);
         },
         log: (message) => {
             console.log(message);
@@ -837,7 +848,7 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
         '--state',
         'open',
         '--json',
-        'number,headRefName,isCrossRepository,body',
+        'number,headRefName,isCrossRepository,title,body',
     ];
 }
 
@@ -845,6 +856,7 @@ export type OpenPullRequestRow = {
     number: number;
     headRefName: string;
     isCrossRepository: boolean;
+    title: unknown;
     body: unknown;
 };
 

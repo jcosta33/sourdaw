@@ -338,9 +338,10 @@ the absolute worktree root of an issueless or off-convention lane. It pushes wit
 refuses any lane with uncommitted changes: commit the work yourself with a conventional subject
 first.
 
-A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it with the
-newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
-`origin/main` in never retitles it, keeps the required headings in
+A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it, when opening,
+with the newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`). Later
+publishes rewrite the body and leave the title, so a follow-up commit and a merge of `origin/main`
+never retitle it. It keeps the required headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
 bytes. A new pull request requires explicit `--summary` and `--test` instructions. What must say what
 changed and why, and must not repeat the title or the title with `type(scope):` stripped. Later
