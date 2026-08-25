@@ -44,13 +44,14 @@ const ARRANGEMENT_ROOT = resolve(__dirname, '../..');
  * this set EXACTLY, so covering one of these forces its removal here, and a newly
  * registered undoable handler cannot be waved through by leaving the list alone.
  *
- * `importStemSet` predates this audit and is tracked separately; it emits an inverse
- * and creates tracks, so it is untested undo on a destructive command.
+ * Empty because `handleImportStemSet.spec.ts` executes `importStemSet` through an
+ * atomic command batch, proves undo runs `discardImportedStemSet` to remove every
+ * imported track, and exercises its track- and MIDI-divergence guards.
  */
-const UNCOVERED_UNDOABLE_HANDLERS = ['importStemSet'];
+const UNCOVERED_UNDOABLE_HANDLERS: readonly string[] = [];
 
-/** `importStemSet`'s inverse, uncovered for the same reason and tracked with it. */
-const UNCOVERED_INVERSE_ACTIONS = ['discardImportedStemSet'];
+/** Inverse actions without owning behavioral coverage; see the proof above. */
+const UNCOVERED_INVERSE_ACTIONS: readonly string[] = [];
 
 /**
  * The action types Arrangement sources name as an `inverseAction` or a `redoAction`,

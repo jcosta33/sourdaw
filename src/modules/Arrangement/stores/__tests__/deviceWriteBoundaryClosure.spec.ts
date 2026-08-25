@@ -333,6 +333,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Grand Boule's state; the three Mix knobs now persist through
         // `grandBouleParamBridge/helpers.ts`, and calibration remains the
         // exception rather than the rule.
+        // Count provenance: new file entry, measured 1 — the sole executable
+        // `engine.setParam` call that projects a validated morph state to the
+        // Grand Boule runtime. Its callers are transient preview, authoritative
+        // project-to-engine reconciliation, and engine-ready replay; none writes
+        // project truth. Settled edits instead pass serializable device state to
+        // `commitGrandBouleDeviceState`, which dispatches the undoable
+        // `setGrandBouleDeviceState` action through `executeAppAction`.
+        'src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts': 1,
         // Count provenance: new file entry, measured 1 — a single doc-comment
         // mention of `CrumbsNode.setParam`, naming the worklet the commit now
         // reaches through `setDeviceParameter`. No executable `setParam` here:
@@ -360,7 +368,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // GrandBoule on a track hosting two before the scope was added.
         'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
-        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 7,
+        // Count provenance: measured 1, was 7. The remaining match is the
+        // doc-comment naming `setParam`; this file no longer writes the engine.
+        // It clamps intent and delegates to `dispatchGrandBouleMorphEdit`, whose
+        // transient branch reaches the runtime projection above and whose settled
+        // branch reaches the command-routed, serializable, undoable commit path.
+        'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
@@ -477,17 +490,19 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // versioned Command executor, not a hydration path.
         'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 4,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
-        // Count provenance: command-palette execution now owns immutable batch
-        // compilation and approval policy in this use case rather than its React
-        // caller. The three hits name compiler metadata only.
-        'src/modules/AiRuntime/useCases/executePromptActionGroup.ts': 3,
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
-        'src/modules/AiRuntime/useCases/index.ts': 2,
         // Count provenance: was 3, measured 5 — `compileAgentActionExecution`
         // import plus two calls, and `providerProtocol.compileRequest` once.
         // Command-envelope / provider-request compilers; no device hydration.
         'src/modules/AiRuntime/useCases/sendChatMessage.ts': 5,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileAgentActionExecution` import identifier, its module path, and
+        // one call. Prompt admission now owns this immutable Command-envelope
+        // compilation; the file performs no device load, hydration, or engine
+        // write. The same references left `executePromptActionGroup.ts` and the
+        // public barrel, which now score 0 and therefore leave this census.
+        'src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts': 3,
         // Count provenance: the versioned-command argument compiler and its two
         // callers only project immutable envelope metadata. These are bare
         // `compileCommandArgumentMetadata` references, not device compilation,
@@ -521,11 +536,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // Count provenance: 4 = the compileAutomationSegments import line
+        // Count provenance: 6 = the compileAutomationSegments import line
         // (matched twice: named import + module path), its single call site,
-        // and one doc-comment mention added by the AU-3 affine-scale fix
-        // (#765). The executable call surface is unchanged and singular.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
+        // and three doc-comment references to compileAutomationEvents that bind
+        // the segment range and affine-scale laws to the shared compiler. The
+        // executable call surface is unchanged and singular; this file schedules
+        // offline runtime automation and writes no project device state.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -563,6 +580,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Gluten/useCases/index.ts': 1,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,
+        // Count provenance: new file entry, measured 2 — the event contract and
+        // subscription both name `audioDevice.loaded`. The subscriber filters to
+        // Grand Boule, resolves the exact device id, and projects authoritative
+        // serialized project state into the newly ready engine; it never writes
+        // project truth and therefore creates no competing undo owner.
+        'src/modules/GrandBoule/useCases/grandBouleSubscriber.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts': 1,
         'src/modules/Grinder/useCases/index.ts': 1,
@@ -691,6 +714,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
+        // Count provenance: new file entry, measured 3 — the guarded comparator
+        // field, `restoredDevices` parameter, and the actual `devices:` restore.
+        // This Arrangement-owned inverse runs as a registered command handler,
+        // verifies the full serializable snapshot against live project truth,
+        // preserves the live external-plugin chunk, and writes through
+        // `updateTrack` inside the Automerge action transaction.
+        'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // the Arrangement handler commits through executeAppAction. Project
         // writer is `writeDeviceToProject`; this is the handler's topology
@@ -727,6 +757,11 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
         'src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts': 1,
         'src/modules/Arrangement/stores/trackStore.ts': 2,
+        // Count provenance: new file entry, measured 1 — `devices:` in the
+        // structured track snapshot captured for guarded clip-collection undo.
+        // This is an Arrangement-owned pure read; the JSON-safe snapshot becomes
+        // command payload data and the registered restore handler owns the write.
+        'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
@@ -807,6 +842,11 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
+        // Count provenance: new file entry, measured 1 — the Project-owned
+        // `devices:` projection in an immutable agent-facing read contract. It
+        // maps canonical serialized ProjectData and performs no store, document,
+        // engine, or undo write.
+        'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateHelpers/addDeviceChain.ts': 1,
@@ -861,6 +901,9 @@ const DEVICE_DATA_COUNTS = {
         // shouldCreateLiveTrackStrip can read device types for folder-strip
         // eligibility (#584) — a static declaration, not an executable access.
         'src/modules/Arrangement/stores/trackEligibility.ts': 1,
+        // Count provenance: new file entry, measured 1 — the type-only
+        // `devices:` field on the immutable agent project-track contract.
+        'src/modules/Project/models/AgentProjectModelContract.ts': 1,
         'src/modules/Project/models/ProjectData.ts': 4,
         'src/modules/Project/models/VcaTrackMigration.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts': 3,
