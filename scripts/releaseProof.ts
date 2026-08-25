@@ -13,17 +13,17 @@ import {
     mkdirSync,
     mkdtempSync,
     openSync,
-    readFileSync,
     readSync,
     readdirSync,
     realpathSync,
     renameSync,
-    rmSync,
+    rmdirSync,
     statSync,
     symlinkSync,
     utimesSync,
     writeFileSync,
     writeSync,
+    type BigIntStats,
 } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
@@ -120,6 +120,12 @@ export const RELEASE_PROOF_ARCHIVE_LIMITS = {
 
 type JsonRecord = Record<string, unknown>;
 
+class FileReadLimitError extends Error {
+    constructor(readonly kind: 'file' | 'aggregate') {
+        super();
+    }
+}
+
 export type ReleaseProofOptions = {
     root: string;
     candidate: string;
@@ -127,6 +133,7 @@ export type ReleaseProofOptions = {
     runtimeContract?: ElectronRuntimeContract;
     releaseInventory?: ReleaseInventory;
     releaseInventoryReader?: ReleaseInventoryReader;
+    fileReader?: ReleaseProofFileReader;
 };
 
 type GitIdentity = {
@@ -138,6 +145,1002 @@ export type ReleaseBuildPhase = 'web' | 'desktop';
 export type ReleaseBuildRunner = (phase: ReleaseBuildPhase, root: string) => void;
 export type ReleaseGateRunner = (root: string, releaseInventory?: ReleaseInventory) => void;
 export type ReleaseInventoryReader = (root: string) => ReleaseInventory;
+export type ReleaseProofValidator = (options: ReleaseProofOptions) => string[];
+export type ReleaseProofFileReader = {
+    open?: (path: string, flags: number) => number;
+    noFollowFlag?: () => unknown;
+    read?: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => number;
+    snapshotByteLimit?: number;
+};
+
+type VerifiedCandidateFile = {
+    candidatePath: string;
+    digest: string;
+    snapshotPath: string;
+};
+
+type CandidateSnapshotBudget = {
+    limit: number;
+    remaining: number;
+};
+
+type CandidateCensusMaps = {
+    buildInputs?: Record<string, string>;
+    webFiles?: Record<string, string>;
+};
+
+export type ReleaseProofPublisher = {
+    publish: (
+        source: string,
+        destination: string,
+        identity: ReleaseProofPublicationIdentity,
+        files: readonly ReleaseProofPublicationFile[]
+    ) => ReleaseProofPublishedTree | undefined;
+    invalidate: () => void;
+    dispose: () => void;
+};
+
+export type ReleaseProofPublisherPreparer = () => ReleaseProofPublisher;
+
+export type ReleaseProofPublicationIdentity = {
+    dev: string;
+    ino: string;
+};
+
+export type ReleaseProofPublicationFile = {
+    ctimeNs: string;
+    dev: string;
+    digest: string;
+    ino: string;
+    mtimeNs: string;
+    path: string;
+    size: number;
+};
+
+export type ReleaseProofPublicationRequest = {
+    source: string;
+    destination: string;
+    identity: ReleaseProofPublicationIdentity;
+    files: readonly ReleaseProofPublicationFile[];
+};
+
+export type ReleaseProofOwnedEntry = {
+    dev: string;
+    ino: string;
+    kind: 'directory' | 'entry';
+    path: string;
+};
+
+export type ReleaseProofPublishedTree = {
+    entries: readonly ReleaseProofOwnedEntry[];
+    identity: ReleaseProofPublicationIdentity;
+};
+
+type ReleaseProofPublicationReceipt = ReleaseProofPublishedTree & { path: string };
+
+type ReleaseProofPublisherResult = { status: number | null; error?: Error; stderr: string; stdout?: string };
+
+export type ReleaseProofPublisherRunner = (
+    request: ReleaseProofPublicationRequest,
+    runTrustedPublisher: () => ReleaseProofPublisherResult
+) => ReleaseProofPublisherResult;
+
+const releaseProofFileReader: ReleaseProofFileReader = {
+    open: (path, flags) => openSync(path, flags),
+    noFollowFlag: () => Reflect.get(constants, 'O_NOFOLLOW'),
+    read: (descriptor, buffer, offset, length, position) => readSync(descriptor, buffer, offset, length, position),
+};
+
+const ATOMIC_RENAME_HELPER = String.raw`
+import ctypes
+import errno
+import hashlib
+import json
+import os
+import stat
+import sys
+import tempfile
+
+source = os.fsencode(sys.argv[1])
+destination = os.fsencode(sys.argv[2])
+expected_dev = int(sys.argv[3])
+expected_ino = int(sys.argv[4])
+expected_files = {entry["path"]: entry for entry in json.load(sys.stdin)}
+directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+source_file_flags = os.O_RDONLY | os.O_NOFOLLOW
+destination_file_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+
+expected_directories = set()
+for path in expected_files:
+    parts = path.split("/")
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        raise SystemExit(18)
+    for index in range(1, len(parts)):
+        expected_directories.add("/".join(parts[:index]))
+
+def same_identity(metadata, expected):
+    return str(metadata.st_dev) == expected["dev"] and str(metadata.st_ino) == expected["ino"]
+
+def same_file(metadata, expected):
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_nlink == 1
+        and same_identity(metadata, expected)
+        and metadata.st_size == expected["size"]
+        and str(metadata.st_mtime_ns) == expected["mtimeNs"]
+        and str(metadata.st_ctime_ns) == expected["ctimeNs"]
+    )
+
+observed_files = set()
+observed_directories = set()
+created_entries = {}
+staging = None
+staging_descriptor = None
+receipt_emitted = False
+
+def owned_entry(path, metadata, kind):
+    return {
+        "dev": str(metadata.st_dev),
+        "ino": str(metadata.st_ino),
+        "kind": kind,
+        "path": path,
+    }
+
+def emit_receipt(path, root_metadata):
+    global receipt_emitted
+    if receipt_emitted:
+        return
+    receipt_emitted = True
+    json.dump(
+        {
+            "entries": sorted(created_entries.values(), key=lambda entry: entry["path"]),
+            "identity": {"dev": str(root_metadata.st_dev), "ino": str(root_metadata.st_ino)},
+            "path": os.fsdecode(path),
+        },
+        sys.stdout,
+        separators=(",", ":"),
+    )
+
+def fail(code):
+    if staging is not None:
+        try:
+            root_metadata = os.fstat(staging_descriptor) if staging_descriptor is not None else os.lstat(staging)
+            emit_receipt(staging, root_metadata)
+        except OSError:
+            pass
+    raise SystemExit(code)
+
+def write_all(descriptor, chunk):
+    remaining = memoryview(chunk)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            fail(18)
+        remaining = remaining[written:]
+
+def copy_tree(source_directory, destination_directory, prefix=""):
+    for name in os.listdir(source_directory):
+        relative = name if prefix == "" else prefix + "/" + name
+        before = os.stat(name, dir_fd=source_directory, follow_symlinks=False)
+        if stat.S_ISDIR(before.st_mode):
+            if relative not in expected_directories:
+                fail(18)
+            source_child = os.open(name, directory_flags, dir_fd=source_directory)
+            os.mkdir(name, 0o700, dir_fd=destination_directory)
+            destination_child = os.open(name, directory_flags, dir_fd=destination_directory)
+            try:
+                opened = os.fstat(source_child)
+                if opened.st_dev != before.st_dev or opened.st_ino != before.st_ino:
+                    fail(18)
+                created_entries[relative] = owned_entry(relative, os.fstat(destination_child), "directory")
+                copy_tree(source_child, destination_child, relative)
+                after = os.stat(name, dir_fd=source_directory, follow_symlinks=False)
+                if after.st_dev != opened.st_dev or after.st_ino != opened.st_ino:
+                    fail(18)
+            finally:
+                os.close(destination_child)
+                os.close(source_child)
+            observed_directories.add(relative)
+            continue
+        expected = expected_files.get(relative)
+        if expected is None or not same_file(before, expected):
+            fail(18)
+        source_file = os.open(name, source_file_flags, dir_fd=source_directory)
+        destination_file = os.open(name, destination_file_flags, 0o600, dir_fd=destination_directory)
+        try:
+            opened = os.fstat(source_file)
+            if not same_file(opened, expected):
+                fail(18)
+            created_entries[relative] = owned_entry(relative, os.fstat(destination_file), "entry")
+            digest = hashlib.sha256()
+            consumed = 0
+            while True:
+                chunk = os.read(source_file, 1024 * 1024)
+                if not chunk:
+                    break
+                consumed += len(chunk)
+                if consumed > expected["size"]:
+                    fail(18)
+                digest.update(chunk)
+                write_all(destination_file, chunk)
+            after = os.fstat(source_file)
+            if not same_file(after, expected) or consumed != expected["size"] or digest.hexdigest() != expected["digest"]:
+                fail(18)
+        finally:
+            os.close(destination_file)
+            os.close(source_file)
+        final_path = os.stat(name, dir_fd=source_directory, follow_symlinks=False)
+        if not same_file(final_path, expected):
+            fail(18)
+        observed_files.add(relative)
+
+source_descriptor = os.open(source, directory_flags)
+try:
+    source_metadata = os.fstat(source_descriptor)
+    if source_metadata.st_dev != expected_dev or source_metadata.st_ino != expected_ino:
+        raise SystemExit(18)
+    staging = tempfile.mkdtemp(
+        prefix=b"." + os.path.basename(destination) + b".publication-helper-",
+        dir=os.path.dirname(destination),
+    )
+    staging_descriptor = os.open(staging, directory_flags)
+    copy_tree(source_descriptor, staging_descriptor)
+except SystemExit:
+    raise
+except BaseException as error:
+    os.write(2, ("trusted publication snapshot: " + str(error) + "\n").encode())
+    fail(1)
+finally:
+    os.close(source_descriptor)
+if observed_files != set(expected_files) or observed_directories != expected_directories:
+    fail(18)
+staging_metadata = os.fstat(staging_descriptor)
+os.close(staging_descriptor)
+staging_descriptor = None
+libc = ctypes.CDLL(None, use_errno=True)
+if sys.platform == "darwin":
+    publish = libc.renamex_np
+    publish.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    publish.restype = ctypes.c_int
+    result = publish(staging, destination, 4)
+elif sys.platform.startswith("linux"):
+    publish = libc.renameat2
+    publish.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    publish.restype = ctypes.c_int
+    result = publish(-100, staging, -100, destination, 1)
+else:
+    fail(69)
+if result == 0:
+    destination_metadata = os.lstat(destination)
+    if destination_metadata.st_dev != staging_metadata.st_dev or destination_metadata.st_ino != staging_metadata.st_ino:
+        raise SystemExit(19)
+    emit_receipt(destination, destination_metadata)
+    raise SystemExit(0)
+failure = ctypes.get_errno()
+os.write(2, ("exclusive rename: " + os.strerror(failure) + "\n").encode())
+emit_receipt(staging, staging_metadata)
+raise SystemExit(17 if failure == errno.EEXIST else 1)
+`;
+
+const ATOMIC_RENAME_INTERPRETER = '/usr/bin/python3';
+
+const OWNED_PATH_REMOVER = String.raw`
+import json
+import os
+import stat
+import sys
+
+quarantine = os.fsencode(sys.argv[1])
+expected_root_dev = int(sys.argv[2])
+expected_root_ino = int(sys.argv[3])
+expected_payload_dev = int(sys.argv[4])
+expected_payload_ino = int(sys.argv[5])
+expected_entries = {entry["path"]: entry for entry in json.load(sys.stdin)}
+directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+observed_entries = set()
+
+def same_identity(metadata, expected_dev, expected_ino):
+    return metadata.st_dev == expected_dev and metadata.st_ino == expected_ino
+
+def entry_kind(metadata):
+    return "directory" if stat.S_ISDIR(metadata.st_mode) else "entry"
+
+def inspect_directory(directory, prefix=""):
+    for name in os.listdir(directory):
+        relative = name if prefix == "" else prefix + "/" + name
+        expected = expected_entries.get(relative)
+        before = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if (
+            expected is None
+            or not same_identity(before, int(expected["dev"]), int(expected["ino"]))
+            or entry_kind(before) != expected["kind"]
+        ):
+            raise SystemExit(20)
+        observed_entries.add(relative)
+        if stat.S_ISDIR(before.st_mode):
+            child = os.open(name, directory_flags, dir_fd=directory)
+            try:
+                opened = os.fstat(child)
+                if not same_identity(opened, before.st_dev, before.st_ino):
+                    raise SystemExit(20)
+                inspect_directory(child, relative)
+            finally:
+                os.close(child)
+
+def remove_entry(parent, name, relative, expected=None):
+    before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if expected is not None and not same_identity(before, expected[0], expected[1]):
+        raise SystemExit(20)
+    if stat.S_ISDIR(before.st_mode):
+        child = os.open(name, directory_flags, dir_fd=parent)
+        try:
+            opened = os.fstat(child)
+            if not same_identity(opened, before.st_dev, before.st_ino):
+                raise SystemExit(20)
+            for child_name in os.listdir(child):
+                child_relative = child_name if relative == "" else relative + "/" + child_name
+                expected_child = expected_entries.get(child_relative)
+                if expected_child is None:
+                    raise SystemExit(20)
+                remove_entry(
+                    child,
+                    child_name,
+                    child_relative,
+                    (int(expected_child["dev"]), int(expected_child["ino"])),
+                )
+            after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if not same_identity(after, opened.st_dev, opened.st_ino):
+                raise SystemExit(20)
+            os.rmdir(name, dir_fd=parent)
+        finally:
+            os.close(child)
+        return
+    after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if not same_identity(after, before.st_dev, before.st_ino):
+        raise SystemExit(20)
+    os.unlink(name, dir_fd=parent)
+
+root = os.open(quarantine, directory_flags)
+try:
+    opened_root = os.fstat(root)
+    if not same_identity(opened_root, expected_root_dev, expected_root_ino):
+        raise SystemExit(20)
+    payload = os.stat(b"tree", dir_fd=root, follow_symlinks=False)
+    if not same_identity(payload, expected_payload_dev, expected_payload_ino):
+        raise SystemExit(20)
+    if stat.S_ISDIR(payload.st_mode):
+        payload_descriptor = os.open(b"tree", directory_flags, dir_fd=root)
+        try:
+            inspect_directory(payload_descriptor)
+        finally:
+            os.close(payload_descriptor)
+    if observed_entries != set(expected_entries):
+        raise SystemExit(20)
+    remove_entry(root, b"tree", "", (expected_payload_dev, expected_payload_ino))
+finally:
+    os.close(root)
+`;
+
+type TrustedSystemInterpreterStats = {
+    isDirectory: () => boolean;
+    isFile: () => boolean;
+    isSymbolicLink: () => boolean;
+    mode: number;
+    uid: number;
+};
+
+type TrustedSystemInterpreterReader = {
+    lstat: (path: string) => TrustedSystemInterpreterStats;
+    realpath: (path: string) => string;
+};
+
+function isTrustedRootOwnedExecutable(stats: TrustedSystemInterpreterStats): boolean {
+    return stats.isFile() && stats.uid === 0 && (stats.mode & 0o022) === 0;
+}
+
+function isTrustedRootOwnedDirectory(stats: TrustedSystemInterpreterStats): boolean {
+    return stats.isDirectory() && !stats.isSymbolicLink() && stats.uid === 0 && (stats.mode & 0o022) === 0;
+}
+
+export function validateTrustedSystemInterpreter(
+    interpreterPath = ATOMIC_RENAME_INTERPRETER,
+    reader: TrustedSystemInterpreterReader = {
+        lstat: (path) => lstatSync(path),
+        realpath: (path) => realpathSync(path),
+    }
+): string {
+    const realPath = reader.realpath(interpreterPath);
+    if (!isAbsolute(realPath) || !isTrustedRootOwnedExecutable(reader.lstat(realPath))) {
+        throw new Error('trusted interpreter real path is not a root-owned non-writable file');
+    }
+    let ancestor = dirname(realPath);
+    while (true) {
+        if (!isTrustedRootOwnedDirectory(reader.lstat(ancestor))) {
+            throw new Error(`trusted interpreter ancestor is not a root-owned non-writable directory: ${ancestor}`);
+        }
+        const parent = dirname(ancestor);
+        if (parent === ancestor) {
+            break;
+        }
+        ancestor = parent;
+    }
+    return realPath;
+}
+
+function trustedAtomicRenameInterpreter(): string {
+    try {
+        return validateTrustedSystemInterpreter();
+    } catch {
+        throw new Error('atomic release proof publication has no trusted system helper');
+    }
+}
+
+function publicationIdentity(value: unknown): value is ReleaseProofPublicationIdentity {
+    return (
+        isRecord(value) &&
+        typeof value.dev === 'string' &&
+        /^[0-9]+$/u.test(value.dev) &&
+        typeof value.ino === 'string' &&
+        /^[0-9]+$/u.test(value.ino)
+    );
+}
+
+function ownedEntry(value: unknown): value is ReleaseProofOwnedEntry {
+    return (
+        isRecord(value) &&
+        typeof value.dev === 'string' &&
+        /^[0-9]+$/u.test(value.dev) &&
+        typeof value.ino === 'string' &&
+        /^[0-9]+$/u.test(value.ino) &&
+        (value.kind === 'directory' || value.kind === 'entry') &&
+        typeof value.path === 'string' &&
+        value.path.length > 0 &&
+        !value.path.includes('\\') &&
+        !posix.isAbsolute(value.path) &&
+        posix.normalize(value.path) === value.path &&
+        !value.path.split('/').includes('..')
+    );
+}
+
+function parsePublicationReceipt(value: string | undefined): ReleaseProofPublicationReceipt | undefined {
+    if (value === undefined || value.length === 0) {
+        return undefined;
+    }
+    try {
+        const parsed: unknown = JSON.parse(value);
+        if (
+            !isRecord(parsed) ||
+            typeof parsed.path !== 'string' ||
+            !isAbsolute(parsed.path) ||
+            !publicationIdentity(parsed.identity) ||
+            !Array.isArray(parsed.entries) ||
+            !parsed.entries.every(ownedEntry)
+        ) {
+            return undefined;
+        }
+        const entries = parsed.entries;
+        if (new Set(entries.map((entry) => entry.path)).size !== entries.length) {
+            return undefined;
+        }
+        return { entries, identity: parsed.identity, path: parsed.path };
+    } catch {
+        return undefined;
+    }
+}
+
+function internalDirectoryIdentity(identity: ReleaseProofPublicationIdentity): DirectoryIdentity {
+    return { dev: BigInt(identity.dev), ino: BigInt(identity.ino) };
+}
+
+export function prepareAtomicDirectoryPublisher(runner?: ReleaseProofPublisherRunner): ReleaseProofPublisher {
+    if (process.platform !== 'darwin' && process.platform !== 'linux') {
+        throw new Error(`atomic release proof publication is unavailable on ${process.platform}`);
+    }
+    const interpreter = trustedAtomicRenameInterpreter();
+    const publishRunner: ReleaseProofPublisherRunner =
+        runner ?? ((_request, runTrustedPublisher) => runTrustedPublisher());
+    let valid = true;
+    const invalidate = (): void => {
+        valid = false;
+    };
+    return {
+        publish(source, destination, identity, files) {
+            if (!valid) {
+                throw new Error('atomic release proof publisher is unavailable');
+            }
+            const request = { source, destination, identity, files };
+            const published = publishRunner(request, () => {
+                const result = spawnSync(
+                    interpreter,
+                    ['-I', '-S', '-c', ATOMIC_RENAME_HELPER, source, destination, identity.dev, identity.ino],
+                    {
+                        encoding: 'utf8',
+                        env: { PATH: '/usr/bin:/bin' },
+                        input: JSON.stringify(files),
+                    }
+                );
+                let stderr = result.stderr;
+                const receipt = parsePublicationReceipt(result.stdout);
+                const stagingPrefix = join(dirname(destination), `.${basename(destination)}.publication-helper-`);
+                if (
+                    result.status !== 0 &&
+                    result.status !== 19 &&
+                    receipt !== undefined &&
+                    receipt.path.startsWith(stagingPrefix) &&
+                    dirname(receipt.path) === dirname(destination)
+                ) {
+                    try {
+                        const cleanup = removeOwnedPath(
+                            receipt.path,
+                            internalDirectoryIdentity(receipt.identity),
+                            dirname(receipt.path),
+                            receipt.entries
+                        );
+                        if (cleanup.state === 'preserved') {
+                            stderr += `helper staging preserved at ${cleanup.path}\n`;
+                        }
+                    } catch (error) {
+                        stderr += `${error instanceof Error ? error.message : String(error)}\n`;
+                    }
+                }
+                return {
+                    status: result.status,
+                    ...(result.error === undefined ? {} : { error: result.error }),
+                    stderr,
+                    stdout: result.stdout,
+                };
+            });
+            if (published.status === 17) {
+                throw new Error('release proof output appeared before atomic publication');
+            }
+            if (published.status === 18) {
+                throw new Error('release proof publication source changed before atomic publication');
+            }
+            if (published.status === 19) {
+                throw new Error('atomic release proof publisher moved an unexpected directory identity');
+            }
+            if (published.status !== 0) {
+                throw new Error(
+                    `atomic release proof publication failed: ${published.error?.message ?? published.stderr.trim()}`
+                );
+            }
+            const receipt = parsePublicationReceipt(published.stdout);
+            if (receipt === undefined || receipt.path !== destination) {
+                throw new Error('atomic release proof publisher returned an invalid publication receipt');
+            }
+            return { entries: receipt.entries, identity: receipt.identity };
+        },
+        invalidate,
+        dispose: invalidate,
+    };
+}
+
+type DirectoryIdentity = {
+    dev: bigint;
+    ino: bigint;
+};
+
+function directoryIdentity(path: string): DirectoryIdentity {
+    const metadata = lstatSync(path, { bigint: true });
+    return { dev: metadata.dev, ino: metadata.ino };
+}
+
+function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity): boolean {
+    return left.dev === right.dev && left.ino === right.ino;
+}
+
+function ownedPathEntries(root: string): ReleaseProofOwnedEntry[] {
+    const rootMetadata = lstatSync(root, { bigint: true });
+    if (!rootMetadata.isDirectory()) {
+        return [];
+    }
+    const entries: ReleaseProofOwnedEntry[] = [];
+    const directories = [{ absolute: root, relative: '' }];
+    while (directories.length > 0) {
+        const directory = directories.pop();
+        if (directory === undefined) {
+            break;
+        }
+        for (const child of readdirSync(directory.absolute, { withFileTypes: true })) {
+            const absolute = join(directory.absolute, child.name);
+            const path = directory.relative === '' ? child.name : `${directory.relative}/${child.name}`;
+            const metadata = lstatSync(absolute, { bigint: true });
+            const kind = metadata.isDirectory() ? 'directory' : 'entry';
+            entries.push({ dev: String(metadata.dev), ino: String(metadata.ino), kind, path });
+            if (entries.length > RELEASE_PROOF_ARCHIVE_LIMITS.entries) {
+                throw new Error('owned cleanup manifest exceeds the entry count limit');
+            }
+            if (path.split('/').length > RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth) {
+                throw new Error('owned cleanup manifest exceeds the path depth limit');
+            }
+            if (kind === 'directory') {
+                directories.push({ absolute, relative: path });
+            }
+        }
+    }
+    return entries.sort((left, right) => {
+        if (left.path === right.path) {
+            return 0;
+        }
+        return left.path < right.path ? -1 : 1;
+    });
+}
+
+type OwnedPathCleanupResult = { state: 'absent' | 'removed' } | { state: 'preserved'; path: string };
+
+function removeOwnedPath(
+    path: string,
+    expectedIdentity?: DirectoryIdentity,
+    quarantineParent = dirname(path),
+    expectedEntries?: readonly ReleaseProofOwnedEntry[]
+): OwnedPathCleanupResult {
+    let identity = expectedIdentity;
+    let currentIdentity: DirectoryIdentity;
+    try {
+        currentIdentity = directoryIdentity(path);
+    } catch {
+        return { state: 'absent' };
+    }
+    if (identity === undefined) {
+        identity = currentIdentity;
+    } else if (!sameDirectoryIdentity(currentIdentity, identity)) {
+        return { state: 'preserved', path };
+    }
+    let entries: readonly ReleaseProofOwnedEntry[];
+    try {
+        entries = expectedEntries ?? ownedPathEntries(path);
+    } catch {
+        return { state: 'preserved', path };
+    }
+    const quarantineRoot = mkdtempSync(join(quarantineParent, `.${basename(path)}.cleanup-`));
+    const quarantinePayload = join(quarantineRoot, 'tree');
+    try {
+        renameSync(path, quarantinePayload);
+    } catch (error) {
+        rmdirSync(quarantineRoot);
+        let remaining: DirectoryIdentity;
+        try {
+            remaining = directoryIdentity(path);
+        } catch {
+            return { state: 'absent' };
+        }
+        if (!sameDirectoryIdentity(remaining, identity)) {
+            return { state: 'preserved', path };
+        }
+        throw new Error(`owned path cleanup could not quarantine ${path}; preserved in place`, { cause: error });
+    }
+    const moved = directoryIdentity(quarantinePayload);
+    if (!sameDirectoryIdentity(moved, identity)) {
+        return { state: 'preserved', path: quarantinePayload };
+    }
+    const quarantineIdentity = directoryIdentity(quarantineRoot);
+    let interpreter: string;
+    try {
+        interpreter = trustedAtomicRenameInterpreter();
+    } catch (error) {
+        throw new Error(`owned path cleanup has no trusted helper; preserved at ${quarantinePayload}`, {
+            cause: error,
+        });
+    }
+    const removed = spawnSync(
+        interpreter,
+        [
+            '-I',
+            '-S',
+            '-c',
+            OWNED_PATH_REMOVER,
+            quarantineRoot,
+            String(quarantineIdentity.dev),
+            String(quarantineIdentity.ino),
+            String(identity.dev),
+            String(identity.ino),
+        ],
+        { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, input: JSON.stringify(entries) }
+    );
+    if (removed.status !== 0) {
+        return { state: 'preserved', path: quarantinePayload };
+    }
+    try {
+        rmdirSync(quarantineRoot);
+    } catch (error) {
+        throw new Error(`owned path cleanup left an unexpected quarantine at ${quarantineRoot}`, { cause: error });
+    }
+    return { state: 'removed' };
+}
+
+function assertOwnedPathCleanup(result: OwnedPathCleanupResult, label: string): void {
+    if (result.state === 'preserved') {
+        throw new Error(`${label} was replaced during cleanup; preserved at ${result.path}`);
+    }
+}
+
+function throwAfterOwnedPathCleanup(error: unknown, result: OwnedPathCleanupResult, label: string): never {
+    if (result.state === 'preserved') {
+        throw new Error(
+            `${error instanceof Error ? error.message : String(error)}; ${label} replacement preserved at ${result.path}`,
+            { cause: error }
+        );
+    }
+    throw error;
+}
+
+type DirectoryByteEntry = ReleaseProofPublicationFile;
+
+type ValidatedDirectorySnapshot = {
+    bytes: DirectoryByteEntry[];
+    entries: ReleaseProofOwnedEntry[];
+    identity: DirectoryIdentity;
+    path: string;
+};
+
+function sameDirectoryBytes(left: readonly DirectoryByteEntry[], right: readonly DirectoryByteEntry[]): boolean {
+    const bytes = (
+        entries: readonly DirectoryByteEntry[]
+    ): Array<Pick<DirectoryByteEntry, 'digest' | 'path' | 'size'>> =>
+        entries.map(({ digest, path, size }) => ({ digest, path, size }));
+    return sameValue(bytes(left), bytes(right));
+}
+
+function directoryByteIdentity(
+    directory: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    label = 'published release proof'
+): DirectoryByteEntry[] {
+    const errors: string[] = [];
+    const paths = listFiles(directory, label, errors);
+    const budget = candidateSnapshotBudget(fileReader);
+    const identity: DirectoryByteEntry[] = [];
+    for (const path of paths) {
+        const absolute = resolve(directory, ...path.split('/'));
+        try {
+            const entry = withContainedRegularFile(
+                directory,
+                absolute,
+                RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+                (descriptor) => {
+                    const opened = fstatSync(descriptor, { bigint: true });
+                    const digest = digestCandidateDescriptor(
+                        descriptor,
+                        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+                        budget,
+                        fileReader
+                    );
+                    const closed = fstatSync(descriptor, { bigint: true });
+                    const finalPath = lstatSync(absolute);
+                    const finalIdentity = lstatSync(absolute, { bigint: true });
+                    if (
+                        closed.dev !== opened.dev ||
+                        closed.ino !== opened.ino ||
+                        closed.nlink !== 1n ||
+                        finalIdentity.dev !== opened.dev ||
+                        finalIdentity.ino !== opened.ino ||
+                        finalIdentity.nlink !== 1n ||
+                        BigInt(finalPath.size) !== closed.size
+                    ) {
+                        throw new Error(`${label} tree changed while hashing`);
+                    }
+                    return {
+                        ctimeNs: String(finalIdentity.ctimeNs),
+                        dev: String(finalIdentity.dev),
+                        digest,
+                        ino: String(finalIdentity.ino),
+                        mtimeNs: String(finalIdentity.mtimeNs),
+                        path,
+                        size: finalPath.size,
+                    };
+                },
+                fileReader
+            );
+            if (entry === undefined) {
+                errors.push(`${label}: missing or unsafe ${path}`);
+            } else {
+                identity.push(entry);
+            }
+        } catch (error) {
+            if (error instanceof FileReadLimitError) {
+                throw new TypeError(
+                    error.kind === 'aggregate'
+                        ? `${label}: cumulative byte limit exceeded`
+                        : `${label}: file exceeds the candidate file-size limit`,
+                    { cause: error }
+                );
+            }
+            throw error;
+        }
+    }
+    const finalPaths = listFiles(directory, label, errors);
+    if (!sameValue(paths, finalPaths)) {
+        errors.push(`${label} tree changed while hashing`);
+    }
+    for (const entry of identity) {
+        try {
+            const finalPath = lstatSync(resolve(directory, ...entry.path.split('/')));
+            const finalIdentity = lstatSync(resolve(directory, ...entry.path.split('/')), { bigint: true });
+            if (
+                String(finalIdentity.dev) !== entry.dev ||
+                String(finalIdentity.ino) !== entry.ino ||
+                finalIdentity.nlink !== 1n ||
+                finalPath.size !== entry.size ||
+                String(finalIdentity.mtimeNs) !== entry.mtimeNs ||
+                String(finalIdentity.ctimeNs) !== entry.ctimeNs
+            ) {
+                errors.push(`${label} tree changed while hashing`);
+                break;
+            }
+        } catch {
+            errors.push(`${label} tree changed while hashing`);
+            break;
+        }
+    }
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+    return identity;
+}
+
+function validateDirectorySnapshot(
+    source: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    label = 'published release proof'
+): ValidatedDirectorySnapshot {
+    const sourceMetadata = lstatSync(source);
+    if (!sourceMetadata.isDirectory()) {
+        throw new Error('release proof publication source is not a directory');
+    }
+    const sourceIdentity = directoryIdentity(source);
+    const entriesBefore = ownedPathEntries(source);
+    const sourceBytes = directoryByteIdentity(source, fileReader, label);
+    const entriesAfter = ownedPathEntries(source);
+    if (!sameDirectoryIdentity(directoryIdentity(source), sourceIdentity) || !sameValue(entriesAfter, entriesBefore)) {
+        throw new Error('release proof publication source changed while validating');
+    }
+    return { bytes: sourceBytes, entries: entriesAfter, identity: sourceIdentity, path: source };
+}
+
+function publishValidatedDirectory(
+    publisher: ReleaseProofPublisher,
+    semanticSource: ValidatedDirectorySnapshot,
+    destination: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader
+): void {
+    let validatedSource: ValidatedDirectorySnapshot;
+    try {
+        validatedSource = validateDirectorySnapshot(semanticSource.path, fileReader);
+        if (
+            !sameDirectoryIdentity(validatedSource.identity, semanticSource.identity) ||
+            !sameValue(validatedSource.bytes, semanticSource.bytes) ||
+            !sameValue(validatedSource.entries, semanticSource.entries)
+        ) {
+            throw new Error('release proof publication candidate changed during semantic validation');
+        }
+    } catch (error) {
+        publisher.invalidate();
+        throw error;
+    }
+    let published = false;
+    let publishedSnapshot: { entries: readonly ReleaseProofOwnedEntry[]; identity: DirectoryIdentity } | undefined;
+    try {
+        const publication = publisher.publish(
+            validatedSource.path,
+            destination,
+            {
+                dev: String(validatedSource.identity.dev),
+                ino: String(validatedSource.identity.ino),
+            },
+            validatedSource.bytes
+        );
+        published = true;
+        if (publication === undefined && existsSync(validatedSource.path)) {
+            throw new Error('atomic release proof publisher reported success without moving the validated directory');
+        }
+        publishedSnapshot =
+            publication === undefined
+                ? { entries: validatedSource.entries, identity: validatedSource.identity }
+                : { entries: publication.entries, identity: internalDirectoryIdentity(publication.identity) };
+        const destinationMetadata = lstatSync(destination);
+        const destinationIdentity = directoryIdentity(destination);
+        if (
+            !destinationMetadata.isDirectory() ||
+            !sameDirectoryIdentity(destinationIdentity, publishedSnapshot.identity)
+        ) {
+            throw new Error('atomic release proof publisher did not publish the validated directory identity');
+        }
+        const destinationBytes = directoryByteIdentity(destination, fileReader);
+        if (!sameDirectoryBytes(destinationBytes, validatedSource.bytes)) {
+            throw new Error('published directory bytes changed during publication');
+        }
+        const destinationEntries = ownedPathEntries(destination);
+        if (!sameValue(destinationEntries, publishedSnapshot.entries)) {
+            throw new Error('published directory identity manifest changed during publication');
+        }
+        if (publication !== undefined) {
+            assertOwnedPathCleanup(
+                removeOwnedPath(
+                    validatedSource.path,
+                    validatedSource.identity,
+                    dirname(validatedSource.path),
+                    validatedSource.entries
+                ),
+                'release proof publication source'
+            );
+        }
+    } catch (error) {
+        try {
+            if (published) {
+                const cleanup = removeOwnedPath(
+                    destination,
+                    publishedSnapshot?.identity,
+                    dirname(destination),
+                    publishedSnapshot?.entries
+                );
+                if (cleanup.state === 'preserved') {
+                    throw new Error(
+                        `${error instanceof Error ? error.message : String(error)}; unexpected output preserved at ${cleanup.path}`,
+                        { cause: error }
+                    );
+                }
+            }
+        } finally {
+            publisher.invalidate();
+        }
+        throw error;
+    }
+}
+
+function assertDirectorySnapshotUnchanged(
+    path: string,
+    expected: ValidatedDirectorySnapshot,
+    fileReader: ReleaseProofFileReader,
+    label = 'published release proof'
+): void {
+    let actual: ValidatedDirectorySnapshot;
+    try {
+        actual = validateDirectorySnapshot(path, fileReader, label);
+    } catch {
+        throw new Error('release proof candidate changed during release gate');
+    }
+    if (
+        !sameDirectoryIdentity(actual.identity, expected.identity) ||
+        !sameValue(actual.bytes, expected.bytes) ||
+        !sameValue(actual.entries, expected.entries)
+    ) {
+        throw new Error('release proof candidate changed during release gate');
+    }
+}
+
+function validatePublicationCandidate(
+    options: ReleaseProofOptions,
+    fileReader: ReleaseProofFileReader
+): ValidatedDirectorySnapshot {
+    const before = validateDirectorySnapshot(options.candidate, fileReader, 'release proof publication candidate');
+    const errors = validateReleaseProof({ ...options, fileReader });
+    let after: ValidatedDirectorySnapshot;
+    try {
+        after = validateDirectorySnapshot(options.candidate, fileReader, 'release proof publication candidate');
+    } catch {
+        throw new Error('release proof publication candidate changed during semantic validation');
+    }
+    if (
+        !sameDirectoryIdentity(after.identity, before.identity) ||
+        !sameValue(after.bytes, before.bytes) ||
+        !sameValue(after.entries, before.entries)
+    ) {
+        throw new Error('release proof publication candidate changed during semantic validation');
+    }
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+    return after;
+}
+
+function candidateSnapshotBudget(fileReader: ReleaseProofFileReader): CandidateSnapshotBudget {
+    const requested = fileReader.snapshotByteLimit;
+    const limit =
+        requested === undefined || !Number.isSafeInteger(requested)
+            ? RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes
+            : Math.max(0, Math.min(requested, RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes));
+    return { limit, remaining: limit };
+}
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -171,54 +1174,198 @@ function sha256File(path: string): string {
     }
 }
 
-function sha256ContainedRegularFile(root: string, path: string): string | undefined {
+function sameFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
+    return left.dev === right.dev && left.ino === right.ino;
+}
+
+function pathMatchesOpenedRegularFile(rootRealPath: string, path: string, opened: BigIntStats): boolean {
+    if (!opened.isFile() || opened.nlink !== 1n) {
+        return false;
+    }
+    const pathMetadata = lstatSync(path, { bigint: true });
+    if (
+        !pathMetadata.isFile() ||
+        pathMetadata.nlink !== 1n ||
+        pathMetadata.size !== opened.size ||
+        !sameFileIdentity(pathMetadata, opened)
+    ) {
+        return false;
+    }
+    const realPath = realpathSync(path);
+    if (!isContained(rootRealPath, realPath)) {
+        return false;
+    }
+    const resolved = statSync(realPath, { bigint: true });
+    return resolved.nlink === 1n && resolved.size === opened.size && sameFileIdentity(resolved, opened);
+}
+
+function withContainedRegularFile<Result>(
+    root: string,
+    path: string,
+    maxBytes: number,
+    consume: (descriptor: number) => Result,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader
+): Result | undefined {
     let descriptor: number | undefined;
     try {
-        if ((constants.O_NOFOLLOW ?? 0) === 0) {
+        const noFollowFlag = fileReader.noFollowFlag?.();
+        if (typeof noFollowFlag !== 'number' || noFollowFlag === 0) {
             return undefined;
         }
         const rootRealPath = realpathSync(root);
-        const beforeOpen = lstatSync(path);
-        if (!beforeOpen.isFile()) {
+        const beforeOpen = lstatSync(path, { bigint: true });
+        if (!beforeOpen.isFile() || beforeOpen.nlink !== 1n) {
             return undefined;
         }
-        descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-        const opened = fstatSync(descriptor);
-        const afterOpen = lstatSync(path);
-        const realPath = realpathSync(path);
-        const resolved = statSync(realPath);
-        if (
-            !opened.isFile() ||
-            !afterOpen.isFile() ||
-            !isContained(rootRealPath, realPath) ||
-            opened.dev !== beforeOpen.dev ||
-            opened.ino !== beforeOpen.ino ||
-            opened.dev !== afterOpen.dev ||
-            opened.ino !== afterOpen.ino ||
-            opened.dev !== resolved.dev ||
-            opened.ino !== resolved.ino
-        ) {
+        if (beforeOpen.size > BigInt(maxBytes)) {
+            throw new FileReadLimitError('file');
+        }
+        descriptor = (fileReader.open ?? openSync)(path, constants.O_RDONLY | noFollowFlag);
+        const opened = fstatSync(descriptor, { bigint: true });
+        if (opened.size > BigInt(maxBytes)) {
+            throw new FileReadLimitError('file');
+        }
+        if (!sameFileIdentity(beforeOpen, opened) || !pathMatchesOpenedRegularFile(rootRealPath, path, opened)) {
             return undefined;
         }
-        const hash = createHash('sha256');
-        const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
-        let position = 0;
-        let bytesRead: number;
-        do {
-            bytesRead = readSync(descriptor, chunk, 0, chunk.length, position);
-            if (bytesRead > 0) {
-                hash.update(chunk.subarray(0, bytesRead));
-                position += bytesRead;
-            }
-        } while (bytesRead > 0);
-        return hash.digest('hex');
-    } catch {
+        const result = consume(descriptor);
+        const closed = fstatSync(descriptor, { bigint: true });
+        if (closed.size > BigInt(maxBytes)) {
+            throw new FileReadLimitError('file');
+        }
+        if (!sameFileIdentity(opened, closed) || !pathMatchesOpenedRegularFile(rootRealPath, path, closed)) {
+            return undefined;
+        }
+        return result;
+    } catch (error) {
+        if (error instanceof FileReadLimitError) {
+            throw error;
+        }
         return undefined;
     } finally {
         if (descriptor !== undefined) {
             closeSync(descriptor);
         }
     }
+}
+
+function sha256ContainedRegularFile(
+    root: string,
+    path: string,
+    maxBytes = RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader
+): string | undefined {
+    return withContainedRegularFile(
+        root,
+        path,
+        maxBytes,
+        (descriptor) =>
+            digestCandidateDescriptor(descriptor, maxBytes, { limit: maxBytes, remaining: maxBytes }, fileReader),
+        fileReader
+    );
+}
+
+function digestCandidateDescriptor(
+    descriptor: number,
+    maxBytes: number,
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader,
+    consume: (bytes: Buffer) => void = () => undefined
+): string {
+    let observedSize = fstatSync(descriptor).size;
+    if (observedSize > maxBytes) {
+        throw new FileReadLimitError('file');
+    }
+    if (observedSize > budget.remaining) {
+        throw new FileReadLimitError('aggregate');
+    }
+    const hash = createHash('sha256');
+    const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
+    let position = 0;
+    while (true) {
+        if (position >= observedSize) {
+            observedSize = fstatSync(descriptor).size;
+            if (observedSize > maxBytes) {
+                throw new FileReadLimitError('file');
+            }
+            if (observedSize - position > budget.remaining) {
+                throw new FileReadLimitError('aggregate');
+            }
+            if (position === observedSize) {
+                return hash.digest('hex');
+            }
+            if (position > observedSize) {
+                throw new Error('candidate descriptor changed while reading');
+            }
+        }
+        const readLength = Math.min(chunk.length, observedSize - position, maxBytes - position, budget.remaining);
+        const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, readLength, position);
+        if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > readLength) {
+            throw new FileReadLimitError('file');
+        }
+        if (bytesRead === 0) {
+            const finalSize = fstatSync(descriptor).size;
+            if (finalSize > maxBytes) {
+                throw new FileReadLimitError('file');
+            }
+            if (finalSize - position > budget.remaining) {
+                throw new FileReadLimitError('aggregate');
+            }
+            if (finalSize !== position) {
+                throw new Error('candidate descriptor reported EOF before all bytes were consumed');
+            }
+            return hash.digest('hex');
+        }
+        const bytes = chunk.subarray(0, bytesRead);
+        hash.update(bytes);
+        consume(bytes);
+        position += bytesRead;
+        budget.remaining -= bytesRead;
+    }
+}
+
+function sha256CandidateFile(
+    root: string,
+    path: string,
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
+): string | undefined {
+    return withContainedRegularFile(
+        root,
+        path,
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        (descriptor) =>
+            digestCandidateDescriptor(descriptor, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes, budget, fileReader),
+        fileReader
+    );
+}
+
+function snapshotCandidateFile(
+    root: string,
+    path: string,
+    snapshotRoot: string,
+    maxBytes: number,
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
+): { digest: string; snapshotPath: string } | undefined {
+    const snapshotPath = join(snapshotRoot, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+    return withContainedRegularFile(
+        root,
+        path,
+        maxBytes,
+        (descriptor) => {
+            const output = openSync(snapshotPath, 'wx');
+            try {
+                const digest = digestCandidateDescriptor(descriptor, maxBytes, budget, fileReader, (bytes) =>
+                    writeSync(output, bytes)
+                );
+                return { digest, snapshotPath };
+            } finally {
+                closeSync(output);
+            }
+        },
+        fileReader
+    );
 }
 
 function gitObjectId(type: 'commit', value: Buffer): string {
@@ -229,24 +1376,116 @@ function writeJson(path: string, value: unknown): void {
     writeFileSync(path, `${JSON.stringify(value, null, 4)}\n`);
 }
 
-function readBoundedFile(path: string, maxBytes: number, label: string): Buffer {
-    const size = statSync(path).size;
-    if (size > maxBytes) {
-        throw new Error(`${label} exceeds the ${String(maxBytes)}-byte read limit`);
+function readBoundedFile(
+    root: string,
+    path: string,
+    maxBytes: number,
+    label: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    budget?: CandidateSnapshotBudget
+): Buffer {
+    let value: Buffer | undefined;
+    try {
+        value = withContainedRegularFile(
+            root,
+            path,
+            maxBytes,
+            (descriptor) => {
+                const chunks: Buffer[] = [];
+                const chunk = Buffer.alloc(Math.max(1, Math.min(HASH_CHUNK_BYTES, maxBytes)));
+                let position = 0;
+                while (true) {
+                    const observedSize = fstatSync(descriptor).size;
+                    if (observedSize > maxBytes) {
+                        throw new FileReadLimitError('file');
+                    }
+                    if (budget !== undefined && Math.max(0, observedSize - position) > budget.remaining) {
+                        throw new FileReadLimitError('aggregate');
+                    }
+                    const remainingFileBytes = maxBytes - position;
+                    const remainingBudgetBytes = budget?.remaining ?? remainingFileBytes;
+                    const readLength = Math.min(chunk.length, remainingFileBytes, remainingBudgetBytes);
+                    if (readLength === 0) {
+                        const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, 1, position);
+                        if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > 1) {
+                            throw new Error(`${label} changed while reading`);
+                        }
+                        if (bytesRead > 0) {
+                            throw new FileReadLimitError(remainingFileBytes === 0 ? 'file' : 'aggregate');
+                        }
+                        const finalSize = fstatSync(descriptor).size;
+                        if (finalSize > maxBytes) {
+                            throw new FileReadLimitError('file');
+                        }
+                        if (budget !== undefined && Math.max(0, finalSize - position) > budget.remaining) {
+                            throw new FileReadLimitError('aggregate');
+                        }
+                        if (finalSize !== position) {
+                            throw new Error(`${label} changed while reading`);
+                        }
+                        break;
+                    }
+                    const bytesRead = (fileReader.read ?? readSync)(descriptor, chunk, 0, readLength, position);
+                    if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > readLength) {
+                        throw new Error(`${label} changed while reading`);
+                    }
+                    if (bytesRead === 0) {
+                        const finalSize = fstatSync(descriptor).size;
+                        if (finalSize > maxBytes) {
+                            throw new FileReadLimitError('file');
+                        }
+                        if (budget !== undefined && Math.max(0, finalSize - position) > budget.remaining) {
+                            throw new FileReadLimitError('aggregate');
+                        }
+                        if (finalSize !== position) {
+                            throw new Error(`${label} changed while reading`);
+                        }
+                        break;
+                    }
+                    chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+                    position += bytesRead;
+                    if (budget !== undefined) {
+                        budget.remaining -= bytesRead;
+                    }
+                }
+                return Buffer.concat(chunks, position);
+            },
+            fileReader
+        );
+    } catch (error) {
+        if (error instanceof FileReadLimitError) {
+            throw new TypeError(
+                error.kind === 'aggregate' && budget !== undefined
+                    ? `${label} exceeds the cumulative candidate snapshot byte limit (${String(budget.limit)} bytes)`
+                    : `${label} exceeds the ${String(maxBytes)}-byte read limit`,
+                { cause: error }
+            );
+        }
+        throw error;
     }
-    return readFileSync(path);
+    if (value === undefined) {
+        throw new Error(`${label} cannot be read safely within the ${String(maxBytes)}-byte read limit`);
+    }
+    return value;
 }
 
-function readJson(path: string): unknown {
+function readJson(
+    root: string,
+    path: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    budget?: CandidateSnapshotBudget
+): unknown {
     return parseJsonWithUniqueKeys(
-        readBoundedFile(path, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, 'JSON document').toString('utf8'),
+        readBoundedFile(root, path, RELEASE_PROOF_TYPE_LIMITS.jsonBytes, 'JSON document', fileReader, budget).toString(
+            'utf8'
+        ),
         path
     );
 }
 
-function readCommitObject(path: string, label: string, errors: string[]): Buffer | undefined {
+function readCommitObject(root: string, path: string, label: string, errors: string[]): Buffer | undefined {
     try {
-        return readBoundedFile(path, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes, `${label} commit object`);
+        return readBoundedFile(root, path, RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes, `${label} commit object`);
     } catch (error) {
         errors.push(error instanceof Error ? error.message : `${label} commit object cannot be read`);
         return undefined;
@@ -254,7 +1493,7 @@ function readCommitObject(path: string, label: string, errors: string[]): Buffer
 }
 
 function expectedDesktopArtifactName(root: string): string {
-    const value = readJson(resolve(root, 'package.json'));
+    const value = readJson(root, resolve(root, 'package.json'));
     const version = isRecord(value) ? value.version : undefined;
     if (typeof version !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.+-]*$/u.test(version)) {
         throw new Error('project package version cannot identify the desktop artifact');
@@ -321,8 +1560,12 @@ function verifyFileHash(
     pathValue: unknown,
     hashValue: unknown,
     label: string,
-    errors: string[]
-): string | undefined {
+    maxBytes: number,
+    errors: string[],
+    snapshotRoot: string,
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
+): VerifiedCandidateFile | undefined {
     const path = candidatePath(root, pathValue, `${label}.path`, errors);
     const hash = typeof hashValue === 'string' && /^[0-9a-f]{64}$/u.test(hashValue) ? hashValue : undefined;
     if (hash === undefined) {
@@ -331,21 +1574,32 @@ function verifyFileHash(
     if (path === undefined || hash === undefined) {
         return undefined;
     }
-    if (!existsSync(path) || !lstatSync(path).isFile()) {
+    if (!existsSync(path)) {
         errors.push(`${label}: file is missing`);
         return undefined;
     }
-    if (containedRealPath(root, path, label, errors) === undefined) {
+    let snapshot: { digest: string; snapshotPath: string } | undefined;
+    try {
+        snapshot = snapshotCandidateFile(root, path, snapshotRoot, maxBytes, budget, fileReader);
+    } catch (error) {
+        if (error instanceof FileReadLimitError) {
+            errors.push(
+                error.kind === 'aggregate'
+                    ? `${label}: cumulative candidate snapshot byte limit exceeded (${String(budget.limit)} bytes)`
+                    : `${label}: file exceeds the candidate file-size limit`
+            );
+            return undefined;
+        }
+        throw error;
+    }
+    if (snapshot === undefined) {
+        errors.push(`${label}: file is missing or unsafe`);
         return undefined;
     }
-    if (statSync(path).size > RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes) {
-        errors.push(`${label}: file exceeds the candidate file-size limit`);
-        return undefined;
-    }
-    if (sha256File(path) !== hash) {
+    if (snapshot.digest !== hash) {
         errors.push(`${label}: digest mismatch`);
     }
-    return path;
+    return { candidatePath: path, digest: snapshot.digest, snapshotPath: snapshot.snapshotPath };
 }
 
 function listFiles(root: string, label: string, errors: string[], allowContainedLinks = false): string[] {
@@ -402,6 +1656,57 @@ function listFiles(root: string, label: string, errors: string[], allowContained
         }
     }
     return files.sort();
+}
+
+function snapshotCandidateTree(
+    candidate: string,
+    snapshot: string,
+    fileReader: ReleaseProofFileReader = releaseProofFileReader
+): void {
+    const label = 'release proof candidate snapshot';
+    const errors: string[] = [];
+    const paths = listFiles(candidate, label, errors);
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+    const budget = candidateSnapshotBudget(fileReader);
+    for (const path of paths) {
+        const source = resolve(candidate, ...path.split('/'));
+        const destination = resolve(snapshot, ...path.split('/'));
+        mkdirSync(dirname(destination), { recursive: true });
+        const copied = withContainedRegularFile(
+            candidate,
+            source,
+            RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+            (descriptor) => {
+                const output = openSync(destination, 'wx');
+                try {
+                    digestCandidateDescriptor(
+                        descriptor,
+                        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+                        budget,
+                        fileReader,
+                        (bytes) => writeSync(output, bytes)
+                    );
+                    return true;
+                } finally {
+                    closeSync(output);
+                }
+            },
+            fileReader
+        );
+        if (copied !== true) {
+            throw new Error(`${label}: missing or unsafe ${path}`);
+        }
+    }
+    const snapshotErrors: string[] = [];
+    const snapshotPaths = listFiles(snapshot, label, snapshotErrors);
+    if (snapshotErrors.length > 0) {
+        throw new Error(snapshotErrors.join('\n'));
+    }
+    if (!sameValue(paths, snapshotPaths)) {
+        throw new Error('release proof candidate census changed while creating the publication snapshot');
+    }
 }
 
 function stringMap(value: unknown, label: string, errors: string[]): Record<string, string> {
@@ -465,8 +1770,7 @@ function validateWebLlmLegalFiles(
     inventory: ReleaseInventory,
     packagedFiles: Record<string, string>,
     label: string,
-    errors: string[],
-    contentsPath?: string
+    errors: string[]
 ): void {
     let requiredFiles: string[];
     try {
@@ -478,10 +1782,7 @@ function validateWebLlmLegalFiles(
     for (const required of requiredFiles) {
         const sourcePath = resolve(root, 'public', ...required.split('/'));
         const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
-        const contentsMatch =
-            contentsPath === undefined ||
-            sha256ContainedRegularFile(contentsPath, resolve(contentsPath, ...required.split('/'))) === sourceDigest;
-        if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest || !contentsMatch) {
+        if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest) {
             errors.push(`${label} WebLLM legal file ${required} is missing or drifted`);
         }
     }
@@ -492,25 +1793,46 @@ function verifyFileMap(
     recorded: Record<string, string>,
     label: string,
     errors: string[],
+    budget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader,
     excluded: readonly string[] = []
-): void {
+): Record<string, string> {
     const actual = listFiles(directory, label, errors).filter((path) => !excluded.includes(path));
     const recordedPaths = Object.keys(recorded).sort();
+    const verified: Record<string, string> = {};
     if (!sameValue(actual, recordedPaths)) {
         errors.push(`${label}: file census mismatch`);
     }
     for (const path of recordedPaths) {
         const absolute = resolve(directory, ...path.split('/'));
-        if (!existsSync(absolute) || !lstatSync(absolute).isFile()) {
+        if (!existsSync(absolute)) {
             errors.push(`${label}: missing ${path}`);
-        } else if (containedRealPath(directory, absolute, `${label} ${path}`, errors) === undefined) {
             continue;
-        } else if (statSync(absolute).size > RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes) {
-            errors.push(`${label}: file exceeds the candidate file-size limit for ${path}`);
-        } else if (sha256File(absolute) !== recorded[path]) {
-            errors.push(`${label}: digest mismatch for ${path}`);
+        }
+        let actualHash: string | undefined;
+        try {
+            actualHash = sha256CandidateFile(directory, absolute, budget, fileReader);
+        } catch (error) {
+            if (error instanceof FileReadLimitError) {
+                errors.push(
+                    error.kind === 'aggregate'
+                        ? `${label}: cumulative candidate snapshot byte limit exceeded (${String(budget.limit)} bytes)`
+                        : `${label}: file exceeds the candidate file-size limit for ${path}`
+                );
+                continue;
+            }
+            throw error;
+        }
+        if (actualHash === undefined) {
+            errors.push(`${label}: missing or unsafe ${path}`);
+        } else {
+            verified[path] = actualHash;
+            if (actualHash !== recorded[path]) {
+                errors.push(`${label}: digest mismatch for ${path}`);
+            }
         }
     }
+    return verified;
 }
 
 function fileMap(directory: string): Record<string, string> {
@@ -534,9 +1856,16 @@ function rendererFileMap(directory: string): Record<string, string> {
     );
 }
 
-function readJsonForValidation(path: string, label: string, errors: string[]): JsonRecord | undefined {
+function readJsonForValidation(
+    root: string,
+    path: string,
+    label: string,
+    errors: string[],
+    fileReader: ReleaseProofFileReader = releaseProofFileReader,
+    budget?: CandidateSnapshotBudget
+): JsonRecord | undefined {
     try {
-        const value = readJson(path);
+        const value = readJson(root, path, fileReader, budget);
         if (!isRecord(value)) {
             errors.push(`${label}: JSON root must be an object`);
             return undefined;
@@ -624,6 +1953,7 @@ function streamTarArchive(
     let total = 0;
     const input = openSync(path, 'r');
     const outputs = new Set<number>();
+    const destinationIdentity = destination === undefined ? undefined : directoryIdentity(destination);
     try {
         const parser = new TarParser({
             file: path,
@@ -715,7 +2045,11 @@ function streamTarArchive(
         return entries.filter((entry) => entry.path.length > 0);
     } catch (error) {
         if (destination !== undefined) {
-            rmSync(destination, { recursive: true, force: true });
+            throwAfterOwnedPathCleanup(
+                error,
+                removeOwnedPath(destination, destinationIdentity),
+                'TAR extraction destination'
+            );
         }
         throw error;
     } finally {
@@ -890,6 +2224,7 @@ function streamZipArchive(
     const linkTargets = new Map<string, Buffer>();
     const seen = new Set<string>();
     const outputs = new Set<number>();
+    const destinationIdentity = options.destination === undefined ? undefined : directoryIdentity(options.destination);
     let aggregateBytes = 0;
     let failure: Error | undefined;
     try {
@@ -1030,7 +2365,11 @@ function streamZipArchive(
         return { entries, hashes, linkTargets };
     } catch (error) {
         if (options.destination !== undefined) {
-            rmSync(options.destination, { recursive: true, force: true });
+            throwAfterOwnedPathCleanup(
+                error,
+                removeOwnedPath(options.destination, destinationIdentity),
+                'ZIP extraction destination'
+            );
         }
         throw error;
     } finally {
@@ -1181,6 +2520,7 @@ function validateGitArchive(
     }
 
     const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-release-tree-'));
+    const temporaryIdentity = directoryIdentity(temporary);
     try {
         extractTarArchive(archive, temporary);
         const sourceRoot = join(temporary, prefix);
@@ -1228,7 +2568,7 @@ function validateGitArchive(
     } catch {
         errors.push(`${label} archive tree could not be verified`);
     } finally {
-        rmSync(temporary, { recursive: true, force: true });
+        assertOwnedPathCleanup(removeOwnedPath(temporary, temporaryIdentity), 'Git archive verification directory');
     }
 }
 
@@ -1246,7 +2586,10 @@ function validateSourceManifest(
     candidate: string,
     proof: JsonRecord,
     expectedRevision: string,
-    errors: string[]
+    errors: string[],
+    snapshotRoot: string,
+    snapshotBudget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
 ): void {
     const source = requiredRecord(proof, 'source', 'release proof', errors);
     if (source === undefined) {
@@ -1257,20 +2600,41 @@ function validateSourceManifest(
         source.manifestPath,
         source.manifestSha256,
         'source manifest',
-        errors
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
-    const archivePath = verifyFileHash(candidate, source.archivePath, source.archiveSha256, 'source archive', errors);
+    const archive = verifyFileHash(
+        candidate,
+        source.archivePath,
+        source.archiveSha256,
+        'source archive',
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
+    );
     const commitPath = verifyFileHash(
         candidate,
         source.commitPath,
         source.commitSha256,
         'source commit object',
-        errors
+        RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
-    const commitObject = commitPath === undefined ? undefined : readCommitObject(commitPath, 'source', errors);
-    if (archivePath !== undefined && commitObject !== undefined) {
+    const commitObject =
+        commitPath === undefined
+            ? undefined
+            : readCommitObject(snapshotRoot, commitPath.snapshotPath, 'source', errors);
+    if (archive !== undefined && commitObject !== undefined) {
         validateGitArchive(
-            archivePath,
+            archive.snapshotPath,
             commitObject,
             expectedRevision,
             'sourdaw',
@@ -1282,7 +2646,7 @@ function validateSourceManifest(
     if (manifestPath === undefined) {
         return;
     }
-    const manifest = readJsonForValidation(manifestPath, 'source manifest', errors);
+    const manifest = readJsonForValidation(snapshotRoot, manifestPath.snapshotPath, 'source manifest', errors);
     if (manifest === undefined) {
         return;
     }
@@ -1336,22 +2700,45 @@ function validateWebManifest(
     proof: JsonRecord,
     expectedRevision: string,
     errors: string[],
-    releaseInventory: ReleaseInventory
-): void {
+    releaseInventory: ReleaseInventory,
+    snapshotRoot: string,
+    snapshotBudget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
+): Record<string, string> | undefined {
     const web = requiredRecord(proof, 'web', 'release proof', errors);
     if (web === undefined) {
-        return;
+        return undefined;
     }
-    const manifestPath = verifyFileHash(candidate, web.manifestPath, web.manifestSha256, 'web manifest', errors);
-    const archivePath = verifyFileHash(candidate, web.archivePath, web.archiveSha256, 'web archive', errors);
+    const manifestPath = verifyFileHash(
+        candidate,
+        web.manifestPath,
+        web.manifestSha256,
+        'web manifest',
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
+    );
+    const archivePath = verifyFileHash(
+        candidate,
+        web.archivePath,
+        web.archiveSha256,
+        'web archive',
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
+    );
     const contentsPath = candidatePath(candidate, web.contentsPath, 'web.contentsPath', errors);
-    const archive = archivePath === undefined ? undefined : validateWebArchive(archivePath, errors);
+    const archive = archivePath === undefined ? undefined : validateWebArchive(archivePath.snapshotPath, errors);
     if (contentsPath === undefined || manifestPath === undefined) {
-        return;
+        return undefined;
     }
-    const manifest = readJsonForValidation(manifestPath, 'web manifest', errors);
+    const manifest = readJsonForValidation(snapshotRoot, manifestPath.snapshotPath, 'web manifest', errors);
     if (manifest === undefined) {
-        return;
+        return undefined;
     }
     if (manifest.schemaVersion !== SCHEMA_VERSION || manifest.artifact !== 'web') {
         errors.push('web manifest identity drifted');
@@ -1363,7 +2750,9 @@ function validateWebManifest(
         errors.push('web manifest build command drifted');
     }
     const files = stringMap(manifest.files, 'web manifest.files', errors);
-    verifyFileMap(contentsPath, files, 'web contents', errors, ['web-artifact-manifest.json']);
+    const verifiedFiles = verifyFileMap(contentsPath, files, 'web contents', errors, snapshotBudget, fileReader, [
+        'web-artifact-manifest.json',
+    ]);
     if (!Object.hasOwn(files, 'index.html') || !Object.keys(files).some((path) => path.startsWith('assets/'))) {
         errors.push('web contents is missing the required application entry or assets');
     }
@@ -1372,14 +2761,12 @@ function validateWebManifest(
             errors.push(`web contents is missing ${required}`);
         }
         const sourcePath = resolve(root, 'public', required);
-        const webPath = resolve(contentsPath, ...required.split('/'));
         const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
-        const webDigest = sha256ContainedRegularFile(contentsPath, webPath);
-        if (sourceDigest === undefined || sourceDigest !== webDigest) {
+        if (sourceDigest === undefined || sourceDigest !== verifiedFiles[required]) {
             errors.push(`web legal file ${required} is missing or drifted`);
         }
     }
-    validateWebLlmLegalFiles(root, releaseInventory, files, 'web', errors, contentsPath);
+    validateWebLlmLegalFiles(root, releaseInventory, verifiedFiles, 'web', errors);
     if (archivePath !== undefined && archive !== undefined) {
         const archiveFiles = archive.entries.map((entry) => entry.path).sort();
         const expectedFiles = ['web-artifact-manifest.json', ...Object.keys(files)].sort();
@@ -1388,18 +2775,18 @@ function validateWebManifest(
         }
         for (const path of expectedFiles) {
             const archived = archive.hashes.get(path);
-            const adjacent = resolve(contentsPath, ...path.split('/'));
-            if (
-                archived === undefined ||
-                !existsSync(adjacent) ||
-                !lstatSync(adjacent).isFile() ||
-                archived !== sha256File(adjacent)
-            ) {
+            const adjacentDigest = path === 'web-artifact-manifest.json' ? manifestPath.digest : verifiedFiles[path];
+            if (archived === undefined || archived !== adjacentDigest) {
                 errors.push(`web archive bytes do not match web contents for ${path}`);
             }
         }
     }
-    const contract = readJsonForValidation(resolve(root, 'release/web-artifact-manifest.json'), 'web contract', errors);
+    const contract = readJsonForValidation(
+        root,
+        resolve(root, 'release/web-artifact-manifest.json'),
+        'web contract',
+        errors
+    );
     if (
         contract !== undefined &&
         !sameValue(contract, {
@@ -1417,6 +2804,7 @@ function validateWebManifest(
     ) {
         errors.push('web contract drifted');
     }
+    return files;
 }
 
 function machOError(path: string, expectedFileType: number): string | undefined {
@@ -1619,6 +3007,7 @@ function desktopSnapshot(archive: string): DesktopSnapshot {
         errors.push('desktop archive must contain exactly one top-level Sourdaw.app');
     }
     const temporary = mkdtempSync(join(tmpdir(), 'sourdaw-desktop-proof-'));
+    const temporaryIdentity = directoryIdentity(temporary);
     try {
         if (errors.length === 0) {
             try {
@@ -1676,7 +3065,7 @@ function desktopSnapshot(archive: string): DesktopSnapshot {
             ffmpegSha256: sha256File(ffmpeg),
         };
     } finally {
-        rmSync(temporary, { recursive: true, force: true });
+        assertOwnedPathCleanup(removeOwnedPath(temporary, temporaryIdentity), 'desktop proof extraction directory');
     }
 }
 
@@ -1820,24 +3209,29 @@ function validateDesktopArchiveContents(
 }
 
 function validateBuildMaterial(
+    snapshotRoot: string,
     desktop: JsonRecord,
     runtimeContract: ElectronRuntimeContract,
     paths: {
-        electronArchive?: string;
-        electronCommit?: string;
-        ffmpegArchive?: string;
-        ffmpegCommit?: string;
-        buildManifest?: string;
+        electronArchive?: VerifiedCandidateFile;
+        electronCommit?: VerifiedCandidateFile;
+        ffmpegArchive?: VerifiedCandidateFile;
+        ffmpegCommit?: VerifiedCandidateFile;
+        buildManifest?: VerifiedCandidateFile;
         buildInputs?: string;
     },
-    errors: string[]
-): void {
+    errors: string[],
+    snapshotBudget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
+): Record<string, string> | undefined {
     const electronCommit =
         paths.electronCommit === undefined
             ? undefined
-            : readCommitObject(paths.electronCommit, 'Electron source', errors);
+            : readCommitObject(snapshotRoot, paths.electronCommit.snapshotPath, 'Electron source', errors);
     const ffmpegCommit =
-        paths.ffmpegCommit === undefined ? undefined : readCommitObject(paths.ffmpegCommit, 'FFmpeg source', errors);
+        paths.ffmpegCommit === undefined
+            ? undefined
+            : readCommitObject(snapshotRoot, paths.ffmpegCommit.snapshotPath, 'FFmpeg source', errors);
     const electronTree =
         electronCommit === undefined
             ? undefined
@@ -1848,7 +3242,7 @@ function validateBuildMaterial(
             : commitTree(ffmpegCommit, runtimeContract.ffmpeg.revision, 'FFmpeg source', errors);
     if (paths.electronArchive !== undefined && electronCommit !== undefined) {
         validateGitArchive(
-            paths.electronArchive,
+            paths.electronArchive.snapshotPath,
             electronCommit,
             runtimeContract.revision,
             'electron',
@@ -1859,7 +3253,7 @@ function validateBuildMaterial(
     }
     if (paths.ffmpegArchive !== undefined && ffmpegCommit !== undefined) {
         validateGitArchive(
-            paths.ffmpegArchive,
+            paths.ffmpegArchive.snapshotPath,
             ffmpegCommit,
             runtimeContract.ffmpeg.revision,
             'ffmpeg',
@@ -1869,11 +3263,16 @@ function validateBuildMaterial(
         );
     }
     if (paths.buildManifest === undefined || paths.buildInputs === undefined) {
-        return;
+        return undefined;
     }
-    const build = readJsonForValidation(paths.buildManifest, 'FFmpeg build material', errors);
+    const build = readJsonForValidation(
+        snapshotRoot,
+        paths.buildManifest.snapshotPath,
+        'FFmpeg build material',
+        errors
+    );
     if (build === undefined) {
-        return;
+        return undefined;
     }
     const electron = isRecord(build.electron) ? build.electron : undefined;
     const ffmpeg = isRecord(build.ffmpeg) ? build.ffmpeg : undefined;
@@ -1904,22 +3303,24 @@ function validateBuildMaterial(
     if (!sameValue(Object.keys(inputs).sort(), [...ELECTRON_FFMPEG_BUILD_INPUTS].sort())) {
         errors.push('FFmpeg build material exact input list drifted');
     }
-    verifyFileMap(paths.buildInputs, inputs, 'Electron FFmpeg build inputs', errors);
+    const verifiedInputs = verifyFileMap(
+        paths.buildInputs,
+        inputs,
+        'Electron FFmpeg build inputs',
+        errors,
+        snapshotBudget,
+        fileReader
+    );
     if (paths.electronArchive !== undefined) {
         const prefix = `electron-${runtimeContract.revision}`;
         for (const path of ELECTRON_FFMPEG_BUILD_INPUTS) {
-            const archived = archiveFileBytes(paths.electronArchive, prefix, path);
-            const adjacent = join(paths.buildInputs, ...path.split('/'));
-            if (
-                archived === undefined ||
-                !existsSync(adjacent) ||
-                sha256Bytes(archived) !== inputs[path] ||
-                sha256File(adjacent) !== inputs[path]
-            ) {
+            const archived = archiveFileBytes(paths.electronArchive.snapshotPath, prefix, path);
+            if (archived === undefined || sha256Bytes(archived) !== verifiedInputs[path]) {
                 errors.push(`Electron FFmpeg build input ${path} does not match the source archive`);
             }
         }
     }
+    return inputs;
 }
 
 function validateDesktop(
@@ -1929,11 +3330,14 @@ function validateDesktop(
     expectedRevision: string,
     errors: string[],
     runtimeContract: ElectronRuntimeContract,
-    releaseInventory: ReleaseInventory
-): void {
+    releaseInventory: ReleaseInventory,
+    snapshotRoot: string,
+    snapshotBudget: CandidateSnapshotBudget,
+    fileReader: ReleaseProofFileReader
+): Record<string, string> | undefined {
     const desktop = requiredRecord(proof, 'desktop', 'release proof', errors);
     if (desktop === undefined) {
-        return;
+        return undefined;
     }
     if (desktop.platform !== 'darwin' || desktop.arch !== 'arm64') {
         errors.push('desktop proof must target darwin arm64');
@@ -1965,9 +3369,13 @@ function validateDesktop(
         desktop.artifactPath,
         desktop.artifactSha256,
         'desktop artifact',
-        errors
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
-    if (artifactPath !== undefined && basename(artifactPath) !== expectedArtifactName) {
+    if (artifactPath !== undefined && basename(artifactPath.candidatePath) !== expectedArtifactName) {
         errors.push('desktop artifact must preserve the exact Sourdaw version-arm64-mac ZIP filename');
     }
     const contentsManifestPath = verifyFileHash(
@@ -1975,55 +3383,88 @@ function validateDesktop(
         desktop.contentsManifestPath,
         desktop.contentsManifestSha256,
         'desktop contents manifest',
-        errors
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
     const runtimeManifestPath = verifyFileHash(
         candidate,
         desktop.runtimeManifestPath,
         desktop.runtimeManifestSha256,
         'desktop runtime manifest',
-        errors
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
     const electronArchive = verifyFileHash(
         candidate,
         desktop.electronSourcePath,
         desktop.electronSourceSha256,
         'Electron source archive',
-        errors
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
     const electronCommit = verifyFileHash(
         candidate,
         desktop.electronCommitPath,
         desktop.electronCommitSha256,
         'Electron commit object',
-        errors
+        RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
     const ffmpegArchive = verifyFileHash(
         candidate,
         desktop.ffmpegSourcePath,
         desktop.ffmpegSourceSha256,
         'FFmpeg source archive',
-        errors
+        RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
     const ffmpegCommit = verifyFileHash(
         candidate,
         desktop.ffmpegCommitPath,
         desktop.ffmpegCommitSha256,
         'FFmpeg commit object',
-        errors
+        RELEASE_PROOF_TYPE_LIMITS.commitObjectBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
     const buildManifest = verifyFileHash(
         candidate,
         desktop.ffmpegBuildPath,
         desktop.ffmpegBuildSha256,
         'FFmpeg build material',
-        errors
+        RELEASE_PROOF_TYPE_LIMITS.jsonBytes,
+        errors,
+        snapshotRoot,
+        snapshotBudget,
+        fileReader
     );
     const buildInputs = candidatePath(candidate, desktop.buildInputsPath, 'desktop.buildInputsPath', errors);
     const manifest =
         contentsManifestPath === undefined
             ? undefined
-            : readJsonForValidation(contentsManifestPath, 'desktop contents manifest', errors);
+            : readJsonForValidation(
+                  snapshotRoot,
+                  contentsManifestPath.snapshotPath,
+                  'desktop contents manifest',
+                  errors
+              );
     if (manifest !== undefined) {
         if (manifest.sourceRevision !== expectedRevision) {
             errors.push('desktop contents manifest revision does not match candidate revision');
@@ -2031,7 +3472,7 @@ function validateDesktop(
         if (artifactPath !== undefined) {
             validateDesktopArchiveContents(
                 root,
-                artifactPath,
+                artifactPath.snapshotPath,
                 desktop.artifactSha256,
                 manifest,
                 runtimeContract,
@@ -2041,6 +3482,7 @@ function validateDesktop(
         }
     }
     const expectedRuntime = readJsonForValidation(
+        root,
         resolve(root, 'public/legal/ELECTRON-SOURCES.json'),
         'repository Electron manifest',
         errors
@@ -2048,7 +3490,7 @@ function validateDesktop(
     const actualRuntime =
         runtimeManifestPath === undefined
             ? undefined
-            : readJsonForValidation(runtimeManifestPath, 'desktop runtime manifest', errors);
+            : readJsonForValidation(snapshotRoot, runtimeManifestPath.snapshotPath, 'desktop runtime manifest', errors);
     if (
         expectedRuntime !== undefined &&
         actualRuntime !== undefined &&
@@ -2057,6 +3499,7 @@ function validateDesktop(
         errors.push('desktop runtime manifest does not match repository provenance');
     }
     const material = readJsonForValidation(
+        root,
         resolve(root, 'release/desktop-runtime-material.json'),
         'desktop material contract',
         errors
@@ -2064,11 +3507,14 @@ function validateDesktop(
     if (material !== undefined && !sameValue(material, expectedDesktopMaterial(runtimeContract))) {
         errors.push('desktop material contract identity drifted');
     }
-    validateBuildMaterial(
+    return validateBuildMaterial(
+        snapshotRoot,
         desktop,
         runtimeContract,
         { electronArchive, electronCommit, ffmpegArchive, ffmpegCommit, buildManifest, buildInputs },
-        errors
+        errors,
+        snapshotBudget,
+        fileReader
     );
 }
 
@@ -2079,7 +3525,12 @@ function addCensusPath(value: unknown, label: string, expected: Set<string>, err
     }
 }
 
-function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: string[]): void {
+function validateCandidateCensus(
+    candidate: string,
+    proof: JsonRecord,
+    maps: CandidateCensusMaps,
+    errors: string[]
+): void {
     const expected = new Set<string>([PROOF_FILE]);
     const source = isRecord(proof.source) ? proof.source : undefined;
     const web = isRecord(proof.web) ? proof.web : undefined;
@@ -2103,22 +3554,15 @@ function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: s
     }
 
     const webContents = safeRelativePath(web?.contentsPath, 'web.contentsPath', errors);
-    const webManifest = candidatePath(candidate, web?.manifestPath, 'web.manifestPath', errors);
-    if (webContents !== undefined && webManifest !== undefined && existsSync(webManifest)) {
-        const manifest = readJsonForValidation(webManifest, 'web manifest census', errors);
-        const files = manifest === undefined ? {} : stringMap(manifest.files, 'web manifest census.files', errors);
-        for (const path of Object.keys(files)) {
+    if (webContents !== undefined && maps.webFiles !== undefined) {
+        for (const path of Object.keys(maps.webFiles)) {
             expected.add(posix.join(webContents, path));
         }
     }
 
     const buildInputs = safeRelativePath(desktop?.buildInputsPath, 'desktop.buildInputsPath', errors);
-    const buildManifest = candidatePath(candidate, desktop?.ffmpegBuildPath, 'desktop.ffmpegBuildPath', errors);
-    if (buildInputs !== undefined && buildManifest !== undefined && existsSync(buildManifest)) {
-        const manifest = readJsonForValidation(buildManifest, 'FFmpeg build census', errors);
-        const files =
-            manifest === undefined ? {} : stringMap(manifest.buildInputs, 'FFmpeg build census.inputs', errors);
-        for (const path of Object.keys(files)) {
+    if (buildInputs !== undefined && maps.buildInputs !== undefined) {
+        for (const path of Object.keys(maps.buildInputs)) {
             expected.add(posix.join(buildInputs, path));
         }
     }
@@ -2157,6 +3601,8 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         errors.push('release proof candidate directory is missing');
         return errors;
     }
+    const fileReader = options.fileReader ?? releaseProofFileReader;
+    const snapshotBudget = candidateSnapshotBudget(fileReader);
     const proofPath = resolve(options.candidate, PROOF_FILE);
     if (
         !existsSync(proofPath) ||
@@ -2166,7 +3612,7 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         errors.push(`${PROOF_FILE}: file is missing or unsafe`);
         return errors;
     }
-    const proof = readJsonForValidation(proofPath, PROOF_FILE, errors);
+    const proof = readJsonForValidation(options.candidate, proofPath, PROOF_FILE, errors, fileReader, snapshotBudget);
     if (proof === undefined) {
         return errors;
     }
@@ -2199,21 +3645,53 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     if (new Set(referencedPaths).size !== referencedPaths.length) {
         errors.push('release proof paths must be unique');
     }
-    validateSourceManifest(options.candidate, proof, options.expectedRevision, errors);
-    if (releaseInventory !== undefined) {
-        validateWebManifest(options.root, options.candidate, proof, options.expectedRevision, errors, releaseInventory);
-        validateDesktop(
-            options.root,
+    const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-snapshot-'));
+    const snapshotRootIdentity = directoryIdentity(snapshotRoot);
+    try {
+        validateSourceManifest(
             options.candidate,
             proof,
             options.expectedRevision,
             errors,
-            runtimeContract,
-            releaseInventory
+            snapshotRoot,
+            snapshotBudget,
+            fileReader
         );
+        let webFiles: Record<string, string> | undefined;
+        let buildInputs: Record<string, string> | undefined;
+        if (releaseInventory !== undefined) {
+            webFiles = validateWebManifest(
+                options.root,
+                options.candidate,
+                proof,
+                options.expectedRevision,
+                errors,
+                releaseInventory,
+                snapshotRoot,
+                snapshotBudget,
+                fileReader
+            );
+            buildInputs = validateDesktop(
+                options.root,
+                options.candidate,
+                proof,
+                options.expectedRevision,
+                errors,
+                runtimeContract,
+                releaseInventory,
+                snapshotRoot,
+                snapshotBudget,
+                fileReader
+            );
+        }
+        validateCandidateCensus(options.candidate, proof, { buildInputs, webFiles }, errors);
+        return errors;
+    } finally {
+        const cleanup = removeOwnedPath(snapshotRoot, snapshotRootIdentity);
+        if (cleanup.state === 'preserved') {
+            errors.push(`release proof validation snapshot replacement preserved at ${cleanup.path}`);
+        }
     }
-    validateCandidateCensus(options.candidate, proof, errors);
-    return errors;
 }
 
 function gitRevision(root: string): string {
@@ -2362,7 +3840,10 @@ function removeIgnoredOutput(root: string, path: string): void {
     if (ignored.status !== 0) {
         throw new Error(`refusing to clear non-ignored build output ${path}`);
     }
-    rmSync(resolve(root, ...path.split('/')), { recursive: true, force: true });
+    const output = resolve(root, ...path.split('/'));
+    if (existsSync(output)) {
+        assertOwnedPathCleanup(removeOwnedPath(output, undefined, dirname(root)), `ignored build output ${path}`);
+    }
 }
 
 function clearWebBuildOutputs(root: string): void {
@@ -2419,11 +3900,14 @@ export function assembleReleaseProof(
     buildRunner: ReleaseBuildRunner = runProjectBuild,
     releaseGate: ReleaseGateRunner = (gateRoot, releaseInventory) =>
         checkReleaseInventory(gateRoot, undefined, releaseInventory),
-    releaseInventoryReader: ReleaseInventoryReader = readReleaseInventory
+    inventoryReader: ReleaseInventoryReader = readReleaseInventory,
+    validator: ReleaseProofValidator = validateReleaseProof,
+    publicationFileReader: ReleaseProofFileReader = releaseProofFileReader,
+    publisherPreparer: ReleaseProofPublisherPreparer = prepareAtomicDirectoryPublisher
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
-    const releaseInventory = releaseInventoryReader(root);
+    const releaseInventory = inventoryReader(root);
     const sourceIdentity = verifyGitCheckout(
         root,
         execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' }).trim(),
@@ -2447,6 +3931,10 @@ export function assembleReleaseProof(
     }
     mkdirSync(dirname(output), { recursive: true });
     const candidate = mkdtempSync(join(dirname(output), `.${basename(output)}.tmp-`));
+    const candidateIdentity = directoryIdentity(candidate);
+    let publicationCandidate: string | undefined;
+    let publicationCandidateIdentity: DirectoryIdentity | undefined;
+    let publisher: ReleaseProofPublisher | undefined;
     try {
         const sourceDir = join(candidate, 'source');
         const webDir = join(candidate, 'web');
@@ -2635,24 +4123,69 @@ export function assembleReleaseProof(
             },
         };
         writeJson(join(candidate, PROOF_FILE), proof);
-        const errors = validateReleaseProof({
-            root,
-            candidate,
-            expectedRevision: revision,
-            runtimeContract,
-            releaseInventory,
-            releaseInventoryReader,
-        });
-        if (errors.length > 0) {
-            throw new Error(errors.join('\n'));
+        if (validator !== validateReleaseProof) {
+            const customErrors = validator({
+                root,
+                candidate,
+                expectedRevision: revision,
+                runtimeContract,
+                releaseInventory,
+            });
+            if (customErrors.length > 0) {
+                throw new Error(customErrors.join('\n'));
+            }
         }
         assertBuildState(root, revision);
+        const releaseGateCandidate = validateDirectorySnapshot(
+            candidate,
+            publicationFileReader,
+            'release proof candidate snapshot'
+        );
         releaseGate(root, releaseInventory);
         assertBuildState(root, revision);
-        renameSync(candidate, output);
+        assertDirectorySnapshotUnchanged(
+            candidate,
+            releaseGateCandidate,
+            publicationFileReader,
+            'release proof candidate snapshot'
+        );
+        publisher = publisherPreparer();
+        publicationCandidate = mkdtempSync(join(dirname(output), `.${basename(output)}.publication-`));
+        publicationCandidateIdentity = directoryIdentity(publicationCandidate);
+        snapshotCandidateTree(candidate, publicationCandidate, publicationFileReader);
+        assertOwnedPathCleanup(removeOwnedPath(candidate, candidateIdentity), 'release proof assembly candidate');
+        const semanticCandidate = validatePublicationCandidate(
+            {
+                root,
+                candidate: publicationCandidate,
+                expectedRevision: revision,
+                runtimeContract,
+                releaseInventory,
+            },
+            publicationFileReader
+        );
+        publishValidatedDirectory(publisher, semanticCandidate, output, publicationFileReader);
     } catch (error) {
-        rmSync(candidate, { recursive: true, force: true });
+        const preserved: string[] = [];
+        const candidateCleanup = removeOwnedPath(candidate, candidateIdentity);
+        if (candidateCleanup.state === 'preserved') {
+            preserved.push(candidateCleanup.path);
+        }
+        if (publicationCandidate !== undefined) {
+            const publicationCleanup = removeOwnedPath(publicationCandidate, publicationCandidateIdentity);
+            if (publicationCleanup.state === 'preserved') {
+                preserved.push(publicationCleanup.path);
+            }
+        }
+        if (preserved.length > 0) {
+            throw new Error(
+                `${error instanceof Error ? error.message : String(error)}; cleanup preserved replacements at ${preserved.join(', ')}`,
+                { cause: error }
+            );
+        }
         throw error;
+    } finally {
+        publisher?.dispose();
     }
 }
 
