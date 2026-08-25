@@ -161,6 +161,14 @@ describe('compileArbitraryCommandList', () => {
         { family: 'automated-track', order: 'child-first' },
         { family: 'automation-lane-creation', order: 'parent-first' },
         { family: 'automation-lane-creation', order: 'child-first' },
+        { family: 'clip-single', order: 'parent-first' },
+        { family: 'clip-single', order: 'child-first' },
+        { family: 'clip-many', order: 'parent-first' },
+        { family: 'clip-many', order: 'child-first' },
+        { family: 'clip-dual', order: 'parent-first' },
+        { family: 'clip-dual', order: 'child-first' },
+        { family: 'clip-source-target', order: 'parent-first' },
+        { family: 'clip-source-target', order: 'child-first' },
         { family: 'sidechain', order: 'parent-first' },
         { family: 'sidechain', order: 'child-first' },
     ] as const)('rejects removeTrack with a $family child mutation when $order', ({ family, order }) => {
@@ -194,6 +202,25 @@ describe('compileArbitraryCommandList', () => {
                         ? {
                               ...track,
                               sends: [{ busId: 'track-hat', level: 0.5, preFader: false }],
+                              clipCount: 2,
+                              clips: [
+                                  {
+                                      id: 'clip-kick-a',
+                                      name: 'Kick A',
+                                      type: 'midi' as const,
+                                      startBeat: 0,
+                                      endBeat: 4,
+                                      noteCount: 1,
+                                  },
+                                  {
+                                      id: 'clip-kick-b',
+                                      name: 'Kick B',
+                                      type: 'midi' as const,
+                                      startBeat: 4,
+                                      endBeat: 8,
+                                      noteCount: 1,
+                                  },
+                              ],
                               deviceCount: 1,
                               devices: [
                                   {
@@ -207,6 +234,17 @@ describe('compileArbitraryCommandList', () => {
                           }
                         : {
                               ...track,
+                              clipCount: 1,
+                              clips: [
+                                  {
+                                      id: 'clip-hat-target',
+                                      name: 'Hat Target',
+                                      type: 'midi' as const,
+                                      startBeat: 0,
+                                      endBeat: 4,
+                                      noteCount: 1,
+                                  },
+                              ],
                               deviceCount: 1,
                               devices: [
                                   {
@@ -289,6 +327,50 @@ describe('compileArbitraryCommandList', () => {
                     quantity: { unit: 'targets' as const, exactly: 1 },
                 },
             },
+            'clip-single': {
+                id: 'gain-kick-a',
+                name: 'setClipGain',
+                arguments: { gain: 0.5 },
+                selector: {
+                    targetArgument: 'clipId',
+                    entity: 'clip' as const,
+                    where: { name: 'Kick A' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
+            'clip-many': {
+                id: 'glue-kick-clips',
+                name: 'glueClips',
+                arguments: {},
+                selector: {
+                    targetArgument: 'clipIds',
+                    entity: 'clip' as const,
+                    where: { trackId: 'track-kick' },
+                    quantity: { unit: 'targets' as const, exactly: 2 },
+                },
+            },
+            'clip-dual': {
+                id: 'crossfade-kick-clips',
+                name: 'crossfadeClips',
+                arguments: { clipBId: 'clip-kick-b', durationBeats: 0.5 },
+                selector: {
+                    targetArgument: 'clipAId',
+                    entity: 'clip' as const,
+                    where: { name: 'Kick A' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
+            'clip-source-target': {
+                id: 'copy-kick-articulations',
+                name: 'copyMidiArticulations',
+                arguments: { sourceClipId: 'clip-kick-a' },
+                selector: {
+                    targetArgument: 'targetClipId',
+                    entity: 'clip' as const,
+                    where: { name: 'Hat Target' },
+                    quantity: { unit: 'targets' as const, exactly: 1 },
+                },
+            },
             sidechain: {
                 id: 'remove-kick-sidechain',
                 name: 'removeSidechainRoute',
@@ -308,6 +390,10 @@ describe('compileArbitraryCommandList', () => {
             'automation-lane': ['track-kick', 'lane-kick-gain'],
             'automated-track': ['track-kick'],
             'automation-lane-creation': ['track-kick'],
+            'clip-single': ['track-kick', 'clip-kick-a'],
+            'clip-many': ['track-kick', 'clip-kick-a', 'clip-kick-b'],
+            'clip-dual': ['track-kick', 'clip-kick-a', 'clip-kick-b'],
+            'clip-source-target': ['track-kick', 'clip-kick-a', 'clip-hat-target'],
             sidechain: ['track-kick', 'track-hat'],
         } as const;
         const items =
@@ -333,6 +419,80 @@ describe('compileArbitraryCommandList', () => {
             status: 'rejected',
             reason: 'Structured command list contains contradictory mutation resources.',
         });
+    });
+
+    it('keeps sibling clip mutations composable when neither deletes their parent track', () => {
+        const siblingContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-kick'
+                    ? {
+                          ...track,
+                          clipCount: 2,
+                          clips: [
+                              {
+                                  id: 'clip-kick-a',
+                                  name: 'Kick A',
+                                  type: 'audio' as const,
+                                  startBeat: 0,
+                                  endBeat: 4,
+                                  noteCount: 0,
+                              },
+                              {
+                                  id: 'clip-kick-b',
+                                  name: 'Kick B',
+                                  type: 'audio' as const,
+                                  startBeat: 4,
+                                  endBeat: 8,
+                                  noteCount: 0,
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const result = compileArbitraryCommandList({
+            context: siblingContext,
+            revision: 'revision-sibling-clips',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['clip-kick-a', 'clip-kick-b']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'gain-kick-a',
+                                    name: 'setClipGain',
+                                    arguments: { gain: 0.5 },
+                                    selector: {
+                                        targetArgument: 'clipId',
+                                        entity: 'clip',
+                                        where: { name: 'Kick A' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                                {
+                                    id: 'gain-kick-b',
+                                    name: 'setClipGain',
+                                    arguments: { gain: 0.75 },
+                                    selector: {
+                                        targetArgument: 'clipId',
+                                        entity: 'clip',
+                                        where: { name: 'Kick B' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                    dependsOn: ['gain-kick-a'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
     });
 
     it('carries every direct secondary target through exact compiler and command-batch planning scope', () => {

@@ -2370,8 +2370,30 @@ const PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = [
         resourceReferenceOnly: true,
     },
 ] as const;
-const CLIP_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' }] as const;
-const MANY_CLIPS_MUTATION_IDENTITY = [{ arguments: [{ argument: 'clipIds', cardinality: 'many' }] }] as const;
+const CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY;
+const CLIP_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const MANY_CLIPS_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'clipIds', cardinality: 'many' }], resourceFamily: 'clip' },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const DUAL_CLIPS_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'clipAId' }], resourceFamily: 'clip' },
+    { arguments: [{ argument: 'clipBId' }], resourceFamily: 'clip' },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const MIDI_ARTICULATION_COPY_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'targetClipId' }], resourceFamily: 'clip' },
+    {
+        arguments: [{ argument: 'sourceClipId' }],
+        destructive: false,
+        resourceFamily: 'clip',
+        resourceReferenceOnly: true,
+    },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const DEVICE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
     ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
@@ -2459,7 +2481,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipColor: CLIP_MUTATION_IDENTITY,
     setClipFade: CLIP_MUTATION_IDENTITY,
     glueClips: MANY_CLIPS_MUTATION_IDENTITY,
-    crossfadeClips: [{ arguments: [{ argument: 'clipAId' }] }, { arguments: [{ argument: 'clipBId' }] }],
+    crossfadeClips: DUAL_CLIPS_MUTATION_IDENTITY,
     lockClip: CLIP_MUTATION_IDENTITY,
     setClipLoop: CLIP_MUTATION_IDENTITY,
     setClipLoopLength: CLIP_MUTATION_IDENTITY,
@@ -2471,7 +2493,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
     arpeggiate: CLIP_MUTATION_IDENTITY,
     createDrumPreviewBranches: NO_MUTATION_IDENTITY,
-    copyMidiArticulations: [{ arguments: [{ argument: 'targetClipId' }] }],
+    copyMidiArticulations: MIDI_ARTICULATION_COPY_MUTATION_IDENTITY,
     transposeNotes: CLIP_MUTATION_IDENTITY,
     invertNotes: CLIP_MUTATION_IDENTITY,
     retrogradeNotes: CLIP_MUTATION_IDENTITY,

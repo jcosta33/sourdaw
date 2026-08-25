@@ -71,9 +71,26 @@ describe('getExecutableAppActionGroundingRules', () => {
         ]);
         expect(getExecutableAppActionGroundingRules('moveClip')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+            parentTrackReference,
+        ]);
+        expect(getExecutableAppActionGroundingRules('glueClips')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'clipIds', cardinality: 'many' }], resourceFamily: 'clip' },
+            parentTrackReference,
+        ]);
+        expect(getExecutableAppActionGroundingRules('crossfadeClips')?.mutationIdentityRules).toEqual([
+            { arguments: [{ argument: 'clipAId' }], resourceFamily: 'clip' },
+            { arguments: [{ argument: 'clipBId' }], resourceFamily: 'clip' },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('copyMidiArticulations')?.mutationIdentityRules).toEqual([
-            { arguments: [{ argument: 'targetClipId' }] },
+            { arguments: [{ argument: 'targetClipId' }], resourceFamily: 'clip' },
+            {
+                arguments: [{ argument: 'sourceClipId' }],
+                destructive: false,
+                resourceFamily: 'clip',
+                resourceReferenceOnly: true,
+            },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('assignToVca')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackId' }], resourceFamily: 'track' },
@@ -115,6 +132,7 @@ describe('getExecutableAppActionGroundingRules', () => {
         ]);
         expect(getExecutableAppActionGroundingRules('removeClip')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+            parentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('removeDevice')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },

@@ -346,6 +346,21 @@ function materializeMutationIdentityArguments(
         }
     };
 
+    const trackIdByClipId = new Map(
+        context.tracks.flatMap((track) => track.clips.map((clip) => [clip.id, track.id] as const))
+    );
+    for (const [argument, value] of Object.entries(command.arguments)) {
+        if (!/[cC]lip(?:[A-Z][A-Za-z0-9]*)?Ids?$/u.test(argument)) {
+            continue;
+        }
+        const clipIds = Array.isArray(value) ? value : [value];
+        for (const clipId of clipIds) {
+            if (typeof clipId === 'string') {
+                addTrackId(trackIdByClipId.get(clipId));
+            }
+        }
+    }
+
     if (['removeDevice', 'setDeviceParameter', 'bypassDevice'].includes(command.name)) {
         const deviceId = command.arguments.deviceId;
         if (typeof deviceId === 'string') {
