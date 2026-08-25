@@ -3597,6 +3597,9 @@ function groundToolCall({
         ) {
             continue;
         }
+        if (call.name === 'addSidechainRoute' && targetRule.argument === 'targetDeviceId') {
+            continue;
+        }
         if (
             sidechainRoutingScope?.status === 'request' &&
             call.name === 'addSidechainRoute' &&
@@ -4011,6 +4014,54 @@ function hasMalformedPunchNumericContinuation(maskedPrompt: string): boolean {
     );
 }
 
+type SidechainRouteDeviceAdmission = {
+    sourceTrackId: string;
+    targetDeviceId: string;
+    targetTrackId: string;
+};
+
+function getCompilerSidechainRouteDeviceAdmissions(
+    calls: readonly ToolCallResult[],
+    targetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined
+): SidechainRouteDeviceAdmission[] {
+    if (targetOverridesByCallIndex === undefined) {
+        return [];
+    }
+    return calls.flatMap((call, index) => {
+        if (call.name !== 'addSidechainRoute') {
+            return [];
+        }
+        const { sourceTrackId, targetDeviceId, targetTrackId } = call.arguments;
+        if (
+            typeof sourceTrackId !== 'string' ||
+            typeof targetDeviceId !== 'string' ||
+            typeof targetTrackId !== 'string'
+        ) {
+            return [];
+        }
+        const targetOverrides = targetOverridesByCallIndex.get(index) ?? [];
+        const matchesStableOverride = (argument: string, capability: string, stableId: string): boolean => {
+            const override = targetOverrides.find((candidate) => candidate.argument === argument);
+            return (
+                override !== undefined &&
+                'stableIds' in override &&
+                override.capability === capability &&
+                override.cardinality === 'one' &&
+                override.stableIds.length === 1 &&
+                override.stableIds[0] === stableId
+            );
+        };
+        if (
+            !matchesStableOverride('sourceTrackId', 'routable-source', sourceTrackId) ||
+            !matchesStableOverride('targetTrackId', 'routable-source', targetTrackId) ||
+            !matchesStableOverride('targetDeviceId', 'sidechain-capable-device', targetDeviceId)
+        ) {
+            return [];
+        }
+        return [{ sourceTrackId, targetDeviceId, targetTrackId }];
+    });
+}
+
 export function bridgeGroundedLlmToolCalls({
     calls,
     context,
@@ -4165,11 +4216,7 @@ export function bridgeGroundedLlmToolCalls({
             return matchingCall ? [matchingCall] : [];
         });
     }
-    let sidechainRouteDeviceAdmissions: ReadonlyArray<{
-        sourceTrackId: string;
-        targetDeviceId: string;
-        targetTrackId: string;
-    }> = [];
+    let sidechainRouteDeviceAdmissions: ReadonlyArray<SidechainRouteDeviceAdmission> = [];
     const articulationTransferScope =
         workflowCapabilityId === 'articulation-transfer'
             ? getArticulationTransferPromptScope(context)
@@ -4576,6 +4623,10 @@ export function bridgeGroundedLlmToolCalls({
             ],
         };
     }
+    sidechainRouteDeviceAdmissions = [
+        ...sidechainRouteDeviceAdmissions,
+        ...getCompilerSidechainRouteDeviceAdmissions(effectiveCalls, compilerTargetOverridesByCallIndex),
+    ];
     const collectedBindings = collectBatchLocalBusBindings(effectiveCalls, context);
     if (collectedBindings.status === 'rejected') {
         return {
