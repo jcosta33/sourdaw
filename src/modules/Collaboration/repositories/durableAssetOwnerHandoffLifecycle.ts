@@ -416,17 +416,24 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                 return { status: 'failed' as const, reason: 'corrupt-record' as const };
             }
             if (!fenceGuard.isCurrent()) {
-                return { status: 'cancelled' as const, ownerId };
+                return { status: 'cancelled' as const, ownerId, previousOwnerIds: [], reboundHashes: [] };
             }
             const reboundHashes = new Set<string>();
+            const previousOwnerIds: string[] = [];
             for (const handoff of values as OwnerHandoffRecord[]) {
                 const result = await commitOwnerRebind(handoff.previousOwnerId, ownerId, fence);
                 if (result.status === 'cancelled') {
-                    return result;
+                    return {
+                        status: 'cancelled' as const,
+                        ownerId,
+                        previousOwnerIds,
+                        reboundHashes: [...reboundHashes],
+                    };
                 }
                 if (result.status === 'failed') {
                     return result;
                 }
+                previousOwnerIds.push(result.previousOwnerId);
                 for (const hash of result.reboundHashes) {
                     reboundHashes.add(hash);
                 }
@@ -435,7 +442,7 @@ export function createDurableAssetOwnerHandoffLifecycle(ownerId: string) {
                 status: 'resumed' as const,
                 ownerId,
                 handoffCount: values.length,
-                previousOwnerIds: (values as OwnerHandoffRecord[]).map((handoff) => handoff.previousOwnerId),
+                previousOwnerIds,
                 reboundHashes: [...reboundHashes],
             };
         },

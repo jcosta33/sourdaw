@@ -72,7 +72,7 @@ export type ResumeDurableAssetOwnerHandoffsResult =
           previousOwnerIds: string[];
           reboundHashes: string[];
       }
-    | { status: 'cancelled'; ownerId: string }
+    | { status: 'cancelled'; ownerId: string; previousOwnerIds: string[]; reboundHashes: string[] }
     | DurableAssetFailure;
 export type ReleaseDurableAssetOwnerResult = {
     status: 'released';

@@ -735,11 +735,11 @@ export class AssetTransfer {
                     if (recovery.status === 'failed') {
                         throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);
                     }
-                    if (recovery.status === 'cancelled' || !recoveryIsAuthorized()) {
-                        throw new DurableOwnerRecoveryCancelled();
-                    }
                     for (const previousOwnerId of recovery.previousOwnerIds) {
                         rebindLiveStageRecoveries(previousOwnerId, recovery.ownerId);
+                    }
+                    if (recovery.status === 'cancelled' || !recoveryIsAuthorized()) {
+                        throw new DurableOwnerRecoveryCancelled();
                     }
                     this.ownerRecoveryPending = false;
                 }

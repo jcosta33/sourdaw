@@ -441,6 +441,50 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('retains a live staged lease after a later recovered owner handoff is revoked', async () => {
+        const firstOwner = 'collaboration-join:partial-owner-recovery-first';
+        const secondOwner = 'collaboration-join:partial-owner-recovery-second';
+        const projectOwner = 'project:partial-owner-recovery';
+        const firstJoining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, firstOwner);
+        const staged = await firstJoining.stageDurableAsset(
+            new Blob(['partial-owner-recovery-original']),
+            'partial-owner-recovery.wav',
+            'asset-stage-partial-owner-recovery',
+            { protectAcrossTransfer: true }
+        );
+        await firstJoining.prepareDurableOwnerRebind(projectOwner);
+        firstJoining.dispose();
+
+        const secondJoining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, secondOwner);
+        await secondJoining.stageDurableAsset(
+            new Blob(['later-owner-recovery-original']),
+            'later-owner-recovery.wav',
+            'asset-stage-later-owner-recovery'
+        );
+        await secondJoining.prepareDurableOwnerRebind(projectOwner);
+        secondJoining.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
+        const revocation = new AbortController();
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad({
+            ownerId: projectOwner,
+            // The first handoff commits while both journals exist. The second
+            // sees that the project-load authority was revoked and must abort.
+            isCurrent: () => durableAssetIndexedDb.countRecords('ownerHandoffs') > 1,
+            signal: revocation.signal,
+        });
+
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(projectOwner));
+
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        await recreated.releaseDurableStagedAsset(staged.leaseId, staged.hash);
+        recreated.dispose();
+    });
+
     it('does not consume admitted staged-asset recovery after the loaded project authority is superseded', async () => {
         const projectOwner = 'project:superseded-staged-recovery';
         const durableAssets = createDurableAssetRepository(projectOwner);
