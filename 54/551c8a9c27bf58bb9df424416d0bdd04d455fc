@@ -1,0 +1,30 @@
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_47225025a3f6d7 503,511,517
+  s_a40848e8f8cca9::t_37e443cfc9b53f 556
+  s_a40848e8f8cca9::t_5f32e228f05e46 488-502,504-510,513-516,518-550,553-555,557-566,1068-1069,1089-1091,1093,1099,1101-1102
+  s_a40848e8f8cca9::t_b191570d4b79d5 512,551-552,1095-1097
+src/modules/Collaboration/repositories/durableAssetOwnerHandoffLifecycle.ts
+  s_a40848e8f8cca9::t_611f78118ff5f6 407-410,439
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_611f78118ff5f6 602,734-737
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_611f78118ff5f6 99-102
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_b191570d4b79d5 414,417,427,431-439,442,522,579-599,604-606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "54551c8a9c27bf58bb9df424416d0bdd04d455fc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
