@@ -210,6 +210,26 @@ function runWorkflowShell(label, body, env) {
         env: { ...process.env, ...env },
     });
     expect(result.status === 0, `${label} must execute outside the scan target: ${result.stderr.trim()}`);
+    return result;
+}
+
+function expectShardFailureWarning(step, slug, suite, shard) {
+    const summaryPath = `${process.env.TEST_TEMP_ROOT}/${slug}-shard-summary.md`;
+    writeFileSync(summaryPath, '');
+    expect(step?.env?.SHARD === '${{ matrix.shard }}', `${suite} warning must receive the matrix shard`);
+    const result = runWorkflowShell(`${suite} warning`, step?.run ?? '', {
+        GITHUB_STEP_SUMMARY: summaryPath,
+        SHARD: shard,
+    });
+    expect(
+        result.stdout === `::warning title=${suite} shard failed::Shard ${shard} failed; inspect the Run shard log.\n`,
+        `${suite} warning must emit the exact shard annotation`
+    );
+    expect(
+        readFileSync(summaryPath, 'utf8') ===
+            `### ${suite} shard ${shard} failed\n\nInspect the \`Run shard\` step log for raw failure output.\n`,
+        `${suite} warning must write the exact shard summary`
+    );
 }
 
 const events = workflow.on;
@@ -400,13 +420,15 @@ expect(
     'end-to-end Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
 );
 expect(
-    unitFailureWarning?.if === shardFailureCondition && unitFailureWarning?.run?.includes('::warning') && unitFailureWarning?.run?.includes('$GITHUB_STEP_SUMMARY'),
-    'unit shard failure must remain visible without changing the job conclusion'
+    unitFailureWarning?.if === shardFailureCondition,
+    'unit shard failure warning must observe the failed Run shard outcome'
 );
 expect(
-    e2eFailureWarning?.if === shardFailureCondition && e2eFailureWarning?.run?.includes('::warning') && e2eFailureWarning?.run?.includes('$GITHUB_STEP_SUMMARY'),
-    'end-to-end shard failure must remain visible without changing the job conclusion'
+    e2eFailureWarning?.if === shardFailureCondition,
+    'end-to-end shard failure warning must observe the failed Run shard outcome'
 );
+expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
+expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
 expect(
     Array.isArray(gateNeeds) &&
