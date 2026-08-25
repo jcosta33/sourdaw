@@ -1391,12 +1391,12 @@ describe('check-dependency-boundaries', () => {
                 {
                     file: relativeModelsPath,
                     line: 1,
-                    reason: 'symbolic links are not permitted under src/modules',
+                    reason: 'symbolic link hides source under src from the dependency guard',
                 },
                 {
                     file: relativeSourcePath,
                     line: 1,
-                    reason: 'symbolic links are not permitted under src/modules',
+                    reason: 'symbolic link hides source under src from the dependency guard',
                 },
             ]);
             expect(new Set(findings.map(({ file }) => file)).size).toBe(findings.length);
