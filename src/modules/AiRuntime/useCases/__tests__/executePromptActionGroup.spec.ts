@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+import { type compileVersionedCommandBatchEnvelope, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { readAgentRunState } from '../../stores/agentRunStore';
@@ -112,7 +112,7 @@ const commandBatch = {
             maxRenderJobs: 0,
         },
     },
-} as never;
+} satisfies Pick<ReturnType<typeof compileVersionedCommandBatchEnvelope>, 'authority' | 'serialized'>;
 
 function seedRun(phase: 'planning' | 'waiting-for-approval' = 'planning'): void {
     agentRunLifecycle.create({
