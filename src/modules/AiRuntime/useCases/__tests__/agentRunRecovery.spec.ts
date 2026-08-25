@@ -13,7 +13,8 @@ const commandRecoveryMocks = vi.hoisted(() => ({
     getVersionedCommandBatchIdempotentReplay: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeVersionedCommandBatchEnvelope: commandRecoveryMocks.executeVersionedCommandBatchEnvelope,
     getVersionedCommandBatchIdempotentReplay: commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay,
 }));
@@ -666,7 +667,7 @@ describe('agent run recovery', () => {
         const { recoverInterruptedAgentRuns: recoverHydratedAgentRuns } = await import('../agentRunRecovery');
         const { recoverAgentRunPendingEffects } = await import('../recoverAgentRunPendingEffects');
 
-        expect(recoverHydratedAgentRuns({ recoveredAt: 200 })).toEqual({
+        await expect(recoverHydratedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
             recoveredRunIds: ['run-persisted-runtime-effects'],
         });
         expect(hydratedAgentRunLifecycle.get('run-persisted-runtime-effects')).toMatchObject({
