@@ -65,6 +65,12 @@ describe('command registry completeness', () => {
                     for (const identityArgument of identityArguments) {
                         if (identityArgument.source === 'app-derived') {
                             expect(descriptor?.parameters.properties).not.toHaveProperty(identityArgument.argument);
+                            expect(identityArgument.targetCapabilities.length).toBeGreaterThan(0);
+                            expect(
+                                identityArgument.targetCapabilities.some((capability) =>
+                                    descriptor?.targetRules.some((targetRule) => targetRule.capability === capability)
+                                )
+                            ).toBe(true);
                             continue;
                         }
                         expect(descriptor?.parameters.properties).toHaveProperty(identityArgument.argument);
@@ -110,7 +116,14 @@ describe('command registry completeness', () => {
 
         expect(descriptor?.parameters.properties).not.toHaveProperty('parentTrackIds');
         expect(registration?.mutationIdentityRules).toContainEqual({
-            arguments: [{ argument: 'parentTrackIds', cardinality: 'many', source: 'app-derived' }],
+            arguments: [
+                {
+                    argument: 'parentTrackIds',
+                    cardinality: 'many',
+                    source: 'app-derived',
+                    targetCapabilities: ['clip', 'editable-clip', 'editable-audio-clip', 'editable-midi-clip'],
+                },
+            ],
             destructive: false,
             resourceFamily: 'track',
             resourceReferenceOnly: true,

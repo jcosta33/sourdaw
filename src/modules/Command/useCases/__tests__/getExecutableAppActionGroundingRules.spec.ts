@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { executableAppActionDescriptorByType } from '../executableAppActionRegistry';
+import {
+    executableAppActionDescriptorByType,
+    type ExecutableAppActionParentTrackTargetCapability,
+} from '../executableAppActionRegistry';
 import { getExecutableAppActionGroundingRules } from '../getExecutableAppActionGroundingRules';
 
 describe('getExecutableAppActionGroundingRules', () => {
@@ -23,12 +26,27 @@ describe('getExecutableAppActionGroundingRules', () => {
     });
 
     it('owns mutation identity independently from capability targets', () => {
-        const parentTrackReference = {
-            arguments: [{ argument: 'parentTrackIds', cardinality: 'many' as const, source: 'app-derived' as const }],
+        const parentTrackReference = (
+            targetCapabilities: readonly ExecutableAppActionParentTrackTargetCapability[]
+        ) => ({
+            arguments: [
+                {
+                    argument: 'parentTrackIds',
+                    cardinality: 'many' as const,
+                    source: 'app-derived' as const,
+                    targetCapabilities,
+                },
+            ],
             destructive: false as const,
             resourceFamily: 'track',
             resourceReferenceOnly: true as const,
-        };
+        });
+        const clipParentTrackReference = parentTrackReference([
+            'clip',
+            'editable-clip',
+            'editable-audio-clip',
+            'editable-midi-clip',
+        ]);
         expect(getExecutableAppActionGroundingRules('setTrackOutput')).toMatchObject({
             targetRules: [
                 { argument: 'outputId', capability: 'output' },
@@ -45,7 +63,7 @@ describe('getExecutableAppActionGroundingRules', () => {
         });
         expect(getExecutableAppActionGroundingRules('setDeviceParameter')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
-            parentTrackReference,
+            parentTrackReference(['device']),
         ]);
         expect(getExecutableAppActionGroundingRules('automateTrackGainRange')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
@@ -67,20 +85,20 @@ describe('getExecutableAppActionGroundingRules', () => {
         ]);
         expect(getExecutableAppActionGroundingRules('addSend')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
-            parentTrackReference,
+            parentTrackReference(['routable-source', 'bus']),
         ]);
         expect(getExecutableAppActionGroundingRules('moveClip')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
-            parentTrackReference,
+            clipParentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('glueClips')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'clipIds', cardinality: 'many' }], resourceFamily: 'clip' },
-            parentTrackReference,
+            clipParentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('crossfadeClips')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'clipAId' }], resourceFamily: 'clip' },
             { arguments: [{ argument: 'clipBId' }], resourceFamily: 'clip' },
-            parentTrackReference,
+            clipParentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('copyMidiArticulations')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'targetClipId' }], resourceFamily: 'clip' },
@@ -90,7 +108,7 @@ describe('getExecutableAppActionGroundingRules', () => {
                 resourceFamily: 'clip',
                 resourceReferenceOnly: true,
             },
-            parentTrackReference,
+            clipParentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('assignToVca')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackId' }], resourceFamily: 'track' },
@@ -115,7 +133,7 @@ describe('getExecutableAppActionGroundingRules', () => {
                 resourceFamily: 'sidechain-route',
                 resourceReferenceOnly: true,
             },
-            parentTrackReference,
+            parentTrackReference(['routable-source']),
         ]);
         expect(getExecutableAppActionGroundingRules('removeSidechainRoute')?.mutationIdentityRules).toEqual([
             {
@@ -123,7 +141,7 @@ describe('getExecutableAppActionGroundingRules', () => {
                 resourceFamily: 'sidechain-route',
                 resourceReferenceOnly: true,
             },
-            parentTrackReference,
+            parentTrackReference(['routable-source']),
         ]);
         expect(getExecutableAppActionGroundingRules('setTrackGain')?.mutationIdempotent).toBe(true);
         expect(getExecutableAppActionGroundingRules('splitClip')?.mutationIdempotent).toBe(false);
@@ -132,15 +150,15 @@ describe('getExecutableAppActionGroundingRules', () => {
         ]);
         expect(getExecutableAppActionGroundingRules('removeClip')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
-            parentTrackReference,
+            clipParentTrackReference,
         ]);
         expect(getExecutableAppActionGroundingRules('removeDevice')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
-            parentTrackReference,
+            parentTrackReference(['device']),
         ]);
         expect(getExecutableAppActionGroundingRules('removeSend')?.mutationIdentityRules).toEqual([
             { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
-            parentTrackReference,
+            parentTrackReference(['routable-source', 'bus']),
         ]);
         expect(getExecutableAppActionGroundingRules('removeSection')?.mutationIdentityRules).toEqual([
             {
