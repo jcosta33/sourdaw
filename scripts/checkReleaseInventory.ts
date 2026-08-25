@@ -391,8 +391,17 @@ function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
     );
 }
 
-function sameRepositoryFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
-    return left.dev === right.dev && left.ino === right.ino;
+function sameRepositoryRegularFileSnapshot(left: BigIntStats, right: BigIntStats): boolean {
+    return (
+        left.isFile() &&
+        right.isFile() &&
+        left.dev === right.dev &&
+        left.ino === right.ino &&
+        left.nlink === right.nlink &&
+        left.size === right.size &&
+        left.mtimeNs === right.mtimeNs &&
+        left.ctimeNs === right.ctimeNs
+    );
 }
 
 function pathMatchesOpenedRepositoryRegularFile(
@@ -404,12 +413,7 @@ function pathMatchesOpenedRepositoryRegularFile(
         return false;
     }
     const pathMetadata = lstatSync(absolutePath, { bigint: true });
-    if (
-        !pathMetadata.isFile() ||
-        pathMetadata.nlink !== 1n ||
-        pathMetadata.size !== opened.size ||
-        !sameRepositoryFileIdentity(pathMetadata, opened)
-    ) {
+    if (pathMetadata.nlink !== 1n || !sameRepositoryRegularFileSnapshot(pathMetadata, opened)) {
         return false;
     }
     const realPath = realpathSync(absolutePath);
@@ -417,7 +421,7 @@ function pathMatchesOpenedRepositoryRegularFile(
         return false;
     }
     const resolved = statSync(realPath, { bigint: true });
-    return resolved.nlink === 1n && resolved.size === opened.size && sameRepositoryFileIdentity(resolved, opened);
+    return resolved.nlink === 1n && sameRepositoryRegularFileSnapshot(resolved, opened);
 }
 
 function openRepositoryRegularFile(
@@ -442,7 +446,7 @@ function openRepositoryRegularFile(
             throw new Error(`not a regular file: ${absolutePath}`);
         }
         if (
-            !sameRepositoryFileIdentity(opened, beforeOpen) ||
+            !sameRepositoryRegularFileSnapshot(opened, beforeOpen) ||
             !pathMatchesOpenedRepositoryRegularFile(rootRealPath, absolutePath, opened)
         ) {
             throw new Error(`path changed while opening: ${absolutePath}`);
@@ -464,10 +468,7 @@ function assertRepositoryRegularFileUnchanged(
 ): void {
     const closed = fstatSync(descriptor, { bigint: true });
     if (
-        !sameRepositoryFileIdentity(closed, opened) ||
-        closed.size !== opened.size ||
-        closed.mtimeNs !== opened.mtimeNs ||
-        closed.ctimeNs !== opened.ctimeNs ||
+        !sameRepositoryRegularFileSnapshot(closed, opened) ||
         !pathMatchesOpenedRepositoryRegularFile(rootRealPath, absolutePath, closed)
     ) {
         throw new Error(`path changed while reading: ${absolutePath}`);

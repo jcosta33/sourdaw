@@ -1364,20 +1364,8 @@ function snapshotCandidateFile(
         (descriptor) => {
             const output = openSync(snapshotPath, 'wx');
             try {
-                const write = fileReader.snapshotWrite ?? writeSync;
                 const digest = digestCandidateDescriptor(descriptor, maxBytes, budget, fileReader, (bytes) => {
-                    let offset = 0;
-                    while (offset < bytes.length) {
-                        const remaining = bytes.length - offset;
-                        const written = write(output, bytes, offset, remaining);
-                        if (!Number.isInteger(written) || written < 0 || written > remaining) {
-                            throw new Error('candidate snapshot write returned an invalid byte count');
-                        }
-                        if (written === 0) {
-                            throw new Error('candidate snapshot write made no progress');
-                        }
-                        offset += written;
-                    }
+                    writeCandidateSnapshotBytes(output, bytes, fileReader);
                 });
                 return { digest, snapshotPath };
             } finally {
@@ -1386,6 +1374,22 @@ function snapshotCandidateFile(
         },
         fileReader
     );
+}
+
+function writeCandidateSnapshotBytes(descriptor: number, bytes: Buffer, fileReader: ReleaseProofFileReader): void {
+    const write = fileReader.snapshotWrite ?? writeSync;
+    let offset = 0;
+    while (offset < bytes.length) {
+        const remaining = bytes.length - offset;
+        const written = write(descriptor, bytes, offset, remaining);
+        if (!Number.isInteger(written) || written < 0 || written > remaining) {
+            throw new Error('candidate snapshot write returned an invalid byte count');
+        }
+        if (written === 0) {
+            throw new Error('candidate snapshot write made no progress');
+        }
+        offset += written;
+    }
 }
 
 function gitObjectId(type: 'commit', value: Buffer): string {
@@ -1709,14 +1713,7 @@ function snapshotCandidateTree(
                         budget,
                         fileReader,
                         (bytes) => {
-                            let offset = 0;
-                            while (offset < bytes.length) {
-                                const written = writeSync(output, bytes, offset, bytes.length - offset);
-                                if (written === 0) {
-                                    throw new Error(`${label}: failed to copy ${path}`);
-                                }
-                                offset += written;
-                            }
+                            writeCandidateSnapshotBytes(output, bytes, fileReader);
                             size += bytes.length;
                         }
                     );
@@ -4201,6 +4198,9 @@ export function assembleReleaseProof(
             },
             publicationFileReader
         );
+        if (!sameDirectoryBytes(semanticCandidate.bytes, releaseGateCandidate.bytes)) {
+            throw new Error('release proof publication snapshot does not match the release-gated candidate');
+        }
         publishValidatedDirectory(publisher, semanticCandidate, output, publicationFileReader);
     } catch (error) {
         const preserved: string[] = [];

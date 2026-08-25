@@ -1444,6 +1444,51 @@ describe('release inventory', () => {
         }
     });
 
+    it('does not admit same-inode same-size path-addressed bytes rewritten through the open seam', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-open-rewrite-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.txt';
+        const filePath = join(root, path);
+        const originalContents = 'original legal bytes';
+        const rewrittenContents = 'rewritten legal byte';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${sha256(rewrittenContents)}:${path}`];
+        let rewritten = false;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, originalContents);
+            utimesSync(filePath, new Date(0), new Date(0));
+            const before = lstatSync(filePath, { bigint: true });
+            const readFile: RepositorySnapshotFileReader = {
+                open(openPath, flags) {
+                    if (openPath === filePath && !rewritten) {
+                        writeFileSync(filePath, rewrittenContents);
+                        rewritten = true;
+                    }
+                    return openSync(openPath, flags);
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(rewritten).toBe(true);
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+            const after = lstatSync(filePath, { bigint: true });
+            expect(after.dev).toBe(before.dev);
+            expect(after.ino).toBe(before.ino);
+            expect(after.size).toBe(before.size);
+            expect(readFileSync(filePath, 'utf8')).toBe(rewrittenContents);
+            expect(after.mtimeNs).not.toBe(before.mtimeNs);
+            expect(after.ctimeNs).not.toBe(before.ctimeNs);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('does not admit scanned text when the file gains a hard link during read', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-read-link-'));
         const root = join(base, 'repository');

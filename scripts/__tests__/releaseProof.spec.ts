@@ -401,6 +401,32 @@ function writeWebBuild(fixture: Fixture, marker = 'current'): void {
     }
 }
 
+function rewriteSelfConsistentWebCandidate(candidate: string, marker: string): void {
+    const contents = join(candidate, 'web/contents');
+    const app = join(contents, 'assets/app.js');
+    write(app, `console.log("${marker}");`);
+    const manifestPath = join(contents, 'web-artifact-manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { files: Record<string, string> };
+    manifest.files['assets/app.js'] = hash(app);
+    writeJson(manifestPath, manifest);
+    const archive = join(candidate, 'web/sourdaw-web.zip');
+    const replacementArchive = join(dirname(candidate), `.${basename(candidate)}.rewritten-web.zip`);
+    rmSync(replacementArchive, { force: true });
+    execFileSync('zip', ['-X', '-q', replacementArchive, '-@'], {
+        cwd: contents,
+        input: `${listFixtureFiles(contents).join('\n')}\n`,
+    });
+    writeFileSync(archive, readFileSync(replacementArchive));
+    rmSync(replacementArchive);
+    const proofPath = join(candidate, 'release-proof.json');
+    const value = JSON.parse(readFileSync(proofPath, 'utf8')) as {
+        web: { archiveSha256: string; manifestSha256: string };
+    };
+    value.web.manifestSha256 = hash(manifestPath);
+    value.web.archiveSha256 = hash(archive);
+    writeJson(proofPath, value);
+}
+
 function rewriteDesktopArchive(fixture: Fixture, mutate: (root: string) => void): void {
     const value = proof(fixture);
     const archive = join(fixture.candidate, desktopProof(value).artifactPath as string);
@@ -1964,6 +1990,154 @@ describe('release proof', () => {
             )
         ).toThrow('release proof publication snapshot does not match the release-gated candidate');
         expect(prepared).toBe(true);
+        expect(publicationCallbacks).toBe(0);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('does not publish a self-consistent publication snapshot rewrite before semantic validation', () => {
+        const fixture = createFixture();
+        let prepared = false;
+        let publicationBudgetRequests = 0;
+        let rewritten = false;
+        let publicationCallbacks = 0;
+        const fileReader: ReleaseProofFileReader = {
+            get snapshotByteLimit() {
+                if (!prepared) {
+                    return RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes;
+                }
+                publicationBudgetRequests += 1;
+                if (publicationBudgetRequests === 2) {
+                    const publicationEntry = readdirSync(fixture.base).find((name) =>
+                        name.startsWith('.candidate.publication-')
+                    );
+                    if (publicationEntry === undefined) {
+                        throw new Error('publication snapshot was not created');
+                    }
+                    rewriteSelfConsistentWebCandidate(
+                        join(fixture.base, publicationEntry),
+                        'rewritten-before-semantic-validation'
+                    );
+                    rewritten = true;
+                }
+                return RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+        };
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+            prepared = true;
+            return prepareAtomicDirectoryPublisher((_request, runTrustedPublisher) => {
+                publicationCallbacks += 1;
+                return runTrustedPublisher();
+            });
+        };
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                fileReader,
+                publisherPreparer
+            )
+        ).toThrow('release proof publication snapshot does not match the release-gated candidate');
+        expect(rewritten).toBe(true);
+        expect(publicationCallbacks).toBe(0);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
+    it('writes the publication snapshot completely through short injected writes', () => {
+        const fixture = createFixture();
+        let prepared = false;
+        let publicationBudgetRequests = 0;
+        let publicationSnapshotWrites = 0;
+        let publicationCallbacks = 0;
+        const fileReader: ReleaseProofFileReader = {
+            get snapshotByteLimit() {
+                if (prepared) {
+                    publicationBudgetRequests += 1;
+                }
+                return RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            snapshotWrite(descriptor, buffer, offset, length) {
+                if (prepared && publicationBudgetRequests === 1) {
+                    publicationSnapshotWrites += 1;
+                }
+                return writeSync(descriptor, buffer, offset, Math.min(length, 7));
+            },
+        };
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+            prepared = true;
+            return prepareAtomicDirectoryPublisher((_request, runTrustedPublisher) => {
+                publicationCallbacks += 1;
+                return runTrustedPublisher();
+            });
+        };
+
+        assemble(
+            fixture,
+            fixtureBuildRunner(fixture),
+            () => undefined,
+            readReleaseInventory,
+            undefined,
+            fileReader,
+            publisherPreparer
+        );
+
+        expect(publicationSnapshotWrites).toBeGreaterThan(1);
+        expect(publicationCallbacks).toBe(1);
+        expect(validate(fixture)).toEqual('');
+    });
+
+    it.each([
+        ['zero', 0],
+        ['negative', -1],
+        ['fractional', 0.5],
+        ['over-remaining', Number.MAX_SAFE_INTEGER],
+    ] as const)('fails closed when publication snapshot writes report %s progress', (_label, progress) => {
+        const fixture = createFixture();
+        let prepared = false;
+        let publicationBudgetRequests = 0;
+        let publicationSnapshotWrites = 0;
+        let publicationCallbacks = 0;
+        const fileReader: ReleaseProofFileReader = {
+            get snapshotByteLimit() {
+                if (prepared) {
+                    publicationBudgetRequests += 1;
+                }
+                return RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            snapshotWrite(descriptor, buffer, offset, length) {
+                if (prepared && publicationBudgetRequests === 1) {
+                    publicationSnapshotWrites += 1;
+                    return progress;
+                }
+                return writeSync(descriptor, buffer, offset, length);
+            },
+        };
+        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+            prepared = true;
+            return prepareAtomicDirectoryPublisher((_request, runTrustedPublisher) => {
+                publicationCallbacks += 1;
+                return runTrustedPublisher();
+            });
+        };
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                fileReader,
+                publisherPreparer
+            )
+        ).toThrow('release proof candidate snapshot: missing or unsafe');
+        expect(publicationSnapshotWrites).toBeGreaterThan(0);
         expect(publicationCallbacks).toBe(0);
         expect(existsSync(fixture.candidate)).toBe(false);
     });
