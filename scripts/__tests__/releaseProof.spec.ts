@@ -1841,36 +1841,51 @@ describe('release proof', () => {
 
     it('never publishes a structurally valid tree swapped in after semantic validation', () => {
         const fixture = createFixture();
-        let publicationBudgetRequests = 0;
         let replacementVisible = false;
-        let swapped = false;
+        let publicationProofPath: string | undefined;
+        let publicationProofDescriptor: number | undefined;
+        let semanticProofReadCompleted = false;
+        let publicationProofReadSeamFired = false;
         const fileReader: ReleaseProofFileReader = {
-            get snapshotByteLimit() {
-                const publicationEntry = readdirSync(fixture.base).find(
-                    (name) =>
-                        name.startsWith('.candidate.publication-') &&
-                        existsSync(join(fixture.base, name, 'release-proof.json'))
-                );
-                if (publicationEntry !== undefined) {
-                    publicationBudgetRequests += 1;
+            open(path, flags) {
+                const descriptor = openSync(path, flags);
+                if (
+                    basename(path) === 'release-proof.json' &&
+                    basename(dirname(path)).startsWith('.candidate.publication-')
+                ) {
+                    publicationProofPath = path;
+                    publicationProofDescriptor = descriptor;
                 }
-                if (publicationEntry !== undefined && publicationBudgetRequests === 3) {
-                    write(join(fixture.base, publicationEntry, 'release-proof.json'), '{}\n');
-                    replacementVisible = existsSync(fixture.candidate);
-                    swapped = true;
-                }
-                return RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes;
+                return descriptor;
             },
-            open: (path, flags) => openSync(path, flags),
             noFollowFlag: () => constants.O_NOFOLLOW,
-            read: (descriptor, buffer, offset, length, position) =>
-                readSync(descriptor, buffer, offset, length, position),
+            read(descriptor, buffer, offset, length, position) {
+                const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                const isPublicationProof = descriptor === publicationProofDescriptor;
+                if (isPublicationProof && bytesRead === 0) {
+                    semanticProofReadCompleted = true;
+                }
+                if (
+                    isPublicationProof &&
+                    bytesRead > 0 &&
+                    semanticProofReadCompleted &&
+                    !publicationProofReadSeamFired
+                ) {
+                    if (publicationProofPath === undefined) {
+                        throw new Error('publication proof descriptor was not bound to its path');
+                    }
+                    write(publicationProofPath, '{}\n');
+                    replacementVisible = existsSync(fixture.candidate);
+                    publicationProofReadSeamFired = true;
+                }
+                return bytesRead;
+            },
         };
 
         expect(() =>
             assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, undefined, fileReader)
         ).toThrow('release proof publication candidate changed during semantic validation');
-        expect(swapped).toBe(true);
+        expect(publicationProofReadSeamFired).toBe(true);
         expect(replacementVisible).toBe(false);
         expect(existsSync(fixture.candidate)).toBe(false);
     });

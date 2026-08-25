@@ -1290,10 +1290,11 @@ describe('release inventory', () => {
         const path = 'public/legal/safe.ts';
         const filePath = join(root, path);
         const outsidePath = join(base, 'outside.ts');
+        const insideReference = 'https://inside.example.test/safe';
 
         try {
             mkdirSync(dirname(filePath), { recursive: true });
-            writeFileSync(filePath, "export const safe = 'inside';\n");
+            writeFileSync(filePath, `export const safe = '${insideReference}';\n`);
             writeFileSync(outsidePath, "export const escaped = 'https://outside.net';\n");
             let swapped = false;
             const readFile = {
@@ -1309,6 +1310,8 @@ describe('release inventory', () => {
 
             const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], readFile);
 
+            expect(swapped).toBe(true);
+            expect(changed.externalReferences).not.toContain(insideReference);
             expect(changed.externalReferences).toEqual([]);
         } finally {
             rmSync(base, { recursive: true, force: true });
