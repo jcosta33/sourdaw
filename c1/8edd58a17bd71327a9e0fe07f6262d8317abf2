@@ -1,0 +1,24 @@
+tests/e2e/e2eUtils.ts
+  s_a40848e8f8cca9::t_f73aafdb121f43 15,34,42,50,60-62,64-65
+tests/e2e/llmBadgeDownload.spec.ts
+  s_a40848e8f8cca9::t_f73aafdb121f43 3,5-6,11,32,34
+  s_a40848e8f8cca9::t_92958993a81e9f 7-9
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_a40848e8f8cca9::t_f73aafdb121f43 3,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c18edd58a17bd71327a9e0fe07f6262d8317abf2",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
