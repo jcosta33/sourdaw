@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { expectExternalProjectLink } from '../../__tests__/expectExternalProjectLink';
 import { MobileGate } from '../MobileGate';
 
 describe('MobileGate', () => {
@@ -92,12 +93,12 @@ describe('MobileGate — mobile view content', () => {
                 <span />
             </MobileGate>
         );
-        expect(screen.getByRole('link', { name: /Discussions/ })).toHaveAttribute(
-            'href',
+        expectExternalProjectLink(
+            screen.getByRole('link', { name: /Discussions/ }),
             'https://github.com/jcosta33/sourdaw/discussions'
         );
-        expect(screen.getByRole('link', { name: /Report a bug/ })).toHaveAttribute(
-            'href',
+        expectExternalProjectLink(
+            screen.getByRole('link', { name: /Report a bug/ }),
             'https://github.com/jcosta33/sourdaw/issues'
         );
     });

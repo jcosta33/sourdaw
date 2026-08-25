@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
+import { expectExternalProjectLink } from '../../__tests__/expectExternalProjectLink';
 import { AlphaNoticeDialog } from '../AlphaNoticeDialog';
 
 describe('AlphaNoticeDialog', () => {
@@ -26,12 +27,12 @@ describe('AlphaNoticeDialog', () => {
     it('routes feedback and bug reports to GitHub', () => {
         render(<AlphaNoticeDialog open onOpenChange={vi.fn()} />);
 
-        expect(screen.getByRole('link', { name: /Discussions/ })).toHaveAttribute(
-            'href',
+        expectExternalProjectLink(
+            screen.getByRole('link', { name: /Discussions/ }),
             'https://github.com/jcosta33/sourdaw/discussions'
         );
-        expect(screen.getByRole('link', { name: /Report a bug/ })).toHaveAttribute(
-            'href',
+        expectExternalProjectLink(
+            screen.getByRole('link', { name: /Report a bug/ }),
             'https://github.com/jcosta33/sourdaw/issues'
         );
     });

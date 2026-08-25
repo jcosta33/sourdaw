@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { expectExternalProjectLink } from '../../__tests__/expectExternalProjectLink';
 import { StatusBar } from '../StatusBar';
 
 const undoState = vi.hoisted(() => ({
@@ -272,16 +273,16 @@ describe('StatusBar', () => {
                 expect(screen.getByRole('menuitem', { name: 'Source' })).toBeInTheDocument();
             });
 
-            expect(screen.getByRole('menuitem', { name: 'Source' })).toHaveAttribute(
-                'href',
+            expectExternalProjectLink(
+                screen.getByRole('menuitem', { name: 'Source' }),
                 'https://github.com/jcosta33/sourdaw'
             );
-            expect(screen.getByRole('menuitem', { name: 'Discussions' })).toHaveAttribute(
-                'href',
+            expectExternalProjectLink(
+                screen.getByRole('menuitem', { name: 'Discussions' }),
                 'https://github.com/jcosta33/sourdaw/discussions'
             );
-            expect(screen.getByRole('menuitem', { name: 'Report a bug' })).toHaveAttribute(
-                'href',
+            expectExternalProjectLink(
+                screen.getByRole('menuitem', { name: 'Report a bug' }),
                 'https://github.com/jcosta33/sourdaw/issues'
             );
         });
