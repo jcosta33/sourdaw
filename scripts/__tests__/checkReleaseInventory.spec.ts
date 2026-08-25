@@ -1,6 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    constants,
+    linkSync,
+    mkdirSync,
+    mkdtempSync,
+    openSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +39,6 @@ import {
     assertProjectLicenseDistributionReleaseInventory,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
-    assertDdspReleaseInventory,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
     DDSP_ADMISSION_DECISION_PATH,
@@ -84,9 +93,75 @@ const ddspModelEnforcementPaths = [
     'src/modules/BrowserAi/useCases/removeModel.ts',
     'src/modules/BrowserAi/useCases/renderDdspInstrument.ts',
 ] as const;
+const WEBLLM_SURFACE_ID = 'webllm-qwen-artifacts';
+const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
+const WEBLLM_LEGAL_CLOSURE_DIGEST = '29ae9a90a1fe893c5a57581377e127a041af4ee3cc392e388da8c1f042279bc0';
+const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
+const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+}
+
+function expectedApacheTvmRawSource(path: string): string {
+    const apacheTvmPrefix = 'public/legal/Apache-TVM/';
+    const tvmFfiPrefix = `${apacheTvmPrefix}3rdparty/tvm-ffi/`;
+    if (path.startsWith(tvmFfiPrefix)) {
+        return `https://raw.githubusercontent.com/apache/tvm-ffi/${TVM_FFI_COMMIT}/${path.slice(tvmFfiPrefix.length)}`;
+    }
+    return `https://raw.githubusercontent.com/apache/tvm/${APACHE_TVM_COMMIT}/${path.slice(apacheTvmPrefix.length)}`;
+}
+
+function isConcreteWebLlmLegalPath(path: string): boolean {
+    return path.startsWith(WEBLLM_LEGAL_PATH_PREFIX) && !path.endsWith('/');
+}
+
+function webLlmLegalSourceBuckets(sources: readonly string[]): Record<string, string[]> {
+    return {
+        apacheTvmRaw: sources
+            .filter(
+                (source) =>
+                    source.startsWith('https://raw.githubusercontent.com/apache/tvm/') ||
+                    source.startsWith('https://raw.githubusercontent.com/apache/tvm-ffi/')
+            )
+            .sort(),
+        mlcLlmNotice: sources.filter((source) => source.startsWith('https://github.com/mlc-ai/mlc-llm/tree/')).sort(),
+        qwenLicenseSet: sources.filter((source) => source.startsWith('https://huggingface.co/Qwen/')).sort(),
+        webLlmLicense: sources.filter((source) => source.startsWith('https://github.com/mlc-ai/web-llm/blob/')).sort(),
+    };
+}
+
+function webLlmLegalSourceKinds(path: string): string[] {
+    if (path.startsWith('public/legal/Apache-TVM/')) {
+        return ['apacheTvmRaw'];
+    }
+    if (path === 'public/legal/MLC-LLM-NOTICE.txt') {
+        return ['mlcLlmNotice'];
+    }
+    if (path === 'public/legal/Qwen-NOTICE.txt') {
+        return ['qwenLicenseSet'];
+    }
+    if (path === 'public/legal/Apache-2.0.txt') {
+        return ['webLlmLicense'];
+    }
+    if (path === 'public/legal/THIRD-PARTY-NOTICES.md') {
+        return ['apacheTvmRaw', 'mlcLlmNotice', 'qwenLicenseSet', 'webLlmLicense'];
+    }
+    throw new Error(`unexpected WebLLM legal path in oracle: ${path}`);
+}
+
+function webLlmLegalClosureOracle() {
+    const surface = readReleaseInventory(repositoryRoot).surfaces.find(({ id }) => id === WEBLLM_SURFACE_ID);
+    if (surface === undefined) {
+        throw new Error(`missing ${WEBLLM_SURFACE_ID} surface`);
+    }
+    const legalPaths = surface.paths.filter(isConcreteWebLlmLegalPath).sort();
+    return {
+        legalPaths,
+        sourceBuckets: webLlmLegalSourceBuckets(surface.sources),
+        pathSourceKinds: Object.fromEntries(legalPaths.map((path) => [path, webLlmLegalSourceKinds(path)])),
+        pathDigests: surface.digests.filter((digest) => /^sha256:[0-9a-f]{64}:public\/legal\//u.test(digest)).sort(),
+    };
 }
 
 function writeDdspModelContractFixture(root: string, manifest: string): void {
@@ -734,101 +809,535 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes both DDSP contracts in production before later release validation', () => {
-        const liveInventory = JSON.parse(
-            readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
-        ) as ReleaseInventory;
-        const laterValidationSentinel = new Error('later release validation sentinel');
-        let laterValidationCalls = 0;
-        const validate = (inventory: ReleaseInventory) =>
-            checkReleaseInventory(repositoryRoot, {
-                projectLicensePreflight() {},
-                readInventory() {
-                    return inventory;
-                },
-                afterDdspValidation() {
-                    laterValidationCalls += 1;
-                    throw laterValidationSentinel;
-                },
-            });
-
-        expect(() => validate(liveInventory)).toThrow(laterValidationSentinel);
-        for (const { id, label, mutate } of [
-            {
-                id: 'ddsp-tfjs-runtime',
-                label: 'DDSP TF.js runtime',
-                mutate: (inventory: ReleaseInventory) => {
-                    inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-tfjs-runtime');
-                },
-            },
-            {
-                id: 'ddsp-tfjs-runtime',
-                label: 'DDSP TF.js runtime',
-                mutate: (inventory: ReleaseInventory) => {
-                    inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime')!.kind = 'hostile';
-                },
-            },
-            {
-                id: 'ddsp-models',
-                label: 'DDSP models',
-                mutate: (inventory: ReleaseInventory) => {
-                    inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-models');
-                },
-            },
-            {
-                id: 'ddsp-models',
-                label: 'DDSP models',
-                mutate: (inventory: ReleaseInventory) => {
-                    inventory.surfaces.find((surface) => surface.id === 'ddsp-models')!.kind = 'hostile';
-                },
-            },
-        ]) {
-            const mutated = structuredClone(liveInventory);
-            mutate(mutated);
-            expect(() => validate(mutated), id).toThrow(`${label} release inventory kind does not match provenance`);
-        }
-        expect(laterValidationCalls).toBe(1);
+    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 10_000 }, () => {
+        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
-    it.each([
-        {
-            id: 'ddsp-tfjs-runtime',
-            label: 'DDSP TF.js runtime',
-            mutate: (inventory: ReleaseInventory) => {
-                inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-tfjs-runtime');
-            },
-        },
-        {
-            id: 'ddsp-tfjs-runtime',
-            label: 'DDSP TF.js runtime',
-            mutate: (inventory: ReleaseInventory) => {
-                inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime')!.kind = 'hostile';
-            },
-        },
-        {
-            id: 'ddsp-models',
-            label: 'DDSP models',
-            mutate: (inventory: ReleaseInventory) => {
-                inventory.surfaces = inventory.surfaces.filter((surface) => surface.id !== 'ddsp-models');
-            },
-        },
-        {
-            id: 'ddsp-models',
-            label: 'DDSP models',
-            mutate: (inventory: ReleaseInventory) => {
-                inventory.surfaces.find((surface) => surface.id === 'ddsp-models')!.kind = 'hostile';
-            },
-        },
-    ])('directly rejects absent or malformed %s release inventory surfaces', ({ id, label, mutate }) => {
-        const liveInventory = JSON.parse(
+    it('pins the WebLLM legal closure to exact paths, source buckets, and path-addressed digests', () => {
+        expect(sha256(JSON.stringify(webLlmLegalClosureOracle()))).toBe(WEBLLM_LEGAL_CLOSURE_DIGEST);
+    });
+
+    it('binds every admitted Apache-TVM legal file to its immutable source bytes and public notice link', () => {
+        const inventory = JSON.parse(
             readFileSync(join(repositoryRoot, 'release/open-source-inventory.json'), 'utf8')
         ) as ReleaseInventory;
-        const mutated = structuredClone(liveInventory);
-        mutate(mutated);
+        const surface = inventory.surfaces.find(({ id }) => id === WEBLLM_SURFACE_ID);
+        const notice = readFileSync(join(repositoryRoot, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
+        const apacheTvmPaths =
+            surface?.paths.filter((path) => path.startsWith('public/legal/Apache-TVM/') && !path.endsWith('/')) ?? [];
 
-        expect(() => assertDdspReleaseInventory(repositoryRoot, mutated), id).toThrow(
-            `${label} release inventory kind does not match provenance`
+        expect(surface).toBeDefined();
+        expect(apacheTvmPaths).toEqual(
+            expect.arrayContaining([
+                'public/legal/Apache-TVM/LICENSE',
+                'public/legal/Apache-TVM/NOTICE',
+                'public/legal/Apache-TVM/3rdparty/tvm-ffi/LICENSE',
+                'public/legal/Apache-TVM/3rdparty/tvm-ffi/NOTICE',
+            ])
         );
+
+        for (const path of apacheTvmPaths) {
+            const fileSha = createHash('sha256')
+                .update(readFileSync(join(repositoryRoot, path)))
+                .digest('hex');
+            expect(surface?.sources).toContain(expectedApacheTvmRawSource(path));
+            expect(surface?.digests).toContain(`sha256:${fileSha}:${path}`);
+            expect(notice).toContain(`(./${path.replace('public/legal/', '')})`);
+        }
+    });
+
+    it('should reject nested tvm-ffi legal byte drift', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        const changed = snapshot();
+        changed.releaseFiles.push(path);
+        changed.fileDigests[path] = 'b'.repeat(64);
+
+        expect(validateReleaseInventory(value, changed)).toContain(`runtime: path-addressed digest drifted: ${path}`);
+    });
+
+    it('should reject a path-addressed digest with a mistyped repository path', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpak.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        expect(validateReleaseInventory(value, snapshot())).toContain(
+            `runtime: path-addressed digest target is missing or untracked: ${path}`
+        );
+    });
+
+    it('rejects non-canonical path-addressed digest paths before snapshotting them', () => {
+        const value = inventory();
+        const paths = [
+            '/outside-root.txt',
+            'public/legal/../outside.txt',
+            'public//legal/notice.txt',
+            'C:public/legal/Qwen-NOTICE.txt',
+            'C:\\outside.txt',
+            '\\\\server\\share\\notice.txt',
+            'public\\legal\\notice.txt',
+        ];
+        value.surfaces[0]!.digests = paths.map((path) => `sha256:${fixtureDigest}:${path}`);
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-noncanonical-'));
+
+        try {
+            writeFileSync(join(root, 'provider.ts'), 'provider');
+            const changed = loadRepositorySnapshot(root, value, ['provider.ts']);
+
+            for (const path of paths) {
+                expect(changed.fileDigests[path]).toBeUndefined();
+            }
+            expect(validateReleaseInventory(value, changed)).toEqual(
+                expect.arrayContaining(
+                    paths.map((path) => `runtime: path-addressed digest path must be normalized and relative: ${path}`)
+                )
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read unsafe or untracked path-addressed digest targets', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-unreadable-digest-'));
+        const root = join(base, 'repository');
+        const trackedPath = 'provider.ts';
+        const unsafePath = '../outside.txt';
+        const untrackedPath = 'public/legal/untracked.txt';
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${unsafePath}`, `sha256:${fixtureDigest}:${untrackedPath}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [],
+        };
+
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            mkdirSync(dirname(join(root, untrackedPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(base, 'outside.txt'), 'outside');
+            writeFileSync(join(root, untrackedPath), 'untracked');
+            let digestReads = 0;
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    digestReads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
+
+            expect(digestReads).toBe(0);
+            expect(changed.fileDigests[unsafePath]).toBeUndefined();
+            expect(changed.fileDigests[untrackedPath]).toBeUndefined();
+            expect(validateReleaseInventory(value, changed)).toEqual(
+                expect.arrayContaining([
+                    `runtime: path-addressed digest path must be normalized and relative: ${unsafePath}`,
+                    `runtime: path-addressed digest target is missing or untracked: ${untrackedPath}`,
+                ])
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read a tracked scan-eligible path-addressed digest symlink outside the repository', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-symlink-digest-'));
+        const root = join(base, 'repository');
+        const trackedPath = 'provider.ts';
+        const symlinkPath = 'public/legal/escaped.ts';
+        const markSymlinkPath = 'public/legal/escaped.md';
+        const outsidePath = join(base, 'outside.ts');
+        const outsideMarkPath = join(base, 'outside.md');
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath, symlinkPath, markSymlinkPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${symlinkPath}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [{ value: 'UnsafeMark', paths: [markSymlinkPath] }],
+        };
+
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            mkdirSync(dirname(join(root, symlinkPath)), { recursive: true });
+            mkdirSync(dirname(join(root, markSymlinkPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(outsidePath, "export const escaped = 'https://outside.example';\n");
+            writeFileSync(outsideMarkPath, 'UnsafeMark');
+            symlinkSync(outsidePath, join(root, symlinkPath));
+            symlinkSync(outsideMarkPath, join(root, markSymlinkPath));
+            const forbiddenReads: string[] = [];
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    const contents = readFileSync(fileDescriptor, 'utf8');
+                    if (contents.includes('outside')) {
+                        forbiddenReads.push(contents);
+                    }
+                    return Buffer.from(contents);
+                },
+                readText: (fileDescriptor: number) => {
+                    const contents = readFileSync(fileDescriptor, 'utf8');
+                    if (contents.includes('outside') || contents.includes('UnsafeMark')) {
+                        forbiddenReads.push(contents);
+                    }
+                    return contents;
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [trackedPath, symlinkPath, markSymlinkPath], readFile);
+
+            expect(forbiddenReads).toEqual([]);
+            expect(changed.externalReferences).toEqual([]);
+            expect(changed.fileDigests[symlinkPath]).toBe('missing');
+            expect(changed.markPaths.UnsafeMark).toEqual([]);
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read a tracked path-addressed digest symlink contained by the repository', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-contained-symlink-digest-'));
+        const root = join(base, 'repository');
+        const symlinkPath = 'public/legal/contained.txt';
+        const targetPath = join(root, 'public/legal/target.txt');
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${symlinkPath}`];
+
+        try {
+            mkdirSync(dirname(targetPath), { recursive: true });
+            writeFileSync(targetPath, 'contained legal bytes');
+            symlinkSync(targetPath, join(root, symlinkPath));
+            let opens = 0;
+            let byteReads = 0;
+            let textReads = 0;
+            const readFile = {
+                open: (path: string) => {
+                    opens += 1;
+                    return openSync(path, constants.O_RDONLY);
+                },
+                readBytes: (fileDescriptor: number) => {
+                    byteReads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => {
+                    textReads += 1;
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [symlinkPath], readFile);
+
+            expect(opens).toBe(0);
+            expect(byteReads).toBe(0);
+            expect(textReads).toBe(0);
+            expect(changed.fileDigests[symlinkPath]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a contained symlink substituted between the precheck and open', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-symlink-swap-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const targetPath = join(root, 'public/legal/target.txt');
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'contained legal bytes');
+            linkSync(filePath, targetPath);
+            const readFile = {
+                open: (openPath: string) => {
+                    rmSync(filePath);
+                    symlinkSync(targetPath, filePath);
+                    return openSync(openPath, constants.O_RDONLY);
+                },
+                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('reads scanned text from its opened file when the path swaps to an outside symlink', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-swap-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.ts';
+        const filePath = join(root, path);
+        const outsidePath = join(base, 'outside.ts');
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, "export const safe = 'inside';\n");
+            writeFileSync(outsidePath, "export const escaped = 'https://outside.net';\n");
+            const readFile = {
+                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
+                readText: (fileDescriptor: number) => {
+                    rmSync(filePath);
+                    symlinkSync(outsidePath, filePath);
+                    return readFileSync(fileDescriptor, 'utf8');
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], readFile);
+
+            expect(changed.externalReferences).toEqual([]);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('reads path-addressed digest bytes from its opened file when the path swaps to an outside symlink', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-byte-swap-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.txt';
+        const filePath = join(root, path);
+        const outsidePath = join(base, 'outside.txt');
+        const safeContents = 'inside legal bytes';
+        const outsideContents = 'outside legal bytes';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${sha256(safeContents)}:${path}`];
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, safeContents);
+            writeFileSync(outsidePath, outsideContents);
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    rmSync(filePath);
+                    symlinkSync(outsidePath, filePath);
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe(sha256(safeContents));
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read non-canonical or untracked snapshot paths', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-unsafe-snapshots-'));
+        const root = join(base, 'repository');
+        const trackedPath = 'provider.ts';
+        const unsafePath = '../outside.txt';
+        const untrackedPath = 'public/legal/untracked.txt';
+        const value = inventory();
+        value.surfaces = [];
+        value.snapshots = [
+            { path: unsafePath, sha256: fixtureDigest },
+            { path: untrackedPath, sha256: fixtureDigest },
+        ];
+
+        try {
+            mkdirSync(dirname(join(root, untrackedPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(base, 'outside.txt'), 'outside');
+            writeFileSync(join(root, untrackedPath), 'untracked');
+            let digestReads = 0;
+            const readFile = {
+                readBytes: (fileDescriptor: number) => {
+                    digestReads += 1;
+                    return readFileSync(fileDescriptor);
+                },
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
+
+            expect(digestReads).toBe(0);
+            expect(changed.fileDigests[unsafePath]).toBeUndefined();
+            expect(changed.fileDigests[untrackedPath]).toBeUndefined();
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not open an untracked required snapshot path', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-required-snapshot-'));
+        const trackedPath = 'provider.ts';
+        const requiredPath = REQUIRED_SNAPSHOT_PATHS[0];
+
+        try {
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(root, requiredPath), 'untracked required snapshot');
+            let opens = 0;
+            const readFile = {
+                open: (path: string) => {
+                    opens += 1;
+                    return openSync(path, constants.O_RDONLY);
+                },
+                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
+                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+            };
+
+            const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [trackedPath], readFile);
+
+            expect(opens).toBe(0);
+            expect(changed.fileDigests[requiredPath]).toBeUndefined();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('should reject a path-addressed digest whose tracked file was deleted', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const trackedPath = 'src/provider.ts';
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-loader-'));
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${path}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [],
+        };
+
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            const changed = loadRepositorySnapshot(root, value, [trackedPath, path]);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('records the actual SHA-256 for an existing path-addressed digest target introduced by a surface digest', () => {
+        const path = 'public/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt';
+        const trackedPath = 'src/provider.ts';
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-loader-'));
+        const value: ReleaseInventory = {
+            schemaVersion: 1,
+            surfaces: [
+                {
+                    id: 'runtime',
+                    kind: 'source',
+                    retention: 'keep',
+                    owner: 'OS-01',
+                    releaseModes: ['source'],
+                    paths: [trackedPath],
+                    sources: ['git:example/repository'],
+                    revisions: ['deadbeef'],
+                    digests: [`sha256:${fixtureDigest}:${path}`],
+                    licenses: ['Apache-2.0'],
+                    productSurfaces: ['source distribution'],
+                    evidence: ['package.json'],
+                    obligations: ['Preserve attribution.'],
+                },
+            ],
+            snapshots: [],
+            externalReferences: [],
+            marks: [],
+        };
+
+        try {
+            mkdirSync(dirname(join(root, trackedPath)), { recursive: true });
+            mkdirSync(dirname(join(root, path)), { recursive: true });
+            writeFileSync(join(root, trackedPath), 'provider');
+            writeFileSync(join(root, path), 'dlpack license');
+            const changed = loadRepositorySnapshot(root, value, [trackedPath, path]);
+
+            expect(changed.fileDigests[path]).toBe(sha256('dlpack license'));
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('should ignore semantic and remote artifact digest labels', () => {
+        const value = inventory();
+        value.surfaces[0]!.digests = [
+            `sha256:${fixtureDigest}:5566554:public/icon.png`,
+            `sha256:${fixtureDigest}:bytes:5566554:https://models.example/public/icon.png`,
+            `sha256:${fixtureDigest}:@runtime-license`,
+        ];
+        const changed = snapshot();
+        changed.fileDigests['public/icon.png'] = 'b'.repeat(64);
+
+        expect(validateReleaseInventory(value, changed)).toEqual([]);
+    });
+
+    it('should ignore git-addressed digest labels', () => {
+        const value = inventory();
+        value.surfaces[0]!.digests = [
+            `sha256:${fixtureDigest}:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt`,
+        ];
+
+        expect(validateReleaseInventory(value, snapshot())).toEqual([]);
+    });
+
+    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 10_000 }, () => {
+        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
@@ -1539,14 +2048,20 @@ describe('release inventory', () => {
         );
     });
 
-    it('runs the project-license preflight before loading the inventory', () => {
+    it('passes the captured inventory marker scan to the project-license preflight', () => {
         let called = false;
+        const capturedInventory = inventory();
 
         expect(() =>
-            checkReleaseInventory('/inventory-is-not-read', () => {
-                called = true;
-                throw new Error('project license preflight sentinel');
-            })
+            checkReleaseInventory(
+                '/inventory-is-not-read',
+                (_root, inventoryContents) => {
+                    called = true;
+                    expect(inventoryContents).toBe(JSON.stringify(capturedInventory));
+                    throw new Error('project license preflight sentinel');
+                },
+                capturedInventory
+            )
         ).toThrow('project license preflight sentinel');
         expect(called).toBe(true);
     });

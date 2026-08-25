@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { getDeviceManifestProtocolContract } from '#/modules/Arrangement/useCases';
+
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 describe('agent protocol versioning', () => {
@@ -20,6 +22,7 @@ describe('agent protocol versioning', () => {
             'external-adapter',
         ]);
         expect(new Set(manifest.map(({ id }) => id)).size).toBe(manifest.length);
+        expect(manifest.find(({ id }) => id === 'device-manifest')).toEqual(getDeviceManifestProtocolContract());
         expect(
             manifest.find(({ id }) => id === 'device-manifest')?.operations.some(({ name }) => name === 'grand-boule')
         ).toBe(true);

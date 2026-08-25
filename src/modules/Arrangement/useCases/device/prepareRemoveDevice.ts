@@ -1,5 +1,6 @@
 import { clearReportedLatency, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
@@ -17,7 +18,10 @@ type PreparedRemoveDeviceEffects = {
     afterAmbiguousCommit: () => Promise<void>;
 };
 
-export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcome | PreparedRemoveDeviceEffects {
+export function prepareRemoveDevice(
+    deviceId: string,
+    batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>
+): PrepareRemoveDeviceOutcome | PreparedRemoveDeviceEffects {
     const state = getTrackState();
     if (!state) {
         return 'missing';
@@ -106,6 +110,7 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
                     before: beforeTrack,
                     after: afterTrack,
                     operation: 'remove-device',
+                    batchContext,
                 });
                 // A superseded delta is void, not stale: a later action in this
                 // same commit removed the host track, so the runtime end state

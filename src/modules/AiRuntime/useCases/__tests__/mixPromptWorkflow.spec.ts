@@ -42,13 +42,6 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import {
-    createHostedSemanticListPlanningResponder,
-    createProviderSemanticListPlanningResponder,
-    decodeHostedProviderUserMessage,
-    type ProviderPlanCall,
-    type SemanticCommandListItem,
-} from './providerToolPlanningFixture';
 
 const PROMPT =
     'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
@@ -59,6 +52,8 @@ const providerPlan = [
     { name: 'setTrackPan', arguments: { trackId: 'track-guitar-right', pan: 20 } },
     { name: 'muteTrack', arguments: { trackId: 'track-room-mic', muted: true } },
 ] as const;
+
+type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -118,6 +113,11 @@ const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
+};
+
+const notificationEventBus = {
+    emit: vi.fn(() => Promise.resolve()),
+    on: vi.fn(() => () => undefined),
 };
 
 function createTrack(id: string, name: string): Track {
@@ -180,50 +180,172 @@ function getHostedRequestBody(): string {
     return body;
 }
 
-function createProviderList(plan: readonly ProviderPlanCall[]): SemanticCommandListItem[] {
-    const trackNames = new Map([
-        ['track-lead-vocal', 'Lead Vocal'],
-        ['track-guitar-left', 'Guitar Left'],
-        ['track-guitar-right', 'Guitar Right'],
-        ['track-room-mic', 'Room Mic'],
-        ['track-drum-bus', 'Drum Bus'],
-    ]);
-    return plan.map((call, index) => {
-        const { trackId, ...argumentsWithoutTrackId } = call.arguments;
-        const trackName = typeof trackId === 'string' ? trackNames.get(trackId) : undefined;
-        if (trackName === undefined) {
-            throw new TypeError('Expected an exact mix fixture target');
-        }
-        return {
-            id: `mix-command-${String(index + 1)}`,
-            name: call.name,
-            arguments: argumentsWithoutTrackId,
-            selector: {
-                targetArgument: 'trackId',
-                entity: 'track',
-                where: { name: trackName },
-                quantity: { unit: 'targets', exactly: 1 },
-            },
-            ...(index === 0 ? {} : { dependsOn: [`mix-command-${String(index)}`] }),
-        };
-    });
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function setProviderPlan(plan: readonly ProviderPlanCall[]): void {
-    const scope = {
-        targetIds: plan.flatMap((call) => (typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : [])),
-        targetRanges: [],
-        protectedTargetIds: ['track-drum-bus'],
-        protectedRanges: [],
-    };
-    const webResponder = createProviderSemanticListPlanningResponder(createProviderList(plan), scope);
-    const hostedResponder = createHostedSemanticListPlanningResponder(createProviderList(plan), scope);
-    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-        Promise.resolve(webResponder(userMessage))
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Apply the exact requested mix changes while preserving the Drum Bus.',
+                    constraints: ['Leave the Drum Bus unchanged.'],
+                    scope: {
+                        targetIds: [
+                            ...new Set(
+                                plan.flatMap((call) =>
+                                    typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+                                )
+                            ),
+                        ],
+                        targetRanges: [],
+                        protectedTargetIds: ['track-drum-bus'],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: [...new Set(plan.map((call) => call.name))],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate exact track identities, values, and protected Drum Bus state.'],
+                    stoppingConditions: ['Stop if any target or protected-state precondition fails.'],
+                },
+            },
+        },
+    ];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!Array.isArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
     );
-    runtimeMocks.fetch.mockImplementation(async (_input, init) =>
-        hostedResponder(decodeHostedProviderUserMessage(init))
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const lines = String(receiptSummary.summary.value).split('\n');
+    const parsed: unknown = JSON.parse(lines.at(-1) ?? '');
+    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchemas(userMessage: string, names: readonly string[]): void {
+    const discovery = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
     );
+    if (
+        !isRecord(discovery) ||
+        discovery.status !== 'success' ||
+        discovery.turn !== 1 ||
+        !isRecord(discovery.data) ||
+        discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discovery.data.schemaVersion !== 1 ||
+        discovery.data.category !== 'command' ||
+        discovery.data.truncated !== false ||
+        !Array.isArray(discovery.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const disclosedNames = new Set(
+        discovery.data.items.flatMap((item) =>
+            isRecord(item) && isRecord(item.function) && typeof item.function.name === 'string'
+                ? [item.function.name]
+                : []
+        )
+    );
+    for (const name of names) {
+        if (!disclosedNames.has(name)) {
+            throw new TypeError(`Expected disclosed command schema for ${name}`);
+        }
+    }
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function setProviderPlan(plan: readonly ProviderCall[]): void {
+    const names = [...new Set(plan.map((call) => call.name))];
+    let webLlmTurn = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+        webLlmTurn += 1;
+        if (webLlmTurn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (webLlmTurn === 1) {
+            return Promise.resolve(
+                JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        assertDiscoveredCommandSchemas(userMessage, names);
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan)));
+    });
+    let hostedTurn = 0;
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        hostedTurn += 1;
+        if (hostedTurn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        if (hostedTurn === 1) {
+            return Promise.resolve(
+                toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
+        }
+        const request: unknown = JSON.parse(init.body);
+        const userMessage =
+            isRecord(request) && Array.isArray(request.messages)
+                ? request.messages.find(
+                      (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
+                  )
+                : undefined;
+        if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
+            throw new TypeError('Expected hosted provider user message');
+        }
+        assertDiscoveredCommandSchemas(userMessage.content, names);
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan)));
+    });
 }
 
 function expectExactMix(): void {
@@ -239,9 +361,10 @@ function expectExactMix(): void {
 
 describe('mix prompt workflow', () => {
     beforeEach(async () => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        setProviderPlan(providerPlan);
+        setProviderPlan(providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })));
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -257,14 +380,13 @@ describe('mix prompt workflow', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
-        configureAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus(notificationEventBus);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const tracks = [
             createTrack('track-lead-vocal', 'Lead Vocal'),
@@ -300,7 +422,6 @@ describe('mix prompt workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState });
@@ -466,6 +587,7 @@ describe('mix prompt workflow', () => {
         });
         runtimeMocks.mutes.set('track-room-mic', collaboratorMuted);
         const pastBeforeConflict = structuredClone(undoStore.value?.past);
+        notificationEventBus.emit.mockClear();
 
         await undo();
 
@@ -473,6 +595,10 @@ describe('mix prompt workflow', () => {
         expect(runtimeMocks.mutes.get('track-room-mic')).toBe(collaboratorMuted);
         expect(undoStore.value?.past).toEqual(pastBeforeConflict);
         expect(undoStore.value?.future).toEqual([]);
+        expect(notificationEventBus.emit).toHaveBeenCalledWith(
+            'ui.notify',
+            expect.objectContaining({ level: 'warning' })
+        );
 
         trackStore.set({
             ...trackStore.value!,

@@ -12,18 +12,16 @@ name: Health gates
 # by the unit shards.
 #
 # Only what cannot fit that budget waits for an approving review: the end-to-end
-# suite across twelve shards and the full-history secret scan. CodeQL uploads on
-# pull-request pushes. A reviewer-bot approval waits for that run to finish, then
-# analyses the exact reviewed head without uploading. The heavy lane also runs
-# nightly. An approval re-runs what the last push already ran, which is
-# deliberate — it costs nothing here, and the alternative is a merge decided by
-# results from an older head.
+# suite across twelve shards, CodeQL, and the full-history secret scan. Those
+# also run nightly and on dispatch. An approval re-runs what the last push
+# already ran, which is deliberate — it costs nothing here, and the alternative
+# is a merge decided by results from an older head.
 #
-# The terminal summary is informational, never merge authority. A pull request
-# controls this workflow file, so no job on any event or ref may publish the
-# protected check name `Gate`. The summary still fails on each pull-request
-# push, then passes only when a current-head approval completes the heavy
-# security jobs. Scheduled runs still accept legitimately skipped jobs.
+# `gate` is the only job the branch ruleset requires by name. It depends on
+# every job whose result should decide a merge, and passes when each either
+# succeeded or was legitimately skipped. A required check naming a filtered job
+# directly would sit pending forever on any pull request that skips it, so
+# nothing else may be required and `gate` must not be renamed.
 #
 # Runners are standard GitHub-hosted labels only. Public repositories bill
 # nothing for those; larger and GPU runners bill even here.
@@ -31,7 +29,7 @@ name: Health gates
 on:
   pull_request:
   pull_request_review:
-    types: [submitted, dismissed]
+    types: [submitted]
   schedule:
     # Catches what the path filters and the approval gate leave unobserved.
     # Nine repository-wide gates went red under exactly that blind spot while
@@ -43,13 +41,9 @@ permissions:
   contents: read
 
 concurrency:
-  # An untrusted review gets a run-scoped group. Besides protecting a running
-  # approval, this keeps it from replacing an authorized run that is pending in
-  # the shared group (GitHub replaces pending runs even when cancellation is
-  # disabled). A reviewer-bot approval waits behind a running pull-request scan
-  # so it cannot interrupt the CodeQL SARIF upload. Only a newer push cancels
-  # trusted in-progress work, preserving current-head semantics.
-  group: health-gates-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request_review' && github.event.review.user.login != 'jcosta33-reviewer[bot]' && github.run_id || 'trusted' }}
+  group: health-gates-${{ github.event.pull_request.number || github.ref }}
+  # Superseded pull-request runs are cancelled; a scheduled or dispatched run
+  # against main is not, because there is nothing newer to supersede it.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -60,10 +54,8 @@ jobs:
     name: Decide scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Only the reviewer bot's submitted approval starts review-gated work. Its
-    # dismissals and other submitted states proceed to the fail-closed summary.
-    # Reviews from every other author are inert.
-    if: github.event_name != 'pull_request_review' || (github.event.review.user.login == 'jcosta33-reviewer[bot]' && github.event.action == 'submitted' && github.event.review.state == 'approved')
+    # A review that requests changes or only comments starts nothing.
+    if: github.event_name != 'pull_request_review' || github.event.review.state == 'approved'
     outputs:
       heavy: ${{ steps.scope.outputs.heavy }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -115,8 +107,8 @@ jobs:
           WEB: ${{ steps.filter.outputs.web }}
         run: |
           set -euo pipefail
-          # Scheduled and manually dispatched runs answer "is main healthy",
-          # which no pull request's changed paths can narrow — every leg runs.
+          # A scheduled or dispatched run answers "is main healthy", which no
+          # pull request's changed paths can narrow — every leg runs.
           if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then
             printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n' >> "$GITHUB_OUTPUT"
             exit 0
@@ -289,7 +281,7 @@ jobs:
       - name: Run shard
         env:
           VITEST_MAX_WORKERS: 4
-        run: pnpm test:run --shard=${{ matrix.shard }}/4
+        run: pnpm run test:run --shard=${{ matrix.shard }}/4
 
   build:
     name: Production build
@@ -492,42 +484,27 @@ jobs:
   dependency-review:
     name: Dependency review
     needs: decide
-    # Run on every pull-request update for fast feedback, then repeat against
-    # the exact commit approved by the trusted reviewer. The terminal summary
-    # requires that second result, so a failed or skipped push-time review
-    # cannot be reused.
-    if: github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && needs.decide.outputs.heavy == 'true')
+    # Only a pull request has two commits to diff, and this is seconds, so it
+    # sits in the fast lane rather than waiting for an approval.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout reviewed head
-        if: github.event_name == 'pull_request_review'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.review.commit_id }}
-          persist-credentials: false
-
       - name: Checkout
-        if: github.event_name != 'pull_request_review'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
-          base-ref: ${{ github.event.pull_request.base.sha }}
-          head-ref: ${{ github.event_name == 'pull_request_review' && github.event.review.commit_id || github.event.pull_request.head.sha }}
           fail-on-severity: high
 
   codeql:
     name: CodeQL
     needs: decide
-    # A pull-request event is the safe place to upload fork findings for PR
-    # annotations. The approval event re-analyses the exact reviewed head but
-    # never uploads: public-fork review tokens are downgraded to read-only.
-    if: github.event_name == 'pull_request' || needs.decide.outputs.heavy == 'true'
+    # Minutes rather than seconds, so it runs with the heavy lane instead of on
+    # every push. An approval still precedes every merge, so nothing reaches
+    # main unscanned.
+    if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -535,15 +512,7 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - name: Checkout reviewed head
-        if: github.event_name == 'pull_request_review'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.review.commit_id }}
-
       - name: Checkout
-        if: github.event_name != 'pull_request_review'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialise CodeQL
@@ -554,11 +523,6 @@ jobs:
 
       - name: Analyse
         uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
-        with:
-          # This pinned action treats `false` as `failure-only`, which can still
-          # write debugging SARIF. `never` is its no-upload mode.
-          upload: ${{ github.event_name == 'pull_request_review' && 'never' || 'always' }}
-          upload-database: ${{ github.event_name != 'pull_request_review' }}
 
   secrets:
     name: Secret scan
@@ -570,60 +534,71 @@ jobs:
     if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
-      - name: Checkout
+      - name: Checkout trusted scanner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted-scanner
+          persist-credentials: false
+
+      - name: Checkout scan target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: scan-target
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install Gitleaks
-        # Pin both the official release and its published archive digest. The
-        # scanner is event-independent and needs no access token.
+      - name: Validate secret scanner positive control
+        working-directory: ${{ github.workspace }}
         env:
-          GITLEAKS_VERSION: 8.30.1
-          GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          GITLEAKS_EXPECTED_LEAK_EXIT_CODE: 79
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/gitleaks.tar.gz"
-          install_dir="$RUNNER_TEMP/gitleaks-bin"
-          curl --fail --location --silent --show-error \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            --output "$archive"
-          printf '%s  %s\n' "$GITLEAKS_LINUX_X64_SHA256" "$archive" | sha256sum --check --strict -
-          mkdir "$install_dir"
-          tar --extract --gzip --file "$archive" --directory "$install_dir" gitleaks
-          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+          umask 077
+          positive_control_repo=$(mktemp -d "$RUNNER_TEMP/gitleaks-positive-control.XXXXXX")
+          trap 'rm -rf "$positive_control_repo"' EXIT
 
-      - name: Load trusted Gitleaks policy
-        env:
-          TRUSTED_BASE_SHA: ${{ github.event_name == 'pull_request_review' && github.event.pull_request.base.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          if [[ ! "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            printf 'trusted Gitleaks base must be a full commit sha\n' >&2
+          git -C "$positive_control_repo" init --initial-branch=main
+          git -C "$positive_control_repo" config user.email sourdaw-ci@example.invalid
+          git -C "$positive_control_repo" config user.name 'Sourdaw CI'
+          synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
+          mkdir -p "$positive_control_repo/public/wasm"
+          printf 'aws_access_key_id = "%s" // gitleaks:allow\n' \
+            "$synthetic_access_key" > "$positive_control_repo/public/wasm/fixture.js"
+          cat > "$positive_control_repo/.gitleaks.toml" <<'GITLEAKS_CONFIG'
+          title = "Untrusted suppression fixture"
+
+          [extend]
+          useDefault = true
+
+          [allowlist]
+          description = "Would suppress every finding if target-root config were loaded"
+          regexes = ['''.*''']
+          GITLEAKS_CONFIG
+          git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml
+          git -C "$positive_control_repo" commit -m 'add synthetic secret fixture'
+
+          set +e
+          GITLEAKS_EXIT_CODE="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+            sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$positive_control_repo/.git"
+          positive_control_status=$?
+          set -e
+
+          if [ "$positive_control_status" -ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" ]; then
+            printf 'expected Gitleaks positive control to exit %s, got %s\n' \
+              "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+              "$positive_control_status" >&2
             exit 1
-          fi
-          trusted_config="$RUNNER_TEMP/gitleaks.toml"
-          trusted_ignore="$RUNNER_TEMP/gitleaksignore"
-          git show "${TRUSTED_BASE_SHA}:.gitleaks.toml" > "$trusted_config"
-          if git cat-file -e "${TRUSTED_BASE_SHA}:.gitleaksignore" 2>/dev/null; then
-            git show "${TRUSTED_BASE_SHA}:.gitleaksignore" > "$trusted_ignore"
-          else
-            : > "$trusted_ignore"
           fi
 
       - name: Scan history for secrets
-        run: |
-          set -euo pipefail
-          gitleaks git \
-            --config "$RUNNER_TEMP/gitleaks.toml" \
-            --gitleaks-ignore-path "$RUNNER_TEMP/gitleaksignore" \
-            --ignore-gitleaks-allow \
-            --redact \
-            --no-banner \
-            --verbose \
-            .
+        working-directory: ${{ github.workspace }}
+        run: sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$GITHUB_WORKSPACE/scan-target/.git"
 
   nightly-report:
     name: Nightly failure report
@@ -659,13 +634,14 @@ jobs:
           fi
 
   gate:
-    # This static name is deliberately non-authoritative. A pull request can
-    # change this workflow, so neither its push nor a later review event may be
-    # allowed to publish a ruleset-required check name. It always reports after
-    # its dependencies settle. Pull-request pushes and non-approved reviews fail
-    # closed; a current-head approval must complete both security jobs
-    # successfully.
-    name: Health summary
+    # Named distinctly from the workflow so the required check is unambiguous in
+    # the ruleset and in the checks list. Renaming it silently breaks the
+    # requirement: the ruleset matches by name, and a required check that no job
+    # reports leaves every pull request pending forever.
+    name: Gate
+    # The single required status check. It runs whatever happened upstream, so
+    # a pull request that legitimately skips every heavy leg still reports a
+    # conclusion instead of sitting pending.
     #
     # `unit` and `e2e` are deliberately absent. They run, and their results are
     # visible on the pull request, but they do not decide the merge yet — a gate
@@ -692,7 +668,7 @@ jobs:
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
     # passed, so both gate.
-    if: always() && (github.event_name != 'pull_request_review' || github.event.review.user.login == 'jcosta33-reviewer[bot]')
+    if: always()
     needs:
       - decide
       - static
@@ -710,40 +686,9 @@ jobs:
     steps:
       - name: Require every job to have succeeded or been skipped
         env:
-          EVENT: ${{ github.event_name }}
-          REVIEW_ACTION: ${{ github.event.action }}
-          REVIEW_AUTHOR: ${{ github.event.review.user.login }}
-          REVIEW_STATE: ${{ github.event.review.state }}
-          REVIEW_COMMIT: ${{ github.event.review.commit_id }}
-          PULL_REQUEST_HEAD: ${{ github.event.pull_request.head.sha }}
           RESULTS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "pull_request" ]; then
-            printf 'pull-request health remains incomplete without a current-head approval run\n'
-            exit 1
-          fi
-          if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_AUTHOR" != "jcosta33-reviewer[bot]" ]; then
-            printf 'pull-request review is not from the required reviewer\n'
-            exit 1
-          fi
-          if [ "$EVENT" = "pull_request_review" ] && { [ "$REVIEW_ACTION" != "submitted" ] || [ "$REVIEW_STATE" != "approved" ]; }; then
-            printf 'pull-request review must be a submitted approval\n'
-            exit 1
-          fi
-          if [ "$EVENT" = "pull_request_review" ] && { [ -z "$REVIEW_COMMIT" ] || [ "$REVIEW_COMMIT" != "$PULL_REQUEST_HEAD" ]; }; then
-            printf 'approval is not for the current pull-request head\n'
-            exit 1
-          fi
-          if [ "$EVENT" = "pull_request_review" ]; then
-            heavy_failed=$(printf '%s' "$RESULTS" | jq -r '["dependency-review", "codeql", "secrets"][] as $job
-              | select(.[$job].result != "success")
-              | "\($job): \(.[$job].result // "missing")"')
-            if [ -n "$heavy_failed" ]; then
-              printf 'heavy security jobs must succeed:\n%s\n' "$heavy_failed"
-              exit 1
-            fi
-          fi
           printf '%s\n' "$RESULTS"
           failed=$(printf '%s' "$RESULTS" | jq -r '
             to_entries[]

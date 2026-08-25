@@ -2,8 +2,19 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { extname, relative, resolve } from 'node:path';
+import {
+    closeSync,
+    constants,
+    existsSync,
+    fstatSync,
+    lstatSync,
+    openSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    statSync,
+} from 'node:fs';
+import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
@@ -209,19 +220,37 @@ export type RepositorySnapshot = {
     markPaths: Record<string, string[]>;
 };
 
+export type RepositorySnapshotFileReader = {
+    open?: (path: string, flags: number) => number;
+    readBytes(fileDescriptor: number): Buffer;
+    readText(fileDescriptor: number): string;
+};
+
+const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
+    open: (path, flags) => openSync(path, flags),
+    readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
+    readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
+};
+
 export type ReleaseInventoryCheckReceipt = {
     validatedSurfaceIds: string[];
 };
 
-export type ReleaseInventoryCheckOptions = {
-    projectLicensePreflight?: (root: string) => void;
-    readInventory?: (root: string) => ReleaseInventory;
-    afterDdspValidation?: () => void;
-};
+type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
+
+function readReleaseInventoryContents(root: string): string {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const contents = readRepositoryRegularText(realpathSync(root), inventoryPath, repositorySnapshotFileReader);
+    if (contents === undefined) {
+        throw new Error(`release inventory cannot be read safely: ${inventoryPath}`);
+    }
+    return contents;
+}
 
 export function readReleaseInventory(root: string): ReleaseInventory {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    return parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
+    const contents = readReleaseInventoryContents(root);
+    return parseJsonWithUniqueKeys<ReleaseInventory>(contents, inventoryPath);
 }
 
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
@@ -242,6 +271,140 @@ function sortedUnique(values: string[]): string[] {
 
 function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function isSemanticSha256Label(value: string): boolean {
+    return value.startsWith('@');
+}
+
+function isByteCountPrefixedRemoteArtifact(value: string): boolean {
+    return /^(?:bytes:)?[0-9]+:/u.test(value);
+}
+
+function isUriLikeDigestLabel(value: string): boolean {
+    return /^[a-z][a-z0-9+.+-]*:/iu.test(value);
+}
+
+function isWindowsPathLikeDigestLabel(value: string): boolean {
+    return value.includes('\\') || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value);
+}
+
+function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
+    const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
+    const sha256 = match?.[1];
+    const path = match?.[2];
+    if (
+        sha256 === undefined ||
+        path === undefined ||
+        isSemanticSha256Label(path) ||
+        isByteCountPrefixedRemoteArtifact(path) ||
+        (isUriLikeDigestLabel(path) && !isWindowsPathLikeDigestLabel(path))
+    ) {
+        return undefined;
+    }
+    return { path, sha256 };
+}
+
+function isCanonicalPathAddress(path: string): boolean {
+    return (
+        !path.includes('\\') &&
+        !path.includes('\0') &&
+        !/^[A-Za-z]:/u.test(path) &&
+        !posix.isAbsolute(path) &&
+        !win32.isAbsolute(path) &&
+        path !== '.' &&
+        path !== '..' &&
+        !path.startsWith('../') &&
+        !path.includes('/../') &&
+        !path.endsWith('/..') &&
+        !path.endsWith('/') &&
+        posix.normalize(path) === path
+    );
+}
+
+function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
+    const relativePath = relative(rootRealPath, realPath);
+    return (
+        relativePath === '..' ||
+        relativePath.startsWith('../') ||
+        relativePath.startsWith('..\\') ||
+        posix.isAbsolute(relativePath) ||
+        win32.isAbsolute(relativePath)
+    );
+}
+
+function openRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): number {
+    let fileDescriptor: number | undefined;
+    try {
+        const beforeOpen = lstatSync(absolutePath);
+        if (!beforeOpen.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        if ((constants.O_NOFOLLOW ?? 0) === 0) {
+            throw new Error(`no-follow open is unavailable: ${absolutePath}`);
+        }
+        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const opened = fstatSync(fileDescriptor);
+        if (!opened.isFile()) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        const afterOpen = lstatSync(absolutePath);
+        if (!afterOpen.isFile() || opened.dev !== afterOpen.dev || opened.ino !== afterOpen.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        const realPath = realpathSync(absolutePath);
+        if (pathEscapesRoot(rootRealPath, realPath)) {
+            throw new Error(`path escapes repository root: ${absolutePath}`);
+        }
+        const resolved = statSync(realPath);
+        if (opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
+            throw new Error(`path changed while opening: ${absolutePath}`);
+        }
+        return fileDescriptor;
+    } catch (error) {
+        if (fileDescriptor !== undefined) {
+            closeSync(fileDescriptor);
+        }
+        throw error;
+    }
+}
+
+function readRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): Buffer {
+    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    try {
+        return readFile.readBytes(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
+}
+
+function readRepositoryRegularText(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): string | undefined {
+    let fileDescriptor: number;
+    try {
+        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    } catch {
+        return undefined;
+    }
+    try {
+        return readFile.readText(fileDescriptor);
+    } finally {
+        closeSync(fileDescriptor);
+    }
 }
 
 function directorySha256(root: string, directory: string): string {
@@ -280,13 +443,19 @@ function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
 
 function trackedFilesSha256(root: string, files: readonly string[]): string {
     const hash = createHash('sha256');
+    const rootRealPath = realpathSync(root);
     for (const file of files) {
-        if (!existsSync(resolve(root, file))) {
+        const absolutePath = resolve(root, file);
+        if (!existsSync(absolutePath)) {
             throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
-        hash.update(readFileSync(resolve(root, file)));
+        try {
+            hash.update(readRepositoryRegularFile(rootRealPath, absolutePath, repositorySnapshotFileReader));
+        } catch {
+            throw new Error(`Grand Boule release source is unsafe: ${file}`);
+        }
         hash.update('\0');
     }
     return hash.digest('hex');
@@ -1346,14 +1515,6 @@ export function assertDdspModelsReleaseInventory(root: string, surface: Partial<
     assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
 }
 
-/** Validates the two DDSP registry entries without running the full repository release gate. */
-export function assertDdspReleaseInventory(root: string, inventory: Pick<ReleaseInventory, 'surfaces'>): void {
-    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
-    assertSurfaceContract(ddspTfjsRuntimeSurface, ddspTfjsRuntimeReleaseInventoryContract(root), 'DDSP TF.js runtime');
-    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
-    assertDdspModelsReleaseInventory(root, ddspModelsSurface);
-}
-
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
 }
@@ -1559,6 +1720,7 @@ export function validateReleaseInventory(
     requiredComponentPaths: Readonly<Record<string, readonly string[]>> = {}
 ): string[] {
     const errors: Array<string | undefined> = [];
+    const trackedFiles = new Set(snapshot.releaseFiles);
     if (inventory.schemaVersion !== 1) {
         errors.push('schemaVersion must be 1');
     }
@@ -1600,6 +1762,21 @@ export function validateReleaseInventory(
         for (const path of surface.paths) {
             if (!snapshot.releaseFiles.some((trackedPath) => pathMatches(path, trackedPath))) {
                 errors.push(`${surface.id}: path is not tracked: ${path}`);
+            }
+        }
+        for (const digest of surface.digests) {
+            const addressed = pathAddressedSha256(digest);
+            if (addressed === undefined) {
+                continue;
+            }
+            if (!isCanonicalPathAddress(addressed.path)) {
+                errors.push(
+                    `${surface.id}: path-addressed digest path must be normalized and relative: ${addressed.path}`
+                );
+            } else if (!trackedFiles.has(addressed.path) || snapshot.fileDigests[addressed.path] === 'missing') {
+                errors.push(`${surface.id}: path-addressed digest target is missing or untracked: ${addressed.path}`);
+            } else if (snapshot.fileDigests[addressed.path] !== addressed.sha256) {
+                errors.push(`${surface.id}: path-addressed digest drifted: ${addressed.path}`);
             }
         }
     }
@@ -1760,30 +1937,47 @@ export function validateReleaseInventory(
 
 export function loadRepositorySnapshot(
     root: string,
-    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'>,
-    trackedFiles?: string[]
+    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'> & Partial<Pick<ReleaseInventory, 'surfaces'>>,
+    trackedFiles?: string[],
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
 ): RepositorySnapshot {
+    const rootRealPath = realpathSync(root);
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+    const isSafeTrackedPath = (path: string): boolean =>
+        isCanonicalPathAddress(path) &&
+        trackedFilesInWorktree.includes(path) &&
+        !pathEscapesRoot(rootRealPath, resolve(rootRealPath, path));
     const files = trackedFilesInWorktree.filter((path) => existsSync(resolve(root, path)));
     const contents = new Map<string, string>();
-    const readText = (path: string): string => {
+    const readText = (path: string): string | undefined => {
         const cached = contents.get(path);
         if (cached !== undefined) {
             return cached;
         }
-        const value = readFileSync(resolve(root, path), 'utf8');
-        contents.set(path, value);
+        const value = readRepositoryRegularText(rootRealPath, resolve(root, path), readFile);
+        if (value !== undefined) {
+            contents.set(path, value);
+        }
         return value;
     };
     const scannedFiles = files.filter(isScannedSource);
     const markFiles = files.filter(isMarkSource);
-    const discoveredReferences = scannedFiles.flatMap((path) =>
-        externalReferences(readText(path)).map((reference) => ({ file: path, ...reference }))
-    );
+    const discoveredReferences = scannedFiles.flatMap((path) => {
+        const contents = readText(path);
+        return contents === undefined
+            ? []
+            : externalReferences(contents).map((reference) => ({ file: path, ...reference }));
+    });
     const snapshotPaths = sortedUnique([
-        ...REQUIRED_SNAPSHOT_PATHS,
-        ...(inventory.snapshots ?? []).map((entry) => entry.path),
+        ...REQUIRED_SNAPSHOT_PATHS.filter(isSafeTrackedPath),
+        ...(inventory.snapshots ?? []).map((entry) => entry.path).filter(isSafeTrackedPath),
+        ...(inventory.surfaces ?? []).flatMap((surface) =>
+            surface.digests.flatMap((digest) => {
+                const addressed = pathAddressedSha256(digest);
+                return addressed === undefined || !isSafeTrackedPath(addressed.path) ? [] : [addressed.path];
+            })
+        ),
     ]);
     const fileDigests = Object.fromEntries(
         snapshotPaths.map((path) => {
@@ -1791,7 +1985,7 @@ export function loadRepositorySnapshot(
                 return [
                     path,
                     createHash('sha256')
-                        .update(readFileSync(resolve(root, path)))
+                        .update(readRepositoryRegularFile(rootRealPath, resolve(root, path), readFile))
                         .digest('hex'),
                 ];
             } catch {
@@ -1802,7 +1996,12 @@ export function loadRepositorySnapshot(
     const markPaths = Object.fromEntries(
         (inventory.marks ?? []).map((mark) => [
             mark.value,
-            markFiles.filter((path) => containsMark(readText(path), mark.value)).sort(),
+            markFiles
+                .filter((path) => {
+                    const contents = readText(path);
+                    return contents !== undefined && containsMark(contents, mark.value);
+                })
+                .sort(),
         ])
     );
     return {
@@ -1818,23 +2017,20 @@ export function loadRepositorySnapshot(
 
 export function checkReleaseInventory(
     root: string,
-    options: ReleaseInventoryCheckOptions | ((root: string) => void) = {}
+    projectLicensePreflight: ProjectLicensePreflight = (preflightRoot, inventoryContents) =>
+        checkProjectLicense(preflightRoot, undefined, inventoryContents),
+    inventory?: ReleaseInventory
 ): ReleaseInventoryCheckReceipt {
-    const {
-        projectLicensePreflight = checkProjectLicense,
-        readInventory = readReleaseInventory,
-        afterDdspValidation,
-    } = typeof options === 'function' ? { projectLicensePreflight: options } : options;
-    projectLicensePreflight(root);
-    const inventory = readInventory(root);
-    assertDdspReleaseInventory(root, inventory);
-    afterDdspValidation?.();
-    const snapshot = loadRepositorySnapshot(root, inventory);
-    const errors = validateReleaseInventory(inventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const inventoryContents = inventory === undefined ? readReleaseInventoryContents(root) : JSON.stringify(inventory);
+    const currentInventory = inventory ?? parseJsonWithUniqueKeys<ReleaseInventory>(inventoryContents, inventoryPath);
+    projectLicensePreflight(root, inventoryContents);
+    const snapshot = loadRepositorySnapshot(root, currentInventory);
+    const errors = validateReleaseInventory(currentInventory, snapshot, REQUIRED_MARKS, REQUIRED_COMPONENT_PATHS);
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
-    const validatedSurfaceIds = ['ddsp-tfjs-runtime', 'ddsp-models'];
+    const validatedSurfaceIds: string[] = [];
     const validateSurface = (surfaceId: string, validate: () => void): void => {
         validate();
         validatedSurfaceIds.push(surfaceId);
@@ -1847,21 +2043,23 @@ export function checkReleaseInventory(
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
     assertGrandBouleMeasurementAdmission(root);
-    const wasmSurface = inventory.surfaces.find((surface) => surface.id === 'project-wasm');
+    const wasmSurface = currentInventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
     );
-    const projectLicenseSurface = inventory.surfaces.find((surface) => surface.id === 'project-license-distribution');
+    const projectLicenseSurface = currentInventory.surfaces.find(
+        (surface) => surface.id === 'project-license-distribution'
+    );
     validateSurface('project-license-distribution', () =>
         assertProjectLicenseDistributionReleaseInventory(root, projectLicenseSurface)
     );
-    const grandBouleSurface = inventory.surfaces.find((surface) => surface.id === 'grand-boule');
+    const grandBouleSurface = currentInventory.surfaces.find((surface) => surface.id === 'grand-boule');
     validateSurface('grand-boule', () => assertGrandBouleReleaseInventory(root, grandBouleSurface));
-    const workletSurface = inventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
+    const workletSurface = currentInventory.surfaces.find((surface) => surface.id === 'audio-worklet-sources');
     validateSurface('audio-worklet-sources', () =>
         assertSurfaceContract(workletSurface, audioWorkletReleaseInventoryContract(root), 'audio worklet')
     );
-    const adaptedMitSurface = inventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
+    const adaptedMitSurface = currentInventory.surfaces.find((surface) => surface.id === 'mi-plaits-dsp-rs-adaptation');
     validateSurface('mi-plaits-dsp-rs-adaptation', () =>
         assertSurfaceContract(
             adaptedMitSurface,
@@ -1869,11 +2067,11 @@ export function checkReleaseInventory(
             'mi-plaits-dsp-rs adaptation'
         )
     );
-    const trademarkSurface = inventory.surfaces.find((surface) => surface.id === 'third-party-marks');
+    const trademarkSurface = currentInventory.surfaces.find((surface) => surface.id === 'third-party-marks');
     validateSurface('third-party-marks', () =>
         assertSurfaceContract(trademarkSurface, trademarkReleaseInventoryContract(root), 'trademark')
     );
-    const ownerVisualAssetSurface = inventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
+    const ownerVisualAssetSurface = currentInventory.surfaces.find((surface) => surface.id === 'owner-visual-assets');
     validateSurface('owner-visual-assets', () =>
         assertSurfaceContract(
             ownerVisualAssetSurface,
@@ -1881,8 +2079,18 @@ export function checkReleaseInventory(
             'owner visual asset'
         )
     );
+    const ddspTfjsRuntimeSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    validateSurface('ddsp-tfjs-runtime', () =>
+        assertSurfaceContract(
+            ddspTfjsRuntimeSurface,
+            ddspTfjsRuntimeReleaseInventoryContract(root),
+            'DDSP TF.js runtime'
+        )
+    );
+    const ddspModelsSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
     checkElectronRuntimeProvenance(root);
-    const electronSurface = inventory.surfaces.find((surface) => surface.id === 'desktop-shell');
+    const electronSurface = currentInventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {
         if (JSON.stringify(electronSurface?.[field as keyof ReleaseSurface]) !== JSON.stringify(expected)) {
             throw new Error(`Electron release inventory ${field} does not match provenance`);
@@ -1891,7 +2099,7 @@ export function checkReleaseInventory(
     validatedSurfaceIds.push('desktop-shell');
     checkLgplRuntimeProvenance(root);
     const levain = checkLevainProvenance(root);
-    const levainSurface = inventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
+    const levainSurface = currentInventory.surfaces.find((surface) => surface.id === 'levain-sample-bank');
     const levainContract = {
         sources: [levain.source.repository],
         revisions: [levain.source.revision],
@@ -1905,7 +2113,7 @@ export function checkReleaseInventory(
     }
     validatedSurfaceIds.push('levain-sample-bank');
     process.stdout.write(
-        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
+        `release inventory valid: ${String(currentInventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references, ${String(levain.samples.length)} Levain samples, ${String(levain.generatedFiles.length)} generated Levain files\n`
     );
     return { validatedSurfaceIds };
 }

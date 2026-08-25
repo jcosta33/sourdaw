@@ -86,6 +86,20 @@ describe('grinderControlRateParams', () => {
             deviceType: 'grinder',
             parameterIds: ['transformerHysteresis', 'cabIrSlot', 'neuralCpuBudget'],
         });
+        const initialization = postMessage.mock.calls.find(
+            (call) => (call[0] as { command?: string }).command === 'initialize-fallback-control'
+        )?.[0] as { correlation?: { workletGeneration?: unknown } } | undefined;
+        const workletGeneration = initialization?.correlation?.workletGeneration;
+        expect(
+            typeof workletGeneration === 'number' && Number.isSafeInteger(workletGeneration) && workletGeneration > 0
+        ).toBe(true);
+        if (
+            typeof workletGeneration !== 'number' ||
+            !Number.isSafeInteger(workletGeneration) ||
+            workletGeneration <= 0
+        ) {
+            throw new Error('Grinder fallback initialization did not provide a positive safe generation');
+        }
         postMessage.mockClear();
 
         grinder.setParam('transformerHysteresis', 0.7);
@@ -104,20 +118,32 @@ describe('grinderControlRateParams', () => {
         }
 
         expect(postMessage).toHaveBeenCalledTimes(2);
-        expect(postMessage).toHaveBeenCalledWith(
-            expect.objectContaining({
-                command: 'set-fallback-param',
-                target: expect.objectContaining({ parameterId: 'transformerHysteresis' }),
-                value: 0.7,
-            })
-        );
-        expect(postMessage).toHaveBeenCalledWith(
-            expect.objectContaining({
-                command: 'set-fallback-param',
-                target: expect.objectContaining({ parameterId: 'cabIrSlot' }),
-                value: 3,
-            })
-        );
+        expect(postMessage).toHaveBeenNthCalledWith(1, {
+            schemaVersion: 1,
+            command: 'set-fallback-param',
+            target: {
+                trackId: 'track-1',
+                deviceId: 'grinder-1',
+                deviceType: 'grinder',
+                parameterId: 'transformerHysteresis',
+            },
+            value: 0.7,
+            correlation: { workletGeneration, controlSequence: 1 },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        });
+        expect(postMessage).toHaveBeenNthCalledWith(2, {
+            schemaVersion: 1,
+            command: 'set-fallback-param',
+            target: {
+                trackId: 'track-1',
+                deviceId: 'grinder-1',
+                deviceType: 'grinder',
+                parameterId: 'cabIrSlot',
+            },
+            value: 3,
+            correlation: { workletGeneration, controlSequence: 2 },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        });
         expect(workletNodeCreations).toBe(1);
     });
 });

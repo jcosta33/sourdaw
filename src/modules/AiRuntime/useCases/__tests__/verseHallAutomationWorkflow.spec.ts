@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationHandlers, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
@@ -38,11 +42,22 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { createHostedToolPlanningFixture, createProviderToolPlanningFixture } from './providerToolPlanningFixture';
 
 const PROMPT = 'Lower every vocal send to the Hall by 3 dB only in verse two.';
 
-const providerPlan = [
+type ProviderCall = { name: string; arguments: Record<string, unknown> };
+
+type AutomateSendRangeProviderCall = {
+    name: 'automateSendRange';
+    arguments: {
+        trackIds: [string, string];
+        busId: string;
+        sectionName: string;
+        reductionDb: number;
+    };
+};
+
+const providerPlan: [AutomateSendRangeProviderCall] = [
     {
         name: 'automateSendRange',
         arguments: {
@@ -52,14 +67,7 @@ const providerPlan = [
             reductionDb: 3,
         },
     },
-] as const;
-
-const providerScope = {
-    targetIds: ['track-lead-vocal', 'track-backing-vocal', 'bus-hall'],
-    targetRanges: [{ startBeat: 16, endBeat: 32 }],
-    protectedTargetIds: [],
-    protectedRanges: [],
-};
+];
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -109,6 +117,211 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+}
+
+function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
+    const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
+    const payload = match?.groups?.payload;
+    if (!payload) {
+        throw new TypeError(`Expected ${section} in provider request`);
+    }
+    const parsed: unknown = JSON.parse(payload);
+    if (!isRecord(parsed)) {
+        throw new TypeError(`Expected object-shaped ${section}`);
+    }
+    return parsed;
+}
+
+function getHostedUserMessage(body: string): string {
+    const request: unknown = JSON.parse(body);
+    if (!isRecord(request) || !isUnknownArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    const userMessage = request.messages.find(
+        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
+    );
+    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return userMessage.content;
+}
+
+function getCommandBatchScope(plan: readonly ProviderCall[]): {
+    targetIds: string[];
+    targetRanges: Array<{ startBeat: number; endBeat: number }>;
+    protectedTargetIds: [];
+    protectedRanges: [];
+} {
+    const targetIds = new Set<string>();
+    for (const call of plan) {
+        const trackIds = call.arguments.trackIds;
+        if (isUnknownArray(trackIds)) {
+            for (const trackId of trackIds) {
+                if (typeof trackId === 'string') {
+                    targetIds.add(trackId);
+                }
+            }
+        }
+        if (typeof call.arguments.busId === 'string') {
+            targetIds.add(call.arguments.busId);
+        }
+    }
+    return {
+        targetIds: [...targetIds],
+        targetRanges: [{ startBeat: 16, endBeat: 32 }],
+        protectedTargetIds: [],
+        protectedRanges: [],
+    };
+}
+
+function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: plan.map((call) => ({ name: call.name, arguments: call.arguments })),
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Lower exactly the admitted vocal sends to Hall by 3 dB in Verse Two.',
+                    constraints: ['Leave sends outside Verse Two unchanged.'],
+                    scope: getCommandBatchScope(plan),
+                    capabilityIds: ['automateSendRange'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate the exact vocal tracks, Hall bus, section, and 3 dB reduction.'],
+                    stoppingConditions: ['Stop if application validation fails.'],
+                },
+            },
+        },
+    ];
+}
+
+function catalogDiscoveryPlan(): ProviderCall[] {
+    return [
+        {
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['automateSendRange'] },
+        },
+    ];
+}
+
+function getApplicationToolReceipts(userMessage: string): unknown[] {
+    const evidence = getProviderSection(userMessage, 'relevant_evidence');
+    if (!isUnknownArray(evidence.receipts)) {
+        throw new TypeError('Expected serialized application tool receipts in provider request');
+    }
+    const receiptSummary = evidence.receipts.find(
+        (receipt) =>
+            isRecord(receipt) &&
+            receipt.id === 'application-tool-loop' &&
+            isRecord(receipt.summary) &&
+            receipt.summary.truncated === false &&
+            typeof receipt.summary.value === 'string'
+    );
+    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
+        throw new TypeError('Expected application tool receipt context in provider request');
+    }
+    const summary = receiptSummary.summary;
+    if (summary.truncated !== false || typeof summary.value !== 'string') {
+        throw new TypeError('Expected complete application tool receipt context in provider request');
+    }
+    const payload = summary.value.split('\n').at(-1);
+    const parsed: unknown = payload ? JSON.parse(payload) : null;
+    if (!isRecord(parsed) || !isUnknownArray(parsed.receipts)) {
+        throw new TypeError('Expected serialized application tool receipt list');
+    }
+    return parsed.receipts;
+}
+
+function assertDiscoveredCommandSchema(userMessage: string): void {
+    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
+    );
+    if (
+        !isRecord(discoveryReceipt) ||
+        discoveryReceipt.status !== 'success' ||
+        discoveryReceipt.turn !== 1 ||
+        !isRecord(discoveryReceipt.data) ||
+        discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
+        discoveryReceipt.data.schemaVersion !== 1 ||
+        discoveryReceipt.data.category !== 'command' ||
+        discoveryReceipt.data.truncated !== false ||
+        !isUnknownArray(discoveryReceipt.data.items)
+    ) {
+        throw new TypeError('Expected a successful complete command catalog discovery receipt');
+    }
+    const schema = discoveryReceipt.data.items.find(
+        (item) =>
+            isRecord(item) &&
+            isRecord(item.function) &&
+            item.function.name === 'automateSendRange' &&
+            isRecord(item.function.parameters)
+    );
+    if (!schema) {
+        throw new TypeError('Expected disclosed automateSendRange command schema');
+    }
+}
+
+function createTurnTrackedWebLlmResponder(
+    buildPlan: (userMessage: string) => ProviderCall[] = () => providerPlan
+): (systemPrompt: string, userMessage: string) => Promise<string> {
+    let turn = 0;
+    return (_systemPrompt, userMessage) => {
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two WebLLM provider turns');
+        }
+        if (turn === 1) {
+            return Promise.resolve(JSON.stringify(catalogDiscoveryPlan()));
+        }
+        assertDiscoveredCommandSchema(userMessage);
+        return Promise.resolve(JSON.stringify(asCommandBatchProposal(buildPlan(userMessage))));
+    };
+}
+
+function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+    return new Response(
+        JSON.stringify({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: calls.map((call) => ({
+                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                        })),
+                    },
+                },
+            ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+}
+
+function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
+    let turn = 0;
+    return (_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        turn += 1;
+        if (turn > 2) {
+            throw new Error('Expected exactly two hosted provider turns');
+        }
+        const userMessage = getHostedUserMessage(init.body);
+        if (turn === 1) {
+            return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan()));
+        }
+        assertDiscoveredCommandSchema(userMessage);
+        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(providerPlan)));
+    };
+}
+
 function createTrack(id: string, name: string, kind: Track['kind'] = 'audio'): Track {
     return {
         id,
@@ -153,10 +366,18 @@ function getConfirmationId(): string {
     );
 }
 
+function getWebLlmUserMessage(): string {
+    const userMessage: unknown = vi.mocked(generateWebLlmCompletion).mock.calls.at(-1)?.[1];
+    if (typeof userMessage !== 'string') {
+        throw new TypeError('Expected final WebLLM planning request');
+    }
+    return userMessage;
+}
+
 function getHostedRequestBody(): string {
     const body = runtimeMocks.fetch.mock.calls.at(-1)?.[1]?.body;
     if (typeof body !== 'string') {
-        throw new TypeError('Expected one hosted provider request body');
+        throw new TypeError('Expected final hosted provider planning request body');
     }
     return body;
 }
@@ -196,11 +417,8 @@ describe('verse Hall send automation workflow', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockImplementation(
-            createProviderToolPlanningFixture(providerPlan, providerScope)
-        );
-        const hostedFixture = createHostedToolPlanningFixture(providerPlan, providerScope);
-        runtimeMocks.fetch.mockImplementation(async () => hostedFixture());
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder());
+        runtimeMocks.fetch.mockImplementation(createTurnTrackedHostedResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
@@ -224,6 +442,10 @@ describe('verse Hall send automation workflow', () => {
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        configureRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+        );
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const lead = createTrack('track-lead-vocal', 'Lead Vocal');
         lead.sends = [
@@ -263,7 +485,6 @@ describe('verse Hall send automation workflow', () => {
     });
 
     afterEach(async () => {
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -312,12 +533,14 @@ describe('verse Hall send automation workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
+        const providerRequest = getWebLlmUserMessage();
         expect(providerRequest).toContain(PROMPT);
         expect(providerRequest).toContain('track-lead-vocal');
         expect(providerRequest).toContain('track-backing-vocal');
         expect(providerRequest).toContain('track-spoken-word');
         expect(providerRequest).toContain('bus-hall');
+        expect(providerRequest).toContain('verse two');
+        expect(providerRequest).not.toContain('section-verse-two');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation).toMatchObject({
             executionMode: 'atomic',
@@ -360,7 +583,7 @@ describe('verse Hall send automation workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: section-verse-two, track-lead-vocal, track-backing-vocal, bus-hall'
+            'Affected IDs: track-lead-vocal, track-backing-vocal, bus-hall, section-verse-two'
         );
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toHaveLength(1);
         expect(undoStore.value?.past).toHaveLength(1);
@@ -386,6 +609,8 @@ describe('verse Hall send automation workflow', () => {
         expect(providerRequest).toContain('track-lead-vocal');
         expect(providerRequest).toContain('track-backing-vocal');
         expect(providerRequest).toContain('bus-hall');
+        expect(providerRequest).toContain('verse two');
+        expect(providerRequest).not.toContain('section-verse-two');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions[0]).toMatchObject({
             type: 'automateSendRange',
@@ -409,8 +634,8 @@ describe('verse Hall send automation workflow', () => {
     });
 
     it('rejects provider enlargement beyond every track whose name and Hall send match vocal', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(
+            createTurnTrackedWebLlmResponder((): ProviderCall[] => [
                 {
                     ...providerPlan[0],
                     arguments: {
@@ -445,7 +670,7 @@ describe('verse Hall send automation workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('fails stale confirmation when a collaborator changes one guarded Hall send', async () => {
+    it('rejects stale confirmation when a collaborator changes one guarded Hall send', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -470,7 +695,7 @@ describe('verse Hall send automation workflow', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
     });
 
-    it('fails stale confirmation when a collaborator turns automation off for one vocal', async () => {
+    it('rejects stale confirmation when a collaborator turns automation off for one vocal', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({

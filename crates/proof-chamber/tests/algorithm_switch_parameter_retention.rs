@@ -35,8 +35,9 @@
 //! * **A parameter the intermediate engine drops.** The case that decides
 //!   whether caching *every* forwarded name was right, rather than only the
 //!   ones the current engine reads.
-//! * **First construction.** An instance told nothing must match the first
-//!   explicit selection bit for bit and retain its platform-independent shape.
+//! * **First construction.** An untold constructor Plate must keep its retained
+//!   cross-platform shape and match the first explicit Plate selection with an
+//!   empty cache, bit for bit in the same process.
 //! * **The documented exception.** One sequence genuinely does not round-trip
 //!   — the plate latches `shimmer` off inside its `freeze` arm, and a value
 //!   cache cannot re-fire a latch whose trigger has since been overwritten. It
@@ -48,9 +49,6 @@
 //!   code no test can see.
 
 use proof_chamber::{ProofChamberInstance, UnexposedEngine};
-
-#[path = "support/plate_fine_structure.rs"]
-mod plate_fine_structure;
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
@@ -233,6 +231,35 @@ fn max_delta(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .fold(0.0_f32, |acc, (x, y)| acc.max((x - y).abs()))
+}
+
+/// Same-process sample identity, including `-0.0`/`+0.0`, without asking two
+/// platform `libm` implementations to produce the same whole-buffer digest.
+fn assert_bit_identical(a: &[f32], b: &[f32], label: &str) {
+    assert_eq!(a.len(), b.len(), "renders must be the same length");
+
+    if let Some((index, (left, right))) = a
+        .iter()
+        .zip(b.iter())
+        .enumerate()
+        .find(|(_, (left, right))| left.to_bits() != right.to_bits())
+    {
+        let differing = a
+            .iter()
+            .zip(b.iter())
+            .filter(|(left, right)| left.to_bits() != right.to_bits())
+            .count();
+        let delta = max_delta(a, b);
+        panic!(
+            "{label}: {differing} samples differ bit-for-bit; first difference \
+             at sample {index}: {:#010x} ({:e}) vs {:#010x} ({:e}); \
+             max_delta {delta:e}",
+            left.to_bits(),
+            left,
+            right.to_bits(),
+            right
+        );
+    }
 }
 
 /// Build a script: select `algorithm`, apply `writes`.
@@ -456,18 +483,18 @@ fn the_replay_preserves_most_recent_write_order() {
 // First construction
 // ---------------------------------------------------------------------------
 
-/// What an instance that has been told nothing but `mix` renders.
+/// What an untold constructor Plate must prove.
 ///
-/// The readable shape is pinned, while the constructor/cache relationship is
-/// compared bit for bit within the same process so platform `libm` drift does
-/// not become an unbound allowlist.
-/// Taken on `main` at d36441d4f, before the parameter cache existed, and
-/// unchanged by it.
+/// This file owns constructor/cache/algorithm-switch parity. It does not own
+/// Plate's independent historical render character, which is guarded by the
+/// Plate render-surface tests. The retained shape below is the cross-platform
+/// scalar contract for an untouched constructor Plate; the exact fine-structure
+/// contract is only same-process parity with the first explicit Plate selection
+/// while the cache is empty.
 ///
 /// Moved once, by #1546, when the plate constructor's `damping` went from
-/// 0.0005 to 0.3. That is a deliberate voicing change and this row is the
-/// place it is supposed to show up, re-measured on this stimulus in the same
-/// commit as the constructor edit.
+/// 0.0005 to 0.3. That is a deliberate voicing change, re-measured on this
+/// stimulus in the same commit as the constructor edit.
 /// What it means in the render is 9.66 dB of 6-12 kHz shed across the tail
 /// against 4.88 dB before, and a late window that sits 8.45 dB *below* the
 /// midrange instead of 0.21 dB above it — measured in
@@ -480,8 +507,8 @@ fn the_replay_preserves_most_recent_write_order() {
 /// Only a newly added Dutch Oven reaches this state.
 ///
 /// Moved a second time, by #1547, and for the same reason as its sibling in
-/// `plate_parameter_surface.rs` — the two fingerprint the same engine from two
-/// stimuli and always move together. `DelayLine::read` and
+/// `plate_parameter_surface.rs` — the two measure the same engine from two
+/// stimuli and move together. `DelayLine::read` and
 /// `EarlyReflections::process` now count back from the most recently written
 /// sample rather than from the slot after it, so a request for zero delay is
 /// zero delay rather than a whole buffer. That is what stops Pre-Delay 0 ms
@@ -489,17 +516,12 @@ fn the_replay_preserves_most_recent_write_order() {
 /// one sample on the way, which is why a stimulus that never writes `predelay`
 /// moves at all.
 ///
-/// The measured content of the move is written out beside the other constant
-/// and not repeated here: identical peak, RMS within 0.0015 dB, identical T60,
-/// every octave band within 0.03 dB, and a waveform that decorrelates past the
-/// first 250 ms. The fine structure moved; the sound did not.
-///
 /// The retained render crosses platform `libm` implementations, so the stable
-/// contract is its readable shape, portable signed projections of its fine
-/// structure, and an exact same-process comparison with the first explicit
-/// selection below. Both paths use the same platform math; any constructor or
-/// cache disagreement still moves a sample bit.
-///
+/// contract is its readable shape plus an exact same-process comparison with
+/// the first explicit Plate selection below. Both paths use the same platform
+/// math; any constructor/empty-cache selection disagreement still moves a
+/// sample bit.
+
 /// The render in three readable numbers.
 ///
 /// `onset: 0` is measured, not a placeholder — see `RenderShape` for why it is
@@ -511,7 +533,7 @@ const UNTOLD_INSTANCE_SHAPE: RenderShape = RenderShape {
 };
 
 #[test]
-fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
+fn an_untold_constructor_plate_keeps_shape_and_matches_empty_cache_plate_selection() {
     // No `algorithm` write at all: the constructor's plate, straight from
     // `ProofChamberInstance::new`.
     let constructed = render(&[("mix", 1.0)]);
@@ -522,16 +544,16 @@ fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
         &UNTOLD_INSTANCE_SHAPE,
         "an untold instance",
     );
-    plate_fine_structure::assert_matches(&constructed, "an untold instance");
 
     // The first `algorithm` write happens against an empty cache, so it must
-    // hand back the constructor's defaults and not a partial replay.
+    // hand back the constructor's defaults, bit for bit, and not a partial
+    // replay.
     let first_selection = render(&[("algorithm", PLATE), ("mix", 1.0)]);
-    let delta = max_delta(&first_selection, &constructed);
-    assert_eq!(
-        delta, 0.0,
+    assert_bit_identical(
+        &first_selection,
+        &constructed,
         "selecting the plate on a fresh instance does not render what the \
-         constructor's plate renders: max_delta {delta:e}"
+         constructor's plate renders",
     );
 }
 
@@ -759,9 +781,9 @@ fn selecting_each_engine_on_a_fresh_instance_matches_its_constructor_defaults() 
     // directly and once after a detour that wrote nothing, so a replay that
     // invented state at either construction shows up as a difference.
     //
-    // The platform-independent shape contract lives in
-    // `an_instance_told_nothing_renders_exactly_what_it_always_has`; this row
-    // is the per-engine spread around it.
+    // The platform-independent constructor Plate shape contract lives in
+    // `an_untold_constructor_plate_keeps_shape_and_matches_empty_cache_plate_selection`;
+    // this row is the per-engine spread around it.
     for (name, algorithm) in EXPOSED {
         let once = render(&settled(algorithm, &[("mix", 1.0)]));
         let after_detour = render(&[

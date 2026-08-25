@@ -451,4 +451,126 @@ describe('planAgentRun', () => {
             ],
         });
     });
+    describe('provider scope authority when the batch creates application-assigned entities', () => {
+        const createdBusId = 'bus-ai-69ae2571-2c4c-4d1a-8f9b-0f2a9d4c7a11';
+        const creationInput = {
+            request: 'Send the backing vocals to a new plate bus.',
+            revision: 'heads-3',
+            actions: [{ type: 'createBus' }, { type: 'setTrackOutput' }],
+            actionLabels: ['Create the backing vocal plate bus', 'Route the backing vocals to the plate bus'],
+            scope: {
+                targetIds: ['track-bgv-high', createdBusId, 'track-bgv-low'],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            grants: {
+                allowedOperationPrefixes: ['createBus', 'setTrackOutput'],
+                create: true,
+                delete: false,
+                routing: true,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: false,
+            applicationAssignedTargetIds: [createdBusId],
+        };
+
+        it('admits a proposal that names every pre-existing target the application computed', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-high', 'track-bgv-low'],
+                        targetRanges: [],
+                        protectedTargetIds: [],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual(expect.objectContaining({ status: 'planned' }));
+        });
+
+        it('admits a proposal that declares the same targets, protected targets, and ranges in another order', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                scope: {
+                    targetIds: ['track-bgv-high', createdBusId, 'track-bgv-low'],
+                    targetRanges: [
+                        { startBeat: 33, endBeat: 49 },
+                        { startBeat: 1, endBeat: 17 },
+                    ],
+                    protectedTargetIds: ['master', 'tape-bus'],
+                    protectedRanges: [
+                        { startBeat: 65, endBeat: 81 },
+                        { startBeat: 9, endBeat: 25 },
+                    ],
+                },
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-low', 'track-bgv-high'],
+                        targetRanges: [
+                            { startBeat: 1, endBeat: 17 },
+                            { startBeat: 33, endBeat: 49 },
+                        ],
+                        protectedTargetIds: ['tape-bus', 'master'],
+                        protectedRanges: [
+                            { startBeat: 9, endBeat: 25 },
+                            { startBeat: 65, endBeat: 81 },
+                        ],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual(expect.objectContaining({ status: 'planned' }));
+        });
+
+        it('rejects a proposal that names a pre-existing target outside the computed scope', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-high', 'track-bgv-low', 'drum-bus'],
+                        targetRanges: [],
+                        protectedTargetIds: [],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'Provider attempted to enlarge or omit the application-owned scope.',
+            });
+        });
+
+        it('rejects a proposal that omits a pre-existing target the application computed', () => {
+            const result = planAgentRun({
+                ...creationInput,
+                providerProposal: providerProposal({
+                    scope: {
+                        targetIds: ['track-bgv-high'],
+                        targetRanges: [],
+                        protectedTargetIds: [],
+                        protectedRanges: [],
+                    },
+                    capabilityIds: ['createBus', 'setTrackOutput'],
+                }),
+            });
+
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'Provider attempted to enlarge or omit the application-owned scope.',
+            });
+        });
+    });
 });

@@ -24,9 +24,12 @@ technical risk never qualify for escalation. Missing access is a blocker, not a 
 Encountered defects are never out of scope: existing rot measurably causes new rot, and delegated
 agents imitate the code around them. A defect is observable misbehavior, a broken invariant, or a
 contradiction with a documented contract — never style preference. Sizeable defects get their own
-lane; small unrelated ones batch into one hygiene lane; work you cannot take now is filed at any
-size, written so a cold session can execute it. "Worth noting" is not an outcome — a thing worth
-noting is a thing worth fixing or filing.
+lane; small unrelated ones batch into one hygiene lane. A defect you are fixing yourself needs no
+issue: the lane and pull request are its claim, and an issue filed only to be closed again in the
+same hour is tracker noise. File only what you are leaving behind — when you must keep working on
+something else, file it at any size, written so a cold session or another agent can pick it up
+later. "Worth noting" is not an outcome — a thing worth noting is a thing worth fixing or handing
+off.
 
 ## Delegation
 
@@ -263,8 +266,9 @@ tracker state. Identity for a script-covered write is the App that script mints,
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
 `.env.sourdaw-reviewer` for `review:prepare` and `review:publish`. Do not commit them. Do not load
-the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
-`jcosta33-reviewer[bot]`. `deliver` does not mint the reviewer.
+the other role's file. Delivery authenticates the author and reviewer roles by their immutable bot
+actor node IDs in `scripts/githubAppIdentity.ts`; mutable App slugs and bot logins are display only.
+The two role IDs are never interchangeable. `deliver` does not mint the reviewer.
 
 The protected primary checkout is the launcher trust boundary for snapshot-backed GitHub writes.
 Run `lane:publish`, `deliver`, and `issue:reconcile` through its package route. The launcher and the
@@ -346,8 +350,8 @@ tables off the pull request.
 
 `review:prepare` prints a bundle path on the primary root: `manifest.json`, `diff.patch`, `pr.md`,
 and base-commit `contracts/`. The caller writes `review.json` for **this** head. A reviewer agent
-gets that bundle, not the author transcript. `review:publish` prints the review id and posts as
-`jcosta33-reviewer[bot]` only while GitHub's head still matches the bundle.
+gets that bundle, not the author transcript. `review:publish` prints the review id and posts through
+the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
@@ -394,8 +398,8 @@ An approval alone is weak evidence, so every consequential claim carries discrim
 test that fails when the change is reverted, a measurement at the boundary users experience. That
 proof stays in the session; it is not the GitHub review.
 
-`pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
-pull request is not a draft, merge state is `CLEAN`, and threads are resolved. It merges into `main`
+`pnpm deliver` squash-merges only after the immutable reviewer actor `APPROVED` the current head,
+the pull request is not a draft, merge state is `CLEAN`, and threads are resolved. It merges into `main`
 and nothing else: `lane:publish` opens every pull request there, so any other base is a retarget the
 delivery scripts did not make, and `deliver` refuses it rather than squashing onto a branch the
 change was never reviewed against. Do not merge any other way.

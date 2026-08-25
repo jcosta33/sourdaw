@@ -6,11 +6,6 @@ import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Pro
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ToolSchema } from '../models/ToolDefinitions';
-import {
-    isWorkflowCapabilityId,
-    WORKFLOW_CAPABILITY_TOOL_NAME,
-    type WorkflowCapabilityId,
-} from '../models/WorkflowCapability';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -42,16 +37,6 @@ const MAX_CURSOR_LENGTH = 256;
 const MAX_CATALOG_CURSOR_LENGTH = 2048;
 const MAX_REVISION_LENGTH = 65_536;
 const CATALOG_CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-const WORKFLOW_REPEATED_PRIMITIVE_CONTRACT: Partial<Record<WorkflowCapabilityId, readonly string[]>> = {
-    'drum-routing': ['setTrackOutput'],
-    'drum-render-comparison': ['createBus', 'setTrackOutput'],
-    'backing-vocal-plate': ['removeDevice', 'addDevice', 'addSend'],
-    'articulation-transfer': ['copyMidiArticulations'],
-    'bass-processing-copy': ['addAdjustmentRegion'],
-    'midi-overlap-shortening': ['removeShortMidiOverlaps'],
-    'shared-vocal-fx-buses': ['removeDevice', 'setTrackGain', 'createBus', 'addDevice', 'addSend'],
-};
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
 type QueryFilters = NonNullable<QueryInput['filters']>;
@@ -705,8 +690,7 @@ function recordDisclosedCommandSchemas(
 
 function validateCommandBatchProposal(
     call: ToolCallResult,
-    disclosedCommandSchemas: ReadonlyMap<string, string>,
-    allowedRepeatedPrimitiveCommandNames: ReadonlySet<string>
+    disclosedCommandSchemas: ReadonlyMap<string, string>
 ): string | null {
     const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
     const list = isRecord(call.arguments.list) ? call.arguments.list : null;
@@ -724,7 +708,6 @@ function validateCommandBatchProposal(
     if (commands.length === 0 || commands.length > 32) {
         return 'Provider command proposal exceeds the command budget.';
     }
-    const names = new Set<string>();
     for (const command of commands) {
         if (!isRecord(command)) {
             return 'Provider command proposal does not match the strict catalog contract.';
@@ -739,8 +722,7 @@ function validateCommandBatchProposal(
             typeof command.name !== 'string' ||
             command.name.length === 0 ||
             command.name.length > 128 ||
-            !isRecord(command.arguments) ||
-            (hasPrimitiveCommands && names.has(command.name) && !allowedRepeatedPrimitiveCommandNames.has(command.name))
+            !isRecord(command.arguments)
         ) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
@@ -759,7 +741,6 @@ function validateCommandBatchProposal(
         } catch {
             return 'Provider command proposal referenced an unavailable catalog command.';
         }
-        names.add(command.name);
     }
     return null;
 }
@@ -768,31 +749,11 @@ function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
     disclosedCommandSchemas: ReadonlyMap<string, string>
 ): string | null {
-    const workflowSelections = calls.filter(({ call }) => call.name === WORKFLOW_CAPABILITY_TOOL_NAME);
-    if (workflowSelections.length > 1) {
-        return 'Provider workflow selection does not match the strict capability contract.';
-    }
-    const workflowSelection = workflowSelections[0]?.call;
-    let selectedCapabilityId: WorkflowCapabilityId | undefined;
-    if (workflowSelection !== undefined) {
-        const capabilityId = workflowSelection.arguments.capabilityId;
-        if (Object.keys(workflowSelection.arguments).length !== 1 || !isWorkflowCapabilityId(capabilityId)) {
-            return 'Provider workflow selection does not match the strict capability contract.';
-        }
-        selectedCapabilityId = capabilityId;
-    }
-    const allowedRepeatedPrimitiveCommandNames = new Set<string>(
-        selectedCapabilityId === undefined ? [] : (WORKFLOW_REPEATED_PRIMITIVE_CONTRACT[selectedCapabilityId] ?? [])
-    );
     for (const { call } of calls) {
         if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
             continue;
         }
-        const rejection = validateCommandBatchProposal(
-            call,
-            disclosedCommandSchemas,
-            allowedRepeatedPrimitiveCommandNames
-        );
+        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas);
         if (rejection !== null) {
             return rejection;
         }

@@ -6,16 +6,14 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import { fail } from './prContract.ts';
 
-export const AUTHOR_BOT_LOGIN = 'jcosta33-author[bot]';
-export const AUTHOR_GRAPHQL_LOGIN = 'jcosta33-author';
-export const REVIEWER_BOT_LOGIN = 'jcosta33-reviewer[bot]';
-export const REVIEWER_GRAPHQL_LOGIN = 'jcosta33-reviewer';
+export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
+export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
 
-export function isReviewerBotLogin(login: string | undefined | null): boolean {
-    return login === REVIEWER_BOT_LOGIN || login === REVIEWER_GRAPHQL_LOGIN;
+export function isReviewerBotNodeId(nodeId: string | undefined | null): boolean {
+    return nodeId === REVIEWER_BOT_NODE_ID;
 }
-export function isAuthorBotLogin(login: string | undefined | null): boolean {
-    return login === AUTHOR_BOT_LOGIN || login === AUTHOR_GRAPHQL_LOGIN;
+export function isAuthorBotNodeId(nodeId: string | undefined | null): boolean {
+    return nodeId === AUTHOR_BOT_NODE_ID;
 }
 export const REQUIRED_REPOSITORY = 'jcosta33/sourdaw';
 /**
@@ -85,6 +83,7 @@ export type MintPermissions = {
 export type MintedInstallation = {
     token: string;
     login: string;
+    actorNodeId: string;
     permissions: Record<string, string>;
 };
 
@@ -200,7 +199,7 @@ export async function mintInstallationToken(input: {
     installationId: string;
     privateKey: string;
     permissions: MintPermissions;
-    expectedLogin: string;
+    expectedActorNodeId: string;
     request?: GitHubJsonClient;
 }): Promise<MintedInstallation> {
     const request = input.request ?? defaultGitHubRequest;
@@ -225,6 +224,7 @@ export async function mintInstallationToken(input: {
     if (typeof payload.token !== 'string' || payload.token === '') {
         fail('installation token response is missing token');
     }
+    assertInstallationToken(payload.token);
     const permissions = stringRecord(payload.permissions);
     assertMintedPermissions(input.permissions, permissions);
     const app = await request('https://api.github.com/app', {
@@ -242,11 +242,36 @@ export async function mintInstallationToken(input: {
         app.body !== null && typeof app.body === 'object' && 'slug' in app.body && typeof app.body.slug === 'string'
             ? app.body.slug
             : undefined;
-    const login = slug === undefined ? undefined : `${slug}[bot]`;
-    if (login !== input.expectedLogin) {
-        fail(`minted login ${login ?? '<missing>'} is not ${input.expectedLogin}`);
+    if (slug === undefined || slug === '') {
+        fail('GitHub App identity is missing its slug');
     }
-    return { token: payload.token, login, permissions };
+    const botLogin = `${slug}[bot]`;
+    const actor = await request(`https://api.github.com/users/${encodeURIComponent(botLogin)}`, {
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${payload.token}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+        },
+    });
+    const actorPayload =
+        actor.body !== null && typeof actor.body === 'object'
+            ? (actor.body as { node_id?: unknown; login?: unknown; type?: unknown })
+            : undefined;
+    if (
+        actor.status !== 200 ||
+        typeof actorPayload?.node_id !== 'string' ||
+        typeof actorPayload.login !== 'string' ||
+        actorPayload.type !== 'Bot'
+    ) {
+        fail(`failed to resolve GitHub App bot actor for ${botLogin}`);
+    }
+    if (actorPayload.node_id !== input.expectedActorNodeId) {
+        fail(
+            `minted bot actor ${actorPayload.node_id} (${actorPayload.login}) is not expected actor ${input.expectedActorNodeId}`
+        );
+    }
+    return { token: payload.token, login: actorPayload.login, actorNodeId: actorPayload.node_id, permissions };
 }
 
 export async function authenticateRole(input: {
@@ -417,7 +442,7 @@ async function authenticateWithPermissions(
         installationId: credentials.installationId,
         privateKey: credentials.privateKey,
         permissions,
-        expectedLogin: input.role === 'author' ? AUTHOR_BOT_LOGIN : REVIEWER_BOT_LOGIN,
+        expectedActorNodeId: input.role === 'author' ? AUTHOR_BOT_NODE_ID : REVIEWER_BOT_NODE_ID,
         request: input.request,
     });
     return { credentials, minted, session: createGhSession(minted.token, env) };
@@ -437,7 +462,7 @@ export async function authenticateTrackerAuthor(input: {
         installationId: credentials.installationId,
         privateKey: credentials.privateKey,
         permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
-        expectedLogin: AUTHOR_BOT_LOGIN,
+        expectedActorNodeId: AUTHOR_BOT_NODE_ID,
         request: input.request,
     });
     return { credentials, minted, session: createGhSession(minted.token, env) };

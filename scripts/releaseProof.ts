@@ -5,8 +5,10 @@ import { createHash } from 'node:crypto';
 import {
     chmodSync,
     closeSync,
+    constants,
     cpSync,
     existsSync,
+    fstatSync,
     lstatSync,
     mkdirSync,
     mkdtempSync,
@@ -32,7 +34,7 @@ import { FuseV1Options, type FuseState } from '@electron/fuses';
 import { Unzip, UnzipInflate } from 'fflate';
 import { Parser as TarParser } from 'tar';
 
-import { checkReleaseInventory } from './checkReleaseInventory.ts';
+import { checkReleaseInventory, readReleaseInventory, type ReleaseInventory } from './checkReleaseInventory.ts';
 import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from './electronRuntimeContract.ts';
 import { findFuseMismatches, REQUIRED_FUSES } from './flipElectronFuses.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
@@ -77,6 +79,9 @@ const WEB_REQUIRED_FILES = [
     'legal/DEPENDENCY-LICENSES.txt',
     'legal/THIRD-PARTY-NOTICES.md',
 ] as const;
+const WEBLLM_SURFACE_ID = 'webllm-qwen-artifacts';
+const PUBLIC_LEGAL_PREFIX = 'public/legal/';
+const PACKAGED_LEGAL_PREFIX = 'legal/';
 
 export const ELECTRON_FFMPEG_BUILD_INPUTS = [
     '.github/actions/build-electron/action.yml',
@@ -120,6 +125,8 @@ export type ReleaseProofOptions = {
     candidate: string;
     expectedRevision: string;
     runtimeContract?: ElectronRuntimeContract;
+    releaseInventory?: ReleaseInventory;
+    releaseInventoryReader?: ReleaseInventoryReader;
 };
 
 type GitIdentity = {
@@ -129,7 +136,8 @@ type GitIdentity = {
 
 export type ReleaseBuildPhase = 'web' | 'desktop';
 export type ReleaseBuildRunner = (phase: ReleaseBuildPhase, root: string) => void;
-export type ReleaseGateRunner = (root: string) => void;
+export type ReleaseGateRunner = (root: string, releaseInventory?: ReleaseInventory) => void;
+export type ReleaseInventoryReader = (root: string) => ReleaseInventory;
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -160,6 +168,56 @@ function sha256File(path: string): string {
         return hash.digest('hex');
     } finally {
         closeSync(descriptor);
+    }
+}
+
+function sha256ContainedRegularFile(root: string, path: string): string | undefined {
+    let descriptor: number | undefined;
+    try {
+        if ((constants.O_NOFOLLOW ?? 0) === 0) {
+            return undefined;
+        }
+        const rootRealPath = realpathSync(root);
+        const beforeOpen = lstatSync(path);
+        if (!beforeOpen.isFile()) {
+            return undefined;
+        }
+        descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const opened = fstatSync(descriptor);
+        const afterOpen = lstatSync(path);
+        const realPath = realpathSync(path);
+        const resolved = statSync(realPath);
+        if (
+            !opened.isFile() ||
+            !afterOpen.isFile() ||
+            !isContained(rootRealPath, realPath) ||
+            opened.dev !== beforeOpen.dev ||
+            opened.ino !== beforeOpen.ino ||
+            opened.dev !== afterOpen.dev ||
+            opened.ino !== afterOpen.ino ||
+            opened.dev !== resolved.dev ||
+            opened.ino !== resolved.ino
+        ) {
+            return undefined;
+        }
+        const hash = createHash('sha256');
+        const chunk = Buffer.alloc(HASH_CHUNK_BYTES);
+        let position = 0;
+        let bytesRead: number;
+        do {
+            bytesRead = readSync(descriptor, chunk, 0, chunk.length, position);
+            if (bytesRead > 0) {
+                hash.update(chunk.subarray(0, bytesRead));
+                position += bytesRead;
+            }
+        } while (bytesRead > 0);
+        return hash.digest('hex');
+    } catch {
+        return undefined;
+    } finally {
+        if (descriptor !== undefined) {
+            closeSync(descriptor);
+        }
     }
 }
 
@@ -365,6 +423,70 @@ function stringMap(value: unknown, label: string, errors: string[]): Record<stri
     return result;
 }
 
+function isConcreteInventoryFilePath(path: string): boolean {
+    if (path.includes('\\') || path.includes('\0') || path.endsWith('/') || /[*?[\]{}]/u.test(path)) {
+        return false;
+    }
+    const normalized = posix.normalize(path);
+    return (
+        !isAbsolute(path) &&
+        normalized === path &&
+        path !== '.' &&
+        !path.startsWith('../') &&
+        !path.includes('/../') &&
+        !path.endsWith('/..')
+    );
+}
+
+function webLlmRequiredLegalFilesFromInventory(inventory: ReleaseInventory): string[] {
+    const surface = inventory.surfaces.find((entry) => entry.id === WEBLLM_SURFACE_ID);
+    if (surface === undefined) {
+        throw new Error(`release inventory is missing ${WEBLLM_SURFACE_ID} surface`);
+    }
+    const required = [
+        ...new Set(
+            surface.paths
+                .filter((path) => path.startsWith(PUBLIC_LEGAL_PREFIX) && isConcreteInventoryFilePath(path))
+                .map((path) => `${PACKAGED_LEGAL_PREFIX}${path.slice(PUBLIC_LEGAL_PREFIX.length)}`)
+        ),
+    ].sort();
+    if (required.length === 0) {
+        throw new Error(`release inventory ${WEBLLM_SURFACE_ID} surface declares no concrete public/legal files`);
+    }
+    return required;
+}
+
+export function webLlmRequiredLegalFiles(root: string): string[] {
+    return webLlmRequiredLegalFilesFromInventory(readReleaseInventory(root));
+}
+
+function validateWebLlmLegalFiles(
+    root: string,
+    inventory: ReleaseInventory,
+    packagedFiles: Record<string, string>,
+    label: string,
+    errors: string[],
+    contentsPath?: string
+): void {
+    let requiredFiles: string[];
+    try {
+        requiredFiles = webLlmRequiredLegalFilesFromInventory(inventory);
+    } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        return;
+    }
+    for (const required of requiredFiles) {
+        const sourcePath = resolve(root, 'public', ...required.split('/'));
+        const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
+        const contentsMatch =
+            contentsPath === undefined ||
+            sha256ContainedRegularFile(contentsPath, resolve(contentsPath, ...required.split('/'))) === sourceDigest;
+        if (sourceDigest === undefined || packagedFiles[required] !== sourceDigest || !contentsMatch) {
+            errors.push(`${label} WebLLM legal file ${required} is missing or drifted`);
+        }
+    }
+}
+
 function verifyFileMap(
     directory: string,
     recorded: Record<string, string>,
@@ -405,7 +527,11 @@ function fileMap(directory: string): Record<string, string> {
 }
 
 function rendererFileMap(directory: string): Record<string, string> {
-    return Object.fromEntries(Object.entries(fileMap(directory)).filter(([path]) => !path.endsWith('.map')));
+    return Object.fromEntries(
+        Object.entries(fileMap(directory))
+            .filter(([path]) => !path.endsWith('.map'))
+            .sort(([left], [right]) => left.localeCompare(right))
+    );
 }
 
 function readJsonForValidation(path: string, label: string, errors: string[]): JsonRecord | undefined {
@@ -1209,7 +1335,8 @@ function validateWebManifest(
     candidate: string,
     proof: JsonRecord,
     expectedRevision: string,
-    errors: string[]
+    errors: string[],
+    releaseInventory: ReleaseInventory
 ): void {
     const web = requiredRecord(proof, 'web', 'release proof', errors);
     if (web === undefined) {
@@ -1246,10 +1373,13 @@ function validateWebManifest(
         }
         const sourcePath = resolve(root, 'public', required);
         const webPath = resolve(contentsPath, ...required.split('/'));
-        if (!existsSync(sourcePath) || !existsSync(webPath) || sha256File(sourcePath) !== sha256File(webPath)) {
+        const sourceDigest = sha256ContainedRegularFile(root, sourcePath);
+        const webDigest = sha256ContainedRegularFile(contentsPath, webPath);
+        if (sourceDigest === undefined || sourceDigest !== webDigest) {
             errors.push(`web legal file ${required} is missing or drifted`);
         }
     }
+    validateWebLlmLegalFiles(root, releaseInventory, files, 'web', errors, contentsPath);
     if (archivePath !== undefined && archive !== undefined) {
         const archiveFiles = archive.entries.map((entry) => entry.path).sort();
         const expectedFiles = ['web-artifact-manifest.json', ...Object.keys(files)].sort();
@@ -1589,7 +1719,8 @@ function validateDesktopArchiveContents(
     artifactSha256: unknown,
     manifest: JsonRecord,
     runtimeContract: ElectronRuntimeContract,
-    errors: string[]
+    errors: string[],
+    releaseInventory: ReleaseInventory
 ): void {
     let snapshot: DesktopSnapshot | undefined;
     try {
@@ -1666,10 +1797,11 @@ function validateDesktopArchiveContents(
     ] as const;
     for (const [packaged, source] of sourceFiles) {
         const sourcePath = resolve(root, ...source.split('/'));
-        if (!existsSync(sourcePath) || snapshot.files[packaged] !== sha256File(sourcePath)) {
+        if (snapshot.files[packaged] !== sha256ContainedRegularFile(root, sourcePath)) {
             errors.push(`desktop legal file ${packaged} is missing or drifted`);
         }
     }
+    validateWebLlmLegalFiles(root, releaseInventory, snapshot.files, 'desktop', errors);
     const target = runtimeContract.targets.find((item) => item.platform === 'darwin' && item.arch === 'arm64');
     if (target === undefined) {
         errors.push('Electron runtime contract has no darwin arm64 target');
@@ -1682,7 +1814,7 @@ function validateDesktopArchiveContents(
         }
     }
     const runtimeManifest = resolve(root, 'public/legal/ELECTRON-SOURCES.json');
-    if (!existsSync(runtimeManifest) || snapshot.files['legal/ELECTRON-SOURCES.json'] !== sha256File(runtimeManifest)) {
+    if (snapshot.files['legal/ELECTRON-SOURCES.json'] !== sha256ContainedRegularFile(root, runtimeManifest)) {
         errors.push('desktop packaged runtime manifest does not match the pinned runtime contract');
     }
 }
@@ -1796,7 +1928,8 @@ function validateDesktop(
     proof: JsonRecord,
     expectedRevision: string,
     errors: string[],
-    runtimeContract: ElectronRuntimeContract
+    runtimeContract: ElectronRuntimeContract,
+    releaseInventory: ReleaseInventory
 ): void {
     const desktop = requiredRecord(proof, 'desktop', 'release proof', errors);
     if (desktop === undefined) {
@@ -1902,7 +2035,8 @@ function validateDesktop(
                 desktop.artifactSha256,
                 manifest,
                 runtimeContract,
-                errors
+                errors,
+                releaseInventory
             );
         }
     }
@@ -1998,6 +2132,13 @@ function validateCandidateCensus(candidate: string, proof: JsonRecord, errors: s
 export function validateReleaseProof(options: ReleaseProofOptions): string[] {
     const errors: string[] = [];
     const runtimeContract = options.runtimeContract ?? ELECTRON_RUNTIME_CONTRACT;
+    let releaseInventory: ReleaseInventory | undefined;
+    try {
+        releaseInventory =
+            options.releaseInventory ?? (options.releaseInventoryReader ?? readReleaseInventory)(options.root);
+    } catch (error) {
+        errors.push(error instanceof Error ? error.message : 'release inventory cannot be read safely');
+    }
     if (!/^[0-9a-f]{40}$/u.test(options.expectedRevision)) {
         errors.push('expected revision must be a 40-character Git SHA');
     }
@@ -2059,8 +2200,18 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         errors.push('release proof paths must be unique');
     }
     validateSourceManifest(options.candidate, proof, options.expectedRevision, errors);
-    validateWebManifest(options.root, options.candidate, proof, options.expectedRevision, errors);
-    validateDesktop(options.root, options.candidate, proof, options.expectedRevision, errors, runtimeContract);
+    if (releaseInventory !== undefined) {
+        validateWebManifest(options.root, options.candidate, proof, options.expectedRevision, errors, releaseInventory);
+        validateDesktop(
+            options.root,
+            options.candidate,
+            proof,
+            options.expectedRevision,
+            errors,
+            runtimeContract,
+            releaseInventory
+        );
+    }
     validateCandidateCensus(options.candidate, proof, errors);
     return errors;
 }
@@ -2266,10 +2417,13 @@ export function assembleReleaseProof(
     ffmpegSource: string,
     runtimeContract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT,
     buildRunner: ReleaseBuildRunner = runProjectBuild,
-    releaseGate: ReleaseGateRunner = checkReleaseInventory
+    releaseGate: ReleaseGateRunner = (gateRoot, releaseInventory) =>
+        checkReleaseInventory(gateRoot, undefined, releaseInventory),
+    releaseInventoryReader: ReleaseInventoryReader = readReleaseInventory
 ): void {
     assertClean(root);
     const revision = gitRevision(root);
+    const releaseInventory = releaseInventoryReader(root);
     const sourceIdentity = verifyGitCheckout(
         root,
         execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' }).trim(),
@@ -2481,12 +2635,19 @@ export function assembleReleaseProof(
             },
         };
         writeJson(join(candidate, PROOF_FILE), proof);
-        const errors = validateReleaseProof({ root, candidate, expectedRevision: revision, runtimeContract });
+        const errors = validateReleaseProof({
+            root,
+            candidate,
+            expectedRevision: revision,
+            runtimeContract,
+            releaseInventory,
+            releaseInventoryReader,
+        });
         if (errors.length > 0) {
             throw new Error(errors.join('\n'));
         }
         assertBuildState(root, revision);
-        releaseGate(root);
+        releaseGate(root, releaseInventory);
         assertBuildState(root, revision);
         renameSync(candidate, output);
     } catch (error) {

@@ -312,9 +312,7 @@ export const parsePromptToActions = inject({ logger })(
                         projectRevision,
                         run: agentRun ? { grants: agentRun.grants, budgets: agentRun.budgets } : undefined,
                         receipts:
-                            receiptContext === null
-                                ? []
-                                : [{ id: 'application-tool-loop', summary: receiptContext.slice(0, 8_192) }],
+                            receiptContext === null ? [] : [{ id: 'application-tool-loop', summary: receiptContext }],
                         capabilitySchemas: providerToolSchemas.map((schema) => ({
                             name: schema.function.name,
                             schemaVersion: 1,
@@ -520,12 +518,6 @@ export const parsePromptToActions = inject({ logger })(
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
-                        verifiedProviderProposalScope: {
-                            targetIds: [],
-                            targetRanges: [],
-                            protectedTargetIds: context.tracks.map((track) => track.id),
-                            protectedRanges: [],
-                        },
                     };
                 }
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
@@ -628,57 +620,14 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
-                    let verifiedProviderProposalScope = bridged.verifiedProviderProposalScope;
-                    if (verifiedProviderProposalScope === undefined && bridged.bassProcessingCopyScope !== undefined) {
-                        verifiedProviderProposalScope = {
-                            targetIds: [
-                                ...new Set([
-                                    ...bridged.bassProcessingCopyScope.entries.flatMap((entry) => [
-                                        entry.layer.id,
-                                        ...entry.layer.affectedTrackIds,
-                                    ]),
-                                    bridged.bassProcessingCopyScope.targetSection.id,
-                                ]),
-                            ],
-                            targetRanges: bridged.bassProcessingCopyScope.entries.map((entry) => ({
-                                startBeat: entry.targetRegion.startBeat,
-                                endBeat: entry.targetRegion.endBeat,
-                            })),
-                            protectedTargetIds: bridged.bassProcessingCopyScope.protectedObjects.map(
-                                (object) => object.id
-                            ),
-                            protectedRanges: [],
-                        };
-                    }
-                    if (verifiedProviderProposalScope === undefined && bridged.syncopatedArpeggioScope !== undefined) {
-                        verifiedProviderProposalScope = {
-                            targetIds: [
-                                bridged.syncopatedArpeggioScope.trackId,
-                                bridged.syncopatedArpeggioScope.clipId,
-                            ],
-                            targetRanges: [],
-                            protectedTargetIds: bridged.syncopatedArpeggioScope.protectedObjects.map(
-                                (object) => object.id
-                            ),
-                            protectedRanges: [],
-                        };
-                    }
-                    if (verifiedProviderProposalScope === undefined && bridged.actionCommandGraph !== undefined) {
-                        verifiedProviderProposalScope = compiledList.compilerEvidence?.proposalScope;
-                    }
-
                     return {
                         actions: guarded.actions,
-                        ...(bridged.actionCommandGraph === undefined
-                            ? {}
-                            : { actionCommandGraph: bridged.actionCommandGraph }),
                         rawText: prompt,
                         requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
-                        ...(verifiedProviderProposalScope === undefined ? {} : { verifiedProviderProposalScope }),
                     };
                 }
 

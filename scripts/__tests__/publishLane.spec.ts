@@ -239,7 +239,8 @@ describe('lane publish', () => {
                     file === 'githubAppIdentity.ts'
                         ? '\nglobalThis.fetch = async (url, init = {}) => {\n' +
                           "  if (String(url).endsWith('/access_tokens')) { const { appendFileSync } = await import('node:fs'); const body = JSON.parse(String(init.body)); appendFileSync(process.env.TEST_EVENT_LOG, 'mint\\n'); appendFileSync(process.env.TEST_MINT_LOG, JSON.stringify(body) + '\\n'); return new Response(JSON.stringify({ token: 'ghs_minted', permissions: body.permissions }), { status: 201 }); }\n" +
-                          "  if (String(url).endsWith('/app')) return new Response(JSON.stringify({ slug: 'jcosta33-author' }), { status: 200 });\n" +
+                          "  if (String(url).endsWith('/app')) return new Response(JSON.stringify({ slug: 'renamed-author' }), { status: 200 });\n" +
+                          "  if (String(url).includes('/users/')) return new Response(JSON.stringify({ login: 'renamed-author[bot]', node_id: 'BOT_kgDOEv71mA', type: 'Bot' }), { status: 200 });\n" +
                           "  return new Response('{}', { status: 404 });\n" +
                           '};\n'
                         : '';

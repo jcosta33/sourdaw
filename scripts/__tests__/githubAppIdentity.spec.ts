@@ -7,13 +7,13 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
-    AUTHOR_BOT_LOGIN,
+    AUTHOR_BOT_NODE_ID,
     AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     TRACKER_AUTHOR_MINT_PERMISSIONS,
-    isAuthorBotLogin,
+    isAuthorBotNodeId,
     AUTHOR_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
-    REVIEWER_BOT_LOGIN,
+    REVIEWER_BOT_NODE_ID,
     REVIEWER_MINT_PERMISSIONS,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
@@ -25,7 +25,7 @@ import {
     gitCredentialHelperPath,
     githubChildEnv,
     githubAuthorizationGitEnv,
-    isReviewerBotLogin,
+    isReviewerBotNodeId,
     loadRoleCredentials,
     mintInstallationToken,
     parseDotenv,
@@ -41,6 +41,8 @@ const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 const PUBLISHING_HEAD = 'a'.repeat(40);
 const PUBLISHING_BASE = 'b'.repeat(40);
+const RENAMED_AUTHOR_LOGIN = 'hplovecraft208[bot]';
+const RENAMED_REVIEWER_LOGIN = 'tmckenna1611[bot]';
 
 const authorFile = `SOURDAW_GITHUB_APP_ID=4650613
 SOURDAW_GITHUB_APP_INSTALLATION_ID=154969409
@@ -72,26 +74,40 @@ GH_TOKEN=parent-token
 
 function mintClient(input: {
     login: string;
+    actorNodeId?: string;
     permissions: Record<string, string>;
     token?: string;
     appStatus?: number;
+    actorStatus?: number;
     mintStatus?: number;
 }): {
-    requests: Array<{ url: string; body?: string }>;
+    requests: Array<{ url: string; body?: string; authorization?: string }>;
     request: GitHubJsonClient;
 } {
-    const requests: Array<{ url: string; body?: string }> = [];
+    const requests: Array<{ url: string; body?: string; authorization?: string }> = [];
     return {
         requests,
         request: async (url, init) => {
-            requests.push({ url, body: init.body });
+            requests.push({ url, body: init.body, authorization: init.headers.Authorization });
             if (url.includes('/access_tokens')) {
                 return {
                     status: input.mintStatus ?? 201,
                     body: { token: input.token ?? 'ghs_minted', permissions: input.permissions },
                 };
             }
-            return { status: input.appStatus ?? 200, body: { slug: input.login.replace('[bot]', '') } };
+            if (url.endsWith('/app')) {
+                return { status: input.appStatus ?? 200, body: { slug: input.login.replace('[bot]', '') } };
+            }
+            return {
+                status: input.actorStatus ?? 200,
+                body: {
+                    login: input.login,
+                    node_id:
+                        input.actorNodeId ??
+                        (input.login === RENAMED_AUTHOR_LOGIN ? AUTHOR_BOT_NODE_ID : REVIEWER_BOT_NODE_ID),
+                    type: 'Bot',
+                },
+            };
         },
     };
 }
@@ -265,7 +281,7 @@ describe('installation mint', () => {
             const ordinaryBase = repository(ordinary, 'scripts/publishLane.ts');
             repository(hostile, '.github/workflows/hostile.yml');
             const { requests, request } = mintClient({
-                login: AUTHOR_BOT_LOGIN,
+                login: RENAMED_AUTHOR_LOGIN,
                 permissions: { contents: 'write', pull_requests: 'write' },
             });
             const auth = await authenticatePublishingAuthor({
@@ -391,7 +407,7 @@ describe('installation mint', () => {
     it('requests workflows write only when the publishing lane changes a workflow', async () => {
         const order: string[] = [];
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
         });
         const auth = await authenticatePublishingAuthor({
@@ -418,7 +434,7 @@ describe('installation mint', () => {
 
     it('keeps ordinary publishing lanes on the existing least-privilege author mint', async () => {
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write' },
         });
         const auth = await authenticatePublishingAuthor({
@@ -440,7 +456,7 @@ describe('installation mint', () => {
 
     it('refuses workflow write returned for an ordinary publishing lane', async () => {
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
         });
 
@@ -460,7 +476,7 @@ describe('installation mint', () => {
 
     it('refuses a workflow publishing token that omits workflow write', async () => {
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write' },
         });
 
@@ -478,9 +494,9 @@ describe('installation mint', () => {
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
-    it('mints reviewer permissions without contents write and checks login', async () => {
+    it('accepts a renamed reviewer bot with the immutable reviewer actor ID', async () => {
         const { requests, request } = mintClient({
-            login: REVIEWER_BOT_LOGIN,
+            login: RENAMED_REVIEWER_LOGIN,
             permissions: { contents: 'read', pull_requests: 'write' },
         });
         const minted = await mintInstallationToken({
@@ -488,16 +504,41 @@ describe('installation mint', () => {
             installationId: '1',
             privateKey: pem,
             permissions: REVIEWER_MINT_PERMISSIONS,
-            expectedLogin: REVIEWER_BOT_LOGIN,
+            expectedActorNodeId: REVIEWER_BOT_NODE_ID,
             request,
         });
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: REVIEWER_MINT_PERMISSIONS });
-        expect(minted.login).toBe(REVIEWER_BOT_LOGIN);
+        expect(minted.login).toBe(RENAMED_REVIEWER_LOGIN);
+        expect(minted.actorNodeId).toBe(REVIEWER_BOT_NODE_ID);
         expect(minted.token).toBe('ghs_minted');
+        expect(requests.find((entry) => entry.url.includes('/users/'))?.authorization).toBe('Bearer ghs_minted');
     });
+    it.each([
+        ['reviewer', RENAMED_REVIEWER_LOGIN, AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID],
+        ['author', RENAMED_AUTHOR_LOGIN, REVIEWER_BOT_NODE_ID, AUTHOR_BOT_NODE_ID],
+    ])(
+        'rejects the %s login when the author and reviewer actor IDs are swapped',
+        async (_role, login, actorNodeId, expectedActorNodeId) => {
+            const { request } = mintClient({
+                login,
+                actorNodeId,
+                permissions: { contents: 'read', pull_requests: 'write' },
+            });
+            await expect(
+                mintInstallationToken({
+                    appId: '1',
+                    installationId: '1',
+                    privateKey: pem,
+                    permissions: REVIEWER_MINT_PERMISSIONS,
+                    expectedActorNodeId,
+                    request,
+                })
+            ).rejects.toThrow(/minted bot actor .* is not expected actor/);
+        }
+    );
     it('rejects a non-success App identity response even when its slug matches', async () => {
         const { request } = mintClient({
-            login: REVIEWER_BOT_LOGIN,
+            login: RENAMED_REVIEWER_LOGIN,
             permissions: { contents: 'read', pull_requests: 'write' },
             appStatus: 401,
         });
@@ -507,7 +548,7 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: REVIEWER_MINT_PERMISSIONS,
-                expectedLogin: REVIEWER_BOT_LOGIN,
+                expectedActorNodeId: REVIEWER_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(/failed to verify GitHub App identity/i);
@@ -517,7 +558,7 @@ describe('installation mint', () => {
         ['App identity', { appStatus: 202 }, /failed to verify GitHub App identity/],
     ])('rejects a 202 %s response with an otherwise valid payload', async (_case, statuses, expected) => {
         const { request } = mintClient({
-            login: REVIEWER_BOT_LOGIN,
+            login: RENAMED_REVIEWER_LOGIN,
             permissions: { contents: 'read', pull_requests: 'write' },
             ...statuses,
         });
@@ -527,7 +568,7 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: REVIEWER_MINT_PERMISSIONS,
-                expectedLogin: REVIEWER_BOT_LOGIN,
+                expectedActorNodeId: REVIEWER_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(expected);
@@ -535,7 +576,7 @@ describe('installation mint', () => {
 
     it('refuses a reviewer token with contents write before further GitHub writes', async () => {
         const { requests, request } = mintClient({
-            login: REVIEWER_BOT_LOGIN,
+            login: RENAMED_REVIEWER_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write' },
         });
         await expect(
@@ -544,7 +585,7 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: REVIEWER_MINT_PERMISSIONS,
-                expectedLogin: REVIEWER_BOT_LOGIN,
+                expectedActorNodeId: REVIEWER_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(/contents: write/);
@@ -553,7 +594,7 @@ describe('installation mint', () => {
 
     it('refuses a reviewer token missing contents before further GitHub writes', async () => {
         const { requests, request } = mintClient({
-            login: REVIEWER_BOT_LOGIN,
+            login: RENAMED_REVIEWER_LOGIN,
             permissions: { pull_requests: 'write' },
         });
         await expect(
@@ -562,7 +603,7 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: REVIEWER_MINT_PERMISSIONS,
-                expectedLogin: REVIEWER_BOT_LOGIN,
+                expectedActorNodeId: REVIEWER_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(/contents is <missing>/);
@@ -573,14 +614,14 @@ describe('installation mint', () => {
         ['missing', { contents: 'read' }],
         ['downgraded', { contents: 'read', pull_requests: 'read' }],
     ])('refuses a reviewer token with %s pull_requests before further GitHub writes', async (_case, permissions) => {
-        const { requests, request } = mintClient({ login: REVIEWER_BOT_LOGIN, permissions });
+        const { requests, request } = mintClient({ login: RENAMED_REVIEWER_LOGIN, permissions });
         await expect(
             mintInstallationToken({
                 appId: '1',
                 installationId: '1',
                 privateKey: pem,
                 permissions: REVIEWER_MINT_PERMISSIONS,
-                expectedLogin: REVIEWER_BOT_LOGIN,
+                expectedActorNodeId: REVIEWER_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(/pull_requests is (?:<missing>|read)/);
@@ -589,7 +630,7 @@ describe('installation mint', () => {
 
     it('refuses extra write grants on a minted token before further GitHub writes', async () => {
         const { requests, request } = mintClient({
-            login: REVIEWER_BOT_LOGIN,
+            login: RENAMED_REVIEWER_LOGIN,
             permissions: { contents: 'read', pull_requests: 'write', administration: 'write' },
         });
         await expect(
@@ -598,7 +639,7 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: REVIEWER_MINT_PERMISSIONS,
-                expectedLogin: REVIEWER_BOT_LOGIN,
+                expectedActorNodeId: REVIEWER_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(/administration: write/);
@@ -613,14 +654,14 @@ describe('installation mint', () => {
         ],
         ['requested write upgraded to admin', { contents: 'read', pull_requests: 'admin' }, /pull_requests is admin/],
     ])('refuses %s before further GitHub writes', async (_case, permissions, expected) => {
-        const { requests, request } = mintClient({ login: REVIEWER_BOT_LOGIN, permissions });
+        const { requests, request } = mintClient({ login: RENAMED_REVIEWER_LOGIN, permissions });
         await expect(
             mintInstallationToken({
                 appId: '1',
                 installationId: '1',
                 privateKey: pem,
                 permissions: REVIEWER_MINT_PERMISSIONS,
-                expectedLogin: REVIEWER_BOT_LOGIN,
+                expectedActorNodeId: REVIEWER_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(expected);
@@ -629,7 +670,7 @@ describe('installation mint', () => {
 
     it('refuses an author token whose contents level does not match the request', async () => {
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'read', pull_requests: 'write' },
         });
         await expect(
@@ -638,7 +679,7 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: AUTHOR_MINT_PERMISSIONS,
-                expectedLogin: AUTHOR_BOT_LOGIN,
+                expectedActorNodeId: AUTHOR_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(/contents is read/);
@@ -647,7 +688,7 @@ describe('installation mint', () => {
 
     it('allows extra read-only grants on a minted token', async () => {
         const { request } = mintClient({
-            login: REVIEWER_BOT_LOGIN,
+            login: RENAMED_REVIEWER_LOGIN,
             permissions: { contents: 'read', pull_requests: 'write', metadata: 'read' },
         });
         const minted = await mintInstallationToken({
@@ -655,7 +696,7 @@ describe('installation mint', () => {
             installationId: '1',
             privateKey: pem,
             permissions: REVIEWER_MINT_PERMISSIONS,
-            expectedLogin: REVIEWER_BOT_LOGIN,
+            expectedActorNodeId: REVIEWER_BOT_NODE_ID,
             request,
         });
         expect(minted.token).toBe('ghs_minted');
@@ -663,7 +704,7 @@ describe('installation mint', () => {
 
     it('requests only author contents write and pull_requests write', async () => {
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write' },
         });
         await mintInstallationToken({
@@ -671,7 +712,7 @@ describe('installation mint', () => {
             installationId: '1',
             privateKey: pem,
             permissions: AUTHOR_MINT_PERMISSIONS,
-            expectedLogin: AUTHOR_BOT_LOGIN,
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
             request,
         });
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
@@ -681,7 +722,7 @@ describe('installation mint', () => {
 
     it('requests only issues write for tracker maintenance', async () => {
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { issues: 'write' },
         });
         await mintInstallationToken({
@@ -689,7 +730,7 @@ describe('installation mint', () => {
             installationId: '1',
             privateKey: pem,
             permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
-            expectedLogin: AUTHOR_BOT_LOGIN,
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
             request,
         });
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: TRACKER_AUTHOR_MINT_PERMISSIONS });
@@ -700,7 +741,7 @@ describe('installation mint', () => {
     it('creates an isolated issues-only tracker author session', async () => {
         const parent: NodeJS.ProcessEnv = { PATH: '/usr/bin', GH_TOKEN: 'inherited' };
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { issues: 'write' },
             token: 'ghs_tracker',
         });
@@ -735,7 +776,13 @@ describe('installation mint', () => {
                     },
                 };
             }
-            return { status: 200, body: { slug: 'jcosta33-author' } };
+            if (url.endsWith('/app')) {
+                return { status: 200, body: { slug: RENAMED_AUTHOR_LOGIN.replace('[bot]', '') } };
+            }
+            return {
+                status: 200,
+                body: { login: RENAMED_AUTHOR_LOGIN, node_id: AUTHOR_BOT_NODE_ID, type: 'Bot' },
+            };
         };
 
         const auth = await authenticateTrackerAuthor({
@@ -749,6 +796,7 @@ describe('installation mint', () => {
             expect(requests.map((entry) => entry.url)).toEqual([
                 'https://api.github.com/app/installations/154969409/access_tokens',
                 'https://api.github.com/app',
+                `https://api.github.com/users/${encodeURIComponent(RENAMED_AUTHOR_LOGIN)}`,
             ]);
             expect(requests.some((entry) => entry.url.includes('/issues/'))).toBe(false);
         } finally {
@@ -758,7 +806,7 @@ describe('installation mint', () => {
 
     it('refuses extra write grants on a tracker maintenance token', async () => {
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { issues: 'write', contents: 'write' },
         });
         await expect(
@@ -767,16 +815,17 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: TRACKER_AUTHOR_MINT_PERMISSIONS,
-                expectedLogin: AUTHOR_BOT_LOGIN,
+                expectedActorNodeId: AUTHOR_BOT_NODE_ID,
                 request,
             })
         ).rejects.toThrow(/contents: write/);
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
-    it('refuses a minted login that is not the expected bot', async () => {
+    it('refuses the current author login when it resolves to the wrong actor ID', async () => {
         const { request } = mintClient({
-            login: 'jcosta33',
+            login: RENAMED_AUTHOR_LOGIN,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
             permissions: { contents: 'write', pull_requests: 'write' },
         });
         await expect(
@@ -785,10 +834,10 @@ describe('installation mint', () => {
                 installationId: '1',
                 privateKey: pem,
                 permissions: AUTHOR_MINT_PERMISSIONS,
-                expectedLogin: AUTHOR_BOT_LOGIN,
+                expectedActorNodeId: AUTHOR_BOT_NODE_ID,
                 request,
             })
-        ).rejects.toThrow(/not jcosta33-author\[bot\]/);
+        ).rejects.toThrow(/minted bot actor .* is not expected actor/);
     });
 });
 
@@ -816,7 +865,7 @@ describe('isolated gh sessions', () => {
             GIT_CURL_VERBOSE: '1',
         };
         const { requests, request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write' },
             token: 'ghs_author',
         });
@@ -849,7 +898,8 @@ describe('isolated gh sessions', () => {
         expect(auth.session.env.GIT_CURL_VERBOSE).toBeUndefined();
         expect(auth.session.env.GIT_SSH_COMMAND).toBe('/usr/bin/false');
         expect(auth.session.env.GIT_SSH).toBe('/usr/bin/false');
-        expect(auth.minted.login).toBe(AUTHOR_BOT_LOGIN);
+        expect(auth.minted.login).toBe(RENAMED_AUTHOR_LOGIN);
+        expect(auth.minted.actorNodeId).toBe(AUTHOR_BOT_NODE_ID);
         expect(JSON.stringify(auth.session.env)).not.toContain(pem.slice(0, 40));
         expect(requests[0]?.url).toContain('/app/installations/154969409/access_tokens');
         auth.session.dispose();
@@ -858,7 +908,7 @@ describe('isolated gh sessions', () => {
     it('does not read the reviewer file when authenticating the author', async () => {
         const reads: string[] = [];
         const { request } = mintClient({
-            login: AUTHOR_BOT_LOGIN,
+            login: RENAMED_AUTHOR_LOGIN,
             permissions: { contents: 'write', pull_requests: 'write' },
         });
         const auth = await authenticateRole({
@@ -956,20 +1006,18 @@ describe('repository and trusted blob', () => {
         expect(root).toBe('/repo');
     });
 
-    it('treats GraphQL Bot login and REST [bot] login as the reviewer', () => {
-        expect(isReviewerBotLogin('jcosta33-reviewer[bot]')).toBe(true);
-        expect(isReviewerBotLogin('jcosta33-reviewer')).toBe(true);
-        expect(isReviewerBotLogin('jcosta33-author[bot]')).toBe(false);
-        expect(isReviewerBotLogin('jcosta33')).toBe(false);
-        expect(isReviewerBotLogin(undefined)).toBe(false);
+    it('recognizes only the immutable reviewer bot actor ID', () => {
+        expect(isReviewerBotNodeId(REVIEWER_BOT_NODE_ID)).toBe(true);
+        expect(isReviewerBotNodeId(AUTHOR_BOT_NODE_ID)).toBe(false);
+        expect(isReviewerBotNodeId('BOT_renamed-login-does-not-matter')).toBe(false);
+        expect(isReviewerBotNodeId(undefined)).toBe(false);
     });
 
-    it('normalizes GraphQL and REST author bot logins without accepting other actors', () => {
-        expect(isAuthorBotLogin('jcosta33-author[bot]')).toBe(true);
-        expect(isAuthorBotLogin('jcosta33-author')).toBe(true);
-        expect(isAuthorBotLogin('jcosta33-reviewer[bot]')).toBe(false);
-        expect(isAuthorBotLogin('jcosta33')).toBe(false);
-        expect(isAuthorBotLogin(undefined)).toBe(false);
+    it('recognizes only the immutable author bot actor ID', () => {
+        expect(isAuthorBotNodeId(AUTHOR_BOT_NODE_ID)).toBe(true);
+        expect(isAuthorBotNodeId(REVIEWER_BOT_NODE_ID)).toBe(false);
+        expect(isAuthorBotNodeId('BOT_renamed-login-does-not-matter')).toBe(false);
+        expect(isAuthorBotNodeId(undefined)).toBe(false);
     });
 });
 

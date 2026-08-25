@@ -20,6 +20,49 @@ const pendingGuards = new WeakMap<
     Array<{ trackId: string; generatedMidiStateGuard: GeneratedMidiStateGuard }>
 >();
 
+type ImportedStemSetGuardPhase = 'pre-import' | 'post-import';
+
+type DiscardImportedStemSetAction = Extract<AppAction, { type: 'discardImportedStemSet' }>;
+
+function isDiscardImportedStemSetDivergenceSafe(
+    action: DiscardImportedStemSetAction,
+    phase: ImportedStemSetGuardPhase
+): boolean {
+    const targetIds = [action.payload.folderId, ...action.payload.stemTrackIds];
+    if (
+        new Set(targetIds).size !== targetIds.length ||
+        action.payload.guards.length !== targetIds.length ||
+        !action.payload.guards.every((entry, index) => entry.trackId === targetIds[index])
+    ) {
+        return false;
+    }
+
+    const state = getTrackStoreState();
+    if (!state) {
+        return false;
+    }
+
+    if (phase === 'pre-import') {
+        const targetsAreAbsent = targetIds.every((trackId) => !state.tracks.some((track) => track.id === trackId));
+        const guardsArePlaceholders = action.payload.guards.every(
+            ({ generatedMidiStateGuard }) =>
+                generatedMidiStateGuard.entityJson === '' && generatedMidiStateGuard.midiByClipIdJson === '{}'
+        );
+        return targetsAreAbsent && guardsArePlaceholders;
+    }
+
+    return action.payload.guards.every((entry) =>
+        isGeneratedMidiStateCurrent({
+            entityId: entry.trackId,
+            entityType: 'track',
+            guard: entry.generatedMidiStateGuard,
+            ...(entry.trackId === action.payload.folderId
+                ? { allowedReferencingTrackIds: action.payload.stemTrackIds }
+                : {}),
+        })
+    );
+}
+
 function getFailureDetail(error: unknown): string {
     if (error instanceof AggregateError) {
         return error.errors.map((entry) => getFailureDetail(entry)).join('; ');
@@ -155,42 +198,15 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
     undoable: true,
 });
 
-type DiscardImportedStemSetAction = Extract<AppAction, { type: 'discardImportedStemSet' }>;
-
-function hasCompleteImportedStemGuards(action: DiscardImportedStemSetAction): boolean {
-    const expectedTrackIds = new Set([action.payload.folderId, ...action.payload.stemTrackIds]);
-    return (
-        expectedTrackIds.size === action.payload.stemTrackIds.length + 1 &&
-        action.payload.guards.length === expectedTrackIds.size &&
-        action.payload.guards.every(
-            (entry) =>
-                expectedTrackIds.has(entry.trackId) &&
-                typeof entry.generatedMidiStateGuard.entityJson === 'string' &&
-                typeof entry.generatedMidiStateGuard.midiByClipIdJson === 'string'
-        ) &&
-        new Set(action.payload.guards.map((entry) => entry.trackId)).size === expectedTrackIds.size
-    );
-}
-
-function canDiscardImportedStemSet(action: DiscardImportedStemSetAction): boolean {
-    if (!hasCompleteImportedStemGuards(action)) {
-        return false;
-    }
-    const allowedChildren = action.payload.stemTrackIds;
-    return action.payload.guards.every((entry) =>
-        isGeneratedMidiStateCurrent({
-            entityId: entry.trackId,
-            entityType: 'track',
-            guard: entry.generatedMidiStateGuard,
-            ...(entry.trackId === action.payload.folderId ? { allowedReferencingTrackIds: allowedChildren } : {}),
-        })
-    );
-}
-
 export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSet'>({
-    canReapplyAfterDivergence: hasCompleteImportedStemGuards,
+    canReapplyAfterDivergence: (action) =>
+        isDiscardImportedStemSetDivergenceSafe(action, 'pre-import') ||
+        isDiscardImportedStemSetDivergenceSafe(action, 'post-import'),
+    validate: (action) =>
+        isDiscardImportedStemSetDivergenceSafe(action, 'pre-import') ||
+        isDiscardImportedStemSetDivergenceSafe(action, 'post-import'),
     execute: (action) => {
-        if (!canDiscardImportedStemSet(action)) {
+        if (!isDiscardImportedStemSetDivergenceSafe(action, 'post-import')) {
             return { status: 'conflict' };
         }
 
@@ -222,5 +238,4 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
-    validate: canDiscardImportedStemSet,
 });

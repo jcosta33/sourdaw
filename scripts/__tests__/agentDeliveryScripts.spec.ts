@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import { coordinateDelivery } from '../deliverPullRequest.ts';
+import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
     BOOTSTRAP_PATH,
@@ -712,7 +713,7 @@ describe('package scripts and gitignore', () => {
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
-            minted: { token, login: 'jcosta33-author[bot]', permissions },
+            minted: { token, login: 'renamed-author[bot]', actorNodeId: AUTHOR_BOT_NODE_ID, permissions },
             session: {
                 configDir: `/${token}`,
                 env: { GH_TOKEN: token },
@@ -788,7 +789,7 @@ describe('package scripts and gitignore', () => {
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
-            'complete:jcosta33-author[bot]',
+            `complete:${AUTHOR_BOT_NODE_ID}`,
         ]);
         expect(adapterRequests).toEqual([
             {
