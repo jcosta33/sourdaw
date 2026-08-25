@@ -6,6 +6,7 @@ import {
     cpSync,
     existsSync,
     linkSync,
+    lstatSync,
     mkdirSync,
     mkdtempSync,
     openSync,
@@ -1638,9 +1639,12 @@ describe('release proof', () => {
         expect(existsSync(fixture.candidate)).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.tmp-'))).toBe(false);
         expect(readdirSync(fixture.base).some((name) => name.startsWith('.candidate.publication-'))).toBe(false);
+        expect(
+            readdirSync(fixture.base).some((name) => name.startsWith('.candidate.tmp-') && name.includes('.cleanup-'))
+        ).toBe(false);
     });
 
-    it('preserves a replacement swapped onto the assembly candidate path without restoring over it', () => {
+    it('removes an owned candidate but preserves a raced replacement at its original path', () => {
         const fixture = createFixture();
         let mutableCandidate: string | undefined;
         let capturedCandidate: string | undefined;
@@ -1664,12 +1668,8 @@ describe('release proof', () => {
             expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate, readReleaseInventory, validator)).toThrow(
                 'candidate cleanup race'
             );
-            expect(existsSync(mutableCandidate ?? '')).toBe(false);
-            const preservedMarker = readdirSync(fixture.base)
-                .map((name) => join(fixture.base, name, 'tree', 'marker'))
-                .find((path) => existsSync(path));
-            expect(preservedMarker).toBeDefined();
-            expect(readFileSync(preservedMarker ?? '', 'utf8')).toBe(marker);
+            expect(readFileSync(join(mutableCandidate ?? '', 'marker'), 'utf8')).toBe(marker);
+            expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
         } finally {
             if (mutableCandidate !== undefined) {
                 rmSync(mutableCandidate, { recursive: true, force: true });
@@ -1680,7 +1680,7 @@ describe('release proof', () => {
         }
     });
 
-    it('quarantines a failed candidate without traversing its child entries', () => {
+    it('deletes a normally owned failed candidate instead of leaking quarantine payloads', () => {
         const fixture = createFixture();
 
         expect(() =>
@@ -1690,10 +1690,7 @@ describe('release proof', () => {
         ).toThrow('release gate failed');
 
         expect(existsSync(fixture.candidate)).toBe(false);
-        const preservedProof = readdirSync(fixture.base)
-            .map((name) => join(fixture.base, name, 'tree', 'release-proof.json'))
-            .find((path) => existsSync(path));
-        expect(preservedProof).toBeDefined();
+        expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
     });
 
     it('does not recursively delete a replacement swapped onto the validation snapshot path', () => {
@@ -1731,21 +1728,12 @@ describe('release proof', () => {
         try {
             expect(validate(fixture, fileReader)).not.toEqual('');
             expect(swapped).toBe(true);
-            const cleanupPrefix = snapshotRoot === undefined ? '' : `.${basename(snapshotRoot)}.cleanup-`;
-            const preservedMarker = readdirSync(tmpdir())
-                .filter((name) => name.startsWith(cleanupPrefix))
-                .map((name) => join(tmpdir(), name, 'tree', 'marker'))
-                .find((path) => existsSync(path));
-            expect(preservedMarker).toBeDefined();
-            expect(readFileSync(preservedMarker ?? '', 'utf8')).toBe(marker);
+            const preservedSnapshotRoot = snapshotRoot;
+            expect(preservedSnapshotRoot).toBeDefined();
+            expect(readFileSync(join(preservedSnapshotRoot ?? '', 'marker'), 'utf8')).toBe(marker);
         } finally {
             if (snapshotRoot !== undefined) {
                 rmSync(snapshotRoot, { recursive: true, force: true });
-                for (const name of readdirSync(tmpdir()).filter((entry) =>
-                    entry.startsWith(`.${basename(snapshotRoot)}.cleanup-`)
-                )) {
-                    rmSync(join(tmpdir(), name), { recursive: true, force: true });
-                }
             }
             if (capturedSnapshot !== undefined) {
                 rmSync(capturedSnapshot, { recursive: true, force: true });
@@ -1812,6 +1800,42 @@ describe('release proof', () => {
         expect(existsSync(fixture.candidate)).toBe(false);
     });
 
+    it('never publishes a structurally valid tree swapped in after semantic validation', () => {
+        const fixture = createFixture();
+        let publicationBudgetRequests = 0;
+        let replacementVisible = false;
+        let swapped = false;
+        const fileReader: ReleaseProofFileReader = {
+            get snapshotByteLimit() {
+                const publicationEntry = readdirSync(fixture.base).find(
+                    (name) =>
+                        name.startsWith('.candidate.publication-') &&
+                        existsSync(join(fixture.base, name, 'release-proof.json'))
+                );
+                if (publicationEntry !== undefined) {
+                    publicationBudgetRequests += 1;
+                }
+                if (publicationEntry !== undefined && publicationBudgetRequests === 3) {
+                    write(join(fixture.base, publicationEntry, 'release-proof.json'), '{}\n');
+                    replacementVisible = existsSync(fixture.candidate);
+                    swapped = true;
+                }
+                return RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes;
+            },
+            open: (path, flags) => openSync(path, flags),
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read: (descriptor, buffer, offset, length, position) =>
+                readSync(descriptor, buffer, offset, length, position),
+        };
+
+        expect(() =>
+            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, undefined, fileReader)
+        ).toThrow('release proof publication candidate changed during semantic validation');
+        expect(swapped).toBe(true);
+        expect(replacementVisible).toBe(false);
+        expect(existsSync(fixture.candidate)).toBe(false);
+    });
+
     it.each(['file', 'empty directory'] as const)('does not replace a concurrently introduced output %s', (kind) => {
         const fixture = createFixture();
         const marker = 'concurrent output';
@@ -1826,17 +1850,51 @@ describe('release proof', () => {
         expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate)).toThrow(
             'release proof output appeared before atomic publication'
         );
-        expect(existsSync(fixture.candidate)).toBe(false);
-        const preservedTree = readdirSync(fixture.base)
-            .filter((name) => name.startsWith('.candidate.cleanup-'))
-            .map((name) => join(fixture.base, name, 'tree'))
-            .find((path) => existsSync(path));
-        expect(preservedTree).toBeDefined();
         if (kind === 'file') {
-            expect(readFileSync(preservedTree ?? '', 'utf8')).toBe(marker);
+            expect(readFileSync(fixture.candidate, 'utf8')).toBe(marker);
         } else {
-            expect(readdirSync(preservedTree ?? '')).toEqual([]);
+            expect(readdirSync(fixture.candidate)).toEqual([]);
         }
+        expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
+    });
+
+    it('preserves the first publisher winner when a second publisher receives EEXIST', () => {
+        const fixture = createFixture();
+        const marker = 'first publisher winner';
+        const gate = (): void => {
+            const winnerSource = mkdtempSync(join(fixture.base, '.first-publisher-'));
+            const markerPath = join(winnerSource, 'marker');
+            write(markerPath, marker);
+            const sourceIdentity = lstatSync(winnerSource, { bigint: true });
+            const markerIdentity = lstatSync(markerPath, { bigint: true });
+            const publisher = prepareAtomicDirectoryPublisher();
+            try {
+                publisher.publish(
+                    winnerSource,
+                    fixture.candidate,
+                    { dev: String(sourceIdentity.dev), ino: String(sourceIdentity.ino) },
+                    [
+                        {
+                            ctimeNs: String(markerIdentity.ctimeNs),
+                            dev: String(markerIdentity.dev),
+                            digest: hash(markerPath),
+                            ino: String(markerIdentity.ino),
+                            mtimeNs: String(markerIdentity.mtimeNs),
+                            path: 'marker',
+                            size: Number(markerIdentity.size),
+                        },
+                    ]
+                );
+            } finally {
+                publisher.dispose();
+            }
+        };
+
+        expect(() => assemble(fixture, fixtureBuildRunner(fixture), gate)).toThrow(
+            'release proof output appeared before atomic publication'
+        );
+        expect(readFileSync(join(fixture.candidate, 'marker'), 'utf8')).toBe(marker);
+        expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
     });
 
     it('uses the fixed system publisher even when PATH contains helper shims', () => {
@@ -1862,26 +1920,35 @@ describe('release proof', () => {
 
     it('validates a trusted system interpreter reached through a symlink chain', () => {
         const fileStats = {
+            isDirectory: () => false,
             isFile: () => true,
             isSymbolicLink: () => false,
             mode: 0o755,
             uid: 0,
         };
         const symlinkStats = {
+            isDirectory: () => false,
             isFile: () => false,
             isSymbolicLink: () => true,
             mode: 0o777,
             uid: 0,
         };
+        const directoryStats = {
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+            mode: 0o755,
+            uid: 0,
+        };
         const reader = {
             lstat(path: string) {
-                if (path === '/usr/bin/python3') {
-                    return symlinkStats;
-                }
                 if (path === '/usr/bin/python3.12') {
                     return fileStats;
                 }
-                throw new Error(path);
+                if (path === '/' || path === '/usr' || path === '/usr/bin') {
+                    return directoryStats;
+                }
+                return symlinkStats;
             },
             readlink(path: string) {
                 if (path === '/usr/bin/python3') {
@@ -1890,8 +1957,8 @@ describe('release proof', () => {
                 throw new Error(path);
             },
             realpath(path: string) {
-                if (path === '/usr/bin/python3.12') {
-                    return path;
+                if (path === '/usr/bin/python3') {
+                    return '/usr/bin/python3.12';
                 }
                 throw new Error(path);
             },
@@ -1904,6 +1971,108 @@ describe('release proof', () => {
         };
 
         expect(validateTrustedSystemInterpreter('/usr/bin/python3', reader)).toBe('/usr/bin/python3.12');
+    });
+
+    it('rejects a helper whose resolved path has a writable ancestor', () => {
+        const fileStats = {
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+            mode: 0o755,
+            uid: 0,
+        };
+        const trustedDirectoryStats = {
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+            mode: 0o755,
+            uid: 0,
+        };
+        const writableDirectoryStats = { ...trustedDirectoryStats, mode: 0o777 };
+        const reader = {
+            lstat(path: string) {
+                if (path === '/trusted/writable/python3') {
+                    return fileStats;
+                }
+                return path === '/trusted/writable' ? writableDirectoryStats : trustedDirectoryStats;
+            },
+            readlink() {
+                throw new Error('unexpected symlink');
+            },
+            realpath() {
+                return '/trusted/writable/python3';
+            },
+            stat(path: string) {
+                return this.lstat(path);
+            },
+        };
+
+        expect(() => validateTrustedSystemInterpreter('/trusted/writable/python3', reader)).toThrow(
+            'trusted interpreter ancestor is not a root-owned non-writable directory: /trusted/writable'
+        );
+    });
+
+    it('keeps a source replacement private when it is swapped in at the helper seam', () => {
+        const fixture = createFixture();
+        let replacementVisible = false;
+        let capturedSource: string | undefined;
+        const publisherPreparer: ReleaseProofPublisherPreparer = () =>
+            prepareAtomicDirectoryPublisher((request, runTrustedPublisher) => {
+                capturedSource = `${request.source}.captured`;
+                renameSync(request.source, capturedSource);
+                const replacement = mkdtempSync(join(dirname(request.source), '.publication-source-replacement-'));
+                write(join(replacement, 'marker'), 'attacker bytes');
+                renameSync(replacement, request.source);
+                const result = runTrustedPublisher();
+                replacementVisible = existsSync(request.destination);
+                return result;
+            });
+
+        try {
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    undefined,
+                    publisherPreparer
+                )
+            ).toThrow('release proof publication source changed before atomic publication');
+            expect(replacementVisible).toBe(false);
+            expect(existsSync(fixture.candidate)).toBe(false);
+        } finally {
+            if (capturedSource !== undefined) {
+                rmSync(capturedSource, { recursive: true, force: true });
+            }
+        }
+    });
+
+    it('keeps an in-place source rewrite private when it occurs at the helper seam', () => {
+        const fixture = createFixture();
+        let replacementVisible = false;
+        const publisherPreparer: ReleaseProofPublisherPreparer = () =>
+            prepareAtomicDirectoryPublisher((request, runTrustedPublisher) => {
+                write(join(request.source, 'release-proof.json'), '{}\n');
+                const result = runTrustedPublisher();
+                replacementVisible = existsSync(request.destination);
+                return result;
+            });
+
+        expect(() =>
+            assemble(
+                fixture,
+                fixtureBuildRunner(fixture),
+                () => undefined,
+                readReleaseInventory,
+                undefined,
+                undefined,
+                publisherPreparer
+            )
+        ).toThrow('release proof publication source changed before atomic publication');
+        expect(replacementVisible).toBe(false);
+        expect(existsSync(fixture.candidate)).toBe(false);
     });
 
     it('rejects and invalidates a publisher that reports success without moving the validated directory', () => {
@@ -1978,7 +2147,7 @@ describe('release proof', () => {
         const fileReader: ReleaseProofFileReader = {
             get snapshotByteLimit() {
                 budgetRequests += 1;
-                return budgetRequests < 5 ? RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes : 0;
+                return budgetRequests < 8 ? RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes : 0;
             },
             open: (path, flags) => openSync(path, flags),
             noFollowFlag: () => constants.O_NOFOLLOW,
@@ -1989,7 +2158,7 @@ describe('release proof', () => {
         expect(() =>
             assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, undefined, fileReader)
         ).toThrow('published release proof: cumulative byte limit exceeded');
-        expect(budgetRequests).toBe(5);
+        expect(budgetRequests).toBe(8);
         expect(existsSync(fixture.candidate)).toBe(false);
     });
 
@@ -2083,7 +2252,7 @@ describe('release proof', () => {
         expect(existsSync(fixture.candidate)).toBe(false);
     });
 
-    it('rejects and invalidates a replaced publisher that moves a different directory to the output', () => {
+    it('rejects a replaced publisher without deleting the unowned output it moved', () => {
         const fixture = createFixture();
         let invalidated = false;
         const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
@@ -2110,13 +2279,8 @@ describe('release proof', () => {
             )
         ).toThrow('did not publish the validated directory identity');
         expect(invalidated).toBe(true);
-        expect(existsSync(fixture.candidate)).toBe(false);
-        const preservedTree = readdirSync(fixture.base)
-            .filter((name) => name.startsWith('.candidate.cleanup-'))
-            .map((name) => join(fixture.base, name, 'tree'))
-            .find((path) => existsSync(path));
-        expect(preservedTree).toBeDefined();
-        expect(readdirSync(preservedTree ?? '')).toEqual([]);
+        expect(readdirSync(fixture.candidate)).toEqual([]);
+        expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
     });
 
     it('rejects unreferenced files outside the closed candidate census', () => {

@@ -7,8 +7,10 @@ import {
     mkdtempSync,
     openSync,
     readFileSync,
+    readSync,
     rmSync,
     symlinkSync,
+    truncateSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -935,18 +937,21 @@ describe('release inventory', () => {
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(join(base, 'outside.txt'), 'outside');
             writeFileSync(join(root, untrackedPath), 'untracked');
-            let digestReads = 0;
+            const forbiddenOpens: string[] = [];
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    digestReads += 1;
-                    return readFileSync(fileDescriptor);
+                open: (path: string, flags: number) => {
+                    if (path.endsWith(unsafePath) || path.endsWith(untrackedPath)) {
+                        forbiddenOpens.push(path);
+                    }
+                    return openSync(path, flags);
                 },
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) =>
+                    readSync(descriptor, buffer, offset, length, position),
             };
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
 
-            expect(digestReads).toBe(0);
+            expect(forbiddenOpens).toEqual([]);
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
             expect(validateReleaseInventory(value, changed)).toEqual(
@@ -1003,19 +1008,13 @@ describe('release inventory', () => {
             symlinkSync(outsideMarkPath, join(root, markSymlinkPath));
             const forbiddenReads: string[] = [];
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    const contents = readFileSync(fileDescriptor, 'utf8');
-                    if (contents.includes('outside')) {
-                        forbiddenReads.push(contents);
-                    }
-                    return Buffer.from(contents);
-                },
-                readText: (fileDescriptor: number) => {
-                    const contents = readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                    const contents = buffer.subarray(offset, offset + bytesRead).toString('utf8');
                     if (contents.includes('outside') || contents.includes('UnsafeMark')) {
                         forbiddenReads.push(contents);
                     }
-                    return contents;
+                    return bytesRead;
                 },
             };
 
@@ -1046,28 +1045,22 @@ describe('release inventory', () => {
             writeFileSync(targetPath, 'contained legal bytes');
             symlinkSync(targetPath, join(root, symlinkPath));
             let opens = 0;
-            let byteReads = 0;
-            let textReads = 0;
+            let reads = 0;
             const readFile = {
                 open: (path: string) => {
                     opens += 1;
                     return openSync(path, constants.O_RDONLY);
                 },
-                readBytes: (fileDescriptor: number) => {
-                    byteReads += 1;
-                    return readFileSync(fileDescriptor);
-                },
-                readText: (fileDescriptor: number) => {
-                    textReads += 1;
-                    return readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    reads += 1;
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
             const changed = loadRepositorySnapshot(root, value, [symlinkPath], readFile);
 
             expect(opens).toBe(0);
-            expect(byteReads).toBe(0);
-            expect(textReads).toBe(0);
+            expect(reads).toBe(0);
             expect(changed.fileDigests[symlinkPath]).toBe('missing');
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
@@ -1101,6 +1094,112 @@ describe('release inventory', () => {
         }
     });
 
+    it('rejects oversized path-addressed bytes before invoking a descriptor read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-bounded-bytes-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        let byteReads = 0;
+        const reader = {
+            fileByteLimit: 8,
+            aggregateByteLimit: 32,
+            read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                byteReads += 1;
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'nine-byte');
+
+            expect(() => loadRepositorySnapshot(root, value, [path], reader)).toThrow(
+                'repository file byte limit exceeded'
+            );
+            expect(byteReads).toBe(0);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects oversized scanned text before invoking a descriptor read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-bounded-text-'));
+        const root = join(base, 'repository');
+        const path = 'src/oversized.ts';
+        const filePath = join(root, path);
+        let textReads = 0;
+        const reader = {
+            fileByteLimit: 8,
+            aggregateByteLimit: 32,
+            read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                textReads += 1;
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, "export const endpoint = 'https://attacker.example';\n");
+
+            expect(() => loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], reader)).toThrow(
+                'repository file byte limit exceeded'
+            );
+            expect(textReads).toBe(0);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('enforces one aggregate descriptor-read budget across repository text and digest reads', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-aggregate-budget-'));
+        const root = join(base, 'repository');
+        const firstPath = 'src/first.ts';
+        const secondPath = 'src/second.ts';
+        const readDescriptors = new Set<number>();
+        const reader = {
+            fileByteLimit: 64,
+            aggregateByteLimit: 40,
+            read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                if (bytesRead > 0) {
+                    readDescriptors.add(descriptor);
+                }
+                return bytesRead;
+            },
+        };
+
+        try {
+            mkdirSync(join(root, 'src'), { recursive: true });
+            writeFileSync(join(root, firstPath), "export default 'https://a.io';\n");
+            writeFileSync(join(root, secondPath), "export default 'https://b.io';\n");
+
+            expect(() =>
+                loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [firstPath, secondPath], reader)
+            ).toThrow('repository aggregate byte limit exceeded');
+            expect(readDescriptors.size).toBe(1);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an oversized release inventory before allocating its declared size', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-bounded-manifest-'));
+        const root = join(base, 'repository');
+        const inventoryPath = join(root, 'release/open-source-inventory.json');
+
+        try {
+            mkdirSync(dirname(inventoryPath), { recursive: true });
+            writeFileSync(inventoryPath, '');
+            truncateSync(inventoryPath, 8 * 1024 * 1024 + 1);
+
+            expect(() => readReleaseInventory(root)).toThrow('release inventory exceeds the per-file byte limit');
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
     it('does not read a tracked path-addressed digest file hard-linked while its descriptor opens', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-hard-link-race-'));
         const root = join(base, 'repository');
@@ -1109,8 +1208,7 @@ describe('release inventory', () => {
         const aliasPath = join(base, 'contained.raced.txt');
         const value = inventory();
         value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
-        let byteReads = 0;
-        let textReads = 0;
+        let reads = 0;
 
         try {
             mkdirSync(dirname(filePath), { recursive: true });
@@ -1124,21 +1222,16 @@ describe('release inventory', () => {
                     return descriptor;
                 },
                 noFollowFlag: () => constants.O_NOFOLLOW,
-                readBytes: (fileDescriptor: number) => {
-                    byteReads += 1;
-                    return readFileSync(fileDescriptor);
-                },
-                readText: (fileDescriptor: number) => {
-                    textReads += 1;
-                    return readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    reads += 1;
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
 
             expect(changed.fileDigests[path]).toBe('missing');
-            expect(byteReads).toBe(0);
-            expect(textReads).toBe(0);
+            expect(reads).toBe(0);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
@@ -1152,8 +1245,7 @@ describe('release inventory', () => {
         const targetPath = join(root, 'public/legal/target.txt');
         const value = inventory();
         value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
-        let byteReads = 0;
-        let textReads = 0;
+        let reads = 0;
         const attemptedFlags: number[] = [];
         let successfulReplacementOpens = 0;
 
@@ -1171,21 +1263,16 @@ describe('release inventory', () => {
                     return descriptor;
                 },
                 noFollowFlag: () => constants.O_NOFOLLOW,
-                readBytes: (fileDescriptor: number) => {
-                    byteReads += 1;
-                    return readFileSync(fileDescriptor);
-                },
-                readText: (fileDescriptor: number) => {
-                    textReads += 1;
-                    return readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    reads += 1;
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
 
             expect(changed.fileDigests[path]).toBe('missing');
-            expect(byteReads).toBe(0);
-            expect(textReads).toBe(0);
+            expect(reads).toBe(0);
             expect(attemptedFlags).toHaveLength(1);
             expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
             expect(successfulReplacementOpens).toBe(0);
@@ -1208,12 +1295,15 @@ describe('release inventory', () => {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, "export const safe = 'inside';\n");
             writeFileSync(outsidePath, "export const escaped = 'https://outside.net';\n");
+            let swapped = false;
             const readFile = {
-                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
-                readText: (fileDescriptor: number) => {
-                    rmSync(filePath);
-                    symlinkSync(outsidePath, filePath);
-                    return readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    if (!swapped) {
+                        rmSync(filePath);
+                        symlinkSync(outsidePath, filePath);
+                        swapped = true;
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
@@ -1240,13 +1330,16 @@ describe('release inventory', () => {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, safeContents);
             writeFileSync(outsidePath, outsideContents);
+            let swapped = false;
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    rmSync(filePath);
-                    symlinkSync(outsidePath, filePath);
-                    return readFileSync(fileDescriptor);
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    if (!swapped) {
+                        rmSync(filePath);
+                        symlinkSync(outsidePath, filePath);
+                        swapped = true;
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
             };
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
@@ -1275,14 +1368,13 @@ describe('release inventory', () => {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, safeContents);
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
                     if (!linked) {
                         linkSync(filePath, aliasPath);
                         linked = true;
                     }
-                    return readFileSync(fileDescriptor);
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
             };
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
@@ -1309,13 +1401,12 @@ describe('release inventory', () => {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, "export const source = 'https://inside.test';\n");
             const readFile = {
-                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
-                readText: (fileDescriptor: number) => {
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
                     if (!linked) {
                         linkSync(filePath, aliasPath);
                         linked = true;
                     }
-                    return readFileSync(fileDescriptor, 'utf8');
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
@@ -1346,18 +1437,21 @@ describe('release inventory', () => {
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(join(base, 'outside.txt'), 'outside');
             writeFileSync(join(root, untrackedPath), 'untracked');
-            let digestReads = 0;
+            const forbiddenOpens: string[] = [];
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    digestReads += 1;
-                    return readFileSync(fileDescriptor);
+                open: (path: string, flags: number) => {
+                    if (path.endsWith(unsafePath) || path.endsWith(untrackedPath)) {
+                        forbiddenOpens.push(path);
+                    }
+                    return openSync(path, flags);
                 },
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) =>
+                    readSync(descriptor, buffer, offset, length, position),
             };
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
 
-            expect(digestReads).toBe(0);
+            expect(forbiddenOpens).toEqual([]);
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
         } finally {
@@ -1379,8 +1473,8 @@ describe('release inventory', () => {
                     opens += 1;
                     return openSync(path, constants.O_RDONLY);
                 },
-                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) =>
+                    readSync(descriptor, buffer, offset, length, position),
             };
 
             const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [trackedPath], readFile);
@@ -1409,13 +1503,9 @@ describe('release inventory', () => {
                     opens += 1;
                     return openSync(openPath, constants.O_RDONLY);
                 },
-                readBytes: (fileDescriptor: number) => {
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => {
                     reads += 1;
-                    return readFileSync(fileDescriptor);
-                },
-                readText: (fileDescriptor: number) => {
-                    reads += 1;
-                    return readFileSync(fileDescriptor, 'utf8');
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
@@ -1818,17 +1908,11 @@ describe('release inventory', () => {
                 return descriptor;
             },
             noFollowFlag: () => constants.O_NOFOLLOW,
-            readBytes(descriptor) {
+            read(descriptor, buffer, offset, length, position) {
                 if (swapped) {
                     readsAfterSwap += 1;
                 }
-                return readFileSync(descriptor);
-            },
-            readText(descriptor) {
-                if (swapped) {
-                    readsAfterSwap += 1;
-                }
-                return readFileSync(descriptor, 'utf8');
+                return readSync(descriptor, buffer, offset, length, position);
             },
         };
 

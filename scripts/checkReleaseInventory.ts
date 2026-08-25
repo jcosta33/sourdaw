@@ -10,6 +10,7 @@ import {
     lstatSync,
     openSync,
     readFileSync,
+    readSync,
     readdirSync,
     realpathSync,
     statSync,
@@ -46,6 +47,13 @@ export const REQUIRED_SNAPSHOT_PATHS = [
     'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
     'public/wasm/manifest.json',
 ] as const;
+
+export const RELEASE_INVENTORY_READ_LIMITS = {
+    inventoryBytes: 8 * 1024 * 1024,
+    repositoryFileBytes: 64 * 1024 * 1024,
+    repositoryAggregateBytes: 512 * 1024 * 1024,
+    chunkBytes: 64 * 1024,
+} as const;
 
 export const REQUIRED_MARKS = [
     '1176',
@@ -224,15 +232,15 @@ export type RepositorySnapshot = {
 export type RepositorySnapshotFileReader = {
     open?: (path: string, flags: number) => number;
     noFollowFlag?: () => unknown;
-    readBytes(fileDescriptor: number): Buffer;
-    readText(fileDescriptor: number): string;
+    read?: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => number;
+    fileByteLimit?: number;
+    aggregateByteLimit?: number;
 };
 
 const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
     open: (path, flags) => openSync(path, flags),
     noFollowFlag: () => Reflect.get(constants, 'O_NOFOLLOW'),
-    readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
-    readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
+    read: (descriptor, buffer, offset, length, position) => readSync(descriptor, buffer, offset, length, position),
 };
 
 export type ReleaseInventoryCheckReceipt = {
@@ -245,18 +253,61 @@ type OpenRepositoryRegularFile = {
     opened: BigIntStats;
 };
 
-function readReleaseInventoryContents(root: string): string {
-    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    const contents = readRepositoryRegularText(realpathSync(root), inventoryPath, repositorySnapshotFileReader);
-    if (contents === undefined) {
-        throw new Error(`release inventory cannot be read safely: ${inventoryPath}`);
+type RepositoryReadBudget = {
+    remaining: number;
+};
+
+class RepositoryFileReadLimitError extends Error {
+    readonly kind: 'file' | 'aggregate';
+
+    constructor(kind: 'file' | 'aggregate') {
+        super(`repository ${kind} byte limit exceeded`);
+        this.kind = kind;
     }
-    return contents;
 }
 
-export function readReleaseInventory(root: string): ReleaseInventory {
+function boundedReadLimit(requested: number | undefined, maximum: number): number {
+    return requested === undefined || !Number.isSafeInteger(requested)
+        ? maximum
+        : Math.max(0, Math.min(requested, maximum));
+}
+
+function repositoryReadBudget(readFile: RepositorySnapshotFileReader): RepositoryReadBudget {
+    return {
+        remaining: boundedReadLimit(
+            readFile.aggregateByteLimit,
+            RELEASE_INVENTORY_READ_LIMITS.repositoryAggregateBytes
+        ),
+    };
+}
+
+function readReleaseInventoryContents(
+    root: string,
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+): string {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    const contents = readReleaseInventoryContents(root);
+    try {
+        return readRepositoryRegularBuffer(
+            realpathSync(root),
+            inventoryPath,
+            readFile,
+            { remaining: RELEASE_INVENTORY_READ_LIMITS.inventoryBytes },
+            RELEASE_INVENTORY_READ_LIMITS.inventoryBytes
+        ).toString('utf8');
+    } catch (error) {
+        if (error instanceof RepositoryFileReadLimitError) {
+            throw new TypeError('release inventory exceeds the per-file byte limit', { cause: error });
+        }
+        throw new Error(`release inventory cannot be read safely: ${inventoryPath}`, { cause: error });
+    }
+}
+
+export function readReleaseInventory(
+    root: string,
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+): ReleaseInventory {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const contents = readReleaseInventoryContents(root, readFile);
     return parseJsonWithUniqueKeys<ReleaseInventory>(contents, inventoryPath);
 }
 
@@ -414,20 +465,72 @@ function assertRepositoryRegularFileUnchanged(
     const closed = fstatSync(descriptor, { bigint: true });
     if (
         !sameRepositoryFileIdentity(closed, opened) ||
+        closed.size !== opened.size ||
+        closed.mtimeNs !== opened.mtimeNs ||
+        closed.ctimeNs !== opened.ctimeNs ||
         !pathMatchesOpenedRepositoryRegularFile(rootRealPath, absolutePath, closed)
     ) {
         throw new Error(`path changed while reading: ${absolutePath}`);
     }
 }
 
-function readRepositoryRegularFile(
+function readBoundedRepositoryDescriptor(
+    file: OpenRepositoryRegularFile,
+    readFile: RepositorySnapshotFileReader,
+    budget: RepositoryReadBudget,
+    maxBytes: number
+): Buffer {
+    const limit = boundedReadLimit(readFile.fileByteLimit, maxBytes);
+    if (file.opened.size > BigInt(limit)) {
+        throw new RepositoryFileReadLimitError('file');
+    }
+    if (file.opened.size > BigInt(budget.remaining)) {
+        throw new RepositoryFileReadLimitError('aggregate');
+    }
+    if (file.opened.size === 0n) {
+        return Buffer.alloc(0);
+    }
+    const chunks: Buffer[] = [];
+    const chunk = Buffer.allocUnsafe(
+        Math.min(RELEASE_INVENTORY_READ_LIMITS.chunkBytes, limit + 1, budget.remaining + 1)
+    );
+    let position = 0;
+    while (true) {
+        const observed = fstatSync(file.descriptor, { bigint: true });
+        if (observed.size > BigInt(limit)) {
+            throw new RepositoryFileReadLimitError('file');
+        }
+        if (observed.size > BigInt(position + budget.remaining)) {
+            throw new RepositoryFileReadLimitError('aggregate');
+        }
+        const readLength = Math.min(chunk.length, limit - position + 1, budget.remaining + 1);
+        const bytesRead = (readFile.read ?? readSync)(file.descriptor, chunk, 0, readLength, position);
+        if (bytesRead === 0) {
+            break;
+        }
+        if (position + bytesRead > limit) {
+            throw new RepositoryFileReadLimitError('file');
+        }
+        if (bytesRead > budget.remaining) {
+            throw new RepositoryFileReadLimitError('aggregate');
+        }
+        chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+        position += bytesRead;
+        budget.remaining -= bytesRead;
+    }
+    return Buffer.concat(chunks, position);
+}
+
+function readRepositoryRegularBuffer(
     rootRealPath: string,
     absolutePath: string,
-    readFile: RepositorySnapshotFileReader
+    readFile: RepositorySnapshotFileReader,
+    budget: RepositoryReadBudget,
+    maxBytes = RELEASE_INVENTORY_READ_LIMITS.repositoryFileBytes
 ): Buffer {
     const file = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
     try {
-        const contents = readFile.readBytes(file.descriptor);
+        const contents = readBoundedRepositoryDescriptor(file, readFile, budget, maxBytes);
         assertRepositoryRegularFileUnchanged(rootRealPath, absolutePath, file.opened, file.descriptor);
         return contents;
     } finally {
@@ -438,7 +541,8 @@ function readRepositoryRegularFile(
 function readRepositoryRegularText(
     rootRealPath: string,
     absolutePath: string,
-    readFile: RepositorySnapshotFileReader
+    readFile: RepositorySnapshotFileReader,
+    budget: RepositoryReadBudget
 ): string | undefined {
     let file: OpenRepositoryRegularFile;
     try {
@@ -447,10 +551,18 @@ function readRepositoryRegularText(
         return undefined;
     }
     try {
-        const contents = readFile.readText(file.descriptor);
+        const contents = readBoundedRepositoryDescriptor(
+            file,
+            readFile,
+            budget,
+            RELEASE_INVENTORY_READ_LIMITS.repositoryFileBytes
+        ).toString('utf8');
         assertRepositoryRegularFileUnchanged(rootRealPath, absolutePath, file.opened, file.descriptor);
         return contents;
-    } catch {
+    } catch (error) {
+        if (error instanceof RepositoryFileReadLimitError) {
+            throw error;
+        }
         return undefined;
     } finally {
         closeSync(file.descriptor);
@@ -494,7 +606,8 @@ function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
 function trackedFilesSha256(
     root: string,
     files: readonly string[],
-    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader,
+    budget: RepositoryReadBudget = repositoryReadBudget(readFile)
 ): string {
     const hash = createHash('sha256');
     const rootRealPath = realpathSync(root);
@@ -506,7 +619,7 @@ function trackedFilesSha256(
         hash.update(file);
         hash.update('\0');
         try {
-            hash.update(readRepositoryRegularFile(rootRealPath, absolute, readFile));
+            hash.update(readRepositoryRegularBuffer(rootRealPath, absolute, readFile, budget));
         } catch {
             throw new Error(`Grand Boule release source is unsafe: ${file}`);
         }
@@ -518,13 +631,14 @@ function trackedFilesSha256(
 function trackedSetSha256(
     root: string,
     pathspecs: readonly string[],
-    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader,
+    budget: RepositoryReadBudget = repositoryReadBudget(readFile)
 ): string {
     const files = trackedFiles(root, pathspecs);
     if (files.length === 0) {
         throw new Error(`Grand Boule release source boundary has no tracked files: ${pathspecs.join(', ')}`);
     }
-    return trackedFilesSha256(root, files, readFile);
+    return trackedFilesSha256(root, files, readFile, budget);
 }
 
 export const AUDIO_WORKLET_SOURCES = [
@@ -1366,6 +1480,7 @@ export function grandBouleReleaseInventoryContract(
     | 'licenses'
     | 'productSurfaces'
 > {
+    const budget = repositoryReadBudget(readFile);
     return {
         kind: GRAND_BOULE_RELEASE_REGISTRY.kind,
         retention: GRAND_BOULE_RELEASE_REGISTRY.retention,
@@ -1390,7 +1505,7 @@ export function grandBouleReleaseInventoryContract(
         ],
         digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
             ({ gitPathspecs, digestLabel }) =>
-                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs, readFile)}:${digestLabel}`
+                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs, readFile, budget)}:${digestLabel}`
         ),
         licenses: ['Apache-2.0'],
         productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
@@ -2001,6 +2116,7 @@ export function loadRepositorySnapshot(
     readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
 ): RepositorySnapshot {
     const rootRealPath = realpathSync(root);
+    const readBudget = repositoryReadBudget(readFile);
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
     const isSafeTrackedPath = (path: string): boolean =>
@@ -2014,7 +2130,7 @@ export function loadRepositorySnapshot(
         if (cached !== undefined) {
             return cached;
         }
-        const value = readRepositoryRegularText(rootRealPath, resolve(root, path), readFile);
+        const value = readRepositoryRegularText(rootRealPath, resolve(root, path), readFile, readBudget);
         if (value !== undefined) {
             contents.set(path, value);
         }
@@ -2044,10 +2160,13 @@ export function loadRepositorySnapshot(
                 return [
                     path,
                     createHash('sha256')
-                        .update(readRepositoryRegularFile(rootRealPath, resolve(root, path), readFile))
+                        .update(readRepositoryRegularBuffer(rootRealPath, resolve(root, path), readFile, readBudget))
                         .digest('hex'),
                 ];
-            } catch {
+            } catch (error) {
+                if (error instanceof RepositoryFileReadLimitError) {
+                    throw error;
+                }
                 return [path, 'missing'];
             }
         })
