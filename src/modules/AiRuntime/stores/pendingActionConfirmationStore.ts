@@ -516,7 +516,7 @@ export async function commitPendingActionResourceLease(confirmationId: string): 
 
 type SettlePendingActionResourceLeaseInput = {
     confirmationId: string;
-    disposition: 'discard' | 'retain';
+    disposition: 'discard' | 'retain' | 'transfer';
 };
 
 export async function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): Promise<void> {

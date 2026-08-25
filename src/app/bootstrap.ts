@@ -224,7 +224,7 @@ try {
     recoverInterruptedAgentRuns();
 } catch (error) {
     logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
-}
+});
 const createOfflineYeastProcessor = () =>
     createOfflineYeastMidiProcessor({
         resolveMusicalPosition: createMusicalPositionProjector(),

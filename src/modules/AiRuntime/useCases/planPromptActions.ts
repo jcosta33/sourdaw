@@ -88,6 +88,20 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             reason: 'Provider planning requires an application-owned budget admission.',
         }));
     let stemImportScope: StemImportPromptScope | undefined;
+    let stemImportResourcesRegistered = false;
+    const discardStemImportScope = async (): Promise<void> => {
+        if (!stemImportScope) {
+            return;
+        }
+        if (stemImportResourcesRegistered) {
+            await preparedStemImportResources.discard({
+                runId: streamIdentity.runId,
+                stems: stemImportScope.actionSeed.stems,
+            });
+            return;
+        }
+        discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+    };
     let result;
     try {
         result = await parsePromptToActions(
@@ -174,6 +188,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                     runId: streamIdentity.runId,
                     stems: stemImportScope.actionSeed.stems,
                 });
+                stemImportResourcesRegistered = true;
             }
             result = await parsePromptToActions(
                 input.prompt,
@@ -205,7 +220,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 retry: category === 'provider' ? 'read-only' : 'never',
                 knownDomain: category !== 'provider',
             }),
-            terminal: true,
+            terminal: category !== 'cancellation',
         });
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);

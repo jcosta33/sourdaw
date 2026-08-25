@@ -4,15 +4,12 @@ import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
-    describePlannedAction,
-    executePromptActionGroup,
-    getProjectContext,
-    planPromptActions,
+    submitAdmittedPromptRequest,
     isComplexPrompt,
     searchPresets,
     getAvailablePresets,
     resolvePresetActions,
-    onVoicePromptDraft,
+    onPromptDraft,
     notifyAiChange,
     isLlmAvailable,
     initEngine,
@@ -24,8 +21,6 @@ import {
     defaultTrackState,
     trackStore,
 } from '#/modules/Arrangement/stores';
-import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 
@@ -65,13 +60,36 @@ type PromptAction = ReturnType<typeof resolvePresetActions>[number];
 
 type PromptPreview = {
     actions: PromptAction[];
-    actionCommandGraph?: Parameters<typeof executePromptActionGroup>[0]['actionCommandGraph'];
     actionLabels: string[];
     rawText: string;
     requiresConfirmation: boolean;
     projectRevision: string;
     executionMode?: 'atomic';
+    confirm?: (signal?: AbortSignal) => Promise<unknown>;
+    cancel?: () => Promise<void>;
 };
+
+function createPromptPreview(input: PromptPreview): PromptPreview {
+    const { confirm, cancel, ...visible } = input;
+    Object.defineProperties(visible, {
+        confirm: { value: confirm },
+        cancel: { value: cancel },
+    });
+    return visible;
+}
+
+function cancelPromptPreview(proposal: PromptPreview | null, message: string): void {
+    if (!proposal?.cancel) {
+        return;
+    }
+    try {
+        void proposal.cancel().catch((error: unknown) => {
+            logger.error(new Error(message, { cause: error }));
+        });
+    } catch (error) {
+        logger.error(new Error(message, { cause: error }));
+    }
+}
 
 // ── Hook return type ────────────────────────────────────────────────────
 
@@ -117,8 +135,19 @@ export const usePromptExecution = (): PromptExecutionState => {
     const inputRef = useRef<HTMLInputElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
     const operationRef = useRef<AbortController | null>(null);
-    const pendingSubmitRef = useRef(false);
     const previewRef = useRef<PromptPreview | null>(null);
+
+    useEffect(
+        () => () => {
+            const operation = operationRef.current;
+            const retainedPreview = previewRef.current;
+            operationRef.current = null;
+            previewRef.current = null;
+            operation?.abort();
+            cancelPromptPreview(retainedPreview, 'Prompt preview cancellation failed during unmount');
+        },
+        []
+    );
 
     const showPreview = (proposal: PromptPreview): void => {
         previewRef.current = proposal;
@@ -183,7 +212,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         setDismissedTags(new Set());
     }, [selectedTrackId, selectedClipId, selectedClipIds]);
 
-    // ── Voice injection (draft only; explicit submit remains required) ───
+    // ── Canonical draft admission (voice and seeded text stay draft-only) ─
     useEffect(() => {
         const admitVoiceDraft = createVoicePromptDraftAdmission({
             isBusy: () => previewRef.current !== null || operationRef.current !== null,
@@ -194,16 +223,8 @@ export const usePromptExecution = (): PromptExecutionState => {
             rejectBusyDraft: () =>
                 notifyAiChange('Voice command not accepted while another AI command is pending or running.', []),
         });
-        return onVoicePromptDraft(admitVoiceDraft);
+        return onPromptDraft(admitVoiceDraft);
     }, []);
-
-    // ── Pending submit after value change ───────────────────────────────
-    useEffect(() => {
-        if (pendingSubmitRef.current && value.trim().length > 0) {
-            pendingSubmitRef.current = false;
-            formRef.current?.requestSubmit();
-        }
-    }, [value]);
 
     // ── Fuzzy search on input change ────────────────────────────────────
     useEffect(() => {
@@ -237,36 +258,37 @@ export const usePromptExecution = (): PromptExecutionState => {
             presetId: result.preset.id,
             context: presetContext,
         });
-        const projectRevision = captureProjectRevision();
         if (actions.length === 0) {
             return;
         }
-
-        if (result.preset.isDestructive || requiresAppActionConfirmation(actions)) {
-            const context = getProjectContext();
-            showPreview({
-                actions,
-                actionLabels: actions.map((action) => describePlannedAction({ action, context })),
-                rawText: result.preset.label,
-                requiresConfirmation: true,
-                projectRevision,
-            });
-            setValue(result.preset.label);
-            setFuzzyResults([]);
-            return;
-        }
-
         const controller = new AbortController();
         operationRef.current = controller;
         setFuzzyResults([]);
         setIsProcessing(true);
         try {
-            await executePromptActionGroup({
-                actions,
+            const submission = await submitAdmittedPromptRequest({
                 prompt: result.preset.label,
-                projectRevision,
+                source: 'preset',
+                actions,
+                requiresConfirmation: result.preset.isDestructive,
                 signal: controller.signal,
             });
+            if (submission.status === 'awaiting-approval') {
+                const { preview: admitted } = submission;
+                showPreview(
+                    createPromptPreview({
+                        actions: [...admitted.actions],
+                        actionLabels: [...admitted.actionLabels],
+                        rawText: result.preset.label,
+                        requiresConfirmation: true,
+                        projectRevision: admitted.projectRevision,
+                        confirm: admitted.confirm,
+                        cancel: admitted.cancel,
+                    })
+                );
+                setValue(result.preset.label);
+                return;
+            }
         } catch (error) {
             if (!controller.signal.aborted) {
                 logger.error(new Error('Preset execution failed', { cause: error }));
@@ -276,7 +298,9 @@ export const usePromptExecution = (): PromptExecutionState => {
                 operationRef.current = null;
             }
             setIsProcessing(false);
-            setValue('');
+            if (!previewRef.current) {
+                setValue('');
+            }
         }
     };
 
@@ -291,47 +315,27 @@ export const usePromptExecution = (): PromptExecutionState => {
         operationRef.current = controller;
         setFuzzyResults([]);
         setIsProcessing(true);
-        // §188.1 — track the clear-on-finish decision locally instead of
-        // reading the `preview` state closure from `finally`. The closure
-        // captures the preview value as of when handleSubmit started; any
-        // `showPreview(result)` earlier in the same invocation is invisible
-        // to it, so the previous code cleared the input even when the user
-        // had just been shown a confirmation preview.
         let shouldClearValue = true;
         try {
-            const { context, result, projectRevision } = await planPromptActions({
+            const submission = await submitAdmittedPromptRequest({
                 prompt: value,
+                source: 'prompt-bar',
                 signal: controller.signal,
             });
-
-            if (controller.signal.aborted) {
-                return;
-            }
-
-            if (result.requiresConfirmation && result.actions.length > 0) {
-                showPreview({
-                    ...result,
-                    actionLabels: result.actions.map((action) => describePlannedAction({ action, context })),
-                    projectRevision,
-                });
-                setIsProcessing(false);
+            if (submission.status === 'awaiting-approval') {
+                const { preview: admitted } = submission;
+                showPreview(
+                    createPromptPreview({
+                        actions: [...admitted.actions],
+                        actionLabels: [...admitted.actionLabels],
+                        rawText: value,
+                        requiresConfirmation: true,
+                        projectRevision: admitted.projectRevision,
+                        confirm: admitted.confirm,
+                        cancel: admitted.cancel,
+                    })
+                );
                 shouldClearValue = false;
-                return;
-            }
-
-            if (result.rejectionReason) {
-                notifyAiChange(`Command not executed: ${result.rejectionReason}`, []);
-            } else if (result.actions.length > 0) {
-                await executePromptActionGroup({
-                    actions: result.actions,
-                    actionCommandGraph: result.actionCommandGraph,
-                    prompt: value,
-                    projectRevision,
-                    executionMode: result.executionMode,
-                    signal: controller.signal,
-                });
-            } else {
-                notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
             }
         } catch (error) {
             if (controller.signal.aborted) {
@@ -355,7 +359,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     const confirmPreview = async (): Promise<void> => {
         const proposal = previewRef.current;
-        if (!proposal || operationRef.current) {
+        if (!proposal?.confirm || operationRef.current) {
             return;
         }
 
@@ -364,19 +368,8 @@ export const usePromptExecution = (): PromptExecutionState => {
         clearPreview();
         setIsProcessing(true);
         try {
-            await executePromptActionGroup({
-                actions: proposal.actions,
-                actionCommandGraph: proposal.actionCommandGraph,
-                prompt: proposal.rawText,
-                projectRevision: proposal.projectRevision,
-                executionMode: proposal.executionMode,
-                signal: controller.signal,
-                successVerb: 'Confirmed',
-            });
+            await proposal.confirm(controller.signal);
         } catch (error) {
-            // `PromptBar` wires this straight to onClick, so a throw here (e.g. from
-            // waitForAutomergeSnapshotTransaction) becomes an unhandled rejection with no
-            // log and no user notice — on the path a *destructive* confirmed preset takes.
             if (!controller.signal.aborted) {
                 logger.error(new Error('Confirmed preview execution failed', { cause: error }));
                 notifyAiChange('Command not executed: the confirmed changes could not be applied.', []);
@@ -391,11 +384,13 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     const cancelPreview = (): void => {
+        const proposal = previewRef.current;
         if (operationRef.current) {
             operationRef.current.abort();
             return;
         }
         clearPreview();
+        cancelPromptPreview(proposal, 'Prompt preview cancellation failed');
     };
 
     const cancelProcessing = (): void => {

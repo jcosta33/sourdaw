@@ -25,7 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
-import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
+import { injectPromptDraft } from '#/modules/AiRuntime/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
@@ -244,7 +244,7 @@ export const TrackListView = ({
                                     size="icon-xs"
                                     aria-label="Auto-organize with AI"
                                     onClick={() =>
-                                        injectPromptCommand(
+                                        injectPromptDraft(
                                             'Auto-organize my project into color-coded instrument folders and standardized names.'
                                         )
                                     }
