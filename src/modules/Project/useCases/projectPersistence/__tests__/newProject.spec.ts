@@ -71,6 +71,7 @@ vi.mock('../helpers/runProjectLoadTransaction', async (importOriginal) => ({
         activate: vi.fn(() => true),
         canActivate: () => true,
         isCurrent: () => true,
+        signal: new AbortController().signal,
     })),
 }));
 
@@ -161,6 +162,7 @@ describe('newProject injectable', () => {
             activate: vi.fn().mockReturnValue(true),
             canActivate: () => isCurrent,
             isCurrent: () => isCurrent,
+            signal: new AbortController().signal,
         });
         pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
         const activation = newProject('Older Project');
@@ -237,6 +239,7 @@ describe('newProject injectable', () => {
                 activate: vi.fn().mockReturnValue(true),
                 canActivate: () => latestTransition === 1,
                 isCurrent: () => latestTransition === 1,
+                signal: new AbortController().signal,
             })
             .mockReturnValueOnce({
                 prepare: vi.fn().mockImplementation(() => {
@@ -246,6 +249,7 @@ describe('newProject injectable', () => {
                 activate: vi.fn().mockReturnValue(false),
                 canActivate: () => true,
                 isCurrent: () => false,
+                signal: new AbortController().signal,
             });
         vi.mocked(compactProject).mockReturnValueOnce(compaction.promise);
 
@@ -281,6 +285,7 @@ describe('newProject injectable', () => {
             activate: vi.fn().mockReturnValue(true),
             canActivate: () => isCurrent,
             isCurrent: () => isCurrent,
+            signal: new AbortController().signal,
         });
         vi.mocked(stopPlayback).mockReturnValueOnce(playbackStop.promise);
 
@@ -339,12 +344,14 @@ describe('newProject injectable', () => {
                 activate: vi.fn().mockReturnValue(true),
                 canActivate: () => latestTransition === 1,
                 isCurrent: () => latestTransition === 1,
+                signal: new AbortController().signal,
             })
             .mockReturnValueOnce({
                 prepare: vi.fn().mockResolvedValue(true),
                 activate: vi.fn().mockReturnValue(true),
                 canActivate: () => true,
                 isCurrent: () => true,
+                signal: new AbortController().signal,
             });
         vi.mocked(compactProject).mockReturnValueOnce(compaction.promise);
 

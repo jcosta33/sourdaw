@@ -543,7 +543,7 @@ export async function sendChatMessage(
                         readyAssetIds,
                     });
                     if (plannedRun.status === 'needs-user-decision') {
-                        createStemImportConfirmationResourceLease(runId, result.actions)?.release();
+                        await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
                         agentRunLifecycle.requireManualResume({
                             runId,
                             reason: plannedRun.decision.reason,
@@ -593,7 +593,7 @@ export async function sendChatMessage(
                         plan: plannedRun.plan,
                     });
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                    createStemImportConfirmationResourceLease(runId, result.actions)?.release();
+                    await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: `Planned without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
@@ -671,7 +671,7 @@ export async function sendChatMessage(
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     options?.onResumedPlanAccepted?.();
-                    createStemImportConfirmationResourceLease(runId, result.actions)?.release();
+                    await createStemImportConfirmationResourceLease(result.actions)?.releaseBestEffort();
                     agentRunLifecycle.requireManualResume({
                         runId,
                         reason: plannedRun.decision.reason,
@@ -814,7 +814,7 @@ export async function sendChatMessage(
                         throw error;
                     } finally {
                         releasePreviewCancellation();
-                        resourceLease?.release();
+                        await resourceLease?.releaseBestEffort();
                     }
                     if (preview.status === 'previewed') {
                         preview.resource.release();
@@ -888,10 +888,11 @@ export async function sendChatMessage(
                         groupId: commandGroup.groupId,
                         groupLabel: commandGroup.groupLabel,
                         projectRevision,
-                        resourceLease: createStemImportConfirmationResourceLease(runId, result.actions, {
-                            batchId: parsedCommandBatch.envelope.batchId,
-                            commandBatch,
-                        }),
+                        resourceLease: createStemImportConfirmationResourceLease(
+                            result.actions,
+                            `stem-promotion:${confirmationId}`,
+                            runId
+                        ),
                     });
                     if (!confirmation) {
                         const reason = 'Prepared action resources exceed the live confirmation limit.';

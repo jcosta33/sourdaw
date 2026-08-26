@@ -1,4 +1,3 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
 import {
     configureRuntimeGraphProjectRevisionValidator,
@@ -13,17 +12,11 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
     );
     configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
     commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
-        const documentFingerprints = captureCommandTargetFingerprints({
-            document: projectDocument ?? getCrdtDoc('root'),
-            targetIds,
-        });
-        const liveFingerprints = captureCommandTargetFingerprints({
-            document: { trackStore: trackStore.value },
-            targetIds,
-        });
-        const targetFingerprints = {
-            ...liveFingerprints,
-            ...documentFingerprints,
+        const targetFingerprints: Record<string, string> = {
+            ...captureCommandTargetFingerprints({
+                document: projectDocument ?? getCrdtDoc('root'),
+                targetIds,
+            }),
         };
         for (const systemTargetId of ['master', 'hw_out']) {
             if (targetIds.includes(systemTargetId)) {

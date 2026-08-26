@@ -9,7 +9,7 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisposition';
 
-import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
+import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
 
 const CLEANUP_OWNER = 'stem-import-preparation';
 type PreparedStemImportResource = Pick<
@@ -57,7 +57,7 @@ function createRegistration(input: {
                 if (registrations.get(registrationKey)?.protected) {
                     throw new Error('Prepared stem cleanup is deferred until command commit truth is reconciled.');
                 }
-                discardPreparedStemImportResources([input.stem]);
+                return preparedStemImportCleanup.discard([input.stem]);
             },
         });
     }
@@ -303,7 +303,7 @@ async function discardPreparedStemImportResourcesWithAuthority(
             .get(input.runId)
             ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
         if (registration?.protected) {
-            discardPreparedStemImportResources([stem]);
+            await preparedStemImportCleanup.discard([stem]);
             registration.unregister();
             registrations.delete(registrationKey);
             if (agentRunLifecycle.get(input.runId)) {

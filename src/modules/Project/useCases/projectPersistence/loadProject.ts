@@ -14,6 +14,7 @@ import { migrateAbsoluteMidiNotes, readLegacyChordTrackMigration } from '#/modul
 
 import { projectStore } from '../../stores/projectStore';
 import { finishProjectLoading } from '../finishProjectLoading';
+import { getDurableProjectOwnerId } from '../getDurableProjectOwnerId';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
@@ -22,6 +23,7 @@ import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
+import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
 
 export async function loadProject(): Promise<boolean> {
     // Boot restore is subordinate: if the user picked a project on the
@@ -112,6 +114,16 @@ export async function loadProject(): Promise<boolean> {
     if (project?.loading) {
         projectStore.set({ ...project, loading: false, initialized: true });
     }
+
+    const durableOwnerId = getDurableProjectOwnerId();
+    if (!durableOwnerId || !transaction.isCurrent()) {
+        return false;
+    }
+    await projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
+        ownerId: durableOwnerId,
+        isCurrent: () => transaction.isCurrent() && getDurableProjectOwnerId() === durableOwnerId,
+        signal: transaction.signal,
+    });
 
     if (!transaction.isCurrent()) {
         return false;

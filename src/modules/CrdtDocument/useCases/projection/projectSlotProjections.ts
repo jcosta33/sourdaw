@@ -1,4 +1,11 @@
-import { gainEnvelopeStore, markerStore, takeLaneStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    gainEnvelopeStore,
+    markerStore,
+    takeLaneStore,
+    trackStore,
+    vcaGroupStore,
+} from '#/modules/Arrangement/stores';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { commandBatchIdempotencyStore } from '#/modules/Command/stores';
 import { midiLearnStore } from '#/modules/ControlSurface/stores';
@@ -82,6 +89,7 @@ export const projectSlotProjections: readonly ProjectSlotProjection[] = [
     slotProjection({ slot: 'markers', getStore: () => markerStore }),
     slotProjection({ slot: 'vcaGroups', getStore: () => vcaGroupStore }),
     slotProjection({ slot: 'gainEnvelopes', getStore: () => gainEnvelopeStore }),
+    slotProjection({ slot: 'adjustmentLayers', getStore: () => adjustmentLayerStore }),
     slotProjection({ slot: 'automation', getStore: () => automationStore }),
     slotProjection({ slot: 'modulation', getStore: () => modulationStore }),
     slotProjection({ slot: 'transport', getStore: () => transportStore }),

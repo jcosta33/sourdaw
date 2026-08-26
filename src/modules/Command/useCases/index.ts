@@ -53,6 +53,8 @@ export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelo
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 export { executeVersionedCommandBatchEnvelope } from './executeVersionedCommandBatchEnvelope';
 export { getVersionedCommandBatchIdempotentReplay } from './getVersionedCommandBatchIdempotentReplay';
+export { getVersionedCommandBatchCommitProof } from './getVersionedCommandBatchCommitProof';
+export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommandBatchCommitDisposition';
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';

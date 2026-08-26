@@ -7,6 +7,6 @@ import { runCrdtPersistenceOperation } from './runCrdtPersistenceOperation';
  * the last save - much faster than a full save for small edits.
  * Periodically compacts to a full snapshot for fast startup and bounded storage.
  */
-export function persistCrdtProject(): Promise<void> {
-    return runCrdtPersistenceOperation('incremental');
+export function persistCrdtProject(expectedRootHeads?: readonly string[]): Promise<void> {
+    return runCrdtPersistenceOperation('incremental', expectedRootHeads);
 }
