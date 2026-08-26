@@ -1,0 +1,117 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_017f81b26a7808 45,50,53,935,937,1153,1872,1998,2020
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a40848e8f8cca9::t_b6756b6250bd6f 6,11,383,401-405,410-453,1592-1593,1598-1600,1602-1618,1797-1805
+scripts/checkReleaseInventory.ts
+  s_a40848e8f8cca9::t_e99af11b56e8cc 13,393-410,468-470,476
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_0bc71c813269de 8,36,111,116-118,644,648-666
+src/components/daw/__tests__/DawSmallLayoutComponents.spec.tsx
+  s_a40848e8f8cca9::t_ab696c9d664928 46,48-49,52,54-55
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_80bc621d230ec4 885,901-912
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_835abe7960e7a2 608,695,3064,3072,3083,3098-3103,3189,3200-3207,4153,4161,4173,4187-4188,4204,4261-4264
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_33cd3a4baba528 70-74,81-82
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_64ee1962bb77e2 3-4,13-14,167-231,409,500,502,543-703
+src/modules/AiRuntime/useCases/agentReference/__tests__/getApplicationWorkflowScope.spec.ts
+  s_a40848e8f8cca9::t_c737dc83359667 1-209
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_eed379d715f05a 129-130
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_57578935d54771 3581-3582,3649,3653,3657-3672
+src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts
+  s_a40848e8f8cca9::t_9101500db3eaf0 1-73
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_a40848e8f8cca9::t_35edb791a5168a 1-141
+src/modules/AiRuntime/useCases/agentReference/getApplicationWorkflowScope.ts
+  s_a40848e8f8cca9::t_59abe295007835 1-121
+src/modules/AiRuntime/useCases/agentReference/getBulkDeviceInsertionTrackScope.ts
+  s_a40848e8f8cca9::t_422b8cb86f4e84 10-13,30-31,35-49,52
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_ce5df21ee6d201 189,203,679,884
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_f257eca58c196e 10,285,287-288,290-291
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_0f95d5831f34a0 33,680-713
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_1f42333451ed4d 199,546
+src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.integration.spec.ts
+  s_a40848e8f8cca9::t_14bf0c5160fed7 3-4,22-27,39-47,50-56,79-81,104,116,120,151-154,163-165,197-200,209-211
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_a40848e8f8cca9::t_0db385a43a5154 3-4,26-31,48-61,112,121-126,173-174,367,369,394,396,433,435,470,472,485,487,522,524,562,564
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_a40848e8f8cca9::t_9c6f3e0198983d 3-4,27-32,47-63,80,89-94,107-108,136,138-141,153,155-158,178,180-183,203,205-208,464,466-469
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_a40848e8f8cca9::t_722b04f2e60c8b 3-4,7,25-30,43-56,71,80-85,119-120,169-171,178,187,189-192,194-195,198-212
+src/modules/Arrangement/handlers/track/__tests__/bounceInPlace.spec.ts
+  s_a40848e8f8cca9::t_a4090cc6470686 34
+src/modules/Arrangement/handlers/track/__tests__/bounceToNewTrack.spec.ts
+  s_a40848e8f8cca9::t_a5e86ff0113f56 34
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrackTransactionScope.spec.ts
+  s_a40848e8f8cca9::t_f5e5adc01e28ab 107
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_a40848e8f8cca9::t_45f305ed7c3393 172
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_9eb555a77ec6f1 2,16-17,52,61-82,145-180,219-221,290-375,449-453,458,467-468,476,501-526
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_fd3b85cc87afac 27,31,87-94,389-421,462
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_6aed5240a550e8 39-40
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_929236d74d38c2 30-46,53-60,669,675,916,922,946-1268,1275,1281-1298,1305-1309,1336,1342,1374,1380
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_bebd6d6d37f7de 411-418,539-540,546-547,553-575,577-592
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_173cc15d37c370 23-25,27,31,38,121-143,386-1118,1126-1144,1151-1178,1183-1184,1262-1272,1274,1979,1990
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_a40848e8f8cca9::t_b7a9df477af666 14,57,59-62,66-75,111-132
+src/modules/Command/useCases/__tests__/getExecutableAppActionGroundingRules.spec.ts
+  s_a40848e8f8cca9::t_c3962ee206892a 3-6,29-39,43-49,66,88,92,96,101,111,136,144,153,157,161
+src/modules/Command/useCases/__tests__/loadExternalPluginVersionedRecovery.spec.ts
+  s_a40848e8f8cca9::t_a4afc5bfb4948a 21,176,178,235
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_a40848e8f8cca9::t_efd8a602fb6e12 15-17,19,372-376,388-389,581,605,618,637-933
+src/modules/Command/useCases/createRecoveredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_1dd86294ca69bc 11,36
+src/modules/Command/useCases/createVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_821c7666d09d94 12,50,324,328-331
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_adbcdcd5d3b189 40-65,2398-2427,2453,2457,2461,2475,2483,2508
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_01bf2ad320fab2 93,123,138,157,173,184,202,216,234,248,262,269,308,321,352,362,378,395,406,413,435,454,476,498,516,535,585,650,665,720
+src/modules/Command/useCases/getVersionedCommandBatchCommitDisposition.ts
+  s_a40848e8f8cca9::t_60d185f67e5d0f 1-2,5,7,13-15,19-42,51-59
+src/modules/Command/useCases/getVersionedCommandBatchCommitProof.ts
+  s_a40848e8f8cca9::t_85f7c613a1565b 20-21
+src/modules/Command/useCases/getVersionedCommandBatchIdempotentReplay.ts
+  s_a40848e8f8cca9::t_59727e7ed8d1c4 36,59
+src/modules/Command/useCases/parseStoredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_ff497b4f941dac 132-182,187,200-202,237
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_2a6e7ca002bb62 14,40
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_a40848e8f8cca9::t_94b03085650675 37
+src/modules/Transport/handlers/transport/__tests__/punchUndoRedo.spec.ts
+  s_a40848e8f8cca9::t_30cf097d929cdb 3-4,9-14,23-31,87-93,103-105,127,134,141,157-160,168-170,188-191,198-200,311-313,320-322,328-331,338-341
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_1afc6295ec017a 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "5ac56901a7e5807ae814c17a10a3f7dad3845e05",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
