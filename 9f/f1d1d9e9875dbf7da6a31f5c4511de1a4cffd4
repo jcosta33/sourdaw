@@ -1,0 +1,60 @@
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_c020d164b9cac3 454,479,500,723
+  s_a40848e8f8cca9::t_5862954754f5f6 563-579
+src/modules/Command/useCases/getVersionedCommandBatchIdempotentReplay.ts
+  s_a40848e8f8cca9::t_b62b7ee35ebc86 36,59
+src/modules/Command/useCases/createRecoveredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_5bfabcaae2a56f 11,36
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_4e19dd48f1cec9 414-418,580,587-592
+  s_a40848e8f8cca9::t_384f7427f3501f 411-412,557,561,565-572,586
+  s_a40848e8f8cca9::t_5862954754f5f6 558-560,562-564
+src/modules/Command/useCases/createVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_1c4e5a9e7a7e12 12,50,324
+src/modules/Command/useCases/__tests__/loadExternalPluginVersionedRecovery.spec.ts
+  s_a40848e8f8cca9::t_6fce94d1fa5a34 21,176,178,235
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_08732cf6ce019e 216,234,269,308,413,476
+  s_a40848e8f8cca9::t_4a41f730d9d081 157,184,202,435,454,498,516,535,585,650,665,720
+  s_a40848e8f8cca9::t_74b700e990c113 93,123,138
+  s_a40848e8f8cca9::t_7adee822e78ed4 321,352
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_1011172c4897f7 1179,1199-1209
+  s_a40848e8f8cca9::t_5862954754f5f6 1171-1178,1180-1196
+  s_a40848e8f8cca9::t_4e19dd48f1cec9 1087-1135,1168
+  s_a40848e8f8cca9::t_3e09ed8f6613a4 1197
+  s_a40848e8f8cca9::t_384f7427f3501f 1198,1210-1218
+  s_a40848e8f8cca9::t_e2d49582084021 1169-1170
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_4679dc371bde2f 485-487
+  s_a40848e8f8cca9::t_bf01cd300e680b 52,61-82
+  s_a40848e8f8cca9::t_bc38317c2dda91 157-176,331,333-334,449-450,484,488-498
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_14b15183b69970 27,31
+  s_a40848e8f8cca9::t_0b469e58495621 389-391,393-409,411-421,462
+src/modules/Command/useCases/parseStoredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_572545a0d88175 187,200-202
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_1542ad701f825a 14,40
+src/modules/Command/useCases/getVersionedCommandBatchCommitDisposition.ts
+  s_a40848e8f8cca9::t_b62b7ee35ebc86 14
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_a40848e8f8cca9::t_84c018503eb3ae 372-376,388-389
+  s_a40848e8f8cca9::t_2fe5872d385953 17,581,605,618,637,643,815,825,894
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "9ff1d1d9e9875dbf7da6a31f5c4511de1a4cffd4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
