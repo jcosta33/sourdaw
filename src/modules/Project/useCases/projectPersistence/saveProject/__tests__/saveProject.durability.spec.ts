@@ -193,7 +193,7 @@ describe('saveProject durability', () => {
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
-    it('keeps the project dirty when project truth changes while the snapshot is being written', async () => {
+    it('rejects the saved snapshot when project truth changes while it is being written', async () => {
         installFakeIndexedDb();
         mocks.captureProjectRevision
             .mockReturnValueOnce('saved-revision')
@@ -201,8 +201,9 @@ describe('saveProject durability', () => {
             .mockReturnValueOnce('newer-revision');
         const saveProject = await importSaveProject();
 
-        await expect(saveProject()).resolves.toBe(true);
+        await expect(saveProject()).resolves.toBe(false);
 
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 

@@ -125,9 +125,13 @@ export async function saveProject(): Promise<boolean> {
         await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
 
         // Only record the recent-projects entry once the snapshot write is
-        // observed to have committed — otherwise we'd list a project that
-        // was never actually saved.
+        // observed to have committed for the exact revision it serialized.
+        // A newer edit leaves the stale snapshot unadvertised and the project
+        // dirty so the next save can replace it.
         assertProjectSnapshotAuthority();
+        if (captureProjectRevision() !== snapshotRevision) {
+            throw new Error('[saveProject] Project changed during named snapshot persistence');
+        }
         addToRecentProjects(project.name, recentKey);
 
         // A save clears dirty only when the complete project authority still

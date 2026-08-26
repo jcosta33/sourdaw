@@ -286,14 +286,25 @@ describe('saveProject', () => {
         expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
-    it('keeps the dirty flag asserted when an edit lands during the snapshot write', async () => {
-        mocks.captureProjectRevision
-            .mockReturnValueOnce('snapshot-revision')
-            .mockReturnValueOnce('snapshot-revision')
-            .mockReturnValueOnce('post-write-revision');
+    it('rejects a committed snapshot that became stale during the named JSON write', async () => {
+        let revision = 'snapshot-revision';
+        let resolveWrite: (() => void) | undefined;
+        mocks.captureProjectRevision.mockImplementation(() => revision);
+        mocks.writeNamedProjectJsonByKey.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolveWrite = resolve;
+            })
+        );
 
-        await saveProject();
+        const saving = saveProject();
+        await vi.waitFor(() => {
+            expect(mocks.writeNamedProjectJsonByKey).toHaveBeenCalledTimes(1);
+        });
+        revision = 'post-write-revision';
+        resolveWrite?.();
 
+        await expect(saving).resolves.toBe(false);
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
