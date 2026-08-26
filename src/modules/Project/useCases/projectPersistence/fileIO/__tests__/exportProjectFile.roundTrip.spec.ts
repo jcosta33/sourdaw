@@ -28,7 +28,7 @@ import { exportProjectFile } from '../exportProjectFile';
 // Heavy / side-effecting boundaries — stubbed so the export runs deterministically
 // against the real stores we seed below. vi.mock is hoisted above these imports.
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
-    downloadProjectFile: vi.fn(() => Promise.resolve()),
+    downloadProjectFile: vi.fn(() => Promise.resolve('written' as const)),
 }));
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -36,9 +36,14 @@ vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
 }));
+const persistCrdtProjectMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    persistCrdtProject: persistCrdtProjectMock,
+}));
 
 function written(): ProjectData {
-    return vi.mocked(downloadProjectFile).mock.calls[0]?.[0] as ProjectData;
+    return vi.mocked(downloadProjectFile).mock.calls[0]?.[0].data as ProjectData;
 }
 
 function seedSavableProject(createdAt: number): void {
@@ -104,6 +109,8 @@ describe('exportProjectFile round-trip shape', () => {
         vi.mocked(notifyUser).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
+        persistCrdtProjectMock.mockReset();
+        persistCrdtProjectMock.mockResolvedValue(undefined);
         trackStore.set({
             tracks: [
                 normalizeTrack({
@@ -347,6 +354,7 @@ describe('exportProjectFile round-trip shape', () => {
 
         await expect(saveProject()).resolves.toBe(false);
 
+        expect(persistCrdtProjectMock).not.toHaveBeenCalled();
         expect(indexedDb.values.has(recentKey)).toBe(false);
     });
 });

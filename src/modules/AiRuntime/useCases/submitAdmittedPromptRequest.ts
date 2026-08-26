@@ -1,5 +1,5 @@
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
@@ -62,7 +62,7 @@ export async function submitAdmittedPromptRequest(
 ): Promise<SubmitAdmittedPromptRequestResult> {
     const prompt = input.prompt.trim();
     const runId = `agent-run-${crypto.randomUUID()}`;
-    const createdRevision = captureProjectRevision();
+    const createdRevision = settlePendingProjectWritesAndCaptureRevision();
     agentRunLifecycle.create({
         runId,
         request: prompt,

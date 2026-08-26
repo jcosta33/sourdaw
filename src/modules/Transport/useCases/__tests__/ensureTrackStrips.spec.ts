@@ -58,6 +58,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
         subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
+    adjustmentLayerStore: { value: null },
     resolveEligibleDeviceWriteTarget: (deviceId: string) => {
         const track = mocks.trackStoreValue.value?.tracks.find((candidate) =>
             candidate.devices.some((device) => device.id === deviceId)

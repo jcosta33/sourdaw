@@ -214,9 +214,11 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 never mints or spawns `gh`. The slug is `work` if omitted, and never purely numeric, because a bare
 number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
 `agent/<issue>/<slug>`. The pull request closes that issue by default; campaign slices use
-`lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`,
-and `lane:publish` takes its absolute path with `--lane`. Run publishing from the protected primary
-checkout, never through a lane's package route. Touch only your own lane.
+`lane:publish --relates` to keep the umbrella open. Without an issue the branch is `agent/<slug>`.
+`lane:publish --lane <absolute-path>` selects an exact author lane; for a conforming issue lane it
+derives and validates the issue from the branch, which disambiguates write-disjoint lanes that share
+an issue. Run publishing from the protected primary checkout, never through a lane's package route.
+Touch only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -335,9 +337,10 @@ freshness.
 
 `lane:publish` names the lane it resolved, then prints the PR number last. Invoke it from the
 protected primary checkout. An issue number resolves an issue lane by branch prefix; `--lane` takes
-the absolute worktree root of an issueless or off-convention lane. It pushes without `--force`, and
-refuses any lane with uncommitted changes: commit the work yourself with a conventional subject
-first.
+an exact absolute author-worktree root, including a conforming issue lane when its issue has multiple
+lanes. A conforming lane's branch supplies the issue identity; the existing issue, pull-request
+content, and relationship gates still apply. It pushes without `--force`, and refuses any lane with
+uncommitted changes: commit the work yourself with a conventional subject first.
 
 A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it, when opening,
 with the newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`). Later

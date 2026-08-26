@@ -180,6 +180,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     appendClipToTrack: vi.fn(),
     takeLaneStore: { value: null },
     vcaGroupStore: { value: null },
+    adjustmentLayerStore: { value: null },
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({

@@ -1,44 +1,45 @@
+import { isAutomergeStorageMutationOwned } from '#/infra/store/storage/createAutomergeStorage';
+
 import { commandBatchIdempotencyPort } from './commandBatchIdempotencyPort';
 import { getProjectCommandBatchIdempotencyCheckpoint } from './getProjectCommandBatchIdempotencyCheckpoint';
+import { parseStoredVerifiedBatchReceipt } from './parseStoredVerifiedBatchReceipt';
 
-type VersionedCommandBatchCommitProof = {
+type VersionedCommandBatchCommitProof = Readonly<{
     projectId: string;
     idempotencyKey: string;
     contentHash: string;
     runId: string;
     batchId: string;
-};
-
+    baseRevision: string;
+    commands: ReadonlyArray<{ commandId: string; operation: string }>;
+}>;
 type CommitDisposition = 'committed' | 'terminal-noncommit' | 'unknown';
 
 function getReceiptDisposition(serializedReceipt: string, proof: VersionedCommandBatchCommitProof): CommitDisposition {
-    try {
-        const receipt: unknown = JSON.parse(serializedReceipt);
-        if (
-            typeof receipt !== 'object' ||
-            receipt === null ||
-            (receipt as Record<string, unknown>).schemaVersion !== 1 ||
-            (receipt as Record<string, unknown>).runId !== proof.runId ||
-            (receipt as Record<string, unknown>).batchId !== proof.batchId
-        ) {
-            return 'unknown';
-        }
-        const outcome = (receipt as Record<string, unknown>).outcome;
-        if (outcome === 'committed' || outcome === 'committed-with-warning' || outcome === 'partially-committed') {
-            return 'committed';
-        }
-        if (
-            outcome === 'no-op' ||
-            outcome === 'rejected' ||
-            outcome === 'conflicted' ||
-            outcome === 'cancelled' ||
-            outcome === 'failed' ||
-            outcome === 'verification-failed'
-        ) {
-            return 'terminal-noncommit';
-        }
-    } catch {
-        return 'unknown';
+    const receipt = parseStoredVerifiedBatchReceipt({
+        baseRevision: proof.baseRevision,
+        batchId: proof.batchId,
+        commands: proof.commands,
+        contentHash: proof.contentHash,
+        runId: proof.runId,
+        serializedReceipt,
+    });
+    if (
+        receipt?.outcome === 'committed' ||
+        receipt?.outcome === 'committed-with-warning' ||
+        receipt?.outcome === 'partially-committed'
+    ) {
+        return 'committed';
+    }
+    if (
+        receipt?.outcome === 'no-op' ||
+        receipt?.outcome === 'rejected' ||
+        receipt?.outcome === 'conflicted' ||
+        receipt?.outcome === 'cancelled' ||
+        receipt?.outcome === 'failed' ||
+        receipt?.outcome === 'verification-failed'
+    ) {
+        return 'terminal-noncommit';
     }
     return 'unknown';
 }
@@ -47,7 +48,15 @@ export async function getVersionedCommandBatchCommitDisposition(
     proof: VersionedCommandBatchCommitProof
 ): Promise<CommitDisposition> {
     const projectCheckpoint = getProjectCommandBatchIdempotencyCheckpoint(proof);
-    if (projectCheckpoint.status === 'pending' || projectCheckpoint.status === 'complete') {
+    if (projectCheckpoint.status === 'complete') {
+        return getReceiptDisposition(projectCheckpoint.serializedReceipt, proof) === 'committed'
+            ? 'committed'
+            : 'unknown';
+    }
+    if (projectCheckpoint.status === 'pending') {
+        if (isAutomergeStorageMutationOwned()) {
+            return 'unknown';
+        }
         return getReceiptDisposition(projectCheckpoint.serializedReceipt, proof) === 'committed'
             ? 'committed'
             : 'unknown';

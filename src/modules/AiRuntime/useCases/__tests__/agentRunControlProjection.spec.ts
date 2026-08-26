@@ -81,6 +81,7 @@ describe('agent run control projection', () => {
             allowedActions: { cancel: true, resume: false, retryWorkIds: ['analysis-1'] },
             manualResumeReason: 'Analysis failed after the project batch committed.',
             resumeRejectionReason: 'The pending decision is unavailable or already consumed.',
+            decision: null,
             committedReceipts: [
                 {
                     workId: 'batch-1',
@@ -219,6 +220,10 @@ describe('agent run control projection', () => {
         expect(getAgentRunControlProjection('run-stale-decision')).toMatchObject({
             allowedActions: { resume: false },
             resumeRejectionReason: 'The project revision changed while the decision was pending.',
+            decision: {
+                reason: 'Choose the bounded interpretation.',
+                alternatives: [{ id: 'mute', label: 'Mute Track 1', changesAuthority: false }],
+            },
         });
     });
 });
