@@ -3063,7 +3063,7 @@ with open(early, "r+b", buffering=0) as file:
         const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
-    }, 15_000);
+    });
 
     it('observes expansion for a valid ZIP with split input chunks', () => {
         const fixture = createFixture();
