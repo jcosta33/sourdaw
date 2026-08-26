@@ -1105,7 +1105,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
     });
 
-    it('rolls back the whole group without receipt or history residue when a later pair conflicts', async () => {
+    it('leaves no receipt or history residue when a later pair source changes before confirmation', async () => {
         addSecondMidiAndAudioTracks();
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
@@ -1131,9 +1131,14 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             'sustain',
         ]);
         expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
             executedActions: [],
         });
         expect(undoStore.value?.past).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 });

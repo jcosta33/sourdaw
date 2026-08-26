@@ -815,13 +815,15 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
 
         await confirmPendingChatActions({ confirmationId });
 
-        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('failed');
+        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('invalidated');
         expect(getCrdtDocIds().toSorted()).toEqual(sourceDocIdsBefore);
         expect(branchStore.value?.branches).toHaveLength(1);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
-        ).not.toContain('Outcome: committed');
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('rejects preview-branch creation when the local collaboration peer is not the host', async () => {
