@@ -500,7 +500,7 @@ expect(
 expect(releaseInventory?.name === 'Release inventory', 'documentation-only release inventory job must remain present');
 expect(releaseInventory?.['runs-on'] === 'ubuntu-latest', 'documentation-only release inventory must run on a hosted Linux runner');
 const releaseInventoryNode = stepNamed(releaseInventory, 'Set up Node');
-expect(releaseInventoryNode?.with?.['node-version'] === 22, 'documentation-only release inventory must use Node 22');
+expect(releaseInventoryNode?.with?.['node-version'] === '${{ env.NODE_VERSION }}', 'non-code release inventory must use the workflow-pinned Node runtime');
 expect(stepNamed(releaseInventory, 'Enable Corepack')?.run === 'corepack enable', 'non-code release inventory must enable Corepack');
 expect(stepNamed(releaseInventory, 'Install dependencies')?.run === 'pnpm install --frozen-lockfile', 'non-code release inventory must install the frozen dependency graph');
 expect(
