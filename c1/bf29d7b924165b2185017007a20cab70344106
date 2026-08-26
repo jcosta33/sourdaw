@@ -1,0 +1,43 @@
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_0202ff8054d37c::t_ff940a1fdbfa4b 100
+  s_0202ff8054d37c::t_c9a1ad2626f05c 109
+src/modules/Arrangement/useCases/clipGainEnvelope/__tests__/sampleGainEnvelopePoints.spec.ts
+  s_0202ff8054d37c::t_7bfbe103b598eb 1-40
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_0202ff8054d37c::t_f0c3a861651d8d 368,373-431
+  s_0202ff8054d37c::t_c9f9fdd3b5a47f 35
+  s_0202ff8054d37c::t_ff0f707b54e584 323-324,335,350
+  s_0202ff8054d37c::t_071a18bde1071a 432
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_0202ff8054d37c::t_a91bc037189c3c 379-381
+  s_0202ff8054d37c::t_966be053e75ee3 345-346,353,360
+  s_0202ff8054d37c::t_664a0e5d666830 298,300-302
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  s_0202ff8054d37c::t_3129be6545232d 27-28,36
+  s_0202ff8054d37c::t_b649b86ec3d1f0 1,3,26,29-35,37-121,124,126-131,136-137,139-143,148-149
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_0202ff8054d37c::t_9f3a322088e5a4 11-15
+  s_0202ff8054d37c::t_51b125890bbebb 38-43
+src/modules/Arrangement/useCases/clipGainEnvelope/sampleGainEnvelopePoints.ts
+  s_0202ff8054d37c::t_b8982f47d71dea 10-13
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  s_0202ff8054d37c::t_0f2a6332f20777 1-104
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_0202ff8054d37c::t_9d4246cffeeef0 122-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c1bf29d7b924165b2185017007a20cab70344106",
+  "prompts": {},
+  "sessions": {
+    "s_0202ff8054d37c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22edd3d4-6930-4288-aacd-3eeb0b792868",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
