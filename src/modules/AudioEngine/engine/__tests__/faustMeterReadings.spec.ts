@@ -139,7 +139,11 @@ describe('Faust bargraph readings reach the control side', () => {
         if (!loadedNode) {
             throw new Error('expected the registry to report the device loaded');
         }
-        loadedNode.controller?.destroy();
+        const destroy = loadedNode.controller?.destroy;
+        if (!destroy) {
+            throw new Error('the loaded node exposes no controller destroy');
+        }
+        destroy();
 
         expect(installed.handler).toBeNull();
         expect(getFaustMeterReading('dev-lufs', 'momentary')).toBeNull();
