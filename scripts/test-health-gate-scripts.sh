@@ -291,7 +291,12 @@ const lint = workflow.jobs?.lint;
 const boundaries = workflow.jobs?.boundaries;
 const unit = workflow.jobs?.unit;
 const smoke = workflow.jobs?.smoke;
+const build = workflow.jobs?.build;
+const rust = workflow.jobs?.rust;
+const nativeMacos = workflow.jobs?.['native-macos'];
+const nativeWindows = workflow.jobs?.['native-windows'];
 const e2e = workflow.jobs?.e2e;
+const dependencyReview = workflow.jobs?.['dependency-review'];
 const gate = workflow.jobs?.gate;
 const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
@@ -361,6 +366,14 @@ expect(lint?.if === codeBearingIf, 'lint must skip documentation-only pull reque
 expect(boundaries?.if === codeBearingIf, 'module boundaries must skip documentation-only pull requests');
 expect(unit?.if === "needs.decide.outputs.web == 'true'", 'unit suite must remain scoped to web-related changes');
 expect(smoke?.if === "needs.decide.outputs.e2e == 'true'", 'offline smoke must remain scoped to user-runtime changes');
+expect(build?.if === "needs.decide.outputs.web == 'true'", 'production build must remain scoped to web-related changes');
+expect(
+    rust?.if === "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+    'Rust workspace must remain scoped to Rust or server changes'
+);
+expect(nativeMacos?.if === "needs.decide.outputs.rust == 'true'", 'macOS native leg must remain scoped to Rust changes');
+expect(nativeWindows?.if === "needs.decide.outputs.rust == 'true'", 'Windows native leg must remain scoped to Rust changes');
+expect(dependencyReview?.if === "github.event_name == 'pull_request'", 'dependency review must remain limited to pull-request events');
 expect(e2e?.if === "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'", 'full E2E must require the scheduled or dispatched heavy path');
 expect(e2e?.strategy?.matrix?.shard?.length === 12, 'full E2E must retain all twelve shards');
 
@@ -399,7 +412,7 @@ for (const fixture of [
     },
     {
         name: 'workflow-only',
-        paths: ['.github/workflows/health-gates.yml'],
+        paths: ['.github/workflows/daily-train.yml'],
         jobs: [
             'decide',
             'dependency-review',
@@ -608,12 +621,14 @@ expect(
 for (const fixture of [
     { name: 'success', result: 'success', expectedStatus: 0, expectedOutput: 'every job succeeded or was skipped\n' },
     { name: 'skipped', result: 'skipped', expectedStatus: 0, expectedOutput: 'every job succeeded or was skipped\n' },
-    { name: 'failure', result: 'failure', expectedStatus: 1, expectedOutput: 'failing jobs:\nunit: failure\n' },
-    { name: 'cancelled', result: 'cancelled', expectedStatus: 1, expectedOutput: 'failing jobs:\nsmoke: cancelled\n' },
+    { name: 'static/type failure', job: 'static', result: 'failure', expectedStatus: 1, expectedOutput: 'failing jobs:\nstatic: failure\n' },
+    { name: 'unit failure', job: 'unit', result: 'failure', expectedStatus: 1, expectedOutput: 'failing jobs:\nunit: failure\n' },
+    { name: 'build failure', job: 'build', result: 'failure', expectedStatus: 1, expectedOutput: 'failing jobs:\nbuild: failure\n' },
+    { name: 'native failure', job: 'native-macos', result: 'failure', expectedStatus: 1, expectedOutput: 'failing jobs:\nnative-macos: failure\n' },
+    { name: 'cancelled', job: 'smoke', result: 'cancelled', expectedStatus: 1, expectedOutput: 'failing jobs:\nsmoke: cancelled\n' },
 ]) {
     const results = terminalGateResults(fixture.expectedStatus === 0 ? fixture.result : 'skipped');
-    if (fixture.name === 'failure') results.unit = { result: fixture.result };
-    if (fixture.name === 'cancelled') results.smoke = { result: fixture.result };
+    if (fixture.job) results[fixture.job] = { result: fixture.result };
     const result = runGate(results);
     expect(result.status === fixture.expectedStatus, `Gate ${fixture.name} fixture must exit ${fixture.expectedStatus}`);
     expect(result.stdout.endsWith(fixture.expectedOutput), `Gate ${fixture.name} fixture must report its exact terminal outcome`);

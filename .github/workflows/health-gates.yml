@@ -71,14 +71,14 @@ jobs:
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
               - 'scripts/health-gates-server.sh'
-              - '.github/workflows/health-gates.yml'
+              - '.github/workflows/**'
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
               - 'package.json'
               - 'vite.config.ts'
               - 'scripts/checkVitestCollectionScope.ts'
-              - '.github/workflows/health-gates.yml'
+              - '.github/workflows/**'
             e2e:
               - 'src/**'
               - 'public/**'
@@ -86,7 +86,7 @@ jobs:
               - 'playwright.config.ts'
               - 'package.json'
               - 'pnpm-lock.yaml'
-              - '.github/workflows/health-gates.yml'
+              - '.github/workflows/**'
             web:
               - 'src/**'
               - 'public/**'
@@ -96,7 +96,7 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'vite.config.ts'
               - 'tsconfig*.json'
-              - '.github/workflows/health-gates.yml'
+              - '.github/workflows/**'
 
       - name: Resolve scope
         id: scope
