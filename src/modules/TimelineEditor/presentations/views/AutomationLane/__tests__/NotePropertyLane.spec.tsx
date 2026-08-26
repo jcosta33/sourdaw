@@ -287,6 +287,174 @@ describe('NotePropertyLane', () => {
             expect(setValues).toHaveBeenCalledWith('clip-1', [{ noteId: 'n3', velocity: 127 }]);
         });
 
+        describe('cross-clip selection scope', () => {
+            // A selection can span every clip the piano roll has open; the lane
+            // must draw and edit the notes of every clip that selection
+            // reaches, addressing each through its own clip — the same
+            // ownership rule the digit-key velocity presets follow.
+            // Geometry comes from the enclosing describe's rect spy.
+
+            /** Primary clip holds n1 (beat 0); opened clip-2 holds n2/n3. */
+            const seedTwoClips = (): Record<string, LaneNote[]> => {
+                const primary = [makeNote('n1', 0, 100)];
+                const secondary = [makeNote('n2', 2, 80), makeNote('n3', 4, 60)];
+                laneMocks.midiState = { notesByClipId: { 'clip-1': primary, 'clip-2': secondary } };
+                return { 'clip-2': secondary };
+            };
+
+            it('renders bars for secondary-clip notes once the selection reaches into their clip', () => {
+                const openedClipNotes = seedTwoClips();
+                const roundRect = vi.spyOn(ctx2d, 'roundRect');
+
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        openedClipNotes={openedClipNotes}
+                        selectedNoteIds={new Set(['n1', 'n2', 'n3'])}
+                    />
+                );
+
+                // n2: x = 2*40+1, height (80/127)*127, y = 131-80-2.
+                // n3: x = 4*40+1, height (60/127)*127, y = 131-60-2.
+                expect(roundRect).toHaveBeenCalledWith(81, 49, 38, 80, [2, 2, 0, 0]);
+                expect(roundRect).toHaveBeenCalledWith(161, 69, 38, 60, [2, 2, 0, 0]);
+            });
+
+            it('a single-clip selection keeps the lane scoped to the primary clip', () => {
+                const openedClipNotes = seedTwoClips();
+                const roundRect = vi.spyOn(ctx2d, 'roundRect');
+
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        openedClipNotes={openedClipNotes}
+                        selectedNoteIds={new Set(['n1'])}
+                    />
+                );
+
+                // Only n1's bar — the opened clip the selection does not touch
+                // stays out of the picture and out of the hit test.
+                expect(roundRect).toHaveBeenCalledTimes(1);
+                expect(roundRect).toHaveBeenCalledWith(1, 29, 38, 100, [2, 2, 0, 0]);
+
+                fireEvent.pointerDown(getCanvas(), { pointerId: 1, clientX: 90, clientY: 2 });
+                expect(liveSetValue).not.toHaveBeenCalled();
+            });
+
+            it('keeps the empty-state hint when the primary clip has no notes, opened clips or not', () => {
+                const secondary = [makeNote('n2', 2, 80)];
+                laneMocks.midiState = { notesByClipId: { 'clip-1': [], 'clip-2': secondary } };
+                const fillText = vi.spyOn(ctx2d, 'fillText');
+
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        openedClipNotes={{ 'clip-2': secondary }}
+                    />
+                );
+
+                expect(fillText).toHaveBeenCalledWith(
+                    'No notes — add MIDI to edit velocity',
+                    expect.any(Number),
+                    expect.any(Number)
+                );
+            });
+
+            it('hit-testing resolves a secondary-clip note through its own clip', () => {
+                const openedClipNotes = seedTwoClips();
+
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        openedClipNotes={openedClipNotes}
+                        selectedNoteIds={new Set(['n1', 'n2', 'n3'])}
+                    />
+                );
+
+                // n3's bar spans content x 161–199; the press paints it at 127
+                // (clientY 2 is the top of the usable range) through clip-2.
+                fireEvent.pointerDown(getCanvas(), { pointerId: 1, clientX: 170, clientY: 2 });
+
+                expect(liveSetValue).toHaveBeenCalledWith('clip-2', 'n3', 127);
+            });
+
+            it('a shift+drag ramp across a cross-clip selection writes every note through its own clip', () => {
+                const openedClipNotes = seedTwoClips();
+
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        openedClipNotes={openedClipNotes}
+                        selectedNoteIds={new Set(['n1', 'n2', 'n3'])}
+                    />
+                );
+
+                // anchor n1 (100) → end 127 over beats 0–4: n2 = 114, n3 = 127.
+                fireEvent.pointerDown(getCanvas(), { pointerId: 1, clientX: 10, clientY: 2, shiftKey: true });
+
+                expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'n1', 100);
+                expect(liveSetValue).toHaveBeenCalledWith('clip-2', 'n2', 114);
+                expect(liveSetValue).toHaveBeenCalledWith('clip-2', 'n3', 127);
+
+                fireEvent.pointerUp(getCanvas(), { pointerId: 1, clientX: 10, clientY: 2 });
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Change velocity ramp',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+
+                // n1 held its anchor value, so the diff spans only what really
+                // changed — and each row restores through its own clip.
+                liveSetValue.mockClear();
+                const undoFn = vi.mocked(pushUndoEntry).mock.lastCall?.[1];
+                undoFn!();
+                expect(liveSetValue).toHaveBeenCalledWith('clip-2', 'n2', 80);
+                expect(liveSetValue).toHaveBeenCalledWith('clip-2', 'n3', 60);
+                expect(liveSetValue).not.toHaveBeenCalledWith('clip-1', expect.anything(), expect.anything());
+            });
+
+            it('a ramp-handle drag commits one undo entry whose redo batches setValues per clip', () => {
+                const openedClipNotes = seedTwoClips();
+                const setValues = vi.fn();
+                const { container } = render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        setValues={setValues}
+                        openedClipNotes={openedClipNotes}
+                        selectedNoteIds={new Set(['n1', 'n2', 'n3'])}
+                    />
+                );
+
+                const leftHandle = container.querySelectorAll('div.cursor-ns-resize')[0]!;
+                // Left anchor lifts to 127 while the right holds 60: n1 → 127,
+                // n2 → round(127 + (60-127)/2) = 94, n3 stays 60 (excluded).
+                fireEvent.pointerDown(leftHandle, { pointerId: 3, clientY: 66 });
+                fireEvent.pointerMove(leftHandle, { pointerId: 3, clientY: 2 });
+
+                expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'n1', 127);
+                expect(liveSetValue).toHaveBeenCalledWith('clip-2', 'n2', 94);
+
+                fireEvent.pointerUp(leftHandle, { pointerId: 3, clientY: 2 });
+                expect(pushUndoEntry).toHaveBeenCalledTimes(1);
+
+                const redoFn = vi.mocked(pushUndoEntry).mock.lastCall?.[2];
+                redoFn!();
+                expect(setValues).toHaveBeenCalledWith('clip-1', [{ noteId: 'n1', velocity: 127 }]);
+                expect(setValues).toHaveBeenCalledWith('clip-2', [{ noteId: 'n2', velocity: 94 }]);
+
+                const undoFn = vi.mocked(pushUndoEntry).mock.lastCall?.[1];
+                undoFn!();
+                expect(setValues).toHaveBeenCalledWith('clip-1', [{ noteId: 'n1', velocity: 100 }]);
+                expect(setValues).toHaveBeenCalledWith('clip-2', [{ noteId: 'n2', velocity: 80 }]);
+            });
+        });
+
         describe('touch, pen, and interrupted drags', () => {
             const readVelocity = (noteId: string): number | undefined =>
                 (laneMocks.midiState.notesByClipId['clip-1'] ?? []).find((note) => note.id === noteId)?.velocity;
