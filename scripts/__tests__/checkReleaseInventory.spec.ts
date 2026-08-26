@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+    closeSync,
     constants,
     linkSync,
-    lstatSync,
     mkdirSync,
     mkdtempSync,
     openSync,
@@ -420,6 +420,23 @@ const INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS = [
     'src/utils/handlerContract.ts',
 ] as const;
 
+function readIndependentTrackedEntry(absolutePath: string): Buffer {
+    let fileDescriptor: number | undefined;
+    try {
+        fileDescriptor = openSync(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        return readFileSync(fileDescriptor);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ELOOP') {
+            return readlinkSync(absolutePath, { encoding: 'buffer' });
+        }
+        throw error;
+    } finally {
+        if (fileDescriptor !== undefined) {
+            closeSync(fileDescriptor);
+        }
+    }
+}
+
 function independentTrackedSetSha256(root: string, pathspecs: readonly string[], label: string): string {
     const files = execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
         cwd: root,
@@ -431,12 +448,9 @@ function independentTrackedSetSha256(root: string, pathspecs: readonly string[],
     const hash = createHash('sha256');
     for (const path of files) {
         const absolutePath = join(root, path);
-        const stat = lstatSync(absolutePath);
         hash.update(path);
         hash.update('\0');
-        hash.update(
-            stat.isSymbolicLink() ? readlinkSync(absolutePath, { encoding: 'buffer' }) : readFileSync(absolutePath)
-        );
+        hash.update(readIndependentTrackedEntry(absolutePath));
         hash.update('\0');
     }
     return `tracked-set-sha256:${hash.digest('hex')}:${label}`;
