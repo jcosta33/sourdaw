@@ -333,6 +333,7 @@ describe('lane publish', () => {
                 TEST_EVENT_LOG: eventLog,
                 TEST_PR_LOG: pullRequestLog,
             };
+            const beforeAmbiguousIssue = snapshotLogs();
             expect(() =>
                 execFileSync(
                     'pnpm',
@@ -344,6 +345,7 @@ describe('lane publish', () => {
                     }
                 )
             ).toThrow(/expected exactly one locked author lane for issue #12/);
+            expect(snapshotLogs()).toEqual(beforeAmbiguousIssue);
             execFileSync(
                 'pnpm',
                 ['lane:publish', '--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
