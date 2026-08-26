@@ -33,6 +33,7 @@ export async function getVersionedCommandBatchIdempotentReplay(input: {
                 baseRevision: parsed.envelope.baseRevision,
                 batchId: parsed.envelope.batchId,
                 commands: parsed.envelope.commands,
+                contentHash,
                 runId: parsed.envelope.runId,
                 serializedReceipt: projectCheckpoint.serializedReceipt,
             });
@@ -55,6 +56,7 @@ export async function getVersionedCommandBatchIdempotentReplay(input: {
             baseRevision: parsed.envelope.baseRevision,
             batchId: parsed.envelope.batchId,
             commands: parsed.envelope.commands,
+            contentHash,
             runId: parsed.envelope.runId,
             serializedReceipt: lookup.serializedReceipt,
         });

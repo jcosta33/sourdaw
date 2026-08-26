@@ -23,6 +23,14 @@ type AgentRunControlProjection = {
     };
     manualResumeReason: string | null;
     resumeRejectionReason: string | null;
+    decision: null | {
+        reason: string;
+        alternatives: Array<{
+            id: string;
+            label: string;
+            changesAuthority: boolean;
+        }>;
+    };
     committedReceipts: Array<{
         workId: string;
         receiptIdentity: string;
@@ -83,6 +91,17 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
         },
         manualResumeReason: run.manualResume.reason,
         resumeRejectionReason: resumeAdmission.status === 'rejected' ? resumeAdmission.reason : null,
+        decision:
+            run.decision === null
+                ? null
+                : {
+                      reason: run.decision.reason,
+                      alternatives: run.decision.alternatives.map((alternative) => ({
+                          id: alternative.id,
+                          label: alternative.label,
+                          changesAuthority: alternative.changesAuthority,
+                      })),
+                  },
         committedReceipts: run.committedWork.map((work) => ({
             workId: work.workId,
             receiptIdentity: work.receiptIdentity,

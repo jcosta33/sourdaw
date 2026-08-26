@@ -7,7 +7,7 @@ import { agentRunWorkLease } from '../agentRunWorkLease';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
-    captureProjectRevision: vi.fn(() => 'revision-1'),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-1'),
     compileAgentActionExecution: vi.fn(),
     describePlannedAction: vi.fn(() => 'Toggle playback'),
     executePromptActionGroup: vi.fn(),
@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({
     planPromptActions: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRevision: mocks.captureProjectRevision }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+}));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
@@ -99,7 +101,7 @@ describe('submitAdmittedPromptRequest', () => {
         vi.clearAllMocks();
         agentRunLifecycle.clear();
         randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
-        mocks.captureProjectRevision.mockReturnValue('revision-1');
+        mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-1');
         mocks.compileAgentActionExecution.mockReturnValue(compiled);
         mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
             status: 'valid',
