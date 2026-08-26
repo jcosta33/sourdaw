@@ -991,17 +991,18 @@ function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDef
 const DEVICE_DATA_PROPERTIES = new Set(['devices', 'parameterValues']);
 
 type LocalUpdater = ArrowFunction | FunctionDeclaration | FunctionExpression;
-type LocalBinding = {
-    readonly expression: Expression | null;
-    readonly updater: LocalUpdater | null;
-};
+type LocalBinding =
+    | { readonly kind: 'expression'; readonly expression: Expression }
+    | { readonly kind: 'parameter' }
+    | { readonly kind: 'unclassifiable' }
+    | { readonly kind: 'updater'; readonly updater: LocalUpdater };
 type LexicalScope = {
     readonly parent: LexicalScope | null;
-    readonly bindings: Map<string, LocalBinding | null>;
+    readonly bindings: Map<string, LocalBinding>;
 };
 
-function addLocalBinding(scope: LexicalScope, name: string, binding: LocalBinding | null): void {
-    scope.bindings.set(name, scope.bindings.has(name) ? null : binding);
+function addLocalBinding(scope: LexicalScope, name: string, binding: LocalBinding): void {
+    scope.bindings.set(name, scope.bindings.has(name) ? { kind: 'unclassifiable' } : binding);
 }
 
 function isConstVariableDeclaration(node: Node): boolean {
@@ -1018,14 +1019,19 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
     const visit = (node: Node, scope: LexicalScope): void => {
         scopeByNode.set(node, scope);
         if (isFunctionDeclaration(node) && node.name) {
-            addLocalBinding(scope, node.name.text, { expression: null, updater: node });
+            addLocalBinding(scope, node.name.text, { kind: 'updater', updater: node });
         }
         if (isVariableDeclaration(node) && isIdentifier(node.name)) {
             const initializer = node.initializer;
             const updater =
                 initializer && (isArrowFunction(initializer) || isFunctionExpression(initializer)) ? initializer : null;
-            const expression = initializer && !updater && isConstVariableDeclaration(node) ? initializer : null;
-            addLocalBinding(scope, node.name.text, { expression, updater });
+            if (updater) {
+                addLocalBinding(scope, node.name.text, { kind: 'updater', updater });
+            } else if (initializer && isConstVariableDeclaration(node)) {
+                addLocalBinding(scope, node.name.text, { kind: 'expression', expression: initializer });
+            } else {
+                addLocalBinding(scope, node.name.text, { kind: 'unclassifiable' });
+            }
         }
 
         let childScope = scope;
@@ -1033,7 +1039,7 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
             childScope = { parent: scope, bindings: new Map() };
             for (const parameter of node.parameters) {
                 if (isIdentifier(parameter.name)) {
-                    addLocalBinding(childScope, parameter.name.text, null);
+                    addLocalBinding(childScope, parameter.name.text, { kind: 'parameter' });
                 }
             }
         } else if (isBlock(node)) {
@@ -1045,21 +1051,18 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
     return scopeByNode;
 }
 
-function resolveLocalBinding(name: string, scope: LexicalScope | undefined): LocalBinding | null {
+function resolveLocalBinding(name: string, scope: LexicalScope | undefined): LocalBinding | undefined {
     for (let current = scope; current; current = current.parent) {
         if (current.bindings.has(name)) {
-            return current.bindings.get(name) ?? null;
+            return current.bindings.get(name);
         }
     }
-    return null;
+    return undefined;
 }
 
 function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): LocalUpdater | null {
-    return resolveLocalBinding(name, scope)?.updater ?? null;
-}
-
-function resolveLocalExpression(name: string, scope: LexicalScope | undefined): Expression | null {
-    return resolveLocalBinding(name, scope)?.expression ?? null;
+    const binding = resolveLocalBinding(name, scope);
+    return binding?.kind === 'updater' ? binding.updater : null;
 }
 
 function isUpdateTrackCall(node: Node): node is CallExpression {
@@ -1123,62 +1126,75 @@ function countDeviceDataAstWrites(file: ProductionSource): number {
     );
     const scopeByNode = indexLocalUpdaters(sourceFile);
     const writes = new Set<Node>();
+    const visiting = new Set<Expression>();
     const seen = new Set<Expression>();
 
     // Bindings stand for a returned state expression, not nested data: resolving a
     // device variable inside that state would double-count its construction.
     const collectStateExpression = (candidate: Expression, resolveBinding = true): void => {
         const expression = unwrapStateExpression(candidate);
+        if (visiting.has(expression)) {
+            throw new Error('cyclic local state binding');
+        }
         if (seen.has(expression)) {
             return;
         }
-        seen.add(expression);
-        if (isObjectLiteralExpression(expression)) {
-            for (const property of expression.properties) {
-                if (isShorthandPropertyAssignment(property) && DEVICE_DATA_PROPERTIES.has(property.name.text)) {
-                    writes.add(property);
-                    continue;
+        visiting.add(expression);
+        try {
+            if (isObjectLiteralExpression(expression)) {
+                for (const property of expression.properties) {
+                    if (isShorthandPropertyAssignment(property) && DEVICE_DATA_PROPERTIES.has(property.name.text)) {
+                        writes.add(property);
+                        continue;
+                    }
+                    if (!isPropertyAssignment(property)) {
+                        continue;
+                    }
+                    if (
+                        isComputedPropertyName(property.name) &&
+                        isStringLiteral(property.name.expression) &&
+                        DEVICE_DATA_PROPERTIES.has(property.name.expression.text)
+                    ) {
+                        writes.add(property);
+                    }
+                    collectStateExpression(property.initializer, false);
                 }
-                if (!isPropertyAssignment(property)) {
-                    continue;
+                return;
+            }
+            if (isArrayLiteralExpression(expression)) {
+                for (const element of expression.elements) {
+                    collectStateExpression(element, false);
                 }
-                if (
-                    isComputedPropertyName(property.name) &&
-                    isStringLiteral(property.name.expression) &&
-                    DEVICE_DATA_PROPERTIES.has(property.name.expression.text)
-                ) {
-                    writes.add(property);
+                return;
+            }
+            if (isConditionalExpression(expression)) {
+                collectStateExpression(expression.whenTrue);
+                collectStateExpression(expression.whenFalse);
+                return;
+            }
+            if (resolveBinding && isIdentifier(expression)) {
+                const binding = resolveLocalBinding(expression.text, scopeByNode.get(expression));
+                if (!binding || binding.kind === 'parameter') {
+                    return;
                 }
-                collectStateExpression(property.initializer, false);
+                if (binding.kind !== 'expression') {
+                    throw new Error(`unclassifiable local state binding: ${expression.text}`);
+                }
+                collectStateExpression(binding.expression);
+                return;
             }
-            return;
-        }
-        if (isArrayLiteralExpression(expression)) {
-            for (const element of expression.elements) {
-                collectStateExpression(element, false);
-            }
-            return;
-        }
-        if (isConditionalExpression(expression)) {
-            collectStateExpression(expression.whenTrue);
-            collectStateExpression(expression.whenFalse);
-            return;
-        }
-        if (resolveBinding && isIdentifier(expression)) {
-            const localExpression = resolveLocalExpression(expression.text, scopeByNode.get(expression));
-            if (localExpression) {
-                collectStateExpression(localExpression);
-            }
-            return;
-        }
-        if (isCallExpression(expression)) {
-            for (const argument of expression.arguments) {
-                if (isArrowFunction(argument) || isFunctionExpression(argument)) {
-                    for (const returned of returnedStateExpressions(argument)) {
-                        collectStateExpression(returned);
+            if (isCallExpression(expression)) {
+                for (const argument of expression.arguments) {
+                    if (isArrowFunction(argument) || isFunctionExpression(argument)) {
+                        for (const returned of returnedStateExpressions(argument)) {
+                            collectStateExpression(returned);
+                        }
                     }
                 }
             }
+        } finally {
+            visiting.delete(expression);
+            seen.add(expression);
         }
     };
 
@@ -1331,25 +1347,40 @@ describe('device write boundary closure', () => {
         ).toBe(1);
     });
 
-    it('fails closed for shadowed, ambiguous, or cyclic local state expressions', () => {
+    it('accepts a no-change updater return and resolves only its legitimate nearest shadow', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/noChangeUpdater.ts',
+                source: 'updateTrack("track", (current) => current);',
+            })
+        ).toBe(0);
         expect(
             countDeviceDataAstWrites({
                 path: 'src/modules/Arrangement/shadowedStateExpression.ts',
                 source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; { const next = current; return next; } });',
             })
         ).toBe(0);
-        expect(
+    });
+
+    it('rejects mutable, ambiguous, or cyclic returned local state expressions', () => {
+        expect(() =>
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/mutableStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { let next = { ...current, devices }; return next; });',
+            })
+        ).toThrow(/unclassifiable local state binding/);
+        expect(() =>
             countDeviceDataAstWrites({
                 path: 'src/modules/Arrangement/ambiguousStateExpression.ts',
                 source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; const next = current; return next; });',
             })
-        ).toBe(0);
-        expect(
+        ).toThrow(/unclassifiable local state binding/);
+        expect(() =>
             countDeviceDataAstWrites({
                 path: 'src/modules/Arrangement/cyclicStateExpression.ts',
                 source: 'const first = second; const second = first; updateTrack("track", () => first);',
             })
-        ).toBe(0);
+        ).toThrow(/cyclic local state binding/);
     });
 
     it.each([
