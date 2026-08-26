@@ -43,11 +43,14 @@
                 "AGENTS.md",
                 "CLAUDE.md",
                 "CONTRIBUTING.md",
+                "CODEX.md",
                 "Cargo.lock",
                 "Cargo.toml",
                 "GEMINI.md",
+                "KIMI.md",
                 "README.md",
                 "SECURITY.md",
+                "ZCODE.md",
                 "components.json",
                 "eslint.config.mjs",
                 "index.html",
@@ -929,9 +932,9 @@
                 "tracked-set-sha256:17e9646737f2d49baf0917ffcec42c1b43ed47f9990bd7180b2fe5a126693451:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:b2b40500eaaea3294d2126ce420b953fb05494d4552a24f9e32a02766a9bf9e7:grand-boule-live-runtime",
-                "tracked-set-sha256:6ed5e86418aaf2979f1defcbd07227a48387c1efa1dcaac857a2f4c0ab543205:grand-boule-project-state",
+                "tracked-set-sha256:ad4ec8d5ad3f55ed3bc4f8bb523c6a189639df5af6e0ce3a375608deefb04d6e:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:38bcd724090093cfe57adaa950a0488207ee4dacd86a7e51880129732507fdbb:grand-boule-release-proof"
+                "tracked-set-sha256:1d3c54b8084fd21225f48aec8ba6cf700dfc3e50ce27ca9da9ccdf65c2838e6e:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
@@ -1151,6 +1154,7 @@
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Gluten/models/GlutenPatch.ts",
                 "src/modules/Gluten/models/GlutenTopologyGating.ts",
                 "src/modules/Grinder/models/GrinderPatch.ts",
@@ -1869,6 +1873,7 @@
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts"
             ]
         },
@@ -1992,7 +1997,8 @@
                 "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md"
             ]
         },
         {
@@ -2014,6 +2020,7 @@
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts"
             ]
         },
