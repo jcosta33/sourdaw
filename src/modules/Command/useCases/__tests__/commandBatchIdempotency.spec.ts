@@ -480,6 +480,9 @@ describe('command batch idempotency', () => {
 
         for (const serializedReceipt of [
             receiptWithOutcome('committed', 'no-op'),
+            receiptWithOutcome('committed', 'executed'),
+            receiptWithOutcome('committed', 'unknown'),
+            receiptWithOutcome('committed', 'not-applied'),
             receiptWithOutcome('executed', 'executed'),
             receiptWithOutcome('no-op', 'no-op'),
             receiptWithOutcome('failed', 'not-applied'),
