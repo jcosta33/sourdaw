@@ -1,0 +1,37 @@
+crates/sourdaw-native/AGENTS.md
+  s_1b9333aca53d4d::t_375500d68fbec1 37
+  s_1b9333aca53d4d::t_be178bf41c263f 55-59
+  s_1b9333aca53d4d::t_d639e68c030cfd 35
+public/legal/PLUGIN-INTERFACE-NOTICES.txt
+  s_1b9333aca53d4d::t_8b86a6ae13afed 1-58
+crates/daw-plugin-host/AGENTS.md
+  s_1b9333aca53d4d::t_cb6a8a66d3fa71 3,7,13-15
+  s_1b9333aca53d4d::t_df29f75121436b 19
+public/legal/THIRD-PARTY-NOTICES.md
+  s_1b9333aca53d4d::t_60f1cb8edbbf58 120-127
+src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx
+  s_1b9333aca53d4d::t_10dc75306f8ed5 195-204
+docs/architecture/04-plugin-hosting-security.md
+  s_1b9333aca53d4d::t_0484241f083d4d 20-22,24-28
+  s_1b9333aca53d4d::t_435e7a5bc4df43 10-13
+public/legal/DEPENDENCY-LICENSES.txt
+  s_1b9333aca53d4d::t_1dcdd3ea41a1da 9,13,37,273,2102,4560,14019-14080
+release/dependency-license-proofs.json
+  s_1b9333aca53d4d::t_9ee4cd379d1a1e 4,36,670-688,6293-6318,8609-8623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "94121aa03c1f126bc19263d7830ef32733fd7e79",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
