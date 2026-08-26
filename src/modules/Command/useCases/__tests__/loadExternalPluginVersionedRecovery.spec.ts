@@ -18,6 +18,7 @@ import { commandRuntimeRepairPort } from '../commandRuntimeRepairPort';
 import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
 import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
 import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
+import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
 import { reconcileProjectCommandBatchEffects } from '../reconcileProjectCommandBatchEffects';
 
 const mocks = vi.hoisted(() => ({
@@ -172,7 +173,9 @@ describe('loadExternalPlugin versioned recovery', () => {
                 maxRenderJobs: 0,
             },
         };
+        const contentHash = await getCommandBatchContentHash(envelope);
         const receipt = createVerifiedBatchReceipt({
+            contentHash,
             envelope,
             observedBaseRevision: baseRevision,
             resultingRevision: baseRevision,
@@ -229,6 +232,7 @@ describe('loadExternalPlugin versioned recovery', () => {
 
         await expect(
             reconcileProjectCommandBatchEffects({
+                contentHash,
                 envelope,
                 serializedReceipt: JSON.stringify(receipt),
             })

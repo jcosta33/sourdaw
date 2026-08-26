@@ -19,9 +19,11 @@ import { selectPreparedStemImportManualRepairs } from '../../stores/selectPrepar
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
+import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
+import { AgentRunDecisionControls, type AgentRunDecisionControl } from '../components/AgentRunDecisionControls';
 import { ChatComposer } from '../components/ChatComposer';
 
 /**
@@ -249,6 +251,7 @@ type ChatPanelProps = {
 
 export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     const [inputValue, setInputValue] = useState('');
+    const [decisionStatusMessage, setDecisionStatusMessage] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -259,6 +262,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
+    const decisionRuns: AgentRunDecisionControl[] =
+        agentRunState.schemaVersion === 1
+            ? agentRunControls.list().flatMap((run) => (run.decision === null ? [] : [run]))
+            : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
     const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
@@ -298,6 +305,29 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
 
     const handleCancelPendingActions = (confirmationId: string): void => {
         void cancelPendingChatActions({ confirmationId });
+    };
+
+    const handleResumeDecision = async (runId: string, alternativeId: string): Promise<void> => {
+        const decisionRun = decisionRuns.find((run) => run.runId === runId);
+        if (decisionRun === undefined || !decisionRun.allowedActions.resume) {
+            setDecisionStatusMessage(
+                decisionRun?.resumeRejectionReason ?? 'The pending decision is unavailable or already consumed.'
+            );
+            return;
+        }
+        const alternative = decisionRun.decision.alternatives.find((candidate) => candidate.id === alternativeId);
+        if (alternative === undefined) {
+            setDecisionStatusMessage('The selected decision alternative is unavailable.');
+            return;
+        }
+
+        setDecisionStatusMessage(`Resuming with ${alternative.label}.`);
+        const result = await agentRunControls.resumeDecision({ runId, alternativeId });
+        if (result.status === 'resumed') {
+            setDecisionStatusMessage(`Started replacement agent run ${result.runId}.`);
+        } else {
+            setDecisionStatusMessage(result.reason);
+        }
     };
 
     const handleRecoverPendingEffects = (runId: string, batchId: string): void => {
@@ -462,6 +492,13 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     </span>
                 ) : null}
             </DawHeaderBand>
+            <AgentRunDecisionControls
+                decisions={decisionRuns}
+                statusMessage={decisionStatusMessage}
+                onResumeDecision={(runId, alternativeId) => {
+                    void handleResumeDecision(runId, alternativeId);
+                }}
+            />
             {/* Scrollable message list. aria-live announces streamed assistant
                 output for screen-reader users during the long (30–90s) planning
                 pass; aria-busy signals that generation is in progress. */}

@@ -17,5 +17,7 @@ export async function getVersionedCommandBatchCommitProof(input: {
         contentHash: await getCommandBatchContentHash(parsed.envelope),
         runId: parsed.envelope.runId,
         batchId: parsed.envelope.batchId,
+        baseRevision: parsed.envelope.baseRevision,
+        commands: parsed.envelope.commands.map(({ commandId, operation }) => ({ commandId, operation })),
     };
 }

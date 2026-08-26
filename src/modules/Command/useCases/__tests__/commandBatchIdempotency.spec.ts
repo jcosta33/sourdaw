@@ -20,16 +20,22 @@ import { commandRuntimeRepairPort } from '../commandRuntimeRepairPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { createRecoveredVerifiedBatchReceipt } from '../createRecoveredVerifiedBatchReceipt';
+import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
+import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
+import { getProjectCommandBatchIdempotencyCheckpoint } from '../getProjectCommandBatchIdempotencyCheckpoint';
 import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
 import { getVersionedCommandBatchCommitProof } from '../getVersionedCommandBatchCommitProof';
 import { getVersionedCommandBatchIdempotentReplay } from '../getVersionedCommandBatchIdempotentReplay';
+import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { persistProjectCommandBatchIdempotencyCheckpoint } from '../persistProjectCommandBatchIdempotencyCheckpoint';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 type SetTrackPanAction = Extract<AppAction, { type: 'setTrackPan' }>;
+type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 
 const mocks = vi.hoisted(() => ({
     clearSemanticContext: vi.fn(),
@@ -109,6 +115,29 @@ function compileBatch(
         mode: 'commit',
         projectId: 'project-idempotency',
         runId: input.runId ?? 'run-idempotency',
+    });
+}
+
+function compileRuntimeBatch() {
+    const baseRevision = revision(0);
+    const action: SetPlaybackAction = { type: 'setPlayback', payload: { playing: true } };
+    const command = {
+        ...createExecutionCommandEnvelope({
+            action,
+            expectedEffect: 'Start playback.',
+            normalizedProjectRevision: baseRevision,
+        }).envelope,
+        commandId: '33333333-3333-4333-8333-333333333333',
+    };
+    return compileVersionedCommandBatchEnvelope({
+        baseRevision,
+        batchId: 'batch-runtime-warning',
+        commands: [JSON.stringify(command)],
+        idempotencyKey: 'client-request-runtime-warning',
+        intent: 'Start playback',
+        mode: 'commit',
+        projectId: 'project-idempotency',
+        runId: 'run-runtime-warning',
     });
 }
 
@@ -354,6 +383,739 @@ describe('command batch idempotency', () => {
         expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
         expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
+
+        await expect(
+            getVersionedCommandBatchCommitDisposition(await getVersionedCommandBatchCommitProof(batch))
+        ).resolves.toBe('committed');
+    });
+
+    it('replays a completed runtime warning receipt without repeating the runtime action', async () => {
+        const afterRuntimeExecution = vi.fn().mockRejectedValue(new Error('transport event unavailable'));
+        const execute = vi.fn(() => ({ status: 'written' as const, afterRuntimeExecution }));
+        registerHandlerMap({
+            setPlayback: {
+                describe: () => ({ label: 'Start playback' }),
+                execute,
+                executionKind: 'runtime',
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const batch = compileRuntimeBatch();
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        const retry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(first).toMatchObject({
+            status: 'executed-with-warning',
+            receipt: {
+                atomicity: 'atomic',
+                outcome: 'executed-with-warning',
+            },
+        });
+        expect(retry).toEqual({
+            status: 'idempotent-replay',
+            actions: [],
+            receipt: 'receipt' in first ? first.receipt : undefined,
+        });
+        expect(execute).toHaveBeenCalledOnce();
+        expect(afterRuntimeExecution).toHaveBeenCalledOnce();
+    });
+
+    it('treats only the exact verified receipt as committed proof', async () => {
+        const batch = compileBatch();
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const command = parsed.envelope.commands[0];
+        if (!command) {
+            throw new Error('The proof batch did not contain a command');
+        }
+        const expectedProof = {
+            baseRevision: revision(0),
+            batchId: 'batch-idempotency',
+            commands: [{ commandId: '11111111-1111-4111-8111-111111111111', operation: 'setTrackGain' }],
+            contentHash: await getCommandBatchContentHash(parsed.envelope),
+            idempotencyKey: 'client-request-1',
+            projectId: 'project-idempotency',
+            runId: 'run-idempotency',
+        };
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        expect(proof).toEqual(expectedProof);
+        const receipt = JSON.stringify(
+            createVerifiedBatchReceipt({
+                contentHash: expectedProof.contentHash,
+                envelope: parsed.envelope,
+                observedBaseRevision: parsed.envelope.baseRevision,
+                resultingRevision: revision(1),
+                result: {
+                    actions: [
+                        {
+                            action: {
+                                type: 'setTrackGain',
+                                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                            },
+                            receipt: createVersionedCommandReceipt({ envelope: command }),
+                        },
+                    ],
+                    status: 'committed',
+                },
+            })
+        );
+        const receiptRecord = JSON.parse(receipt) as {
+            base: { normalizedRevision: string };
+            commandOutcomes: Array<{ commandId: string; operation: string; outcome: string }>;
+        };
+        const committedReceipts = [
+            JSON.stringify(
+                createVerifiedBatchReceipt({
+                    contentHash: expectedProof.contentHash,
+                    envelope: parsed.envelope,
+                    observedBaseRevision: parsed.envelope.baseRevision,
+                    resultingRevision: revision(1),
+                    result: {
+                        actions: [
+                            {
+                                action: {
+                                    type: 'setTrackGain',
+                                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                                },
+                                receipt: createVersionedCommandReceipt({ envelope: command }),
+                            },
+                        ],
+                        status: 'committed-with-warning',
+                        warning: 'history observer unavailable',
+                    },
+                })
+            ),
+            JSON.stringify(
+                createVerifiedBatchReceipt({
+                    contentHash: expectedProof.contentHash,
+                    envelope: parsed.envelope,
+                    observedBaseRevision: parsed.envelope.baseRevision,
+                    resultingRevision: revision(1),
+                    result: {
+                        actions: [
+                            {
+                                action: {
+                                    type: 'setTrackGain',
+                                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                                },
+                                receipt: createVersionedCommandReceipt({ envelope: command }),
+                            },
+                        ],
+                        status: 'committed-with-warning',
+                        warningDetails: [
+                            {
+                                kind: 'external-effect',
+                                commandId: command.commandId,
+                                message: 'runtime graph update failed',
+                                pendingEffect: {
+                                    kind: 'runtime-graph',
+                                    commandId: command.commandId,
+                                    operation: command.operation,
+                                    reason: 'runtime graph update failed',
+                                    remediation: 'retry',
+                                    state: 'pending',
+                                },
+                            },
+                        ],
+                    },
+                })
+            ),
+        ];
+        const receiptWithOutcome = (outcome: string, commandOutcome: string) =>
+            JSON.stringify({
+                ...receiptRecord,
+                outcome,
+                commandOutcomes: receiptRecord.commandOutcomes.map((command) => ({
+                    ...command,
+                    outcome: commandOutcome,
+                })),
+            });
+        const lookup = vi.fn((input: { contentHash: string; idempotencyKey: string; projectId: string }) =>
+            Promise.resolve(
+                input.projectId === expectedProof.projectId &&
+                    input.idempotencyKey === expectedProof.idempotencyKey &&
+                    input.contentHash === expectedProof.contentHash
+                    ? { status: 'complete' as const, serializedReceipt: receipt }
+                    : { status: 'missing' as const }
+            )
+        );
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        for (const serializedReceipt of committedReceipts) {
+            lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        }
+        const alteredContentHash = await getCommandBatchContentHash({
+            ...parsed.envelope,
+            commands: parsed.envelope.commands.map((candidate) =>
+                candidate.commandId === command.commandId
+                    ? { ...candidate, arguments: { ...candidate.arguments, gain: 0.5 } }
+                    : candidate
+            ),
+        });
+        lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt: receipt });
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: alteredContentHash })
+        ).resolves.toBe('unknown');
+        lookup.mockResolvedValueOnce({
+            status: 'complete',
+            serializedReceipt: JSON.stringify({ ...receiptRecord, contentHash: undefined, schemaVersion: 1 }),
+        });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: `sha256:${'f'.repeat(64)}` })
+        ).resolves.toBe('unknown');
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, idempotencyKey: 'other-client-request' })
+        ).resolves.toBe('unknown');
+        await expect(getVersionedCommandBatchCommitDisposition({ ...proof, projectId: 'other-project' })).resolves.toBe(
+            'unknown'
+        );
+
+        lookup.mockResolvedValueOnce({ status: 'missing' });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+
+        lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt: '{"schemaVersion":1}' });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+
+        for (const serializedReceipt of [
+            receiptWithOutcome('committed', 'no-op'),
+            receiptWithOutcome('committed', 'executed'),
+            receiptWithOutcome('committed', 'unknown'),
+            receiptWithOutcome('committed', 'not-applied'),
+            receiptWithOutcome('executed', 'executed'),
+            JSON.stringify({ ...receiptRecord, runId: 'stale-run' }),
+            JSON.stringify({ ...receiptRecord, batchId: 'stale-batch' }),
+            JSON.stringify({
+                ...receiptRecord,
+                base: JSON.parse(revision(999)) as typeof receiptRecord.base,
+            }),
+            JSON.stringify({
+                ...receiptRecord,
+                commandOutcomes: receiptRecord.commandOutcomes.map((command) => ({
+                    ...command,
+                    commandId: '22222222-2222-4222-8222-222222222222',
+                })),
+            }),
+            JSON.stringify({
+                ...receiptRecord,
+                commandOutcomes: receiptRecord.commandOutcomes.map((command) => ({
+                    ...command,
+                    operation: 'setTrackPan',
+                })),
+            }),
+        ]) {
+            lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+        }
+        for (const serializedReceipt of [
+            receiptWithOutcome('no-op', 'no-op'),
+            receiptWithOutcome('failed', 'not-applied'),
+        ]) {
+            lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('terminal-noncommit');
+        }
+    });
+
+    it('rejects receipt reuse when only an application-assigned ID changes', async () => {
+        const baseRevision = revision(0);
+        const created = createExecutionCommandEnvelope({
+            action: { type: 'addTrack', payload: { name: 'Lead Vocal', kind: 'audio', color: '#d946ef' } },
+            expectedEffect: 'Add the Lead Vocal audio track.',
+            normalizedProjectRevision: baseRevision,
+        });
+        const command = {
+            ...created.envelope,
+            commandId: '44444444-4444-4444-8444-444444444444',
+        };
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision,
+            batchId: 'batch-assigned-id-proof',
+            commands: [JSON.stringify(command)],
+            idempotencyKey: 'client-request-assigned-id-proof',
+            intent: 'Add the Lead Vocal track',
+            mode: 'commit',
+            projectId: 'project-idempotency',
+            runId: 'run-assigned-id-proof',
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const parsedCommand = parsed.envelope.commands[0];
+        const assignedId = parsedCommand?.applicationAssignedIds[0];
+        if (!parsedCommand || !assignedId) {
+            throw new Error('The assigned-ID proof batch did not materialize an application ID');
+        }
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const receipt = JSON.stringify(
+            createVerifiedBatchReceipt({
+                contentHash: proof.contentHash,
+                envelope: parsed.envelope,
+                observedBaseRevision: baseRevision,
+                resultingRevision: revision(1),
+                result: {
+                    actions: [
+                        {
+                            action: created.action,
+                            receipt: createVersionedCommandReceipt({ envelope: parsedCommand }),
+                        },
+                    ],
+                    status: 'committed',
+                },
+            })
+        );
+        const alteredContentHash = await getCommandBatchContentHash({
+            ...parsed.envelope,
+            commands: parsed.envelope.commands.map((candidate) =>
+                candidate.commandId === parsedCommand.commandId
+                    ? {
+                          ...candidate,
+                          applicationAssignedIds: candidate.applicationAssignedIds.map((candidateId) =>
+                              candidateId.argument === assignedId.argument
+                                  ? { ...candidateId, value: `${candidateId.value}-altered` }
+                                  : candidateId
+                          ),
+                      }
+                    : candidate
+            ),
+        });
+        const lookup = vi.fn(() => Promise.resolve({ status: 'complete' as const, serializedReceipt: receipt }));
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        expect(parsedCommand.applicationAssignedIds.length).toBeGreaterThan(0);
+        expect(alteredContentHash).not.toBe(proof.contentHash);
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: alteredContentHash })
+        ).resolves.toBe('unknown');
+        expect(lookup).toHaveBeenCalledWith({ ...proof, contentHash: alteredContentHash });
+    });
+
+    it('classifies every producer-created receipt family through durable repository lookup', async () => {
+        const batch = compileBatch();
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const command = parsed.envelope.commands[0];
+        if (!command) {
+            throw new Error('The receipt-family batch did not contain a command');
+        }
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        type ProducerResult = Parameters<typeof createVerifiedBatchReceipt>[0]['result'];
+        const actions: ProducerResult['actions'] = [
+            {
+                action: {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                },
+                receipt: createVersionedCommandReceipt({ envelope: command }),
+            },
+        ];
+        const pendingEffect = {
+            commandId: command.commandId,
+            kind: 'runtime-graph' as const,
+            operation: 'setTrackGain' as const,
+            reason: 'runtime graph revision is stale',
+            remediation: 'retry' as const,
+            state: 'pending' as const,
+        };
+        const cases: ReadonlyArray<{
+            disposition: 'committed' | 'terminal-noncommit' | 'unknown';
+            name: string;
+            outcome:
+                | 'committed'
+                | 'committed-with-warning'
+                | 'partially-committed'
+                | 'executed'
+                | 'executed-with-warning'
+                | 'ambiguous'
+                | 'no-op'
+                | 'rejected'
+                | 'conflicted'
+                | 'cancelled'
+                | 'failed'
+                | 'verification-failed';
+            result: ProducerResult;
+        }> = [
+            {
+                name: 'committed',
+                outcome: 'committed',
+                result: { status: 'committed', actions },
+                disposition: 'committed',
+            },
+            {
+                name: 'committed-with-warning',
+                outcome: 'committed-with-warning',
+                result: {
+                    status: 'committed-with-warning',
+                    actions,
+                    warningDetails: [{ kind: 'observer', message: 'history observer unavailable' }],
+                },
+                disposition: 'committed',
+            },
+            {
+                name: 'partially-committed',
+                outcome: 'partially-committed',
+                result: {
+                    status: 'committed-with-warning',
+                    actions,
+                    warningDetails: [
+                        {
+                            kind: 'external-effect',
+                            commandId: command.commandId,
+                            message: 'runtime graph update failed',
+                            pendingEffect,
+                        },
+                    ],
+                },
+                disposition: 'committed',
+            },
+            {
+                name: 'executed',
+                outcome: 'executed',
+                result: { status: 'executed', actions },
+                disposition: 'unknown',
+            },
+            {
+                name: 'executed-with-warning',
+                outcome: 'executed-with-warning',
+                result: {
+                    status: 'executed-with-warning',
+                    actions,
+                    warningDetails: [
+                        {
+                            kind: 'external-effect',
+                            commandId: command.commandId,
+                            message: 'runtime graph update failed',
+                        },
+                    ],
+                },
+                disposition: 'unknown',
+            },
+            {
+                name: 'ambiguous',
+                outcome: 'ambiguous',
+                result: { status: 'ambiguous', actions: [], reason: 'unknown commit state' },
+                disposition: 'unknown',
+            },
+            {
+                name: 'no-op',
+                outcome: 'no-op',
+                result: { status: 'no-op', actions: [] },
+                disposition: 'terminal-noncommit',
+            },
+            {
+                name: 'rejected',
+                outcome: 'rejected',
+                result: { status: 'rejected', actions: [], reason: 'request rejected' },
+                disposition: 'terminal-noncommit',
+            },
+            {
+                name: 'conflicted',
+                outcome: 'conflicted',
+                result: { status: 'conflicted', actions: [], reason: 'project conflict' },
+                disposition: 'terminal-noncommit',
+            },
+            {
+                name: 'cancelled',
+                outcome: 'cancelled',
+                result: { status: 'cancelled', actions: [], reason: 'execution cancelled' },
+                disposition: 'terminal-noncommit',
+            },
+            {
+                name: 'failed',
+                outcome: 'failed',
+                result: { status: 'failed', actions: [], reason: 'execution failed' },
+                disposition: 'terminal-noncommit',
+            },
+            {
+                name: 'verification-failed',
+                outcome: 'verification-failed',
+                result: {
+                    status: 'conflicted',
+                    actions: [],
+                    reason: 'protected target changed',
+                    failureKind: 'verification',
+                },
+                disposition: 'terminal-noncommit',
+            },
+        ];
+        const lookup = vi.fn();
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        for (const testCase of cases) {
+            const receipt = createVerifiedBatchReceipt({
+                contentHash: proof.contentHash,
+                envelope: parsed.envelope,
+                observedBaseRevision: parsed.envelope.baseRevision,
+                resultingRevision: testCase.disposition === 'committed' ? revision(1) : revision(0),
+                result: testCase.result,
+            });
+            expect(receipt, testCase.name).toMatchObject({ schemaVersion: 2, outcome: testCase.outcome });
+            const serializedReceipt = JSON.stringify(receipt);
+            lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
+
+            await expect(getVersionedCommandBatchCommitDisposition(proof), testCase.name).resolves.toBe(
+                testCase.disposition
+            );
+        }
+
+        expect(lookup).toHaveBeenCalledTimes(cases.length);
+        expect(lookup.mock.calls.every(([candidate]) => candidate === proof)).toBe(true);
+    });
+
+    it('accepts a recovery-produced committed receipt through durable repository lookup', async () => {
+        const batch = compileBatch();
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const command = parsed.envelope.commands[0];
+        if (!command) {
+            throw new Error('The recovered receipt batch did not contain a command');
+        }
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const priorReceipt = createVerifiedBatchReceipt({
+            contentHash: proof.contentHash,
+            envelope: parsed.envelope,
+            observedBaseRevision: parsed.envelope.baseRevision,
+            resultingRevision: revision(1),
+            result: {
+                status: 'committed-with-warning',
+                actions: [
+                    {
+                        action: {
+                            type: 'setTrackGain',
+                            payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                        },
+                        receipt: createVersionedCommandReceipt({ envelope: command }),
+                    },
+                ],
+                warningDetails: [
+                    {
+                        kind: 'external-effect',
+                        commandId: command.commandId,
+                        message: 'runtime graph update failed',
+                        pendingEffect: {
+                            commandId: command.commandId,
+                            kind: 'runtime-graph',
+                            operation: 'setTrackGain',
+                            reason: 'runtime graph update failed',
+                            remediation: 'retry',
+                            state: 'pending',
+                        },
+                    },
+                ],
+            },
+        });
+        const recoveredReceipt = createRecoveredVerifiedBatchReceipt({
+            contentHash: proof.contentHash,
+            envelope: parsed.envelope,
+            priorReceipt,
+            receiptWarnings: ['Recovered pending external effects.'],
+        });
+        const lookup = vi.fn(() =>
+            Promise.resolve({
+                status: 'complete' as const,
+                serializedReceipt: JSON.stringify(recoveredReceipt),
+            })
+        );
+        delete projectDocument.commandBatchIdempotency;
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        expect(priorReceipt).toMatchObject({
+            outcome: 'partially-committed',
+            pendingEffects: [{ commandId: command.commandId, state: 'pending' }],
+        });
+        expect(recoveredReceipt).toMatchObject({
+            schemaVersion: 2,
+            contentHash: proof.contentHash,
+            outcome: 'committed',
+            atomicity: 'atomic',
+            pendingEffects: [],
+        });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        expect(lookup).toHaveBeenCalledOnce();
+        expect(lookup).toHaveBeenCalledWith(proof);
+    });
+
+    it('fails closed for non-complete project evidence and repository lookup failures', async () => {
+        const batch = compileBatch();
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const lookup = vi.fn(() => Promise.resolve({ status: 'complete' as const, serializedReceipt: '{}' }));
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+        const projectRecord = (contentHash: string, serializedReceipt: string) => ({
+            contentHash,
+            id: `${proof.projectId}\u0000${proof.idempotencyKey}\u0000${contentHash}`,
+            idempotencyKey: proof.idempotencyKey,
+            projectId: proof.projectId,
+            serializedReceipt,
+            state: 'complete',
+        });
+
+        const projectEvidence = [
+            {
+                ledger: { records: [projectRecord(proof.contentHash, '{"schemaVersion":1}')] },
+                name: 'malformed complete receipt',
+            },
+            {
+                ledger: { records: [projectRecord(`sha256:${'f'.repeat(64)}`, '{}')] },
+                name: 'conflicting content hash',
+            },
+            {
+                ledger: { records: [], schemaVersion: 2 },
+                name: 'unsupported schema',
+            },
+        ];
+        for (const { ledger, name } of projectEvidence) {
+            projectDocument.commandBatchIdempotency = ledger;
+            await expect(getVersionedCommandBatchCommitDisposition(proof), name).resolves.toBe('unknown');
+            expect(lookup, name).not.toHaveBeenCalled();
+        }
+
+        delete projectDocument.commandBatchIdempotency;
+        for (const status of ['pending', 'conflict'] as const) {
+            lookup.mockResolvedValueOnce({ status });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+        }
+        lookup.mockRejectedValueOnce(new Error('idempotency repository unavailable'));
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+    });
+
+    it('preserves ordered command identity in a valid two-command commit proof', async () => {
+        const baseRevision = revision(0);
+        const gainCommand = {
+            ...createExecutionCommandEnvelope({
+                action: {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                },
+                expectedEffect: 'Set the vocal gain to 0.8.',
+                normalizedProjectRevision: baseRevision,
+            }).envelope,
+            commandId: '11111111-1111-4111-8111-111111111111',
+        };
+        const panCommand = {
+            ...createExecutionCommandEnvelope({
+                action: {
+                    type: 'setTrackPan',
+                    payload: { trackId: 'track-guitar', expectedPan: 0, pan: -0.2 },
+                },
+                expectedEffect: 'Pan the guitar left.',
+                normalizedProjectRevision: baseRevision,
+            }).envelope,
+            commandId: '22222222-2222-4222-8222-222222222222',
+        };
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision,
+            batchId: 'batch-two-command-proof',
+            commands: [JSON.stringify(gainCommand), JSON.stringify(panCommand)],
+            idempotencyKey: 'client-request-two-command-proof',
+            intent: 'Balance vocal and guitar',
+            mode: 'commit',
+            projectId: 'project-idempotency',
+            runId: 'run-two-command-proof',
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const receipt = JSON.stringify(
+            createVerifiedBatchReceipt({
+                contentHash: proof.contentHash,
+                envelope: parsed.envelope,
+                observedBaseRevision: baseRevision,
+                resultingRevision: revision(1),
+                result: {
+                    actions: [
+                        {
+                            action: {
+                                type: 'setTrackGain',
+                                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                            },
+                            receipt: createVersionedCommandReceipt({ envelope: parsed.envelope.commands[0]! }),
+                        },
+                        {
+                            action: {
+                                type: 'setTrackPan',
+                                payload: { trackId: 'track-guitar', expectedPan: 0, pan: -0.2 },
+                            },
+                            receipt: createVersionedCommandReceipt({ envelope: parsed.envelope.commands[1]! }),
+                        },
+                    ],
+                    status: 'committed',
+                },
+            })
+        );
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'complete', serializedReceipt: receipt }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        expect(proof.commands).toEqual([
+            { commandId: gainCommand.commandId, operation: 'setTrackGain' },
+            { commandId: panCommand.commandId, operation: 'setTrackPan' },
+        ]);
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        const reversedReceipt = JSON.stringify({
+            ...(JSON.parse(receipt) as Record<string, unknown>),
+            commandOutcomes: (JSON.parse(receipt) as { commandOutcomes: unknown[] }).commandOutcomes.toReversed(),
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'complete', serializedReceipt: reversedReceipt }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+    });
+
+    it('rejects invalid serialized batches and mismatched authority from commit proof', async () => {
+        const batch = compileBatch();
+
+        await expect(
+            getVersionedCommandBatchCommitProof({ authority: batch.authority, serialized: 'not-json' })
+        ).rejects.toThrow('Command batch commit proof is invalid: Command batch must be valid JSON');
+        await expect(
+            getVersionedCommandBatchCommitProof({
+                authority: { ...batch.authority, projectId: 'other-project' },
+                serialized: batch.serialized,
+            })
+        ).rejects.toThrow('Command batch commit proof is invalid: Command batch exceeds application-issued authority');
     });
 
     it('discards caller recovery prepared for a project transaction that never commits', async () => {
@@ -361,17 +1123,65 @@ describe('command batch idempotency', () => {
         const promote = vi.fn();
         const discard = vi.fn();
         const batch = compileBatch();
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const pendingCheckpointLookup = vi.fn();
+        let projectHead = 'before-project-commit';
+        configureAutomergeStoragePort({
+            getDoc: () => projectDocument,
+            getDocHeads: () => [projectHead],
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                if (rejectInitialProjectCommit && mutationCount === 0) {
+                    throw new Error('initial project commit unavailable');
+                }
+                const draft = structuredClone(projectDocument);
+                changeFn(draft);
+                projectDocument = draft;
+                mutationCount += 1;
+            },
+        });
+        let dispositionDuringPreparedCommit: ReturnType<typeof getVersionedCommandBatchCommitDisposition> | null = null;
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
             options: {
-                onProjectCommitCheckpoint: () => ({ promote, discard }),
+                onProjectCommitCheckpoint: () => {
+                    expect(commandBatchIdempotencyStore.value).toMatchObject({
+                        records: [{ state: 'effects-pending' }],
+                    });
+                    const projectBeforeCommit = projectDocument;
+                    projectDocument = {
+                        ...projectDocument,
+                        commandBatchIdempotency: structuredClone(commandBatchIdempotencyStore.value),
+                    };
+                    projectHead = 'prepared-project-commit';
+                    expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({
+                        status: 'pending',
+                    });
+                    const serializedReceipt = commandBatchIdempotencyStore.value?.records[0]?.serializedReceipt;
+                    if (!serializedReceipt) {
+                        throw new Error('The prepared project checkpoint did not include a verified receipt');
+                    }
+                    pendingCheckpointLookup.mockResolvedValue({ status: 'complete', serializedReceipt });
+                    commandBatchIdempotencyPort.setRepository({
+                        lookup: pendingCheckpointLookup,
+                        claim: () => Promise.resolve({ status: 'claimed' }),
+                        complete: () => Promise.resolve(),
+                    });
+                    dispositionDuringPreparedCommit = getVersionedCommandBatchCommitDisposition(proof);
+                    projectDocument = projectBeforeCommit;
+                    projectHead = 'before-project-commit';
+                    return { promote, discard };
+                },
             },
         });
 
         expect(result).toMatchObject({ status: 'failed', reason: 'initial project commit unavailable' });
+        await expect(dispositionDuringPreparedCommit).resolves.toBe('unknown');
+        expect(pendingCheckpointLookup).not.toHaveBeenCalled();
         expect(promote).not.toHaveBeenCalled();
         expect(discard).toHaveBeenCalledOnce();
         expect(mutationCount).toBe(0);
@@ -449,7 +1259,19 @@ describe('command batch idempotency', () => {
             serialized: batch.serialized,
         });
         const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
+        projectDocument = structuredClone(projectDocument);
+        commandBatchIdempotencyStore.hydrate();
+        expect(getProjectCommandBatchIdempotencyCheckpoint(projectCommitProof)).toMatchObject({
+            status: 'pending',
+        });
+        const postReloadLookup = vi.fn(() => Promise.resolve({ status: 'missing' as const }));
+        commandBatchIdempotencyPort.setRepository({
+            lookup: postReloadLookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
         await expect(getVersionedCommandBatchCommitDisposition(projectCommitProof)).resolves.toBe('committed');
+        expect(postReloadLookup).not.toHaveBeenCalled();
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'missing' }),
             claim: () => Promise.resolve({ status: 'claimed' }),
@@ -1154,7 +1976,7 @@ describe('command batch idempotency', () => {
         });
         expect(retry).toMatchObject({
             status: 'idempotent-replay',
-            receipt: { outcome: 'committed', errors: [] },
+            receipt: { outcome: 'committed', atomicity: 'atomic', errors: [] },
         });
         expect('receipt' in retry ? retry.receipt.warnings : []).not.toContain(
             expect.stringContaining('runtime strip unavailable')
@@ -1165,7 +1987,7 @@ describe('command batch idempotency', () => {
         });
         expect(settledRetry).toMatchObject({
             status: 'idempotent-replay',
-            receipt: { outcome: 'committed', errors: [] },
+            receipt: { outcome: 'committed', atomicity: 'atomic', errors: [] },
         });
         expect(tryAcquireRecoveryLease).toHaveBeenCalledTimes(2);
         expect(release).toHaveBeenCalledTimes(1);

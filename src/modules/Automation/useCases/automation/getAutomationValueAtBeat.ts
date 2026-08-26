@@ -1,3 +1,4 @@
+import { boundAutomationLaneValue } from '#/utils/automationLaneBound';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
 import { interpolateAutomationPointValue } from '../../services/automationPointAlgorithms';
@@ -18,56 +19,25 @@ const _laneByIdCache = new Map<string, AutomationLane>();
 
 /**
  * Bound a raw value to the point-holding lane's own declared `minValue`/
- * `maxValue`. Catmull-Rom ('smooth') interpolation overshoots between control
- * points by construction, so an interior segment can briefly hand back a
- * value the lane says it cannot hold — the declared range is a contract every
- * other reader (device-param clamps, AudioParam schedulers) assumes already
- * holds. Applied to `interpolated` *before* `resolved.scale`: `minValue`/
- * `maxValue` describe the source lane's own points (the same units as
- * `interpolated`), not the scaled return value — a linked/inverted lane's
- * `linkScale` can legitimately push the final value outside the source
- * lane's own range (e.g. `linkScale: -1`), and clamping after the multiply
- * would wrongly flatten that. Defensive against non-finite bounds so a lane
- * fixture that never set them (several specs construct lanes with only the
- * fields their assertions touch) degrades to a no-op instead of NaN.
- *
- * The ceiling is the lane's **declared** `maxValue`, raised only as far as a
- * stored point on the segment in play actually reaches, and never past
- * {@link getAutomationLaneCeiling}.
- *
- * That is two jobs kept apart on purpose. Containing spline overshoot is this
- * function's original one, and it must keep using the declared value: a gain
- * lane authored before the fader gained its `+6 dB` of headroom stores
- * `maxValue: 1`, and bounding its overshoot at the derived ceiling instead
- * would make a project saved last week — opened and played with no edit at
- * all — up to `+6 dB` louder wherever a smooth curve rides near unity. The
- * derived ceiling governs what may be *written* into a lane (`paintDrawPoint`)
- * and the axis it is drawn on, not what an untouched curve is allowed to
- * overshoot to.
- *
- * The raise is what keeps the two consistent. `paintDrawPoint` can now put a
- * point at `1.5` into a legacy lane, and flattening that stored point back to
- * unity here would make the drawn curve, what is heard, and what the offline
- * path exports three different things. Bounding by the segment's own points
- * honours it without inventing level anywhere else: a lane whose points all
- * sit at or below its declared ceiling clamps exactly as it did before.
- *
- * Segment-local rather than lane-wide because this runs per tick, per lane —
- * a scan for the lane's highest point would be O(points) on every call.
+ * `maxValue` — the shared `boundAutomationLaneValue` kernel
+ * (`#/utils/automationLaneBound`), which the offline compile path routes every
+ * lane family through too (#2539). The law's reasons live on the kernel; what
+ * is specific to this call site is the *position*: applied to `interpolated`
+ * *before* `resolved.scale`, because `minValue`/`maxValue` describe the source
+ * lane's own points (the same units as `interpolated`), not the scaled return
+ * value — a linked/inverted lane's `linkScale` can legitimately push the final
+ * value outside the source lane's own range (e.g. `linkScale: -1`), and
+ * clamping after the multiply would wrongly flatten that.
  */
 function clampToLaneRange(value: number, lane: AutomationLane, firstValue: number, secondValue: number): number {
-    if (!Number.isFinite(lane.minValue) || !Number.isFinite(lane.maxValue)) {
-        return value;
-    }
-    let ceiling = lane.maxValue;
-    const derived = getAutomationLaneCeiling(lane);
-    if (derived > ceiling) {
-        const highestStored = Math.max(firstValue, secondValue);
-        if (highestStored > ceiling) {
-            ceiling = Math.min(derived, highestStored);
-        }
-    }
-    return Math.min(ceiling, Math.max(lane.minValue, value));
+    return boundAutomationLaneValue({
+        value,
+        declaredMin: lane.minValue,
+        declaredMax: lane.maxValue,
+        derivedCeiling: getAutomationLaneCeiling(lane),
+        segmentFirstValue: firstValue,
+        segmentSecondValue: secondValue,
+    });
 }
 
 export function getAutomationValueAtBeat(

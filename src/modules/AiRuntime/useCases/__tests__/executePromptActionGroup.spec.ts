@@ -67,18 +67,20 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
 const RUN_ID = 'prompt-run-1';
 const BATCH_ID = 'batch-1';
 const IDEMPOTENCY_KEY = 'batch-key-1';
+const BASE_REVISION = JSON.stringify({
+    documentIdentityEpoch: 1,
+    mutationEpoch: 0,
+    documents: [{ docId: 'root', heads: ['head-0'] }],
+});
 const expectedDurableCommitProof = Object.freeze({
     projectId: 'project:test',
     idempotencyKey: IDEMPOTENCY_KEY,
     contentHash: `sha256:${'a'.repeat(64)}`,
     runId: RUN_ID,
     batchId: BATCH_ID,
+    baseRevision: BASE_REVISION,
+    commands: [{ commandId: 'command-1', operation: 'importStemSet' }],
 }) satisfies Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
-const BASE_REVISION = JSON.stringify({
-    documentIdentityEpoch: 1,
-    mutationEpoch: 0,
-    documents: [{ docId: 'root', heads: ['head-0'] }],
-});
 const action = { type: 'togglePlayback' } satisfies AppAction;
 type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 const stemAction = {
