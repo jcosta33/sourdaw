@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
@@ -22,6 +24,12 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -35,6 +43,23 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+const dormantLoopLengthLabel =
+    'Set clip loop length to 2 beats; clip looping is disabled, so the stored length is dormant until enabled';
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
+function expectWarningNotification(index: number, message: string): void {
+    expect(notifications).toHaveLength(index + 1);
+    expect(notifications[index]).toEqual({ message, level: 'warning' });
+}
 
 function currentClip() {
     const clip = trackStore.value?.tracks[0]?.clips[0];
@@ -52,6 +77,7 @@ function seedClipFixture(): void {
 
 describe('handleSetClipLoopLength atomic integration', () => {
     beforeEach(() => {
+        Container.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('clip loop length atomic integration');
         removeCrdtDoc('root');
@@ -60,6 +86,12 @@ describe('handleSetClipLoopLength atomic integration', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getMacroHandlers());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -72,6 +104,8 @@ describe('handleSetClipLoopLength atomic integration', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
+        Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         transportStore.set(defaultTransportState);
         configureAutomergeStoragePort(null);
@@ -99,7 +133,12 @@ describe('handleSetClipLoopLength atomic integration', () => {
         await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
 
         setClipLoopLength('clip-1', 3);
+        const firstUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(
+            firstUndoNotification,
+            `Cannot undo "${dormantLoopLengthLabel}": project state has changed`
+        );
         expect(currentClip().loopLength).toBe(3);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
@@ -111,7 +150,12 @@ describe('handleSetClipLoopLength atomic integration', () => {
         expect(undoStore.value?.future).toHaveLength(1);
 
         setClipLoopLength('clip-1', 3);
+        const firstRedoNotification = notifications.length;
         await redo();
+        expectWarningNotification(
+            firstRedoNotification,
+            `Cannot redo "${dormantLoopLengthLabel}": project state has changed`
+        );
         expect(currentClip().loopLength).toBe(3);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
@@ -131,7 +175,12 @@ describe('handleSetClipLoopLength atomic integration', () => {
         });
         trimClipEnd('clip-1', 10_000);
 
+        const staleUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(
+            staleUndoNotification,
+            `Cannot undo "${dormantLoopLengthLabel}": project state has changed`
+        );
         expect(currentClip()).toMatchObject({ endBeat: 10_000, loopLength: 2 });
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
@@ -151,7 +200,12 @@ describe('handleSetClipLoopLength atomic integration', () => {
         await undo();
         trimClipEnd('clip-1', 10_000);
 
+        const staleRedoNotification = notifications.length;
         await redo();
+        expectWarningNotification(
+            staleRedoNotification,
+            `Cannot redo "${dormantLoopLengthLabel}": project state has changed`
+        );
         expect(currentClip().endBeat).toBe(10_000);
         expect(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
         expect(undoStore.value?.past).toHaveLength(0);
@@ -407,7 +461,12 @@ describe('handleSetClipLoopLength atomic integration', () => {
         expect(currentClip()).toMatchObject({ loopLength: 2 });
 
         transportStore.set({ ...defaultTransportState, isPlaying: true });
+        const busyUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(
+            busyUndoNotification,
+            `Cannot undo "${dormantLoopLengthLabel}": project state has changed`
+        );
 
         expect.soft(currentClip()).toMatchObject({ loopLength: 2 });
         expect.soft(undoStore.value?.past).toHaveLength(1);

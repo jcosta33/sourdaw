@@ -73,6 +73,9 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
             platform: 'linux',
             invoke: (command, args = []) => {
                 calls.push({ command, args });
+                if (command === 'load_cached_whisper_model') {
+                    return Promise.resolve(undefined);
+                }
                 if (command === 'list_midi_inputs') {
                     return Promise.resolve([]);
                 }
@@ -159,12 +162,13 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
         expect(call.args).toEqual([]);
     }
 
-    // Beyond the poll, exactly two native crossings: the MIDI fallback
-    // enumerating input ports, then project activation clearing plugin state
-    // (its optional instance id crosses as an undefined positional slot). The
-    // bridge takes positional arguments, so a no-argument command arrives as
-    // an empty array.
+    // Beyond the poll, exactly three native crossings: the cache-only Whisper
+    // availability probe, the MIDI fallback enumerating input ports, then
+    // project activation clearing plugin state (its optional instance id
+    // crosses as an undefined positional slot). The bridge takes positional
+    // arguments, so a no-argument command arrives as an empty array.
     expect(runtimeCalls.filter((call) => call.command !== 'engine_rt_diagnostics')).toEqual([
+        { command: 'load_cached_whisper_model', args: [] },
         { command: 'list_midi_inputs', args: [] },
         { command: 'unload_plugin', args: [undefined] },
     ]);

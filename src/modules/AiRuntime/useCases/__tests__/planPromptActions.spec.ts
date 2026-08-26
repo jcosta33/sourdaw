@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'rev-1'),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'rev-1'),
     getProjectContext: vi.fn(() => ({ tracks: [] })),
     parsePromptToActions: vi.fn(),
     prepareStemImport: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
 }));
 
 vi.mock('../getProjectContext', () => ({
@@ -58,6 +60,7 @@ describe('planPromptActions', () => {
         vi.clearAllMocks();
         agentRunLifecycle.clear();
         mocks.captureProjectRevision.mockReset().mockReturnValue('rev-1');
+        mocks.settlePendingProjectWritesAndCaptureRevision.mockReset().mockReturnValue('rev-1');
         mocks.parsePromptToActions.mockReset();
         mocks.prepareStemImport.mockReset().mockResolvedValue({ status: 'prepared' });
         mocks.createStemImportPromptScope.mockReset().mockReturnValue(stemImportScope);
@@ -74,8 +77,7 @@ describe('planPromptActions', () => {
     });
 
     it('throws AiProposalInvalidatedError when the project revision changed during planning', async () => {
-        // First call returns rev-1, second call (after parse) returns rev-2
-        mocks.captureProjectRevision.mockReturnValueOnce('rev-1').mockReturnValueOnce('rev-2');
+        mocks.captureProjectRevision.mockReturnValue('rev-2');
         mocks.parsePromptToActions.mockResolvedValue({ actions: [{ type: 'testAction' }], raw: 'parsed' });
 
         await expect(planPromptActions({ prompt: 'do something' })).rejects.toThrow(AiProposalInvalidatedError);
@@ -262,7 +264,7 @@ describe('planPromptActions', () => {
 
     it('discards registered prepared stems through their owner when the project revision invalidates the plan', async () => {
         seedAdmittedRun();
-        mocks.captureProjectRevision.mockReturnValueOnce('rev-1').mockReturnValueOnce('rev-2');
+        mocks.captureProjectRevision.mockReturnValue('rev-2');
         mocks.parsePromptToActions
             .mockResolvedValueOnce({ actions: [], preparationRequest: 'stem-import' })
             .mockResolvedValueOnce({ actions: [{ type: 'importStemSet', payload: stemImportScope.actionSeed }] });
