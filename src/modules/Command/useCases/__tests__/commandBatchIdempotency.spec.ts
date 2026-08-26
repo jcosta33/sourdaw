@@ -21,6 +21,7 @@ import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommand
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
+import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
 import { getProjectCommandBatchIdempotencyCheckpoint } from '../getProjectCommandBatchIdempotencyCheckpoint';
 import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
@@ -351,13 +352,28 @@ describe('command batch idempotency', () => {
         if (parsed.status === 'invalid') {
             throw new Error(parsed.reason);
         }
+        const command = parsed.envelope.commands[0];
+        if (!command) {
+            throw new Error('The proof batch did not contain a command');
+        }
         const proof = await getVersionedCommandBatchCommitProof(batch);
         const receipt = JSON.stringify(
             createVerifiedBatchReceipt({
                 envelope: parsed.envelope,
                 observedBaseRevision: parsed.envelope.baseRevision,
                 resultingRevision: revision(1),
-                result: { actions: [], status: 'committed' },
+                result: {
+                    actions: [
+                        {
+                            action: {
+                                type: 'setTrackGain',
+                                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                            },
+                            receipt: createVersionedCommandReceipt({ envelope: command }),
+                        },
+                    ],
+                    status: 'committed',
+                },
             })
         );
         const receiptRecord = JSON.parse(receipt) as {
@@ -403,6 +419,7 @@ describe('command batch idempotency', () => {
         await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
 
         for (const serializedReceipt of [
+            receiptWithOutcome('committed', 'no-op'),
             receiptWithOutcome('executed', 'executed'),
             receiptWithOutcome('no-op', 'no-op'),
             receiptWithOutcome('failed', 'not-applied'),
