@@ -67,6 +67,7 @@ export async function downloadProjectFile({
             }
             const writable = await handle.createWritable();
             if (!shouldWrite()) {
+                await writable.abort();
                 return 'rejected-stale';
             }
             await writable.write(blob);

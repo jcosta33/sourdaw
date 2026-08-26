@@ -160,6 +160,7 @@ describe('downloadProjectFile', () => {
         const writable = {
             write: vi.fn(),
             close: vi.fn(),
+            abort: vi.fn(),
         };
         const writableTarget = createDeferred<typeof writable>();
         const createWritable = vi.fn().mockReturnValue(writableTarget.promise);
@@ -174,6 +175,7 @@ describe('downloadProjectFile', () => {
         writableTarget.resolve(writable);
 
         await expect(download).resolves.toBe('rejected-stale');
+        expect(writable.abort).toHaveBeenCalledTimes(1);
         expect(writable.write).not.toHaveBeenCalled();
         expect(writable.close).not.toHaveBeenCalled();
     });
