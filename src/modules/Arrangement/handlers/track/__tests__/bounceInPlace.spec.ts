@@ -31,7 +31,7 @@ describe('handleBounceInPlace', () => {
         });
 
         expect(mocks.bounceInPlace).toHaveBeenCalledWith('t1', { deferUndoEntry: expect.any(Function) });
-        if (result.status !== 'written') {
+        if (!result || result.status !== 'written' || !result.afterCommit || !result.afterAmbiguousCommit) {
             throw new Error('expected the written result to carry the post-commit hooks');
         }
 
