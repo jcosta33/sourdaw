@@ -306,7 +306,8 @@ export function scheduleAudioClips(
                     // one there is nothing to ramp until the source reaches
                     // sample 0. The fade *window* below stays measured from the
                     // clip head, so a pre-roll that outruns it leaves the gain
-                    // already at 1 — the ramp happened during the silence.
+                    // already at the clip's plateau — the ramp happened during
+                    // the silence.
                     const effectiveStart = Math.max(soundStartTime, now);
 
                     if (isFirstIter && clip.fadeInBeats > 0) {
