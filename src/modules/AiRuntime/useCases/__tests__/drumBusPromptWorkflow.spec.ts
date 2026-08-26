@@ -1159,6 +1159,9 @@ describe('drum bus prompt workflow', () => {
     it('inspects only the supplied project document and preserves a real master-track fingerprint', () => {
         setEx11Project();
         const rawDocument = getCrdtDoc<Record<string, unknown>>('root');
+        if (!rawDocument) {
+            throw new TypeError('Expected root project document');
+        }
         const rawTracks = rawDocument.tracks;
         if (!isRecord(rawTracks) || !Array.isArray(rawTracks.tracks)) {
             throw new TypeError('Expected raw project tracks');
