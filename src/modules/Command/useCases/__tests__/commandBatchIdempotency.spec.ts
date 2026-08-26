@@ -20,8 +20,12 @@ import { commandRuntimeRepairPort } from '../commandRuntimeRepairPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
+import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
+import { getVersionedCommandBatchCommitProof } from '../getVersionedCommandBatchCommitProof';
 import { getVersionedCommandBatchIdempotentReplay } from '../getVersionedCommandBatchIdempotentReplay';
+import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { persistProjectCommandBatchIdempotencyCheckpoint } from '../persistProjectCommandBatchIdempotencyCheckpoint';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
@@ -334,6 +338,59 @@ describe('command batch idempotency', () => {
         expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
         expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
+
+        await expect(
+            getVersionedCommandBatchCommitDisposition(await getVersionedCommandBatchCommitProof(batch))
+        ).resolves.toBe('committed');
+    });
+
+    it('treats only the exact verified receipt as committed proof', async () => {
+        const batch = compileBatch();
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const receipt = JSON.stringify(
+            createVerifiedBatchReceipt({
+                envelope: parsed.envelope,
+                observedBaseRevision: parsed.envelope.baseRevision,
+                resultingRevision: revision(1),
+                result: { actions: [], status: 'committed' },
+            })
+        );
+        const lookup = vi.fn((input: { contentHash: string; idempotencyKey: string; projectId: string }) =>
+            Promise.resolve(
+                input.projectId === proof.projectId &&
+                    input.idempotencyKey === proof.idempotencyKey &&
+                    input.contentHash === proof.contentHash
+                    ? { status: 'complete' as const, serializedReceipt: receipt }
+                    : { status: 'missing' as const }
+            )
+        );
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: `sha256:${'f'.repeat(64)}` })
+        ).resolves.toBe('unknown');
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, idempotencyKey: 'other-client-request' })
+        ).resolves.toBe('unknown');
+
+        lookup.mockResolvedValueOnce({ status: 'missing' });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+
+        lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt: '{"schemaVersion":1}' });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+
+        const staleReceipt = JSON.stringify({ ...JSON.parse(receipt), runId: 'stale-run' });
+        lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt: staleReceipt });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
     });
 
     it('discards caller recovery prepared for a project transaction that never commits', async () => {
