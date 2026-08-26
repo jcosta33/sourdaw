@@ -8,9 +8,9 @@
  * call only reads `undoStore.value` after the first has committed its write. Sequential
  * awaited callers (e.g. `undoToIndex`) still proceed one step at a time.
  */
-let mutationChain: Promise<void> = Promise.resolve();
+let mutationChain: Promise<unknown> = Promise.resolve();
 
-export function runUndoRedoExclusive(operation: () => Promise<void>): Promise<void> {
+export function runUndoRedoExclusive<Result>(operation: () => Promise<Result>): Promise<Result> {
     const result = mutationChain.then(operation);
     // Keep the chain alive even if an operation rejects, so one failure does not wedge
     // every future undo/redo. Swallow only on the chain copy; the caller still sees the

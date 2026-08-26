@@ -65,11 +65,13 @@ export async function undoToIndex(targetIndex: number): Promise<void> {
             undoTreeMoveTo(currentEntryId(newPast));
             continue;
         }
-        const lengthBefore = state.past.length;
-        await undo();
-        const after = undoStore.value;
-        if (!after || after.past.length >= lengthBefore) {
-            // No-progress guard: undo() declined to consume anything.
+        const outcome = await undo();
+        if (!outcome.headConsumed) {
+            // undo() left the head entry on `past`: it conflicted, and either nothing
+            // replaced it or the call stepped over it onto an older entry. Stack length
+            // cannot stand in for progress — a step-over shortens `past` while the row
+            // this sweep must stop at still stands, so a length-based guard would keep
+            // reverting older edits the user chose to keep.
             return;
         }
     }

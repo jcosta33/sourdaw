@@ -4,6 +4,7 @@ import { undoToIndex } from '../undoToIndex';
 
 import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
+import type { UndoResult } from '../undo';
 
 const mocks = vi.hoisted(() => {
     const undoStoreValue: { value: UndoStoreState | null } = {
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => {
     return {
         undoStoreValue,
         redo: vi.fn<() => Promise<void>>(),
-        undo: vi.fn<() => Promise<void>>(),
+        undo: vi.fn<() => Promise<UndoResult>>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
     };
 });
@@ -61,14 +62,34 @@ function mockUndoConsumingHead(): void {
     mocks.undo.mockImplementation(() => {
         const state = mocks.undoStoreValue.value;
         if (!state || state.past.length === 0) {
-            return Promise.resolve();
+            return Promise.resolve({ headConsumed: false });
         }
         const head = state.past[state.past.length - 1]!;
         mocks.undoStoreValue.value = {
             past: state.past.slice(0, -1),
             future: [head, ...state.future],
         };
-        return Promise.resolve();
+        return Promise.resolve({ headConsumed: true });
+    });
+}
+
+/**
+ * Simulates the real undo() meeting a conflicted head: it steps over the head
+ * onto the entry beneath, which leaves `past` one shorter while the head — the
+ * row a backward sweep must stop at — still stands.
+ */
+function mockUndoSteppingOverHead(): void {
+    mocks.undo.mockImplementation(() => {
+        const state = mocks.undoStoreValue.value;
+        if (!state || state.past.length < 2) {
+            return Promise.resolve({ headConsumed: false });
+        }
+        const steppedOnto = state.past[state.past.length - 2]!;
+        mocks.undoStoreValue.value = {
+            past: [...state.past.slice(0, -2), state.past[state.past.length - 1]!],
+            future: [steppedOnto, ...state.future],
+        };
+        return Promise.resolve({ headConsumed: false });
     });
 }
 
@@ -94,7 +115,7 @@ describe('undoToIndex', () => {
         mocks.undo.mockReset();
         mocks.undoTreeMoveTo.mockReset();
         mocks.redo.mockResolvedValue(undefined);
-        mocks.undo.mockResolvedValue(undefined);
+        mocks.undo.mockResolvedValue({ headConsumed: false });
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
 
@@ -191,6 +212,24 @@ describe('undoToIndex', () => {
 
         expect(mocks.undo).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['A']);
+    });
+
+    it('should stop as soon as undo steps over the head instead of trusting stack length', async () => {
+        // The head conflicts, so undo() reverts the entry beneath it instead.
+        // `past` shrinks, but the head the sweep was walking down from is still
+        // there: reading that shrink as progress makes the sweep keep going and
+        // revert the row the user clicked to keep.
+        mockUndoSteppingOverHead();
+        mocks.undoStoreValue.value = {
+            past: ['E0', 'E1', 'E2', 'E3', 'E4'].map(actionEntry),
+            future: [],
+        };
+
+        await undoToIndex(1);
+
+        expect(mocks.undo).toHaveBeenCalledTimes(1);
+        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E4']);
+        expect(mocks.undoStoreValue.value.future.map((entry) => entry.id)).toEqual(['E3']);
     });
 
     it('should stop when undo makes no progress instead of looping forever', async () => {

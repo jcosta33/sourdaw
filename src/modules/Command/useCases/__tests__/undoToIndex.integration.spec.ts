@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { REDO_NOT_APPLIED } from '../redoResult';
 import { undoToIndex } from '../undoToIndex';
 
@@ -22,8 +23,13 @@ const mocks = vi.hoisted(() => {
         undoStoreValue,
         executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
+        notifyUser: vi.fn<(message: string, level?: string) => void>(),
     };
 });
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
 
 vi.mock('../../stores/undoStore', () => ({
     undoStore: {
@@ -60,6 +66,11 @@ function inertEntry(id: string): ActionUndoEntry {
     return { ...undoableEntry(id), inverseAction: null };
 }
 
+/** Its inverse is guarded and the document has moved on: replaying it aborts. */
+function conflictingEntry(id: string): ActionUndoEntry {
+    return { ...undoableEntry(id), inverseAction: { type: 'stopPlayback' } };
+}
+
 function notAppliedCallbackEntry(id: string): CallbackUndoEntry {
     return {
         kind: 'callback',
@@ -77,7 +88,28 @@ describe('undoToIndex via the Undo History panel path', () => {
         mocks.executeAppAction.mockReset();
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.undoTreeMoveTo.mockReset();
+        mocks.notifyUser.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
+    });
+
+    it('keeps the clicked entry applied when the head conflicts', async () => {
+        const past = [undoableEntry('E0'), undoableEntry('E1'), undoableEntry('E2'), undoableEntry('E3')];
+        mocks.undoStoreValue.value = { past: [...past, conflictingEntry('E4')], future: [] };
+        mocks.executeAppAction.mockImplementation(async (action) => {
+            if (action.type === 'stopPlayback') {
+                throw new AppActionConflictError('stopPlayback');
+            }
+        });
+
+        // Row 'E1' is index 1: the user asked to keep E0 and E1 applied.
+        await undoToIndex(1);
+
+        // Undo cannot apply E4's inverse, so it steps over E4 once and reverts E3.
+        // The sweep must stop there: E4 still heads `past`, so the shortened stack
+        // is not progress towards row E1. Reading it as progress reverts E2 and then
+        // E1 itself — the very edit the user clicked to keep.
+        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E4']);
+        expect(mocks.undoStoreValue.value.future.map((entry) => entry.id)).toEqual(['E3']);
     });
 
     it('keeps the clicked undoable entry when an inert entry sits between it and the head', async () => {
