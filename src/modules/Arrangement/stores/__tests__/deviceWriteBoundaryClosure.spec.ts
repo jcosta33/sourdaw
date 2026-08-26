@@ -1066,7 +1066,7 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
 }
 
 function resolveLocalBinding(name: string, scope: LexicalScope | undefined): LocalBinding | undefined {
-    for (let current = scope; current; current = current.parent ?? undefined) {
+    for (let current: LexicalScope | null | undefined = scope; current; current = current.parent) {
         const binding = current.bindings.get(name);
         if (binding) {
             return binding;
@@ -1108,7 +1108,7 @@ function unwrapStateExpression(expression: Expression): Expression {
 
 function returnedStateExpressions(updater: LocalUpdater): Expression[] {
     const body = updater.body;
-    if (body === undefined) {
+    if (!body) {
         return [];
     }
     if (!isBlock(body)) {
