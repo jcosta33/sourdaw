@@ -222,7 +222,7 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
     const renderInteractions = () => renderHook(() => useTimelineInteractions(canvasRef as any));
 
     const mouseDown = (
-        result: ReturnType<typeof renderInteractions>,
+        result: ReturnType<typeof renderInteractions>['result'],
         x: number,
         y: number,
         modifiers: { altKey?: boolean; shiftKey?: boolean } = {}
@@ -231,12 +231,12 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             result.current.handleMouseDown({ button: 0, clientX: x, clientY: y, ...modifiers } as any);
         });
 
-    const mouseMove = (result: ReturnType<typeof renderInteractions>, x: number, y: number) =>
+    const mouseMove = (result: ReturnType<typeof renderInteractions>['result'], x: number, y: number) =>
         act(() => {
             result.current.handleMouseMove({ clientX: x, clientY: y } as any);
         });
 
-    const mouseUp = (result: ReturnType<typeof renderInteractions>, x: number, y: number) =>
+    const mouseUp = (result: ReturnType<typeof renderInteractions>['result'], x: number, y: number) =>
         act(() => {
             result.current.handleMouseUp({ clientX: x, clientY: y } as any);
         });

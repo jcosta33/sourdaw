@@ -225,7 +225,7 @@ describe('useTimelineInteractions — gesture cancellation', () => {
         });
     };
 
-    const beginMoveDrag = (result: ReturnType<typeof renderInteractions>) => {
+    const beginMoveDrag = (result: ReturnType<typeof renderInteractions>['result']) => {
         act(() => {
             result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
         });
