@@ -124,8 +124,7 @@ const {
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
             vi.fn<(validator: RuntimeGraphProjectRevisionValidator | null) => void>(),
-        configureRuntimeGraphTopologyValidatorMock:
-            vi.fn<(validator: RuntimeGraphTopologyValidator | null) => void>(),
+        configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator | null) => void>(),
         runtimeGraphTopologyMock: {
             matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
         },
