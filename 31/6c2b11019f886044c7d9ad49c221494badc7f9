@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 1,30
+src/modules/CrdtDocument/useCases/settlePendingProjectWritesAndCaptureRevision.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 1-2,5-12,14
+  s_a40848e8f8cca9::t_8c4ee50a24e517 3-4,13,15-16
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 5
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 10,20-22,104
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 7,326
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 27,56,482
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 5,17,63,80,267
+src/modules/CrdtDocument/useCases/__tests__/settlePendingProjectWritesAndCaptureRevision.spec.ts
+  s_a40848e8f8cca9::t_002747274da085 1-28,32-44
+  s_a40848e8f8cca9::t_85ca239bfca113 29-31
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_a40848e8f8cca9::t_25fa4a38e23e34 2,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "316c2b11019f886044c7d9ad49c221494badc7f9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
