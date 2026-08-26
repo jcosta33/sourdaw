@@ -6,6 +6,8 @@ export { leaveSession } from './collaboration/leaveSession';
 export { broadcastPresence } from './collaboration/broadcastPresence';
 export { onPresence } from './collaboration/onPresence';
 export { getAssetTransfer } from './collaboration/getAssetTransfer';
+export { configureCollaborationAssetOwner } from './collaboration/getCollaborationAssetOwnerId';
+export { configureDurableAssetCommitProof } from './configureDurableAssetCommitProof';
 export { canMutateBranchMetadata } from './collaboration/canMutateBranchMetadata';
 export { canExecuteCommandBatch } from './collaboration/canExecuteCommandBatch';
 export { getCollaborationHandlers } from './getCollaborationHandlers';

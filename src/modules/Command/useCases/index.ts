@@ -8,6 +8,7 @@ export { commandProjectRevisionPort } from './commandProjectRevisionPort';
 export { commandProjectDivergencePort } from './commandProjectDivergencePort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
+export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
@@ -52,6 +53,8 @@ export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelo
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 export { executeVersionedCommandBatchEnvelope } from './executeVersionedCommandBatchEnvelope';
 export { getVersionedCommandBatchIdempotentReplay } from './getVersionedCommandBatchIdempotentReplay';
+export { getVersionedCommandBatchCommitProof } from './getVersionedCommandBatchCommitProof';
+export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommandBatchCommitDisposition';
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';

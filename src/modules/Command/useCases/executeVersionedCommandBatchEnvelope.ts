@@ -29,15 +29,86 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
     /** @deprecated A boolean is not proof of exact approval and never authorizes execution. */
     confirmed?: boolean;
     serialized: string;
-    options?: ExecuteOptions;
+    options?: ExecuteOptions & {
+        /** Persist caller-owned recovery state while the exact project checkpoint is being journaled. */
+        onProjectCommitCheckpoint?: (result: { receipt: ReturnType<typeof createVerifiedBatchReceipt> }) => {
+            promote: (result: { receipt: ReturnType<typeof createVerifiedBatchReceipt> }) => void;
+            discard: () => void;
+        } | void;
+    };
     onProjectCommitPrepared?: () => void;
 };
+
+type ProjectCommitRecoveryPreparation = Exclude<
+    ReturnType<
+        NonNullable<NonNullable<ExecuteVersionedCommandBatchEnvelopeInput['options']>['onProjectCommitCheckpoint']>
+    >,
+    void
+>;
 
 const PROJECT_COMMIT_RECOVERY_WARNING =
     'The atomic project commit is durable, but post-commit receipt finalization was interrupted.';
 const PROJECT_RECEIPT_REVISION_WARNING =
     'Resulting project heads are omitted because the verified receipt is itself journaled in project truth.';
 const activeIdempotencyClaims = new Set<string>();
+
+function isOriginatingProjectCurrent(capturedRevision: string | null): boolean {
+    if (!commandProjectRevisionPort.isConfigured()) {
+        return capturedRevision === null;
+    }
+    if (capturedRevision === null) {
+        return false;
+    }
+    try {
+        return commandProjectRevisionPort.capture() === capturedRevision;
+    } catch {
+        return false;
+    }
+}
+
+function settlePreparedProjectCommitRecovery(input: {
+    preparation: ProjectCommitRecoveryPreparation | null;
+    envelope: Parameters<typeof getProjectCommandBatchIdempotencyCheckpoint>[0] & {
+        baseRevision: string;
+        batchId: string;
+        commands: Parameters<typeof parseStoredVerifiedBatchReceipt>[0]['commands'];
+        runId: string;
+    };
+}): void {
+    if (!input.preparation) {
+        return;
+    }
+    let checkpoint: ReturnType<typeof getProjectCommandBatchIdempotencyCheckpoint>;
+    try {
+        checkpoint = getProjectCommandBatchIdempotencyCheckpoint(input.envelope);
+    } catch {
+        // Without project truth, keep the prepared capsule so restart recovery can decide safely.
+        return;
+    }
+    if (checkpoint.status === 'pending') {
+        const receipt = parseStoredVerifiedBatchReceipt({
+            baseRevision: input.envelope.baseRevision,
+            batchId: input.envelope.batchId,
+            commands: input.envelope.commands,
+            contentHash: input.envelope.contentHash,
+            runId: input.envelope.runId,
+            serializedReceipt: checkpoint.serializedReceipt,
+        });
+        if (receipt?.pendingEffects.length) {
+            try {
+                input.preparation.promote({ receipt });
+            } catch {
+                // The prepared capsule remains durable and can be promoted from the project checkpoint after restart.
+            }
+            return;
+        }
+    }
+    try {
+        input.preparation.discard();
+    } catch {
+        // A stale prepared capsule is rejected against project truth before recovery and pruned on restart.
+    }
+}
 
 export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersionedCommandBatchEnvelopeInput) {
     const parsed = parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
@@ -49,6 +120,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (parsed.envelope.mode === 'preview') {
         return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
+    const batchContentHash = await getCommandBatchContentHash(parsed.envelope);
     const requiresDurableExecutionAuthority = commandBatchIdempotencyPort.isConfigured();
     let observedBaseRevision: string | null = null;
     const receiptWarnings: string[] = [];
@@ -63,9 +135,13 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             `Observed base revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
         );
     }
-    let idempotencyContentHash: string | null = null;
+    const idempotencyContentHash = requiresDurableExecutionAuthority ? batchContentHash : null;
     let mayReclaimPendingClaim = false;
-    const projectCommitRecovery: { receipt: ReturnType<typeof createVerifiedBatchReceipt> | null } = {
+    const projectCommitRecovery: {
+        receipt: ReturnType<typeof createVerifiedBatchReceipt> | null;
+        preparation: ProjectCommitRecoveryPreparation | null;
+    } = {
+        preparation: null,
         receipt: null,
     };
     if (requiresDurableExecutionAuthority) {
@@ -78,6 +154,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...result,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings,
@@ -87,14 +164,13 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             };
         }
         try {
-            idempotencyContentHash = await getCommandBatchContentHash(parsed.envelope);
             const activeClaimId = `${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`;
             const projectCheckpoint = activeIdempotencyClaims.has(activeClaimId)
                 ? { status: 'missing' as const }
                 : getProjectCommandBatchIdempotencyCheckpoint({
                       projectId: parsed.envelope.projectId,
                       idempotencyKey: parsed.envelope.idempotencyKey,
-                      contentHash: idempotencyContentHash,
+                      contentHash: batchContentHash,
                   });
             if (projectCheckpoint.status === 'unsupported-schema') {
                 const result = {
@@ -105,6 +181,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -122,6 +199,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -135,6 +213,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: projectCheckpoint.serializedReceipt,
                 });
@@ -152,6 +231,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: projectCheckpoint.serializedReceipt,
                 });
@@ -165,7 +245,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 const recoveryLeaseAcquired = await commandBatchIdempotencyPort.tryAcquireRecoveryLease({
                     projectId: parsed.envelope.projectId,
                     idempotencyKey: parsed.envelope.idempotencyKey,
-                    contentHash: idempotencyContentHash,
+                    contentHash: batchContentHash,
                 });
                 if (recoveryLeaseAcquired !== true) {
                     return {
@@ -179,13 +259,14 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     const recoveryCheckpoint = getProjectCommandBatchIdempotencyCheckpoint({
                         projectId: parsed.envelope.projectId,
                         idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
+                        contentHash: batchContentHash,
                     });
                     if (recoveryCheckpoint.status === 'complete') {
                         const completedReceipt = parseStoredVerifiedBatchReceipt({
                             baseRevision: parsed.envelope.baseRevision,
                             batchId: parsed.envelope.batchId,
                             commands: parsed.envelope.commands,
+                            contentHash: batchContentHash,
                             runId: parsed.envelope.runId,
                             serializedReceipt: recoveryCheckpoint.serializedReceipt,
                         });
@@ -224,6 +305,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         baseRevision: parsed.envelope.baseRevision,
                         batchId: parsed.envelope.batchId,
                         commands: parsed.envelope.commands,
+                        contentHash: batchContentHash,
                         runId: parsed.envelope.runId,
                         serializedReceipt: recoveryCheckpoint.serializedReceipt,
                     });
@@ -234,8 +316,11 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             actions: [] as [],
                         };
                     }
+                    const originatingProjectRevision = observedBaseRevision;
                     const reconciliation = await reconcileProjectCommandBatchEffects({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
+                        isProjectCurrent: () => isOriginatingProjectCurrent(originatingProjectRevision),
                         serializedReceipt: recoveryCheckpoint.serializedReceipt,
                         shouldReconcile: () => commandBatchExecutionAuthorityPort.canExecute(),
                     });
@@ -255,7 +340,16 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             receipt: recoveryReceipt,
                         };
                     }
+                    if (!isOriginatingProjectCurrent(originatingProjectRevision)) {
+                        return {
+                            status: 'ambiguous' as const,
+                            reason: 'The originating project changed during external-effect recovery',
+                            actions: [] as [],
+                            receipt: recoveryReceipt,
+                        };
+                    }
                     const recoveredReceipt = createRecoveredVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         priorReceipt: recoveryReceipt,
                         receiptWarnings: [PROJECT_RECEIPT_REVISION_WARNING],
@@ -265,7 +359,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         persistProjectCommandBatchIdempotencyCheckpoint({
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: idempotencyContentHash,
+                            contentHash: batchContentHash,
                             state: 'complete',
                             serializedReceipt: serializedRecoveredReceipt,
                         });
@@ -281,7 +375,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         await commandBatchIdempotencyPort.complete({
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: idempotencyContentHash,
+                            contentHash: batchContentHash,
                             serializedReceipt: serializedRecoveredReceipt,
                         });
                     } catch {
@@ -298,7 +392,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         await commandBatchIdempotencyPort.release({
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: idempotencyContentHash,
+                            contentHash: batchContentHash,
                         });
                     } catch {
                         // The recovery outcome remains authoritative; repository release is best effort.
@@ -309,13 +403,14 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             const prior = await commandBatchIdempotencyPort.lookup({
                 projectId: parsed.envelope.projectId,
                 idempotencyKey: parsed.envelope.idempotencyKey,
-                contentHash: idempotencyContentHash,
+                contentHash: batchContentHash,
             });
             if (prior?.status === 'complete') {
                 const receipt = parseStoredVerifiedBatchReceipt({
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: prior.serializedReceipt,
                 });
@@ -337,6 +432,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...result,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings,
@@ -355,6 +451,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         return {
             ...result,
             receipt: createVerifiedBatchReceipt({
+                contentHash: batchContentHash,
                 envelope: resolvedEnvelope,
                 observedBaseRevision,
                 receiptWarnings,
@@ -376,6 +473,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: claim.serializedReceipt,
                 });
@@ -397,6 +495,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -414,6 +513,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -432,6 +532,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...result,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings,
@@ -470,9 +571,18 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             status: 'committed-with-warning' as const,
                             actions: committedResult.actions,
                             warning: PROJECT_COMMIT_RECOVERY_WARNING,
-                            warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                            warningDetails: [
+                                { kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING },
+                                ...committedResult.pendingEffects.map((pendingEffect) => ({
+                                    kind: 'external-effect' as const,
+                                    commandId: pendingEffect.commandId,
+                                    message: pendingEffect.reason,
+                                    pendingEffect,
+                                })),
+                            ],
                         };
                         projectCommitRecovery.receipt = createVerifiedBatchReceipt({
+                            contentHash: batchContentHash,
                             envelope: resolvedEnvelope,
                             observedBaseRevision,
                             receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
@@ -486,6 +596,9 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             state: 'effects-pending',
                             serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
                         });
+                        projectCommitRecovery.preparation =
+                            input.options?.onProjectCommitCheckpoint?.({ receipt: projectCommitRecovery.receipt }) ??
+                            null;
                     }
                     input.onProjectCommitPrepared?.();
                 },
@@ -495,6 +608,20 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             },
         });
     } catch (error) {
+        if (idempotencyContentHash !== null) {
+            settlePreparedProjectCommitRecovery({
+                preparation: projectCommitRecovery.preparation,
+                envelope: {
+                    baseRevision: parsed.envelope.baseRevision,
+                    batchId: parsed.envelope.batchId,
+                    commands: parsed.envelope.commands,
+                    contentHash: idempotencyContentHash,
+                    idempotencyKey: parsed.envelope.idempotencyKey,
+                    projectId: parsed.envelope.projectId,
+                    runId: parsed.envelope.runId,
+                },
+            });
+        }
         if (idempotencyContentHash !== null) {
             await commandBatchIdempotencyPort.release({
                 projectId: parsed.envelope.projectId,
@@ -520,6 +647,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     let finalized = {
         ...result,
         receipt: createVerifiedBatchReceipt({
+            contentHash: batchContentHash,
             envelope: resolvedEnvelope,
             observedBaseRevision,
             receiptWarnings,
@@ -534,6 +662,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     result.status === 'committed-with-warning' &&
                     result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
                 const projectReceipt = createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
@@ -560,6 +689,18 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 }
             }
         }
+        settlePreparedProjectCommitRecovery({
+            preparation: projectCommitRecovery.preparation,
+            envelope: {
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                commands: parsed.envelope.commands,
+                contentHash: idempotencyContentHash,
+                idempotencyKey: parsed.envelope.idempotencyKey,
+                projectId: parsed.envelope.projectId,
+                runId: parsed.envelope.runId,
+            },
+        });
         try {
             await commandBatchIdempotencyPort.complete({
                 projectId: parsed.envelope.projectId,
@@ -576,6 +717,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...finalized,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings: [...receiptWarnings, warning],

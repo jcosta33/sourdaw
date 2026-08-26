@@ -21,6 +21,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { persistAgentRunState, readAgentRunState } from '../../stores/agentRunStore';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
@@ -29,6 +30,11 @@ const mocks = vi.hoisted(() => ({
     executionOverride: 'none' as 'ambiguous-before-commit' | 'none',
     obscureCommittedResult: 'none' as 'ambiguous' | 'mismatched' | 'missing' | 'none',
     observedCommandResult: { value: null as null | { status: string; reason?: string } },
+    prepareDurablePromotionRecovery: vi.fn(),
+    commitDurablePromotionRecovery: vi.fn(),
+    completeDurablePromotionRecovery: vi.fn(),
+    transitionDurablePromotionRecoveryToCleanup: vi.fn(),
+    completeDurableCleanupRecovery: vi.fn(),
     promoteStagedAsset: vi.fn(),
     replayOverride: 'real' as 'failed' | 'missing' | 'real',
     releasePreviewAudioBuffer: vi.fn(),
@@ -104,6 +110,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
     getAssetTransfer: () => ({
+        prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
+        commitDurablePromotionRecovery: mocks.commitDurablePromotionRecovery,
+        completeDurablePromotionRecovery: mocks.completeDurablePromotionRecovery,
+        transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
+        completeDurableCleanupRecovery: mocks.completeDurableCleanupRecovery,
         promoteStagedAsset: mocks.promoteStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,
     }),
@@ -126,6 +137,7 @@ const stemAction = {
                 sourceBytes: 100,
                 decodedBytes: 200,
                 audioBufferId: 'buffer-prompt-recovery',
+                assetHash: 'hash-prompt-recovery',
                 assetLeaseId: 'lease-prompt-recovery',
                 trackId: 'track-prompt-recovery',
                 trackName: 'Drums',
@@ -152,6 +164,11 @@ describe('prompt stem import recovery', () => {
         mocks.obscureCommittedResult = 'none';
         mocks.observedCommandResult.value = null;
         mocks.replayOverride = 'real';
+        mocks.prepareDurablePromotionRecovery.mockResolvedValue({ status: 'prepared' });
+        mocks.commitDurablePromotionRecovery.mockResolvedValue({ status: 'committed' });
+        mocks.completeDurablePromotionRecovery.mockResolvedValue({ status: 'completed' });
+        mocks.transitionDurablePromotionRecoveryToCleanup.mockResolvedValue({ status: 'prepared' });
+        mocks.completeDurableCleanupRecovery.mockResolvedValue({ status: 'completed' });
         vi.stubGlobal('navigator', {
             ...navigator,
             locks: {
@@ -221,7 +238,7 @@ describe('prompt stem import recovery', () => {
     });
 
     it.each(['ambiguous', 'missing', 'mismatched'] as const)(
-        'settles exact protected stems after the approval preview is gone and the %s result loses receipt truth',
+        'keeps exact durable stem promotion recovery pending after the approval preview is gone and the %s result loses receipt truth',
         async (observedResult) => {
             const submission = await submitAdmittedPromptRequest({
                 prompt: 'Import the selected stems',
@@ -253,12 +270,56 @@ describe('prompt stem import recovery', () => {
             expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ stemImport: { imported: true } });
             expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
             expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+            expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+                `stem-promotion:${runId}:${batchId}`,
+                [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
+                expect.objectContaining({ runId, batchId })
+            );
+            expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+            expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+            expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+            expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
             expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
             expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         }
     );
 
-    it('reconstructs retained prepared stems after reload and physically discards them on proven noncommit', async () => {
+    it('keeps durable stem promotion recovery pending when command commit truth is unavailable before reload', async () => {
+        const submission = await submitAdmittedPromptRequest({
+            prompt: 'Import the selected stems',
+            source: 'prompt-bar',
+            actions: [stemAction],
+            requiresConfirmation: true,
+        });
+        if (submission.status !== 'awaiting-approval') {
+            throw new TypeError(`Expected approval preview, received ${submission.status}`);
+        }
+        const runId = submission.runId;
+        const batchId = agentRunLifecycle.get(runId)?.batches[0]?.batchId;
+        if (!batchId) {
+            throw new TypeError('Expected the admitted command batch');
+        }
+        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
+        mocks.executionOverride = 'ambiguous-before-commit';
+        mocks.replayOverride = 'missing';
+
+        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${runId}:${batchId}`,
+            [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
+            expect.objectContaining({ runId, batchId })
+        );
+        expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+        expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('retains exact prepared-stem recovery after ordinary run history evicts its owner', async () => {
         const submission = await submitAdmittedPromptRequest({
             prompt: 'Import the selected stems',
             source: 'prompt-bar',
@@ -274,24 +335,135 @@ describe('prompt stem import recovery', () => {
         mocks.replayOverride = 'missing';
 
         await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
-        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('preparedStemImports');
-        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        const batchId = agentRunLifecycle.get(runId)?.preparedStemImports[0]?.batchId;
+        if (!batchId) {
+            throw new TypeError('Expected the exact prepared-stem recovery batch');
+        }
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-stem-run-${String(index)}`,
+                request: `Later run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-revision-${String(index)}`,
+                createdAt: 1_000 + index,
+            });
+        }
+        expect(agentRunLifecycle.get(runId)).toBeNull();
+        expect(readAgentRunState()).toMatchObject({
+            preparedStemImportRecoveryLedger: [
+                {
+                    runId,
+                    batchId,
+                    serializedCommandBatch: expect.any(String),
+                    resources: [
+                        {
+                            audioBufferId: 'buffer-prompt-recovery',
+                            assetLeaseId: 'lease-prompt-recovery',
+                        },
+                    ],
+                },
+            ],
+        });
 
         vi.resetModules();
         mocks.replayOverride = 'failed';
         const { recoverInterruptedAgentRuns } = await import('../agentRunRecovery');
-        const { agentRunLifecycle: reloadedAgentRunLifecycle } = await import('../agentRunLifecycle');
+        const { readAgentRunState: readReloadedAgentRunState } = await import('../../stores/agentRunStore');
 
-        await recoverInterruptedAgentRuns({ recoveredAt: 500 });
-        await recoverInterruptedAgentRuns({ recoveredAt: 501 });
+        await recoverInterruptedAgentRuns({ recoveredAt: 550 });
+        await recoverInterruptedAgentRuns({ recoveredAt: 551 });
 
-        expect(reloadedAgentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
-        expect(reloadedAgentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-prompt-recovery');
         expect(mocks.releaseStagedAsset).toHaveBeenCalledOnce();
         expect(mocks.releaseStagedAsset).toHaveBeenCalledWith('lease-prompt-recovery');
+        expect(readReloadedAgentRunState()).not.toHaveProperty('preparedStemImportRecoveryLedger');
+    });
+
+    it('surfaces manual repair without deleting retained media when an evicted capsule is invalid', async () => {
+        const submission = await submitAdmittedPromptRequest({
+            prompt: 'Import the selected stems',
+            source: 'prompt-bar',
+            actions: [stemAction],
+            requiresConfirmation: true,
+        });
+        if (submission.status !== 'awaiting-approval') {
+            throw new TypeError(`Expected approval preview, received ${submission.status}`);
+        }
+        const runId = submission.runId;
+        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
+        mocks.executionOverride = 'ambiguous-before-commit';
+        mocks.replayOverride = 'missing';
+
+        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-manual-run-${String(index)}`,
+                request: `Later manual run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-manual-revision-${String(index)}`,
+                createdAt: 2_000 + index,
+            });
+        }
+        const evictedState = readAgentRunState();
+        const capsule = evictedState.preparedStemImportRecoveryLedger?.[0];
+        if (!capsule) {
+            throw new TypeError('Expected an independently retained prepared-stem capsule');
+        }
+        persistAgentRunState({
+            ...evictedState,
+            preparedStemImportRecoveryLedger: [
+                {
+                    ...capsule,
+                    serializedCommandBatch: 'invalid retained command proof',
+                },
+            ],
+        });
+
+        vi.resetModules();
+        const { recoverInterruptedAgentRuns } = await import('../agentRunRecovery');
+        const { readAgentRunState: readReloadedAgentRunState } = await import('../../stores/agentRunStore');
+
+        await recoverInterruptedAgentRuns({ recoveredAt: 575 });
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(readReloadedAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+            expect.objectContaining({
+                runId,
+                batchId: capsule.batchId,
+                status: 'manual-repair',
+                lastError: expect.stringContaining('Keep the staged media retained'),
+                resources: [
+                    {
+                        audioBufferId: 'buffer-prompt-recovery',
+                        assetLeaseId: 'lease-prompt-recovery',
+                    },
+                ],
+            }),
+        ]);
+
+        const firstReloadedCapsule = readReloadedAgentRunState().preparedStemImportRecoveryLedger?.[0];
+        if (!firstReloadedCapsule) {
+            throw new TypeError('Expected the manual-repair capsule after first recovery');
+        }
+        vi.resetModules();
+        const { recoverInterruptedAgentRuns: recoverAfterSecondReload } = await import('../agentRunRecovery');
+        const { readAgentRunState: readSecondReloadedAgentRunState } = await import('../../stores/agentRunStore');
+
+        await recoverAfterSecondReload({ recoveredAt: 576 });
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(readSecondReloadedAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+            expect.objectContaining({
+                runId: firstReloadedCapsule.runId,
+                batchId: firstReloadedCapsule.batchId,
+                serializedCommandBatch: firstReloadedCapsule.serializedCommandBatch,
+                status: 'manual-repair',
+                resources: firstReloadedCapsule.resources,
+            }),
+        ]);
     });
 
     it('fails closed after reload when a legacy prepared stem asset has no recovery metadata', async () => {

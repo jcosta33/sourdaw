@@ -1,45 +1,44 @@
 # AudioEngine module — Agent Guidelines
 
-WebAudio graph runtime: hosts every release-admitted built-in device as a WASM engine node, plus the buffer cache
-(`stores/audioBufferCache.ts`), recording, and metering.
+WebAudio graph runtime: hosts every release-admitted built-in device as a WASM engine node, plus the buffer cache, recording feeds, offline rendering, and latency compensation.
 
-Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch Oven module.
+## Domain Ownership
 
-## WASM device pipeline
+Owns the WebAudio runtime graph (`AudioContext`, track/bus strips, send/sidechain routing), built-in WASM device hosting, sample buffer cache (`stores/audioBufferCache.ts`), audio input recording/monitoring, offline rendering orchestration, and latency compensation. Does not own timeline/clip arrangements (Arrangement), audio export encoding (AudioRendering), warp marker editing (ElasticAudio), or third-party plugin sandbox lifecycle (PluginHost).
 
-- Device DSP lives in Rust crates and compiles to WASM: `pnpm wasm:all` runs
-  `wasm-pack --target web` for `crates/{daw-dsp,proof-chamber,scoring,daw-wasm-decoder}` into
-  `public/wasm/`. The `scripts/gen-*-worklet.ts` post-processors rewrite the wasm-pack JS glue into
-  `src/modules/AudioEngine/wasm/`, prepending AudioWorklet-scope polyfills and replacing
-  `new URL(..., import.meta.url)` with a static path so Vite does not bundle the `.wasm`. Re-run
-  the `wasm:*` script after changing a crate; never hand-edit files under `AudioEngine/wasm/`.
-- Grand Boule runs its live WASM engine in a Worker behind a SharedArrayBuffer ring. Offline render
-  runs the same engine inline in an AudioWorklet, where no live deadline exists.
-- The release census covers the complete `public/wasm` tree and every manifest-declared AudioEngine
-  mirror. Package ids and artifact paths come from `scripts/wasm-artifacts.ts`; unknown sidecars,
-  manifest paths, text references, or binary exports fail release validation.
-- The main thread revalidates, fetches and asynchronously compiles each WASM URL once. A
-  short-lived module lease is released on abort or host-construction failure; successful host
-  construction commits one URL per bundle to the `AudioContext`, because wasm-bindgen glue is a
-  realm singleton. Loading another version after that requires a fresh context and is rejected
-  instead of silently retaining the old binary.
-- AudioWorklet processors receive the structured-cloned `WebAssembly.Module` through
-  `processorOptions`; Grand Boule's Worker receives the same compiled module. A separate port init
-  message starts caught instantiation and the ready/error handshake.
-  Processors call `initSync` and compile nothing on their real-time-adjacent threads. Shared module
-  caching and handshake logic live in `src/infra/audioWorklet/workletInitShared.ts`.
-- Crumbs disk streaming is native-only ([daw-dsp](../../../crates/daw-dsp/AGENTS.md)). Browser
-  playback and offline rendering run the same Crumbs engine in WASM, with decoded PCM preloaded
-  into its in-memory sample pool.
+## Public Contract Surface
 
-## Runtime boundaries
+- **`useCases`**: Audio context & engine lifecycle (`initializeAudioEngine`, `getAudioContext`, `audioEngine`, `getAudioTime`, `getEngineState`, `getEngineDiagnostics`, `getEngineHealth`, `isEngineAudioAvailable`, `refreshEngineRtDiagnostics`, `resetAudioGraph`, `resumeEngine`, `waitForDevices`), audio buffer cache (`audioBufferCache`, `cacheAudioBuffer`, `getCachedAudioBuffer`, `decodeAudioFile`, `decodeAudioFileBuffer`), recording feeds (`startAudioRecording`, `stopAudioRecording`, `startInputMonitoring`, `stopInputMonitoring`), device controls (`buildDeviceChain`, `updateDeviceParam`, `updateDevicePatch`, `scheduleDeviceParam`, `scheduleDeviceKeyOn`, `scheduleDeviceKeyOff`), track/bus audio controls (`setTrackGain`, `setTrackPan`, `scheduleTrackGain`, `scheduleTrackPan`, `ensureTrackStrip`, `removeTrackStrip`, `ensureBusStrip`, `removeBusStrip`, `setSend`, `wireSidechainRoute`), offline rendering (`renderOffline`, `exportStems`, `renderTrackSubgraphOffline`), latency compensation (`getTrackLatency`, `getCompensationDelay`, `getSidechainKeyDelay`, `getLatencyReport`, `reportLatency`), graph compilation & delta (`compileAudioGraphTopology`, `applyRuntimeGraphDelta`, `compileRuntimeGraphDelta`), and handler map `getFinalFeatureHandlers`.
+- **`events`**: `AudioDeviceLoadedPayload`, `AudioDeviceRemovedPayload`.
+- **`stores`**: `audioBufferCache`, `audioGraphStore` (`defaultAudioGraphState`), `audioRecordingStore`, `adjustmentApplicationStore`.
+- **`presentations/views`**: `AudioDevicePicker`, `MidiDevicePicker`, `PluginBrowser`, `PluginScanSettings`.
+- **Handler maps**: `getFinalFeatureHandlers`.
 
-- Worklets import nothing from app modules, helpers, or desktop IPC. The depcruise `worklets-no-*`
-  rules are **error** but match `src/modules/<M>/worklets/**` only, so they do not reach the raw
-  processors in `public/audio/worklets/` — there the isolation is yours to hold, unchecked.
-  `worker.format: 'iife'` in `vite.config.ts` is what lets worklet blob URLs load bundles — don't
-  change it casually.
-- One live `AudioContext` app-wide.
-- Faust is wired here and in PluginHost. Change one, check the other.
-- Native-plugin bridge worklets are raw JS in `public/audio/worklets/`, separate from the WASM
-  glue.
+## Key Subsystems
+
+- **`engine/`**: Runtime graph nodes (`TrackNode`, `BusNode`, `AdjustmentBusNode`, `AdjustmentLayerRuntime`, `CrumbsRecordFeedNode`, built-in WASM device nodes: `BacteriaNode`, `CrumbsNode`, `CrustNode`, `FermenterNode`, `GlutenNode`, `GrandBouleNode`, `GrinderNode`, `KneadNode`, `LevainNode`, `NativePluginBridgeNode`, `ProofChamberNode`, `ProofNode`, `ScoringNode`, `ToasterNode`), `audioDeviceRuntimeSink.ts`, `wasmDeviceRegistry.ts`, `telemetryAllocator.ts`, `dropoutCounter.ts`. (Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch Oven module).
+- **`wasm/`**: Generated JS glue for compiled Rust WASM crates (`crates/{daw-dsp,proof-chamber,scoring,daw-wasm-decoder}`).
+- **`worklets/`**: AudioWorklet processors and node wrappers.
+- **`workers/`**: Background workers (e.g. Grand Boule Worker behind SharedArrayBuffer ring).
+- **`repositories/`**: Audio device selection, recording input streams.
+- **`models/`**: `AudioEngineState.ts`, `AudioGraphBackend.ts`, `EngineRtDiagnostics.ts`, `BuiltinDeviceRuntime.ts`.
+
+## Invariants & Traps
+
+- **Audio thread safety**: AudioWorklet and audio rendering threads must never allocate heap memory, block, or take locks.
+- **WASM device pipeline**: Device DSP lives in Rust crates and compiles to WASM: `pnpm wasm:all` runs `wasm-pack --target web` for `crates/{daw-dsp,proof-chamber,scoring,daw-wasm-decoder}` into `public/wasm/`. The `scripts/gen-*-worklet.ts` post-processors rewrite the wasm-pack JS glue into `src/modules/AudioEngine/wasm/`, prepending AudioWorklet-scope polyfills and replacing `new URL(..., import.meta.url)` with a static path so Vite does not bundle the `.wasm`. Re-run the `wasm:*` script after changing a crate; never hand-edit files under `AudioEngine/wasm/`.
+- **Grand Boule runtime**: Grand Boule runs its live WASM engine in a Worker behind a SharedArrayBuffer ring. Offline render runs the same engine inline in an AudioWorklet, where no live deadline exists.
+- **Release census**: The release census covers the complete `public/wasm` tree and every manifest-declared AudioEngine mirror. Package ids and artifact paths come from `scripts/wasm-artifacts.ts`; unknown sidecars, manifest paths, text references, or binary exports fail release validation.
+- **Single realm singleton**: The main thread revalidates, fetches and asynchronously compiles each WASM URL once. A short-lived module lease is released on abort or host-construction failure; successful host construction commits one URL per bundle to the `AudioContext`, because wasm-bindgen glue is a realm singleton. Loading another version after that requires a fresh context and is rejected instead of silently retaining the old binary.
+- **AudioWorklet instantiation**: AudioWorklet processors receive the structured-cloned `WebAssembly.Module` through `processorOptions`; Grand Boule's Worker receives the same compiled module. A separate port init message starts caught instantiation and the ready/error handshake. Processors call `initSync` and compile nothing on their real-time-adjacent threads. Shared module caching and handshake logic live in `src/infra/audioWorklet/workletInitShared.ts`.
+- **Crumbs streaming**: Crumbs disk streaming is native-only (`crates/daw-dsp`). Browser playback and offline rendering run the same Crumbs engine in WASM, with decoded PCM preloaded into its in-memory sample pool.
+- **Worklet boundaries**: Worklets import nothing from app modules, helpers, or desktop IPC. Depcruise `worklets-no-*` rules match `src/modules/<M>/worklets/**` only; raw processors in `public/audio/worklets/` must be manually isolated. `worker.format: 'iife'` in `vite.config.ts` allows worklet blob URLs to load bundles.
+- **Single AudioContext**: Exactly one live `AudioContext` app-wide.
+- **Faust synchronization**: Faust is wired in AudioEngine and PluginHost; changes in one require matching updates in the other.
+- **Native plugin bridge**: Native-plugin bridge worklets are raw JS in `public/audio/worklets/`, separate from the WASM glue.
+
+## Verification
+
+- **Focused unit tests**: `pnpm test:run src/modules/AudioEngine`
+- **Module boundaries**: `pnpm deps:validate`
+- **WASM rebuild**: `pnpm wasm:all` or package-specific script

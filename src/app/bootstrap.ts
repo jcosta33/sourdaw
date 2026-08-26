@@ -63,7 +63,14 @@ import {
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
-import { canExecuteCommandBatch, canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
+import {
+    canExecuteCommandBatch,
+    canMutateBranchMetadata,
+    configureCollaborationAssetOwner,
+    configureDurableAssetCommitProof,
+    getAssetTransfer,
+    leaveSession,
+} from '#/modules/Collaboration/useCases';
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
@@ -75,7 +82,9 @@ import {
     setActionHistoryMetadataPort,
     commandProjectRevisionPort,
     commandProjectDivergencePort,
+    getVersionedCommandBatchCommitDisposition,
     commandTrackDefaultsPort,
+    commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
@@ -119,6 +128,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
 import {
+    getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
     initProjectDirtyTracking,
@@ -145,6 +155,7 @@ import {
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
     stopPlayback,
+    repairRuntimeGraphFromProject,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
@@ -195,6 +206,7 @@ agentProjectInspectionPort.setProvider(captureAgentProjectInspectionState);
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
 commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
+commandRuntimeRepairPort.setProvider(repairRuntimeGraphFromProject);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>
@@ -206,6 +218,12 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
+configureCollaborationAssetOwner({
+    captureOwnerId: getDurableProjectOwnerId,
+});
+configureDurableAssetCommitProof({
+    getDisposition: getVersionedCommandBatchCommitDisposition,
+});
 void recoverInterruptedAgentRuns().catch((error: unknown) => {
     logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
 });
@@ -272,7 +290,28 @@ setTimeOperationDependencies({
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
 });
-setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+setProjectIdentityTransitionDependencies({
+    leaveCollaborationSession: leaveSession,
+    resumeDurableAssetOwnerHandoffsAfterProjectLoad: async (authority) => {
+        const isCurrentOwner = () =>
+            !authority.signal.aborted && authority.isCurrent() && getDurableProjectOwnerId() === authority.ownerId;
+        if (!isCurrentOwner()) {
+            return;
+        }
+        const assetTransfer = getAssetTransfer();
+        if (!assetTransfer) {
+            throw new Error('Durable asset owner recovery is unavailable after project load');
+        }
+        if (!isCurrentOwner()) {
+            return;
+        }
+        await assetTransfer.resumeDurableOwnerRebindsAfterProjectLoad({
+            ownerId: authority.ownerId,
+            isCurrent: isCurrentOwner,
+            signal: authority.signal,
+        });
+    },
+});
 
 function disposeYeastRealtimeBridge(): void {
     disposeWebMidiRealtimeProcessor();

@@ -58,8 +58,7 @@ function sectionContentEnd(body: string, contentStart: number): number {
     return boundaries.length === 0 ? body.length : Math.min(...boundaries);
 }
 
-export function howToTestFromBody(body: string): string {
-    const heading = REQUIRED_BODY_HEADINGS[1];
+function requiredSectionFromBody(body: string, heading: RequiredBodyHeading): string {
     const headingIndex = body.indexOf(heading);
     if (headingIndex < 0) {
         fail(`pull-request body is missing: ${heading}`);
@@ -75,6 +74,28 @@ export function howToTestFromBody(body: string): string {
     return content;
 }
 
+export function whatFromBody(body: string): string {
+    return requiredSectionFromBody(body, REQUIRED_BODY_HEADINGS[0]);
+}
+
+export function howToTestFromBody(body: string): string {
+    return requiredSectionFromBody(body, REQUIRED_BODY_HEADINGS[1]);
+}
+
+function foldedPhrase(text: string): string {
+    return text.trim().replaceAll(/\s+/g, ' ').toLowerCase();
+}
+
+function conventionalRemainder(title: string): string {
+    const separator = title.indexOf(': ');
+    return separator < 0 ? title : title.slice(separator + 2);
+}
+
+function whatRepeatsTitle(what: string, title: string): boolean {
+    const foldedWhat = foldedPhrase(what);
+    return foldedWhat === foldedPhrase(title) || foldedWhat === foldedPhrase(conventionalRemainder(title));
+}
+
 /**
  * A missing heading and an empty section are two different failures, so they are diagnosed in two
  * separate passes and never share a message. Deriving one section's end from the *next* heading's
@@ -84,7 +105,7 @@ export function howToTestFromBody(body: string): string {
  * heading was never written is missing How-to-test, not missing a What-does-this-do section that is
  * sitting right there, full.
  */
-export function assertPullRequestBody(body: string, label: string): void {
+export function assertPullRequestBody(body: string, label: string, title?: string): void {
     if (Buffer.byteLength(body, 'utf8') > PULL_REQUEST_BODY_BYTE_LIMIT) {
         fail(`${label} exceeds 4000 bytes`);
     }
@@ -108,6 +129,9 @@ export function assertPullRequestBody(body: string, label: string): void {
         if (body.slice(contentStart, contentEnd).trim() === '') {
             fail(`${label} section is empty: ${section.heading}`);
         }
+    }
+    if (title !== undefined && whatRepeatsTitle(whatFromBody(body), title)) {
+        fail(`${label} What section repeats the title`);
     }
 }
 
@@ -324,10 +348,15 @@ export function issueRelationshipFromBody(
 
 export function composePublishBody(
     issue: number | undefined,
-    subject: string,
+    title: string,
+    summary: string,
     testInstructions: string,
     relationship: IssueRelationship = 'closes'
 ): string {
+    const what = summary.trim();
+    if (what === '') {
+        fail('pull-request What section is empty');
+    }
     const howToTest = testInstructions.trim();
     if (howToTest === '') {
         fail('pull-request How to test instructions are empty');
@@ -335,7 +364,7 @@ export function composePublishBody(
     const relatedTickets =
         issue === undefined ? NO_RELATED_TICKETS : `${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`;
     const body = `### 🎯 What does this PR do?
-${subject}
+${what}
 
 ### 🧪 How to test
 ${howToTest}
@@ -346,7 +375,7 @@ None.
 ### 📌 Related tickets & additional notes
 ${relatedTickets}
 `;
-    assertPullRequestBody(body, 'pull-request body');
+    assertPullRequestBody(body, 'pull-request body', title);
     assertIssueClosingReferences(body, issue, issue === undefined ? undefined : relationship);
     if (issue !== undefined && !body.includes(`${relationship === 'closes' ? 'Closes' : 'Related'} #${issue}`)) {
         fail(`pull-request body is missing ${relationship === 'closes' ? 'Closes' : 'Related'} #<issue-number>`);

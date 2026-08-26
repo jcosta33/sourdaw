@@ -6,9 +6,16 @@ import {
 } from '../../stores/externalPluginActivationStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
+import {
+    externalPluginActivationEpoch,
+    externalPluginActivationOutcomes,
+    externalPluginActivationTasks,
+    type ExternalPluginActivationResult,
+} from './externalPluginActivationTasks';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { restorePluginState } from './restorePluginState';
+import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 
 type ActivateExternalPluginInput = {
@@ -61,9 +68,53 @@ export function activateExternalPlugin({
     instanceId,
     stateChunk,
     onLatencyMs,
-}: ActivateExternalPluginInput): void {
+}: ActivateExternalPluginInput): Promise<ExternalPluginActivationResult> {
+    const rebuildCompletion = pluginLifecycleScheduler.currentRebuildCompletion();
+    if (rebuildCompletion) {
+        return rebuildCompletion.then(() => activateExternalPlugin({ pluginId, instanceId, stateChunk, onLatencyMs }));
+    }
+    const activationEpoch = externalPluginActivationEpoch.current;
+    const activeTask = externalPluginActivationTasks.get(instanceId);
+    if (activeTask) {
+        return activeTask;
+    }
     if (loadedExternalInstances.has(instanceId)) {
-        return;
+        const priorOutcome = externalPluginActivationOutcomes.get(instanceId);
+        if (priorOutcome?.status === 'failed' && priorOutcome.stage === 'restore' && stateChunk) {
+            const restoreTask = restorePluginState(instanceId, stateChunk)
+                .then((): ExternalPluginActivationResult => {
+                    if (activationEpoch !== externalPluginActivationEpoch.current) {
+                        return {
+                            status: 'failed',
+                            stage: 'restore',
+                            reason: 'External plugin activation was superseded by a runtime graph rebuild',
+                        };
+                    }
+                    setActivationStatus(instanceId, 'active');
+                    return { status: 'active' };
+                })
+                .catch((error: unknown): ExternalPluginActivationResult => {
+                    const reason = String(error);
+                    setActivationStatus(instanceId, 'error', reason);
+                    logger.warn(
+                        `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${reason}`
+                    );
+                    return { status: 'failed', stage: 'restore', reason };
+                })
+                .then((outcome) => {
+                    if (
+                        activationEpoch === externalPluginActivationEpoch.current &&
+                        externalPluginActivationTasks.get(instanceId) === restoreTask
+                    ) {
+                        externalPluginActivationOutcomes.set(instanceId, outcome);
+                        externalPluginActivationTasks.delete(instanceId);
+                    }
+                    return outcome;
+                });
+            externalPluginActivationTasks.set(instanceId, restoreTask);
+            return restoreTask;
+        }
+        return Promise.resolve(priorOutcome ?? { status: 'active' });
     }
     loadedExternalInstances.add(instanceId);
     setActivationStatus(instanceId, 'loading');
@@ -76,9 +127,17 @@ export function activateExternalPlugin({
         watchExternalPluginLatency();
     }
 
-    void (async () => {
+    const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
+        let attachmentFailure: ExternalPluginActivationResult | null = null;
         try {
             const instance = await loadPlugin(pluginId, instanceId);
+            if (activationEpoch !== externalPluginActivationEpoch.current) {
+                return {
+                    status: 'failed',
+                    stage: 'attach',
+                    reason: 'External plugin activation was superseded by a runtime graph rebuild',
+                };
+            }
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
                 // it renders nothing. Recorded on the activation entry rather
@@ -87,6 +146,7 @@ export function activateExternalPlugin({
                 const message = 'Loaded without a running native engine — this plugin processes no audio yet.';
                 setActivationStatus(instanceId, 'active', message);
                 logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
+                attachmentFailure = { status: 'failed', stage: 'attach', reason: message };
             } else {
                 setActivationStatus(instanceId, 'active');
             }
@@ -102,20 +162,34 @@ export function activateExternalPlugin({
             externalLatencyReporters.delete(instanceId);
             setActivationStatus(instanceId, 'error', String(error));
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
-            return;
+            return { status: 'failed', stage: 'load', reason: String(error) };
         }
 
         if (!stateChunk) {
-            return;
+            return attachmentFailure ?? { status: 'active' };
         }
         try {
             await restorePluginState(instanceId, stateChunk);
+            return attachmentFailure ?? { status: 'active' };
         } catch (error) {
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.
             logger.warn(
                 `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${String(error)}`
             );
+            setActivationStatus(instanceId, 'error', String(error));
+            return { status: 'failed', stage: 'restore', reason: String(error) };
         }
-    })();
+    })().then((outcome) => {
+        if (
+            activationEpoch === externalPluginActivationEpoch.current &&
+            externalPluginActivationTasks.get(instanceId) === activationTask
+        ) {
+            externalPluginActivationOutcomes.set(instanceId, outcome);
+            externalPluginActivationTasks.delete(instanceId);
+        }
+        return outcome;
+    });
+    externalPluginActivationTasks.set(instanceId, activationTask);
+    return activationTask;
 }

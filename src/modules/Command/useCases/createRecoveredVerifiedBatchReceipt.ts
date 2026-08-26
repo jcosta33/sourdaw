@@ -8,6 +8,7 @@ import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 type VerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 
 export function createRecoveredVerifiedBatchReceipt(input: {
+    contentHash: string;
     envelope: VersionedCommandBatchEnvelope;
     priorReceipt: VerifiedBatchReceipt;
     receiptWarnings: readonly string[];
@@ -32,6 +33,7 @@ export function createRecoveredVerifiedBatchReceipt(input: {
         ];
     });
     const recovered = createVerifiedBatchReceipt({
+        contentHash: input.contentHash,
         envelope: input.envelope,
         observedBaseRevision: input.priorReceipt.observedBase?.normalizedRevision ?? null,
         receiptWarnings: input.receiptWarnings,
@@ -40,7 +42,6 @@ export function createRecoveredVerifiedBatchReceipt(input: {
     });
     return {
         ...recovered,
-        atomicity: input.priorReceipt.atomicity,
         modelSummary: `${recovered.modelSummary} Pending external effects were reconciled successfully.`,
     };
 }

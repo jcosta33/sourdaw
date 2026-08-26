@@ -12,6 +12,7 @@ import { collaborationStore } from '#/modules/Collaboration/stores';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
@@ -130,7 +131,15 @@ export function scheduleAudioClips(
             }
 
             const strip = ensureTrackStrip(track.id);
-            const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
+            // One shared law with the offline projector (#2532): the stored
+            // ratio is finiteness-checked at its write paths but never
+            // range-checked, and a raw 0 or negative here divides the derived
+            // durations into NaN/Infinity so the iteration falls into the
+            // do-not-start branch below — silently dropped live while the
+            // bounce clamps and plays. The stretchMode gate is this
+            // scheduler's policy and stays here, outside the law.
+            const stretchRatio =
+                clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
             const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
             const clipBeatsPerSecond = clipTempo / 60;
 

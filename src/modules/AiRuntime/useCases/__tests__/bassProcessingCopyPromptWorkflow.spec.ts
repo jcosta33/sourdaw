@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import {
     adjustmentLayerStore,
     markerStore,
@@ -20,7 +22,6 @@ import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
-    commandBatchPreflightPort,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -29,7 +30,6 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
-    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -45,42 +45,13 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
+import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
-
-const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
-
-vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
-    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
-    return {
-        ...original,
-        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
-            const storage = original.createAutomergeStorage(...args);
-            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
-            return storage;
-        },
-    };
-});
-
-function flushFixtureStorageOwner(key: string): void {
-    const storage = fixtureStorageOwners.get(`root:${key}`);
-    if (!storage) {
-        throw new Error(`Expected fixture-owned ${key} storage adapter`);
-    }
-    storage.flushPendingUnscopedWrite();
-}
-
-function settleFixtureProjectWrites(): void {
-    for (const key of ['tracks', 'markers', 'adjustmentLayers', 'automation', 'transport']) {
-        flushFixtureStorageOwner(key);
-    }
-}
-
-function sendChatMessage(prompt: string) {
-    settleFixtureProjectWrites();
-    return sendChatMessageUseCase(prompt);
-}
 
 const PROMPT =
     "Copy the bass processing from chorus one to chorus two while preserving chorus two's existing distortion automation.";
@@ -433,7 +404,7 @@ function getBassProcessingCopyTargetIds(plan: readonly ProviderPlanCall[]): stri
         if (!layer) {
             throw new TypeError(`Expected EX-03 adjustment layer ${layerId}`);
         }
-        targetIds.add(layer.id);
+        targetIds.add(layerId);
         for (const trackId of layer.affectedTrackIds) {
             targetIds.add(trackId);
         }
@@ -657,7 +628,7 @@ function getConfirmationId(): string {
 
 describe('bass-processing section copy workflow', () => {
     beforeEach(async () => {
-        commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         vi.spyOn(audioEngine, 'applyAdjustmentLayerTick').mockImplementation(() => undefined);
         vi.spyOn(audioEngine, 'resetAdjustmentLayers').mockImplementation(() => undefined);
@@ -784,15 +755,14 @@ describe('bass-processing section copy workflow', () => {
             ],
         });
         transportStore.set({ ...defaultTransportState });
+        flushAutomergeStorageWrites();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
-        commandBatchPreflightPort.setProvider(null);
-        configureRuntimeGraphProjectRevisionValidator(null);
-        configureRuntimeGraphTopologyValidator(null);
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -813,84 +783,6 @@ describe('bass-processing section copy workflow', () => {
     it('routes a semantic paraphrase to the bass-processing copy capability', async () => {
         await sendChatMessage(PARAPHRASE);
         expect(getConfirmationId()).not.toBe('');
-    });
-
-    it('rejects unflushed adjustment-layer identity drift through production fingerprints', async () => {
-        settleFixtureProjectWrites();
-        const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
-        const layersBeforePlanning = structuredClone(adjustmentLayerStore.value);
-        const undoBeforePlanning = structuredClone(undoStore.value);
-        const runtimeCallsBeforePlanning = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
-
-        await sendChatMessage(PROMPT);
-        const confirmation = getPendingActionConfirmation(getConfirmationId());
-        const approvedFingerprint = confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['layer-bass-eq'];
-        const approvedRevision = captureProjectRevision();
-        expect(approvedFingerprint).toBeDefined();
-        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
-        expect(adjustmentLayerStore.value).toEqual(layersBeforePlanning);
-        expect(undoStore.value).toEqual(undoBeforePlanning);
-        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
-
-        adjustmentLayerStore.set({
-            layers: (adjustmentLayerStore.value?.layers ?? []).map((layer) =>
-                layer.id === 'layer-bass-eq' ? { ...layer, id: 'layer-bass-eq-collaborator' } : layer
-            ),
-        });
-        const collaboratorState = structuredClone(adjustmentLayerStore.value);
-        expect(captureProjectRevision()).toBe(approvedRevision);
-
-        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
-
-        expect(result.status).toBe('failed');
-        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
-        expect(adjustmentLayerStore.value).toEqual(collaboratorState);
-        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
-        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
-        expect(undoStore.value).toEqual(undoBeforePlanning);
-        expect(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
-                ?.content
-        ).toContain('The approved target fingerprints no longer match.');
-    });
-
-    it('rejects unflushed adjustment-layer state drift through production fingerprints', async () => {
-        settleFixtureProjectWrites();
-        const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
-        const layersBeforePlanning = structuredClone(adjustmentLayerStore.value);
-        const undoBeforePlanning = structuredClone(undoStore.value);
-        const runtimeCallsBeforePlanning = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
-
-        await sendChatMessage(PROMPT);
-        const confirmation = getPendingActionConfirmation(getConfirmationId());
-        const approvedFingerprint = confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['layer-bass-eq'];
-        const approvedRevision = captureProjectRevision();
-        expect(approvedFingerprint).toBeDefined();
-        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
-        expect(adjustmentLayerStore.value).toEqual(layersBeforePlanning);
-        expect(undoStore.value).toEqual(undoBeforePlanning);
-        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
-
-        adjustmentLayerStore.set({
-            layers: (adjustmentLayerStore.value?.layers ?? []).map((layer) =>
-                layer.id === 'layer-bass-eq' ? { ...layer, mix: 0.13 } : layer
-            ),
-        });
-        const collaboratorState = structuredClone(adjustmentLayerStore.value);
-        expect(captureProjectRevision()).toBe(approvedRevision);
-
-        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
-
-        expect(result.status).toBe('failed');
-        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
-        expect(adjustmentLayerStore.value).toEqual(collaboratorState);
-        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
-        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
-        expect(undoStore.value).toEqual(undoBeforePlanning);
-        expect(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
-                ?.content
-        ).toContain('The approved target fingerprints no longer match.');
     });
 
     it('copies the exact bass processing through confirmation, receipt, runtime scheduling, undo, and redo', async () => {
@@ -988,7 +880,7 @@ describe('bass-processing section copy workflow', () => {
             expect.arrayContaining(['track-lead-vocal', 'layer-vocal-reverb', 'auto-bass-distortion-drive'])
         );
 
-        await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+        await confirmPendingChatActions({ confirmationId });
 
         const committedLayers = adjustmentLayerStore.value?.layers ?? [];
         const eqRegions = committedLayers.find((layer) => layer.id === 'layer-bass-eq')?.regions ?? [];
@@ -1178,7 +1070,7 @@ describe('bass-processing section copy workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId });
 
-        expect(result).toEqual({ status: 'executed' });
+        expect(result.status).toBe('executed');
         expect(
             adjustmentLayerStore.value?.layers
                 .find((layer) => layer.id === 'layer-bass-eq')

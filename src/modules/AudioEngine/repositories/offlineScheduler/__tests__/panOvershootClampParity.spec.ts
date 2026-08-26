@@ -8,29 +8,23 @@ import { type AutomationLane as OfflineAutomationLane } from '../../../models/Au
 import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
 
 /**
- * Pan clamp parity — reviewer finding on #2313.
+ * Pan clamp parity between live and offline for an overshooting smooth curve.
  *
- * `getAutomationValueAtBeat.ts` now clamps its return to the lane's declared
- * `minValue`/`maxValue`. `TrackNode.schedulePanAutomation` (`../../../engine/
- * TrackNode.ts`) additionally clamps to [-1, 1] on every live write, so live
- * pan is doubly guarded. `automationScheduling.ts`'s `pan` branch (this
- * directory, `lane.parameterId === 'pan'`) is the one branch in that file with
- * no `valueTransform` — it schedules the raw interpolated curve value straight
- * onto `trackPanNode.pan`, with no clamp of its own.
+ * The lane's declared range is the law live applies to every lane family:
+ * `getAutomationValueAtBeat` bounds the interpolated value to it before any
+ * branch sees the value. The offline pan branch applies the same bound through
+ * the shared kernel (`#/utils/automationLaneBound`) at the same position (#2538)
+ * — before the platform's own nominal-range clamp.
  *
- * A reviewer proposed this is a live-vs-offline divergence: an overshooting
- * smooth (Catmull-Rom) curve would clamp live and not offline. It does not
- * materialize — `StereoPannerNode.pan`'s nominal range is [-1, 1], and the Web
- * Audio specification clamps every `AudioParam` write to its nominal range
- * regardless of how the value was scheduled. This spec pins that: it reads the
- * raw value offline actually writes (proving it really does overshoot, so the
- * assertion isn't vacuous), then applies the same nominal-range clamp a real
- * `StereoPannerNode.pan` applies, and checks it against what live computes.
- *
- * Do NOT "fix" the apparent gap by adding a `valueTransform` to the offline pan
- * branch or by moving the clamp into `evaluateAutomationCurve` — neither
- * changes any observable output, and the shared curve kernel does not have the
- * lane's declared bounds in scope.
+ * That platform clamp used to be the branch's entire story: `StereoPannerNode.pan`
+ * has a nominal range of [-1, 1] and the Web Audio specification clamps every
+ * AudioParam write to it, which made the missing lane bound unobservable for a
+ * lane declaring exactly [-1, 1] (the `addAutomationLane` default). It was
+ * observable for any other declared range — a lane persisted with a narrower or
+ * shifted range was released to the param's nominal range offline while the
+ * monitor held it at its own. The declared range is the contract; offline now
+ * matches live by construction rather than by the platform's coincidence, and
+ * the nominal clamp remains a backstop neither side relies on.
  */
 
 const OVERSHOOT_BEAT = 3.2;
@@ -79,7 +73,7 @@ function panStoreLane(id: string, minValue: number, maxValue: number): Automatio
     };
 }
 
-function panOfflineLane(id: string): OfflineAutomationLane {
+function panOfflineLane(id: string, minValue: number, maxValue: number): OfflineAutomationLane {
     return {
         id,
         trackId: 'track-1',
@@ -87,11 +81,8 @@ function panOfflineLane(id: string): OfflineAutomationLane {
         parameterName: 'Pan',
         points: offlinePoints(),
         enabled: true,
-        // Offline never reads these for the pan branch (no valueTransform) —
-        // set to the lane's real declared range anyway so the fixture matches
-        // what a project actually persists for a pan lane.
-        minValue: -1,
-        maxValue: 1,
+        minValue,
+        maxValue,
     };
 }
 
@@ -114,6 +105,24 @@ function offlineValueAt(pan: ReturnType<typeof makeParam>, timeSeconds: number):
     return match![0];
 }
 
+function renderPanLane(lane: OfflineAutomationLane) {
+    const pan = makeParam();
+    scheduleTrackAutomationFixture({
+        lanes: [lane],
+        trackId: 'track-1',
+        trackGainNode: { gain: makeParam() } as unknown as GainNode,
+        trackPanNode: { pan } as unknown as StereoPannerNode,
+        deviceEntries: [],
+        durationSeconds: 4,
+        defaultTempo: DEFAULT_TEMPO,
+        changes: [],
+        regionStartSeconds: 0,
+        sampleRate: 44_100,
+        compensationDelaySec: 0,
+    });
+    return pan;
+}
+
 describe('pan clamp parity between live and offline for an overshooting smooth curve', () => {
     beforeEach(() => {
         automationStore.set({ lanes: [] });
@@ -122,63 +131,43 @@ describe('pan clamp parity between live and offline for an overshooting smooth c
         automationStore.set({ lanes: [] });
     });
 
-    it('live and offline agree, and neither exceeds the pan AudioParam nominal range', () => {
+    it('live and offline hold the crest at the lane’s declared range, matching value for value', () => {
         // Raw (unclamped) curve value: a lane whose declared range cannot bind
         // it, so getAutomationValueAtBeat returns the true interpolated value —
-        // the same evaluateAutomationCurve output the offline compiler reads.
+        // and offline, whose bound is the same law on the same range, must not
+        // clamp it either.
         automationStore.set({ lanes: [panStoreLane('pan-raw', -1000, 1000)] });
         const rawLive = getAutomationValueAtBeat('pan-raw', OVERSHOOT_BEAT);
         expect(rawLive).not.toBeNull();
-
-        // The real declared pan range (-1..1, addAutomationLane's default):
-        // getAutomationValueAtBeat now clamps to it before returning.
-        automationStore.set({ lanes: [panStoreLane('pan-1', -1, 1)] });
-        const liveClamped = getAutomationValueAtBeat('pan-1', OVERSHOOT_BEAT);
-        expect(liveClamped).not.toBeNull();
-
-        // Offline: automationScheduling.ts's pan branch writes the raw curve
-        // value straight onto trackPanNode.pan, with no valueTransform.
-        const pan = makeParam();
-        scheduleTrackAutomationFixture({
-            lanes: [panOfflineLane('pan-1')],
-            trackId: 'track-1',
-            trackGainNode: { gain: makeParam() } as unknown as GainNode,
-            trackPanNode: { pan } as unknown as StereoPannerNode,
-            deviceEntries: [],
-            durationSeconds: 4,
-            defaultTempo: DEFAULT_TEMPO,
-            changes: [],
-            regionStartSeconds: 0,
-            sampleRate: 44_100,
-            compensationDelaySec: 0,
-        });
-        const rawOffline = offlineValueAt(pan, OVERSHOOT_TIME_SECONDS);
-
-        // Both sides read the curve through the same evaluateAutomationCurve
-        // kernel, so the raw values agree — this is what makes the rest of the
-        // assertion meaningful rather than coincidental.
+        const rawPan = renderPanLane(panOfflineLane('pan-raw', -1000, 1000));
+        const rawOffline = offlineValueAt(rawPan, OVERSHOOT_TIME_SECONDS);
         expect(rawOffline).toBeCloseTo(rawLive!, 6);
 
-        // The overshoot is real: offline's unguarded write exceeds the nominal
-        // range on its own, so the test is not vacuously passing because
-        // nothing ever left [-1, 1].
+        // The overshoot is real: the raw value exceeds the declared pan range
+        // on its own, so the clamped assertions below are not vacuous.
         expect(rawOffline).toBeGreaterThan(1);
 
-        // Live clamps explicitly, in getAutomationValueAtBeat, to the lane's
-        // declared range.
+        // The real declared pan range (-1..1, addAutomationLane's default):
+        // both sides clamp the crest to it — live explicitly in
+        // getAutomationValueAtBeat, offline through the same shared bound.
+        automationStore.set({ lanes: [panStoreLane('pan-1', -1, 1)] });
+        const liveClamped = getAutomationValueAtBeat('pan-1', OVERSHOOT_BEAT);
         expect(liveClamped).toBe(1);
 
-        // Offline relies on the platform instead: per the Web Audio
-        // specification, StereoPannerNode.pan has a nominal range of [-1, 1]
-        // and every AudioParam write is clamped to it. Applying that clamp to
-        // the raw value offline actually scheduled reproduces exactly what
-        // live computed explicitly.
-        const offlineAfterNominalRangeClamp = Math.max(-1, Math.min(1, rawOffline));
-        expect(offlineAfterNominalRangeClamp).toBe(liveClamped);
+        const pan = renderPanLane(panOfflineLane('pan-1', -1, 1));
+        expect(offlineValueAt(pan, OVERSHOOT_TIME_SECONDS)).toBe(liveClamped);
+    });
 
-        expect(liveClamped).toBeLessThanOrEqual(1);
-        expect(liveClamped).toBeGreaterThanOrEqual(-1);
-        expect(offlineAfterNominalRangeClamp).toBeLessThanOrEqual(1);
-        expect(offlineAfterNominalRangeClamp).toBeGreaterThanOrEqual(-1);
+    it('holds a pan lane to a declared range the platform clamp could not express', () => {
+        // The case the platform clamp never covered: a lane persisted with a
+        // declared ceiling below the param's nominal 1. Live holds the crest at
+        // the declared 0.9; offline must hold the same line, where the nominal
+        // [-1, 1] clamp would have printed the full crest.
+        automationStore.set({ lanes: [panStoreLane('pan-narrow', -1, 0.9)] });
+        const liveClamped = getAutomationValueAtBeat('pan-narrow', OVERSHOOT_BEAT);
+        expect(liveClamped).toBe(0.9);
+
+        const pan = renderPanLane(panOfflineLane('pan-narrow', -1, 0.9));
+        expect(offlineValueAt(pan, OVERSHOOT_TIME_SECONDS)).toBe(liveClamped);
     });
 });

@@ -1,6 +1,7 @@
 import { type Track } from '#/modules/Arrangement/stores';
 // Not `#/modules/Arrangement/useCases` — same cycle law as `scheduleTrackClips`.
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { type OfflineClipFadeIn, type OfflineClipFadeOut } from './scheduleOfflineClipSource';
 
@@ -110,10 +111,11 @@ export function projectOfflineAudioClipPlaybacks(
     const loopLen = loopProjection.loopLengthBeats;
     const maxIterations = loopProjection.iterationCount;
 
-    const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
-    // Clamp stretchRatio to a sane positive range — zero or negative would
-    // cause division-by-zero in `bufferDurationSeconds / stretchRatio`.
-    const safeStretchRatio = Math.max(0.01, Math.min(100, stretchRatio));
+    // One shared law with the live scheduler (#2532), so a corrupt ratio
+    // bounces exactly as it monitors. The stretchMode gate is this
+    // projector's policy and stays here, outside the law.
+    const safeStretchRatio =
+        clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     const clipGainValue = clip.gain;
 
     const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;

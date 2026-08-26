@@ -5,12 +5,15 @@ import {
 } from '../../stores/externalPluginActivationStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
+import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 function forgetPluginInstance(instanceId: string): void {
     loadedExternalInstances.delete(instanceId);
     externalLatencyReporters.delete(instanceId);
+    externalPluginActivationTasks.delete(instanceId);
+    externalPluginActivationOutcomes.delete(instanceId);
     externalPluginActivationStore.update((state) => {
         const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
         delete byInstanceId[instanceId];

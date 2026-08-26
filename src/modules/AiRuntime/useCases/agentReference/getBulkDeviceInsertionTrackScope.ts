@@ -7,6 +7,10 @@ function normalizePromptText(value: string): string {
         .trim();
 }
 
+function normalizeDeviceName(value: string): string {
+    return normalizePromptText(value.replace(/^builtin-/u, ''));
+}
+
 export function getBulkDeviceInsertionTrackScope(prompt: string, context: ProjectContext) {
     const normalized = normalizePromptText(prompt);
     const match = /\b(?:every|all) ([\p{L}\p{N}]+) tracks?\b/iu.exec(normalized);
@@ -23,12 +27,29 @@ export function getBulkDeviceInsertionTrackScope(prompt: string, context: Projec
     const matchingTracks = context.tracks.filter(
         (track) => track.kind !== 'vca' && familyPattern.test(normalizePromptText(track.name))
     );
-    const targetIds = matchingTracks.filter((track) => track.frozen !== true).map((track) => track.id);
+    const targetTracks = matchingTracks.filter((track) => track.frozen !== true);
+    const targetIds = targetTracks.map((track) => track.id);
     if (targetIds.length === 0) {
+        return null;
+    }
+    const afterDeviceName = /\bafter ([\p{L}\p{N}]+)\b/iu.exec(normalized)?.[1];
+    if (!afterDeviceName) {
+        return null;
+    }
+    const anchors = targetTracks.map((track) => {
+        const device = track.devices.find(
+            (candidate) =>
+                normalizeDeviceName(candidate.name ?? candidate.type) === afterDeviceName ||
+                normalizeDeviceName(candidate.type) === afterDeviceName
+        );
+        return device === undefined ? null : { trackId: track.id, afterDeviceId: device.id };
+    });
+    if (anchors.some((anchor) => anchor === null)) {
         return null;
     }
     return {
         targetIds,
+        anchors: anchors.filter((anchor): anchor is NonNullable<typeof anchor> => anchor !== null),
         excludedFrozenTrackIds: matchingTracks.filter((track) => track.frozen === true).map((track) => track.id),
     };
 }

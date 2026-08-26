@@ -1,4 +1,4 @@
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
@@ -7,7 +7,7 @@ import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
-import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
+import { preparedStemImportCleanup } from './agentReference/discardPreparedStemImportResources';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { prepareStemImport } from './agentReference/prepareStemImport';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
@@ -27,7 +27,7 @@ type PlanPromptActionsInput = {
 };
 
 export async function planPromptActions(input: PlanPromptActionsInput) {
-    const projectRevision = captureProjectRevision();
+    const projectRevision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
     const streamIdentity = (() => {
         if (input.streamIdentity !== undefined) {
@@ -109,7 +109,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             });
             return;
         }
-        discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+        await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems);
     };
     let result;
     try {
@@ -211,7 +211,9 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             );
         }
     } catch (error) {
-        await discardStemImportScope();
+        if (stemImportScope) {
+            await discardStemImportScope();
+        }
         let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
         if (error instanceof AiProposalInvalidatedError) {
             category = 'conflict';

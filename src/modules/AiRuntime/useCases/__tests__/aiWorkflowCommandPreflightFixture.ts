@@ -14,6 +14,7 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
     );
     configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
     commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
+<<<<<<< HEAD
         const documentFingerprints = captureCommandTargetFingerprints({
             document: projectDocument ?? getCrdtDoc('root'),
             targetIds,
@@ -44,6 +45,18 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
         }
         if (targetIds.includes('hw_out')) {
             targetFingerprints.hw_out = 'system-output:hw_out';
+=======
+        const targetFingerprints: Record<string, string> = {
+            ...captureCommandTargetFingerprints({
+                document: projectDocument ?? getCrdtDoc('root'),
+                targetIds,
+            }),
+        };
+        for (const systemTargetId of ['master', 'hw_out']) {
+            if (targetIds.includes(systemTargetId)) {
+                targetFingerprints[systemTargetId] = `system-output:${systemTargetId}`;
+            }
+>>>>>>> origin/main
         }
         return {
             audioGraphValid: true,
