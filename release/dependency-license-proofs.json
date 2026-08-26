@@ -52,6 +52,14 @@
                 "sha256": "15623a5737a766d8d4423120ed43340400017007fcdd42e292cbc8964f44f392"
             },
             {
+                "path": "electron-builder.yml",
+                "sha256": "7bd6b91b280c621afb9e85f91332c04a026d75f60911d7daa866c84fc45c363f"
+            },
+            {
+                "path": "package.json",
+                "sha256": "7d77f05c1ea7dccb25fa09c7b602e18c190ede0b2969ade782e900d8e097787e"
+            },
+            {
                 "path": "rust-toolchain.toml",
                 "sha256": "bae4e26ab3ac14ac537b8d09c3577c55b94cd39c781fb9ac3d291e5e12f72a82"
             },
@@ -301,12 +309,12 @@
                 ],
                 "reportedLegalFiles": [
                     {
-                        "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "8ca9672c083b8dea204f989671faf38c442d5a4a77d449200a85cd07f7e1527c"
-                    },
-                    {
                         "label": "LICENSE",
                         "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+                    },
+                    {
+                        "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
+                        "sha256": "8ca9672c083b8dea204f989671faf38c442d5a4a77d449200a85cd07f7e1527c"
                     }
                 ]
             },
@@ -6578,12 +6586,12 @@
                 ],
                 "reportedLegalFiles": [
                     {
-                        "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "eaafac0da67b25f4c837fdddcbd7fb0d6119aeab816d23ae04748caaab718321"
-                    },
-                    {
                         "label": "LICENSE",
                         "sha256": "e562a2ddfaf8280537795ac5ecd34e3012b6582a147ef69ba6a6a5c08c84757d"
+                    },
+                    {
+                        "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
+                        "sha256": "eaafac0da67b25f4c837fdddcbd7fb0d6119aeab816d23ae04748caaab718321"
                     }
                 ]
             },

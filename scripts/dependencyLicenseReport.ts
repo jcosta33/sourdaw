@@ -19,6 +19,14 @@ export const CARGO_RUNTIME_FEATURE_SELECTION = {
     noDefaultFeatures: false,
     features: ['sourdaw-native/napi-addon'],
 } as const;
+const CARGO_FIXED_SOURCE_INPUT_PATHS = [
+    'Cargo.toml',
+    'electron-builder.yml',
+    'package.json',
+    'rust-toolchain.toml',
+    'scripts/buildNativeAddon.ts',
+] as const;
+const CARGO_CONFIG_PATHS = ['.cargo/config', '.cargo/config.toml'] as const;
 
 type LegalFile = {
     label: string;
@@ -477,17 +485,18 @@ function cargoPackageId(pkg: Pick<DependencyLicenseRecord, 'name' | 'version'>):
     return `${pkg.name}@${pkg.version}`;
 }
 
+function compareCodeUnits(left: string, right: string): number {
+    if (left === right) {
+        return 0;
+    }
+    return left < right ? -1 : 1;
+}
+
 function compareCargoPackageIdentities(
     left: Pick<DependencyLicenseRecord, 'name' | 'version'>,
     right: Pick<DependencyLicenseRecord, 'name' | 'version'>
 ): number {
-    if (left.name !== right.name) {
-        return left.name < right.name ? -1 : 1;
-    }
-    if (left.version === right.version) {
-        return 0;
-    }
-    return left.version < right.version ? -1 : 1;
+    return compareCodeUnits(left.name, right.name) || compareCodeUnits(left.version, right.version);
 }
 
 function runtimeCargoPackageIds(metadata: CargoMetadata): Set<string> {
@@ -589,7 +598,7 @@ function assembledProofMetadata(packageId: string, legalFile: LegalFile): LegalF
 }
 
 function compareEvidenceReferences(left: EvidenceReference, right: EvidenceReference): number {
-    return left.label.localeCompare(right.label) || left.sha256.localeCompare(right.sha256);
+    return compareCodeUnits(left.label, right.label) || compareCodeUnits(left.sha256, right.sha256);
 }
 
 function evidenceReferences(files: readonly LegalFile[]): EvidenceReference[] {
@@ -610,29 +619,81 @@ function assertEvidenceReferences(packageId: string, field: string, references: 
     }
 }
 
-function cargoManifestPaths(root: string, directory = 'crates'): string[] {
-    return readdirSync(resolve(root, directory), { withFileTypes: true }).flatMap((entry) => {
-        const path = `${directory}/${entry.name}`;
-        if (entry.isDirectory()) {
-            return cargoManifestPaths(root, path);
+function pathEscapesRoot(path: string): boolean {
+    return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
+}
+
+function assertRepositorySourceInput(root: string, path: string): void {
+    const rootPath = resolve(root);
+    const candidatePath = resolve(rootPath, path);
+    const candidateRelative = relative(rootPath, candidatePath);
+    if (candidateRelative.length === 0 || pathEscapesRoot(candidateRelative)) {
+        throw new Error(`${path}: Cargo source input escapes the repository`);
+    }
+    const realRelative = relative(realpathSync(rootPath), realpathSync(candidatePath));
+    if (realRelative.length === 0 || pathEscapesRoot(realRelative)) {
+        throw new Error(`${path}: Cargo source input escapes the repository`);
+    }
+}
+
+function repositoryManifestPath(root: string, manifestPath: string): string {
+    if (!isAbsolute(manifestPath)) {
+        throw new Error(`${manifestPath}: Cargo metadata manifest path is not absolute`);
+    }
+    const rootPath = resolve(root);
+    const candidateRelative = relative(rootPath, resolve(manifestPath));
+    const path = candidateRelative.split(sep).join('/');
+    if (
+        candidateRelative.length === 0 ||
+        pathEscapesRoot(candidateRelative) ||
+        path !== posix.normalize(path) ||
+        posix.isAbsolute(path) ||
+        path.split('/').includes('..')
+    ) {
+        throw new Error(`${manifestPath}: Cargo metadata manifest path escapes the repository`);
+    }
+    assertRepositorySourceInput(root, path);
+    return path;
+}
+
+function cargoWorkspaceManifestPaths(root: string, metadata: CargoMetadata): string[] {
+    const packages = new Map(metadata.packages.map((pkg) => [pkg.id, pkg]));
+    const paths = metadata.workspace_members.map((member) => {
+        const pkg = packages.get(member);
+        if (pkg === undefined) {
+            throw new Error(`Cargo metadata workspace member ${member} has no package manifest`);
         }
-        return entry.isFile() && entry.name === 'Cargo.toml' ? [path] : [];
+        return repositoryManifestPath(root, pkg.manifest_path);
+    });
+    if (new Set(paths).size !== paths.length) {
+        throw new Error('Cargo metadata workspace manifest paths must be unique');
+    }
+    return paths.sort(compareCodeUnits);
+}
+
+function cargoSourceInputPaths(root: string, workspaceManifestPaths: readonly string[]): string[] {
+    return [
+        ...new Set([
+            ...CARGO_FIXED_SOURCE_INPUT_PATHS,
+            ...workspaceManifestPaths,
+            ...CARGO_CONFIG_PATHS.filter((path) => existsSync(resolve(root, path))),
+        ]),
+    ].sort(compareCodeUnits);
+}
+
+function cargoSourceInputs(
+    root: string,
+    workspaceManifestPaths: readonly string[]
+): CargoRuntimeInventorySnapshot['sourceInputs'] {
+    return cargoSourceInputPaths(root, workspaceManifestPaths).map((path) => {
+        assertRepositorySourceInput(root, path);
+        return { path, sha256: sha256(readFileSync(resolve(root, path))) };
     });
 }
 
-function cargoSourceInputs(root: string): CargoRuntimeInventorySnapshot['sourceInputs'] {
-    const paths = [
-        'Cargo.toml',
-        'rust-toolchain.toml',
-        'scripts/buildNativeAddon.ts',
-        ...cargoManifestPaths(root),
-        ...['.cargo/config', '.cargo/config.toml'].filter((path) => existsSync(resolve(root, path))),
-    ].sort();
-    return paths.map((path) => ({ path, sha256: sha256(readFileSync(resolve(root, path))) }));
-}
-
 function assertCargoSourceInputs(root: string, inventory: CargoRuntimeInventorySnapshot): void {
-    if (JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root))) {
+    const storedPaths = inventory.sourceInputs.map(({ path }) => path);
+    if (JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root, storedPaths))) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs drifted`);
     }
 }
@@ -656,7 +717,7 @@ function assertCargoRuntimeInventory(
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported Cargo runtime inventory`);
     }
     const canonicalSourceInputs = [...inventory.sourceInputs].sort((left, right) =>
-        left.path.localeCompare(right.path)
+        compareCodeUnits(left.path, right.path)
     );
     if (
         new Set(inventory.sourceInputs.map(({ path }) => path)).size !== inventory.sourceInputs.length ||
@@ -782,7 +843,10 @@ export function collectCargoDependencyLicenses(root: string): DependencyLicenseR
     });
 }
 
-function collectCargoDependencyLicensesFromInstalledMetadata(root: string): DependencyLicenseRecord[] {
+function collectCargoDependencyLicensesFromInstalledMetadata(root: string): {
+    metadata: CargoMetadata;
+    records: DependencyLicenseRecord[];
+} {
     const metadataArguments = [
         'metadata',
         '--locked',
@@ -801,26 +865,29 @@ function collectCargoDependencyLicensesFromInstalledMetadata(root: string): Depe
     );
     const workspace = new Set(metadata.workspace_members);
     const runtime = runtimeCargoPackageIds(metadata);
-    return metadata.packages
-        .filter((pkg) => runtime.has(pkg.id) && !workspace.has(pkg.id))
-        .map((pkg) => ({
-            ecosystem: 'cargo' as const,
-            name: pkg.name,
-            version: pkg.version,
-            license: licenseExpression(pkg.license, `${pkg.name}@${pkg.version}`),
-            legalFiles: packageLegalFiles(
-                dirname(pkg.manifest_path),
-                pkg.license_file === null ? undefined : pkg.license_file
-            ),
-            metadataFiles: [
-                readLegalFile(pkg.manifest_path, basename(pkg.manifest_path)),
-                ...(existsSync(resolve(dirname(pkg.manifest_path), 'AUTHORS'))
-                    ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
-                    : []),
-            ],
-            ...(pkg.source === null ? {} : { cargoSource: pkg.source }),
-            graphs: ['Cargo.lock'],
-        }));
+    return {
+        metadata,
+        records: metadata.packages
+            .filter((pkg) => runtime.has(pkg.id) && !workspace.has(pkg.id))
+            .map((pkg) => ({
+                ecosystem: 'cargo' as const,
+                name: pkg.name,
+                version: pkg.version,
+                license: licenseExpression(pkg.license, `${pkg.name}@${pkg.version}`),
+                legalFiles: packageLegalFiles(
+                    dirname(pkg.manifest_path),
+                    pkg.license_file === null ? undefined : pkg.license_file
+                ),
+                metadataFiles: [
+                    readLegalFile(pkg.manifest_path, basename(pkg.manifest_path)),
+                    ...(existsSync(resolve(dirname(pkg.manifest_path), 'AUTHORS'))
+                        ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
+                        : []),
+                ],
+                ...(pkg.source === null ? {} : { cargoSource: pkg.source }),
+                graphs: ['Cargo.lock'],
+            })),
+    };
 }
 
 function cargoChecksum(root: string, name: string, version: string, source: string): string | undefined {
@@ -1259,16 +1326,10 @@ function mergeDependencyLicenseRecords(records: DependencyLicenseRecord[]): Depe
 }
 
 function compareRecords(left: DependencyLicenseRecord, right: DependencyLicenseRecord): number {
-    const compare = (leftValue: string, rightValue: string): number => {
-        if (leftValue === rightValue) {
-            return 0;
-        }
-        return leftValue < rightValue ? -1 : 1;
-    };
     return (
-        compare(left.ecosystem, right.ecosystem) ||
-        compare(left.name, right.name) ||
-        compare(left.version, right.version)
+        compareCodeUnits(left.ecosystem, right.ecosystem) ||
+        compareCodeUnits(left.name, right.name) ||
+        compareCodeUnits(left.version, right.version)
     );
 }
 
@@ -1300,10 +1361,10 @@ export function renderDependencyLicenseReport(
     const npmCount = sorted.filter(({ ecosystem }) => ecosystem === 'npm').length;
     const cargoCount = sorted.length - npmCount;
     const graphLines = Object.entries(graphDigests)
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(([left], [right]) => compareCodeUnits(left, right))
         .map(([path, digest]) => `- ${path} sha256:${digest}`);
     const legalBlocks = [...blocks.entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(([left], [right]) => compareCodeUnits(left, right))
         .map(([digest, block]) => {
             const packages = [...block.packages]
                 .sort()
@@ -1398,6 +1459,7 @@ function renderDependencyLicenseArtifacts(
 
 function createCargoRuntimeInventory(
     root: string,
+    metadata: CargoMetadata,
     cargoRecords: readonly DependencyLicenseRecord[],
     resolvedRecords: readonly DependencyLicenseRecord[],
     proofs: Readonly<Record<string, DependencyLicenseProof>>
@@ -1429,7 +1491,7 @@ function createCargoRuntimeInventory(
     });
     return assertCargoRuntimeInventory({
         cargoLockSha256: sha256(readFileSync(resolve(root, 'Cargo.lock'))),
-        sourceInputs: cargoSourceInputs(root),
+        sourceInputs: cargoSourceInputs(root, cargoWorkspaceManifestPaths(root, metadata)),
         featureSelection: {
             allFeatures: CARGO_RUNTIME_FEATURE_SELECTION.allFeatures,
             noDefaultFeatures: CARGO_RUNTIME_FEATURE_SELECTION.noDefaultFeatures,
@@ -1473,11 +1535,17 @@ export function buildDependencyLicenseArtifactsFromInstalledMetadata(
     ) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
     }
-    const cargoRecords = collectCargoDependencyLicensesFromInstalledMetadata(root);
-    const records = resolveDependencyLicenseRecords(root, cargoRecords, sourceManifest.packages);
+    const cargo = collectCargoDependencyLicensesFromInstalledMetadata(root);
+    const records = resolveDependencyLicenseRecords(root, cargo.records, sourceManifest.packages);
     const manifest: DependencyLicenseProofManifest = {
         schemaVersion: 4,
-        cargoRuntimeInventory: createCargoRuntimeInventory(root, cargoRecords, records, sourceManifest.packages),
+        cargoRuntimeInventory: createCargoRuntimeInventory(
+            root,
+            cargo.metadata,
+            cargo.records,
+            records,
+            sourceManifest.packages
+        ),
         packages: sourceManifest.packages,
     };
     return {

@@ -5,7 +5,6 @@ import {
     existsSync,
     mkdirSync,
     mkdtempSync,
-    readdirSync,
     readFileSync,
     rmSync,
     symlinkSync,
@@ -68,31 +67,28 @@ function write(root: string, path: string, contents: string): void {
 
 function writeCargoInventoryFixture(root: string): void {
     const repositoryRoot = process.cwd();
-    const cargoManifests = (directory = 'crates'): string[] =>
-        readdirSync(join(repositoryRoot, directory), { withFileTypes: true }).flatMap((entry) => {
-            const path = `${directory}/${entry.name}`;
-            if (entry.isDirectory()) {
-                return cargoManifests(path);
-            }
-            return entry.isFile() && entry.name === 'Cargo.toml' ? [path] : [];
-        });
-    const paths = [
+    const snapshotPaths = [
         'Cargo.lock',
-        'Cargo.toml',
-        'rust-toolchain.toml',
-        'scripts/buildNativeAddon.ts',
+        'electron-builder.yml',
+        'package.json',
         DEPENDENCY_LICENSE_REPORT_PATH,
         DEPENDENCY_LICENSE_PROOFS_PATH,
-        ...cargoManifests(),
-        ...['.cargo/config', '.cargo/config.toml'].filter((path) => existsSync(join(repositoryRoot, path))),
     ];
-    for (const path of paths) {
+    for (const path of snapshotPaths) {
+        write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
+    }
+    const manifest = readCargoInventoryFixtureManifest(root);
+    for (const { path } of manifest.cargoRuntimeInventory?.sourceInputs ?? []) {
         write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
     }
 }
 
 type CargoInventoryFixtureManifest = {
     cargoRuntimeInventory?: {
+        sourceInputs: Array<{
+            path: string;
+            sha256: string;
+        }>;
         featureSelection: {
             features: string[];
         };
@@ -233,6 +229,20 @@ describe('project license', () => {
         );
     });
 
+    it('binds the Cargo resolver and desktop shipping inputs', () => {
+        const manifest = readCargoInventoryFixtureManifest(process.cwd());
+        const paths = manifest.cargoRuntimeInventory?.sourceInputs.map(({ path }) => path);
+        expect(paths).toEqual(
+            expect.arrayContaining([
+                'Cargo.toml',
+                'crates/sourdaw-native/Cargo.toml',
+                'electron-builder.yml',
+                'package.json',
+                'scripts/buildNativeAddon.ts',
+            ])
+        );
+    });
+
     it('rejects missing transitive packages from the generated Cargo snapshot', () => {
         writeCargoInventoryFixture(root);
         const manifest = readCargoInventoryFixtureManifest(root);
@@ -287,16 +297,47 @@ describe('project license', () => {
     });
 
     it.each([
+        ['Cargo.toml', 'resolver = "2"', 'resolver = "3"'],
         ['crates/sourdaw-native/Cargo.toml', 'napi-addon =', 'napi-addon-renamed ='],
+        ['electron-builder.yml', 'from: crates/sourdaw-native', 'from: crates/sourdaw-native-renamed'],
+        ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
         ['scripts/buildNativeAddon.ts', "'napi-addon'", "'napi-addon-renamed'"],
     ])('rejects Cargo resolution input drift in %s without invoking Cargo', (path, before, after) => {
         writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
         const inputPath = join(root, path);
         const input = readFileSync(inputPath, 'utf8');
         expect(input).toContain(before);
         writeFileSync(inputPath, input.replace(before, after));
 
         expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
+    it('rejects Cargo source-input symlinks that escape the repository', () => {
+        writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
+        const outsideRoot = mkdtempSync(join(tmpdir(), 'sourdaw-cargo-source-input-'));
+        const outsidePath = join(outsideRoot, 'Cargo.toml');
+        writeFileSync(outsidePath, '[package]\nname = "outside"\n');
+        symlinkSync(outsidePath, join(root, 'outside-Cargo.toml'));
+        try {
+            const manifest = readCargoInventoryFixtureManifest(root);
+            manifest.cargoRuntimeInventory!.sourceInputs.push({
+                path: 'outside-Cargo.toml',
+                sha256: createHash('sha256').update(readFileSync(outsidePath)).digest('hex'),
+            });
+            manifest.cargoRuntimeInventory!.sourceInputs.sort((left, right) => {
+                if (left.path === right.path) {
+                    return 0;
+                }
+                return left.path < right.path ? -1 : 1;
+            });
+            writeCargoInventoryFixtureManifest(root, manifest);
+
+            expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source input escapes the repository');
+        } finally {
+            rmSync(outsideRoot, { recursive: true, force: true });
+        }
     });
 
     it('rejects canonical LICENSE drift independently', () => {
