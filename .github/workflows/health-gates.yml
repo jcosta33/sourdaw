@@ -673,10 +673,17 @@ jobs:
       - name: Checkout scan target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Leaving repository unset keeps origin at the base repository. The
+          # pinned head SHA is valid for both same-repository and fork PRs;
+          # the next step fetches the independently pinned base SHA there.
           ref: ${{ github.event.pull_request.head.sha }}
           path: scan-target
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Fetch immutable base SHA
+        working-directory: scan-target
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
 
       - name: Scan pull request diff for secrets
         working-directory: ${{ github.workspace }}

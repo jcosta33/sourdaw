@@ -318,6 +318,7 @@ const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const prTrustedCheckout = stepNamed(prSecrets, 'Checkout trusted scanner');
 const prTargetCheckout = stepNamed(prSecrets, 'Checkout scan target');
+const prTargetBaseFetch = stepNamed(prSecrets, 'Fetch immutable base SHA');
 const prSecretScan = stepNamed(prSecrets, 'Scan pull request diff for secrets');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
 const positiveControlRun = positiveControl?.run ?? '';
@@ -641,7 +642,7 @@ for (const fixture of [
     },
     {
         name: 'issue-template-only',
-        paths: ['.github/ISSUE_TEMPLATE/bug.yml'],
+        paths: ['.github/ISSUE_TEMPLATE/bug_report.yml'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'true' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
@@ -745,9 +746,12 @@ expect(prTrustedCheckout?.with?.ref === '${{ github.event.pull_request.base.sha 
 expect(prTrustedCheckout?.with?.path === 'trusted-scanner', 'PR diff secret scan must isolate trusted scanner inputs');
 expect(prTrustedCheckout?.with?.['persist-credentials'] === false, 'PR diff trusted scanner checkout must not persist credentials');
 expect(prTargetCheckout?.with?.ref === '${{ github.event.pull_request.head.sha }}', 'PR diff secret scan must read the immutable head SHA');
+expect(prTargetCheckout?.with?.repository === undefined, 'PR diff target checkout must retain the base repository as its origin for fork PRs');
 expect(prTargetCheckout?.with?.path === 'scan-target', 'PR diff secret scan must isolate the untrusted target');
 expect(prTargetCheckout?.with?.['fetch-depth'] === 0, 'PR diff secret scan must fetch the base-to-head history');
 expect(prTargetCheckout?.with?.['persist-credentials'] === false, 'PR diff target checkout must not persist credentials');
+expect(prTargetBaseFetch?.['working-directory'] === 'scan-target', 'PR diff secret scan must fetch the base SHA into the scan target repository');
+expect(prTargetBaseFetch?.run === 'git fetch --no-tags --depth=1 origin "$BASE_SHA"', 'PR diff secret scan must fetch the immutable base SHA from the base repository origin');
 const prSecretScanRun = prSecretScan?.run ?? '';
 expect(prSecretScan?.['working-directory'] === '${{ github.workspace }}', 'PR diff secret scan must run outside the untrusted checkout');
 expect(prSecretScanRun.includes("--config \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml\""), 'PR diff secret scan must use the trusted Gitleaks configuration');
