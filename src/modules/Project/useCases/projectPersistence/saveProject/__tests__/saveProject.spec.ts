@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
     buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
+    flushAutomergeStorageWrites: vi.fn<() => void>(),
     migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
     repairState: { value: null },
     writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
@@ -25,6 +26,10 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 }));
 vi.mock('../../migrateActiveProjectIdentity', () => ({
     migrateActiveProjectIdentity: mocks.migrateActiveProjectIdentity,
+}));
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
+    flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -78,6 +83,7 @@ describe('saveProject', () => {
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         mocks.repairState.value = null;
         mocks.writeNamedProjectJsonByKey.mockResolvedValue(undefined);
@@ -209,6 +215,30 @@ describe('saveProject', () => {
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
+    it('rejects a snapshot when project truth changes after build while CRDT persistence is pending', async () => {
+        let revision = 'built-revision';
+        let resolvePersist: (() => void) | undefined;
+        mocks.captureProjectRevision.mockImplementation(() => revision);
+        mocks.persistCrdtProject.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolvePersist = resolve;
+            })
+        );
+
+        const saving = saveProject();
+        await vi.waitFor(() => {
+            expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(1);
+        });
+
+        revision = 'edited-revision';
+        resolvePersist?.();
+
+        await expect(saving).resolves.toBe(false);
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
     it('rejects completion when repair becomes required during the named snapshot write', async () => {
         let resolveWrite: (() => void) | undefined;
         mocks.writeNamedProjectJsonByKey.mockReturnValue(
@@ -248,8 +278,8 @@ describe('saveProject', () => {
     });
 
     it('clears the dirty flag once persistence succeeds and the revision is unchanged', async () => {
-        // Both captureProjectRevision calls (before and after persist) return
-        // the same value, modelling a save with no concurrent edit.
+        // Every revision capture returns the same value, modelling a save with
+        // no concurrent edit before or during either durable write.
         mocks.captureProjectRevision.mockReturnValue('same-revision');
         await saveProject();
 
@@ -257,11 +287,10 @@ describe('saveProject', () => {
     });
 
     it('keeps the dirty flag asserted when an edit lands during the snapshot write', async () => {
-        // Models the genuine concurrent-edit case the guard exists for: after
-        // persist settles (the revision is captured) a concurrent edit during
-        // the async IndexedDB write advances the revision, so the snapshot is
-        // stale and dirty must stay asserted for the next save.
-        mocks.captureProjectRevision.mockReturnValueOnce('pre-write').mockReturnValueOnce('post-write');
+        mocks.captureProjectRevision
+            .mockReturnValueOnce('snapshot-revision')
+            .mockReturnValueOnce('snapshot-revision')
+            .mockReturnValueOnce('post-write-revision');
 
         await saveProject();
 

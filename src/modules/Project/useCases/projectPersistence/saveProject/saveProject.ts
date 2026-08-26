@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -106,20 +107,17 @@ export async function saveProject(): Promise<boolean> {
         }
 
         // buildProjectData synchronizes the current arrangement projection into
-        // project truth, then persist it.
+        // project truth. Flush that known write before capturing the snapshot's
+        // revision so persistCrdtProject cannot make an ordinary save look
+        // concurrent with itself.
+        flushAutomergeStorageWrites();
+        const snapshotRevision = captureProjectRevision();
+
         await persistCrdtProject();
         assertProjectSnapshotAuthority();
-
-        // Capture the revision AFTER the save's own CRDT bookkeeping
-        // (buildProjectData's arrangement sync + the incremental persist) has
-        // settled. Capturing before persist compared the post-save guard
-        // against a baseline the save itself invalidated — persistCrdtProject
-        // advances the Automerge mutationEpoch/heads as a side effect of its
-        // own commit, so the pre-persist token never matched the post-persist
-        // one and dirty could never clear. The guard now trips only on an edit
-        // arriving after persist but before the snapshot write commits — the
-        // genuine concurrent-edit case it was written to catch.
-        const savedRevision = captureProjectRevision();
+        if (captureProjectRevision() !== snapshotRevision) {
+            throw new Error('[saveProject] Project changed during CRDT persistence');
+        }
 
         // Awaited, so a rejected transaction reaches the catch below rather
         // than being reported as a successful save.
@@ -140,7 +138,7 @@ export async function saveProject(): Promise<boolean> {
         if (
             agentProjectRepairStateStore.value === null &&
             latest?.createdAt === project.createdAt &&
-            captureProjectRevision() === savedRevision
+            captureProjectRevision() === snapshotRevision
         ) {
             projectStore.set({ ...latest, dirty: false });
         }
