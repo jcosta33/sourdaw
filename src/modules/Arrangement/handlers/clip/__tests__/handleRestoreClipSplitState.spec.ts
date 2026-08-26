@@ -134,16 +134,16 @@ describe('handleRestoreClipSplitState — satellites', () => {
         mockedSatellitesMatch.mockReturnValue(false);
         const satellites = [{ clipId: 'c1', gainEnvelope: null, warpState: null }];
 
-        expect(
-            handleRestoreClipSplitState.validate(
-                makeAction(makeSnapshot({ clipSatellites: satellites }), makeSnapshot())
-            )
-        ).toBe(false);
+        const action = makeAction(makeSnapshot({ clipSatellites: satellites }), makeSnapshot());
+
+        expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
         expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites);
     });
 
     it('validate skips the satellite check for a legacy payload', () => {
-        expect(handleRestoreClipSplitState.validate(makeAction(makeSnapshot(), makeSnapshot()))).toBe(true);
+        const action = makeAction(makeSnapshot(), makeSnapshot());
+
+        expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
         expect(mockedSatellitesMatch).not.toHaveBeenCalled();
     });
 });
