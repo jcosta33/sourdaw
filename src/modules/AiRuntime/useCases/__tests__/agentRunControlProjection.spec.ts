@@ -18,7 +18,7 @@ const {
     requireManualResume: requireAgentRunManualResume,
 } = agentRunLifecycle;
 const { claim: claimAgentRunWorkLease, settle: settleAgentRunWorkLease } = agentRunWorkLease;
-const { get: getAgentRunControlProjection } = agentRunControls;
+const { get: getAgentRunControlProjection, listDecisions: listAgentRunDecisionControlProjections } = agentRunControls;
 
 describe('agent run control projection', () => {
     beforeEach(() => {
@@ -217,7 +217,9 @@ describe('agent run control projection', () => {
             workIds: [],
         });
 
-        expect(getAgentRunControlProjection('run-stale-decision')).toMatchObject({
+        const projection = getAgentRunControlProjection('run-stale-decision');
+
+        expect(projection).toMatchObject({
             allowedActions: { resume: false },
             resumeRejectionReason: 'The project revision changed while the decision was pending.',
             decision: {
@@ -225,5 +227,12 @@ describe('agent run control projection', () => {
                 alternatives: [{ id: 'mute', label: 'Mute Track 1', changesAuthority: false }],
             },
         });
+        createAgentRun({
+            runId: 'run-without-decision',
+            request: 'Analyze Track 1.',
+            mode: 'explain',
+            createdRevision: captureProjectRevision(),
+        });
+        expect(listAgentRunDecisionControlProjections()).toEqual([projection]);
     });
 });
