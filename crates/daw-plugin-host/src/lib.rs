@@ -4,6 +4,8 @@ pub mod params;
 pub mod runtime;
 pub mod scanner;
 pub mod traits;
+pub mod vst3_bus_layout;
+pub mod vst3_class_id;
 pub mod vst3_host;
 pub mod vst3_module;
 pub mod vst3_module_info;

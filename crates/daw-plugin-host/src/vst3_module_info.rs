@@ -83,8 +83,14 @@ pub fn json5_to_json(source: &str) -> String {
     while let Some(character) = characters.next() {
         if in_string {
             output.push(character);
-            escaped = !escaped && character == '\\';
-            if character == '"' && !escaped {
+            // Whether *this* character is the one being escaped has to be read
+            // before the flag is rewritten for the next one. Reading it after
+            // makes the `"` of `"a\"b"` close the string, and the rest of the
+            // document is then scanned inside-out — every real comment kept and
+            // every quoted `//` blanked.
+            let was_escaped = escaped;
+            escaped = !was_escaped && character == '\\';
+            if character == '"' && !was_escaped {
                 in_string = false;
             }
             continue;
@@ -131,6 +137,16 @@ fn blank_until_block_end(
     characters: &mut std::iter::Peekable<std::str::Chars<'_>>,
     output: &mut String,
 ) {
+    // The `*` that opened the comment is taken off the iterator before the scan
+    // begins, and `previous` starts as neither slash nor star. Letting the
+    // opener's own star into the scan makes `/*/` look like a closed comment,
+    // which ends it two characters in and spills the rest of the comment text
+    // into the JSON as though it were data.
+    let Some(opening_star) = characters.next() else {
+        return;
+    };
+    output.push(if opening_star == '\n' { '\n' } else { ' ' });
+
     let mut previous = ' ';
     for character in characters.by_ref() {
         output.push(if character == '\n' { '\n' } else { ' ' });
@@ -142,40 +158,51 @@ fn blank_until_block_end(
 }
 
 /// Drop a comma that is followed only by whitespace and a closing bracket.
+///
+/// Walks byte offsets into the original text rather than a `Vec<char>`: a
+/// `moduleinfo.json` is bounded but not small, and collecting it into four bytes
+/// per character to look one character ahead costs a second copy of the document
+/// for nothing.
 fn remove_trailing_commas(source: &str) -> String {
     let mut output = String::with_capacity(source.len());
     let mut in_string = false;
     let mut escaped = false;
-    let characters: Vec<char> = source.chars().collect();
 
-    for (index, character) in characters.iter().enumerate() {
+    for (index, character) in source.char_indices() {
         if in_string {
-            output.push(*character);
-            escaped = !escaped && *character == '\\';
-            if *character == '"' && !escaped {
+            output.push(character);
+            // As in `json5_to_json`: read the flag for this character before
+            // rewriting it for the next.
+            let was_escaped = escaped;
+            escaped = !was_escaped && character == '\\';
+            if character == '"' && !was_escaped {
                 in_string = false;
             }
             continue;
         }
-        if *character == '"' {
+        if character == '"' {
             in_string = true;
             escaped = false;
-            output.push(*character);
+            output.push(character);
             continue;
         }
-        if *character == ','
-            && characters[index + 1..]
-                .iter()
-                .find(|next| !next.is_whitespace())
-                .is_some_and(|next| *next == '}' || *next == ']')
-        {
+        // `,` is one byte, so `index + 1` is a character boundary.
+        if character == ',' && closes_next(&source[index + 1..]) {
             output.push(' ');
             continue;
         }
-        output.push(*character);
+        output.push(character);
     }
 
     output
+}
+
+/// Whether the next thing in `rest` that is not whitespace closes an object or
+/// an array.
+fn closes_next(rest: &str) -> bool {
+    rest.chars()
+        .find(|next| !next.is_whitespace())
+        .is_some_and(|next| next == '}' || next == ']')
 }
 
 #[cfg(test)]
@@ -274,6 +301,52 @@ mod tests {
     fn an_unparseable_document_is_refused_rather_than_read_as_empty() {
         assert!(parse_module_info("not json at all").is_err());
         assert!(parse_module_info(r#"{ "Classes": "one" }"#).is_err());
+    }
+
+    /// An escaped quote does not end a string. Reading it as one puts the
+    /// scanner inside-out for the rest of the document: real comments survive
+    /// into the JSON and quoted text is blanked as though it were a comment.
+    #[test]
+    fn an_escaped_quote_does_not_end_the_string_it_is_inside() {
+        let document =
+            r#"{ "Classes": [ { "CID": "a\"b//c", "Category": "Audio Module Class" } ] }"#;
+
+        let info = parse_module_info(document).expect("a JSON5 document should parse");
+
+        assert_eq!(
+            info.classes[0].cid, "a\"b//c",
+            "the `//` inside the string was read as a comment"
+        );
+    }
+
+    /// The same bug seen from the other side: the trailing-comma pass has its own
+    /// string scanner, and a comma inside a string must never be dropped.
+    #[test]
+    fn a_comma_inside_a_string_with_an_escaped_quote_survives() {
+        let document = r#"{ "Classes": [ { "CID": "a\"b", "Category": "Audio Module Class", "Name": "x, y" } ] }"#;
+
+        let info = parse_module_info(document).expect("a JSON5 document should parse");
+
+        assert_eq!(info.classes[0].name, "x, y");
+    }
+
+    /// `/*/` is an unterminated block comment: the `*` belongs to the opener and
+    /// cannot also close it. Reading it as closed ends the comment two characters
+    /// in and spills its text into the document.
+    #[test]
+    fn a_block_comment_is_not_closed_by_the_star_that_opened_it() {
+        let document = r#"{ /*/ "Classes": [ { "CID": "commented out" } ] */ "Classes": [] }"#;
+
+        let normalised = json5_to_json(document);
+
+        assert!(
+            !normalised.contains("CID"),
+            "the comment ended on its own opening star and its text reached the JSON: {normalised}"
+        );
+        assert!(parse_module_info(document)
+            .expect("one comment, then one Classes key")
+            .classes
+            .is_empty());
     }
 
     /// Blanking rather than deleting keeps every later byte at the offset the

@@ -31,7 +31,27 @@ impl PluginScanPolicy {
             .collect()
     }
 
-    pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<(), String> {
+    /// Where `path` sits in the platform's priority order, or `None` for a path
+    /// under no allowed root.
+    ///
+    /// The order of the allowed roots is priority — per-user, then machine-wide,
+    /// then network — and this is what carries that order to a caller that was
+    /// handed its paths in some other one. The lowest index wins, so a path
+    /// under two nested roots ranks with the more specific of them.
+    pub fn root_rank(&self, path: &Path) -> Option<usize> {
+        self.allowed_roots.iter().position(|allowed_root| {
+            let allowed_root = fs::canonicalize(allowed_root)
+                .unwrap_or_else(|_| normalize_path_lexically(allowed_root));
+            path == allowed_root || path.starts_with(&allowed_root)
+        })
+    }
+
+    /// Authorize a scan root, returning the resolved path that was authorized.
+    ///
+    /// The resolved path, not the caller's spelling: the checks below are made
+    /// against the canonical path, so walking anything else would walk a
+    /// directory this function never looked at.
+    pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<PathBuf, String> {
         if requested_path.as_os_str().is_empty() {
             return Err("Plugin scan path cannot be empty".to_string());
         }
@@ -87,7 +107,7 @@ impl PluginScanPolicy {
         });
 
         if is_authorized {
-            return Ok(());
+            return Ok(requested_path);
         }
 
         Err(unauthorized_scan_path(&requested_path))
@@ -221,7 +241,7 @@ mod tests {
 
         assert!(!policy.allowed_roots.is_empty());
         for allowed_root in &policy.allowed_roots {
-            assert_eq!(policy.authorize_scan_root(allowed_root), Ok(()));
+            assert!(policy.authorize_scan_root(allowed_root).is_ok());
         }
     }
 
@@ -288,7 +308,40 @@ mod tests {
             .expect("platform default plugin roots should exist");
         let child_root = allowed_root.join("Vendor").join("Plugin.clap");
 
-        assert_eq!(policy.authorize_scan_root(&child_root), Ok(()));
+        assert!(policy.authorize_scan_root(&child_root).is_ok());
+    }
+
+    /// The path the policy hands back is the one its checks were made against.
+    /// Returning the caller's spelling would let a scan walk a directory the
+    /// authorization never looked at.
+    #[test]
+    fn authorization_answers_with_the_path_it_resolved() {
+        let policy = PluginScanPolicy::with_allowed_roots(vec![PathBuf::from("/plugins/VST3")]);
+
+        let authorized = policy
+            .authorize_scan_root(Path::new("/plugins/VST3/Vendor/../Vendor"))
+            .expect("a descendant of an allowed root");
+
+        assert_eq!(authorized, PathBuf::from("/plugins/VST3/Vendor"));
+    }
+
+    /// The ranking is what decides which copy of a twice-installed plugin the
+    /// scan meets first, so it has to come from the platform order rather than
+    /// from the order a caller listed its paths in.
+    #[test]
+    fn a_root_ranks_by_the_platform_order_and_an_unlisted_one_does_not_rank() {
+        let policy = PluginScanPolicy::with_allowed_roots(vec![
+            PathBuf::from("/per-user/VST3"),
+            PathBuf::from("/machine-wide/VST3"),
+        ]);
+
+        assert_eq!(policy.root_rank(Path::new("/per-user/VST3")), Some(0));
+        assert_eq!(
+            policy.root_rank(Path::new("/machine-wide/VST3/Vendor")),
+            Some(1),
+            "a descendant ranks with the root that contains it"
+        );
+        assert_eq!(policy.root_rank(Path::new("/somewhere/else")), None);
     }
 
     #[test]

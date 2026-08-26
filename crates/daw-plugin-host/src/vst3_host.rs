@@ -9,9 +9,23 @@
 //! [`Vst3HostState`] — the record of everything a plugin has told the host that
 //! the host has not acted on yet.
 //!
-//! Nothing here calls back into the plugin. Every method is reachable from
-//! whichever thread the plugin chose, including its audio thread, so nothing
-//! here allocates, locks, or blocks on a path a plugin can reach from there.
+//! Nothing here calls back into the plugin.
+//!
+//! What each object may do is set by the thread VST3 binds it to, and the two
+//! groups differ:
+//!
+//! * `IComponentHandler` is the *controller's* handler, and the format binds the
+//!   controller to the UI thread. Its methods are still written lock-free and
+//!   allocation-free — a plugin that ignores that rule and edits from its
+//!   processor then costs this host nothing, which is why the gesture and
+//!   deferred-message queues are fixed-size slot arrays rather than channels.
+//! * `IHostApplication::createInstance`, and the `IMessage` and `IAttributeList`
+//!   it returns, allocate and lock. They have to: the plugin owns the lifetime of
+//!   the object it asks for, so the host cannot hand out preallocated storage,
+//!   and an attribute list is a keyed map by definition. VST3 expects a plugin to
+//!   compose messages off its processing path for exactly this reason.
+//!
+//! Sourdaw's own audio thread reaches none of this.
 
 use crate::traits::{HostParameterUpdate, LatencyChangeNotifier};
 use std::collections::BTreeMap;
@@ -323,7 +337,13 @@ impl Vst3HostState {
             .fetch_or(flags & !handled, Ordering::AcqRel);
 
         // Wake only once the flags are visible, so an observer this call wakes
-        // sees the change it is being woken for.
+        // sees the change it is being woken for. The wake itself may allocate,
+        // and may because `restartComponent` reaches this host through
+        // `IComponentHandler` — the controller's interface, which VST3 binds to
+        // the UI thread. The flags above are set first and unconditionally, so a
+        // plugin that flags from somewhere else still has its change picked up by
+        // the next control-path visit even if the wake is the wrong thing to do
+        // there.
         if flags & RestartFlags_::kLatencyChanged as i32 != 0 {
             if let Some(notify) = self.latency_notifier.get() {
                 notify();
@@ -335,7 +355,7 @@ impl Vst3HostState {
     ///
     /// Returns false when the deferral buffer is full, which is the one case the
     /// caller must report rather than swallow.
-    fn defer_message(&self, target: MessageTarget, message: ComPtr<IMessage>) -> bool {
+    pub(crate) fn defer_message(&self, target: MessageTarget, message: ComPtr<IMessage>) -> bool {
         for slot in &self.deferred_messages {
             if slot
                 .state
@@ -576,9 +596,13 @@ enum AttributeValue {
 
 /// The host's `IAttributeList`, handed out as part of an `IMessage`.
 ///
-/// A `Mutex` is correct here and would not be on the audio path: an attribute
-/// list is only ever touched while a message is being composed or read, both of
-/// which are the control-path acts this host defers messages onto.
+/// Locks, and cannot not: it is a keyed map the plugin writes and reads through
+/// a shared reference, and both halves of the plugin may hold one at once. The
+/// thread it is touched from is the plugin's choice — whichever one composed or
+/// read the message — so this is not on Sourdaw's audio path but may be on the
+/// plugin's, which is why VST3 tells a plugin to compose messages elsewhere.
+/// Delivery is separate and always lands on the control path; see
+/// [`Vst3HostState::take_deferred_messages`].
 #[derive(Default)]
 pub struct Vst3AttributeList {
     entries: Mutex<BTreeMap<Vec<u8>, AttributeValue>>,

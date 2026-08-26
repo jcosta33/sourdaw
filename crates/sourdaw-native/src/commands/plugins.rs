@@ -268,30 +268,19 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
     hydrate_plugin_registry(state).await;
     let start = std::time::Instant::now();
     let scan_policy = PluginScanPolicy::platform_defaults();
-    let mut authorized_paths = Vec::new();
-    let mut errors = Vec::new();
+    let requested_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
 
-    for scan_path in &paths {
-        let path = PathBuf::from(scan_path);
-        if let Err(error) = scan_policy.authorize_scan_root(&path) {
-            errors.push(error);
-            continue;
-        }
-
-        if !path.is_dir() {
-            errors.push(format!("Not a directory: {}", scan_path));
-            continue;
-        }
-        authorized_paths.push(path);
-    }
-
-    let scan_roots = authorized_paths.clone();
     let deadline = start + MAX_SCAN_DURATION;
-    let (plugins, scan_errors, notices, scanned_paths, scan_complete) =
+    let (plugins, mut errors, notices, scanned_paths, scan_complete, authorized_paths) =
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
+            // Authorization is filesystem work — an existence check, a symlink
+            // check per path component, and `canonicalize` — on paths a caller
+            // supplied, so it belongs on the blocking pool beside the walk it
+            // gates rather than on the async runtime's thread.
+            let (scan_roots, mut scan_errors) = authorize_scan_roots(&scan_policy, requested_paths);
+            let authorized_paths = scan_roots.clone();
             let mut candidates = Vec::new();
-            let mut scan_errors = Vec::new();
             let mut notices = Vec::new();
             let mut scan_complete = true;
             for path in scan_roots {
@@ -373,11 +362,17 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                 }
             }
             retain_first_plugin_per_identity(&mut plugins);
-            (plugins, scan_errors, notices, scanned_paths, scan_complete)
+            (
+                plugins,
+                scan_errors,
+                notices,
+                scanned_paths,
+                scan_complete,
+                authorized_paths,
+            )
         })
         .await
         .map_err(|error| format!("Plugin scan task failed: {error}"))?;
-    errors.extend(scan_errors);
 
     // Populate the plugin registry so load_plugin can find them. The scanner
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
@@ -406,6 +401,45 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
 
 pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
     Ok(PluginScanPolicy::platform_defaults().allowed_roots_as_strings())
+}
+
+/// The scan roots this policy allows, in the platform's own priority order,
+/// paired with the reasons the rest were refused.
+///
+/// The path kept is the canonical one the policy authorized, not the caller's
+/// spelling of it: the checks are made against the canonical path, so walking
+/// anything else walks a directory the policy never looked at.
+///
+/// The ranking is the point of the sort. Which copy of a plugin installed in two
+/// folders wins is decided by the order the roots are walked in, and that
+/// decision belongs to the platform's priority order — per-user, then
+/// machine-wide, then network — not to the order a caller happened to list them.
+/// The sort is stable, so roots the platform does not list keep the caller's
+/// order among themselves and come last.
+fn authorize_scan_roots(
+    policy: &PluginScanPolicy,
+    requested: Vec<PathBuf>,
+) -> (Vec<PathBuf>, Vec<String>) {
+    let mut authorized = Vec::new();
+    let mut errors = Vec::new();
+
+    for path in requested {
+        let canonical = match policy.authorize_scan_root(&path) {
+            Ok(canonical) => canonical,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
+        if !canonical.is_dir() {
+            errors.push(format!("Not a directory: {}", path.display()));
+            continue;
+        }
+        authorized.push(canonical);
+    }
+
+    authorized.sort_by_key(|path| policy.root_rank(path).unwrap_or(usize::MAX));
+    (authorized, errors)
 }
 
 // ── Activation-time registry resolution ─────────────────────────────────
@@ -510,9 +544,11 @@ fn resolve_registry_entry(
     };
 
     let last_known_path = PathBuf::from(&last_known.path);
+    // The rescan reads the path the policy resolved and authorized, which is the
+    // only path the checks above actually looked at.
     let rescanned = match scan_policy
         .authorize_scan_root(&last_known_path)
-        .and_then(|()| rescan(&last_known.format, &last_known_path))
+        .and_then(|authorized| rescan(&last_known.format, &authorized))
     {
         Ok(rescanned) => rescanned,
         Err(reason) => {
@@ -1271,7 +1307,7 @@ fn read_plugin_state_chunk(instance_id: &str, state: &AppState) -> Result<Vec<u8
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
         if let Some(instance) = plugins.get(instance_id) {
-            return Ok(instance.plugin.get_state());
+            return instance.plugin.get_state();
         }
     }
 
@@ -2558,6 +2594,78 @@ mod tests {
         assert!(registry.is_empty());
     }
 
+    /// A real temporary directory, resolved. The system temp directory reaches
+    /// these tests through `/var`, which is a symlink on macOS — and the scan
+    /// policy refuses any path with a symlink component, so an unresolved temp
+    /// root is refused before the ordering it is meant to exercise is reached.
+    fn created_temp_scan_root(test_name: &str) -> PathBuf {
+        let root = unique_temp_scan_root(test_name);
+        std::fs::create_dir_all(&root).expect("temp scan root should be created");
+        std::fs::canonicalize(&root).expect("a directory that was just created resolves")
+    }
+
+    /// The scan keeps the first copy of a plugin it meets, so the order the
+    /// roots are walked in is what decides which install of a twice-installed
+    /// plugin gets hosted. That decision belongs to the platform's priority
+    /// order — per-user before machine-wide before network — and a caller
+    /// listing its paths the other way round must not reverse it.
+    #[test]
+    fn scan_roots_are_walked_in_the_platforms_priority_order_not_the_callers() {
+        let per_user = created_temp_scan_root("priority-per-user");
+        let machine_wide = created_temp_scan_root("priority-machine-wide");
+        let policy =
+            PluginScanPolicy::with_allowed_roots(vec![per_user.clone(), machine_wide.clone()]);
+
+        let (ordered, errors) =
+            authorize_scan_roots(&policy, vec![machine_wide.clone(), per_user.clone()]);
+
+        let _ = std::fs::remove_dir_all(&per_user);
+        let _ = std::fs::remove_dir_all(&machine_wide);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|path| path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(""))
+                .collect::<Vec<_>>(),
+            vec![
+                per_user
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("named"),
+                machine_wide
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("named"),
+            ],
+            "the caller listed the machine-wide root first and it was walked first"
+        );
+    }
+
+    /// An unauthorized or missing root is refused by name rather than walked,
+    /// and the rest of the request still scans.
+    #[test]
+    fn an_unauthorized_root_is_refused_without_stopping_the_others() {
+        let allowed = created_temp_scan_root("mixed-authorized");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![allowed.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(
+            &policy,
+            vec![PathBuf::from("/definitely/not/granted"), allowed.clone()],
+        );
+
+        let _ = std::fs::remove_dir_all(&allowed);
+        assert_eq!(ordered.len(), 1);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("Unauthorized plugin scan path")),
+            "{errors:?}"
+        );
+    }
+
     #[test]
     fn get_default_plugin_paths_returns_authorized_native_scan_roots() {
         let paths = crate::block_on_test(get_default_plugin_paths())
@@ -2566,7 +2674,7 @@ mod tests {
 
         assert!(!paths.is_empty());
         for path in paths {
-            assert_eq!(scan_policy.authorize_scan_root(Path::new(&path)), Ok(()));
+            assert!(scan_policy.authorize_scan_root(Path::new(&path)).is_ok());
         }
     }
 

@@ -19,6 +19,26 @@ those interfaces require are reproduced here.
 VST 3 interfaces
 ----------------
 
+Provenance of the notice below
+..............................
+
+The interface declarations Sourdaw compiles are the ones committed in the `vst3`
+0.3.0 crate, at `src/bindings.rs`. That file states which release of the
+interfaces it was generated from: `SDKVersionString` is the string `"VST 3.8.0"`.
+
+The upstream those declarations come from is the VST 3 plug-in interfaces
+repository, `github.com/steinbergmedia/vst3_pluginterfaces`, tag
+`v3.8.0_build_66` (2025-10-20), whose licence terms are in `LICENSE.txt` at the
+root of that tag. That tag and that file are the verification route: they are
+what a reader compares this notice against.
+
+The text reproduced below is the canonical MIT License text carrying Steinberg
+Media Technologies GmbH's copyright line, which is the form those interfaces are
+licensed under. It was not fetched from the network and has not been
+byte-compared with the upstream file named above, so this record does not
+authenticate that file; it states which release the compiled declarations
+identify themselves as, and where the authoritative text for that release lives.
+
 MIT License
 
 Copyright (c) 2025 Steinberg Media Technologies GmbH

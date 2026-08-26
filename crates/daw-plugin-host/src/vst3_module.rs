@@ -21,8 +21,10 @@
 //! deciding for, so all of them are exercised on whichever platform the tests
 //! happen to run on. Only the loading itself is `cfg`-gated.
 
+use crate::vst3_host::Vst3HostContext;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use vst3::Steinberg::{IPluginFactory, PFactoryInfo, PFactoryInfo_::FactoryFlags_};
 use vst3::{ComPtr, Steinberg::IPluginFactoryTrait};
 
@@ -273,21 +275,53 @@ mod platform {
 #[cfg(target_os = "windows")]
 mod platform {
     use super::{windows_module_paths, GET_PLUGIN_FACTORY};
-    use libloading::Library;
+    use libloading::os::windows::{
+        Library, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+    };
     use std::ffi::c_void;
     use std::path::Path;
 
     type InitDll = unsafe extern "system" fn() -> bool;
     type ExitDll = unsafe extern "system" fn() -> bool;
 
+    /// Where the loader is allowed to look for a module's own dependencies.
+    ///
+    /// A plugin bundle ships its vendor DLLs beside the module, so
+    /// `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` is what makes them findable at all.
+    /// `LOAD_LIBRARY_SEARCH_DEFAULT_DIRS` is what keeps the search from falling
+    /// back to the standard order, which includes the process's current
+    /// directory — a directory a user's own double-click or a downloaded archive
+    /// can set, and therefore one an attacker can plant a same-named DLL in.
+    const SEARCH_ONLY_TRUSTED_DIRECTORIES: u32 =
+        LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR;
+
     pub struct LoadedModule {
         library: Library,
+    }
+
+    /// Read a symbol out of a library that nothing owns for `Drop` yet.
+    ///
+    /// Free rather than a method because `open` must resolve `InitDll` *before*
+    /// a `LoadedModule` exists — see there for why.
+    fn symbol_in<T>(library: &Library, name: &[u8]) -> Option<T> {
+        unsafe {
+            library
+                .get::<T>(name)
+                .ok()
+                .map(|symbol| std::ptr::read(&*symbol as *const T))
+        }
     }
 
     impl LoadedModule {
         /// `InitDll` is optional by the format's own rule, so its absence is not
         /// an error — but a present one returning false is, for the same reason
         /// it is on the other platforms.
+        ///
+        /// The `LoadedModule` is built only once init has succeeded. Building it
+        /// first and returning `Err` afterwards would drop it, and its `Drop`
+        /// calls `ExitDll` — tearing down state the module just said it never
+        /// built. The library is dropped directly on that path instead, which
+        /// unloads the image and calls nothing.
         pub fn open(bundle_path: &Path) -> Result<Self, String> {
             let candidates = windows_module_paths(bundle_path, std::env::consts::ARCH)?;
             let mut last_error = format!(
@@ -295,34 +329,32 @@ mod platform {
                 bundle_path.display()
             );
             for candidate in candidates {
-                match unsafe { Library::new(&candidate) } {
-                    Ok(library) => {
-                        let module = Self { library };
-                        if let Some(init) = module.symbol::<InitDll>(b"InitDll\0") {
-                            if !unsafe { init() } {
-                                return Err(format!(
-                                    "VST3 module refused initialization: {}",
-                                    candidate.display()
-                                ));
-                            }
-                        }
-                        return Ok(module);
-                    }
+                let library = match unsafe {
+                    Library::load_with_flags(candidate.as_path(), SEARCH_ONLY_TRUSTED_DIRECTORIES)
+                } {
+                    Ok(library) => library,
                     Err(error) => {
                         last_error = format!("Cannot load {}: {error}", candidate.display());
+                        continue;
+                    }
+                };
+
+                if let Some(init) = symbol_in::<InitDll>(&library, b"InitDll\0") {
+                    if !unsafe { init() } {
+                        drop(library);
+                        return Err(format!(
+                            "VST3 module refused initialization: {}",
+                            candidate.display()
+                        ));
                     }
                 }
+                return Ok(Self { library });
             }
             Err(last_error)
         }
 
         fn symbol<T>(&self, name: &[u8]) -> Option<T> {
-            unsafe {
-                self.library
-                    .get::<T>(name)
-                    .ok()
-                    .map(|symbol| std::ptr::read(&*symbol as *const T))
-            }
+            symbol_in(&self.library, name)
         }
 
         pub fn plugin_factory_entry(&self) -> Option<*mut c_void> {
@@ -331,6 +363,8 @@ mod platform {
     }
 
     impl Drop for LoadedModule {
+        /// Only ever reached for a module whose `InitDll` succeeded or was
+        /// absent, which is what makes `ExitDll` the paired call here.
         fn drop(&mut self) {
             if let Some(exit) = self.symbol::<ExitDll>(b"ExitDll\0") {
                 unsafe { exit() };
@@ -353,9 +387,28 @@ mod platform {
         library: Library,
     }
 
+    /// Read a symbol out of a library that nothing owns for `Drop` yet.
+    ///
+    /// Free rather than a method because `open` must resolve `ModuleEntry`
+    /// *before* a `LoadedModule` exists — see there for why.
+    fn symbol_in<T>(library: &Library, name: &[u8]) -> Option<T> {
+        unsafe {
+            library
+                .get::<T>(name)
+                .ok()
+                .map(|symbol| std::ptr::read(&*symbol as *const T))
+        }
+    }
+
     impl LoadedModule {
         /// `ModuleEntry` takes the module's own `dlopen` handle, which is why
         /// the raw handle is recovered here rather than kept opaque.
+        ///
+        /// The `LoadedModule` is built only once `ModuleEntry` has succeeded.
+        /// Building it first and returning `Err` afterwards would drop it, and
+        /// its `Drop` calls `ModuleExit` — tearing down state a module that
+        /// never entered has not built. The library is dropped directly on that
+        /// path instead, which `dlclose`s the image and calls nothing.
         pub fn open(bundle_path: &Path) -> Result<Self, String> {
             let Some(candidate) = linux_module_path(bundle_path, std::env::consts::ARCH)? else {
                 return Err(format!(
@@ -366,32 +419,29 @@ mod platform {
             let library = unsafe { Library::new(&candidate) }
                 .map_err(|error| format!("Cannot load {}: {error}", candidate.display()))?;
             let handle = library.into_raw();
-            let module = Self {
-                library: unsafe { Library::from_raw(handle) },
-            };
+            // SAFETY: `handle` came from `into_raw` immediately above and is
+            // owned by exactly this `Library` from here on.
+            let library = unsafe { Library::from_raw(handle) };
 
-            let Some(entry) = module.symbol::<ModuleEntry>(b"ModuleEntry\0") else {
+            let Some(entry) = symbol_in::<ModuleEntry>(&library, b"ModuleEntry\0") else {
+                drop(library);
                 return Err(format!(
                     "VST3 module exports no ModuleEntry: {}",
                     candidate.display()
                 ));
             };
             if !unsafe { entry(handle) } {
+                drop(library);
                 return Err(format!(
                     "VST3 module refused initialization: {}",
                     candidate.display()
                 ));
             }
-            Ok(module)
+            Ok(Self { library })
         }
 
         fn symbol<T>(&self, name: &[u8]) -> Option<T> {
-            unsafe {
-                self.library
-                    .get::<T>(name)
-                    .ok()
-                    .map(|symbol| std::ptr::read(&*symbol as *const T))
-            }
+            symbol_in(&self.library, name)
         }
 
         pub fn plugin_factory_entry(&self) -> Option<*mut c_void> {
@@ -400,6 +450,8 @@ mod platform {
     }
 
     impl Drop for LoadedModule {
+        /// Only ever reached for a module whose `ModuleEntry` returned true,
+        /// which is what makes `ModuleExit` the paired call here.
         fn drop(&mut self) {
             if let Some(exit) = self.symbol::<ModuleExit>(b"ModuleExit\0") {
                 unsafe { exit() };
@@ -429,6 +481,15 @@ pub struct Vst3Module {
     /// non-discardable module outlive this host object.
     #[allow(dead_code)]
     platform: Option<platform::LoadedModule>,
+    /// The host context this module's *factory* was given.
+    ///
+    /// The module's own, not a caller's: one module is shared by every instance
+    /// created from it, so a context borrowed from whichever instance happened to
+    /// load it first would be freed while the factory still points at it. Last
+    /// field, and therefore last dropped, so nothing the factory or the image
+    /// might touch outlives it.
+    #[allow(dead_code)]
+    host: Vst3HostContext,
 }
 
 // SAFETY: a VST3 factory is required by the format to be callable from the
@@ -437,17 +498,27 @@ unsafe impl Send for Vst3Module {}
 unsafe impl Sync for Vst3Module {}
 
 impl Vst3Module {
-    /// Load a bundle, run its entry point, and take its factory.
+    /// Load a bundle, run its entry point, and take its factory — or hand back
+    /// the module this process already has open for that bundle.
     ///
-    /// `host_context` is handed to `IPluginFactory3::setHostContext` the moment
-    /// the factory is in hand, because that is the only window in which a
-    /// factory that needs host services has them before it is asked to create
-    /// anything. A factory that is not an `IPluginFactory3` has no such call and
-    /// is not an error.
-    pub fn open(
-        bundle_path: &Path,
-        host_context: *mut vst3::Steinberg::FUnknown,
-    ) -> Result<Arc<Self>, String> {
+    /// The module's own host context is handed to
+    /// `IPluginFactory3::setHostContext` the moment the factory is in hand,
+    /// because that is the only window in which a factory that needs host
+    /// services has them before it is asked to create anything. A factory that is
+    /// not an `IPluginFactory3` has no such call and is not an error.
+    pub fn open(bundle_path: &Path) -> Result<Arc<Self>, String> {
+        // The bundle is identified by the path the filesystem agrees on, so two
+        // routes to the same module — a symlinked scan root, a relative path —
+        // are one cache entry rather than two loads of one image. A path that
+        // cannot be canonicalised is used as given; the load below then fails
+        // with the reason.
+        let key = bundle_path
+            .canonicalize()
+            .unwrap_or_else(|_| bundle_path.to_path_buf());
+        shared_module(&LOADED_MODULES, key, || Self::load(bundle_path))
+    }
+
+    fn load(bundle_path: &Path) -> Result<Arc<Self>, String> {
         let platform = platform::LoadedModule::open(bundle_path)?;
         let Some(entry) = platform.plugin_factory_entry() else {
             return Err(format!(
@@ -463,7 +534,8 @@ impl Vst3Module {
             )
         })?;
 
-        set_host_context(&factory, host_context);
+        let host = Vst3HostContext::new();
+        set_host_context(&factory, host.as_unknown());
 
         let keep_resident = factory_is_non_discardable(&factory);
         Ok(Arc::new(Self {
@@ -477,12 +549,60 @@ impl Vst3Module {
             } else {
                 Some(platform)
             },
+            host,
         }))
     }
 
     pub fn factory(&self) -> &ComPtr<IPluginFactory> {
         &self.factory
     }
+}
+
+/// Every VST3 module this process has open, by canonical bundle path.
+///
+/// A `.vst3` is one shared library. Loading a bundle twice runs its entry point
+/// twice and unloading either copy takes the image away from the other, while
+/// two instances of one plugin — the second reverb on the second track — are
+/// completely ordinary. So a bundle is loaded once and shared, and the image is
+/// unloaded only when the last holder lets go.
+///
+/// `Weak`, so an entry never becomes the thing keeping a module resident.
+static LOADED_MODULES: LazyLock<Mutex<HashMap<PathBuf, Weak<Vst3Module>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// The module already open for `key`, or one `load` produces and the cache
+/// records.
+///
+/// Generic over the module because the rule is about `Arc` strength and holds
+/// nothing VST3-specific — which is what lets it be tested without a `.vst3`
+/// binary, since CI has none and must not execute one.
+///
+/// `load` runs under the lock on purpose: two threads opening the same bundle at
+/// once would otherwise both miss, both load the image, and one of them would
+/// win the cache while the other's copy ran its entry point for nothing.
+fn shared_module<Module>(
+    cache: &Mutex<HashMap<PathBuf, Weak<Module>>>,
+    key: PathBuf,
+    load: impl FnOnce() -> Result<Arc<Module>, String>,
+) -> Result<Arc<Module>, String> {
+    // A poisoned cache is a map of weak pointers, which no panic can leave
+    // half-written; refusing to load plugins for the rest of the session would
+    // be the larger failure.
+    let mut open = cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if let Some(module) = open.get(&key).and_then(Weak::upgrade) {
+        return Ok(module);
+    }
+
+    // Entries for modules that have since been released. Swept here rather than
+    // in `Drop`, which would have to take this same lock while it is held.
+    open.retain(|_, weak| weak.strong_count() > 0);
+
+    let module = load()?;
+    open.insert(key, Arc::downgrade(&module));
+    Ok(module)
 }
 
 /// Hand the host context to a factory that can take one.
@@ -528,6 +648,7 @@ pub fn factory_info(factory: &ComPtr<IPluginFactory>) -> Option<PFactoryInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
     #[test]
     fn a_windows_arm_host_probes_the_recommended_arm64x_directory_first() {
@@ -640,5 +761,140 @@ mod tests {
     fn a_bundle_with_no_name_is_refused_rather_than_probed() {
         assert!(windows_module_paths(Path::new("/"), "x86_64").is_err());
         assert!(macos_executable_path(Path::new("/")).is_err());
+    }
+
+    // ── Module sharing ──────────────────────────────────────────────────
+
+    /// Stands in for `Vst3Module`: the cache's rule is about `Arc` strength, and
+    /// nothing in it is VST3-specific. Counts its own unloads so a premature one
+    /// is visible.
+    struct FakeModule {
+        unloads: Arc<AtomicUsize>,
+    }
+
+    impl Drop for FakeModule {
+        fn drop(&mut self) {
+            self.unloads.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+    }
+
+    fn fake_cache() -> Mutex<HashMap<PathBuf, Weak<FakeModule>>> {
+        Mutex::new(HashMap::new())
+    }
+
+    /// The whole point: a `.vst3` is one shared library, and loading it a second
+    /// time runs its entry point again in the same address space.
+    #[test]
+    fn a_second_instance_of_one_bundle_shares_the_module_the_first_loaded() {
+        let cache = fake_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let loads = AtomicUsize::new(0);
+        let mut load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        let first = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+            .expect("the fake loads");
+        let second = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+            .expect("the fake loads");
+
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 1);
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    /// The other half of the same rule: dropping one instance must not unload
+    /// the image the other is still running from.
+    #[test]
+    fn releasing_one_holder_leaves_the_module_loaded_for_the_rest() {
+        let cache = fake_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let load = || {
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        let first =
+            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load).expect("loads");
+        let second =
+            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load).expect("loads");
+
+        drop(first);
+        assert_eq!(
+            unloads.load(AtomicOrdering::SeqCst),
+            0,
+            "the module was unloaded while another instance was still using it"
+        );
+
+        drop(second);
+        assert_eq!(
+            unloads.load(AtomicOrdering::SeqCst),
+            1,
+            "the last holder released and the image stayed resident"
+        );
+    }
+
+    /// A released bundle loads again rather than resurrecting a dead entry.
+    #[test]
+    fn a_bundle_reopened_after_its_last_release_is_loaded_again() {
+        let cache = fake_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let loads = AtomicUsize::new(0);
+        let mut load = || {
+            loads.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        drop(
+            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+                .expect("the fake loads"),
+        );
+        let reopened = shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), &mut load)
+            .expect("the fake loads");
+
+        assert_eq!(loads.load(AtomicOrdering::SeqCst), 2);
+        assert_eq!(Arc::strong_count(&reopened), 1);
+    }
+
+    #[test]
+    fn two_different_bundles_are_two_modules() {
+        let cache = fake_cache();
+        let unloads = Arc::new(AtomicUsize::new(0));
+        let load = || {
+            Ok(Arc::new(FakeModule {
+                unloads: Arc::clone(&unloads),
+            }))
+        };
+
+        let reverb =
+            shared_module(&cache, PathBuf::from("/plugins/Reverb.vst3"), load).expect("loads");
+        let delay =
+            shared_module(&cache, PathBuf::from("/plugins/Delay.vst3"), load).expect("loads");
+
+        assert!(!Arc::ptr_eq(&reverb, &delay));
+    }
+
+    /// A refused load leaves nothing behind, so the next attempt is a real
+    /// attempt rather than a replayed failure.
+    #[test]
+    fn a_bundle_that_failed_to_load_is_not_remembered_as_open() {
+        let cache = fake_cache();
+
+        let refused: Result<Arc<FakeModule>, String> =
+            shared_module(&cache, PathBuf::from("/plugins/Broken.vst3"), || {
+                Err("VST3 module refused initialization".to_string())
+            });
+
+        assert!(refused.is_err());
+        assert!(cache
+            .lock()
+            .expect("uncontended")
+            .get(Path::new("/plugins/Broken.vst3"))
+            .is_none());
     }
 }

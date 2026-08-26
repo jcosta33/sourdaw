@@ -171,8 +171,12 @@ pub trait AudioPlugin: Send + Sync {
     /// Get all parameters exposed by the plugin
     fn get_parameters(&self) -> Vec<PluginParameter>;
 
-    /// Get the opaque binary state of the plugin
-    fn get_state(&self) -> Vec<u8>;
+    /// The opaque binary state of the plugin, or why the plugin would not give
+    /// it.
+    ///
+    /// Fallible because a refusal and an empty state are different answers, and
+    /// only the first one must never be written over a project's last good save.
+    fn get_state(&self) -> Result<Vec<u8>, String>;
 
     /// Set the opaque binary state of the plugin.
     fn set_state(&mut self, state: &[u8]) -> Result<(), String>;
@@ -256,6 +260,17 @@ pub trait HostedPluginRuntime: AudioPlugin {
         midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
         parameter_updates: &[HostParameterUpdate],
     );
+
+    /// Tell the plugin's editor about a parameter the host wrote. Control path
+    /// only, and never the audio thread.
+    ///
+    /// A host-side write reaches the processor through the audio thread's own
+    /// queue, which the editor never sees. A format that keeps its editor in a
+    /// separate object therefore has to be told a second time, or its knob keeps
+    /// showing the value the user moved away from. The default is empty because a
+    /// format whose editor reads the same object the processor writes has already
+    /// been told.
+    fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
 
     /// Apply a latency change the plugin flagged, returning the new latency in
     /// frames, or `None` when nothing was pending. Control path only.

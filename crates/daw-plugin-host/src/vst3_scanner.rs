@@ -10,7 +10,7 @@ use crate::scanner::{
     PluginFormat, ScannedAudioChannelCounts, ScannedDescriptor, ScannedInstance,
     ScannedInstanceCapabilities, ScannedParameterDescriptor,
 };
-use crate::vst3_host::Vst3HostContext;
+use crate::vst3_class_id::normalized_class_id;
 use crate::vst3_module::{factory_info, Vst3Module};
 use crate::vst3_module_info::{parse_module_info, ModuleInfo};
 use crate::vst3_wrapper::{format_class_id, read_parameters, Vst3Instance};
@@ -106,19 +106,48 @@ pub fn extract_vst3_metadata(path: &Path) -> Result<Vst3DescriptorMetadata, Stri
     read_metadata_from_module(path)
 }
 
+/// The largest `moduleinfo.json` this scan will read.
+///
+/// The file is a list of class descriptions written by the SDK's generator; a
+/// real one is kilobytes. The bound is here because the file is untrusted input
+/// sitting inside a plugin bundle, and a scan that reads it whole would size the
+/// scanner's memory from whatever a bundle chooses to put there. Generous enough
+/// that no honest bundle meets it.
+const MAX_MODULE_INFO_BYTES: u64 = 4 * 1024 * 1024;
+
 fn read_metadata_from_module_info(bundle: &Path) -> Option<Vst3DescriptorMetadata> {
     crate::vst3_module::module_info_paths(bundle)
         .iter()
-        .filter_map(|candidate| std::fs::read_to_string(candidate).ok())
+        .filter_map(|candidate| read_bounded(candidate).ok())
         .filter_map(|source| parse_module_info(&source).ok())
         .find_map(|info| first_audio_module_class(&info))
 }
 
+/// Read at most [`MAX_MODULE_INFO_BYTES`] of a file as UTF-8.
+///
+/// A file at the ceiling is truncated rather than refused, and the truncated text
+/// then fails to parse — which is the same outcome as any other unreadable
+/// description, and sends the caller to the module load path.
+fn read_bounded(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+
+    let mut source = String::new();
+    std::fs::File::open(path)?
+        .take(MAX_MODULE_INFO_BYTES)
+        .read_to_string(&mut source)?;
+    Ok(source)
+}
+
 fn first_audio_module_class(info: &ModuleInfo) -> Option<Vst3DescriptorMetadata> {
     let class = info.audio_module_classes().next()?;
+    // Through the same conversion the load path uses. A side-car file that names
+    // something which is not a class id describes no loadable plugin, and
+    // publishing it anyway moves the failure from the scan to the moment a user
+    // tries to open it.
+    let class_id = normalized_class_id(&class.cid).ok()?;
     Some(Vst3DescriptorMetadata {
         vendor: fallback(&class.vendor, &info.factory_info.vendor),
-        class_id: class.cid.trim().to_uppercase(),
+        class_id,
         version: class.version.clone(),
         sub_categories: class.sub_categories.clone(),
         parameters: None,
@@ -128,8 +157,7 @@ fn first_audio_module_class(info: &ModuleInfo) -> Option<Vst3DescriptorMetadata>
 }
 
 fn read_metadata_from_module(bundle: &Path) -> Result<Vst3DescriptorMetadata, String> {
-    let host = Vst3HostContext::new();
-    let module = Vst3Module::open(bundle, host.as_unknown())?;
+    let module = Vst3Module::open(bundle)?;
     first_audio_module_class_of_factory(module.factory())
         .ok_or_else(|| "VST3 bundle declares no audio module class".to_string())
 }

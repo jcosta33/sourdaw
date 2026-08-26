@@ -8,10 +8,14 @@
 //! not the path to it.
 
 use super::*;
+use crate::vst3_host::tuid_from_guid;
+use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
+use std::thread::ThreadId;
 use vst3::Steinberg::Vst::{
-    BusInfo, BusTypes_, IComponentHandler, IComponentHandlerTrait, IMessage, RestartFlags_,
-    RoutingInfo, TChar,
+    BusInfo, BusTypes_, IComponentHandler, IComponentHandlerTrait, IHostApplication,
+    IHostApplicationTrait, IMessage, IMessageTrait, RestartFlags_, RoutingInfo, SpeakerArr,
+    SpeakerArrangement, TChar,
 };
 use vst3::Steinberg::{
     char8, kNoInterface, kNotImplemented, kResultFalse, tresult, uint32, FIDString, FUnknown,
@@ -23,9 +27,19 @@ use vst3::{uid, ComRef};
 const COMBINED_CID: TUID = uid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
 const SPLIT_COMPONENT_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD);
 const SPLIT_CONTROLLER_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xEEEEEEEE);
+const UNKNOWN_CID: TUID = uid(0x00000000, 0x00000000, 0x00000000, 0x0000BEEF);
 
 const GAIN_PARAM: ParamID = 0;
 const HIDDEN_PARAM: ParamID = 1;
+
+/// A six-channel speaker bitmask, for a plugin that ships wider than the host
+/// carries. Any six bits will do: the host reads the speaker count out of an
+/// arrangement and nothing else.
+const SIX_CHANNELS: SpeakerArrangement = 0b111111;
+
+/// Bus observations reserved per direction, so recording one costs no
+/// allocation inside `process`.
+const OBSERVED_BUS_CAPACITY: usize = 8;
 
 /// Everything a test can observe about what the host did to the plugin.
 #[derive(Default)]
@@ -63,10 +77,43 @@ struct FakeState {
     controller_saw_component_chunk: Mutex<Vec<u8>>,
     notes: Mutex<Vec<(i16, i16, bool)>>,
     handler: Mutex<Option<ComPtr<IComponentHandler>>>,
+
+    /// The audio buses the plugin declares, and the arrangement it currently
+    /// runs each of them at.
+    buses: Mutex<FakeBuses>,
+    /// A plugin that will not change a bus arrangement for anybody.
+    refuses_arrangements: AtomicBool,
+    /// How many times the host stated an arrangement, so a test can prove it
+    /// asked rather than assumed.
+    arrangement_requests: AtomicI32,
+    /// The exact bus shape the last block was handed, per direction.
+    observed_inputs: Mutex<Vec<ObservedBus>>,
+    observed_outputs: Mutex<Vec<ObservedBus>>,
+
+    /// A processor that refuses the state a project restores into it.
+    refuses_set_state: AtomicBool,
+    /// A processor that will not report its own state.
+    fails_get_state: AtomicBool,
+
+    /// The connection point each half was given, which is the host's proxy.
+    component_peer: Mutex<Option<ComPtr<IConnectionPoint>>>,
+    /// The host application a plugin allocates its messages from.
+    host_application: Mutex<Option<ComPtr<IHostApplication>>>,
+    /// Message ids each half received, with the thread that delivered them.
+    component_notifications: Mutex<Vec<(String, ThreadId)>>,
+    controller_notifications: Mutex<Vec<(String, ThreadId)>>,
 }
 
 impl FakeState {
+    /// The shape most plugins ship: one stereo main bus in each direction.
     fn new() -> Arc<Self> {
+        Self::with_buses(
+            vec![FakeBus::main(SpeakerArr::kStereo)],
+            vec![FakeBus::main(SpeakerArr::kStereo)],
+        )
+    }
+
+    fn with_buses(inputs: Vec<FakeBus>, outputs: Vec<FakeBus>) -> Arc<Self> {
         let state = Arc::new(Self::default());
         state
             .processor_gain
@@ -74,14 +121,26 @@ impl FakeState {
         state
             .controller_gain
             .store(1.0f64.to_bits(), Ordering::Release);
-        // Reserved up front so the note log cannot allocate inside `process`:
-        // the allocation test measures the whole call, and a fake that grows a
-        // `Vec` there would be indistinguishable from a host that allocates.
+        *state.buses.lock().expect("bus mutex") = FakeBuses { inputs, outputs };
+        // Reserved up front so neither the note log nor the bus observation can
+        // allocate inside `process`: the allocation test measures the whole
+        // call, and a fake that grows a `Vec` there would be indistinguishable
+        // from a host that allocates.
         state
             .notes
             .lock()
             .expect("notes mutex")
             .reserve(MAX_MIDI * 4);
+        state
+            .observed_inputs
+            .lock()
+            .expect("observation mutex")
+            .reserve(OBSERVED_BUS_CAPACITY);
+        state
+            .observed_outputs
+            .lock()
+            .expect("observation mutex")
+            .reserve(OBSERVED_BUS_CAPACITY);
         state
     }
 
@@ -89,6 +148,79 @@ impl FakeState {
         let state = Self::new();
         state.event_input_buses.store(1, Ordering::Release);
         state
+    }
+
+    fn observed_inputs(&self) -> Vec<ObservedBus> {
+        self.observed_inputs
+            .lock()
+            .expect("observation mutex")
+            .clone()
+    }
+
+    fn observed_outputs(&self) -> Vec<ObservedBus> {
+        self.observed_outputs
+            .lock()
+            .expect("observation mutex")
+            .clone()
+    }
+
+    fn controller_notifications(&self) -> Vec<(String, ThreadId)> {
+        self.controller_notifications
+            .lock()
+            .expect("notification mutex")
+            .clone()
+    }
+
+    /// Remember the host application VST3 hands a plugin in `initialize`, which
+    /// is the only place a plugin can get one.
+    ///
+    /// # Safety
+    /// `context` is the pointer the host passed to `initialize`.
+    unsafe fn remember_host(&self, context: *mut FUnknown) {
+        let Some(context) = ComRef::from_raw(context) else {
+            return;
+        };
+        let Some(application) = context.cast::<IHostApplication>() else {
+            return;
+        };
+        *self.host_application.lock().expect("host mutex") = Some(application);
+    }
+
+    /// The component telling its controller something, exactly the way a real
+    /// one does: a message allocated from the host, handed to the connection
+    /// point the host connected it to.
+    fn send_from_component(&self, message_id: &str) -> tresult {
+        let message = self
+            .new_message(message_id)
+            .expect("the host allocates a message for the plugin");
+        let peer = self.component_peer.lock().expect("peer mutex");
+        let peer = peer
+            .as_ref()
+            .expect("the host connected the component to something");
+        // SAFETY: the peer is the host's own proxy, live for the instance's life.
+        unsafe { peer.notify(message.as_ptr()) }
+    }
+
+    fn new_message(&self, message_id: &str) -> Option<ComPtr<IMessage>> {
+        let application = self.host_application.lock().expect("host mutex");
+        let application = application.as_ref()?;
+        let mut class_id = tuid_from_guid(&IMessage::IID);
+        let mut interface_id = tuid_from_guid(&IMessage::IID);
+        let mut object: *mut std::ffi::c_void = ptr::null_mut();
+        // SAFETY: the application is live, and both ids are valid out-parameters
+        // of exactly the declared size.
+        let message = unsafe {
+            if application.createInstance(&mut class_id, &mut interface_id, &mut object)
+                != kResultOk
+            {
+                return None;
+            }
+            ComPtr::<IMessage>::from_raw(object as *mut IMessage)?
+        };
+        let id = CString::new(message_id).expect("a test id has no null byte");
+        // SAFETY: the message is live and the id outlives the call, which copies it.
+        unsafe { message.setMessageID(id.as_ptr()) };
+        Some(message)
     }
 
     fn processor_gain(&self) -> f64 {
@@ -132,6 +264,80 @@ impl FakeState {
     }
 }
 
+// ── The plugin's bus declaration ────────────────────────────────────────
+
+/// One audio bus the fake declares, and the arrangement it runs it at.
+#[derive(Clone, Copy)]
+struct FakeBus {
+    arrangement: SpeakerArrangement,
+    is_main: bool,
+}
+
+impl FakeBus {
+    fn main(arrangement: SpeakerArrangement) -> Self {
+        Self {
+            arrangement,
+            is_main: true,
+        }
+    }
+
+    fn aux(arrangement: SpeakerArrangement) -> Self {
+        Self {
+            arrangement,
+            is_main: false,
+        }
+    }
+
+    fn channels(self) -> int32 {
+        self.arrangement.count_ones() as int32
+    }
+}
+
+#[derive(Default)]
+struct FakeBuses {
+    inputs: Vec<FakeBus>,
+    outputs: Vec<FakeBus>,
+}
+
+impl FakeBuses {
+    fn of(&self, direction: int32) -> &[FakeBus] {
+        if direction == BusDirections_::kInput as int32 {
+            &self.inputs
+        } else {
+            &self.outputs
+        }
+    }
+}
+
+/// One bus of a `ProcessData`, exactly as the plugin was handed it.
+///
+/// This is what a real plugin reads before it touches a sample, and it is the
+/// only place a host's bus mistake is visible.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ObservedBus {
+    channels: int32,
+    silence_flags: u64,
+    has_buffers: bool,
+}
+
+/// A bus the host mapped its own scratch onto.
+fn fed(channels: int32) -> ObservedBus {
+    ObservedBus {
+        channels,
+        silence_flags: 0,
+        has_buffers: true,
+    }
+}
+
+/// A bus the host declared and has no signal for.
+fn unfed(channels: int32) -> ObservedBus {
+    ObservedBus {
+        channels,
+        silence_flags: (1u64 << channels) - 1,
+        has_buffers: false,
+    }
+}
+
 // ── The fake plugin ─────────────────────────────────────────────────────
 
 /// A plugin whose component and controller are one object — the shape most
@@ -166,7 +372,7 @@ impl Class for FakeController {
 
 fn component_bus_count(state: &FakeState, media: int32, direction: int32) -> int32 {
     if media == MediaTypes_::kAudio as int32 {
-        return 1;
+        return state.buses.lock().expect("bus mutex").of(direction).len() as int32;
     }
     if media == MediaTypes_::kEvent as int32 && direction == BusDirections_::kInput as int32 {
         return state.event_input_buses.load(Ordering::Acquire);
@@ -174,18 +380,117 @@ fn component_bus_count(state: &FakeState, media: int32, direction: int32) -> int
     0
 }
 
-unsafe fn write_bus_info(bus: *mut BusInfo, media: int32, direction: int32, channels: int32) {
+fn audio_bus_at(state: &FakeState, direction: int32, index: int32) -> Option<FakeBus> {
+    let index = usize::try_from(index).ok()?;
+    state
+        .buses
+        .lock()
+        .expect("bus mutex")
+        .of(direction)
+        .get(index)
+        .copied()
+}
+
+unsafe fn component_bus_info(
+    state: &FakeState,
+    media: int32,
+    direction: int32,
+    index: int32,
+    bus: *mut BusInfo,
+) -> tresult {
+    if media == MediaTypes_::kAudio as int32 {
+        let Some(declared) = audio_bus_at(state, direction, index) else {
+            return kInvalidArgument;
+        };
+        write_bus_info(bus, media, direction, declared.channels(), declared.is_main);
+        return kResultOk;
+    }
+    if index != 0 || component_bus_count(state, media, direction) == 0 {
+        return kInvalidArgument;
+    }
+    write_bus_info(bus, media, direction, 0, true);
+    kResultOk
+}
+
+unsafe fn write_bus_info(
+    bus: *mut BusInfo,
+    media: int32,
+    direction: int32,
+    channels: int32,
+    is_main: bool,
+) {
     if bus.is_null() {
         return;
     }
     (*bus).mediaType = media;
     (*bus).direction = direction;
     (*bus).channelCount = channels;
-    (*bus).busType = BusTypes_::kMain as int32;
+    (*bus).busType = if is_main {
+        BusTypes_::kMain as int32
+    } else {
+        BusTypes_::kAux as int32
+    };
     (*bus).flags = 0;
 }
 
+/// The plugin's answer to the arrangement the host states.
+///
+/// A real plugin either takes the host's width or keeps its own, and
+/// `getBusArrangement` afterwards is the only thing that says which happened —
+/// so the fake stores what it accepted and reports it back.
+unsafe fn fake_set_bus_arrangements(
+    state: &FakeState,
+    inputs: *mut SpeakerArrangement,
+    num_ins: int32,
+    outputs: *mut SpeakerArrangement,
+    num_outs: int32,
+) -> tresult {
+    state.arrangement_requests.fetch_add(1, Ordering::AcqRel);
+    if state.refuses_arrangements.load(Ordering::Acquire) {
+        return kResultFalse;
+    }
+    let mut buses = state.buses.lock().expect("bus mutex");
+    if usize::try_from(num_ins) != Ok(buses.inputs.len())
+        || usize::try_from(num_outs) != Ok(buses.outputs.len())
+    {
+        return kResultFalse;
+    }
+    accept_arrangements(&mut buses.inputs, inputs);
+    accept_arrangements(&mut buses.outputs, outputs);
+    kResultOk
+}
+
+/// # Safety
+/// `requested` addresses at least `buses.len()` arrangements.
+unsafe fn accept_arrangements(buses: &mut [FakeBus], requested: *mut SpeakerArrangement) {
+    if requested.is_null() {
+        return;
+    }
+    for (index, bus) in buses.iter_mut().enumerate() {
+        bus.arrangement = *requested.add(index);
+    }
+}
+
+unsafe fn fake_get_bus_arrangement(
+    state: &FakeState,
+    direction: int32,
+    index: int32,
+    arrangement: *mut SpeakerArrangement,
+) -> tresult {
+    if arrangement.is_null() {
+        return kInvalidArgument;
+    }
+    let Some(bus) = audio_bus_at(state, direction, index) else {
+        return kInvalidArgument;
+    };
+    *arrangement = bus.arrangement;
+    kResultOk
+}
+
 unsafe fn component_set_state(state: &FakeState, stream: *mut IBStream) -> tresult {
+    if state.refuses_set_state.load(Ordering::Acquire) {
+        return kResultFalse;
+    }
     let Some(stream) = ComRef::from_raw(stream) else {
         return kInvalidArgument;
     };
@@ -194,10 +499,33 @@ unsafe fn component_set_state(state: &FakeState, stream: *mut IBStream) -> tresu
 }
 
 unsafe fn component_get_state(state: &FakeState, stream: *mut IBStream) -> tresult {
+    if state.fails_get_state.load(Ordering::Acquire) {
+        return kResultFalse;
+    }
     let Some(stream) = ComRef::from_raw(stream) else {
         return kInvalidArgument;
     };
     write_all(stream, &state.component_chunk.lock().expect("chunk mutex"))
+}
+
+/// What a half was told, and on which thread — the whole reason a message is
+/// routed through the host instead of straight to the peer.
+unsafe fn record_notification(
+    log: &Mutex<Vec<(String, ThreadId)>>,
+    message: *mut IMessage,
+) -> tresult {
+    let Some(message) = ComRef::from_raw(message) else {
+        return kInvalidArgument;
+    };
+    let id = message.getMessageID();
+    if id.is_null() {
+        return kInvalidArgument;
+    }
+    log.lock().expect("notification mutex").push((
+        CStr::from_ptr(id).to_string_lossy().into_owned(),
+        std::thread::current().id(),
+    ));
+    kResultOk
 }
 
 unsafe fn read_all(stream: ComRef<'_, IBStream>) -> Vec<u8> {
@@ -237,6 +565,9 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
     }
     state.process_calls.fetch_add(1, Ordering::AcqRel);
     let data = &mut *data;
+
+    record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs);
+    record_bus_shape(&state.observed_outputs, data.outputs, data.numOutputs);
 
     state
         .saw_process_context
@@ -297,15 +628,20 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         }
     }
 
-    if data.inputs.is_null() || data.outputs.is_null() {
+    if data.numInputs < 1 || data.numOutputs < 1 || data.inputs.is_null() || data.outputs.is_null()
+    {
         return kResultOk;
     }
     let gain = state.processor_gain() as f32;
+    // Bus zero is the main bus this fake declares, in both directions.
     let input = &*data.inputs;
     let output = &*data.outputs;
-    let channels = input.numChannels.min(output.numChannels).max(0) as usize;
     let in_buffers = input.__field0.channelBuffers32;
     let out_buffers = output.__field0.channelBuffers32;
+    if in_buffers.is_null() || out_buffers.is_null() {
+        return kResultOk;
+    }
+    let channels = input.numChannels.min(output.numChannels).max(0) as usize;
     for channel in 0..channels {
         let source = *in_buffers.add(channel);
         let target = *out_buffers.add(channel);
@@ -316,11 +652,37 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
     kResultOk
 }
 
+/// Record one direction's bus shape without allocating.
+///
+/// The vectors were reserved at construction because `process` is measured for
+/// allocation, and a fake that grew one here would be indistinguishable from a
+/// host that allocated on the audio thread.
+unsafe fn record_bus_shape(
+    into: &Mutex<Vec<ObservedBus>>,
+    buses: *mut AudioBusBuffers,
+    count: int32,
+) {
+    let mut observed = into.lock().expect("observation mutex");
+    observed.clear();
+    if buses.is_null() {
+        return;
+    }
+    for index in 0..count.max(0) as usize {
+        let bus = &*buses.add(index);
+        observed.push(ObservedBus {
+            channels: bus.numChannels,
+            silence_flags: bus.silenceFlags,
+            has_buffers: !bus.__field0.channelBuffers32.is_null(),
+        });
+    }
+}
+
 macro_rules! fake_component_impls {
     ($type:ty) => {
         impl IPluginBaseTrait for $type {
-            unsafe fn initialize(&self, _context: *mut FUnknown) -> tresult {
+            unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
                 self.state.initialize_calls.fetch_add(1, Ordering::AcqRel);
+                self.state.remember_host(context);
                 kResultOk
             }
 
@@ -350,16 +712,7 @@ macro_rules! fake_component_impls {
                 index: int32,
                 bus: *mut BusInfo,
             ) -> tresult {
-                if index != 0 || component_bus_count(&self.state, r#type, dir) == 0 {
-                    return kInvalidArgument;
-                }
-                let channels = if r#type == MediaTypes_::kAudio as int32 {
-                    2
-                } else {
-                    0
-                };
-                write_bus_info(bus, r#type, dir, channels);
-                kResultOk
+                component_bus_info(&self.state, r#type, dir, index, bus)
             }
 
             unsafe fn getRoutingInfo(
@@ -398,21 +751,16 @@ macro_rules! fake_component_impls {
         impl IAudioProcessorTrait for $type {
             unsafe fn setBusArrangements(
                 &self,
-                _inputs: *mut u64,
-                _num_ins: int32,
-                _outputs: *mut u64,
-                _num_outs: int32,
+                inputs: *mut u64,
+                num_ins: int32,
+                outputs: *mut u64,
+                num_outs: int32,
             ) -> tresult {
-                kResultOk
+                fake_set_bus_arrangements(&self.state, inputs, num_ins, outputs, num_outs)
             }
 
-            unsafe fn getBusArrangement(
-                &self,
-                _dir: int32,
-                _index: int32,
-                _arr: *mut u64,
-            ) -> tresult {
-                kNotImplemented
+            unsafe fn getBusArrangement(&self, dir: int32, index: int32, arr: *mut u64) -> tresult {
+                fake_get_bus_arrangement(&self.state, dir, index, arr)
             }
 
             unsafe fn canProcessSampleSize(&self, symbolic_sample_size: int32) -> tresult {
@@ -626,8 +974,9 @@ fake_controller_impls!(FakeCombined);
 fake_controller_impls!(FakeController);
 
 impl IPluginBaseTrait for FakeController {
-    unsafe fn initialize(&self, _context: *mut FUnknown) -> tresult {
+    unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
         self.state.initialize_calls.fetch_add(1, Ordering::AcqRel);
+        self.state.remember_host(context);
         kResultOk
     }
 
@@ -639,20 +988,22 @@ impl IPluginBaseTrait for FakeController {
 
 impl IConnectionPointTrait for FakeSplitComponent {
     unsafe fn connect(&self, other: *mut IConnectionPoint) -> tresult {
-        if other.is_null() {
+        let Some(peer) = ComRef::from_raw(other) else {
             return kInvalidArgument;
-        }
+        };
         self.state.component_connects.fetch_add(1, Ordering::AcqRel);
+        *self.state.component_peer.lock().expect("peer mutex") = Some(peer.to_com_ptr());
         kResultOk
     }
 
     unsafe fn disconnect(&self, _other: *mut IConnectionPoint) -> tresult {
         self.state.component_connects.fetch_sub(1, Ordering::AcqRel);
+        *self.state.component_peer.lock().expect("peer mutex") = None;
         kResultOk
     }
 
-    unsafe fn notify(&self, _message: *mut IMessage) -> tresult {
-        kResultOk
+    unsafe fn notify(&self, message: *mut IMessage) -> tresult {
+        record_notification(&self.state.component_notifications, message)
     }
 }
 
@@ -674,8 +1025,8 @@ impl IConnectionPointTrait for FakeController {
         kResultOk
     }
 
-    unsafe fn notify(&self, _message: *mut IMessage) -> tresult {
-        kResultOk
+    unsafe fn notify(&self, message: *mut IMessage) -> tresult {
+        record_notification(&self.state.controller_notifications, message)
     }
 }
 
@@ -840,8 +1191,11 @@ fn instantiate(state: &Arc<FakeState>, class_id: TUID) -> Vst3Instance {
 }
 
 fn load(state: &Arc<FakeState>, class_id: TUID) -> Vst3Wrapper {
+    try_load(state, class_id).expect("the fake plugin activates")
+}
+
+fn try_load(state: &Arc<FakeState>, class_id: TUID) -> Result<Vst3Wrapper, String> {
     Vst3Wrapper::activated(instantiate(state, class_id), class_id, 48_000.0)
-        .expect("the fake plugin activates")
 }
 
 /// Hand the plugin one block of a constant signal and read what came back.
@@ -1040,6 +1394,25 @@ fn the_parameter_list_omits_hidden_parameters() {
     assert!(parameters[0].is_automatable);
 }
 
+/// The runtime owner queues a host write for the audio thread, and the audio
+/// thread's queue is not something a separate controller object ever sees. This
+/// is the seam that carries the same write to the editor, and a backend that
+/// leaves it as the trait's no-op default leaves the plugin's own knob behind.
+#[test]
+fn a_host_write_shown_to_the_editor_reaches_the_controller() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, SPLIT_COMPONENT_CID);
+
+    wrapper.apply_host_parameter_write_to_editor(GAIN_PARAM, 0.25);
+
+    assert_eq!(state.controller_gain(), 0.25);
+    assert_eq!(
+        state.processor_gain(),
+        1.0,
+        "the processor heard a write that belongs to the editor's route"
+    );
+}
+
 /// A non-finite value has no normalised meaning, and handing one to a plugin is
 /// how a NaN reaches the output bus.
 #[test]
@@ -1187,7 +1560,9 @@ fn both_state_chunks_round_trip_through_the_seams_single_blob() {
     let source = FakeState::new();
     *source.component_chunk.lock().expect("chunk mutex") = b"processor-state".to_vec();
     *source.controller_chunk.lock().expect("chunk mutex") = b"editor-state".to_vec();
-    let saved = load(&source, SPLIT_COMPONENT_CID).get_state();
+    let saved = load(&source, SPLIT_COMPONENT_CID)
+        .get_state()
+        .expect("the fake reports its state");
 
     let restored = FakeState::new();
     let mut wrapper = load(&restored, SPLIT_COMPONENT_CID);
@@ -1220,11 +1595,66 @@ fn a_combined_class_contributes_one_chunk_not_two() {
     let state = FakeState::new();
     *state.component_chunk.lock().expect("chunk mutex") = b"everything".to_vec();
 
-    let saved = load(&state, COMBINED_CID).get_state();
+    let saved = load(&state, COMBINED_CID)
+        .get_state()
+        .expect("the fake reports its state");
     let (component, controller) = decode_state(&saved).expect("this host wrote it");
 
     assert_eq!(component, b"everything".to_vec());
     assert!(controller.is_empty());
+}
+
+/// A processor that will not take the saved state has not taken it. Reporting
+/// success anyway leaves the project believing a preset loaded that the plugin
+/// is not running.
+#[test]
+fn a_processor_that_refuses_the_saved_state_makes_the_restore_fail() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    state.refuses_set_state.store(true, Ordering::Release);
+
+    let error = wrapper
+        .set_state(&encode_state(b"processor-state", b""))
+        .expect_err("the processor refused the chunk");
+
+    assert!(error.contains("refused the processor state"), "{error}");
+}
+
+/// A refusal and an empty state are different answers, and only one of them may
+/// be written over a project's last good save.
+#[test]
+fn a_processor_that_will_not_report_its_state_is_an_error_not_an_empty_save() {
+    let state = FakeState::new();
+    let wrapper = load(&state, COMBINED_CID);
+    state.fails_get_state.store(true, Ordering::Release);
+
+    let error = wrapper
+        .get_state()
+        .expect_err("the processor refused to report");
+
+    assert!(
+        error.contains("refused to report its processor state"),
+        "{error}"
+    );
+}
+
+/// A split plugin's controller boots on its parameter defaults while the
+/// component boots on the state it was built with. Nothing else agrees them, so
+/// an editor opened without this shows values the processor is not using.
+#[test]
+fn a_split_controller_is_shown_the_processor_state_it_booted_beside() {
+    let state = FakeState::new();
+    *state.component_chunk.lock().expect("chunk mutex") = b"booted-processor-state".to_vec();
+
+    let _instance = instantiate(&state, SPLIT_COMPONENT_CID);
+
+    assert_eq!(
+        *state
+            .controller_saw_component_chunk
+            .lock()
+            .expect("chunk mutex"),
+        b"booted-processor-state".to_vec()
+    );
 }
 
 #[test]
@@ -1293,6 +1723,23 @@ fn a_malformed_class_id_is_refused_rather_than_padded() {
     assert!(parse_class_id("zz22334455667788AABBCCDDEEFF0011").is_err());
 }
 
+/// A bundle's `moduleinfo.json` is an unsigned side-car file, so a class id read
+/// out of one may name a class the binary beside it does not implement — or one
+/// that belongs to somebody else's plugin. The factory is the only authority,
+/// and it is asked before anything is instantiated.
+#[test]
+fn a_class_the_bundles_own_factory_does_not_list_is_not_declared() {
+    let state = FakeState::new();
+    let factory = factory_for(&state);
+
+    assert!(factory_declares_class(&factory, &COMBINED_CID));
+    assert!(factory_declares_class(&factory, &SPLIT_COMPONENT_CID));
+    assert!(
+        !factory_declares_class(&factory, &UNKNOWN_CID),
+        "a class id the factory never lists was accepted as this bundle's own"
+    );
+}
+
 /// The identity the wrapper reports is the one it was created from — a saved
 /// project reloads by this string.
 #[test]
@@ -1305,6 +1752,311 @@ fn the_wrapper_reports_the_class_it_was_created_from() {
         format_class_id(&COMBINED_CID).as_str()
     );
     assert_eq!(wrapper.get_name(), "Fake Plugin");
+}
+
+// ── Bus geometry ────────────────────────────────────────────────────────
+
+/// The ordinary case, pinned so the shapes below read as differences from it:
+/// one stereo bus in each direction, both fed by the host's own scratch.
+#[test]
+fn a_stereo_effect_is_handed_one_fed_stereo_bus_in_each_direction() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    render(&mut wrapper, 1.0, 8);
+
+    assert_eq!(state.observed_inputs(), vec![fed(2)]);
+    assert_eq!(state.observed_outputs(), vec![fed(2)]);
+}
+
+/// A plugin whose main output is mono must be told it has one output channel.
+/// Claiming two while it only ever writes one is how a host reads a channel the
+/// plugin never touched and calls the result audio.
+#[test]
+fn a_mono_output_plugin_is_handed_exactly_one_output_channel() {
+    let state = FakeState::with_buses(
+        vec![FakeBus::main(SpeakerArr::kStereo)],
+        vec![FakeBus::main(SpeakerArr::kMono)],
+    );
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    let output = render(&mut wrapper, 1.0, 8);
+
+    assert_eq!(state.observed_inputs(), vec![fed(2)]);
+    assert_eq!(state.observed_outputs(), vec![fed(1)]);
+    assert!(
+        output.iter().all(|sample| (*sample - 1.0).abs() < 1e-6),
+        "the accepted mono channel never reached the host's pair: {output:?}"
+    );
+}
+
+/// An instrument declares no audio input bus at all. Handing it one anyway
+/// states a bus its own declaration denies, and `numInputs` is what a plugin
+/// loops over.
+#[test]
+fn an_instrument_with_no_audio_input_is_handed_no_input_bus() {
+    let state = FakeState::with_buses(Vec::new(), vec![FakeBus::main(SpeakerArr::kStereo)]);
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    render(&mut wrapper, 1.0, 8);
+
+    assert!(
+        state.observed_inputs().is_empty(),
+        "an instrument was handed an audio input bus it never declared"
+    );
+    assert_eq!(state.observed_outputs(), vec![fed(2)]);
+}
+
+/// Every bus the plugin declared has to be passed, or the plugin indexes past
+/// the end of the host's own array. The sidechain this host has no signal for is
+/// passed empty and flagged silent — a null buffer without the flag is an
+/// invitation to read it.
+#[test]
+fn a_sidechain_bus_is_declared_to_the_plugin_and_flagged_silent() {
+    let state = FakeState::with_buses(
+        vec![
+            FakeBus::main(SpeakerArr::kStereo),
+            FakeBus::aux(SpeakerArr::kMono),
+        ],
+        vec![FakeBus::main(SpeakerArr::kStereo)],
+    );
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    render(&mut wrapper, 1.0, 8);
+
+    assert_eq!(state.observed_inputs(), vec![fed(2), unfed(1)]);
+    assert_eq!(state.observed_outputs(), vec![fed(2)]);
+}
+
+/// Stating the host's own width on the main pair is the whole reason
+/// `setBusArrangements` is called: a surround-capable plugin left on its
+/// shipped default runs a bus the engine's slots cannot fill.
+#[test]
+fn a_surround_capable_plugin_that_accepts_stereo_runs_stereo() {
+    let state = FakeState::with_buses(
+        vec![FakeBus::main(SIX_CHANNELS)],
+        vec![FakeBus::main(SIX_CHANNELS)],
+    );
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    render(&mut wrapper, 1.0, 8);
+
+    assert!(
+        state.arrangement_requests.load(Ordering::Acquire) > 0,
+        "the host never stated an arrangement, so the plugin kept its own"
+    );
+    assert_eq!(state.observed_inputs(), vec![fed(2)]);
+    assert_eq!(state.observed_outputs(), vec![fed(2)]);
+}
+
+/// A plugin that will not leave its surround main bus has nowhere for the host's
+/// two channels to go. Refusing it at load is the only honest outcome: handing
+/// it two pointers while telling it six channels is a read into memory this host
+/// never allocated.
+#[test]
+fn a_plugin_that_refuses_every_arrangement_the_host_can_feed_is_refused_at_load() {
+    let state = FakeState::with_buses(
+        vec![FakeBus::main(SpeakerArr::kStereo)],
+        vec![FakeBus::main(SIX_CHANNELS)],
+    );
+    state.refuses_arrangements.store(true, Ordering::Release);
+
+    let error = try_load(&state, COMBINED_CID)
+        .err()
+        .expect("six output channels cannot be fed");
+
+    assert!(error.contains("Fake Plugin"), "{error}");
+    assert!(error.contains("main output bus runs 6 channels"), "{error}");
+    assert!(
+        state.arrangement_requests.load(Ordering::Acquire) > 0,
+        "the host refused the plugin without ever offering it a width"
+    );
+}
+
+// ── Host stream ─────────────────────────────────────────────────────────
+
+/// Every argument these take crosses the COM boundary from a plugin, where a
+/// Rust panic is undefined behaviour rather than an unwind.
+unsafe fn write_bytes(stream: &HostStream, bytes: &[u8]) -> tresult {
+    let mut written = 0;
+    stream.write(
+        bytes.as_ptr() as *mut std::ffi::c_void,
+        bytes.len() as int32,
+        &mut written,
+    )
+}
+
+/// A plugin may seek anywhere. Parking the cursor where it asked turns the next
+/// write into a resize to whatever number it named.
+#[test]
+fn a_seek_past_the_end_parks_the_cursor_at_the_end() {
+    let stream = HostStream::over(b"1234");
+    let mut landed = -1;
+
+    let sought = unsafe {
+        stream.seek(
+            1_000_000,
+            IStreamSeekMode_::kIBSeekSet as int32,
+            &mut landed,
+        )
+    };
+    let written = unsafe { write_bytes(&stream, b"56") };
+
+    assert_eq!(sought, kResultOk);
+    assert_eq!(landed, 4, "the cursor was left past the end of the buffer");
+    assert_eq!(written, kResultOk);
+    assert_eq!(stream.snapshot(), b"123456".to_vec());
+}
+
+/// Reading at the end answers "no bytes" rather than slicing from a position the
+/// buffer does not have.
+#[test]
+fn a_read_at_the_end_of_the_stream_returns_no_bytes() {
+    let stream = HostStream::over(b"1234");
+    let mut landed = -1;
+    unsafe { stream.seek(0, IStreamSeekMode_::kIBSeekEnd as int32, &mut landed) };
+
+    let mut buffer = [0u8; 8];
+    let mut read = -1;
+    let result = unsafe {
+        stream.read(
+            buffer.as_mut_ptr() as *mut std::ffi::c_void,
+            buffer.len() as int32,
+            &mut read,
+        )
+    };
+
+    assert_eq!(result, kResultOk);
+    assert_eq!(read, 0);
+}
+
+/// `kIBSeekEnd` plus an offset is arithmetic on a plugin-supplied number. Left
+/// unsaturated it overflows, and an overflow panic in a debug build unwinds into
+/// the plugin's frame.
+#[test]
+fn a_seek_from_the_end_by_a_huge_offset_does_not_overflow() {
+    let stream = HostStream::over(b"1234");
+    let mut landed = -1;
+
+    let sought = unsafe {
+        stream.seek(
+            int64::MAX,
+            IStreamSeekMode_::kIBSeekEnd as int32,
+            &mut landed,
+        )
+    };
+    let written = unsafe { write_bytes(&stream, b"5") };
+
+    assert_eq!(sought, kResultOk);
+    assert_eq!(landed, 4);
+    assert_eq!(written, kResultOk);
+    assert_eq!(stream.snapshot(), b"12345".to_vec());
+}
+
+/// A length no host has memory for comes back as a result code the plugin is
+/// required to handle, rather than being attempted as an allocation.
+#[test]
+fn a_write_larger_than_the_stream_ceiling_is_refused() {
+    let stream = HostStream::empty();
+    let byte = [0u8; 1];
+    let mut written = -1;
+
+    let result = unsafe {
+        stream.write(
+            byte.as_ptr() as *mut std::ffi::c_void,
+            int32::MAX,
+            &mut written,
+        )
+    };
+
+    assert_eq!(result, kOutOfMemory);
+    assert!(
+        stream.snapshot().is_empty(),
+        "the stream grew for a write it refused"
+    );
+}
+
+/// Null pointers, negative lengths, unknown seek modes and a seek before the
+/// start all arrive from the plugin's side of a COM call. Every one of them must
+/// come back as a result code.
+#[test]
+fn no_stream_call_panics_on_an_argument_a_plugin_supplied() {
+    let stream = HostStream::over(b"1234");
+    let mut byte = [0u8; 1];
+    let scratch = byte.as_mut_ptr() as *mut std::ffi::c_void;
+
+    // SAFETY: this is the abuse the methods exist to survive.
+    unsafe {
+        assert_eq!(
+            stream.read(ptr::null_mut(), 1, ptr::null_mut()),
+            kInvalidArgument
+        );
+        assert_eq!(stream.read(scratch, -1, ptr::null_mut()), kInvalidArgument);
+        assert_eq!(
+            stream.write(ptr::null_mut(), 1, ptr::null_mut()),
+            kInvalidArgument
+        );
+        assert_eq!(stream.write(scratch, -1, ptr::null_mut()), kInvalidArgument);
+        assert_eq!(
+            stream.seek(-1, IStreamSeekMode_::kIBSeekSet as int32, ptr::null_mut()),
+            kInvalidArgument
+        );
+        assert_eq!(
+            stream.seek(
+                int64::MIN,
+                IStreamSeekMode_::kIBSeekCur as int32,
+                ptr::null_mut()
+            ),
+            kInvalidArgument
+        );
+        assert_eq!(stream.seek(0, 99, ptr::null_mut()), kInvalidArgument);
+        assert_eq!(stream.tell(ptr::null_mut()), kResultOk);
+    }
+    assert_eq!(stream.snapshot(), b"1234".to_vec());
+}
+
+// ── Connection-point messages ───────────────────────────────────────────
+
+/// A component reports to its controller from whatever thread it happens to be
+/// on. Delivering that straight to the peer runs controller code there — the
+/// classic case being a meter level raised inside `process`, which would run the
+/// editor on the audio thread. The host parks it and hands it over itself.
+#[test]
+fn a_message_raised_off_the_control_path_is_delivered_on_it() {
+    let state = FakeState::new();
+    let wrapper = load(&state, SPLIT_COMPONENT_CID);
+
+    let sender = Arc::clone(&state);
+    let raising_thread = std::thread::spawn(move || {
+        assert_eq!(sender.send_from_component("sourdaw.meter"), kResultOk);
+        std::thread::current().id()
+    })
+    .join()
+    .expect("the raising thread finished");
+
+    assert!(
+        state.controller_notifications().is_empty(),
+        "the controller ran on the thread that raised the message"
+    );
+
+    wrapper.deliver_deferred_messages();
+
+    let delivered = state.controller_notifications();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].0, "sourdaw.meter");
+    assert_ne!(
+        delivered[0].1, raising_thread,
+        "the message was delivered on the thread that raised it"
+    );
+    assert_eq!(delivered[0].1, std::thread::current().id());
+
+    wrapper.deliver_deferred_messages();
+
+    assert_eq!(
+        state.controller_notifications().len(),
+        1,
+        "a delivered message was left in the queue and delivered again"
+    );
 }
 
 // ── RT-path allocation ──────────────────────────────────────────────────

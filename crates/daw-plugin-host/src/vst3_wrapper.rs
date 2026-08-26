@@ -5,15 +5,21 @@
 //! `IEditController` → connect them → `setupProcessing` → `setActive(true)` →
 //! `setProcessing(true)` on the audio thread → `IAudioProcessor::process`.
 //!
-//! RT-safety: every buffer, parameter queue and event the audio thread hands the
-//! plugin is allocated in `from_factory` and refilled in place. `process` takes
-//! no lock, allocates nothing, and performs no I/O.
+//! RT-safety: every buffer, parameter queue, bus array and event the audio
+//! thread hands the plugin is allocated while activating — including the
+//! per-bus storage the negotiated layout sizes — and refilled in place.
+//! `process` takes no lock, allocates nothing, and performs no I/O.
 
 use crate::params::PluginParameter;
 use crate::traits::{
     AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
     ProcessingGate,
 };
+use crate::vst3_bus_layout::{
+    activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
+    HOST_CHANNELS,
+};
+use crate::vst3_class_id::same_class_id;
 use crate::vst3_host::{read_string128, MessageTarget, Vst3HostContext, Vst3HostState};
 use crate::vst3_module::Vst3Module;
 use std::cell::Cell;
@@ -21,27 +27,30 @@ use std::path::Path;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 use vst3::Steinberg::Vst::{
-    AudioBusBuffers, AudioBusBuffers__type0, BusDirections_, Event, Event_::EventTypes_,
-    Event__type0, IAudioProcessor, IAudioProcessorTrait, IComponent, IComponentTrait,
-    IConnectionPoint, IConnectionPointTrait, IEditController, IEditControllerTrait, IEventList,
-    IEventListTrait, IParamValueQueue, IParamValueQueueTrait, IParameterChanges,
-    IParameterChangesTrait, MediaTypes_, NoteOffEvent, NoteOnEvent, ParamID, ParamValue,
-    ParameterInfo, ParameterInfo_::ParameterFlags_, ProcessContext,
-    ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_, ProcessSetup,
+    AudioBusBuffers, BusDirections_, Event, Event_::EventTypes_, Event__type0, IAudioProcessor,
+    IAudioProcessorTrait, IComponent, IComponentTrait, IConnectionPoint, IConnectionPointTrait,
+    IEditController, IEditControllerTrait, IEventList, IEventListTrait, IMessage, IParamValueQueue,
+    IParamValueQueueTrait, IParameterChanges, IParameterChangesTrait, MediaTypes_, NoteOffEvent,
+    NoteOnEvent, ParamID, ParamValue, ParameterInfo, ParameterInfo_::ParameterFlags_,
+    ProcessContext, ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_, ProcessSetup,
     SymbolicSampleSizes_,
 };
 use vst3::Steinberg::{
-    int32, int64, kInvalidArgument, kResultOk, IBStream, IBStreamTrait,
-    IBStream_::IStreamSeekMode_, IPluginBaseTrait, IPluginFactory, IPluginFactoryTrait, TUID,
+    int32, int64, kInvalidArgument, kOutOfMemory, kResultFalse, kResultOk, tresult, IBStream,
+    IBStreamTrait, IBStream_::IStreamSeekMode_, IPluginBaseTrait, IPluginFactory,
+    IPluginFactoryTrait, TUID,
 };
-use vst3::{Class, ComPtr, ComWrapper, Interface};
+use vst3::{Class, ComPtr, ComRef, ComWrapper, Interface};
+
+pub use crate::vst3_class_id::{format_class_id, parse_class_id};
 
 /// Largest block this host hands a plugin, and the `maxSamplesPerBlock` every
 /// instance is set up with.
 const MAX_BUFFER: usize = 4096;
-/// Channels the seam carries. VST3 buses are wider, but the engine's plugin
-/// slots are stereo, so a wider main bus is fed silence rather than garbage.
-const CHANNELS: usize = 2;
+/// Channels the seam carries, and therefore the scratch a main bus is mapped
+/// onto. The negotiated bus layout decides how many of them a given plugin
+/// actually reads or writes.
+const CHANNELS: usize = HOST_CHANNELS;
 /// MIDI events forwarded per block. Extra events are dropped rather than
 /// allocated for.
 const MAX_MIDI: usize = 64;
@@ -51,6 +60,23 @@ const MAX_PARAMETER_QUEUES: usize = 64;
 /// makes before it stops chasing a plugin that re-flags from inside its own
 /// activation. Mirrors the CLAP backend's cap for the same reason.
 const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
+/// Consecutive blocks in which a refused `setProcessing(1)` is retried before
+/// the slot settles on passing audio through.
+///
+/// A plugin that will not enter the processing state is not going to change its
+/// mind on the next buffer, and asking it 47 000 times a minute is a call into
+/// third-party code on the audio thread for an answer already given. Bounded
+/// for the same reason `MAX_LATENCY_REQUERY_PASSES` is.
+const MAX_PROCESSING_START_REFUSALS: u32 = 8;
+/// The most bytes a plugin may write into one host state stream.
+///
+/// `write` is reached from third-party code across the COM boundary and its
+/// length argument is the plugin's own, so it is untrusted: with no ceiling a
+/// plugin that reports a nonsense length turns a preset save into an
+/// out-of-memory abort of the whole application. 256 MiB is orders of magnitude
+/// above any real plugin state and still far below what refusing would cost a
+/// legitimate one.
+const MAX_STREAM_BYTES: usize = 256 * 1024 * 1024;
 
 /// Magic and version of the container that carries a VST3 instance's two state
 /// chunks as the one opaque blob the seam persists.
@@ -341,6 +367,12 @@ fn note_event(note: u8, velocity: u8, channel: i16, is_on: bool) -> Event {
 /// Control path only — state transfer never happens on the audio thread — so a
 /// mutex here costs nothing and removes every question about which thread the
 /// plugin calls back from.
+///
+/// Every argument these methods take is a plugin's, arriving across the COM
+/// boundary where a Rust panic is undefined behaviour rather than an unwind. So
+/// no method here indexes, adds or allocates on an unchecked plugin-supplied
+/// value: an out-of-range position reads nothing, and an impossible length is
+/// refused with a result code the plugin is required to handle.
 #[derive(Default)]
 pub struct HostStream {
     inner: Mutex<StreamCursor>,
@@ -394,13 +426,16 @@ impl IBStreamTrait for HostStream {
         let Ok(mut cursor) = self.inner.lock() else {
             return kInvalidArgument;
         };
-        let available = cursor.bytes.len().saturating_sub(cursor.position);
-        let count = available.min(num_bytes as usize);
-        ptr::copy_nonoverlapping(
-            cursor.bytes[cursor.position..].as_ptr(),
-            buffer as *mut u8,
-            count,
-        );
+        // Past the end reads nothing. Slicing first would index out of range,
+        // and a panic here unwinds into the plugin's frame.
+        let Some(remaining) = cursor.bytes.get(cursor.position..) else {
+            if !num_bytes_read.is_null() {
+                *num_bytes_read = 0;
+            }
+            return kResultOk;
+        };
+        let count = remaining.len().min(num_bytes as usize);
+        ptr::copy_nonoverlapping(remaining.as_ptr(), buffer as *mut u8, count);
         cursor.position += count;
         if !num_bytes_read.is_null() {
             *num_bytes_read = count as int32;
@@ -421,7 +456,14 @@ impl IBStreamTrait for HostStream {
             return kInvalidArgument;
         };
         let count = num_bytes as usize;
-        let end = cursor.position + count;
+        // An unchecked `position + count` wraps in release, which turns the
+        // `resize` below into a no-op and the copy into a heap overflow.
+        let Some(end) = cursor.position.checked_add(count) else {
+            return kOutOfMemory;
+        };
+        if end > MAX_STREAM_BYTES {
+            return kOutOfMemory;
+        }
         if cursor.bytes.len() < end {
             cursor.bytes.resize(end, 0);
         }
@@ -452,9 +494,13 @@ impl IBStreamTrait for HostStream {
         if target < 0 {
             return kInvalidArgument;
         }
-        cursor.position = target as usize;
+        // Clamped to the end, as the SDK's own `MemoryStream` clamps: a cursor
+        // parked past the buffer is a read or a write addressed at memory this
+        // stream never has.
+        let clamped = (target as u64).min(cursor.bytes.len() as u64) as usize;
+        cursor.position = clamped;
         if !result.is_null() {
-            *result = target;
+            *result = clamped as int64;
         }
         kResultOk
     }
@@ -528,6 +574,82 @@ pub fn decode_state(encoded: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Host-owned connection proxies
+// ---------------------------------------------------------------------------
+
+/// The host object one half of a split plugin is connected to.
+///
+/// VST3 delivers an `IMessage` by calling `notify` on the peer's connection
+/// point, which runs the peer's code on whichever thread raised the message. A
+/// processor reporting a meter level from inside `process` would therefore run
+/// controller code on the audio thread. The host takes that decision instead:
+/// every message is parked here with the half it is bound for, and the control
+/// path delivers it.
+struct Vst3ConnectionProxy {
+    state: Arc<Vst3HostState>,
+    /// The half a message arriving here is bound for — the *peer* of whichever
+    /// half was handed this proxy.
+    peer: MessageTarget,
+}
+
+impl Class for Vst3ConnectionProxy {
+    type Interfaces = (IConnectionPoint,);
+}
+
+impl IConnectionPointTrait for Vst3ConnectionProxy {
+    /// The host connected both ends itself, so a plugin connecting back tells
+    /// this proxy nothing it does not already hold.
+    unsafe fn connect(&self, other: *mut IConnectionPoint) -> tresult {
+        if other.is_null() {
+            return kInvalidArgument;
+        }
+        kResultOk
+    }
+
+    unsafe fn disconnect(&self, _other: *mut IConnectionPoint) -> tresult {
+        kResultOk
+    }
+
+    unsafe fn notify(&self, message: *mut IMessage) -> tresult {
+        let Some(message) = ComRef::from_raw(message) else {
+            return kInvalidArgument;
+        };
+        if self.state.defer_message(self.peer, message.to_com_ptr()) {
+            return kResultOk;
+        }
+        // The deferral buffer is full. Reported rather than swallowed: a half
+        // that believes it told the other something it never did is a bug with
+        // no symptom of its own.
+        kResultFalse
+    }
+}
+
+/// The pair of proxies one split plugin is wired through.
+struct ConnectionProxyPair {
+    /// Handed to the component; anything arriving is bound for the controller.
+    for_component: ComPtr<IConnectionPoint>,
+    /// Handed to the controller; anything arriving is bound for the component.
+    for_controller: ComPtr<IConnectionPoint>,
+}
+
+impl ConnectionProxyPair {
+    fn new(state: Arc<Vst3HostState>) -> Option<Self> {
+        Some(Self {
+            for_component: ComWrapper::new(Vst3ConnectionProxy {
+                state: Arc::clone(&state),
+                peer: MessageTarget::Controller,
+            })
+            .to_com_ptr()?,
+            for_controller: ComWrapper::new(Vst3ConnectionProxy {
+                state,
+                peer: MessageTarget::Component,
+            })
+            .to_com_ptr()?,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // An instantiated, unactivated plugin
 // ---------------------------------------------------------------------------
 
@@ -554,6 +676,10 @@ pub struct Vst3Instance {
     /// Whether `controller` is the same object as `component`. A combined class
     /// is initialised and terminated once, not twice.
     controller_is_component: bool,
+    /// The host objects the plugin's two halves are connected to instead of to
+    /// each other. Declared after the plugin's own objects so they are released
+    /// only once nothing can call back into them.
+    proxies: Option<ConnectionProxyPair>,
     host: Vst3HostContext,
     /// Kept alive for the instance's whole life. `None` only for a factory built
     /// in-process by a test.
@@ -576,7 +702,21 @@ impl Vst3Instance {
     pub fn open(bundle_path: &Path, descriptor_id: &str) -> Result<Self, String> {
         let class_id = parse_class_id(descriptor_id)?;
         let host = Vst3HostContext::new();
-        let module = Vst3Module::open(bundle_path, host.as_unknown())?;
+        let module = Vst3Module::open(bundle_path)?;
+
+        // The factory is the only authority on which classes a bundle carries.
+        // A bundle's `moduleinfo.json` is an unsigned side-car file, so a CID
+        // read from it may name a class this binary does not implement — or one
+        // that belongs to somebody else's plugin, which is how an early-ranked
+        // copy evicts the genuine registration of the plugin it names.
+        if !factory_declares_class(module.factory(), &class_id) {
+            return Err(format!(
+                "[VST3] '{}' does not implement class {descriptor_id}; its own factory lists no \
+                 such class",
+                bundle_path.display()
+            ));
+        }
+
         let name = class_name(module.factory(), &class_id)
             .unwrap_or_else(|| bundle_name(bundle_path).to_string());
         let factory = module.factory().clone();
@@ -612,6 +752,7 @@ impl Vst3Instance {
             controller: None,
             component,
             controller_is_component: false,
+            proxies: None,
             host,
             _module: module,
             name: name.to_string(),
@@ -682,6 +823,35 @@ impl Vst3Instance {
         self.controller = Some(controller);
         self.set_component_handler();
         self.connect_component_and_controller();
+        self.show_controller_the_processor_state();
+    }
+
+    /// Hand the controller the processor's current state, once, at
+    /// instantiation.
+    ///
+    /// The SDK's own host does this immediately after connecting the two halves,
+    /// and for a split plugin it is the only thing that agrees them: the
+    /// controller boots on its parameter defaults, while the component boots on
+    /// whatever state it restored or was built with. Skipping it opens the
+    /// editor on values the processor is not using.
+    ///
+    /// A combined class already is the component, so there is nothing to carry
+    /// across and asking it to read its own state back is work with no effect.
+    fn show_controller_the_processor_state(&self) {
+        if self.controller_is_component {
+            return;
+        }
+        let Some(controller) = &self.controller else {
+            return;
+        };
+        // SAFETY: control path only; both objects are live and initialised.
+        let Some(processor_state) = read_chunk(|stream| unsafe { self.component.getState(stream) })
+        else {
+            return;
+        };
+        write_chunk(&processor_state, |stream| unsafe {
+            controller.setComponentState(stream)
+        });
     }
 
     fn controller_class_id(&self) -> Option<TUID> {
@@ -704,11 +874,23 @@ impl Vst3Instance {
         }
     }
 
-    /// Join the component's and controller's connection points.
+    /// Put the host between the component's and the controller's connection
+    /// points.
     ///
-    /// A split plugin talks to itself across this pair, and a plugin whose halves
-    /// are never connected loses every processor-to-editor update — the classic
-    /// symptom being an editor whose meters never move.
+    /// A split plugin talks to itself across this pair, and a plugin whose
+    /// halves are never connected loses every processor-to-editor update — the
+    /// classic symptom being an editor whose meters never move. Connecting them
+    /// to *each other* is the other failure: `notify` then runs the peer's code
+    /// on whichever thread raised the message, and a processor that reports a
+    /// meter level from inside `process` would run controller code on the audio
+    /// thread.
+    ///
+    /// So each half is connected to a host object that owns the delivery
+    /// decision instead, which is what the SDK's own connection proxy exists
+    /// for. Every message is parked and handed on by
+    /// [`Vst3Wrapper::deliver_deferred_messages`]: the host cannot tell which
+    /// thread a plugin called from, and parking costs one control-path hop
+    /// where guessing costs the audio thread.
     fn connect_component_and_controller(&mut self) {
         let Some(controller) = &self.controller else {
             return;
@@ -719,14 +901,19 @@ impl Vst3Instance {
         ) else {
             return;
         };
+        let Some(proxies) = ConnectionProxyPair::new(Arc::clone(&self.host.state)) else {
+            return;
+        };
 
-        // SAFETY: both points belong to live objects this instance owns.
+        // SAFETY: both points belong to live objects this instance owns, and
+        // each proxy outlives the plugin object it is handed to (field order).
         unsafe {
-            component_point.connect(controller_point.as_ptr());
-            controller_point.connect(component_point.as_ptr());
+            component_point.connect(proxies.for_component.as_ptr());
+            controller_point.connect(proxies.for_controller.as_ptr());
         }
         self.component_connection = Some(component_point);
         self.controller_connection = Some(controller_point);
+        self.proxies = Some(proxies);
     }
 }
 
@@ -735,12 +922,13 @@ impl Drop for Vst3Instance {
         // SAFETY: every object is live until this point, and the order below is
         // the reverse of construction, which is what VST3 requires.
         unsafe {
-            if let (Some(component_point), Some(controller_point)) = (
-                self.component_connection.as_ref(),
-                self.controller_connection.as_ref(),
-            ) {
-                component_point.disconnect(controller_point.as_ptr());
-                controller_point.disconnect(component_point.as_ptr());
+            if let Some(proxies) = &self.proxies {
+                if let Some(component_point) = self.component_connection.as_ref() {
+                    component_point.disconnect(proxies.for_component.as_ptr());
+                }
+                if let Some(controller_point) = self.controller_connection.as_ref() {
+                    controller_point.disconnect(proxies.for_controller.as_ptr());
+                }
             }
 
             if let Some(controller) = &self.controller {
@@ -782,6 +970,26 @@ pub struct Vst3Wrapper {
     /// Scratch the audio thread drains editor gestures into, so draining costs
     /// no allocation.
     gesture_scratch: Box<[HostParameterUpdate; MAX_PARAMETER_QUEUES]>,
+
+    /// The audio buses this instance runs with, agreed at activation.
+    bus_layout: BusLayout,
+    /// One `AudioBusBuffers` per declared bus, sized at activation because the
+    /// bus count is the plugin's and a block may not allocate.
+    input_bus_buffers: Vec<AudioBusBuffers>,
+    output_bus_buffers: Vec<AudioBusBuffers>,
+    /// Consecutive blocks in which the plugin has refused to start processing.
+    processing_start_refusals: u32,
+    /// Whether the plugin has refused a `process` call. Raised by the audio
+    /// thread, which may not allocate or take the I/O lock, and read by the
+    /// control path, which is the only thread that may report it.
+    process_refused: bool,
+    /// Whether that refusal has already been reported. A plugin that refuses
+    /// every block would otherwise print once per control visit for the rest of
+    /// the session.
+    process_refusal_reported: bool,
+    /// The restart flags this host does not act on, as last reported. Held so a
+    /// flag word that stops growing stops printing.
+    reported_restart_flags: int32,
 }
 
 // SAFETY: as `Vst3Instance` — every VST3 object is reached under the seam's
@@ -820,6 +1028,13 @@ impl Vst3Wrapper {
             process_context: Box::new(empty_process_context(sample_rate)),
             has_transport: false,
             gesture_scratch: Box::new([HostParameterUpdate::default(); MAX_PARAMETER_QUEUES]),
+            bus_layout: BusLayout::default(),
+            input_bus_buffers: Vec::new(),
+            output_bus_buffers: Vec::new(),
+            processing_start_refusals: 0,
+            process_refused: false,
+            process_refusal_reported: false,
+            reported_restart_flags: 0,
         };
         wrapper.activate()?;
         Ok(wrapper)
@@ -838,26 +1053,23 @@ impl Vst3Wrapper {
         };
 
         // SAFETY: the component is initialised and inactive, which is the only
-        // state in which bus activation and `setupProcessing` are defined.
-        unsafe {
-            activate_first_bus(
-                component,
-                MediaTypes_::kAudio as int32,
-                BusDirections_::kInput as int32,
-            );
-            activate_first_bus(
-                component,
-                MediaTypes_::kAudio as int32,
-                BusDirections_::kOutput as int32,
-            );
-            if self.accepts_midi {
-                activate_first_bus(
-                    component,
-                    MediaTypes_::kEvent as int32,
-                    BusDirections_::kInput as int32,
-                );
-            }
+        // state in which bus arrangement, bus activation and `setupProcessing`
+        // are defined.
+        let bus_layout = unsafe {
+            // Before activation, because `setBusArrangements` is only defined
+            // while the component is inactive — and after it, every block's
+            // shape is fixed by what the plugin agreed to here.
+            let layout = negotiate_bus_layout(component, &processor, self.instance.name())?;
 
+            activate_main_audio_bus(component, BusDirections_::kInput as int32);
+            activate_main_audio_bus(component, BusDirections_::kOutput as int32);
+            if self.accepts_midi {
+                activate_first_event_bus(component);
+            }
+            layout
+        };
+
+        unsafe {
             let mut setup = self.process_setup();
             if processor.setupProcessing(&mut setup) != kResultOk {
                 return Err(format!(
@@ -874,8 +1086,15 @@ impl Vst3Wrapper {
             }
         }
 
+        // Every geometry-dependent allocation happens here, once: a block reads
+        // the bus count out of these arrays rather than out of the plugin, and
+        // growing them would be an allocation on the audio thread.
+        self.input_bus_buffers = empty_bus_buffers(bus_layout.inputs.len());
+        self.output_bus_buffers = empty_bus_buffers(bus_layout.outputs.len());
+        self.bus_layout = bus_layout;
         self.processor = Some(processor);
         self.activated = true;
+        self.processing_start_refusals = 0;
         // The first audio block enters the processing state, on the thread VST3
         // requires for it.
         self.processing.request_start();
@@ -911,9 +1130,10 @@ impl Vst3Wrapper {
     ///
     /// VST3 routes an `IMessage` from one connection point to the other, and a
     /// plugin may send one from its processor — where re-entering the peer
-    /// directly would run plugin code on the audio thread. The host callbacks
-    /// park those messages instead; this hands them on from the control thread.
-    pub fn deliver_deferred_messages(&mut self) {
+    /// directly would run plugin code on the audio thread. The host's own
+    /// connection proxies park every message instead; this hands them on, and
+    /// the control path calls it wherever it already visits the plugin.
+    pub fn deliver_deferred_messages(&self) {
         for pending in self.instance.host.state.take_deferred_messages() {
             let point = match pending.target {
                 MessageTarget::Component => self.instance.component_connection.as_ref(),
@@ -927,6 +1147,33 @@ impl Vst3Wrapper {
             unsafe {
                 point.notify(pending.message.as_ptr());
             }
+        }
+    }
+
+    /// Say out loud what the audio thread and the plugin's callbacks recorded.
+    ///
+    /// The audio thread cannot report anything itself — it may not allocate or
+    /// take the I/O lock — so what it saw is left as a flag for the control path
+    /// to read. The restart flags this host does not act on are named for the
+    /// same reason: a behaviour difference nobody prints has no evidence of
+    /// itself. Both are latched, so a plugin that misbehaves on every block still
+    /// produces one line.
+    fn report_plugin_observations(&mut self) {
+        if self.process_refused && !self.process_refusal_reported {
+            self.process_refusal_reported = true;
+            eprintln!(
+                "[VST3] '{}' refused a process call; blocks pass through it unprocessed",
+                self.instance.name()
+            );
+        }
+
+        let unhandled = self.instance.host.state.unhandled_restart_flags();
+        if unhandled != self.reported_restart_flags {
+            self.reported_restart_flags = unhandled;
+            eprintln!(
+                "[VST3] '{}' asked for restart flags this host does not act on: {unhandled:#010x}",
+                self.instance.name()
+            );
         }
     }
 
@@ -1067,29 +1314,32 @@ impl Vst3Wrapper {
             return;
         }
 
-        let Some(processor) = self.processor.clone() else {
+        if self.processor.is_none() {
             Self::pass_through(inputs, outputs, num_samples);
             return;
-        };
+        }
 
         let samples = num_samples.min(MAX_BUFFER);
-        let channels = inputs.len().min(CHANNELS);
+        let fed_channels = self.bus_layout.main_input_channels().min(CHANNELS);
+        let taken_channels = self.bus_layout.main_output_channels().min(CHANNELS);
 
-        for (channel, source) in inputs.iter().enumerate().take(channels) {
-            let len = source.len().min(samples);
-            self.input_scratch[channel][..len].copy_from_slice(&source[..len]);
+        for channel in 0..CHANNELS {
+            let source = inputs.get(channel).filter(|_| channel < fed_channels);
+            let len = source.map_or(0, |source| source.len().min(samples));
+            if let Some(source) = source {
+                self.input_scratch[channel][..len].copy_from_slice(&source[..len]);
+            }
             self.input_scratch[channel][len..samples].fill(0.0);
-        }
-        for channel in channels..CHANNELS {
-            self.input_scratch[channel][..samples].fill(0.0);
         }
         self.output_scratch[0][..samples].fill(0.0);
         self.output_scratch[1][..samples].fill(0.0);
 
         // SAFETY: every pointer below addresses this wrapper's own preallocated
         // storage and is valid for the duration of the `process` call, which is
-        // the only span VST3 lets a plugin read them for.
-        unsafe {
+        // the only span VST3 lets a plugin read them for. The bus arrays were
+        // sized at activation from the layout the plugin agreed to, so nothing
+        // here allocates and nothing indexes past what the plugin declared.
+        let refused = unsafe {
             let mut in_ptrs: [*mut f32; CHANNELS] = [
                 self.input_scratch[0].as_mut_ptr(),
                 self.input_scratch[1].as_mut_ptr(),
@@ -1099,29 +1349,25 @@ impl Vst3Wrapper {
                 self.output_scratch[1].as_mut_ptr(),
             ];
 
-            let mut input_bus = AudioBusBuffers {
-                numChannels: CHANNELS as int32,
-                silenceFlags: 0,
-                __field0: AudioBusBuffers__type0 {
-                    channelBuffers32: in_ptrs.as_mut_ptr(),
-                },
-            };
-            let mut output_bus = AudioBusBuffers {
-                numChannels: CHANNELS as int32,
-                silenceFlags: 0,
-                __field0: AudioBusBuffers__type0 {
-                    channelBuffers32: out_ptrs.as_mut_ptr(),
-                },
-            };
+            point_buses_at_scratch(
+                &mut self.input_bus_buffers,
+                &self.bus_layout.inputs,
+                in_ptrs.as_mut_ptr(),
+            );
+            point_buses_at_scratch(
+                &mut self.output_bus_buffers,
+                &self.bus_layout.outputs,
+                out_ptrs.as_mut_ptr(),
+            );
 
             let mut data = ProcessData {
                 processMode: ProcessModes_::kRealtime as int32,
                 symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
                 numSamples: samples as int32,
-                numInputs: 1,
-                numOutputs: 1,
-                inputs: &mut input_bus,
-                outputs: &mut output_bus,
+                numInputs: self.input_bus_buffers.len() as int32,
+                numOutputs: self.output_bus_buffers.len() as int32,
+                inputs: first_bus_pointer(&mut self.input_bus_buffers),
+                outputs: first_bus_pointer(&mut self.output_bus_buffers),
                 inputParameterChanges: if self.parameter_changes.is_empty() {
                     ptr::null_mut()
                 } else {
@@ -1143,12 +1389,39 @@ impl Vst3Wrapper {
                 },
             };
 
-            processor.process(&mut data);
+            // Borrowed, not cloned: cloning would put an `AddRef`/`Release`
+            // pair — vendor code, and an atomic each — on every block.
+            let processor = self
+                .processor
+                .as_ref()
+                .expect("the processor was checked before this block began");
+            processor.process(&mut data) != kResultOk
+        };
+
+        if refused {
+            // The output scratch was zeroed above, so keeping it would render a
+            // refusal as eternal silence. Passing the block through is what the
+            // other refusal paths in this method already do.
+            Self::pass_through(inputs, outputs, num_samples);
+            self.process_refused = true;
+            return;
         }
 
-        for (channel, out) in outputs.iter_mut().enumerate().take(channels) {
+        if taken_channels == 0 {
+            // No audio output bus at all — an analyzer taps the signal and
+            // produces none of its own, so the block continues past it.
+            Self::pass_through(inputs, outputs, num_samples);
+            return;
+        }
+
+        // A main output bus narrower than the host's pair is fanned across it,
+        // which is what a mono plugin in a stereo slot sounds like everywhere
+        // else. Scratch above the accepted width was never written by the
+        // plugin, so it must not reach the output.
+        for (channel, out) in outputs.iter_mut().enumerate() {
+            let source = channel.min(taken_channels - 1);
             let len = samples.min(out.len());
-            out[..len].copy_from_slice(&self.output_scratch[channel][..len]);
+            out[..len].copy_from_slice(&self.output_scratch[source][..len]);
         }
     }
 }
@@ -1199,43 +1472,83 @@ impl AudioPlugin for Vst3Wrapper {
             .record_parameter_edit(param_id, clamped);
     }
 
+    /// The controller's parameter list, and the control-path visit the rest of
+    /// this backend's deferred work rides on.
+    ///
+    /// The plugin's halves talk through host-owned proxies that park every
+    /// message, so something on the control path has to hand them on. This is
+    /// the call the runtime owner already makes there, and doing it here is what
+    /// keeps the deferral from being a queue nobody drains.
+    ///
+    /// It is also what `kParamValuesChanged` and `kParamTitlesChanged` were
+    /// asking for — a re-read of the whole list — so those flags are cleared
+    /// here, by the call that satisfies them.
     fn get_parameters(&self) -> Vec<PluginParameter> {
+        self.deliver_deferred_messages();
+        self.instance.host.state.take_parameter_values_dirty();
+        self.instance.host.state.take_parameter_titles_dirty();
         self.instance
             .controller()
             .map(read_parameters)
             .unwrap_or_default()
     }
 
-    fn get_state(&self) -> Vec<u8> {
+    /// Both chunks, or the plugin's refusal.
+    ///
+    /// A component that could not produce its state has not produced *empty*
+    /// state, and a container built out of that refusal looks exactly like a
+    /// valid save — which then overwrites the last good one in the project file.
+    /// The controller's own chunk stays tolerant: `getState` answering
+    /// `kNotImplemented` is ordinary for a controller with nothing to persist.
+    fn get_state(&self) -> Result<Vec<u8>, String> {
         let component = read_chunk(|stream| {
             // SAFETY: control path only; the component is live.
             unsafe { self.instance.component().getState(stream) }
-        });
+        })
+        .ok_or_else(|| {
+            format!(
+                "[VST3] '{}' refused to report its processor state",
+                self.instance.name()
+            )
+        })?;
+
         let controller = self
             .instance
             .controller()
             .filter(|_| !self.instance.controller_is_component)
-            .map(|controller| {
+            .and_then(|controller| {
                 read_chunk(|stream| {
                     // SAFETY: control path only; the controller is live.
                     unsafe { controller.getState(stream) }
                 })
             })
             .unwrap_or_default();
-        encode_state(&component, &controller)
+        Ok(encode_state(&component, &controller))
     }
 
     /// Restore both chunks in the order VST3 requires: the processor first, then
     /// the controller's *view* of that same processor state, then the
     /// controller's own editor state. Skipping `setComponentState` leaves an
     /// editor showing the values of the session before the load.
+    ///
+    /// The component's answer decides the result: a processor that refused the
+    /// saved state is running on something else, and reporting success would
+    /// tell the project it reloaded when it did not. The controller's two
+    /// entry points stay tolerant, because `kNotImplemented` is the ordinary
+    /// answer from a combined class that already took the same bytes.
     fn set_state(&mut self, state: &[u8]) -> Result<(), String> {
         let (component, controller_chunk) = decode_state(state)?;
 
-        write_chunk(&component, |stream| {
+        let restored = write_chunk(&component, |stream| {
             // SAFETY: control path only; the component is live.
             unsafe { self.instance.component().setState(stream) }
         });
+        if restored != kResultOk {
+            return Err(format!(
+                "[VST3] '{}' refused the processor state saved in this project",
+                self.instance.name()
+            ));
+        }
 
         let Some(controller) = self.instance.controller() else {
             return Ok(());
@@ -1283,6 +1596,11 @@ impl HostedPluginRuntime for Vst3Wrapper {
 
     /// **Audio thread only** — the caller's thread affinity is what makes
     /// `setProcessing` legal.
+    ///
+    /// A plugin that keeps refusing to start is asked a bounded number of times
+    /// and then left alone. Retrying on every block spends an unbounded number of
+    /// vendor calls on the audio thread for an answer that has not changed, and
+    /// the block passes through either way.
     fn sync_processing_state(&mut self) {
         let wants = self.processing.wants_processing();
         if wants == self.processing.is_processing() {
@@ -1293,17 +1611,43 @@ impl HostedPluginRuntime for Vst3Wrapper {
             return;
         };
 
-        // SAFETY: the processor is live and the component is active.
-        unsafe {
-            if wants {
-                if processor.setProcessing(1) == kResultOk {
-                    self.processing.mark_started();
-                }
-                return;
-            }
-            processor.setProcessing(0);
+        if !wants {
+            // SAFETY: the processor is live and the component is active.
+            unsafe { processor.setProcessing(0) };
+            self.processing.mark_stopped();
+            self.processing_start_refusals = 0;
+            return;
         }
-        self.processing.mark_stopped();
+
+        if self.processing_start_refusals >= MAX_PROCESSING_START_REFUSALS {
+            return;
+        }
+
+        // SAFETY: the processor is live and the component is active.
+        if unsafe { processor.setProcessing(1) } == kResultOk {
+            self.processing.mark_started();
+            self.processing_start_refusals = 0;
+            return;
+        }
+        self.processing_start_refusals += 1;
+    }
+
+    /// Show the plugin's editor a value the host wrote. Control path only.
+    ///
+    /// Only `setParamNormalized`: the processor is already being told through the
+    /// audio thread's own parameter queue, and recording this as a plugin-side
+    /// gesture would send the host's own write back around a second time.
+    fn apply_host_parameter_write_to_editor(&mut self, param_id: u32, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+        let Some(controller) = self.instance.controller() else {
+            return;
+        };
+        // SAFETY: control path only; the controller is live.
+        unsafe {
+            controller.setParamNormalized(param_id, value.clamp(0.0, 1.0));
+        }
     }
 
     fn set_transport(&mut self, transport: HostTransport) {
@@ -1337,6 +1681,9 @@ impl HostedPluginRuntime for Vst3Wrapper {
     }
 
     fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        self.report_plugin_observations();
+        self.deliver_deferred_messages();
+
         if !self.instance.host.state.take_latency_dirty() {
             return Ok(None);
         }
@@ -1390,23 +1737,6 @@ impl HostedPluginRuntime for Vst3Wrapper {
 // Free helpers
 // ---------------------------------------------------------------------------
 
-/// Parse a class CID as the scanner publishes it: 32 hex characters.
-pub fn parse_class_id(descriptor_id: &str) -> Result<TUID, String> {
-    let trimmed = descriptor_id.trim();
-    if trimmed.len() != 32 || !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(format!(
-            "'{descriptor_id}' is not a VST3 class id (expected 32 hexadecimal characters)"
-        ));
-    }
-    let mut class_id: TUID = [0; 16];
-    for (index, slot) in class_id.iter_mut().enumerate() {
-        let byte = u8::from_str_radix(&trimmed[index * 2..index * 2 + 2], 16)
-            .map_err(|error| format!("'{descriptor_id}' is not a VST3 class id: {error}"))?;
-        *slot = byte as std::ffi::c_char;
-    }
-    Ok(class_id)
-}
-
 /// The bundle's own name, for a plugin whose factory lists no name for the class.
 fn bundle_name(bundle_path: &Path) -> &str {
     bundle_path
@@ -1453,14 +1783,6 @@ pub fn read_parameters(controller: &ComPtr<IEditController>) -> Vec<PluginParame
     }
 }
 
-/// Spell a class CID the way a saved project stores it.
-pub fn format_class_id(class_id: &TUID) -> String {
-    class_id
-        .iter()
-        .map(|byte| format!("{:02X}", *byte as u8))
-        .collect()
-}
-
 /// The name the factory gives a class, when it lists one with this CID.
 pub fn class_name(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> Option<String> {
     // SAFETY: the factory is live; each `info` is a valid out parameter.
@@ -1471,12 +1793,31 @@ pub fn class_name(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> Option<S
             if factory.getClassInfo(index, &mut info) != kResultOk {
                 continue;
             }
-            if info.cid.iter().zip(class_id.iter()).all(|(a, b)| a == b) {
+            if same_class_id(&info.cid, class_id) {
                 return non_empty(read_char8(&info.name));
             }
         }
     }
     None
+}
+
+/// Whether the factory itself lists this class.
+///
+/// Separate from `class_name`, which answers `None` for a class the factory does
+/// list under an empty name. The two questions only look alike: a bundle whose
+/// `moduleinfo.json` advertises a CID its factory does not implement is either
+/// stale metadata or a file describing someone else's plugin, and asking such a
+/// factory to instantiate that CID is handing untrusted bytes to a loader.
+pub fn factory_declares_class(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> bool {
+    // SAFETY: the factory is live; each `info` is a valid out parameter.
+    unsafe {
+        let count = factory.countClasses();
+        (0..count).any(|index| {
+            let mut info: vst3::Steinberg::PClassInfo = std::mem::zeroed();
+            factory.getClassInfo(index, &mut info) == kResultOk
+                && same_class_id(&info.cid, class_id)
+        })
+    }
 }
 
 fn create_component(
@@ -1514,30 +1855,84 @@ fn create_controller(
     }
 }
 
-/// Activate bus zero of one media type and direction, when the component has
-/// one. Bus zero is the main bus by VST3 convention, and a component with no bus
-/// of that kind is not an error.
+/// Activate event bus zero, when the component has one. Bus zero is the main bus
+/// by VST3 convention, and a component with no event input is not an error.
 ///
 /// # Safety
 /// `component` must be initialised and inactive.
-unsafe fn activate_first_bus(component: &ComPtr<IComponent>, media: int32, direction: int32) {
+unsafe fn activate_first_event_bus(component: &ComPtr<IComponent>) {
+    let media = MediaTypes_::kEvent as int32;
+    let direction = BusDirections_::kInput as int32;
     if component.getBusCount(media, direction) <= 0 {
         return;
     }
     component.activateBus(media, direction, 0, 1);
 }
 
-fn read_chunk(read: impl FnOnce(*mut IBStream) -> int32) -> Vec<u8> {
-    let stream = ComWrapper::new(HostStream::empty());
-    if read(borrowed_ptr::<_, IBStream>(&stream)) != kResultOk {
-        return Vec::new();
-    }
-    stream.snapshot()
+/// One zeroed `AudioBusBuffers` per declared bus, allocated at activation so the
+/// audio thread only ever refills them.
+fn empty_bus_buffers(count: usize) -> Vec<AudioBusBuffers> {
+    // SAFETY: `AudioBusBuffers` is plain `repr(C)` data whose union member is a
+    // pointer; all-zero is the "no channels, no buffers" value VST3 defines.
+    (0..count)
+        .map(|_| unsafe { std::mem::zeroed::<AudioBusBuffers>() })
+        .collect()
 }
 
-fn write_chunk(bytes: &[u8], write: impl FnOnce(*mut IBStream) -> int32) {
+/// Refill the per-bus buffer descriptors in place for one block.
+///
+/// Only the main bus is fed: the host renders one stereo pair, so a sidechain or
+/// an auxiliary output gets a null channel array with every one of its declared
+/// channels flagged silent, which is how VST3 spells "this bus carries nothing
+/// this block" without inventing buffers for it.
+///
+/// # Safety
+/// `scratch` must address at least `HOST_CHANNELS` valid channel pointers that
+/// outlive the `process` call these descriptors are handed to.
+unsafe fn point_buses_at_scratch(
+    buffers: &mut [AudioBusBuffers],
+    geometry: &[BusGeometry],
+    scratch: *mut *mut f32,
+) {
+    for (buffer, bus) in buffers.iter_mut().zip(geometry.iter()) {
+        buffer.numChannels = bus.channels as int32;
+        if bus.is_main && bus.channels > 0 {
+            buffer.silenceFlags = 0;
+            buffer.__field0.channelBuffers32 = scratch;
+            continue;
+        }
+        buffer.silenceFlags = silent_channel_flags(bus.channels);
+        buffer.__field0.channelBuffers32 = ptr::null_mut();
+    }
+}
+
+/// The pointer VST3 reads a bus array from: the first element, or null when the
+/// plugin declared no bus in that direction. An empty `Vec`'s `as_mut_ptr` is a
+/// dangling non-null address, and handing that to a plugin alongside a zero count
+/// invites it to be dereferenced anyway.
+fn first_bus_pointer(buffers: &mut [AudioBusBuffers]) -> *mut AudioBusBuffers {
+    if buffers.is_empty() {
+        return ptr::null_mut();
+    }
+    buffers.as_mut_ptr()
+}
+
+/// The bytes the plugin wrote, or `None` when it refused to write any.
+///
+/// The distinction is the whole point: a refusal and an empty chunk are different
+/// answers, and only the caller knows whether this particular refusal is fatal.
+fn read_chunk(read: impl FnOnce(*mut IBStream) -> int32) -> Option<Vec<u8>> {
+    let stream = ComWrapper::new(HostStream::empty());
+    if read(borrowed_ptr::<_, IBStream>(&stream)) != kResultOk {
+        return None;
+    }
+    Some(stream.snapshot())
+}
+
+/// Hand the plugin a stream over `bytes` and return its verdict on them.
+fn write_chunk(bytes: &[u8], write: impl FnOnce(*mut IBStream) -> int32) -> int32 {
     let stream = ComWrapper::new(HostStream::over(bytes));
-    write(borrowed_ptr::<_, IBStream>(&stream));
+    write(borrowed_ptr::<_, IBStream>(&stream))
 }
 
 fn read_char8(value: &[std::ffi::c_char]) -> String {

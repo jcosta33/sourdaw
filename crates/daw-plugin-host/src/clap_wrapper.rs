@@ -1312,21 +1312,26 @@ impl AudioPlugin for ClapWrapper {
         }
     }
 
-    fn get_state(&self) -> Vec<u8> {
+    /// The plugin's saved state, or its refusal to produce one.
+    ///
+    /// A plugin that implements no state extension has no state, and empty is
+    /// the true answer for it. A plugin whose `save` fails has state it would not
+    /// give, and answering empty there tells the project it saved when it did
+    /// not.
+    fn get_state(&self) -> Result<Vec<u8>, String> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
-            return fixture.state.clone();
+            return Ok(fixture.state.clone());
         }
 
         if self.state_ext.is_null() || self.plugin.is_null() {
-            return vec![];
+            return Ok(vec![]);
         }
 
         unsafe {
             let state = &*self.state_ext;
-            let save_fn = match state.save {
-                Some(f) => f,
-                None => return vec![],
+            let Some(save_fn) = state.save else {
+                return Ok(vec![]);
             };
 
             let mut buffer: Vec<u8> = Vec::new();
@@ -1335,13 +1340,10 @@ impl AudioPlugin for ClapWrapper {
                 write: Some(ostream_write),
             };
 
-            let ok = save_fn(self.plugin, &ostream);
-            if ok {
-                buffer
-            } else {
-                eprintln!("[CLAP] state.save() failed for {}", self.name);
-                vec![]
+            if !save_fn(self.plugin, &ostream) {
+                return Err(format!("[CLAP] '{}' refused to save its state", self.name));
             }
+            Ok(buffer)
         }
     }
 

@@ -384,8 +384,8 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Vec<u8> {
-            Vec::new()
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
         }
 
         fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
@@ -424,8 +424,8 @@ mod tests {
             Vec::new()
         }
 
-        fn get_state(&self) -> Vec<u8> {
-            Vec::new()
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
         }
 
         fn set_state(&mut self, _: &[u8]) -> Result<(), String> {

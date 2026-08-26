@@ -16,7 +16,7 @@ Native audio plugin hosting, parameter mapping, state serialization, and GUI win
 - **Scan Policy & Worker Isolation**: Plugin scanning requires absolute paths; symlinks are rejected. Executing untrusted plugin binaries during discovery must run in the bounded `plugin_scan_worker` child process—never load plugin entrypoints directly in the main app process.
 - **Audio Thread Safety**: Real-time plugin audio processing must avoid heap allocation and mutex locks. If non-RT control locks a plugin mutex, the audio thread bypasses it rather than blocking.
 - **Retirement Queue**: Destroyed plugin runtimes are queued in a retirement structure and released on a background thread—never drop plugin runtimes on the audio thread.
-- **Thread-affine lifecycle calls**: A format's own threading rules bind the host. VST3 `setActive` is UI-thread only and `setProcessing` is the sole lifecycle call the audio thread may make; both formats route through the shared `ProcessingGate` rather than a private state machine.
+- **Thread-affine lifecycle calls**: A format's own threading rules bind the host. `setProcessing` is the sole VST3 lifecycle call the audio thread may make, and every other one — `setActive`, `setupProcessing`, `initialize`, `terminate` — is made from the control path under the runtime owner's exclusive access seam, which is what excludes a concurrent `process`. "Control path" is not "UI thread": this host has no UI thread of its own, and a latency change flagged by a plugin is carried out on the watcher thread. Both formats route through the shared `ProcessingGate` rather than a private state machine.
 
 ## Verification
 

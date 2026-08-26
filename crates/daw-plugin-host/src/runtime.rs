@@ -64,7 +64,7 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.get_parameters())
     }
 
-    fn get_state(&self) -> Vec<u8> {
+    fn get_state(&self) -> Result<Vec<u8>, String> {
         delegate!(self, backend => backend.get_state())
     }
 
@@ -140,6 +140,10 @@ impl HostedPluginRuntime for HostedRuntime {
             midi_events,
             parameter_updates,
         ))
+    }
+
+    fn apply_host_parameter_write_to_editor(&mut self, param_id: u32, value: f64) {
+        delegate!(self, backend => backend.apply_host_parameter_write_to_editor(param_id, value))
     }
 
     fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
