@@ -26,6 +26,7 @@ import {
 import { composePublishBody } from '../prContract.ts';
 import {
     existingOpenPullRequestArgs,
+    updatePullRequestArgs,
     issueExistsFromLookup,
     issueLookupArgs,
     laneIssueNumber,
@@ -42,6 +43,7 @@ import {
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
+const DEFAULT_SUMMARY = 'Keep VCS identity records so each authored change names who wrote it.';
 const TEST_INSTRUCTIONS = 'Run the focused publisher specs and confirm they pass.';
 const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
@@ -53,19 +55,6 @@ function fixtureGit(repository: string, args: string[]): string {
     delete env.GIT_DIR;
     delete env.GIT_WORK_TREE;
     return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
-}
-
-function runPackageRoute(repository: string, args: string[], env: NodeJS.ProcessEnv): string {
-    const pnpmCli = process.env.npm_execpath;
-    if (!pnpmCli) {
-        throw new Error('The protected-publisher fixture requires the active pnpm CLI path');
-    }
-    return execFileSync(process.execPath, [pnpmCli, ...args], {
-        cwd: repository,
-        env,
-        encoding: 'utf8',
-        timeout: 8_000,
-    });
 }
 
 function initializeRepository(path: string): void {
@@ -121,6 +110,7 @@ type FakeInput = {
     /** Per-lookup answers, so a pull request can close between the authorizing query and the push. */
     existingByCall?: Array<number | undefined>;
     existingBody?: unknown;
+    existingTitle?: unknown;
     issueExists?: boolean;
 };
 
@@ -160,9 +150,10 @@ function fakePort(input: FakeInput = {}) {
                 ? undefined
                 : {
                       number,
+                      title: input.existingTitle === undefined ? DEFAULT_SUBJECT : input.existingTitle,
                       body:
                           input.existingBody === undefined
-                              ? composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS)
+                              ? composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS)
                               : input.existingBody,
                   };
         },
@@ -171,9 +162,10 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`create:${branch}:${title}:${body.includes('Closes #12') ? 'closes' : 'missing'}`);
             return 88;
         },
-        updatePullRequest: (number, { title, body }) => {
-            bodies.push(body);
-            calls.push(`edit:${number}:${title}`);
+        updatePullRequest: (number, input) => {
+            bodies.push(input.body);
+            calls.push(`edit:${number}`);
+            calls.push(`editKeys:${[...Object.keys(input)].sort().join(',')}`);
         },
         // Logging is ordered against the mutating calls, so it shares their ledger.
         log: (message) => {
@@ -215,16 +207,28 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
 ];
 
 describe('lane publish', () => {
-    it('publishes the exact classified lane through the protected primary launcher', () => {
+    it('enforces exact issue-lane publishing boundaries through the protected primary launcher', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-routing-'));
         const primary = join(fixtureRoot, 'primary');
         const authorizedLane = join(fixtureRoot, 'authorized-lane');
+        const siblingIssueLane = join(fixtureRoot, 'sibling-issue-lane');
+        const foreignIssueLane = join(fixtureRoot, 'foreign-issue-lane');
+        const unlockedIssueLane = join(fixtureRoot, 'unlocked-issue-lane');
         const hostilePrimary = join(fixtureRoot, 'hostile-primary');
         const hostileLane = join(fixtureRoot, 'hostile-lane');
         const bin = join(fixtureRoot, 'bin');
         const pushLog = join(fixtureRoot, 'push.json');
         const mintLog = join(fixtureRoot, 'mint.json');
         const eventLog = join(fixtureRoot, 'events.log');
+        const pullRequestLog = join(fixtureRoot, 'pull-requests.json');
+        const readLog = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
+        const logLines = (path: string) => readLog(path).trim().split('\n').filter(Boolean);
+        const snapshotLogs = () => ({
+            mint: readLog(mintLog),
+            events: readLog(eventLog),
+            push: readLog(pushLog),
+            pullRequest: readLog(pullRequestLog),
+        });
         try {
             initializeRepository(primary);
             mkdirSync(join(primary, 'scripts'), { recursive: true });
@@ -257,12 +261,17 @@ describe('lane publish', () => {
             fixtureGit(primary, ['add', '.']);
             fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: trusted publisher']);
             fixtureGit(primary, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+            const fixtureBase = fixtureGit(primary, ['rev-parse', 'HEAD']);
+            addLockedLane(primary, siblingIssueLane, 'agent/12/sibling', 'sibling.txt');
             const authorizedHead = addLockedLane(
                 primary,
                 authorizedLane,
                 'agent/12/authorized',
                 '.github/workflows/fixture.yml'
             );
+            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/foreign', foreignIssueLane]);
+            fixtureGit(primary, ['worktree', 'lock', '--reason', 'active:foreign-author', foreignIssueLane]);
+            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/unlocked', unlockedIssueLane]);
 
             initializeRepository(hostilePrimary);
             writeFileSync(join(hostilePrimary, 'base.txt'), 'base\n');
@@ -289,9 +298,11 @@ describe('lane publish', () => {
             writeFileSync(
                 gitWrapper,
                 '#!/usr/bin/env node\n' +
-                    "import { appendFileSync } from 'node:fs';\n" +
+                    "import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';\n" +
                     "import { spawnSync } from 'node:child_process';\n" +
                     'const args = process.argv.slice(2);\n' +
+                    "const readsBase = args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === 'refs/remotes/origin/main^{commit}';\n" +
+                    "if (readsBase && process.env.TEST_BASE_SHA_SEQUENCE) { const sequence = JSON.parse(process.env.TEST_BASE_SHA_SEQUENCE); const counter = process.env.TEST_BASE_SHA_COUNTER; const index = existsSync(counter) ? Number(readFileSync(counter, 'utf8')) : 0; writeFileSync(counter, String(index + 1)); console.log(sequence[Math.min(index, sequence.length - 1)]); process.exit(0); }\n" +
                     "if (args.includes('fetch')) { appendFileSync(process.env.TEST_EVENT_LOG, 'fetch\\n'); process.exit(0); }\n" +
                     "if (args.includes('ls-remote')) process.exit(0);\n" +
                     "if (args.includes('push')) { appendFileSync(process.env.TEST_EVENT_LOG, 'push\\n'); appendFileSync(process.env.TEST_PUSH_LOG, JSON.stringify({ cwd: process.cwd(), args }) + '\\n'); process.exit(0); }\n" +
@@ -305,10 +316,10 @@ describe('lane publish', () => {
                 '#!/usr/bin/env node\n' +
                     "import { appendFileSync } from 'node:fs';\n" +
                     'const args = process.argv.slice(2);\n' +
-                    "if (args[0] === 'repo') console.log('jcosta33/sourdaw');\n" +
+                    "if (args[0] === 'repo') console.log(process.env.TEST_REPOSITORY ?? 'jcosta33/sourdaw');\n" +
                     "else if (args[0] === 'api') console.log(JSON.stringify({ number: 12, isPullRequest: false }));\n" +
                     "else if (args[0] === 'pr' && args[1] === 'list') console.log('[]');\n" +
-                    "else if (args[0] === 'pr' && args[1] === 'create') { appendFileSync(process.env.TEST_EVENT_LOG, 'pr-write\\n'); console.log('https://github.com/jcosta33/sourdaw/pull/88'); }\n" +
+                    "else if (args[0] === 'pr' && args[1] === 'create') { appendFileSync(process.env.TEST_EVENT_LOG, 'pr-write\\n'); appendFileSync(process.env.TEST_PR_LOG, JSON.stringify(args) + '\\n'); console.log('https://github.com/jcosta33/sourdaw/pull/88'); }\n" +
                     "else { console.error('unexpected gh ' + args.join(' ')); process.exit(1); }\n"
             );
             chmodSync(ghWrapper, 0o700);
@@ -320,16 +331,43 @@ describe('lane publish', () => {
                 TEST_PUSH_LOG: pushLog,
                 TEST_MINT_LOG: mintLog,
                 TEST_EVENT_LOG: eventLog,
+                TEST_PR_LOG: pullRequestLog,
             };
-            runPackageRoute(primary, ['lane:publish', '12', '--test', TEST_INSTRUCTIONS], launcherEnv);
+            const beforeAmbiguousIssue = snapshotLogs();
+            expect(() =>
+                execFileSync(
+                    'pnpm',
+                    ['lane:publish', '12', '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
+                    {
+                        cwd: primary,
+                        env: launcherEnv,
+                        encoding: 'utf8',
+                    }
+                )
+            ).toThrow(/expected exactly one locked author lane for issue #12/);
+            expect(snapshotLogs()).toEqual(beforeAmbiguousIssue);
+            execFileSync(
+                'pnpm',
+                ['lane:publish', '--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
+                {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                }
+            );
 
             expect(JSON.parse(readFileSync(mintLog, 'utf8').trim())).toEqual({
                 permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
             });
             const push = JSON.parse(readFileSync(pushLog, 'utf8').trim()) as { cwd: string; args: string[] };
+            const pushedRefspec = push.args.find((arg) => arg.includes(':refs/heads/'));
             expect(realpathSync(push.cwd)).toBe(realpathSync(authorizedLane));
-            expect(push.args).toContain(`${authorizedHead}:refs/heads/agent/12/authorized`);
-            expect(push.args).not.toContain('HEAD:refs/heads/agent/12/hostile');
+            expect(pushedRefspec?.split(':')[0]).toBe(authorizedHead);
+            expect(pushedRefspec?.split(':')[1]).toBe('refs/heads/agent/12/authorized');
+            expect(push.args.some((arg) => arg.endsWith(':refs/heads/agent/12/sibling'))).toBe(false);
+            expect(push.args.some((arg) => arg.endsWith(':refs/heads/agent/12/hostile'))).toBe(false);
+            expect(push.args).not.toContain('--force');
+            expect(push.args).not.toContain('--force-with-lease');
             const events = readFileSync(eventLog, 'utf8').trim().split('\n');
             const mintEvent = events.indexOf('mint');
             const pushEvent = events.indexOf('push');
@@ -345,16 +383,120 @@ describe('lane publish', () => {
                 )
             ).toBeGreaterThan(pushEvent);
             expect(events[pullRequestWriteEvent - 1]).toBe('fetch');
-            expect(() => runPackageRoute(primary, ['lane:publish', '--lane', authorizedLane], launcherEnv)).toThrow(
-                /issue lanes must publish by issue number/
-            );
+            const beforeForeignLock = snapshotLogs();
             expect(() =>
-                runPackageRoute(primary, ['lane:publish', '--lane', join(authorizedLane, '.github')], launcherEnv)
+                execFileSync('pnpm', ['lane:publish', '--lane', foreignIssueLane], {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                })
+            ).toThrow(/not inside a locked author lane/);
+            const afterForeignLock = snapshotLogs();
+            expect(afterForeignLock).toEqual(beforeForeignLock);
+
+            const beforeUnlockedLane = snapshotLogs();
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', '--lane', unlockedIssueLane], {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                })
+            ).toThrow(/not inside a locked author lane/);
+            expect(snapshotLogs()).toEqual(beforeUnlockedLane);
+
+            const beforeWrongRepository = snapshotLogs();
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', '--lane', authorizedLane], {
+                    cwd: primary,
+                    env: { ...launcherEnv, TEST_REPOSITORY: 'attacker/sourdaw' },
+                    encoding: 'utf8',
+                })
+            ).toThrow(/expected jcosta33\/sourdaw/);
+            const afterWrongRepository = snapshotLogs();
+            expect(afterWrongRepository.push).toBe(beforeWrongRepository.push);
+            expect(afterWrongRepository.pullRequest).toBe(beforeWrongRepository.pullRequest);
+
+            const changedBase = 'f'.repeat(40);
+            const beforePrePushRace = snapshotLogs();
+            expect(() =>
+                execFileSync(
+                    'pnpm',
+                    [
+                        'lane:publish',
+                        '--lane',
+                        authorizedLane,
+                        '--summary',
+                        DEFAULT_SUMMARY,
+                        '--test',
+                        TEST_INSTRUCTIONS,
+                    ],
+                    {
+                        cwd: primary,
+                        env: {
+                            ...launcherEnv,
+                            TEST_BASE_SHA_SEQUENCE: JSON.stringify([
+                                fixtureBase,
+                                fixtureBase,
+                                fixtureBase,
+                                changedBase,
+                            ]),
+                            TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'pre-push-base-counter'),
+                        },
+                        encoding: 'utf8',
+                    }
+                )
+            ).toThrow(/origin\/main changed after its permission-scoped token was minted/);
+            const afterPrePushRace = snapshotLogs();
+            expect(afterPrePushRace.push).toBe(beforePrePushRace.push);
+            expect(afterPrePushRace.pullRequest).toBe(beforePrePushRace.pullRequest);
+
+            const pushesBeforePostPushRace = logLines(pushLog).length;
+            const pullRequestsBeforePostPushRace = readLog(pullRequestLog);
+            expect(() =>
+                execFileSync(
+                    'pnpm',
+                    [
+                        'lane:publish',
+                        '--lane',
+                        authorizedLane,
+                        '--summary',
+                        DEFAULT_SUMMARY,
+                        '--test',
+                        TEST_INSTRUCTIONS,
+                    ],
+                    {
+                        cwd: primary,
+                        env: {
+                            ...launcherEnv,
+                            TEST_BASE_SHA_SEQUENCE: JSON.stringify([
+                                fixtureBase,
+                                fixtureBase,
+                                fixtureBase,
+                                fixtureBase,
+                                changedBase,
+                            ]),
+                            TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'post-push-base-counter'),
+                        },
+                        encoding: 'utf8',
+                    }
+                )
+            ).toThrow(/origin\/main changed after its permission-scoped token was minted/);
+            expect(logLines(pushLog)).toHaveLength(pushesBeforePostPushRace + 1);
+            expect(readLog(pullRequestLog)).toBe(pullRequestsBeforePostPushRace);
+
+            const beforeNestedPath = snapshotLogs();
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', '--lane', join(authorizedLane, '.github')], {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                })
             ).toThrow(/--lane must name the exact author worktree root/);
+            expect(snapshotLogs()).toEqual(beforeNestedPath);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
-    }, 20_000);
+    }, 15_000);
 
     it('resolves the locked lane before requesting its diff-scoped publishing token', () => {
         const source = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');
@@ -410,7 +552,7 @@ describe('lane publish', () => {
     it('pushes without force, opens one PR, and prints the number', () => {
         const { port, calls, logs } = fakePort();
 
-        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls.some((call) => call.includes('--force'))).toBe(false);
         expect(calls.some((call) => call.includes('merge --auto'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(true);
@@ -423,13 +565,21 @@ describe('lane publish', () => {
 
         expect(publishLane(12, port)).toBe(41);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
-        expect(calls).toContain('edit:41:feat(vcs): add identities');
+        expect(calls).toContain('edit:41');
     });
 
     it('refuses to open a pull request without explicit test instructions', () => {
         const { port, calls } = fakePort();
 
         expect(() => publishLane(12, port)).toThrow(/requires --test <instructions>/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('refuses to open a pull request without an explicit summary', () => {
+        const { port, calls } = fakePort();
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toThrow(/requires --summary <text>/);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
@@ -448,7 +598,7 @@ describe('lane publish', () => {
     it('publishes a clean lane', () => {
         const { port, calls } = fakePort({ dirty: false });
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(calls).toContain('push:agent/12/work');
     });
@@ -465,13 +615,13 @@ describe('lane publish', () => {
         };
         const accepted = fakePort({ headSha: classifiedHead });
 
-        publishLane(12, accepted.port, undefined, TEST_INSTRUCTIONS, authorization);
+        publishLane(12, accepted.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, authorization);
         expect(accepted.calls).toContain(`pushHead:${classifiedHead}`);
 
         const changed = fakePort({ headSha: 'b'.repeat(40) });
-        expect(() => publishLane(12, changed.port, undefined, TEST_INSTRUCTIONS, authorization)).toThrow(
-            /HEAD changed after its permission-scoped token was minted/
-        );
+        expect(() =>
+            publishLane(12, changed.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, authorization)
+        ).toThrow(/HEAD changed after its permission-scoped token was minted/);
         expect(changed.calls.some((call) => call.startsWith('push:'))).toBe(false);
     });
 
@@ -486,7 +636,7 @@ describe('lane publish', () => {
         };
         const { port, calls } = fakePort({ headSha: authorization.headSha, baseSha: 'c'.repeat(40) });
 
-        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, authorization)).toThrow(
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, authorization)).toThrow(
             /origin\/main changed after its permission-scoped token was minted/
         );
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
@@ -499,14 +649,14 @@ describe('lane publish', () => {
         expect(publishLane(12, port)).toBe(41);
 
         expect(calls).toContain('push:agent/12/work');
-        expect(calls).toContain('edit:41:feat(vcs): add identities');
+        expect(calls).toContain('edit:41');
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
     it('names the resolved lane before it pushes or opens a pull request', () => {
         const { port, calls } = fakePort();
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         const receipt = calls.indexOf(`log:publishing ${ISSUE_LANE} on agent/12/work`);
         expect(receipt).toBeGreaterThanOrEqual(0);
@@ -517,9 +667,11 @@ describe('lane publish', () => {
     it('writes Closes #<issue> into the body when an issue is given', () => {
         const { port, bodies } = fakePort();
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(bodies.at(-1)).toContain('Closes #12');
+        expect(bodies.at(-1)).toContain(`### 🎯 What does this PR do?\n${DEFAULT_SUMMARY}`);
+        expect(bodies.at(-1)).not.toContain(`### 🎯 What does this PR do?\n${DEFAULT_SUBJECT}`);
         expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${TEST_INSTRUCTIONS}`);
     });
 
@@ -529,15 +681,31 @@ describe('lane publish', () => {
             cwd: `${ISSUE_LANE}/scripts`,
         });
 
-        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+        expect(calls).toContain('issueExists:12');
         expect(calls).toContain('push:agent/12/work');
         expect(bodies.at(-1)).toContain('Closes #12');
+    });
+
+    it('refuses a branch-derived issue that does not exist before mutating the lane or pull request', () => {
+        const { port, calls } = fakePort({
+            trees: [...otherAuthorLanes(), worktree()],
+            cwd: ISSUE_LANE,
+            issueExists: false,
+        });
+
+        expect(() => publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+            /issue #12 does not exist/
+        );
+        expect(calls).toContain('issueExists:12');
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:') || call.startsWith('edit:'))).toBe(false);
     });
 
     it('references a campaign issue without closing it', () => {
         const { port, bodies } = fakePort();
 
-        publishLane(12, port, 'relates', TEST_INSTRUCTIONS);
+        publishLane(12, port, 'relates', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(bodies.at(-1)).toContain('Related #12');
         expect(bodies.at(-1)).not.toContain('Closes #12');
@@ -549,7 +717,7 @@ describe('lane publish', () => {
             cwd: `${ISSUE_LANE}/scripts`,
         });
 
-        publishLane(undefined, port, 'relates', TEST_INSTRUCTIONS);
+        publishLane(undefined, port, 'relates', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(bodies.at(-1)).toContain('Related #12');
     });
@@ -557,7 +725,7 @@ describe('lane publish', () => {
     it('preserves Related on a later flagless update', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS, 'relates'),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS, 'relates'),
         });
 
         publishLane(12, port);
@@ -569,7 +737,7 @@ describe('lane publish', () => {
     it('preserves Closes on a later flagless update', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port);
@@ -582,7 +750,7 @@ describe('lane publish', () => {
         const existingInstructions = 'Open the settings panel and confirm the new control is visible.';
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, existingInstructions),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, existingInstructions),
         });
 
         publishLane(12, port);
@@ -590,11 +758,24 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${existingInstructions}`);
     });
 
+    it('preserves a valid existing What section when --summary is omitted', () => {
+        const existingSummary = 'Name each authored change so reviewers can see who wrote it.';
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, existingSummary, TEST_INSTRUCTIONS),
+        });
+
+        publishLane(12, port);
+
+        expect(bodies.at(-1)).toContain(`### 🎯 What does this PR do?\n${existingSummary}`);
+        expect(bodies.at(-1)).not.toContain(DEFAULT_SUMMARY);
+    });
+
     it('updates existing test instructions when --test is supplied', () => {
         const updatedInstructions = 'Run the publisher CLI and confirm the updated instructions appear.';
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port, undefined, updatedInstructions);
@@ -603,10 +784,23 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain(TEST_INSTRUCTIONS);
     });
 
+    it('updates the existing What section when --summary is supplied', () => {
+        const updatedSummary = 'Describe the change for a teammate who was not in the session.';
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+        });
+
+        publishLane(12, port, undefined, undefined, updatedSummary);
+
+        expect(bodies.at(-1)).toContain(`### 🎯 What does this PR do?\n${updatedSummary}`);
+        expect(bodies.at(-1)).not.toContain(DEFAULT_SUMMARY);
+    });
+
     it('changes a valid existing relationship only when requested', () => {
         const { port, bodies } = fakePort({
             existing: 41,
-            existingBody: composePublishBody(12, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(12, port, 'relates');
@@ -627,6 +821,14 @@ describe('lane publish', () => {
         const { port, calls } = fakePort({ existing: 41, existingBody: null });
 
         expect(() => publishLane(12, port)).toThrow(/body is unreadable/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('refuses an existing pull request whose title is unreadable', () => {
+        const { port, calls } = fakePort({ existing: 41, existingTitle: null });
+
+        expect(() => publishLane(12, port)).toThrow(/title is unreadable/);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
@@ -660,7 +862,7 @@ describe('lane publish', () => {
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
             cwd: CLEANUP_LANE,
             existing: 41,
-            existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, TEST_INSTRUCTIONS),
+            existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
         });
 
         publishLane(undefined, port);
@@ -685,7 +887,7 @@ describe('lane publish', () => {
             cwd: CLEANUP_LANE,
         });
 
-        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls).toContain('push:agent/cleanup');
         expect(calls.some((call) => call.startsWith('issueExists:'))).toBe(false);
         expect(bodies.at(-1)).not.toContain('Closes #');
@@ -699,7 +901,7 @@ describe('lane publish', () => {
             cwd: `${CLEANUP_LANE}/scripts/__tests__`,
         });
 
-        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS)).toBe(88);
+        expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls).toContain('push:agent/cleanup');
     });
 
@@ -889,15 +1091,56 @@ describe('lane publish', () => {
     it('uses the lane subject as the pull-request title', () => {
         const { port, calls } = fakePort({ subject: 'feat(foo): bar' });
 
-        publishLane(12, port, undefined, TEST_INSTRUCTIONS);
+        publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
         expect(calls.some((call) => call.includes('feat(foo): bar'))).toBe(true);
+    });
+
+    it('does not retitle an existing pull request when the lane subject changes', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            subject: 'feat(foo): a later commit',
+        });
+
+        publishLane(12, port);
+
+        expect(calls).toContain('edit:41');
+        expect(calls).toContain('editKeys:body');
+        expect(calls.some((call) => call.includes('feat(foo): a later commit'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('checks a later --summary against the existing GitHub title, not the newest commit subject', () => {
+        const { port, calls, bodies } = fakePort({
+            existing: 41,
+            existingTitle: DEFAULT_SUBJECT,
+            subject: 'feat(foo): a later commit',
+        });
+
+        publishLane(12, port, undefined, undefined, 'a later commit');
+
+        expect(calls).toContain('edit:41');
+        expect(bodies.at(-1)).toContain('### 🎯 What does this PR do?\na later commit');
+    });
+
+    it('refuses a later --summary that repeats the existing GitHub title', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            existingTitle: DEFAULT_SUBJECT,
+            subject: 'feat(foo): a later commit',
+        });
+
+        expect(() => publishLane(12, port, undefined, undefined, 'add identities')).toThrow(
+            /What section repeats the title/
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
 
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
-        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS)).toThrow(message);
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(message);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
@@ -925,6 +1168,12 @@ describe('lane publish', () => {
             testInstructions: TEST_INSTRUCTIONS,
             help: false,
         });
+        expect(parsePublishLaneArgs(['--summary', DEFAULT_SUMMARY, '12', '--test', TEST_INSTRUCTIONS])).toEqual({
+            issue: 12,
+            summary: DEFAULT_SUMMARY,
+            testInstructions: TEST_INSTRUCTIONS,
+            help: false,
+        });
         expect(parsePublishLaneArgs(['--relates'])).toEqual({ relationship: 'relates', help: false });
         expect(parsePublishLaneArgs([])).toEqual({ help: false });
         expect(parsePublishLaneArgs(['--help'])).toEqual({ help: true });
@@ -932,6 +1181,10 @@ describe('lane publish', () => {
         expect(() => parsePublishLaneArgs(['--relates', '--relates'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--test'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['--test', TEST_INSTRUCTIONS, '--test', TEST_INSTRUCTIONS])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--summary'])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['--summary', DEFAULT_SUMMARY, '--summary', DEFAULT_SUMMARY])).toThrow(
+            /usage/
+        );
         expect(() => parsePublishLaneArgs(['--lane', 'relative/lane'])).toThrow(/absolute path/);
         expect(() => parsePublishLaneArgs(['12', '--lane', CLEANUP_LANE])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
@@ -998,7 +1251,7 @@ describe('lane publish', () => {
         }
     });
 
-    it('requests headRefName, isCrossRepository, and the body the update path must preserve', () => {
+    it('requests headRefName, isCrossRepository, the title, and the body the update path must preserve', () => {
         expect(existingOpenPullRequestArgs('agent/12/work')).toEqual([
             'pr',
             'list',
@@ -1009,9 +1262,22 @@ describe('lane publish', () => {
             '--state',
             'open',
             '--json',
-            'number,headRefName,isCrossRepository,body',
+            'number,headRefName,isCrossRepository,title,body',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
+    });
+
+    it('edits an existing pull request body without sending a title', () => {
+        expect(updatePullRequestArgs(41, 'body text')).toEqual([
+            'pr',
+            'edit',
+            '41',
+            '--repo',
+            'jcosta33/sourdaw',
+            '--body',
+            'body text',
+        ]);
+        expect(updatePullRequestArgs(41, 'body text')).not.toContain('--title');
     });
 
     describe('matchingOpenPullRequest', () => {
@@ -1020,16 +1286,18 @@ describe('lane publish', () => {
                 number: 41,
                 headRefName: 'agent/12/work',
                 isCrossRepository: false,
+                title: 'feat(vcs): add identities',
                 body: '### 📌 Related tickets & additional notes\nCloses #12',
                 ...overrides,
             };
         }
 
-        it('accepts an exact same-repo head match, and carries its body forward', () => {
+        it('accepts an exact same-repo head match, and carries its title and body forward', () => {
             expect(matchingOpenPullRequest([row()], 'agent/12/work')).toEqual({
                 number: 41,
                 headRefName: 'agent/12/work',
                 isCrossRepository: false,
+                title: 'feat(vcs): add identities',
                 body: '### 📌 Related tickets & additional notes\nCloses #12',
             });
         });

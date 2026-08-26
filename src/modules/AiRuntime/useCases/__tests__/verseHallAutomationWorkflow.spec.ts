@@ -583,7 +583,7 @@ describe('verse Hall send automation workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: section-verse-two, track-lead-vocal, track-backing-vocal, bus-hall'
+            'Affected IDs: track-lead-vocal, track-backing-vocal, bus-hall, section-verse-two'
         );
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toHaveLength(1);
         expect(undoStore.value?.past).toHaveLength(1);

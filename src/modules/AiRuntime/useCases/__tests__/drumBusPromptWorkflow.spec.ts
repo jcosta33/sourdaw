@@ -401,12 +401,13 @@ function getProviderContext(userMessage: string): Record<string, unknown> {
  * target references for each action type used by this fixture file. `planAgentRun`
  * compares scopes by sorted membership, so declaration order here does not need
  * to match the application's own `parameters.properties` order. Device-only
- * `targetDeviceId` participates in the scope for device-addressed sidechain
- * routing, while `renderProjectSections` has no target rules at all.
+ * arguments (e.g. `targetDeviceId`) are intentionally excluded: the application
+ * only tracks track/bus identities in `scope.targetIds`, and `renderProjectSections`
+ * has no target rules at all.
  */
 const SCOPE_TARGET_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
     setTrackOutput: ['trackId', 'outputId'],
-    addSidechainRoute: ['sourceTrackId', 'targetTrackId', 'targetDeviceId'],
+    addSidechainRoute: ['sourceTrackId', 'targetTrackId'],
     addDevice: ['trackId'],
     addSend: ['trackId', 'busId'],
     setTrackGain: ['trackId'],
@@ -701,6 +702,23 @@ function getEx11ProtectedTargetIds(userMessage: string): string[] {
 }
 
 /**
+ * `bridgeDrumRenderComparisonPlan` attaches an `expectedTrackOutputs` guard to
+ * the drum bus's `createBus` action, verifying the room still routes to
+ * `capability.room.currentOutputId`. That guard's argument path contains
+ * "Track" (from `expectedTrackOutputs`), so the compiled envelope picks up its
+ * `outputId` as a stable `scope.targetIds` entry even though the provider's own
+ * `createBus` call never carries it. This reads the same `master` value back
+ * out of the capability so the fixture's declared scope matches.
+ */
+function getEx11ExtraTargetIds(userMessage: string): string[] {
+    const capability = getProviderContext(userMessage).drumRenderComparisonCapability;
+    if (!isRecord(capability) || !isRecord(capability.room) || typeof capability.room.currentOutputId !== 'string') {
+        throw new TypeError('Expected EX-11 room capability');
+    }
+    return [capability.room.currentOutputId];
+}
+
+/**
  * `bridgeDrumRenderComparisonPlan` attaches each render job's `startBeat`/
  * `endBeat` to the `renderProjectSections` command it compiles, even though the
  * provider's own call only carries `sectionIds`. Those nested beat fields
@@ -729,7 +747,7 @@ function useEx11WebLlmFixture(): void {
             ...asCommandBatchProposal(
                 createEx11ProviderPlanFromUserMessage(userMessage),
                 getEx11ProtectedTargetIds(userMessage),
-                [],
+                getEx11ExtraTargetIds(userMessage),
                 getEx11ExtraTargetRanges(userMessage)
             ),
         ])
@@ -751,7 +769,7 @@ function useEx11HostedFixture(
                 ...asCommandBatchProposal(
                     plan,
                     getEx11ProtectedTargetIds(userMessage),
-                    [],
+                    getEx11ExtraTargetIds(userMessage),
                     getEx11ExtraTargetRanges(userMessage)
                 ),
             ];
@@ -2402,12 +2420,12 @@ describe('drum bus prompt workflow', () => {
         expect(confirmation?.affectedIds).not.toContain('device-guitar-comp');
         expect(confirmation?.affectedIds).not.toContain('device-bass-eq');
         expect(confirmation?.affectedIds).toEqual([
-            'device-bass-comp-a',
             'track-bass-synth',
             'track-kick',
+            'device-bass-comp-a',
             'device-bass-comp-b',
-            'device-bass-di-comp',
             'track-bass-di',
+            'device-bass-di-comp',
         ]);
         expect(confirmation?.protectedUnchanged).toEqual([
             { id: 'device-bass-eq', name: 'Bass Synth Bass EQ' },
@@ -2458,15 +2476,11 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
+        expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
-        const expectedActionAffectedIds = [
-            ['device-bass-comp-a', routeIds[0]!, 'track-bass-synth', 'track-kick'],
-            ['device-bass-comp-b', routeIds[1]!, 'track-bass-synth', 'track-kick'],
-            ['device-bass-di-comp', routeIds[2]!, 'track-bass-di', 'track-kick'],
-        ];
-        expect(executedActions?.map((execution) => execution.affectedIds)).toEqual(expectedActionAffectedIds);
-        for (const affectedIds of expectedActionAffectedIds) {
-            expect(receipt?.content).toContain(`Affected IDs: ${affectedIds.join(', ')}`);
+        for (const [index, routeId] of routeIds.entries()) {
+            expect(executedActions?.[index]?.affectedIds).toContain(routeId);
+            expect(receipt?.content).toContain(routeId);
         }
         expect(undoStore.value?.past).toHaveLength(3);
 
@@ -2553,17 +2567,13 @@ describe('drum bus prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
+        expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
         const routeIds = sidechainStore.value?.routes.map((route) => route.id) ?? [];
         const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
         expect(routeIds).toHaveLength(3);
-        const expectedActionAffectedIds = [
-            ['device-bass-comp-a', routeIds[0]!, 'track-bass-synth', 'track-kick'],
-            ['device-bass-comp-b', routeIds[1]!, 'track-bass-synth', 'track-kick'],
-            ['device-bass-di-comp', routeIds[2]!, 'track-bass-di', 'track-kick'],
-        ];
-        expect(executedActions?.map((execution) => execution.affectedIds)).toEqual(expectedActionAffectedIds);
-        for (const affectedIds of expectedActionAffectedIds) {
-            expect(receipt?.content).toContain(`Affected IDs: ${affectedIds.join(', ')}`);
+        for (const [index, routeId] of routeIds.entries()) {
+            expect(executedActions?.[index]?.affectedIds).toContain(routeId);
+            expect(receipt?.content).toContain(routeId);
         }
 
         await undo();

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     aiBackendPreference: { value: 'auto' },
     appendChatMessage: vi.fn(),
     captureProjectRevision: vi.fn(),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(),
     chatState: { value: { chatMode: 'chat', isGenerating: false, messages: [] } },
     compileAgentActionExecution: vi.fn(),
     describeAgentRiskApproval: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
 }));
 
 vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
@@ -267,6 +269,8 @@ function createStemImportAction(audioBufferId: string): ExecutableRuntimeAction 
                     sourceBytes: 64,
                     decodedBytes: 128,
                     audioBufferId,
+                    assetHash: `sha256:${audioBufferId}`,
+                    assetLeaseId: `asset-lease:${audioBufferId}`,
                     trackId: 'track-kick',
                     trackName: 'Kick',
                     trackGain: 0.8,
@@ -475,6 +479,7 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.aiBackendPreference.value = 'auto';
         mocks.chatState.value = { chatMode: 'chat', isGenerating: false, messages: [] };
         mocks.captureProjectRevision.mockReturnValue('revision-fixture');
+        mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-fixture');
         mocks.describeAgentRiskApproval.mockReturnValue('Risk approval required.');
         mocks.describePendingActionConfirmation.mockReturnValue({
             actionLabels: ['Fixture action'],

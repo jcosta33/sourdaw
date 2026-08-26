@@ -16,11 +16,13 @@ import {
     createCrdtDoc,
     getCrdtDoc,
     markActionHistoryEntryReverted,
+    mutateCrdtDoc,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 
 import { AutomergeSync } from '../automergeSync';
 
@@ -46,6 +48,7 @@ type RootDocument = {
      * without entangling these tests with projection behaviour.
      */
     peerProbe?: string;
+    projectMeta?: Record<string, unknown>;
 };
 
 const no_action_history_metadata_port = {
@@ -164,6 +167,77 @@ describe('AutomergeSync replay authority integration', () => {
         // below would pass on an empty sync round.
         expect(getCrdtDoc<RootDocument>('root')?.peerProbe).toBe('peer edit');
         expect(getActionReplayStatus(entry_id)).toEqual({ status: 'ready' });
+    });
+
+    it('reports host convergence only after the real root projection installs each authoritative identity', () => {
+        const {
+            dirty: _dirty,
+            loading: _loading,
+            identityMigrationPending: _identityMigrationPending,
+            initialized: _initialized,
+            ...durableProjectMeta
+        } = defaultProjectStoreState;
+        mutateCrdtDoc<RootDocument>({
+            id: 'root',
+            changeFn: (draft) => {
+                draft.projectMeta = {
+                    ...durableProjectMeta,
+                    projectId: '11111111-1111-4111-8111-111111111111',
+                };
+            },
+        });
+        projectStore.hydrate();
+        unsubscribe_projection = setupProjectionBridge();
+        const projectedOwnerIds: Array<string | undefined> = [];
+        const onSyncConverged = () => projectedOwnerIds.push(projectStore.value?.projectId);
+
+        const sameIdentity = change(fork_peer_document('root'), (draft) => {
+            draft.peerProbe = 'host root advanced without changing identity text';
+        });
+        deliver_peer_sync({
+            sync: new AutomergeSync(
+                { getConnectedPeerIds: () => [], sendCrdtSync: () => undefined },
+                { onSyncConverged }
+            ),
+            docId: 'root',
+            remote: sameIdentity,
+        });
+
+        const intermediate = change(fork_peer_document('root'), (draft) => {
+            if (!draft.projectMeta) {
+                throw new Error('Expected seeded project metadata');
+            }
+            draft.projectMeta.projectId = '22222222-2222-4222-8222-222222222222';
+        });
+        deliver_peer_sync({
+            sync: new AutomergeSync(
+                { getConnectedPeerIds: () => [], sendCrdtSync: () => undefined },
+                { onSyncConverged }
+            ),
+            docId: 'root',
+            remote: intermediate,
+        });
+
+        const authoritative = change(fork_peer_document('root'), (draft) => {
+            if (!draft.projectMeta) {
+                throw new Error('Expected projected project metadata');
+            }
+            draft.projectMeta.projectId = '33333333-3333-4333-8333-333333333333';
+        });
+        deliver_peer_sync({
+            sync: new AutomergeSync(
+                { getConnectedPeerIds: () => [], sendCrdtSync: () => undefined },
+                { onSyncConverged }
+            ),
+            docId: 'root',
+            remote: authoritative,
+        });
+
+        expect(projectedOwnerIds).toEqual([
+            '11111111-1111-4111-8111-111111111111',
+            '22222222-2222-4222-8222-222222222222',
+            '33333333-3333-4333-8333-333333333333',
+        ]);
     });
 
     it('keeps replay authority when the sync targets a branch document', async () => {

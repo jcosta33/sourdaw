@@ -1,4 +1,4 @@
-import { parseVersionedCommandBatchEnvelope, requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -213,10 +213,7 @@ export async function submitAdmittedPromptRequest(
             projectRevision: planned.projectRevision,
             runId,
             mode: 'apply',
-            requiresConfirmation:
-                requiresAppActionConfirmation(planned.result.actions) ||
-                planned.result.requiresConfirmation ||
-                input.requiresConfirmation === true,
+            requiresConfirmation: planned.result.requiresConfirmation || input.requiresConfirmation === true,
         });
         const parsed = parseVersionedCommandBatchEnvelope(
             compiled.commandBatch.serialized,
@@ -258,7 +255,7 @@ export async function submitAdmittedPromptRequest(
             },
         });
 
-        const execute = (
+        const execute = async (
             successVerb?: 'Confirmed',
             signal: AbortSignal | undefined = input.signal
         ): ReturnType<typeof executePromptActionGroup> =>
@@ -274,7 +271,6 @@ export async function submitAdmittedPromptRequest(
             });
 
         if (compiled.requiresConfirmation) {
-            let confirmationExecution: ReturnType<typeof executePromptActionGroup> | null = null;
             agentRunLifecycle.transitionPhase({
                 runId,
                 phase: 'waiting-for-approval',
@@ -287,10 +283,7 @@ export async function submitAdmittedPromptRequest(
                     actions: planned.result.actions,
                     actionLabels,
                     projectRevision: planned.projectRevision,
-                    confirm: (signal) => {
-                        confirmationExecution ??= execute('Confirmed', signal);
-                        return confirmationExecution;
-                    },
+                    confirm: (signal) => execute('Confirmed', signal),
                     cancel,
                 },
             };

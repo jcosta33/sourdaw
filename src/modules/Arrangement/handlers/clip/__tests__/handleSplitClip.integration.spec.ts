@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppActionBatch,
@@ -20,7 +22,12 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -32,6 +39,20 @@ const noActionHistoryMetadataPort = {
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
+function expectWarningNotification(index: number, message: string): void {
+    expect(notifications).toHaveLength(index + 1);
+    expect(notifications[index]).toEqual({ message, level: 'warning' });
+}
 
 function makeAudioBuffer(channelData: Float32Array, sampleRate: number): AudioBuffer {
     return {
@@ -47,7 +68,7 @@ function makeAudioBuffer(channelData: Float32Array, sampleRate: number): AudioBu
 
 describe('handleSplitClip atomic integration', () => {
     beforeEach(() => {
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        Container.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('split clip atomic integration');
         removeCrdtDoc('root');
@@ -56,6 +77,12 @@ describe('handleSplitClip atomic integration', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getTransportHandlers());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -86,10 +113,11 @@ describe('handleSplitClip atomic integration', () => {
     });
 
     afterEach(() => {
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
+        Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         vi.restoreAllMocks();
@@ -138,12 +166,16 @@ describe('handleSplitClip atomic integration', () => {
     });
 
     it('keeps the split and undo entry when right-side MIDI changed externally', async () => {
+        const originalClips = structuredClone(trackStore.value!.tracks[0]!.clips);
+        const originalNotesByClipId = structuredClone(midiStore.value!.notesByClipId);
+
         await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } }], {
             source: 'prompt',
             requireCompensation: true,
         });
         const rightClip = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id !== 'clip-1')!;
         const rightNotes = midiStore.value!.notesByClipId[rightClip.id]!;
+        const preparedRightNoteVelocity = rightNotes[0]!.velocity;
         midiStore.set({
             ...midiStore.value!,
             notesByClipId: {
@@ -152,10 +184,32 @@ describe('handleSplitClip atomic integration', () => {
             },
         });
 
+        const staleUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(
+            staleUndoNotification,
+            'Cannot undo "Split clip "Intro" (clip-1) at beat 4": project state has changed'
+        );
 
+        expect(undoStore.value!.past).toHaveLength(1);
+        expect(undoStore.value!.future).toHaveLength(0);
         expect(trackStore.value!.tracks[0]!.clips).toHaveLength(2);
         expect(midiStore.value!.notesByClipId[rightClip.id]![0]!.velocity).toBe(12);
+
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                [rightClip.id]: [{ ...rightNotes[0]!, velocity: preparedRightNoteVelocity }, ...rightNotes.slice(1)],
+            },
+        });
+
+        await undo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(originalClips);
+        expect(midiStore.value!.notesByClipId).toEqual(originalNotesByClipId);
+        expect(undoStore.value!.past).toHaveLength(0);
+        expect(undoStore.value!.future).toHaveLength(1);
     });
 
     it.each(['tempo-first', 'split-first'] as const)(

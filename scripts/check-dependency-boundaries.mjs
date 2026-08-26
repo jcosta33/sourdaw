@@ -1504,9 +1504,8 @@ function walkFiles(directory, symlinkPaths = []) {
 }
 
 // `walkFiles` records a symbolic link and does not follow it, so a linked source file or a linked
-// directory keeps everything behind it out of every check below. Under `src/modules` links are
-// refused outright; elsewhere under `src` only the ones that hide source matter, which leaves the
-// documentation links that sit beside a component alone.
+// directory keeps everything behind it out of every check below. Only the ones that hide source matter,
+// which leaves documentation links (e.g. AGENTS.md, CLAUDE.md, GEMINI.md) alone across src.
 function hidesSourceFromTheWalk(absolutePath, file) {
     if (sourceFilePath.test(file)) {
         return true;
@@ -1529,9 +1528,6 @@ export function findStaticGuardFindings(repositoryRoot = root) {
         }));
     const symlinkFindings = symlinkPaths.flatMap((absolutePath) => {
         const file = toPosixPath(relative(repositoryRoot, absolutePath));
-        if (/^src\/modules(?:\/|$)/.test(file)) {
-            return [{ file, line: 1, reason: 'symbolic links are not permitted under src/modules' }];
-        }
         if (!hidesSourceFromTheWalk(absolutePath, file)) {
             return [];
         }

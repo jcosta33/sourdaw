@@ -1,6 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +31,8 @@ import {
 import {
     assertLicenseExpressionEvidence,
     collectNpmLockDependencyLicenses,
+    buildDependencyLicenseArtifacts,
+    collectCargoDependencyLicenses,
     DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
     assertPlatformRestrictedNpmPackage,
@@ -52,6 +63,51 @@ const ownershipFiles = [
 function write(root: string, path: string, contents: string): void {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), contents);
+}
+
+function writeCargoInventoryFixture(root: string): void {
+    const repositoryRoot = process.cwd();
+    const snapshotPaths = [
+        'Cargo.lock',
+        'electron-builder.yml',
+        'package.json',
+        DEPENDENCY_LICENSE_REPORT_PATH,
+        DEPENDENCY_LICENSE_PROOFS_PATH,
+    ];
+    for (const path of snapshotPaths) {
+        write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
+    }
+    const manifest = readCargoInventoryFixtureManifest(root);
+    for (const { path } of manifest.cargoRuntimeInventory?.sourceInputs ?? []) {
+        write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
+    }
+}
+
+type CargoInventoryFixtureManifest = {
+    cargoRuntimeInventory?: {
+        sourceInputs: Array<{
+            path: string;
+            sha256: string;
+        }>;
+        featureSelection: {
+            features: string[];
+        };
+        packages: Array<{
+            name: string;
+            version: string;
+            source: string;
+        }>;
+    };
+};
+
+function readCargoInventoryFixtureManifest(root: string): CargoInventoryFixtureManifest {
+    return JSON.parse(
+        readFileSync(join(root, DEPENDENCY_LICENSE_PROOFS_PATH), 'utf8')
+    ) as CargoInventoryFixtureManifest;
+}
+
+function writeCargoInventoryFixtureManifest(root: string, manifest: CargoInventoryFixtureManifest): void {
+    writeFileSync(join(root, DEPENDENCY_LICENSE_PROOFS_PATH), `${JSON.stringify(manifest, null, 4)}\n`);
 }
 
 function encodeTarEntry(path: string, type: 'File' | 'NextFileHasLongPath', contents: Buffer): Buffer {
@@ -128,6 +184,160 @@ describe('project license', () => {
 
     it('accepts one project grant across source and shipped metadata', () => {
         expect(validateProjectLicense(root, cargo)).toEqual([]);
+    });
+
+    it('validates the locked Cargo inventory without invoking cargo', () => {
+        const unavailableCargoPath = mkdtempSync(join(tmpdir(), 'sourdaw-unavailable-cargo-'));
+        const originalPath = process.env.PATH;
+        const originalSentinelPath = process.env.CARGO_SENTINEL_PATH;
+        const cargoPath = join(unavailableCargoPath, 'cargo');
+        const sentinelPath = join(unavailableCargoPath, 'cargo-invoked');
+        writeFileSync(cargoPath, '#!/bin/sh\nprintf invoked > "$CARGO_SENTINEL_PATH"\nexit 97\n');
+        chmodSync(cargoPath, 0o755);
+        process.env.PATH = `${unavailableCargoPath}:${originalPath ?? ''}`;
+        process.env.CARGO_SENTINEL_PATH = sentinelPath;
+        try {
+            const records = collectCargoDependencyLicenses(process.cwd());
+            expect(records).not.toHaveLength(0);
+            expect(buildDependencyLicenseArtifacts(process.cwd()).report).toBe(
+                readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8')
+            );
+            expect(existsSync(sentinelPath)).toBe(false);
+        } finally {
+            if (originalPath === undefined) {
+                delete process.env.PATH;
+            } else {
+                process.env.PATH = originalPath;
+            }
+            if (originalSentinelPath === undefined) {
+                delete process.env.CARGO_SENTINEL_PATH;
+            } else {
+                process.env.CARGO_SENTINEL_PATH = originalSentinelPath;
+            }
+            rmSync(unavailableCargoPath, { recursive: true, force: true });
+        }
+    });
+
+    it('binds the offline Cargo inventory to the shipped feature contract', () => {
+        const manifest = readCargoInventoryFixtureManifest(process.cwd());
+        expect(manifest.cargoRuntimeInventory?.featureSelection.features).toContain('sourdaw-native/napi-addon');
+        expect(manifest.cargoRuntimeInventory?.packages).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ name: 'napi' }),
+                expect.objectContaining({ name: 'napi-derive' }),
+            ])
+        );
+    });
+
+    it('binds the Cargo resolver and desktop shipping inputs', () => {
+        const manifest = readCargoInventoryFixtureManifest(process.cwd());
+        const paths = manifest.cargoRuntimeInventory?.sourceInputs.map(({ path }) => path);
+        expect(paths).toEqual(
+            expect.arrayContaining([
+                'Cargo.toml',
+                'crates/sourdaw-native/Cargo.toml',
+                'electron-builder.yml',
+                'package.json',
+                'scripts/buildNativeAddon.ts',
+            ])
+        );
+    });
+
+    it('rejects missing transitive packages from the generated Cargo snapshot', () => {
+        writeCargoInventoryFixture(root);
+        const manifest = readCargoInventoryFixtureManifest(root);
+        const inventory = manifest.cargoRuntimeInventory;
+        expect(inventory).toBeDefined();
+        inventory!.packages = inventory!.packages.filter(({ name }) => name !== 'adler2');
+        writeCargoInventoryFixtureManifest(root, manifest);
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo dependency inventory drifted');
+    });
+
+    it('rejects supported Cargo license-expression drift offline', () => {
+        writeCargoInventoryFixture(root);
+        const reportPath = join(root, DEPENDENCY_LICENSE_REPORT_PATH);
+        const report = readFileSync(reportPath, 'utf8');
+        writeFileSync(
+            reportPath,
+            report.replace('cargo:automerge@0.11.0 | MIT |', 'cargo:automerge@0.11.0 | MIT OR Apache-2.0 |')
+        );
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo dependency inventory drifted');
+    });
+
+    it('rejects Cargo legal-evidence reassignment offline', () => {
+        writeCargoInventoryFixture(root);
+        const reportPath = join(root, DEPENDENCY_LICENSE_REPORT_PATH);
+        const report = readFileSync(reportPath, 'utf8');
+        const automerge = /^cargo:automerge@0\.11\.0 \| MIT \| ([^|]+) \| Cargo\.lock$/mu.exec(report)?.[1];
+        expect(automerge).toBeDefined();
+        writeFileSync(
+            reportPath,
+            report.replace(/^(cargo:adler2@2\.0\.1 \| [^|]+ \| )[^|]+( \| Cargo\.lock)$/mu, `$1${automerge!}$2`)
+        );
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo dependency inventory drifted');
+    });
+
+    it('rejects Cargo source and lock drift offline', () => {
+        writeCargoInventoryFixture(root);
+        const lockPath = join(root, 'Cargo.lock');
+        const lock = readFileSync(lockPath, 'utf8');
+        writeFileSync(lockPath, lock.replace(/^checksum = "[0-9a-f]{64}"$/mu, `checksum = "${'0'.repeat(64)}"`));
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo.lock snapshot drifted');
+
+        writeFileSync(lockPath, lock);
+        const manifest = readCargoInventoryFixtureManifest(root);
+        const inventory = manifest.cargoRuntimeInventory;
+        expect(inventory).toBeDefined();
+        inventory!.packages[0]!.source = 'registry+https://example.invalid/index';
+        writeCargoInventoryFixtureManifest(root, manifest);
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('proof source is not the crates.io registry');
+    });
+
+    it.each([
+        ['Cargo.toml', 'resolver = "2"', 'resolver = "3"'],
+        ['crates/sourdaw-native/Cargo.toml', 'napi-addon =', 'napi-addon-renamed ='],
+        ['electron-builder.yml', 'from: crates/sourdaw-native', 'from: crates/sourdaw-native-renamed'],
+        ['package.json', 'node scripts/buildNativeAddon.ts', 'node scripts/buildNativeAddonRenamed.ts'],
+        ['scripts/buildNativeAddon.ts', "'napi-addon'", "'napi-addon-renamed'"],
+    ])('rejects Cargo resolution input drift in %s without invoking Cargo', (path, before, after) => {
+        writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
+        const inputPath = join(root, path);
+        const input = readFileSync(inputPath, 'utf8');
+        expect(input).toContain(before);
+        writeFileSync(inputPath, input.replace(before, after));
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
+    });
+
+    it('rejects Cargo source-input symlinks that escape the repository', () => {
+        writeCargoInventoryFixture(root);
+        expect(collectCargoDependencyLicenses(root)).not.toHaveLength(0);
+        const outsideRoot = mkdtempSync(join(tmpdir(), 'sourdaw-cargo-source-input-'));
+        const outsidePath = join(outsideRoot, 'Cargo.toml');
+        writeFileSync(outsidePath, '[package]\nname = "outside"\n');
+        symlinkSync(outsidePath, join(root, 'outside-Cargo.toml'));
+        try {
+            const manifest = readCargoInventoryFixtureManifest(root);
+            manifest.cargoRuntimeInventory!.sourceInputs.push({
+                path: 'outside-Cargo.toml',
+                sha256: createHash('sha256').update(readFileSync(outsidePath)).digest('hex'),
+            });
+            manifest.cargoRuntimeInventory!.sourceInputs.sort((left, right) => {
+                if (left.path === right.path) {
+                    return 0;
+                }
+                return left.path < right.path ? -1 : 1;
+            });
+            writeCargoInventoryFixtureManifest(root, manifest);
+
+            expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source input escapes the repository');
+        } finally {
+            rmSync(outsideRoot, { recursive: true, force: true });
+        }
     });
 
     it('rejects canonical LICENSE drift independently', () => {
@@ -556,17 +766,14 @@ describe('project license', () => {
         const archivePath = 'release/dependency-license-proofs/example-1.0.0.tgz';
         const license = readFileSync(join(process.cwd(), 'public/legal/MI-PLAITS-DSP-RS-MIT.txt'));
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
-        writeFileSync(
-            join(root, archivePath),
-            gzipSync(
-                Buffer.concat([
-                    encodeTarEntry('package/LICENSE', 'File', license),
-                    encodeTarEntry('./package/LICENSE', 'File', license),
-                    Buffer.alloc(1024),
-                ])
-            )
+        const archive = gzipSync(
+            Buffer.concat([
+                encodeTarEntry('package/LICENSE', 'File', license),
+                encodeTarEntry('./package/LICENSE', 'File', license),
+                Buffer.alloc(1024),
+            ])
         );
-        const archive = readFileSync(join(root, archivePath));
+        writeFileSync(join(root, archivePath), archive);
         const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
         const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
         write(

@@ -75,7 +75,7 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
         let postCommitFailure: RuntimeDeviceDeltaPostCommitError | undefined;
         let runtimeDeltaApplied = false;
         let pluginActivationSettled = false;
-        function applyRuntimeEffect(): void {
+        async function applyRuntimeEffect(): Promise<void> {
             if (postCommitFailure) {
                 throw postCommitFailure;
             }
@@ -114,11 +114,14 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                 pluginActivationSettled = true;
                 return;
             }
-            activateExternalPlugin({
+            const activation = await activateExternalPlugin({
                 pluginId: externalPluginId,
                 instanceId: externalInstanceId,
                 onLatencyMs: (latencyMs) => reportLatency(committedDevice.id, latencyMs),
             });
+            if (activation.status === 'failed') {
+                throw new Error(activation.reason);
+            }
             pluginActivationSettled = true;
         }
 
@@ -126,6 +129,7 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
             status: 'written' as const,
             afterCommit: applyRuntimeEffect,
             afterAmbiguousCommit: applyRuntimeEffect,
+            postCommitEffect: { kind: 'runtime-graph' as const, remediation: 'repair' as const },
         };
     },
     describe: (alpha) => ({ label: `Load external plugin "${alpha.payload.pluginId}"` }),

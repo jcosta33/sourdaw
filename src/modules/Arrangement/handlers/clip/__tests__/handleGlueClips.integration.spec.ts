@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -21,7 +23,12 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 import { type AppAction, type ClipGlueActionSnapshot } from '#/utils/handlerContract';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -37,6 +44,20 @@ const noActionHistoryMetadataPort = {
 };
 
 const LEGACY_GLUE_MACRO_ID = 'legacy-glue-macro';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
+function expectWarningNotification(index: number, message: string): void {
+    expect(notifications).toHaveLength(index + 1);
+    expect(notifications[index]).toEqual({ message, level: 'warning' });
+}
 
 function withProbability(snapshot: ClipGlueActionSnapshot, probability: number): ClipGlueActionSnapshot {
     return {
@@ -88,7 +109,7 @@ function persistLegacyGlueMacro(probability?: number): Extract<AppAction, { type
 
 describe('handleGlueClips atomic integration', () => {
     beforeEach(() => {
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        Container.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('glue clips atomic integration');
         removeCrdtDoc('root');
@@ -97,6 +118,12 @@ describe('handleGlueClips atomic integration', () => {
         clearHandlerRegistry();
         registerHandlerMap(getMacroHandlers());
         registerHandlerMap(getArrangementHandlers());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -140,10 +167,11 @@ describe('handleGlueClips atomic integration', () => {
     });
 
     afterEach(() => {
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
+        Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
@@ -336,7 +364,9 @@ describe('handleGlueClips atomic integration', () => {
             ],
         });
 
+        const staleUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(staleUndoNotification, 'Cannot undo "Glue clips": project state has changed');
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
         expect(automationStore.value!.lanes).toMatchObject([{ clipId: glued.id }]);
@@ -361,7 +391,9 @@ describe('handleGlueClips atomic integration', () => {
         });
         trackStore.set({ ...trackStore.value!, ghostClips: [ghost] });
 
+        const staleUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(staleUndoNotification, 'Cannot undo "Glue clips": project state has changed');
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
         expect(trackStore.value!.ghostClips).toMatchObject([{ id: 'clip-ghost', parentClipId: glued.id }]);
@@ -398,7 +430,9 @@ describe('handleGlueClips atomic integration', () => {
             ),
         });
 
+        const staleUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(staleUndoNotification, 'Cannot undo "Glue clips": project state has changed');
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
         expect(trackStore.value!.tracks[0]!.alternatives[0]!.clips).toMatchObject([{ id: 'clip-a' }]);
@@ -433,7 +467,9 @@ describe('handleGlueClips atomic integration', () => {
             activeNotes: new Set<number>(),
         });
 
+        const undoNotification = notifications.length;
         await undo();
+        expectWarningNotification(undoNotification, 'Cannot undo "Glue clips": project state has changed');
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
         stepRecordStore.set(null);
@@ -446,7 +482,9 @@ describe('handleGlueClips atomic integration', () => {
             clipId: glued.id,
             activeNotes: new Set<number>(),
         });
+        const redoNotification = notifications.length;
         await redo();
+        expectWarningNotification(redoNotification, 'Cannot redo "Glue clips": project state has changed');
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
         stepRecordStore.set(null);
@@ -481,7 +519,9 @@ describe('handleGlueClips atomic integration', () => {
         });
         const previousTakeLanes = structuredClone(takeLaneStore.value);
 
+        const staleUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(staleUndoNotification, 'Cannot undo "Glue clips": project state has changed');
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
         expect(takeLaneStore.value).toEqual(previousTakeLanes);
@@ -519,7 +559,9 @@ describe('handleGlueClips atomic integration', () => {
         });
         const previousTakeLanes = structuredClone(takeLaneStore.value);
 
+        const staleRedoNotification = notifications.length;
         await redo();
+        expectWarningNotification(staleRedoNotification, 'Cannot redo "Glue clips": project state has changed');
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
         expect(takeLaneStore.value).toEqual(previousTakeLanes);

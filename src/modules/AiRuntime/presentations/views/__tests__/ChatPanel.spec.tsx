@@ -14,13 +14,23 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/stores/chatStore', () => ({
-    chatStore: {},
+    chatStore: { kind: 'chat' },
     clearChatMessages: vi.fn(),
     toggleReasoning: vi.fn(),
     setChatMode: vi.fn(),
     stopGenerating: vi.fn(),
 }));
 
+vi.mock('#/modules/AiRuntime/stores/agentRunStore', () => ({
+    agentRunStore: { kind: 'agent-runs' },
+}));
+
+vi.mock('../../../useCases/getAgentRunControlProjection', () => ({
+    agentRunControls: {
+        listDecisions: vi.fn(),
+        resumeDecision: vi.fn(),
+    },
+}));
 vi.mock('#/modules/AiRuntime/useCases/sendChatMessage', () => ({
     sendChatMessage: vi.fn(),
 }));
@@ -31,6 +41,10 @@ vi.mock('../../../useCases/confirmPendingChatActions', () => ({
 
 vi.mock('../../../useCases/cancelPendingChatActions', () => ({
     cancelPendingChatActions: vi.fn(),
+}));
+
+vi.mock('../../../useCases/recoverAgentRunPendingEffects', () => ({
+    recoverAgentRunPendingEffects: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat', () => ({
@@ -95,19 +109,34 @@ const { useStore } = await import('#/infra/store/useStore');
 const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
+const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
+const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
     await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
+const { agentRunControls } = await import('../../../useCases/getAgentRunControlProjection');
+
+const chatState = {
+    messages: [],
+    isGenerating: false,
+    chatMode: 'chat',
+    enableReasoning: false,
+};
 
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         Element.prototype.scrollIntoView = vi.fn();
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
-            messages: [],
-            isGenerating: false,
-            chatMode: 'chat',
-            enableReasoning: false,
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store: unknown) =>
+            store === agentRunStore ? { schemaVersion: 1, runs: [] } : chatState
+        );
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+        (agentRunControls.resumeDecision as ReturnType<typeof vi.fn>).mockResolvedValue({
+            status: 'resumed',
+            sourceRunId: 'decision-run',
+            runId: 'resumed-run',
+            decisionId: 'decision-1',
+            selectedAlternativeId: 'keep-tempo',
         });
         (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(true);
     });
@@ -218,6 +247,336 @@ describe('ChatPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry missing section renders' }));
         expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
+    });
+
+    it('renders a pending decision in the production chat workspace and resumes only after explicit activation', async () => {
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([
+            {
+                runId: 'decision-run',
+                allowedActions: { resume: true },
+                resumeRejectionReason: null,
+                decision: {
+                    reason: 'Choose the bounded interpretation before the run can continue.',
+                    alternatives: [
+                        {
+                            id: 'keep tempo / primary!',
+                            label: 'Keep the current tempo',
+                            changesAuthority: false,
+                        },
+                    ],
+                },
+            },
+        ]);
+
+        render(<ChatPanel />);
+
+        expect(screen.getByText('Choose the bounded interpretation before the run can continue.')).toBeInTheDocument();
+        const choice = screen.getByRole('button', { name: 'Select Keep the current tempo' });
+        expect(choice).toHaveAttribute('type', 'button');
+        expect(choice).toHaveFocus();
+        expect(agentRunControls.resumeDecision).not.toHaveBeenCalled();
+
+        fireEvent.click(choice);
+
+        expect(agentRunControls.resumeDecision).toHaveBeenCalledWith({
+            runId: 'decision-run',
+            alternativeId: 'keep tempo / primary!',
+        });
+        expect(await screen.findByText('Started replacement agent run resumed-run.')).toBeInTheDocument();
+        const status = screen.getByRole('status');
+        expect(status).toHaveAttribute('aria-live', 'polite');
+        expect(status).toHaveAttribute('aria-atomic', 'true');
+        expect(status).toHaveFocus();
+    });
+
+    it('replaces the provisional resume status with the public rejection reason', async () => {
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([
+            {
+                runId: 'decision-run',
+                allowedActions: { resume: true },
+                resumeRejectionReason: null,
+                decision: {
+                    reason: 'Choose the bounded interpretation before the run can continue.',
+                    alternatives: [{ id: 'keep-tempo', label: 'Keep the current tempo', changesAuthority: false }],
+                },
+            },
+        ]);
+        (agentRunControls.resumeDecision as ReturnType<typeof vi.fn>).mockResolvedValue({
+            status: 'rejected',
+            reason: 'The pending decision is unavailable or already consumed.',
+        });
+
+        render(<ChatPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Select Keep the current tempo' }));
+
+        expect(await screen.findByText('The pending decision is unavailable or already consumed.')).toBeInTheDocument();
+        const status = screen.getByRole('status');
+        expect(status).toHaveAttribute('aria-live', 'polite');
+        expect(status).toHaveAttribute('aria-atomic', 'true');
+        expect(status).toHaveFocus();
+    });
+
+    it('keeps unavailable decisions visible but disabled with their public rejection reason', () => {
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([
+            {
+                runId: 'stale-run',
+                allowedActions: { resume: false },
+                resumeRejectionReason: 'The project revision changed while the decision was pending.',
+                decision: {
+                    reason: 'Choose a tempo before continuing.',
+                    alternatives: [
+                        {
+                            id: 'keep tempo / primary!',
+                            label: 'Keep the current tempo',
+                            changesAuthority: false,
+                        },
+                    ],
+                },
+            },
+        ]);
+
+        render(<ChatPanel />);
+
+        const choice = screen.getByRole('button', { name: 'Select Keep the current tempo' });
+        expect(choice).toBeDisabled();
+        expect(choice).toHaveAccessibleDescription(
+            /Unavailable: The project revision changed while the decision was pending\./
+        );
+    });
+
+    it('owns persisted retry, repair, reconciliation, and manual continuations after chat history is gone', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [
+                          {
+                              runId: 'run-retry',
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-retry',
+                                      effects: [
+                                          {
+                                              commandId: 'command-retry',
+                                              kind: 'runtime-graph',
+                                              operation: 'setTrackGain',
+                                              reason: 'The gain node rejected the update.',
+                                              remediation: 'retry',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'reconcile-batch',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                          {
+                              runId: 'run-repair',
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-repair',
+                                      effects: [
+                                          {
+                                              commandId: 'command-repair',
+                                              kind: 'runtime-graph',
+                                              operation: 'addDevice',
+                                              reason: 'The audio graph is stale.',
+                                              remediation: 'repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'reconcile-batch',
+                                      lastError: 'The graph needs reconciliation.',
+                                  },
+                              ],
+                          },
+                          {
+                              runId: 'run-reconcile',
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-reconcile',
+                                      effects: [
+                                          {
+                                              commandId: 'command-reconcile',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'The publication queue is unavailable.',
+                                              remediation: 'reconcile',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'reconcile-batch',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                          {
+                              runId: 'run-manual',
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-manual',
+                                      effects: [
+                                          {
+                                              commandId: 'command-manual',
+                                              kind: 'external-effect',
+                                              operation: 'publishRender',
+                                              reason: 'The external system cannot prove an exact retry.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                      ],
+                      pendingEffectRecoveryLedger: [
+                          {
+                              runId: 'run-repair',
+                              batchId: 'batch-repair',
+                              checkpoint: 'durable',
+                              effects: [
+                                  {
+                                      commandId: 'command-repair',
+                                      kind: 'runtime-graph',
+                                      operation: 'addDevice',
+                                      reason: 'The durable recovery ledger owns this repair.',
+                                      remediation: 'repair',
+                                      state: 'pending',
+                                  },
+                              ],
+                              recovery: 'reconcile-batch',
+                              lastError: 'The durable graph repair is ready.',
+                          },
+                      ],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Retry runtime effect' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Reconcile pending effects' }));
+        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(1, {
+            runId: 'run-retry',
+            batchId: 'batch-retry',
+        });
+        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(2, {
+            runId: 'run-repair',
+            batchId: 'batch-repair',
+        });
+        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(3, {
+            runId: 'run-reconcile',
+            batchId: 'batch-reconcile',
+        });
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledTimes(3);
+        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-manual' })).toHaveTextContent(
+            'publishRender: The external system cannot prove an exact retry.'
+        );
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-reconcile' })).toHaveTextContent(
+            'renderProjectSections: The publication queue is unavailable.'
+        );
+        expect(screen.getAllByRole('list', { name: 'Pending effects for batch batch-repair' })).toHaveLength(1);
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-repair' })).toHaveTextContent(
+            'addDevice: The durable recovery ledger owns this repair.'
+        );
+        expect(screen.getByText('The durable graph repair is ready.')).toBeInTheDocument();
+    });
+
+    it('renders recovery owned by an evicted run from the non-evictable ledger', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [],
+                      pendingEffectRecoveryLedger: [
+                          {
+                              runId: 'run-evicted',
+                              batchId: 'batch-evicted',
+                              checkpoint: 'durable',
+                              effects: [
+                                  {
+                                      commandId: 'command-evicted',
+                                      kind: 'runtime-graph',
+                                      operation: 'loadExternalPlugin',
+                                      reason: 'The native plugin host needs a graph rebuild.',
+                                      remediation: 'repair',
+                                      state: 'pending',
+                                  },
+                              ],
+                              recovery: 'reconcile-batch',
+                              lastError: null,
+                          },
+                      ],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        expect(screen.queryByText('The kitchen is quiet')).not.toBeInTheDocument();
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-evicted' })).toHaveTextContent(
+            'loadExternalPlugin: The native plugin host needs a graph rebuild.'
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledWith({
+            runId: 'run-evicted',
+            batchId: 'batch-evicted',
+        });
+    });
+
+    it('surfaces retained prepared media when an evicted run requires manual repair', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [],
+                      preparedStemImportRecoveryLedger: [
+                          {
+                              schemaVersion: 1,
+                              runId: 'run-evicted-stems',
+                              batchId: 'batch-evicted-stems',
+                              serializedCommandBatch: 'invalid retained batch',
+                              resources: [
+                                  {
+                                      audioBufferId: 'buffer-evicted-stems',
+                                      assetLeaseId: 'lease-evicted-stems',
+                                  },
+                              ],
+                              status: 'manual-repair',
+                              lastError: 'The retained command proof is invalid. Keep the staged media for inspection.',
+                              manualRepairRequiredAt: 500,
+                          },
+                      ],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        expect(screen.queryByText('The kitchen is quiet')).not.toBeInTheDocument();
+        expect(screen.getByText('Prepared stem import requires manual repair')).toBeInTheDocument();
+        expect(screen.getByText('Retained media: buffer-evicted-stems')).toBeInTheDocument();
+        expect(screen.getByText(/retained command proof is invalid/i)).toBeInTheDocument();
     });
 
     it('should have correct accessibility attributes', () => {

@@ -26,6 +26,9 @@ describe('settlePendingProjectWritesAndCaptureRevision', () => {
         const beforePendingWrite = captureProjectRevision();
         storage.set({ value: 1 });
 
+        expect(storage.get()).toEqual({ value: 1 });
+        expect(captureProjectRevision()).toBe(beforePendingWrite);
+
         const settledRevision = settlePendingProjectWritesAndCaptureRevision();
 
         expect(settledRevision).not.toBe(beforePendingWrite);

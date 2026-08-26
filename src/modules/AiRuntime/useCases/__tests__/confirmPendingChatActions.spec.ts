@@ -6,18 +6,24 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { type getAgentSectionRenderArtifacts } from '#/modules/AudioRendering/useCases';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     commandBatchPreviewPort,
+    commandRuntimeRepairPort,
     commandBatchPreflightPort,
     configureCommandBatchIdempotency,
     commandProjectDivergencePort,
+    getVersionedCommandBatchIdempotentReplay,
     executeAppAction,
     migrateLegacyAppActionToVersionedCommandEnvelope,
+    resetActionReplayAuthority,
+    redo,
     serializeVersionedCommandEnvelope,
+    undo,
     commandProjectRevisionPort,
 } from '#/modules/Command/useCases';
 import {
@@ -28,12 +34,13 @@ import {
     createCrdtDoc,
     getCrdtDocIds,
     mutateCrdtDoc,
+    removeCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
-import { type ActionHandler, type AppAction, type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
@@ -41,16 +48,16 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
-    updatePendingActionConfirmationStatus,
-    updatePendingActionFollowUp,
     settlePendingActionResourceLease,
 } from '../../stores/pendingActionConfirmationStore';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -58,23 +65,49 @@ import {
 } from './aiWorkflowCommandPreflightFixture';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
-type RenderProjectSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
-type AgentSectionRenderArtifact = ReturnType<typeof getAgentSectionRenderArtifacts>[number];
+type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 
-type RenderRetryInput = {
-    jobs: readonly RenderProjectSectionJobSnapshot[];
-    sourceRevision: string;
-};
-
-const renderRecoveryMocks = vi.hoisted(() => ({
-    artifacts: [] as AgentSectionRenderArtifact[],
-    retry: vi.fn<(input: RenderRetryInput) => Promise<void>>(),
+const runtimeMocks = vi.hoisted(() => ({
+    applyRuntimeGraphDelta: vi.fn(),
+    getRuntimeGraphRevision: vi.fn(() => 4),
 }));
 
-vi.mock('#/modules/AudioRendering/useCases', () => ({
-    getAgentSectionRenderArtifacts: () => renderRecoveryMocks.artifacts,
-    retryAgentProjectSectionRenders: renderRecoveryMocks.retry,
-}));
+function createRuntimeTestTrack(): Track {
+    return {
+        id: 'track-bass',
+        name: 'Bass',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        color: '#ffffff',
+        clips: [],
+        devices: [{ id: 'device-eq', name: 'EQ', type: 'builtin-eq', bypassed: false, parameterValues: {} }],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 72,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: '',
+        alternatives: [],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
+}
 
 const stemResourceMocks = vi.hoisted(() => ({
     releasePreviewAudioBuffer: vi.fn(),
@@ -83,6 +116,8 @@ const stemResourceMocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
+    getRuntimeGraphRevision: runtimeMocks.getRuntimeGraphRevision,
     releasePreviewAudioBuffer: stemResourceMocks.releasePreviewAudioBuffer,
 }));
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
@@ -134,8 +169,6 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearAiHistory();
         agentRunLifecycle.clear();
         clearPendingActionConfirmations();
-        renderRecoveryMocks.artifacts = [];
-        renderRecoveryMocks.retry.mockReset();
         resetCrdtProjectAuthority('AI confirmation admission');
         createCrdtDoc('independent');
         createCrdtDoc('owned');
@@ -144,6 +177,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandProjectDivergencePort.setProvider(null);
+        commandRuntimeRepairPort.setProvider(null);
         chatStore.set({
             messages: [
                 {
@@ -173,117 +207,9 @@ describe('confirmPendingChatActions transaction admission', () => {
         commandBatchPreviewPort.setRecoveryProvider(null);
         commandProjectRevisionPort.setProvider(null);
         commandProjectDivergencePort.setProvider(null);
-    });
-
-    it('retries incomplete section renders in budget without replaying committed project actions', async () => {
-        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>();
-        registerHandlerMap({
-            setTempo: {
-                canReapplyAfterDivergence: () => true,
-                execute,
-                describe: (action) => ({
-                    label: 'Set tempo',
-                    inverseAction: {
-                        type: 'setTempo',
-                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
-                    },
-                }),
-                undoable: true,
-                validate: () => true,
-            },
-        });
-        const projectRevision = captureProjectRevision();
-        const projectAction = {
-            type: 'setTempo',
-            payload: { bpm: 132 },
-        } satisfies SetTempoAction;
-        const renderAction = {
-            type: 'renderProjectSections',
-            payload: {
-                sectionIds: ['section-chorus'],
-                jobs: [
-                    {
-                        jobId: 'render-chorus',
-                        sectionId: 'section-chorus',
-                        sectionName: 'Chorus',
-                        startBeat: 32,
-                        endBeat: 48,
-                        sampleRate: 48_000,
-                        tailSeconds: 1,
-                    },
-                ],
-            },
-        } satisfies RenderProjectSectionsAction;
-        agentRunLifecycle.create({
-            runId: 'confirmation-render-retry',
-            request: 'Render the chorus.',
-            mode: 'macro',
-            createdRevision: projectRevision,
-            budgets: { limits: { maxRenderJobs: 2 }, consumed: {} },
-        });
-        proposePendingActionConfirmation({
-            id: 'confirmation-render-retry',
-            runId: 'confirmation-render-retry',
-            prompt: 'Render the chorus.',
-            assistantMessageId: 'assistant-1',
-            actions: [projectAction, renderAction],
-            actionLabels: ['Set tempo to 132 BPM', 'Render Chorus'],
-            projectRevision,
-        });
-        updatePendingActionConfirmationStatus({
-            confirmationId: 'confirmation-render-retry',
-            status: 'executed',
-        });
-        updatePendingActionFollowUp({
-            confirmationId: 'confirmation-render-retry',
-            error: 'The initial render was interrupted.',
-            projectRevision,
-            status: 'retryable',
-        });
-        renderRecoveryMocks.retry.mockImplementation(async ({ jobs, sourceRevision }) => {
-            renderRecoveryMocks.artifacts = jobs.map((job) => ({
-                owner: 'agent-section-render',
-                retention: 'session',
-                ...job,
-                sourceRevision,
-                renderedAt: 1,
-                durationSeconds: 1,
-                frameCount: 48_000,
-                channelCount: 2,
-                byteSize: 384_000,
-                warnings: [],
-                buffer: {} as AudioBuffer,
-            }));
-        });
-
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-render-retry' })).resolves.toEqual({
-            status: 'executed',
-        });
-
-        expect(renderRecoveryMocks.retry).toHaveBeenCalledWith({
-            jobs: renderAction.payload.jobs,
-            sourceRevision: projectRevision,
-        });
-        expect(execute).not.toHaveBeenCalled();
-        expect(agentRunLifecycle.get('confirmation-render-retry')?.budgetAttempts).toEqual([
-            expect.objectContaining({
-                attemptId: 'render-retry:confirmation-render-retry:1',
-                category: 'maxRenderJobs',
-                reserved: 1,
-                actual: 1,
-                final: true,
-            }),
-        ]);
-        expect(getPendingActionConfirmation('confirmation-render-retry')).toMatchObject({
-            status: 'executed',
-            followUpStatus: 'complete',
-            error: null,
-        });
-        expect(chatStore.value?.messages[0]).toMatchObject({
-            pendingActionConfirmationStatus: 'executed',
-            pendingActionFollowUpStatus: 'complete',
-            content: expect.stringContaining('without replaying project actions'),
-        });
+        commandRuntimeRepairPort.setProvider(null);
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        removeCrdtDoc('root');
     });
 
     it('invalidates a confirmed action when the project changes while batch admission is waiting', async () => {
@@ -549,6 +475,89 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
     });
 
+    it('releases commit-protected resources when the storage transaction proves noncommit', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-storage-failure', groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-storage-failure',
+            batchId: 'group-storage-failure',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+        const prepareForCommit = vi.fn().mockResolvedValue(undefined);
+        const protect = vi.fn();
+        const commit = vi.fn().mockResolvedValue(undefined);
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockResolvedValue(undefined);
+        const transfer = vi.fn().mockResolvedValue(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-storage-failure',
+            runId: 'confirmation-storage-failure',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-storage-failure',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+            resourceLease: { bytes: 1, prepareForCommit, protect, commit, release, retain, transfer },
+        });
+        configureAutomergeStoragePort({
+            getDoc: () => ({}),
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: () => {
+                throw new Error('storage commit rejected');
+            },
+        });
+
+        try {
+            await expect(
+                confirmPendingChatActions({ confirmationId: 'confirmation-storage-failure' })
+            ).resolves.toMatchObject({ status: 'failed', reason: 'storage commit rejected' });
+            expect(prepareForCommit).toHaveBeenCalledOnce();
+            expect(protect).toHaveBeenCalledOnce();
+            expect(commit).not.toHaveBeenCalled();
+            expect(retain).not.toHaveBeenCalled();
+            expect(transfer).not.toHaveBeenCalled();
+            expect(release).toHaveBeenCalledOnce();
+        } finally {
+            await settlePendingActionResourceLease({
+                confirmationId: 'confirmation-storage-failure',
+                disposition: 'retain',
+            });
+        }
+    });
+
     it.each([
         { outcome: 'verified-after-abort', createsTargets: true },
         { outcome: 'ambiguous', createsTargets: false },
@@ -795,12 +804,31 @@ describe('confirmPendingChatActions transaction admission', () => {
             groupLabel: 'Set tempo batch',
             projectRevision,
         };
-        proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch' });
+        const prepareForCommit = vi.fn().mockResolvedValue(undefined);
+        const commit = vi.fn().mockResolvedValue(undefined);
+        const release = vi.fn().mockResolvedValue(undefined);
+        const retain = vi.fn().mockRejectedValue(new Error('promotion remains pending'));
+        proposePendingActionConfirmation({
+            ...proposal,
+            id: 'confirmation-recovery-batch',
+            resourceLease: { bytes: 1, prepareForCommit, commit, release, retain },
+        });
 
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch' })).resolves.toEqual({
-            status: 'executed',
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch' })
+        ).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [expect.objectContaining({ kind: 'external-effect', remediation: 'reconcile' })],
+            continuation: { kind: 'reconcile-exact-batch' },
         });
         expect(effectAttempts).toBe(2);
+        expect(prepareForCommit).toHaveBeenCalledOnce();
+        expect(commit).toHaveBeenCalledOnce();
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
+        expect(prepareForCommit.mock.invocationCallOrder[0]).toBeLessThan(commit.mock.invocationCallOrder[0]!);
+        expect(commit.mock.invocationCallOrder[0]).toBeLessThan(retain.mock.invocationCallOrder[0]!);
 
         proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch-retry' });
         await expect(
@@ -1001,6 +1029,213 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(agentRunLifecycle.get('confirmation-reapproval')?.revisions.approved).toBe(currentRevision);
         expect(execute).toHaveBeenCalledOnce();
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+    });
+
+    it('surfaces a durable add-device runtime failure and reconciles without replaying project truth', async () => {
+        runtimeMocks.applyRuntimeGraphDelta.mockReset();
+        const rejectedRuntimeDelta = {
+            acceptance: 'rejected' as const,
+            application: 'not-applied' as const,
+            reason: 'runtime graph revision is stale',
+        };
+        const appliedRuntimeDelta = {
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+        };
+        runtimeMocks.applyRuntimeGraphDelta
+            .mockReturnValueOnce(rejectedRuntimeDelta)
+            .mockReturnValue(appliedRuntimeDelta);
+        const repairRuntimeFromCurrentProject = vi.fn();
+        commandRuntimeRepairPort.setProvider(repairRuntimeFromCurrentProject);
+        resetAiWorkflowCommandPreflightFixture();
+        configureAiWorkflowCommandPreflightFixture('project-runtime-effect');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        trackStore.set({
+            tracks: [createRuntimeTestTrack()],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        const action = {
+            type: 'addDevice',
+            payload: {
+                trackId: 'track-bass',
+                deviceType: 'builtin-compressor',
+                deviceId: 'device-compressor',
+                afterDeviceId: 'device-eq',
+                expectedDeviceIds: ['device-eq'],
+                expectedFrozen: false,
+            },
+        } satisfies AddDeviceAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Insert the compressor after EQ on Bass.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-runtime-effect', groupLabel: 'Insert compressor', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'run-runtime-effect',
+            batchId: 'group-runtime-effect',
+            projectId: 'project-runtime-effect',
+            baseRevision: projectRevision,
+            intent: 'Insert the compressor after EQ on Bass.',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        agentRunLifecycle.create({
+            runId: 'run-runtime-effect',
+            request: 'Insert the compressor after EQ on Bass.',
+            mode: 'apply',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'run-runtime-effect', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'run-runtime-effect', phase: 'waiting-for-approval' });
+        proposePendingActionConfirmation({
+            id: 'confirmation-runtime-effect',
+            runId: 'run-runtime-effect',
+            prompt: 'Insert the compressor after EQ on Bass.',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Insert compressor after EQ on Bass'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-runtime-effect',
+            groupLabel: 'Insert compressor',
+            projectRevision,
+        });
+
+        const failed = await confirmPendingChatActions({ confirmationId: 'confirmation-runtime-effect' });
+
+        expect(failed).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                {
+                    kind: 'runtime-graph',
+                    state: 'pending',
+                    operation: 'addDevice',
+                    reason: 'runtime graph revision is stale',
+                    remediation: 'retry',
+                },
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
+        });
+        expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual([
+            'device-eq',
+            'device-compressor',
+        ]);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledOnce();
+        expect(getPendingActionConfirmation('confirmation-runtime-effect')).toMatchObject({
+            status: 'failed',
+            executedActions: [{ outcome: 'committed-with-warning' }],
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            content: expect.not.stringContaining('Executed after confirmation'),
+        });
+        expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
+            phase: 'partially-completed',
+            pendingEffectContinuations: [
+                {
+                    batchId: 'group-runtime-effect',
+                    effects: [
+                        expect.objectContaining({
+                            commandId: envelope.commandId,
+                            kind: 'runtime-graph',
+                            remediation: 'retry',
+                        }),
+                    ],
+                    recovery: 'reconcile-batch',
+                    serializedBatch: commandBatch.serialized,
+                },
+            ],
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ owner: 'external-effect', state: 'external-pending' }),
+                ]),
+            },
+        });
+
+        await undo();
+        expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual(['device-eq']);
+        expect(undoStore.value).toMatchObject({ past: [], future: [expect.anything()] });
+        await redo();
+        expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual([
+            'device-eq',
+            'device-compressor',
+        ]);
+        expect(undoStore.value).toMatchObject({ past: [expect.anything()], future: [] });
+
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        await expect(
+            getVersionedCommandBatchIdempotentReplay({
+                authority: commandBatch.authority,
+                serialized: commandBatch.serialized,
+            })
+        ).resolves.toMatchObject({
+            outcome: 'partially-committed',
+            pendingEffects: [
+                expect.objectContaining({
+                    kind: 'runtime-graph',
+                    operation: 'addDevice',
+                    reason: 'runtime graph revision is stale',
+                }),
+            ],
+        });
+
+        await expect(recoverInterruptedAgentRuns()).resolves.toEqual({ recoveredRunIds: ['run-runtime-effect'] });
+        expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
+            manualResume: { required: false },
+            pendingEffectContinuations: [
+                {
+                    batchId: 'group-runtime-effect',
+                    recovery: 'reconcile-batch',
+                    serializedBatch: commandBatch.serialized,
+                },
+            ],
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ owner: 'external-effect', state: 'external-pending' }),
+                ]),
+            },
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({
+                runId: 'run-runtime-effect',
+                batchId: 'group-runtime-effect',
+            })
+        ).resolves.toEqual({ status: 'recovered' });
+
+        expect(trackStore.value?.tracks[0]?.devices.map((device) => device.id)).toEqual([
+            'device-eq',
+            'device-compressor',
+        ]);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(3);
+        expect(repairRuntimeFromCurrentProject).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get('run-runtime-effect')).toMatchObject({
+            phase: 'completed',
+            saga: {
+                steps: expect.arrayContaining([
+                    expect.objectContaining({ owner: 'external-effect', state: 'committed' }),
+                ]),
+            },
+        });
     });
 
     it('keeps a confirmed batch authorized when its owned storage commit moves the project revision', async () => {

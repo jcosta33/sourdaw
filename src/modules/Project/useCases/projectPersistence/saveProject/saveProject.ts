@@ -1,4 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -11,6 +13,12 @@ import { buildProjectData } from '../fileIO/buildProjectData';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
+
+function assertProjectSnapshotAuthority(): void {
+    if (agentProjectRepairStateStore.value !== null) {
+        throw new Error('[saveProject] Project repair became required before snapshot persistence');
+    }
+}
 
 export async function saveProject(): Promise<boolean> {
     // Everything below assumes `projectStore` identifies the project the other
@@ -99,27 +107,31 @@ export async function saveProject(): Promise<boolean> {
         }
 
         // buildProjectData synchronizes the current arrangement projection into
-        // project truth, then persist it.
-        await persistCrdtProject();
+        // project truth. Flush that known write before capturing the snapshot's
+        // revision so persistCrdtProject cannot make an ordinary save look
+        // concurrent with itself.
+        flushAutomergeStorageWrites();
+        const snapshotRevision = captureProjectRevision();
 
-        // Capture the revision AFTER the save's own CRDT bookkeeping
-        // (buildProjectData's arrangement sync + the incremental persist) has
-        // settled. Capturing before persist compared the post-save guard
-        // against a baseline the save itself invalidated — persistCrdtProject
-        // advances the Automerge mutationEpoch/heads as a side effect of its
-        // own commit, so the pre-persist token never matched the post-persist
-        // one and dirty could never clear. The guard now trips only on an edit
-        // arriving after persist but before the snapshot write commits — the
-        // genuine concurrent-edit case it was written to catch.
-        const savedRevision = captureProjectRevision();
+        await persistCrdtProject();
+        assertProjectSnapshotAuthority();
+        if (captureProjectRevision() !== snapshotRevision) {
+            throw new Error('[saveProject] Project changed during CRDT persistence');
+        }
 
         // Awaited, so a rejected transaction reaches the catch below rather
         // than being reported as a successful save.
+        assertProjectSnapshotAuthority();
         await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
 
         // Only record the recent-projects entry once the snapshot write is
-        // observed to have committed — otherwise we'd list a project that
-        // was never actually saved.
+        // observed to have committed for the exact revision it serialized.
+        // A newer edit leaves the stale snapshot unadvertised and the project
+        // dirty so the next save can replace it.
+        assertProjectSnapshotAuthority();
+        if (captureProjectRevision() !== snapshotRevision) {
+            throw new Error('[saveProject] Project changed during named snapshot persistence');
+        }
         addToRecentProjects(project.name, recentKey);
 
         // A save clears dirty only when the complete project authority still
@@ -127,7 +139,11 @@ export async function saveProject(): Promise<boolean> {
         // transition during the async snapshot write keeps dirty asserted so
         // the next autosave cannot be suppressed by a stale completion.
         const latest = projectStore.value;
-        if (latest?.createdAt === project.createdAt && captureProjectRevision() === savedRevision) {
+        if (
+            agentProjectRepairStateStore.value === null &&
+            latest?.createdAt === project.createdAt &&
+            captureProjectRevision() === snapshotRevision
+        ) {
             projectStore.set({ ...latest, dirty: false });
         }
         return true;

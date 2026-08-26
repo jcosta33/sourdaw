@@ -1,5 +1,6 @@
 import { clampFaderGain, dbToGain } from '#/utils/audioLevelLaw';
 import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
+import { boundAutomationLaneValue } from '#/utils/automationLaneBound';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 import { AUTOMATION_SLEW_ALPHA } from '#/utils/automationSlew';
 
@@ -114,24 +115,14 @@ export type ScheduleTrackAutomationInput = {
 };
 
 /**
- * The offline half of the live path's `clampToLaneRange` — the same function,
- * evaluated on the same inputs.
- *
- * Live bounds an interpolated value by the source lane's declared range, raised
- * only as far as the two stored points bracketing the segment in play actually
- * reach, and never past the derived ceiling. This body is that arithmetic with
- * the lane's floor, its declared ceiling and its derived ceiling closed over —
- * all three are pure functions of the lane, so resolving them once per lane
- * rather than once per value changes nothing about the result. The bracket
- * stays a parameter, because it is the one input that varies per value, and
+ * The offline half of the live path's `clampToLaneRange` — the shared
+ * `boundAutomationLaneValue` kernel (`#/utils/automationLaneBound`), evaluated
+ * on the same inputs. The law and its reasons live on the kernel; this wrapper
+ * resolves the lane's floor, declared ceiling and derived ceiling once per lane
+ * — all three are pure functions of the lane, so resolving them here rather
+ * than once per value changes nothing about the result. The bracket stays a
+ * parameter, because it is the one input that varies per value, and
  * `compileAutomationEvents` supplies the same pair live's binary search does.
- *
- * That the raise is segment-local is not an implementation detail either side
- * may relax. A legacy gain lane with a peak in one segment and a plateau in
- * another has a lane-wide maximum higher than any point bracketing the plateau,
- * and a bound built from that maximum lets the plateau's Catmull-Rom overshoot
- * through — the monitor holds it at the declared ceiling while the bounce
- * prints the overshoot, at the same playhead position.
  *
  * Returns `undefined` when the lane declares no usable range, matching live's
  * non-finite guard — several specs build lanes with only the fields their
@@ -146,16 +137,15 @@ function resolveLaneValueBound(
     if (!Number.isFinite(floor) || !Number.isFinite(declared)) {
         return undefined;
     }
-    return (value, segmentFirstValue, segmentSecondValue) => {
-        let ceiling = declared;
-        if (derivedCeiling > declared) {
-            const highestStored = Math.max(segmentFirstValue, segmentSecondValue);
-            if (highestStored > declared) {
-                ceiling = Math.min(derivedCeiling, highestStored);
-            }
-        }
-        return Math.min(ceiling, Math.max(floor, value));
-    };
+    return (value, segmentFirstValue, segmentSecondValue) =>
+        boundAutomationLaneValue({
+            value,
+            declaredMin: floor,
+            declaredMax: declared,
+            derivedCeiling,
+            segmentFirstValue,
+            segmentSecondValue,
+        });
 }
 
 export function scheduleTrackAutomation({
@@ -230,8 +220,22 @@ export function scheduleTrackAutomation({
         const points = sourceLane.points;
         const laneScale = resolved.scale;
 
+        // #2538/#2539: the lane's declared range, applied where live applies it
+        // to EVERY lane family — inside `getAutomationValueAtBeat`, per segment,
+        // to the interpolated scalar before the link scale and before any
+        // parameter-family transform below. Live has no "unbounded" branch, so
+        // offline has none either: before this, only the gain branch carried the
+        // bound and a smooth curve overshooting a pan, send or device lane's
+        // declared range printed into the bounce at a level the monitor had
+        // clamped away. A parameter-family transform (`clampFaderGain`, the
+        // send's [0, 1], the device law) is not this bound and never was —
+        // those clamp what the strip or parameter may hold, not what the lane's
+        // own points declare. `compileAutomationEvents` runs the bound per
+        // segment, against the same bracketing pair live's lookup hands it.
+        const valueBound = resolveLaneValueBound(sourceLane, resolveLaneCeiling(sourceLane));
         const laneOptions =
             activeWindowSeconds || laneScale !== 1 ? { activeWindowSeconds, valueScale: laneScale } : undefined;
+        const boundOptions = valueBound ? { valueBound } : {};
 
         if (lane.parameterId === 'gain') {
             // The fader level law is the live path's, applied offline too.
@@ -243,16 +247,6 @@ export function scheduleTrackAutomation({
             // back. `valueTransform` runs after linkScale, matching the live
             // order (scale the dB scalar, then convert, then clamp).
             const isDecibelLane = lane.minValue < 0;
-            // The lane's own declared range, applied where live applies it —
-            // to the interpolated scalar, per segment, before the link scale
-            // and before the fader law. `clampFaderGain` alone is not this
-            // bound and never was: it stops the strip at `FADER_MAX_GAIN`,
-            // which used to be `1` and so happened to coincide with a legacy
-            // gain lane's declared `1`. Once the fader widened, the two parted,
-            // and every smooth gain ride cresting near unity printed the
-            // spline's overshoot the monitor had clamped away — a bounce louder
-            // than the mix, on a project nobody edited.
-            const valueBound = resolveLaneValueBound(sourceLane, resolveLaneCeiling(sourceLane));
             scheduleAutomationOnParam(
                 trackGainNode.gain,
                 points,
@@ -264,7 +258,7 @@ export function scheduleTrackAutomation({
                 compensationDelaySec,
                 {
                     ...laneOptions,
-                    ...(valueBound ? { valueBound } : {}),
+                    ...boundOptions,
                     // The VCA group master composes in exactly where live puts
                     // it: after the dB→linear conversion and before the fader
                     // clamp (`dbToGain(value) * vcaMultiplier` handed to
@@ -279,6 +273,15 @@ export function scheduleTrackAutomation({
         }
 
         if (lane.parameterId === 'pan') {
+            // No `valueTransform` here, live or offline: live maps the bounded
+            // lane value through `value * 50` and `TrackNode` clamps the
+            // AudioParam's nominal [-1, 1] on every write; offline writes the
+            // same bounded value in pan units and the platform applies that
+            // same nominal clamp. The nominal range is the *param's* law — the
+            // lane's declared range is the one the bound above applies, and a
+            // lane persisted with a range narrower than [-1, 1] must be held to
+            // its own range offline exactly as `getAutomationValueAtBeat` holds
+            // it live, not released to the param's wider nominal range (#2538).
             scheduleAutomationOnParam(
                 trackPanNode.pan,
                 points,
@@ -288,7 +291,7 @@ export function scheduleTrackAutomation({
                 regionStartSeconds,
                 projectBeatToSeconds,
                 compensationDelaySec,
-                laneOptions
+                { ...laneOptions, ...boundOptions }
             );
             continue;
         }
@@ -306,6 +309,16 @@ export function scheduleTrackAutomation({
                 compensationDelaySec,
                 {
                     ...laneOptions,
+                    ...boundOptions,
+                    // The send pot's own [0, 1] law, in live's position: live
+                    // bounds the lane value in `getAutomationValueAtBeat`, then
+                    // `TrackNode.scheduleSendAutomation` clamps [0, 1] on the
+                    // write. `valueBound` (per segment, before this transform)
+                    // is the lane's declared range — NOT always [0, 1]. The
+                    // hardcoded clamp below used to be the only bound this
+                    // branch carried, so a lane declaring a narrower range
+                    // printed its overshoot into the bounce while the monitor
+                    // held it at the declared ceiling (#2538).
                     valueTransform: (value) => Math.max(0, Math.min(1, value)),
                 }
             );
@@ -350,6 +363,14 @@ export function scheduleTrackAutomation({
                     regionStartSeconds,
                     projectBeatToSeconds,
                     {
+                        // The lane's declared range runs before the device law,
+                        // exactly where live runs it: `getAutomationValueAtBeat`
+                        // bounds the curve, then `applyAutomation` slews and
+                        // applies `clampDeviceParameterValue` (#2538). The
+                        // device law below is the *parameter's* range — a
+                        // different, usually wider question than what this
+                        // lane's own points declare.
+                        ...boundOptions,
                         slew: { ...deviceSlewGrid, clampStep, quantiseEmit },
                         activeWindowSeconds,
                         valueScale: laneScale,
@@ -392,6 +413,11 @@ export function scheduleTrackAutomation({
                     projectBeatToSeconds,
                     compensationDelaySec,
                     {
+                        // Same order as the segments binding above: the lane's
+                        // declared range on the unscaled source curve, before
+                        // the binding's affine and before the slew's device-law
+                        // clamp (#2538).
+                        ...boundOptions,
                         slew: { ...deviceSlewGrid, clampStep: clampScaledStep, quantiseEmit: quantiseScaledEmit },
                         activeWindowSeconds,
                         valueScale: laneScale * scale,

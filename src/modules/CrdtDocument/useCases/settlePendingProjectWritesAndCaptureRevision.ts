@@ -3,7 +3,7 @@ import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomer
 import { captureProjectRevision } from './captureProjectRevision';
 
 /**
- * Establish a new planning base from durable project truth.
+ * Establish a new planning base from settled project truth.
  *
  * Local stores expose writes before their animation-frame CRDT flush. Settling
  * those writes first prevents their later in-app flush from looking like

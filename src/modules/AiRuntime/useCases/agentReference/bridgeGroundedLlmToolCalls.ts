@@ -3579,8 +3579,8 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
     const groundedArguments = { ...call.arguments };
-    const bulkDeviceInsertionTargetIds =
-        call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
+    const bulkDeviceInsertionScope =
+        call.name === 'addDevice' ? getBulkDeviceInsertionTrackScope(prompt, context) : null;
     const bulkMutedEmptyTrackDeletionTargetIds =
         call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
     const drumRoutingScope =
@@ -3647,12 +3647,28 @@ function groundToolCall({
             continue;
         }
         if (
-            bulkDeviceInsertionTargetIds &&
+            bulkDeviceInsertionScope &&
             call.name === 'addDevice' &&
             targetRule.argument === 'trackId' &&
             typeof assertedValue === 'string' &&
-            bulkDeviceInsertionTargetIds.includes(assertedValue)
+            bulkDeviceInsertionScope.targetIds.includes(assertedValue)
         ) {
+            continue;
+        }
+        if (bulkDeviceInsertionScope && call.name === 'addDevice' && targetRule.argument === 'afterDeviceId') {
+            const trackId = groundedArguments.trackId;
+            const anchor =
+                typeof trackId === 'string'
+                    ? bulkDeviceInsertionScope.anchors.find((candidate) => candidate.trackId === trackId)
+                    : undefined;
+            if (anchor === undefined || assertedValue !== anchor.afterDeviceId) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Provider afterDeviceId does not match the application-resolved insertion anchor'
+                );
+            }
+            groundedArguments.afterDeviceId = anchor.afterDeviceId;
             continue;
         }
         if (

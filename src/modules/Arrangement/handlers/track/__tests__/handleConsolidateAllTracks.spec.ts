@@ -61,8 +61,16 @@ describe('handleConsolidateAllTracks', () => {
             // `recordUndoEntry: false` on every nested bounce: this command owns one
             // atomic undo unit, and a nested callback entry underneath it would hold a
             // part-way-through-the-loop snapshot that undoing past this command replays.
-            expect(mocks.bounceInPlace).toHaveBeenNthCalledWith(1, 't1', { recordUndoEntry: false });
-            expect(mocks.bounceInPlace).toHaveBeenNthCalledWith(2, 't2', { recordUndoEntry: false });
+            // `transactionScope` re-enters that unit's storage transaction, because
+            // every bounce after the first runs past the `await` that dropped it.
+            expect(mocks.bounceInPlace).toHaveBeenNthCalledWith(1, 't1', {
+                recordUndoEntry: false,
+                transactionScope: expect.any(Function),
+            });
+            expect(mocks.bounceInPlace).toHaveBeenNthCalledWith(2, 't2', {
+                recordUndoEntry: false,
+                transactionScope: expect.any(Function),
+            });
             expect(result).toEqual({ status: 'written' });
         });
 

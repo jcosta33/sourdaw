@@ -5,6 +5,9 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export type AdjustmentEffectType =
     'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
@@ -52,8 +55,183 @@ export type AdjustmentLayerState = {
     layers: AdjustmentLayer[];
 };
 
+const ADJUSTMENT_PARAMETER_KEYS = ['name', 'value', 'min', 'max', 'unit'] as const;
+const ADJUSTMENT_REGION_KEYS = ['id', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'] as const;
+const ADJUSTMENT_LAYER_KEYS = [
+    'id',
+    'name',
+    'effectType',
+    'parameters',
+    'affectedTrackIds',
+    'insertionIndex',
+    'regions',
+    'enabled',
+    'mix',
+    'color',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+    const keys = Object.keys(value);
+    return keys.length === expected.length && keys.every((key) => expected.includes(key));
+}
+
+function isDenseArray(value: unknown): value is unknown[] {
+    if (!Array.isArray(value) || Object.keys(value).length !== value.length) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index++) {
+        if (!Object.hasOwn(value, index)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isAdjustmentEffectType(value: unknown): value is AdjustmentEffectType {
+    return (
+        value === 'eq' ||
+        value === 'compressor' ||
+        value === 'reverb' ||
+        value === 'delay' ||
+        value === 'saturation' ||
+        value === 'filter' ||
+        value === 'stereo-width' ||
+        value === 'volume' ||
+        value === 'pan'
+    );
+}
+
+function isAdjustmentParameter(value: unknown): value is AdjustmentParameter {
+    return (
+        isRecord(value) &&
+        hasExactKeys(value, ADJUSTMENT_PARAMETER_KEYS) &&
+        typeof value.name === 'string' &&
+        value.name.length > 0 &&
+        isFiniteNumber(value.value) &&
+        isFiniteNumber(value.min) &&
+        isFiniteNumber(value.max) &&
+        value.min <= value.max &&
+        value.value >= value.min &&
+        value.value <= value.max &&
+        typeof value.unit === 'string'
+    );
+}
+
+function isAdjustmentRegion(value: unknown): value is AdjustmentRegion {
+    return (
+        isRecord(value) &&
+        hasExactKeys(value, ADJUSTMENT_REGION_KEYS) &&
+        typeof value.id === 'string' &&
+        value.id.length > 0 &&
+        isFiniteNumber(value.startBeat) &&
+        value.startBeat >= 0 &&
+        isFiniteNumber(value.endBeat) &&
+        value.endBeat >= value.startBeat &&
+        isFiniteNumber(value.blend) &&
+        value.blend >= 0 &&
+        value.blend <= 1 &&
+        isFiniteNumber(value.fadeInBeats) &&
+        value.fadeInBeats >= 0 &&
+        isFiniteNumber(value.fadeOutBeats) &&
+        value.fadeOutBeats >= 0
+    );
+}
+
+function isAdjustmentLayer(value: unknown, regionIds: Set<string>): value is AdjustmentLayer {
+    if (
+        !isRecord(value) ||
+        !hasExactKeys(value, ADJUSTMENT_LAYER_KEYS) ||
+        typeof value.id !== 'string' ||
+        value.id.length === 0 ||
+        typeof value.name !== 'string' ||
+        !isAdjustmentEffectType(value.effectType) ||
+        !isDenseArray(value.parameters) ||
+        !isDenseArray(value.affectedTrackIds) ||
+        !isFiniteNumber(value.insertionIndex) ||
+        !Number.isInteger(value.insertionIndex) ||
+        value.insertionIndex < 0 ||
+        !isDenseArray(value.regions) ||
+        typeof value.enabled !== 'boolean' ||
+        !isFiniteNumber(value.mix) ||
+        value.mix < 0 ||
+        value.mix > 1 ||
+        typeof value.color !== 'string'
+    ) {
+        return false;
+    }
+
+    const parameterNames = new Set<string>();
+    for (const parameter of value.parameters) {
+        if (!isAdjustmentParameter(parameter) || parameterNames.has(parameter.name)) {
+            return false;
+        }
+        parameterNames.add(parameter.name);
+    }
+
+    const affectedTrackIds = new Set<string>();
+    for (const trackId of value.affectedTrackIds) {
+        if (typeof trackId !== 'string' || trackId.length === 0 || affectedTrackIds.has(trackId)) {
+            return false;
+        }
+        affectedTrackIds.add(trackId);
+    }
+
+    for (const region of value.regions) {
+        if (!isAdjustmentRegion(region) || regionIds.has(region.id)) {
+            return false;
+        }
+        regionIds.add(region.id);
+    }
+    return true;
+}
+
+function isAdjustmentLayerState(value: unknown): value is AdjustmentLayerState {
+    if (!isRecord(value) || !hasExactKeys(value, ['layers']) || !isDenseArray(value.layers)) {
+        return false;
+    }
+
+    const layerIds = new Set<string>();
+    const regionIds = new Set<string>();
+    for (const layer of value.layers) {
+        if (!isAdjustmentLayer(layer, regionIds) || layerIds.has(layer.id)) {
+            return false;
+        }
+        layerIds.add(layer.id);
+    }
+    return true;
+}
+
+/**
+ * Decode the shared `adjustmentLayers` slot without repairing it in place.
+ *
+ * Valid state is returned by identity. Any malformed or unsupported content
+ * projects as empty so typed audio and command consumers cannot observe it;
+ * the Automerge adapter retains the raw slot and its registered sanitizer
+ * makes project admission report repair-required instead of writing a lossy
+ * projection back over another peer's data.
+ */
+export function sanitizeAdjustmentLayerState(value: unknown): AdjustmentLayerState {
+    return isAdjustmentLayerState(value) ? value : { layers: [] };
+}
+
 export const adjustmentLayerStore = createStore<AdjustmentLayerState>({
+    storage: createAutomergeStorage<AdjustmentLayerState>(DOC_PREFIX_ROOT, 'adjustmentLayers', {
+        fromCrdt: sanitizeAdjustmentLayerState,
+        crdtEntityIdentity: {
+            parameters: (row) => (typeof row.name === 'string' && row.name.length > 0 ? row.name : null),
+        },
+        hydrateMissing: () => ({ layers: [] }),
+    }),
     initialData: { layers: [] },
+    sanitize: sanitizeAdjustmentLayerState,
 });
 
 // §122.1 — UUID instead of module-level counters that reset on HMR

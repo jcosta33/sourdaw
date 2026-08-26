@@ -18,7 +18,7 @@ const {
     requireManualResume: requireAgentRunManualResume,
 } = agentRunLifecycle;
 const { claim: claimAgentRunWorkLease, settle: settleAgentRunWorkLease } = agentRunWorkLease;
-const { get: getAgentRunControlProjection } = agentRunControls;
+const { get: getAgentRunControlProjection, listDecisions: listAgentRunDecisionControlProjections } = agentRunControls;
 
 describe('agent run control projection', () => {
     beforeEach(() => {
@@ -81,6 +81,7 @@ describe('agent run control projection', () => {
             allowedActions: { cancel: true, resume: false, retryWorkIds: ['analysis-1'] },
             manualResumeReason: 'Analysis failed after the project batch committed.',
             resumeRejectionReason: 'The pending decision is unavailable or already consumed.',
+            decision: null,
             committedReceipts: [
                 {
                     workId: 'batch-1',
@@ -216,9 +217,22 @@ describe('agent run control projection', () => {
             workIds: [],
         });
 
-        expect(getAgentRunControlProjection('run-stale-decision')).toMatchObject({
+        const projection = getAgentRunControlProjection('run-stale-decision');
+
+        expect(projection).toMatchObject({
             allowedActions: { resume: false },
             resumeRejectionReason: 'The project revision changed while the decision was pending.',
+            decision: {
+                reason: 'Choose the bounded interpretation.',
+                alternatives: [{ id: 'mute', label: 'Mute Track 1', changesAuthority: false }],
+            },
         });
+        createAgentRun({
+            runId: 'run-without-decision',
+            request: 'Analyze Track 1.',
+            mode: 'explain',
+            createdRevision: captureProjectRevision(),
+        });
+        expect(listAgentRunDecisionControlProjections()).toEqual([projection]);
     });
 });

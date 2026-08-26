@@ -133,6 +133,36 @@ GITLEAKS
 chmod +x "$extract_dir/gitleaks"
 SH
 chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_bin/sha256sum" "$fake_bin/tar"
+cat > "$fake_bin/gh" <<'SH'
+#!/bin/sh
+set -eu
+
+printf '%s' "$*" | tr '\n' ' ' >> "$GH_ISSUE_LOG"
+printf '\n' >> "$GH_ISSUE_LOG"
+repo=
+expect_repo=false
+for argument in "$@"; do
+    if [ "$expect_repo" = true ]; then
+        repo=$argument
+        expect_repo=false
+    elif [ "$argument" = --repo ]; then
+        expect_repo=true
+    fi
+done
+if [ "$repo" != "$GITHUB_REPOSITORY" ]; then
+    printf 'gh issue command must pass --repo %s\n' "$GITHUB_REPOSITORY" >&2
+    exit 24
+fi
+
+case "${GH_ISSUE_MODE}:${1:-}:${2:-}" in
+    existing:issue:list) printf '42\n' ;;
+    existing:issue:comment) ;;
+    none:issue:list) ;;
+    none:issue:create) ;;
+    *) exit 23 ;;
+esac
+SH
+chmod +x "$fake_bin/gh"
 
 WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" node --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
@@ -180,14 +210,36 @@ function runWorkflowShell(label, body, env) {
         env: { ...process.env, ...env },
     });
     expect(result.status === 0, `${label} must execute outside the scan target: ${result.stderr.trim()}`);
+    return result;
+}
+
+function expectShardFailureWarning(step, slug, suite, shard) {
+    const summaryPath = `${process.env.TEST_TEMP_ROOT}/${slug}-shard-summary.md`;
+    writeFileSync(summaryPath, '');
+    expect(step?.env?.SHARD === '${{ matrix.shard }}', `${suite} warning must receive the matrix shard`);
+    const result = runWorkflowShell(`${suite} warning`, step?.run ?? '', {
+        GITHUB_STEP_SUMMARY: summaryPath,
+        SHARD: shard,
+    });
+    expect(
+        result.stdout === `::warning title=${suite} shard failed::Shard ${shard} failed; inspect the Run shard log.\n`,
+        `${suite} warning must emit the exact shard annotation`
+    );
+    expect(
+        readFileSync(summaryPath, 'utf8') ===
+            `### ${suite} shard ${shard} failed\n\nInspect the \`Run shard\` step log for raw failure output.\n`,
+        `${suite} warning must write the exact shard summary`
+    );
 }
 
 const events = workflow.on;
+const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
 const unit = workflow.jobs?.unit;
-const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
+const e2e = workflow.jobs?.e2e;
 const gate = workflow.jobs?.gate;
+const nightlyReport = workflow.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
@@ -198,7 +250,13 @@ const secretScanRun = secretScan?.run ?? '';
 const secretScanUses = secretScan?.uses ?? '';
 const secretsEnv = secrets?.env ?? {};
 const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
-const unitRun = stepNamed(unit, 'Run shard')?.run ?? '';
+const unitRunStep = stepNamed(unit, 'Run shard');
+const e2eRunStep = stepNamed(e2e, 'Run shard');
+const unitFailureWarning = stepNamed(unit, 'Report shard failure');
+const e2eFailureWarning = stepNamed(e2e, 'Report shard failure');
+const unitRun = unitRunStep?.run ?? '';
+const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
+const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 const expectedGateNeeds = [
     'decide',
@@ -210,7 +268,6 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
-    'browser-ai-webgpu',
     'codeql',
     'secrets',
 ];
@@ -220,6 +277,16 @@ expect(events?.pull_request !== undefined, 'pull_request trigger must remain pre
 expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
 expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
+expect(
+    concurrency?.group ===
+        "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}",
+    'only pull_request and approved reviews may share a PR-number concurrency group'
+);
+expect(
+    concurrency?.['cancel-in-progress'] ===
+        "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
+    'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
+);
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
     'decide must run the heavy path only for approved pull_request_review submissions'
@@ -344,22 +411,90 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
-expect(gate?.name === 'Gate', 'stable Gate summary job name must stay exact');
-expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
-expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');
+const pullRequestReportAllowance = "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
+const shardFailureCondition = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
+expect(
+    unit?.['continue-on-error'] === undefined,
+    'unit suite must not use job-level continue-on-error'
+);
+expect(
+    e2e?.['continue-on-error'] === undefined,
+    'end-to-end suite must not use job-level continue-on-error'
+);
+expect(unitRunStep?.id === 'run_shard', 'unit Run shard step must keep its stable id');
+expect(e2eRunStep?.id === 'run_shard', 'end-to-end Run shard step must keep its stable id');
+expect(
+    unitRunStep?.['continue-on-error'] === pullRequestReportAllowance,
+    'unit Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+);
+expect(
+    e2eRunStep?.['continue-on-error'] === pullRequestReportAllowance,
+    'end-to-end Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+);
+expect(
+    unitFailureWarning?.if === shardFailureCondition,
+    'unit shard failure warning must observe the failed Run shard outcome'
+);
+expect(
+    e2eFailureWarning?.if === shardFailureCondition,
+    'end-to-end shard failure warning must observe the failed Run shard outcome'
+);
+expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
+expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
+expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
+expect(
+    gate?.if ===
+        "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
+    'Gate must cancel with superseded runs and must not report success for non-approved reviews'
+);
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
         gateNeeds.every((need, index) => need === expectedGateNeeds[index]),
     `Gate needs must stay exactly: ${expectedGateNeeds.join(', ')}`
 );
-expect(!gateNeeds.includes('unit'), 'unit suite must remain outside informational Gate summary dependencies');
-expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside informational Gate summary dependencies');
-expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside informational Gate summary dependencies');
+expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
+expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
+expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+expect(
+    gateRun.includes('select(.value.result != "success" and .value.result != "skipped")') &&
+        gateRun.includes('if [ -n "$failed" ]; then') &&
+        gateRun.includes('exit 1') &&
+        gateRun.includes("printf 'every job succeeded or was skipped\\n'"),
+    'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
+);
+expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
+expect(
+    nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&
+        nightlyReportRun.includes('gh issue comment "$existing" --repo "$GITHUB_REPOSITORY"') &&
+        nightlyReportRun.includes('gh issue create --repo "$GITHUB_REPOSITORY"'),
+    'every nightly reporter issue operation must target $GITHUB_REPOSITORY'
+);
 
 const maliciousHelperMarker = `${process.env.TEST_TEMP_ROOT}/pr-owned-helper-invoked.log`;
 const workflowCommandLog = `${process.env.TEST_TEMP_ROOT}/workflow-secret-scan.log`;
 writeFileSync(workflowCommandLog, '');
+const nightlyIssueLog = `${process.env.TEST_TEMP_ROOT}/nightly-issue.log`;
+const fixtureRepository = `fixture-owner-${process.pid}/fixture-repository`;
+const nightlyReportEnv = {
+    GITHUB_REPOSITORY: fixtureRepository,
+    GH_ISSUE_LOG: nightlyIssueLog,
+    PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
+    RESULTS: '{"static":{"result":"failure"},"lint":{"result":"success"}}',
+    RUN_URL: 'nightly-run-123',
+};
+writeFileSync(nightlyIssueLog, '');
+runWorkflowShell('nightly report existing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'existing' });
+const existingIssueCommands = readFileSync(nightlyIssueLog, 'utf8').trim().split('\n');
+expect(existingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes(`--repo ${fixtureRepository}`)), 'existing path must list issues in the repository');
+expect(existingIssueCommands.some((command) => command.startsWith('issue comment 42 ') && command.includes(`--repo ${fixtureRepository}`)), 'existing path must comment on the existing issue in the repository');
+expect(!existingIssueCommands.some((command) => command.startsWith('issue create ')), 'existing path must not create an issue');
+writeFileSync(nightlyIssueLog, '');
+runWorkflowShell('nightly report missing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'none' });
+const missingIssueCommands = readFileSync(nightlyIssueLog, 'utf8').trim().split('\n');
+expect(missingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes(`--repo ${fixtureRepository}`)), 'missing path must list issues in the repository');
+expect(missingIssueCommands.some((command) => command.startsWith('issue create ') && command.includes(`--repo ${fixtureRepository}`)), 'missing path must create an issue in the repository');
+expect(!missingIssueCommands.some((command) => command.startsWith('issue comment ')), 'missing path must not comment on an issue');
 const workflowShellEnv = {
     GITHUB_WORKSPACE: process.env.TEST_TEMP_ROOT,
     RUNNER_TEMP: `${process.env.TEST_TEMP_ROOT}/workflow-runner`,

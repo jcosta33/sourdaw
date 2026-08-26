@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -17,7 +19,12 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
@@ -29,9 +36,24 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
 describe('handleAddClip atomic integration', () => {
     beforeEach(() => {
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        Container.clear();
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('add clip atomic integration');
         removeCrdtDoc('root');
@@ -49,12 +71,14 @@ describe('handleAddClip atomic integration', () => {
     });
 
     afterEach(() => {
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        unsubscribeFromNotifications();
+        unsubscribeFromNotifications = () => undefined;
+        Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -77,6 +101,7 @@ describe('handleAddClip atomic integration', () => {
         );
 
         expect(result).toMatchObject({ status: 'committed' });
+        expect(notifications).toEqual([]);
         const created = trackStore.value!.tracks[0]!.clips[0]!;
         expect(created).toMatchObject({
             trackId: 'track-keys',
@@ -88,9 +113,11 @@ describe('handleAddClip atomic integration', () => {
         expect(midiStore.value!.notesByClipId).not.toHaveProperty(created.id);
 
         await undo();
+        expect(notifications).toEqual([]);
         expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
 
         await redo();
+        expect(notifications).toEqual([]);
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Verse', type: 'midi' }]);
     });
 
@@ -121,6 +148,10 @@ describe('handleAddClip atomic integration', () => {
 
         await undo();
 
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Editable"": project state has changed', level: 'warning' },
+        ]);
+
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Editable' }]);
         expect(midiStore.value!.notesByClipId[created.id]).toMatchObject([{ id: 'external-note' }]);
 
@@ -129,6 +160,9 @@ describe('handleAddClip atomic integration', () => {
             notesByClipId: {},
         });
         await undo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Editable"": project state has changed', level: 'warning' },
+        ]);
 
         expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
     });
@@ -160,6 +194,10 @@ describe('handleAddClip atomic integration', () => {
 
         await undo();
 
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Initialized"": project state has changed', level: 'warning' },
+        ]);
+
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Initialized' }]);
         expect(midiStore.value!.notesByClipId).toHaveProperty(created.id, []);
 
@@ -168,6 +206,9 @@ describe('handleAddClip atomic integration', () => {
             notesByClipId: {},
         });
         await undo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Initialized"": project state has changed', level: 'warning' },
+        ]);
 
         expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
     });

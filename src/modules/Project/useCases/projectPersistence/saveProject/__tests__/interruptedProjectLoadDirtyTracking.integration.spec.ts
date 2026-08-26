@@ -186,6 +186,7 @@ const transactionControls = {
  * never happen.
  */
 function loadTransaction(): ProjectLoadTransaction {
+    const controller = new AbortController();
     let activated = false;
     let lost = false;
     const ownable = (): boolean => !lost && !transactionControls.superseded;
@@ -206,6 +207,7 @@ function loadTransaction(): ProjectLoadTransaction {
         },
         canActivate: () => ownable(),
         isCurrent: () => activated && ownable(),
+        signal: controller.signal,
     };
 }
 

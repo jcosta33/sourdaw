@@ -17,7 +17,11 @@ import {
     type AgentRunDecision,
     type AgentRunError,
     type AgentRunPlan,
+    type AgentRunPendingEffect,
+    type AgentRunPendingEffectContinuation,
+    type AgentRunPendingEffectRecovery,
     type AgentRunPreparedStemImportRecovery,
+    type AgentRunPreparedStemImportRecoveryCapsule,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
@@ -28,10 +32,14 @@ import {
     type AgentRunWorkLease,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 const MAX_RUNS = 50;
+const MAX_PENDING_EFFECT_RECOVERIES = 256;
+const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
 const MAX_COLLECTION_LENGTH = 256;
 const MAX_TEXT_LENGTH = 128 * 1024;
+const MAX_SERIALIZED_BATCH_LENGTH = 1024 * 1024;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -101,7 +109,7 @@ function readNumberRecord(value: unknown): Record<string, number> | null {
     return result;
 }
 
-function readRanges(value: unknown, allowPointRange: boolean): Array<{ startBeat: number; endBeat: number }> | null {
+function readRanges(value: unknown, allowPointRange = false): Array<{ startBeat: number; endBeat: number }> | null {
     if (!Array.isArray(value) || value.length > MAX_COLLECTION_LENGTH) {
         return null;
     }
@@ -121,6 +129,186 @@ function readRanges(value: unknown, allowPointRange: boolean): Array<{ startBeat
         ranges.push({ startBeat: candidate.startBeat, endBeat: candidate.endBeat });
     }
     return ranges;
+}
+
+function readCommandBatchAuthority(value: unknown): AgentRunPendingEffectContinuation['authority'] | null {
+    if (!isRecord(value) || !isRecord(value.scope) || !isRecord(value.grants) || !isRecord(value.budgets)) {
+        return null;
+    }
+    const scope = value.scope;
+    const grants = value.grants;
+    const budgets = value.budgets;
+    const projectId = readString(value.projectId);
+    const baseRevision = readString(value.baseRevision);
+    const targetIds = readStringArray(scope.targetIds);
+    const targetRanges = readRanges(scope.targetRanges, true);
+    const protectedTargetIds = readStringArray(scope.protectedTargetIds);
+    const protectedRanges = readRanges(scope.protectedRanges);
+    const allowedOperationPrefixes = readStringArray(grants.allowedOperationPrefixes);
+    const create = typeof grants.create === 'boolean' ? grants.create : null;
+    const deleteGrant = typeof grants.delete === 'boolean' ? grants.delete : null;
+    const routing = typeof grants.routing === 'boolean' ? grants.routing : null;
+    const tempo = typeof grants.tempo === 'boolean' ? grants.tempo : null;
+    const master = typeof grants.master === 'boolean' ? grants.master : null;
+    const file = typeof grants.file === 'boolean' ? grants.file : null;
+    const audioUpload = typeof grants.audioUpload === 'boolean' ? grants.audioUpload : null;
+    const remoteGeneration = typeof grants.remoteGeneration === 'boolean' ? grants.remoteGeneration : null;
+    const autoCommit = typeof grants.autoCommit === 'boolean' ? grants.autoCommit : null;
+    const maxCommands = readNonNegativeInteger(budgets.maxCommands);
+    const maxCreatedTracks = readNonNegativeInteger(budgets.maxCreatedTracks);
+    const maxDeletedObjects = readNonNegativeInteger(budgets.maxDeletedObjects);
+    const maxAffectedTracks = readNonNegativeInteger(budgets.maxAffectedTracks);
+    const maxAffectedClips = readNonNegativeInteger(budgets.maxAffectedClips);
+    const maxAutomationPoints = readNonNegativeInteger(budgets.maxAutomationPoints);
+    const maxImportedAssets = readNonNegativeInteger(budgets.maxImportedAssets);
+    const maxRenderJobs = readNonNegativeInteger(budgets.maxRenderJobs);
+    if (
+        projectId === null ||
+        baseRevision === null ||
+        targetIds === null ||
+        targetRanges === null ||
+        protectedTargetIds === null ||
+        protectedRanges === null ||
+        allowedOperationPrefixes === null ||
+        create === null ||
+        deleteGrant === null ||
+        routing === null ||
+        tempo === null ||
+        master === null ||
+        file === null ||
+        audioUpload === null ||
+        remoteGeneration === null ||
+        autoCommit === null ||
+        maxCommands === null ||
+        maxCreatedTracks === null ||
+        maxDeletedObjects === null ||
+        maxAffectedTracks === null ||
+        maxAffectedClips === null ||
+        maxAutomationPoints === null ||
+        maxImportedAssets === null ||
+        maxRenderJobs === null
+    ) {
+        return null;
+    }
+    return {
+        projectId,
+        baseRevision,
+        scope: { targetIds, targetRanges, protectedTargetIds, protectedRanges },
+        grants: {
+            allowedOperationPrefixes,
+            create,
+            delete: deleteGrant,
+            routing,
+            tempo,
+            master,
+            file,
+            audioUpload,
+            remoteGeneration,
+            autoCommit,
+        },
+        budgets: {
+            maxCommands,
+            maxCreatedTracks,
+            maxDeletedObjects,
+            maxAffectedTracks,
+            maxAffectedClips,
+            maxAutomationPoints,
+            maxImportedAssets,
+            maxRenderJobs,
+        },
+    };
+}
+
+function readPendingEffect(value: unknown): AgentRunPendingEffect | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const commandId = readString(value.commandId);
+    const operation = readString(value.operation);
+    const reason = readString(value.reason);
+    if (commandId === null || operation === null || reason === null || value.state !== 'pending') {
+        return null;
+    }
+    if (value.kind === 'runtime-graph') {
+        if (value.remediation !== 'retry' && value.remediation !== 'repair') {
+            return null;
+        }
+        return {
+            commandId,
+            operation,
+            reason,
+            state: 'pending',
+            kind: 'runtime-graph',
+            remediation: value.remediation,
+        };
+    }
+    if (value.kind === 'external-effect') {
+        if (value.remediation !== 'reconcile' && value.remediation !== 'manual-repair') {
+            return null;
+        }
+        return {
+            commandId,
+            operation,
+            reason,
+            state: 'pending',
+            kind: 'external-effect',
+            remediation: value.remediation,
+        };
+    }
+    return null;
+}
+
+function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectContinuation | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const batchId = readString(value.batchId);
+    const effects = readCollection(value.effects, readPendingEffect);
+    const receiptIdentity = readString(value.receiptIdentity);
+    const serializedBatch =
+        typeof value.serializedBatch === 'string' &&
+        value.serializedBatch.length > 0 &&
+        value.serializedBatch.length <= MAX_SERIALIZED_BATCH_LENGTH
+            ? value.serializedBatch
+            : null;
+    const authority = readCommandBatchAuthority(value.authority);
+    const lastError = readNullableString(value.lastError);
+    if (
+        batchId === null ||
+        effects === null ||
+        effects.length === 0 ||
+        new Set(effects.map(({ commandId }) => commandId)).size !== effects.length ||
+        receiptIdentity === null ||
+        serializedBatch === null ||
+        authority === null ||
+        lastError === undefined ||
+        (value.recovery !== 'reconcile-batch' && value.recovery !== 'manual-repair') ||
+        (value.recovery === 'manual-repair' && !effects.some(({ remediation }) => remediation === 'manual-repair')) ||
+        (value.recovery === 'reconcile-batch' && effects.some(({ remediation }) => remediation === 'manual-repair'))
+    ) {
+        return null;
+    }
+    return {
+        batchId,
+        effects,
+        receiptIdentity,
+        recovery: value.recovery,
+        serializedBatch,
+        authority,
+        lastError,
+    };
+}
+
+function readPendingEffectRecovery(value: unknown): AgentRunPendingEffectRecovery | null {
+    const continuation = readPendingEffectContinuation(value);
+    if (!continuation || !isRecord(value)) {
+        return null;
+    }
+    const runId = readString(value.runId);
+    if (runId === null || (value.checkpoint !== 'prepared' && value.checkpoint !== 'durable')) {
+        return null;
+    }
+    return { ...continuation, runId, checkpoint: value.checkpoint };
 }
 
 function readBatch(value: unknown): AgentRunBatch | null {
@@ -558,6 +746,37 @@ function readPreparedStemImportRecoveries(value: unknown): AgentRunPreparedStemI
         recoveries.push(recovery);
     }
     return recoveries;
+}
+
+function readPreparedStemImportRecoveryCapsule(value: unknown): AgentRunPreparedStemImportRecoveryCapsule | null {
+    const recovery = readPreparedStemImportRecovery(value);
+    if (!recovery || !isRecord(value)) {
+        return null;
+    }
+    const runId = readString(value.runId);
+    const lastError = readNullableString(value.lastError);
+    const manualRepairRequiredAt = readNullableTimestamp(value.manualRepairRequiredAt);
+    if (
+        runId === null ||
+        lastError === undefined ||
+        manualRepairRequiredAt === undefined ||
+        (value.status !== 'pending' && value.status !== 'manual-repair') ||
+        (value.status === 'pending' && (lastError !== null || manualRepairRequiredAt !== null)) ||
+        (value.status === 'manual-repair' && (lastError === null || manualRepairRequiredAt === null))
+    ) {
+        return null;
+    }
+    return {
+        ...recovery,
+        runId,
+        status: value.status,
+        lastError,
+        manualRepairRequiredAt,
+    };
+}
+
+function preparedStemImportRecoveryIdentity(runId: string, batchId: string): string {
+    return `${runId}\u0000${batchId}`;
 }
 
 function readWorkLease(value: unknown): AgentRunWorkLease | null {
@@ -1304,6 +1523,10 @@ function readAgentRun(value: unknown): AgentRun | null {
     const committedWork = readCollection(value.committedWork, readCommittedWork);
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
+    const pendingEffectContinuations =
+        value.pendingEffectContinuations === undefined
+            ? []
+            : readCollection(value.pendingEffectContinuations, readPendingEffectContinuation);
     const preparedStemImports = readPreparedStemImportRecoveries(value.preparedStemImports);
     const workLeases = readCollection(value.workLeases, readWorkLease);
     const contextEvidence =
@@ -1352,6 +1575,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         committedWork === null ||
         retriableWork === null ||
         temporaryAssets === null ||
+        pendingEffectContinuations === null ||
         workLeases === null ||
         (contextEvidence === null && value.contextEvidence !== undefined && value.contextEvidence !== null) ||
         cancellationGeneration === null ||
@@ -1425,6 +1649,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         committedWork,
         retriableWork,
         temporaryAssets,
+        pendingEffectContinuations,
         preparedStemImports,
         manualResume: {
             required: value.manualResume.required,
@@ -1453,7 +1678,102 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
         seenRunIds.add(run.runId);
         runs.push(run);
     }
-    return { schemaVersion: AGENT_RUN_SCHEMA_VERSION, runs };
+    const explicitRecoveries =
+        value.pendingEffectRecoveryLedger === undefined
+            ? []
+            : readCollection(value.pendingEffectRecoveryLedger, readPendingEffectRecovery);
+    if (explicitRecoveries === null || explicitRecoveries.length > MAX_PENDING_EFFECT_RECOVERIES) {
+        return createEmptyAgentRunState();
+    }
+    const recoveryById = new Map<string, AgentRunPendingEffectRecovery>();
+    for (const recovery of explicitRecoveries) {
+        const id = `${recovery.runId}\u0000${recovery.batchId}`;
+        if (recoveryById.has(id)) {
+            return createEmptyAgentRunState();
+        }
+        recoveryById.set(id, recovery);
+    }
+    for (const run of runs) {
+        for (const continuation of run.pendingEffectContinuations) {
+            const id = `${run.runId}\u0000${continuation.batchId}`;
+            if (!recoveryById.has(id)) {
+                recoveryById.set(id, { ...structuredClone(continuation), runId: run.runId, checkpoint: 'durable' });
+            }
+        }
+    }
+    const pendingEffectRecoveryLedger = [...recoveryById.values()];
+    if (pendingEffectRecoveryLedger.length > MAX_PENDING_EFFECT_RECOVERIES) {
+        return createEmptyAgentRunState();
+    }
+    const explicitPreparedStemRecoveries =
+        value.preparedStemImportRecoveryLedger === undefined
+            ? []
+            : readCollection(value.preparedStemImportRecoveryLedger, readPreparedStemImportRecoveryCapsule);
+    if (
+        explicitPreparedStemRecoveries === null ||
+        explicitPreparedStemRecoveries.length > MAX_PREPARED_STEM_IMPORT_RECOVERIES
+    ) {
+        return createEmptyAgentRunState();
+    }
+    const preparedRecoveryById = new Map<string, AgentRunPreparedStemImportRecoveryCapsule>();
+    const preparedRecoveryByResourceId = new Map<string, string>();
+    for (const recovery of explicitPreparedStemRecoveries) {
+        const id = preparedStemImportRecoveryIdentity(recovery.runId, recovery.batchId);
+        if (preparedRecoveryById.has(id)) {
+            return createEmptyAgentRunState();
+        }
+        for (const resource of recovery.resources) {
+            if (preparedRecoveryByResourceId.has(resource.audioBufferId)) {
+                return createEmptyAgentRunState();
+            }
+            preparedRecoveryByResourceId.set(resource.audioBufferId, id);
+        }
+        preparedRecoveryById.set(id, recovery);
+    }
+    for (const run of runs) {
+        const runRecoveryIds = new Set<string>();
+        for (const recovery of run.preparedStemImports) {
+            const id = preparedStemImportRecoveryIdentity(run.runId, recovery.batchId);
+            const explicitRecovery = preparedRecoveryById.get(id);
+            if (explicitRecovery && !hasSamePreparedStemImportRecovery(explicitRecovery, recovery)) {
+                return createEmptyAgentRunState();
+            }
+            if (!explicitRecovery) {
+                for (const resource of recovery.resources) {
+                    const existingOwner = preparedRecoveryByResourceId.get(resource.audioBufferId);
+                    if (existingOwner && existingOwner !== id) {
+                        return createEmptyAgentRunState();
+                    }
+                    preparedRecoveryByResourceId.set(resource.audioBufferId, id);
+                }
+                preparedRecoveryById.set(id, {
+                    ...structuredClone(recovery),
+                    runId: run.runId,
+                    status: 'pending',
+                    lastError: null,
+                    manualRepairRequiredAt: null,
+                });
+            }
+            runRecoveryIds.add(id);
+        }
+        if (
+            [...preparedRecoveryById.keys()].some(
+                (id) => id.startsWith(`${run.runId}\u0000`) && !runRecoveryIds.has(id)
+            )
+        ) {
+            return createEmptyAgentRunState();
+        }
+    }
+    const preparedStemImportRecoveryLedger = [...preparedRecoveryById.values()];
+    if (preparedStemImportRecoveryLedger.length > MAX_PREPARED_STEM_IMPORT_RECOVERIES) {
+        return createEmptyAgentRunState();
+    }
+    return {
+        schemaVersion: AGENT_RUN_SCHEMA_VERSION,
+        runs,
+        ...(pendingEffectRecoveryLedger.length > 0 ? { pendingEffectRecoveryLedger } : {}),
+        ...(preparedStemImportRecoveryLedger.length > 0 ? { preparedStemImportRecoveryLedger } : {}),
+    };
 }
 
 export const agentRunStore = createStore<AgentRunState>({
@@ -1470,10 +1790,26 @@ export function readAgentRunState(): AgentRunState {
 }
 
 export function persistAgentRunState(state: AgentRunState): void {
+    const requestedPreparedStemRecoveries = state.preparedStemImportRecoveryLedger ?? [];
+    if (requestedPreparedStemRecoveries.length > MAX_PREPARED_STEM_IMPORT_RECOVERIES) {
+        throw new Error('Agent run prepared-stem recovery ledger reached its persistent capacity');
+    }
     const boundedState = { ...state, runs: state.runs.slice(-MAX_RUNS) };
     const sanitizedState = sanitizeAgentRunState(boundedState);
     if (sanitizedState.runs.length !== boundedState.runs.length) {
         throw new Error('Agent run state contains data outside the persistent schema bounds');
+    }
+    const requestedRecoveries = state.pendingEffectRecoveryLedger ?? [];
+    const sanitizedRecoveries = sanitizedState.pendingEffectRecoveryLedger ?? [];
+    if (requestedRecoveries.length > 0 && sanitizedRecoveries.length !== requestedRecoveries.length) {
+        throw new Error('Agent run pending-effect recovery ledger reached its persistent capacity');
+    }
+    const sanitizedPreparedStemRecoveries = sanitizedState.preparedStemImportRecoveryLedger ?? [];
+    if (
+        requestedPreparedStemRecoveries.length > 0 &&
+        sanitizedPreparedStemRecoveries.length !== requestedPreparedStemRecoveries.length
+    ) {
+        throw new Error('Agent run prepared-stem recovery ledger contains invalid or duplicate recovery capsules');
     }
     if (!agentRunStore.trySet(sanitizedState)) {
         throw new Error('Agent run state could not be persisted locally');

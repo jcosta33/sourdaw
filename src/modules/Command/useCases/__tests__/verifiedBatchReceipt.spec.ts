@@ -12,6 +12,11 @@ import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
+import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
+import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
+import { parseStoredVerifiedBatchReceipt } from '../parseStoredVerifiedBatchReceipt';
+import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
@@ -133,7 +138,7 @@ function compileBatch(
     });
 }
 
-function receiptFrom(result: object) {
+function receiptFrom(result: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>) {
     expect(result).toHaveProperty('receipt');
     if (!('receipt' in result)) {
         throw new Error('Expected a verified batch receipt');
@@ -360,6 +365,11 @@ describe('verified batch receipt', () => {
 
     it('returns one machine-readable receipt for the exact atomic Automerge outcome', async () => {
         const batch = compileBatch();
+        const parsedBatch = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsedBatch.status === 'invalid') {
+            throw new Error(parsedBatch.reason);
+        }
+        const contentHash = await getCommandBatchContentHash(parsedBatch.envelope);
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -371,7 +381,8 @@ describe('verified batch receipt', () => {
         expect(mutationCount).toBe(1);
         expect(projectDocument).toEqual({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(receiptFrom(result)).toMatchObject({
-            schemaVersion: 1,
+            schemaVersion: 2,
+            contentHash,
             runId: 'run-receipt',
             batchId: 'batch-receipt',
             outcome: 'committed',
@@ -510,9 +521,17 @@ describe('verified batch receipt', () => {
 
     it('reports a durable commit with a failed non-atomic effect as partial', async () => {
         clearHandlerRegistry();
+        const runtimeFailure = Object.assign(new Error('audio graph update failed'), {
+            pendingEffect: {
+                kind: 'runtime-graph' as const,
+                reason: 'runtime graph revision is stale',
+                remediation: 'retry' as const,
+                state: 'pending' as const,
+            },
+        });
         registerTestHandlers({
             panAfterCommit: () => {
-                throw new Error('audio graph update failed');
+                throw runtimeFailure;
             },
         });
         const batch = compileBatch();
@@ -525,7 +544,8 @@ describe('verified batch receipt', () => {
 
         expect(result.status).toBe('committed-with-warning');
         expect(mutationCount).toBe(1);
-        expect(receiptFrom(result)).toMatchObject({
+        const receipt = receiptFrom(result);
+        expect(receipt).toMatchObject({
             outcome: 'partially-committed',
             atomicity: 'durable-atomic-with-non-atomic-effects',
             commandOutcomes: [{ outcome: 'committed' }, { outcome: 'committed' }],
@@ -533,9 +553,378 @@ describe('verified batch receipt', () => {
                 'setTrackPan post-commit effect failed: audio graph update failed; runtime reconciliation failed: audio graph update failed',
             ],
             errors: [],
+            pendingEffects: [
+                {
+                    commandId: PAN_COMMAND_ID,
+                    kind: 'runtime-graph',
+                    operation: 'setTrackPan',
+                    reason: 'runtime graph revision is stale',
+                    remediation: 'retry',
+                    state: 'pending',
+                },
+            ],
             resulting: { normalizedRevision: revision(1) },
             modelSummary: 'Committed 2 commands atomically, but at least one non-atomic follow-up effect failed.',
         });
+
+        const restartedReceipt = parseStoredVerifiedBatchReceipt({
+            baseRevision: revision(0),
+            batchId: 'batch-receipt',
+            commands: [
+                { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+            ],
+            contentHash: receipt.contentHash,
+            runId: 'run-receipt',
+            serializedReceipt: JSON.stringify(receipt),
+        });
+        expect(restartedReceipt?.pendingEffects).toEqual([
+            {
+                commandId: PAN_COMMAND_ID,
+                kind: 'runtime-graph',
+                operation: 'setTrackPan',
+                reason: 'runtime graph revision is stale',
+                remediation: 'retry',
+                state: 'pending',
+            },
+        ]);
+        const legacyPartialReceipt: Partial<typeof receipt> = { ...receipt };
+        delete legacyPartialReceipt.pendingEffects;
+        expect(
+            parseStoredVerifiedBatchReceipt({
+                baseRevision: revision(0),
+                batchId: 'batch-receipt',
+                commands: [
+                    { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                    { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+                ],
+                contentHash: receipt.contentHash,
+                runId: 'run-receipt',
+                serializedReceipt: JSON.stringify(legacyPartialReceipt),
+            })
+        ).toBeNull();
+        expect(
+            parseStoredVerifiedBatchReceipt({
+                baseRevision: revision(0),
+                batchId: 'batch-receipt',
+                commands: [
+                    { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                    { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+                ],
+                contentHash: receipt.contentHash,
+                runId: 'run-receipt',
+                serializedReceipt: JSON.stringify({
+                    ...receipt,
+                    pendingEffects: [
+                        {
+                            commandId: PAN_COMMAND_ID,
+                            kind: 'runtime-graph',
+                            operation: 'setTrackPan',
+                            reason: 'runtime graph revision is stale',
+                            remediation: 'manual-repair',
+                            state: 'pending',
+                        },
+                    ],
+                }),
+            })
+        ).toBeNull();
+    });
+
+    it('round-trips every producer-supported receipt family through storage parsing', async () => {
+        const batch = compileBatch();
+        const parsedBatch = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsedBatch.status === 'invalid') {
+            throw new Error(parsedBatch.reason);
+        }
+        const contentHash = await getCommandBatchContentHash(parsedBatch.envelope);
+        type ProducerResult = Parameters<typeof createVerifiedBatchReceipt>[0]['result'];
+        const actions: ProducerResult['actions'] = [
+            {
+                action: {
+                    type: 'setTrackGain' as const,
+                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                },
+                receipt: createVersionedCommandReceipt({ envelope: parsedBatch.envelope.commands[0]! }),
+            },
+            {
+                action: {
+                    type: 'setTrackPan' as const,
+                    payload: { trackId: 'track-guitar', pan: -0.2, expectedPan: 0 },
+                },
+                receipt: createVersionedCommandReceipt({ envelope: parsedBatch.envelope.commands[1]! }),
+            },
+        ];
+        const pendingEffect = {
+            commandId: PAN_COMMAND_ID,
+            kind: 'runtime-graph' as const,
+            operation: 'setTrackPan' as const,
+            reason: 'runtime graph revision is stale',
+            remediation: 'retry' as const,
+            state: 'pending' as const,
+        };
+        const cases: ReadonlyArray<{
+            name: string;
+            result: ProducerResult;
+            resultingRevision: string;
+            outcome:
+                | 'committed'
+                | 'committed-with-warning'
+                | 'partially-committed'
+                | 'executed'
+                | 'executed-with-warning'
+                | 'no-op'
+                | 'ambiguous'
+                | 'rejected'
+                | 'conflicted'
+                | 'cancelled'
+                | 'failed'
+                | 'verification-failed';
+            atomicity: 'atomic' | 'durable-atomic-with-non-atomic-effects';
+            commandOutcomes: Array<'committed' | 'executed' | 'no-op' | 'unknown' | 'not-applied'>;
+            pendingEffects: unknown[];
+        }> = [
+            {
+                name: 'committed',
+                result: { status: 'committed', actions },
+                resultingRevision: revision(1),
+                outcome: 'committed',
+                atomicity: 'atomic',
+                commandOutcomes: ['committed', 'committed'],
+                pendingEffects: [],
+            },
+            {
+                name: 'committed observer warning',
+                result: {
+                    status: 'committed-with-warning',
+                    actions,
+                    warning: 'history observer unavailable',
+                    warningDetails: [{ kind: 'observer', message: 'history observer unavailable' }],
+                },
+                resultingRevision: revision(1),
+                outcome: 'committed-with-warning',
+                atomicity: 'atomic',
+                commandOutcomes: ['committed', 'committed'],
+                pendingEffects: [],
+            },
+            {
+                name: 'partially committed',
+                result: {
+                    status: 'committed-with-warning',
+                    actions,
+                    warning: 'runtime graph update failed',
+                    warningDetails: [
+                        {
+                            kind: 'external-effect',
+                            commandId: PAN_COMMAND_ID,
+                            message: 'runtime graph update failed',
+                            pendingEffect,
+                        },
+                    ],
+                },
+                resultingRevision: revision(1),
+                outcome: 'partially-committed',
+                atomicity: 'durable-atomic-with-non-atomic-effects',
+                commandOutcomes: ['committed', 'committed'],
+                pendingEffects: [pendingEffect],
+            },
+            {
+                name: 'executed',
+                result: { status: 'executed', actions },
+                resultingRevision: revision(0),
+                outcome: 'executed',
+                atomicity: 'atomic',
+                commandOutcomes: ['executed', 'executed'],
+                pendingEffects: [],
+            },
+            {
+                name: 'executed warning',
+                result: {
+                    status: 'executed-with-warning',
+                    actions,
+                    warning: 'transport event unavailable',
+                    warningDetails: [
+                        {
+                            kind: 'external-effect',
+                            commandId: GAIN_COMMAND_ID,
+                            message: 'transport event unavailable',
+                        },
+                    ],
+                },
+                resultingRevision: revision(0),
+                outcome: 'executed-with-warning',
+                atomicity: 'atomic',
+                commandOutcomes: ['executed', 'executed'],
+                pendingEffects: [],
+            },
+            {
+                name: 'no-op',
+                result: { status: 'no-op', actions: [] },
+                resultingRevision: revision(0),
+                outcome: 'no-op',
+                atomicity: 'atomic',
+                commandOutcomes: ['no-op', 'no-op'],
+                pendingEffects: [],
+            },
+            {
+                name: 'ambiguous',
+                result: { status: 'ambiguous', actions: [], reason: 'commit state is unknown' },
+                resultingRevision: revision(0),
+                outcome: 'ambiguous',
+                atomicity: 'atomic',
+                commandOutcomes: ['unknown', 'unknown'],
+                pendingEffects: [],
+            },
+            ...(
+                [
+                    ['rejected', 'request rejected'],
+                    ['conflicted', 'project conflict'],
+                    ['cancelled', 'execution cancelled'],
+                    ['failed', 'execution failed'],
+                ] as const
+            ).map(([status, reason]) => ({
+                name: status,
+                result: { status, actions: [], reason },
+                resultingRevision: revision(0),
+                outcome: status,
+                atomicity: 'atomic' as const,
+                commandOutcomes: ['not-applied' as const, 'not-applied' as const],
+                pendingEffects: [],
+            })),
+            {
+                name: 'verification failed',
+                result: {
+                    status: 'conflicted',
+                    actions: [],
+                    reason: 'protected target changed',
+                    failureKind: 'verification',
+                },
+                resultingRevision: revision(0),
+                outcome: 'verification-failed',
+                atomicity: 'atomic',
+                commandOutcomes: ['not-applied', 'not-applied'],
+                pendingEffects: [],
+            },
+        ];
+
+        for (const expected of cases) {
+            const receipt = createVerifiedBatchReceipt({
+                contentHash,
+                envelope: parsedBatch.envelope,
+                observedBaseRevision: revision(0),
+                resultingRevision: expected.resultingRevision,
+                result: expected.result,
+            });
+            const stored = parseStoredVerifiedBatchReceipt({
+                baseRevision: revision(0),
+                batchId: parsedBatch.envelope.batchId,
+                commands: parsedBatch.envelope.commands,
+                contentHash,
+                runId: parsedBatch.envelope.runId,
+                serializedReceipt: JSON.stringify(receipt),
+            });
+
+            expect(stored, expected.name).not.toBeNull();
+            expect(stored, expected.name).toMatchObject({
+                outcome: expected.outcome,
+                atomicity: expected.atomicity,
+                commandOutcomes: parsedBatch.envelope.commands.map((command, index) => ({
+                    commandId: command.commandId,
+                    operation: command.operation,
+                    outcome: expected.commandOutcomes[index],
+                })),
+                pendingEffects: expected.pendingEffects,
+            });
+        }
+    });
+
+    it('rejects incoherent stored command-outcome families', async () => {
+        const batch = compileBatch();
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        const receipt = receiptFrom(result);
+        const commandOutcomes = receipt.commandOutcomes as Array<Record<string, unknown>>;
+        const pendingExternalEffect = {
+            commandId: GAIN_COMMAND_ID,
+            kind: 'external-effect',
+            operation: 'setTrackGain',
+            reason: 'render completion is pending',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const serializeReceipt = (input: {
+            atomicity: 'atomic' | 'durable-atomic-with-non-atomic-effects';
+            commandOutcome: 'committed' | 'executed' | 'no-op' | 'unknown' | 'not-applied';
+            outcome:
+                | 'committed'
+                | 'committed-with-warning'
+                | 'partially-committed'
+                | 'executed'
+                | 'executed-with-warning'
+                | 'no-op'
+                | 'ambiguous'
+                | 'rejected'
+                | 'conflicted'
+                | 'cancelled'
+                | 'failed'
+                | 'verification-failed';
+            pendingEffects?: unknown[];
+        }) =>
+            JSON.stringify({
+                ...receipt,
+                atomicity: input.atomicity,
+                commandOutcomes: commandOutcomes.map((command) => ({ ...command, outcome: input.commandOutcome })),
+                outcome: input.outcome,
+                pendingEffects: input.pendingEffects ?? [],
+            });
+        const parseReceipt = (serializedReceipt: string) =>
+            parseStoredVerifiedBatchReceipt({
+                baseRevision: revision(0),
+                batchId: 'batch-receipt',
+                commands: [
+                    { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
+                    { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
+                ],
+                contentHash: receipt.contentHash,
+                runId: 'run-receipt',
+                serializedReceipt,
+            });
+
+        const malformedFamilies = [
+            ['executed', 'committed'],
+            ['executed-with-warning', 'committed'],
+            ['no-op', 'committed'],
+            ['ambiguous', 'committed'],
+            ['rejected', 'committed'],
+            ['conflicted', 'committed'],
+            ['cancelled', 'committed'],
+            ['failed', 'committed'],
+            ['verification-failed', 'committed'],
+        ] as const;
+        for (const [outcome, commandOutcome] of malformedFamilies) {
+            expect(parseReceipt(serializeReceipt({ outcome, commandOutcome, atomicity: 'atomic' }))).toBeNull();
+        }
+        expect(
+            parseReceipt(
+                serializeReceipt({
+                    atomicity: 'durable-atomic-with-non-atomic-effects',
+                    commandOutcome: 'committed',
+                    outcome: 'committed',
+                })
+            )
+        ).toBeNull();
+        expect(
+            parseReceipt(
+                serializeReceipt({
+                    atomicity: 'durable-atomic-with-non-atomic-effects',
+                    commandOutcome: 'no-op',
+                    outcome: 'partially-committed',
+                    pendingEffects: [pendingExternalEffect],
+                })
+            )
+        ).toBeNull();
     });
 
     it('reports observer warnings without claiming a partial project commit', async () => {

@@ -10,9 +10,12 @@ import {
     lstatSync,
     openSync,
     readFileSync,
+    readlinkSync,
+    readSync,
     readdirSync,
     realpathSync,
     statSync,
+    type BigIntStats,
 } from 'node:fs';
 import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +48,13 @@ export const REQUIRED_SNAPSHOT_PATHS = [
     'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
     'public/wasm/manifest.json',
 ] as const;
+
+export const RELEASE_INVENTORY_READ_LIMITS = {
+    inventoryBytes: 8 * 1024 * 1024,
+    repositoryFileBytes: 64 * 1024 * 1024,
+    repositoryAggregateBytes: 512 * 1024 * 1024,
+    chunkBytes: 64 * 1024,
+} as const;
 
 export const REQUIRED_MARKS = [
     '1176',
@@ -222,14 +232,16 @@ export type RepositorySnapshot = {
 
 export type RepositorySnapshotFileReader = {
     open?: (path: string, flags: number) => number;
-    readBytes(fileDescriptor: number): Buffer;
-    readText(fileDescriptor: number): string;
+    noFollowFlag?: () => unknown;
+    read?: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => number;
+    fileByteLimit?: number;
+    aggregateByteLimit?: number;
 };
 
 const repositorySnapshotFileReader: RepositorySnapshotFileReader = {
     open: (path, flags) => openSync(path, flags),
-    readBytes: (fileDescriptor) => readFileSync(fileDescriptor),
-    readText: (fileDescriptor) => readFileSync(fileDescriptor, 'utf8'),
+    noFollowFlag: () => Reflect.get(constants, 'O_NOFOLLOW'),
+    read: (descriptor, buffer, offset, length, position) => readSync(descriptor, buffer, offset, length, position),
 };
 
 export type ReleaseInventoryCheckReceipt = {
@@ -237,19 +249,66 @@ export type ReleaseInventoryCheckReceipt = {
 };
 
 type ProjectLicensePreflight = (root: string, inventoryContents?: string) => void;
+type OpenRepositoryRegularFile = {
+    descriptor: number;
+    opened: BigIntStats;
+};
 
-function readReleaseInventoryContents(root: string): string {
-    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    const contents = readRepositoryRegularText(realpathSync(root), inventoryPath, repositorySnapshotFileReader);
-    if (contents === undefined) {
-        throw new Error(`release inventory cannot be read safely: ${inventoryPath}`);
+type RepositoryReadBudget = {
+    remaining: number;
+};
+
+class RepositoryFileReadLimitError extends Error {
+    readonly kind: 'file' | 'aggregate';
+
+    constructor(kind: 'file' | 'aggregate') {
+        super(`repository ${kind} byte limit exceeded`);
+        this.kind = kind;
     }
-    return contents;
 }
 
-export function readReleaseInventory(root: string): ReleaseInventory {
+function boundedReadLimit(requested: number | undefined, maximum: number): number {
+    return requested === undefined || !Number.isSafeInteger(requested)
+        ? maximum
+        : Math.max(0, Math.min(requested, maximum));
+}
+
+function repositoryReadBudget(readFile: RepositorySnapshotFileReader): RepositoryReadBudget {
+    return {
+        remaining: boundedReadLimit(
+            readFile.aggregateByteLimit,
+            RELEASE_INVENTORY_READ_LIMITS.repositoryAggregateBytes
+        ),
+    };
+}
+
+function readReleaseInventoryContents(
+    root: string,
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+): string {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
-    const contents = readReleaseInventoryContents(root);
+    try {
+        return readRepositoryRegularBuffer(
+            realpathSync(root),
+            inventoryPath,
+            readFile,
+            { remaining: RELEASE_INVENTORY_READ_LIMITS.inventoryBytes },
+            RELEASE_INVENTORY_READ_LIMITS.inventoryBytes
+        ).toString('utf8');
+    } catch (error) {
+        if (error instanceof RepositoryFileReadLimitError) {
+            throw new TypeError('release inventory exceeds the per-file byte limit', { cause: error });
+        }
+        throw new Error(`release inventory cannot be read safely: ${inventoryPath}`, { cause: error });
+    }
+}
+
+export function readReleaseInventory(
+    root: string,
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
+): ReleaseInventory {
+    const inventoryPath = resolve(root, 'release/open-source-inventory.json');
+    const contents = readReleaseInventoryContents(root, readFile);
     return parseJsonWithUniqueKeys<ReleaseInventory>(contents, inventoryPath);
 }
 
@@ -333,41 +392,63 @@ function pathEscapesRoot(rootRealPath: string, realPath: string): boolean {
     );
 }
 
+function sameRepositoryFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
+    return left.dev === right.dev && left.ino === right.ino;
+}
+
+function pathMatchesOpenedRepositoryRegularFile(
+    rootRealPath: string,
+    absolutePath: string,
+    opened: BigIntStats
+): boolean {
+    if (!opened.isFile() || opened.nlink !== 1n) {
+        return false;
+    }
+    const pathMetadata = lstatSync(absolutePath, { bigint: true });
+    if (
+        !pathMetadata.isFile() ||
+        pathMetadata.nlink !== 1n ||
+        pathMetadata.size !== opened.size ||
+        !sameRepositoryFileIdentity(pathMetadata, opened)
+    ) {
+        return false;
+    }
+    const realPath = realpathSync(absolutePath);
+    if (pathEscapesRoot(rootRealPath, realPath)) {
+        return false;
+    }
+    const resolved = statSync(realPath, { bigint: true });
+    return resolved.nlink === 1n && resolved.size === opened.size && sameRepositoryFileIdentity(resolved, opened);
+}
+
 function openRepositoryRegularFile(
     rootRealPath: string,
     absolutePath: string,
     readFile: RepositorySnapshotFileReader
-): number {
+): OpenRepositoryRegularFile {
     let fileDescriptor: number | undefined;
     try {
-        const beforeOpen = lstatSync(absolutePath);
-        if (!beforeOpen.isFile()) {
-            throw new Error(`not a regular file: ${absolutePath}`);
-        }
-        if ((constants.O_NOFOLLOW ?? 0) === 0) {
+        const noFollowFlag =
+            readFile.noFollowFlag === undefined ? Reflect.get(constants, 'O_NOFOLLOW') : readFile.noFollowFlag();
+        if (typeof noFollowFlag !== 'number' || noFollowFlag === 0) {
             throw new Error(`no-follow open is unavailable: ${absolutePath}`);
         }
-        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
-        const opened = fstatSync(fileDescriptor);
-        if (!opened.isFile()) {
+        const beforeOpen = lstatSync(absolutePath, { bigint: true });
+        if (!beforeOpen.isFile() || beforeOpen.nlink !== 1n) {
             throw new Error(`not a regular file: ${absolutePath}`);
         }
-        if (opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
+        fileDescriptor = (readFile.open ?? openSync)(absolutePath, constants.O_RDONLY | noFollowFlag);
+        const opened = fstatSync(fileDescriptor, { bigint: true });
+        if (!opened.isFile() || opened.nlink !== 1n) {
+            throw new Error(`not a regular file: ${absolutePath}`);
+        }
+        if (
+            !sameRepositoryFileIdentity(opened, beforeOpen) ||
+            !pathMatchesOpenedRepositoryRegularFile(rootRealPath, absolutePath, opened)
+        ) {
             throw new Error(`path changed while opening: ${absolutePath}`);
         }
-        const afterOpen = lstatSync(absolutePath);
-        if (!afterOpen.isFile() || opened.dev !== afterOpen.dev || opened.ino !== afterOpen.ino) {
-            throw new Error(`path changed while opening: ${absolutePath}`);
-        }
-        const realPath = realpathSync(absolutePath);
-        if (pathEscapesRoot(rootRealPath, realPath)) {
-            throw new Error(`path escapes repository root: ${absolutePath}`);
-        }
-        const resolved = statSync(realPath);
-        if (opened.dev !== resolved.dev || opened.ino !== resolved.ino) {
-            throw new Error(`path changed while opening: ${absolutePath}`);
-        }
-        return fileDescriptor;
+        return { descriptor: fileDescriptor, opened };
     } catch (error) {
         if (fileDescriptor !== undefined) {
             closeSync(fileDescriptor);
@@ -376,34 +457,119 @@ function openRepositoryRegularFile(
     }
 }
 
-function readRepositoryRegularFile(
+function assertRepositoryRegularFileUnchanged(
     rootRealPath: string,
     absolutePath: string,
-    readFile: RepositorySnapshotFileReader
+    opened: BigIntStats,
+    descriptor: number
+): void {
+    const closed = fstatSync(descriptor, { bigint: true });
+    if (
+        !sameRepositoryFileIdentity(closed, opened) ||
+        closed.size !== opened.size ||
+        closed.mtimeNs !== opened.mtimeNs ||
+        closed.ctimeNs !== opened.ctimeNs ||
+        !pathMatchesOpenedRepositoryRegularFile(rootRealPath, absolutePath, closed)
+    ) {
+        throw new Error(`path changed while reading: ${absolutePath}`);
+    }
+}
+
+function readBoundedRepositoryDescriptor(
+    file: OpenRepositoryRegularFile,
+    readFile: RepositorySnapshotFileReader,
+    budget: RepositoryReadBudget,
+    maxBytes: number
 ): Buffer {
-    const fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    const limit = boundedReadLimit(readFile.fileByteLimit, maxBytes);
+    if (file.opened.size > BigInt(limit)) {
+        throw new RepositoryFileReadLimitError('file');
+    }
+    if (file.opened.size > BigInt(budget.remaining)) {
+        throw new RepositoryFileReadLimitError('aggregate');
+    }
+    if (file.opened.size === 0n) {
+        return Buffer.alloc(0);
+    }
+    const chunks: Buffer[] = [];
+    const chunk = Buffer.allocUnsafe(
+        Math.min(RELEASE_INVENTORY_READ_LIMITS.chunkBytes, limit + 1, budget.remaining + 1)
+    );
+    let position = 0;
+    while (true) {
+        const observed = fstatSync(file.descriptor, { bigint: true });
+        if (observed.size > BigInt(limit)) {
+            throw new RepositoryFileReadLimitError('file');
+        }
+        if (observed.size > BigInt(position + budget.remaining)) {
+            throw new RepositoryFileReadLimitError('aggregate');
+        }
+        const readLength = Math.min(chunk.length, limit - position + 1, budget.remaining + 1);
+        const bytesRead = (readFile.read ?? readSync)(file.descriptor, chunk, 0, readLength, position);
+        if (bytesRead === 0) {
+            if (BigInt(position) !== file.opened.size) {
+                throw new Error(`unexpected early EOF while reading repository file descriptor`);
+            }
+            break;
+        }
+        if (position + bytesRead > limit) {
+            throw new RepositoryFileReadLimitError('file');
+        }
+        if (bytesRead > budget.remaining) {
+            throw new RepositoryFileReadLimitError('aggregate');
+        }
+        chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+        position += bytesRead;
+        budget.remaining -= bytesRead;
+    }
+    return Buffer.concat(chunks, position);
+}
+
+function readRepositoryRegularBuffer(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader,
+    budget: RepositoryReadBudget,
+    maxBytes = RELEASE_INVENTORY_READ_LIMITS.repositoryFileBytes
+): Buffer {
+    const file = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
     try {
-        return readFile.readBytes(fileDescriptor);
+        const contents = readBoundedRepositoryDescriptor(file, readFile, budget, maxBytes);
+        assertRepositoryRegularFileUnchanged(rootRealPath, absolutePath, file.opened, file.descriptor);
+        return contents;
     } finally {
-        closeSync(fileDescriptor);
+        closeSync(file.descriptor);
     }
 }
 
 function readRepositoryRegularText(
     rootRealPath: string,
     absolutePath: string,
-    readFile: RepositorySnapshotFileReader
+    readFile: RepositorySnapshotFileReader,
+    budget: RepositoryReadBudget
 ): string | undefined {
-    let fileDescriptor: number;
+    let file: OpenRepositoryRegularFile;
     try {
-        fileDescriptor = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+        file = openRepositoryRegularFile(rootRealPath, absolutePath, readFile);
     } catch {
         return undefined;
     }
     try {
-        return readFile.readText(fileDescriptor);
+        const contents = readBoundedRepositoryDescriptor(
+            file,
+            readFile,
+            budget,
+            RELEASE_INVENTORY_READ_LIMITS.repositoryFileBytes
+        ).toString('utf8');
+        assertRepositoryRegularFileUnchanged(rootRealPath, absolutePath, file.opened, file.descriptor);
+        return contents;
+    } catch (error) {
+        if (error instanceof RepositoryFileReadLimitError) {
+            throw error;
+        }
+        return undefined;
     } finally {
-        closeSync(fileDescriptor);
+        closeSync(file.descriptor);
     }
 }
 
@@ -441,18 +607,156 @@ function trackedFiles(root: string, pathspecs: readonly string[]): string[] {
         .sort();
 }
 
-function trackedFilesSha256(root: string, files: readonly string[]): string {
+type GitTreeEntry = {
+    mode: string;
+    object: string;
+    path: string;
+    stage?: string;
+};
+
+function malformedGitRecord(command: string, entry: string): never {
+    throw new Error(`malformed ${command} record: ${JSON.stringify(entry)}`);
+}
+
+function parseGitTreeEntry(entry: string): GitTreeEntry {
+    const tab = entry.indexOf('\t');
+    if (tab <= 0 || tab === entry.length - 1) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+
+    const fields = entry.slice(0, tab).split(' ');
+    const mode = fields[0];
+    const type = fields[1];
+    const object = fields[2];
+    if (fields.length !== 3 || mode === undefined || type === undefined || object === undefined) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+    if (mode.length === 0 || type.length === 0 || object.length === 0) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+
+    return { mode, object, path: entry.slice(tab + 1) };
+}
+
+function parseGitIndexEntry(entry: string): GitTreeEntry {
+    const tab = entry.indexOf('\t');
+    if (tab <= 0 || tab === entry.length - 1) {
+        return malformedGitRecord('git ls-files --stage', entry);
+    }
+
+    const fields = entry.slice(0, tab).split(' ');
+    const mode = fields[0];
+    const object = fields[1];
+    const stage = fields[2];
+    if (
+        fields.length !== 3 ||
+        mode === undefined ||
+        object === undefined ||
+        stage === undefined ||
+        mode.length === 0 ||
+        object.length === 0 ||
+        !/^\d+$/u.test(stage)
+    ) {
+        return malformedGitRecord('git ls-files --stage', entry);
+    }
+
+    return { mode, object, path: entry.slice(tab + 1), stage };
+}
+function gitTreeEntries(root: string, path: string): GitTreeEntry[] {
+    return execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', path], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .map(parseGitTreeEntry);
+}
+
+function gitIndexEntries(root: string, path: string): GitTreeEntry[] {
+    return execFileSync('git', ['ls-files', '--stage', '-z', '--', path], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .map(parseGitIndexEntry);
+}
+
+function gitBlob(root: string, object: string): Buffer {
+    return execFileSync('git', ['cat-file', 'blob', object], { cwd: root });
+}
+
+function assertCanonicalGrandBouleProviderPolicySymlink(root: string, path: string): void {
+    const indexEntries = gitIndexEntries(root, path).filter((entry) => entry.path === path);
+    if (indexEntries.length === 0) {
+        throw new Error(`Grand Boule provider-policy symlink is not tracked: ${path}`);
+    }
+    if (indexEntries.length !== 1) {
+        throw new Error(`Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`);
+    }
+    const indexEntry = indexEntries[0]!;
+    if (indexEntry.stage !== '0') {
+        throw new Error(`Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`);
+    }
+    if (indexEntry.mode !== '120000') {
+        throw new Error(`Grand Boule provider-policy symlink is not tracked as a symlink: ${path}`);
+    }
+
+    const committedEntry = gitTreeEntries(root, path).find((entry) => entry.path === path);
+    if (committedEntry === undefined) {
+        throw new Error(`Grand Boule provider-policy symlink is not committed: ${path}`);
+    }
+    if (committedEntry.mode !== '120000') {
+        throw new Error(`Grand Boule provider-policy symlink commit is not a symlink: ${path}`);
+    }
+    if (!gitBlob(root, committedEntry.object).equals(Buffer.from('AGENTS.md'))) {
+        throw new Error(`Grand Boule provider-policy symlink commit target is not AGENTS.md: ${path}`);
+    }
+    if (!gitBlob(root, indexEntry.object).equals(Buffer.from('AGENTS.md'))) {
+        throw new Error(`Grand Boule provider-policy symlink index target is not AGENTS.md: ${path}`);
+    }
+
+    const absolutePath = resolve(root, path);
+    let before;
+    try {
+        before = lstatSync(absolutePath);
+    } catch {
+        throw new Error(`Grand Boule provider-policy symlink checkout is missing: ${path}`);
+    }
+    if (!before.isSymbolicLink() || readlinkSync(absolutePath) !== 'AGENTS.md') {
+        throw new Error(`Grand Boule provider-policy symlink checkout target is not AGENTS.md: ${path}`);
+    }
+    const after = lstatSync(absolutePath);
+    if (!after.isSymbolicLink() || before.dev !== after.dev || before.ino !== after.ino) {
+        throw new Error(`Grand Boule provider-policy symlink checkout changed while checking: ${path}`);
+    }
+}
+
+function assertCanonicalGrandBouleProviderPolicySymlinks(root: string, paths: readonly string[]): void {
+    for (const path of paths) {
+        assertCanonicalGrandBouleProviderPolicySymlink(root, path);
+    }
+}
+
+function trackedFilesSha256(
+    root: string,
+    files: readonly string[],
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader,
+    budget: RepositoryReadBudget = repositoryReadBudget(readFile)
+): string {
     const hash = createHash('sha256');
     const rootRealPath = realpathSync(root);
     for (const file of files) {
         const absolutePath = resolve(root, file);
-        if (!existsSync(absolutePath)) {
+        try {
+            lstatSync(absolutePath);
+        } catch {
             throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
         try {
-            hash.update(readRepositoryRegularFile(rootRealPath, absolutePath, repositorySnapshotFileReader));
+            hash.update(readRepositoryRegularBuffer(rootRealPath, absolutePath, readFile, budget));
         } catch {
             throw new Error(`Grand Boule release source is unsafe: ${file}`);
         }
@@ -461,12 +765,17 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
     return hash.digest('hex');
 }
 
-function trackedSetSha256(root: string, pathspecs: readonly string[]): string {
+function trackedSetSha256(
+    root: string,
+    pathspecs: readonly string[],
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader,
+    budget: RepositoryReadBudget = repositoryReadBudget(readFile)
+): string {
     const files = trackedFiles(root, pathspecs);
     if (files.length === 0) {
         throw new Error(`Grand Boule release source boundary has no tracked files: ${pathspecs.join(', ')}`);
     }
-    return trackedFilesSha256(root, files);
+    return trackedFilesSha256(root, files, readFile, budget);
 }
 
 export const AUDIO_WORKLET_SOURCES = [
@@ -1156,9 +1465,18 @@ export function assertProjectLicenseDistributionReleaseInventory(
 
 type GrandBouleReleaseBoundary = {
     paths: readonly string[];
+    excludedPaths?: readonly string[];
     gitPathspecs: readonly string[];
     digestLabel: string;
 };
+
+export const GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS = [
+    'src/modules/GrandBoule/CLAUDE.md',
+    'src/modules/GrandBoule/CODEX.md',
+    'src/modules/GrandBoule/GEMINI.md',
+    'src/modules/GrandBoule/KIMI.md',
+    'src/modules/GrandBoule/ZCODE.md',
+] as const;
 
 export const GRAND_BOULE_RELEASE_REGISTRY = {
     kind: 'project-source',
@@ -1238,8 +1556,10 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
+            excludedPaths: GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS,
             gitPathspecs: [
                 'src/modules/GrandBoule',
+                ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
@@ -1293,7 +1613,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
 } as const;
 
 export function grandBouleReleaseInventoryContract(
-    root: string
+    root: string,
+    readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
 ): Pick<
     ReleaseSurface,
     | 'kind'
@@ -1307,6 +1628,13 @@ export function grandBouleReleaseInventoryContract(
     | 'licenses'
     | 'productSurfaces'
 > {
+    for (const { excludedPaths } of GRAND_BOULE_RELEASE_REGISTRY.boundaries) {
+        if (excludedPaths !== undefined) {
+            assertCanonicalGrandBouleProviderPolicySymlinks(root, excludedPaths);
+        }
+    }
+
+    const budget = repositoryReadBudget(readFile);
     return {
         kind: GRAND_BOULE_RELEASE_REGISTRY.kind,
         retention: GRAND_BOULE_RELEASE_REGISTRY.retention,
@@ -1331,7 +1659,7 @@ export function grandBouleReleaseInventoryContract(
         ],
         digests: GRAND_BOULE_RELEASE_REGISTRY.boundaries.map(
             ({ gitPathspecs, digestLabel }) =>
-                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs)}:${digestLabel}`
+                `tracked-set-sha256:${trackedSetSha256(root, gitPathspecs, readFile, budget)}:${digestLabel}`
         ),
         licenses: ['Apache-2.0'],
         productSurfaces: [...GRAND_BOULE_RELEASE_REGISTRY.productSurfaces],
@@ -1942,6 +2270,7 @@ export function loadRepositorySnapshot(
     readFile: RepositorySnapshotFileReader = repositorySnapshotFileReader
 ): RepositorySnapshot {
     const rootRealPath = realpathSync(root);
+    const readBudget = repositoryReadBudget(readFile);
     const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
     const isSafeTrackedPath = (path: string): boolean =>
@@ -1955,7 +2284,7 @@ export function loadRepositorySnapshot(
         if (cached !== undefined) {
             return cached;
         }
-        const value = readRepositoryRegularText(rootRealPath, resolve(root, path), readFile);
+        const value = readRepositoryRegularText(rootRealPath, resolve(root, path), readFile, readBudget);
         if (value !== undefined) {
             contents.set(path, value);
         }
@@ -1985,10 +2314,13 @@ export function loadRepositorySnapshot(
                 return [
                     path,
                     createHash('sha256')
-                        .update(readRepositoryRegularFile(rootRealPath, resolve(root, path), readFile))
+                        .update(readRepositoryRegularBuffer(rootRealPath, resolve(root, path), readFile, readBudget))
                         .digest('hex'),
                 ];
-            } catch {
+            } catch (error) {
+                if (error instanceof RepositoryFileReadLimitError) {
+                    throw error;
+                }
                 return [path, 'missing'];
             }
         })
