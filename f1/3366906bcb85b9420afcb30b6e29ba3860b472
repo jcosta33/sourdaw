@@ -1,0 +1,31 @@
+src/modules/Command/useCases/undo.ts
+  s_0202ff8054d37c::t_a63742cd3102b1 231-232,234-236,240,249-253
+  s_0202ff8054d37c::t_a1e5ed78c68c84 22-25
+  s_0202ff8054d37c::t_b7cd7e7403b14f 141-144,147-152
+  s_0202ff8054d37c::t_fba6fbc8e92bf0 212-215
+  s_0202ff8054d37c::t_0bf49e66a859e3 194-198
+  s_0202ff8054d37c::t_e59ea54e2c019e 170-172,175
+  s_0202ff8054d37c::t_f926e7f02e8eff 219
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_0202ff8054d37c::t_eb13b439d48ee0 166-188
+  s_0202ff8054d37c::t_7703009cc5acf8 99-104,107-111,119-136
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_0202ff8054d37c::t_51985074364d15 667-673,677,683-684,691-696,699-721
+  s_0202ff8054d37c::t_31faf6ba398b6b 722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "f13366906bcb85b9420afcb30b6e29ba3860b472",
+  "prompts": {},
+  "sessions": {
+    "s_0202ff8054d37c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22edd3d4-6930-4288-aacd-3eeb0b792868",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
