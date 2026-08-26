@@ -116,4 +116,37 @@ describe('exportProjectFile', () => {
         expect(downloadProjectFile).not.toHaveBeenCalled();
         expect(exportCachedAudioBuffers).not.toHaveBeenCalled();
     });
+
+    it('does not download when CRDT repair becomes required during audio export', async () => {
+        let resolveAudioExport!: (buffers: Record<string, never>) => void;
+        vi.mocked(exportCachedAudioBuffers).mockReturnValue(
+            new Promise<Record<string, never>>((resolve) => {
+                resolveAudioExport = resolve;
+            })
+        );
+
+        const exportPromise = exportProjectFile();
+        await vi.waitFor(() => {
+            expect(exportCachedAudioBuffers).toHaveBeenCalledTimes(1);
+        });
+        agentProjectRepairStateStoreMock.value = {
+            audioGraphValid: true,
+            detectedRevision: 'repair-entered-during-audio-export',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/adjustmentLayers'],
+                },
+            ],
+            status: 'repair-required',
+        };
+        resolveAudioExport({});
+
+        await exportPromise;
+
+        expect(downloadProjectFile).not.toHaveBeenCalled();
+    });
 });
