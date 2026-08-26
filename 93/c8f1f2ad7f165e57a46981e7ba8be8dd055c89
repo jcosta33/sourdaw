@@ -1,0 +1,28 @@
+src/modules/Arrangement/handlers/device/handleReorderDevices.ts
+  s_a40848e8f8cca9::t_fa6311651a700b 117
+src/modules/Arrangement/useCases/device/reorderDevices.ts
+  s_a40848e8f8cca9::t_bd59de6692820d 5-6
+  s_a40848e8f8cca9::t_fa6311651a700b 1
+  s_a40848e8f8cca9::t_c5d76272c968eb 7
+src/modules/Arrangement/useCases/device/__tests__/reorderDevices.spec.ts
+  s_a40848e8f8cca9::t_479a44d2800b73 1-22,24-28,30,32-33
+  s_a40848e8f8cca9::t_fa6311651a700b 23,29,31
+src/modules/Arrangement/handlers/device/__tests__/handleReorderDevices.spec.ts
+  s_a40848e8f8cca9::t_fa6311651a700b 176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "93c8f1f2ad7f165e57a46981e7ba8be8dd055c89",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
