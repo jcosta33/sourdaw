@@ -227,6 +227,12 @@ describe('agent run control projection', () => {
                 alternatives: [{ id: 'mute', label: 'Mute Track 1', changesAuthority: false }],
             },
         });
+        createAgentRun({
+            runId: 'run-without-decision',
+            request: 'Analyze Track 1.',
+            mode: 'explain',
+            createdRevision: captureProjectRevision(),
+        });
         expect(listAgentRunDecisionControlProjections()).toEqual([projection]);
     });
 });
