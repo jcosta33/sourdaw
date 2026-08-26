@@ -1037,6 +1037,49 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it.each([
+        {
+            name: 'an extra top-level field',
+            mutate: (proof: ReturnType<typeof makeCommitProof>) => ({ ...proof, arguments: {} }),
+        },
+        {
+            name: 'an extra per-command field',
+            mutate: (proof: ReturnType<typeof makeCommitProof>) => ({
+                ...proof,
+                commands: proof.commands.map((command, index) =>
+                    index === 0 ? { ...command, arguments: {} } : command
+                ),
+            }),
+        },
+    ])('rejects a schema-v2 persisted promotion proof with $name', async ({ mutate }) => {
+        const recoveryId = 'stem-promotion:extra-proof-field';
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['extra-proof-field'], { type: 'audio/wav' }),
+            'extra-proof-field.wav',
+            'asset-stage-extra-proof-field'
+        );
+        const proof = makeCommitProof({
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:extra-proof-field',
+            contentHash: `sha256:${'6'.repeat(64)}`,
+            runId: 'run-extra-proof-field',
+            batchId: 'batch-extra-proof-field',
+        });
+        await transfer.prepareDurablePromotionRecovery(
+            recoveryId,
+            [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
+            proof
+        );
+        durableAssetIndexedDb.overwritePromotionRecoveryCommitProof(recoveryId, mutate(proof));
+        transfer.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(
+            recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER))
+        ).rejects.toThrow('Durable asset promotion recovery failed: corrupt-record');
+        recreated.dispose();
+    });
+
     it('upgrades a legacy promotion proof without executing an unprovable commit', async () => {
         const recoveryId = 'stem-promotion:legacy-proof';
         const staged = await transfer.stageDurableAsset(

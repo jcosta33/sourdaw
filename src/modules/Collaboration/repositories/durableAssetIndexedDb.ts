@@ -288,13 +288,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isPromotionCommitProof(value: unknown): value is NonNullable<PromotionRecoveryRecord['commitProof']> {
-    if (!isRecord(value) || !Array.isArray(value.commands) || value.commands.length === 0) {
+    const fields = [
+        'projectId',
+        'idempotencyKey',
+        'contentHash',
+        'runId',
+        'batchId',
+        'baseRevision',
+        'commands',
+    ] as const;
+    if (
+        !isRecord(value) ||
+        Object.keys(value).length !== fields.length ||
+        !fields.every((field) => Object.hasOwn(value, field)) ||
+        !Array.isArray(value.commands) ||
+        value.commands.length === 0
+    ) {
         return false;
     }
+    const commandFields = ['commandId', 'operation'] as const;
     const commandIds = new Set<string>();
     for (const command of value.commands) {
         if (
             !isRecord(command) ||
+            Object.keys(command).length !== commandFields.length ||
+            !commandFields.every((field) => Object.hasOwn(command, field)) ||
             typeof command.commandId !== 'string' ||
             command.commandId.length === 0 ||
             typeof command.operation !== 'string' ||
