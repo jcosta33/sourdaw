@@ -3,6 +3,7 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
+const OFFLINE_IDLE_WINDOW_MS = 500;
 
 test.use({ serviceWorkers: 'block' });
 
@@ -18,7 +19,7 @@ function isLoopbackEndpoint(url: URL): boolean {
     return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
 }
 
-async function blockExternalRequests(page: Page): Promise<() => void> {
+async function blockExternalRequests(page: Page): Promise<() => Promise<void>> {
     const unexpectedEndpoints = { requests: [] as string[], webSockets: [] as string[] };
     await page.route('**/*', async (route) => {
         const url = new URL(route.request().url());
@@ -38,11 +39,13 @@ async function blockExternalRequests(page: Page): Promise<() => void> {
         unexpectedEndpoints.webSockets.push(url.toString());
         await webSocket.close({ code: 1008, reason: 'External network blocked' });
     });
-    return () =>
+    return async () => {
+        await page.waitForTimeout(OFFLINE_IDLE_WINDOW_MS);
         expect(unexpectedEndpoints, 'offline smoke blocked external runtime endpoints').toEqual({
             requests: [],
             webSockets: [],
         });
+    };
 }
 
 type AudioContextTestControl = {
@@ -217,7 +220,7 @@ test.describe('Offline project smoke', () => {
 
         await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
         await expect(page.getByText('Add your first track')).toBeVisible();
-        assertOffline();
+        await assertOffline();
     });
 
     test('saves and reopens an edited project', async ({ page, browser }) => {
@@ -236,11 +239,11 @@ test.describe('Offline project smoke', () => {
         try {
             await expect(reopened.page.getByRole('button', { name: 'Smoke Persistence' })).toBeVisible();
             await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toBeVisible();
-            reopened.assertOffline();
+            await reopened.assertOffline();
         } finally {
             await reopened.context.close();
         }
-        assertOffline();
+        await assertOffline();
     });
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
@@ -275,7 +278,7 @@ test.describe('Offline project smoke', () => {
         const stoppedPosition = await playheadPosition();
         await page.waitForTimeout(250);
         await expect(playheadPosition()).resolves.toBe(stoppedPosition);
-        assertOffline();
+        await assertOffline();
     });
 
     test('undo restores durable project truth before its track edit', async ({ page, browser }) => {
@@ -300,10 +303,10 @@ test.describe('Offline project smoke', () => {
             await expect(reopened.page.getByRole('button', { name: 'Smoke Undo Persistence' })).toBeVisible();
             await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toHaveCount(0);
             await expect(reopened.page.getByText('Add your first track')).toBeVisible();
-            reopened.assertOffline();
+            await reopened.assertOffline();
         } finally {
             await reopened.context.close();
         }
-        assertOffline();
+        await assertOffline();
     });
 });

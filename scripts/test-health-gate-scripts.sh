@@ -430,6 +430,20 @@ for (const scope of ['RUST', 'SERVER', 'E2E', 'WEB', 'METADATA', 'UNCLASSIFIED']
 expect(smokeSpec.includes("test.use({ serviceWorkers: 'block' });"), 'offline smoke must block service workers before routing requests');
 expect(smokeSpec.includes("await page.routeWebSocket('**/*'"), 'offline smoke must route WebSockets before navigation');
 expect(smokeSpec.includes("await webSocket.close({ code: 1008, reason: 'External network blocked' });"), 'offline smoke must close every external WebSocket');
+expect(smokeSpec.includes('const OFFLINE_IDLE_WINDOW_MS = 500;'), 'offline smoke must use one named 500 ms quiescence window');
+expect(
+    smokeSpec.includes('async function blockExternalRequests(page: Page): Promise<() => Promise<void>>') &&
+        smokeSpec.includes('return async () => {') &&
+        smokeSpec.includes('await page.waitForTimeout(OFFLINE_IDLE_WINDOW_MS);'),
+    'offline assertions must wait through the bounded idle window before inspecting captured endpoints'
+);
+const awaitedOfflineAssertions = smokeSpec.match(/await (?:reopened\.)?assertOffline\(\);/gu) ?? [];
+const offlineAssertions = smokeSpec.match(/(?:reopened\.)?assertOffline\(\);/gu) ?? [];
+expect(awaitedOfflineAssertions.length === 6, 'every offline assertion must be awaited after the last visible action or assertion');
+expect(
+    awaitedOfflineAssertions.length === offlineAssertions.length,
+    'offline smoke must not retain a synchronous endpoint snapshot'
+);
 expect(smokeSpec.includes('await page.addInitScript(() => {'), 'playback smoke must install AudioContext instrumentation before navigation');
 expect(smokeSpec.includes('const nativeResume = AudioContext.prototype.resume;'), 'playback smoke must wrap the native AudioContext resume method');
 expect(smokeSpec.includes('await nativeResume.call(this);'), 'playback smoke must await the native AudioContext resume method');
@@ -520,8 +534,8 @@ expect(dependencyReview?.if === "github.event_name == 'pull_request'", 'dependen
 expect(prSecrets?.if === "github.event_name == 'pull_request'", 'PR diff secret scan must run only for pull-request events');
 expect(
     releaseInventory?.if ===
-        "github.event_name == 'pull_request' && (needs.decide.outputs.metadata == 'true' || (needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'))",
-    'release inventory must run for metadata pull requests and non-code pull requests'
+        "github.event_name == 'pull_request' && needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'",
+    'release inventory must run only for non-code pull requests'
 );
 expect(releaseInventory?.name === 'Release inventory', 'documentation-only release inventory job must remain present');
 expect(releaseInventory?.['runs-on'] === 'ubuntu-latest', 'documentation-only release inventory must run on a hosted Linux runner');
@@ -533,19 +547,22 @@ expect(
     stepNamed(releaseInventory, 'Validate release inventory')?.run === 'pnpm test:release-inventory',
     'non-code release inventory must invoke the project-native script'
 );
-expect(
-    stepNamed(releaseInventory, 'Validate issue-template contract')?.run === 'pnpm test:run scripts/__tests__/fileTrackerIssue.spec.ts',
-    'metadata changes must execute the focused fileTrackerIssue contract'
-);
-const metadataContractStep = stepNamed(releaseInventory, 'Validate issue-template contract');
-expect(
-    metadataContractStep?.if === "needs.decide.outputs.metadata == 'true'",
-    'metadata contract must run exactly for the metadata scope'
-);
+const releaseMetadataContractStep = stepNamed(releaseInventory, 'Validate issue-template contract');
+const staticMetadataContractStep = stepNamed(staticChecks, 'Validate issue-template contract');
+for (const [jobName, step] of [
+    ['release-inventory', releaseMetadataContractStep],
+    ['static', staticMetadataContractStep],
+]) {
+    expect(
+        step?.run === 'pnpm test:run scripts/__tests__/fileTrackerIssue.spec.ts',
+        `${jobName} metadata changes must execute the focused fileTrackerIssue contract`
+    );
+    expect(step?.if === "needs.decide.outputs.metadata == 'true'", `${jobName} metadata contract must run exactly for the metadata scope`);
+}
 const nonCodeCommandLog = `${process.env.TEST_TEMP_ROOT}/non-code-release-inventory.log`;
 const releaseInstallRun = stepNamed(releaseInventory, 'Install dependencies')?.run ?? '';
 const releaseInventoryRun = stepNamed(releaseInventory, 'Validate release inventory')?.run ?? '';
-const metadataContractRun = stepNamed(releaseInventory, 'Validate issue-template contract')?.run ?? '';
+const metadataContractRun = releaseMetadataContractStep?.run ?? '';
 writeFileSync(nonCodeCommandLog, '');
 const missingNonCodeDependencies = runWorkflowShellResult(`set -e\n${releaseInstallRun}\n${releaseInventoryRun}`, {
     COMMAND_LOG: nonCodeCommandLog,
@@ -579,15 +596,17 @@ function startedPullRequestJobs(scopes) {
     if (scopes.e2e === 'true') jobs.push('smoke');
     if (scopes.rust === 'true' || scopes.server === 'true') jobs.push('rust');
     if (scopes.rust === 'true') jobs.push('native-macos', 'native-windows');
-    if (scopes.metadata === 'true' || !codeBearing) {
+    if (!codeBearing) {
         jobs.push('release-inventory');
     }
     jobs.push('gate');
     return jobs;
 }
 
-function startsMetadataContract(scopes) {
-    return metadataContractStep?.if === "needs.decide.outputs.metadata == 'true'" && scopes.metadata === 'true';
+function metadataContractJobs(scopes) {
+    if (scopes.metadata !== 'true') return [];
+    const codeBearing = scopes.web === 'true' || scopes.rust === 'true' || scopes.server === 'true' || scopes.e2e === 'true';
+    return codeBearing ? ['static'] : ['release-inventory'];
 }
 
 for (const fixture of [
@@ -597,6 +616,7 @@ for (const fixture of [
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'gate'],
+        metadataContractJobs: [],
     },
     {
         name: 'test-only',
@@ -701,7 +721,7 @@ for (const fixture of [
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
-        metadataContract: false,
+        metadataContractJobs: [],
     },
     {
         name: 'nested Markdown under Rust code',
@@ -737,7 +757,7 @@ for (const fixture of [
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'true' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
-        metadataContract: true,
+        metadataContractJobs: ['release-inventory'],
     },
     {
         name: 'mixed issue-template and TypeScript code',
@@ -754,10 +774,9 @@ for (const fixture of [
             'unit',
             'build',
             'smoke',
-            'release-inventory',
             'gate',
         ],
-        metadataContract: true,
+        metadataContractJobs: ['static'],
     },
     {
         name: 'unclassified root code',
@@ -834,10 +853,10 @@ for (const fixture of [
         JSON.stringify(startedPullRequestJobs(fixture.scopes)) === JSON.stringify(fixture.jobs),
         `${fixture.name} must start only its applicable jobs and terminal Gate`
     );
-    if (fixture.metadataContract !== undefined) {
+    if (fixture.metadataContractJobs !== undefined) {
         expect(
-            startsMetadataContract(fixture.scopes) === fixture.metadataContract,
-            `${fixture.name} must ${fixture.metadataContract ? 'run' : 'skip'} the focused issue-template contract`
+            JSON.stringify(metadataContractJobs(fixture.scopes)) === JSON.stringify(fixture.metadataContractJobs),
+            `${fixture.name} must run the focused issue-template contract only in ${fixture.metadataContractJobs.join(', ') || 'no job'}`
         );
     }
     const results = terminalGateResults('skipped');
@@ -849,6 +868,13 @@ for (const fixture of [
     const gateResult = runGate(results);
     expect(gateResult.status === 0, `${fixture.name} terminal Gate must pass with successful and skipped dependencies`);
     expect(gateResult.stdout.endsWith('every job succeeded or was skipped\n'), `${fixture.name} terminal Gate must report its successful conclusion`);
+}
+for (const codeScope of ['web', 'rust', 'server', 'e2e']) {
+    const scopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'true', [codeScope]: 'true' };
+    expect(
+        JSON.stringify(metadataContractJobs(scopes)) === JSON.stringify(['static']),
+        `metadata mixed with ${codeScope} code must use the existing static job only`
+    );
 }
 expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(prSecrets?.name === 'PR diff secret scan', 'PR diff secret scan job must remain present');
@@ -1164,6 +1190,24 @@ runWorkflowShell('PR merge-diff secret positive control', prMergePositiveControl
     FAKE_GITLEAKS_REQUIRE_MERGE_DIFF: 'true',
     FAKE_GITLEAKS_STATUS: '79',
 });
+const prMergePositiveControlPrefix = `${trustedGitleaksPrefix} --exit-code=79 --log-opts=`;
+const prMergePositiveControlCommands = readFileSync(workflowCommandLog, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith('gitleaks git '));
+expect(
+    prMergePositiveControlCommands.some((command) => {
+        if (!command.startsWith(prMergePositiveControlPrefix)) return false;
+        const [range, mergeDiffFlag, fixtureGitPath, ...extra] = command.slice(prMergePositiveControlPrefix.length).split(' ');
+        return (
+            /^[0-9a-f]{40}\.\.[0-9a-f]{40}$/u.test(range ?? '') &&
+            mergeDiffFlag === '-m' &&
+            fixtureGitPath?.includes('/gitleaks-pr-merge-control.') === true &&
+            fixtureGitPath.endsWith('/.git') &&
+            extra.length === 0
+        );
+    }),
+    'PR merge-diff positive control must execute with trusted inputs, hardened flags, exit code 79, merge diffs, and its fixture Git database'
+);
 const prMergePositiveControlClean = runWorkflowShellResult(prMergePositiveControlRun, {
     ...prWorkflowEnv,
     GITLEAKS_EXPECTED_LEAK_EXIT_CODE: '79',
