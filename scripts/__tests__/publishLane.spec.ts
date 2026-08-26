@@ -213,6 +213,7 @@ describe('lane publish', () => {
         const authorizedLane = join(fixtureRoot, 'authorized-lane');
         const siblingIssueLane = join(fixtureRoot, 'sibling-issue-lane');
         const foreignIssueLane = join(fixtureRoot, 'foreign-issue-lane');
+        const unlockedIssueLane = join(fixtureRoot, 'unlocked-issue-lane');
         const hostilePrimary = join(fixtureRoot, 'hostile-primary');
         const hostileLane = join(fixtureRoot, 'hostile-lane');
         const bin = join(fixtureRoot, 'bin');
@@ -270,6 +271,7 @@ describe('lane publish', () => {
             );
             fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/foreign', foreignIssueLane]);
             fixtureGit(primary, ['worktree', 'lock', '--reason', 'active:foreign-author', foreignIssueLane]);
+            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/unlocked', unlockedIssueLane]);
 
             initializeRepository(hostilePrimary);
             writeFileSync(join(hostilePrimary, 'base.txt'), 'base\n');
@@ -388,9 +390,17 @@ describe('lane publish', () => {
                 })
             ).toThrow(/not inside a locked author lane/);
             const afterForeignLock = snapshotLogs();
-            expect(afterForeignLock.mint).toBe(beforeForeignLock.mint);
-            expect(afterForeignLock.push).toBe(beforeForeignLock.push);
-            expect(afterForeignLock.pullRequest).toBe(beforeForeignLock.pullRequest);
+            expect(afterForeignLock).toEqual(beforeForeignLock);
+
+            const beforeUnlockedLane = snapshotLogs();
+            expect(() =>
+                execFileSync('pnpm', ['lane:publish', '--lane', unlockedIssueLane], {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                })
+            ).toThrow(/not inside a locked author lane/);
+            expect(snapshotLogs()).toEqual(beforeUnlockedLane);
 
             const beforeWrongRepository = snapshotLogs();
             expect(() =>
