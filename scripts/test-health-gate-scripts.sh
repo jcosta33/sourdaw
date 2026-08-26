@@ -347,6 +347,11 @@ const expectedGateNeeds = [
     'codeql',
     'secrets',
 ];
+const checkoutSteps = Object.entries(workflow.jobs ?? {}).flatMap(([jobName, job]) =>
+    (job.steps ?? [])
+        .filter((step) => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'))
+        .map((step) => ({ jobName, step }))
+);
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
 expect(events?.pull_request !== undefined, 'pull_request trigger must remain present');
@@ -360,9 +365,21 @@ expect(
 const configuredPathFilters = parse(pathFilters?.with?.filters ?? '');
 expect(configuredPathFilters.documentation === undefined, 'path classification must not retain a redundant documentation filter');
 expect(configuredPathFilters.non_document === undefined, 'path classification must not retain a redundant non-document filter');
+for (const scope of ['rust', 'server', 'e2e', 'web']) {
+    expect(configuredPathFilters[scope]?.includes('!*.md'), `${scope} path classification must exclude root Markdown`);
+    expect(configuredPathFilters[scope]?.includes('!**/*.md'), `${scope} path classification must exclude nested Markdown`);
+}
 expect(resolveScope?.env?.NON_DOCUMENT === undefined, 'scope resolution must not retain a redundant non-document output');
 expect(!resolveScopeRun.includes('NON_DOCUMENT'), 'scope resolution must let unclassified alone force every fast scope');
 expect(smokeSpec.includes("test.use({ serviceWorkers: 'block' });"), 'offline smoke must block service workers before routing requests');
+expect(smokeSpec.includes("await page.routeWebSocket('**/*'"), 'offline smoke must route WebSockets before navigation');
+expect(smokeSpec.includes("await webSocket.close({ code: 1008, reason: 'External network blocked' });"), 'offline smoke must close every external WebSocket');
+expect(smokeSpec.includes('AudioContext.prototype.resume = async function'), 'playback smoke must instrument the real AudioContext resume path before navigation');
+expect(smokeSpec.includes("expect.poll(audioContextResumeStates).toContain('running')"), 'playback smoke must observe a successfully resumed AudioContext after the play gesture');
+expect(
+    checkoutSteps.length > 0 && checkoutSteps.every(({ step }) => step.with?.['persist-credentials'] === false),
+    `every actions/checkout step must disable persisted credentials: ${checkoutSteps.map(({ jobName, step }) => `${jobName}/${step.name ?? 'unnamed'}`).join(', ')}`
+);
 expect(
     concurrency?.group === "health-gates-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}",
     'only pull_request runs may share a PR-number concurrency group'
@@ -455,6 +472,46 @@ for (const fixture of [
         jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
     },
     {
+        name: 'Playwright config',
+        paths: ['playwright.config.ts'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false' },
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
+    },
+    {
+        name: 'Vitest collection scope script',
+        paths: ['scripts/checkVitestCollectionScope.ts'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'true' },
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'rust', 'gate'],
+    },
+    {
+        name: 'server health-gate script',
+        paths: ['scripts/health-gates-server.sh'],
+        unclassified: 'false',
+        scopes: { rust: 'true', server: 'true', e2e: 'false', web: 'true' },
+        jobs: [
+            'decide',
+            'dependency-review',
+            'static',
+            'lint',
+            'boundaries',
+            'unit',
+            'build',
+            'rust',
+            'native-macos',
+            'native-windows',
+            'gate',
+        ],
+    },
+    {
+        name: 'shared package manifest',
+        paths: ['package.json'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true' },
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
+    },
+    {
         name: 'workflow-only',
         paths: ['.github/workflows/daily-train.yml'],
         unclassified: 'false',
@@ -477,6 +534,48 @@ for (const fixture of [
     {
         name: 'documentation-only',
         paths: ['docs/architecture/fast-gate.md'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        jobs: ['decide', 'dependency-review', 'gate'],
+    },
+    {
+        name: 'nested Markdown under Rust code',
+        paths: ['crates/daw-core/README.md'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        jobs: ['decide', 'dependency-review', 'gate'],
+    },
+    {
+        name: 'nested Markdown under server code',
+        paths: ['server/README.md'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        jobs: ['decide', 'dependency-review', 'gate'],
+    },
+    {
+        name: 'nested Markdown under shared runtime code',
+        paths: ['src/README.md'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        jobs: ['decide', 'dependency-review', 'gate'],
+    },
+    {
+        name: 'nested Markdown under end-to-end tests',
+        paths: ['tests/e2e/README.md'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        jobs: ['decide', 'dependency-review', 'gate'],
+    },
+    {
+        name: 'nested Markdown under desktop code',
+        paths: ['electron/README.md'],
+        unclassified: 'false',
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        jobs: ['decide', 'dependency-review', 'gate'],
+    },
+    {
+        name: 'nested Markdown under scripts',
+        paths: ['scripts/README.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
         jobs: ['decide', 'dependency-review', 'gate'],

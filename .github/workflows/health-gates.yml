@@ -59,6 +59,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Filter changed paths
         id: filter
@@ -73,6 +75,8 @@ jobs:
               - 'rust-toolchain.toml'
               - 'scripts/health-gates-server.sh'
               - '.github/workflows/**'
+              - '!*.md'
+              - '!**/*.md'
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
@@ -80,6 +84,8 @@ jobs:
               - 'vite.config.ts'
               - 'scripts/checkVitestCollectionScope.ts'
               - '.github/workflows/**'
+              - '!*.md'
+              - '!**/*.md'
             e2e:
               - 'src/**'
               - 'public/**'
@@ -89,6 +95,8 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'vite.config.ts'
               - '.github/workflows/**'
+              - '!*.md'
+              - '!**/*.md'
             web:
               - 'src/**'
               - 'public/**'
@@ -99,6 +107,8 @@ jobs:
               - 'vite.config.ts'
               - 'tsconfig*.json'
               - '.github/workflows/**'
+              - '!*.md'
+              - '!**/*.md'
             unclassified:
               - '**'
               - '!crates/**'
@@ -178,6 +188,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # `test:release-inventory` proves each generated Levain manifest
           # against the commit its provenance record pins, by `git show`-ing
           # that blob. A shallow clone does not contain those commits, so the
@@ -245,6 +256,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -275,6 +288,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -304,6 +319,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -344,6 +361,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -372,6 +391,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -397,6 +418,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -443,6 +466,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install the pinned Rust toolchain
         run: rustup show
@@ -466,6 +491,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install the pinned Rust toolchain
         run: rustup show
@@ -493,6 +520,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -541,6 +570,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -582,6 +613,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
@@ -604,6 +637,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Initialise CodeQL
         uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3

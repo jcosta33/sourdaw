@@ -3,6 +3,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
+const AUDIO_CONTEXT_RESUME_STATES_KEY = '__sourdawE2eAudioContextResumeStates';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -14,18 +15,52 @@ function trackList(page: Page) {
     return page.getByRole('grid', { name: /Track list/i }).first();
 }
 
+function isLoopbackEndpoint(url: URL): boolean {
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+}
+
 async function blockExternalRequests(page: Page): Promise<() => void> {
-    const unexpectedRequests: string[] = [];
+    const unexpectedEndpoints = { requests: [] as string[], webSockets: [] as string[] };
     await page.route('**/*', async (route) => {
         const url = new URL(route.request().url());
-        if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+        if (isLoopbackEndpoint(url)) {
             await route.continue();
             return;
         }
-        unexpectedRequests.push(url.toString());
+        unexpectedEndpoints.requests.push(url.toString());
         await route.abort('blockedbyclient');
     });
-    return () => expect(unexpectedRequests, 'offline smoke blocked external runtime requests').toEqual([]);
+    await page.routeWebSocket('**/*', async (webSocket) => {
+        const url = new URL(webSocket.url());
+        if (isLoopbackEndpoint(url)) {
+            webSocket.connectToServer();
+            return;
+        }
+        unexpectedEndpoints.webSockets.push(url.toString());
+        await webSocket.close({ code: 1008, reason: 'External network blocked' });
+    });
+    return () =>
+        expect(unexpectedEndpoints, 'offline smoke blocked external runtime endpoints').toEqual({
+            requests: [],
+            webSockets: [],
+        });
+}
+
+async function observeAudioContextResumes(page: Page): Promise<() => Promise<unknown[]>> {
+    await page.addInitScript((resumeStatesKey) => {
+        const resumeStates: AudioContextState[] = [];
+        Object.defineProperty(window, resumeStatesKey, { value: resumeStates });
+        const resume = AudioContext.prototype.resume;
+        AudioContext.prototype.resume = async function (this: AudioContext): Promise<void> {
+            await resume.call(this);
+            resumeStates.push(this.state);
+        };
+    }, AUDIO_CONTEXT_RESUME_STATES_KEY);
+    return () =>
+        page.evaluate((resumeStatesKey) => {
+            const resumeStates = Reflect.get(window, resumeStatesKey);
+            return Array.isArray(resumeStates) ? resumeStates : [];
+        }, AUDIO_CONTEXT_RESUME_STATES_KEY);
 }
 
 async function openNewProject(page: Page): Promise<() => void> {
@@ -94,6 +129,7 @@ test.describe('Offline project smoke', () => {
     });
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
+        const audioContextResumeStates = await observeAudioContextResumes(page);
         const assertOffline = await openNewProject(page);
 
         const playbackControls = page.getByRole('group', { name: 'Playback controls' });
@@ -104,6 +140,7 @@ test.describe('Offline project smoke', () => {
         await play.click();
         await expect(playbackControls.getByRole('status')).toHaveText('Playing');
         await expect(play).toHaveAccessibleName('Pause');
+        await expect.poll(audioContextResumeStates).toContain('running');
 
         await expect.poll(playheadPosition).not.toBe(initialPosition);
         const firstAdvancedPosition = await playheadPosition();
