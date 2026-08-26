@@ -9,6 +9,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import {
     chordTrackStore,
@@ -139,6 +140,10 @@ type BuildProjectDataInput = {
 export async function buildProjectData({
     includeAudioBuffers = false,
 }: BuildProjectDataInput = {}): Promise<BuiltProjectData | null> {
+    if (agentProjectRepairStateStore.value !== null) {
+        return null;
+    }
+
     syncCurrentArrangementToStore();
 
     const tracks = trackStore.value;

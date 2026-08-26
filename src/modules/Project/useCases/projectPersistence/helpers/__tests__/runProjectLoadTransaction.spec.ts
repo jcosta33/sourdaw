@@ -32,6 +32,8 @@ describe('runProjectLoadTransaction', () => {
         await expect(first.prepare()).resolves.toBe(true);
         await expect(second.prepare()).resolves.toBe(true);
 
+        expect(first.signal.aborted).toBe(true);
+        expect(second.signal.aborted).toBe(false);
         expect(first.activate()).toBe(false);
         expect(second.activate()).toBe(true);
         expect(first.isCurrent()).toBe(false);
@@ -49,6 +51,7 @@ describe('runProjectLoadTransaction', () => {
         await second.prepare();
 
         expect(authority.isCurrent()).toBe(false);
+        expect(first.signal.aborted).toBe(true);
     });
 
     it('should reject activation when collaboration shutdown fails', async () => {

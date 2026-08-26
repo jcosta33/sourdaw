@@ -1,10 +1,17 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
+const syncCurrentArrangementToStoreMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({
+    syncCurrentArrangementToStore: syncCurrentArrangementToStoreMock,
+}));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
 const exportCachedAudioBuffersMock = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: exportCachedAudioBuffersMock,
+}));
+const agentProjectRepairStateStoreMock = vi.hoisted((): { value: unknown } => ({ value: null }));
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: agentProjectRepairStateStoreMock,
 }));
 
 const trackStoreMock = vi.hoisted((): { value: { tracks: unknown[] } } => ({ value: { tracks: [] } }));
@@ -102,10 +109,12 @@ function yeastDeviceTrack(trackId: string, deviceId: string): Record<string, unk
 
 describe('buildProjectData', () => {
     beforeEach(() => {
+        agentProjectRepairStateStoreMock.value = null;
         trackStoreMock.value.tracks = [];
         for (const key of Object.keys(yeastRacksMock)) {
             delete yeastRacksMock[key];
         }
+        syncCurrentArrangementToStoreMock.mockClear();
         exportCachedAudioBuffersMock.mockReset();
         exportCachedAudioBuffersMock.mockResolvedValue({});
         Object.assign(productionBriefFixture, { id: 'production-brief', supersedesBriefId: null });
@@ -118,6 +127,32 @@ describe('buildProjectData', () => {
             tuning: { name: '12-TET', frequencies: [] },
             productionBrief: productionBriefFixture,
         };
+    });
+
+    it('refuses to serialize while raw CRDT project repair is required', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        agentProjectRepairStateStoreMock.value = {
+            audioGraphValid: true,
+            detectedRevision: 'revision-with-invalid-adjustment-layers',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/adjustmentLayers'],
+                },
+            ],
+            status: 'repair-required',
+        };
+
+        await expect(buildProjectData({ includeAudioBuffers: true })).resolves.toBeNull();
+
+        expect(syncCurrentArrangementToStoreMock).not.toHaveBeenCalled();
+        expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
     });
 
     // AC-5. `includeAudioBuffers: false` is the shape the live save uses: the

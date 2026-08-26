@@ -26,14 +26,23 @@ const mocks = vi.hoisted(() => {
         persistCrdtProject: vi.fn(() => Promise.resolve()),
         prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
         projectCrdtToStores: vi.fn(),
-        projectStoreValue: { value: { initialized: true, loading: false } },
+        projectStoreValue: {
+            value: {
+                identityMigrationPending: false,
+                identityPersistencePending: false,
+                initialized: true,
+                loading: false,
+                projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+            },
+        },
         readLegacyChordTrackMigration: vi.fn(() => null),
         startCrdtAutoSave: vi.fn(() => vi.fn()),
         trackStoreValue,
     };
 });
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
         get value() {
             return mocks.trackStoreValue.value;
