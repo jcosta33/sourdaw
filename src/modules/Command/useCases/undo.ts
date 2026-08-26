@@ -19,6 +19,10 @@ function undoEntryLabel(entry: UndoEntry): string {
     return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
+function notifyUndoConflict(entry: UndoEntry): void {
+    notifyUser(`Cannot undo "${undoEntryLabel(entry)}": project state has changed`, 'warning');
+}
+
 function commitUndoTransition(
     initialPast: readonly UndoEntry[],
     retainedPast: readonly UndoEntry[],
@@ -134,9 +138,18 @@ async function undoImpl(): Promise<void> {
     }
 
     let past = initial.past;
+    // Entries this scan stepped over because their guarded inverse conflicted.
+    // Nothing was written for them, so they keep their place in `past` and a
+    // later undo retries them.
+    const conflictedEntries: UndoEntry[] = [];
     // Scan downwards until something is actually undone. Inert entries (action
     // entries without an inverseAction) are dropped along the way so they can
-    // never wedge the undoable entries beneath them.
+    // never wedge the undoable entries beneath them. A conflicted entry is
+    // reported and stepped over for the same reason: pinning it at the top of
+    // `past` would make every further undo retry the same failing entry and
+    // strand the whole history beneath it. Stepping over is safe because every
+    // older inverse carries its own guard — one whose snapshot no longer matches
+    // the document conflicts in turn instead of writing.
     while (past.length > 0) {
         const lastEntry = past[past.length - 1]!;
 
@@ -154,12 +167,12 @@ async function undoImpl(): Promise<void> {
             if (isAtomicActionGroup) {
                 const outcome = await executeActionGroupUndo(groupEntries);
                 if (outcome.status === 'conflict') {
-                    const label = undoEntryLabel(lastEntry);
-                    notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
-                    return;
+                    notifyUndoConflict(lastEntry);
+                    conflictedEntries.unshift(...groupEntries);
+                    continue;
                 }
 
-                commitUndoTransition(initial.past, past, groupEntries);
+                commitUndoTransition(initial.past, [...past, ...conflictedEntries], groupEntries);
                 if (outcome.status === 'committed') {
                     throw outcome.error;
                 }
@@ -178,12 +191,11 @@ async function undoImpl(): Promise<void> {
                 });
 
                 if (outcome.status === 'conflict') {
-                    const label = undoEntryLabel(entry);
-                    notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
-                    // Conflicting entry cannot be undone; drop it and remaining un-undone
-                    // group entries from past so the stack does not wedge.
-                    commitUndoTransition(initial.past, past, undoneEntries);
-                    return;
+                    notifyUndoConflict(entry);
+                    // Nothing was written for this entry, so it and every older member of
+                    // its group stay on `past` and stay retryable.
+                    retainedEntries = groupEntries.slice(0, groupIndex + 1);
+                    break;
                 }
                 if (outcome.status === 'inert') {
                     continue;
@@ -197,15 +209,14 @@ async function undoImpl(): Promise<void> {
                 }
             }
 
-            if (undoneEntries.length === 0 && retainedEntries.length === 0) {
-                // The whole group was inert: it is dropped; keep scanning.
+            if (undoneEntries.length === 0) {
+                // Nothing in this group could be undone — it was inert throughout, or its
+                // newest member conflicted. Either way the scan moves on to older entries.
+                conflictedEntries.unshift(...retainedEntries);
                 continue;
             }
 
-            const nextPast = [...past, ...retainedEntries];
-            if (undoneEntries.length > 0 || nextPast.length !== initial.past.length) {
-                commitUndoTransition(initial.past, nextPast, undoneEntries);
-            }
+            commitUndoTransition(initial.past, [...past, ...retainedEntries, ...conflictedEntries], undoneEntries);
             if (committedError !== undefined) {
                 throw committedError;
             }
@@ -217,15 +228,16 @@ async function undoImpl(): Promise<void> {
             runExecuteAppAction: executeAppAction,
         });
 
+        past = past.slice(0, -1);
+
         if (outcome.status === 'conflict') {
-            const label = undoEntryLabel(lastEntry);
-            notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
-            return;
+            notifyUndoConflict(lastEntry);
+            conflictedEntries.unshift(lastEntry);
+            continue;
         }
 
-        past = past.slice(0, -1);
         if (outcome.status === 'undone' || outcome.status === 'committed') {
-            commitUndoTransition(initial.past, past, [lastEntry]);
+            commitUndoTransition(initial.past, [...past, ...conflictedEntries], [lastEntry]);
             if (outcome.status === 'committed') {
                 throw outcome.error;
             }
@@ -234,9 +246,11 @@ async function undoImpl(): Promise<void> {
         // Inert entry: dropped without reaching future; keep scanning.
     }
 
-    // The stack held only inert entries: persist the purge so the wedge is gone.
-    if (past.length !== initial.past.length) {
-        commitUndoTransition(initial.past, past, []);
+    // Nothing on the stack could be undone. Conflicted entries stay exactly where they
+    // were; only a purge of inert entries needs persisting so their wedge is gone.
+    const retainedPast = [...past, ...conflictedEntries];
+    if (retainedPast.length !== initial.past.length) {
+        commitUndoTransition(initial.past, retainedPast, []);
     }
 }
 

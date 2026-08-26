@@ -96,11 +96,19 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [entry] });
         });
 
-        it('notifies the user and preserves a conflicting entry for retry', async () => {
-            const older = actionEntry({ id: 'older-1', label: 'First Action' });
+        it('notifies the user, steps over a conflicting entry and undoes the one beneath it', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: { type: 'togglePlayback' },
+            });
             const conflicting = actionEntry({ id: 'conflict-1', label: 'Cut Clip' });
             mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
-            mocks.executeAppAction.mockRejectedValue(new AppActionConflictError('toggleRecording'));
+            mocks.executeAppAction.mockImplementation(async (action) => {
+                if (action.type === 'toggleRecording') {
+                    throw new AppActionConflictError('toggleRecording');
+                }
+            });
 
             await expect(undo()).resolves.toBeUndefined();
 
@@ -108,6 +116,24 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
                 'Cannot undo "Cut Clip": project state has changed',
                 'warning'
             );
+            // The conflicting entry wrote nothing: it keeps its place in `past` so a
+            // later undo retries it, and it never reaches `future` where redo would
+            // re-apply an action that was never undone. Pinning it at the top of `past`
+            // instead would strand `older-1` there for the rest of the session.
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [conflicting], future: [older] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('conflict-1');
+        });
+
+        it('leaves the stack untouched when every entry beneath the conflict also conflicts', async () => {
+            const older = actionEntry({ id: 'older-1', label: 'First Action' });
+            const conflicting = actionEntry({ id: 'conflict-1', label: 'Cut Clip' });
+            mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
+            mocks.executeAppAction.mockRejectedValue(new AppActionConflictError('toggleRecording'));
+
+            await expect(undo()).resolves.toBeUndefined();
+
+            // Nothing was written for either entry, so both stay undoable and the stack
+            // is left exactly as it stood.
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
             expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
         });
@@ -136,6 +162,29 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             );
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
             expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        });
+
+        it('steps over a conflicting action group to the entry beneath it', async () => {
+            const older = actionEntry({ id: 'older-1', label: 'First Action' });
+            const first = actionEntry({ id: 'g-first', groupId: 'group-1', groupLabel: 'Grouped Edit' });
+            const second = actionEntry({ id: 'g-second', groupId: 'group-1', groupLabel: 'Grouped Edit' });
+            mocks.undoStoreValue.value = { past: [older, first, second], future: [] };
+            mocks.executeAppActionBatch.mockResolvedValue({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: toggleRecording',
+                actions: [],
+            });
+
+            await expect(undo()).resolves.toBeUndefined();
+
+            // A group that cannot be undone blocks the history beneath it exactly as a
+            // single entry would, so it is reported and stepped over whole.
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "Grouped Edit": project state has changed',
+                'warning'
+            );
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [older] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('g-second');
         });
     });
 
