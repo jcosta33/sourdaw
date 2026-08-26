@@ -297,6 +297,8 @@ const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
 const pathFilters = stepNamed(decide, 'Filter changed paths');
 const secrets = workflow.jobs?.secrets;
+const prSecrets = workflow.jobs?.['pr-secrets'];
+const releaseInventory = workflow.jobs?.['release-inventory'];
 const staticChecks = workflow.jobs?.static;
 const lint = workflow.jobs?.lint;
 const boundaries = workflow.jobs?.boundaries;
@@ -314,6 +316,9 @@ const resolveScope = stepNamed(decide, 'Resolve scope');
 const resolveScopeRun = resolveScope?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
+const prTrustedCheckout = stepNamed(prSecrets, 'Checkout trusted scanner');
+const prTargetCheckout = stepNamed(prSecrets, 'Checkout scan target');
+const prSecretScan = stepNamed(prSecrets, 'Scan pull request diff for secrets');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
 const positiveControlRun = positiveControl?.run ?? '';
 const secretScan = stepNamed(secrets, 'Scan history for secrets');
@@ -337,6 +342,8 @@ const expectedGateNeeds = [
     'lint',
     'boundaries',
     'dependency-review',
+    'pr-secrets',
+    'release-inventory',
     'build',
     'rust',
     'native-macos',
@@ -363,6 +370,14 @@ expect(
     'path classification must use the pinned action documented some-with-excludes predicate'
 );
 const configuredPathFilters = parse(pathFilters?.with?.filters ?? '');
+expect(
+    configuredPathFilters.web?.includes('.github/ISSUE_TEMPLATE/**'),
+    'issue templates must be web-owned so fileTrackerIssue contracts run'
+);
+expect(
+    configuredPathFilters.unclassified?.includes('!.github/ISSUE_TEMPLATE/**'),
+    'issue templates must be excluded from unclassified after becoming web-owned'
+);
 expect(configuredPathFilters.documentation === undefined, 'path classification must not retain a redundant documentation filter');
 expect(configuredPathFilters.non_document === undefined, 'path classification must not retain a redundant non-document filter');
 for (const scope of ['rust', 'server', 'e2e', 'web']) {
@@ -436,17 +451,36 @@ expect(
 expect(nativeMacos?.if === "needs.decide.outputs.rust == 'true'", 'macOS native leg must remain scoped to Rust changes');
 expect(nativeWindows?.if === "needs.decide.outputs.rust == 'true'", 'Windows native leg must remain scoped to Rust changes');
 expect(dependencyReview?.if === "github.event_name == 'pull_request'", 'dependency review must remain limited to pull-request events');
+expect(prSecrets?.if === "github.event_name == 'pull_request'", 'PR diff secret scan must run only for pull-request events');
+expect(
+    releaseInventory?.if ===
+        "github.event_name == 'pull_request' && needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'",
+    'release inventory must run only for documentation-only pull requests'
+);
+expect(releaseInventory?.name === 'Release inventory', 'documentation-only release inventory job must remain present');
+expect(releaseInventory?.['runs-on'] === 'ubuntu-latest', 'documentation-only release inventory must run on a hosted Linux runner');
+const releaseInventoryNode = stepNamed(releaseInventory, 'Set up Node');
+expect(releaseInventoryNode?.with?.['node-version'] === 22, 'documentation-only release inventory must use Node 22');
+expect(
+    (releaseInventory?.steps ?? []).every((step) => step.name !== 'Install dependencies'),
+    'documentation-only release inventory must not install project dependencies'
+);
+expect(
+    stepNamed(releaseInventory, 'Validate release inventory')?.run === 'node scripts/checkReleaseInventory.ts',
+    'documentation-only release inventory must invoke its built-in-only script directly'
+);
 expect(e2e?.if === "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'", 'full E2E must require the scheduled or dispatched heavy path');
 expect(e2e?.strategy?.matrix?.shard?.length === 12, 'full E2E must retain all twelve shards');
 
 function startedPullRequestJobs(scopes) {
-    const jobs = ['decide', 'dependency-review'];
+    const jobs = ['decide', 'dependency-review', 'pr-secrets'];
     const codeBearing = scopes.web === 'true' || scopes.rust === 'true' || scopes.server === 'true' || scopes.e2e === 'true';
     if (codeBearing) jobs.push('static', 'lint', 'boundaries');
     if (scopes.web === 'true') jobs.push('unit', 'build');
     if (scopes.e2e === 'true') jobs.push('smoke');
     if (scopes.rust === 'true' || scopes.server === 'true') jobs.push('rust');
     if (scopes.rust === 'true') jobs.push('native-macos', 'native-windows');
+    if (!codeBearing) jobs.push('release-inventory');
     jobs.push('gate');
     return jobs;
 }
@@ -457,56 +491,56 @@ for (const fixture of [
         paths: ['src/modules/Project/useCases/smokeFixture.ts'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'true' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'gate'],
     },
     {
         name: 'test-only',
         paths: ['tests/e2e/smoke.spec.ts'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
     },
     {
         name: 'Rust-only',
         paths: ['crates/daw-core/src/smoke_fixture.rs'],
         unclassified: 'false',
         scopes: { rust: 'true', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'rust', 'native-macos', 'native-windows', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'rust', 'native-macos', 'native-windows', 'gate'],
     },
     {
         name: 'Electron-only',
         paths: ['electron/main/smokeFixture.ts'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'true' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
     },
     {
         name: 'server-only',
         paths: ['server/src/smokeFixture.ts'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'rust', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'rust', 'gate'],
     },
     {
         name: 'Vite config',
         paths: ['vite.config.ts'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
     },
     {
         name: 'Playwright config',
         paths: ['playwright.config.ts'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
     },
     {
         name: 'Vitest collection scope script',
         paths: ['scripts/checkVitestCollectionScope.ts'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'true' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'rust', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'rust', 'gate'],
     },
     {
         name: 'server health-gate script',
@@ -516,6 +550,7 @@ for (const fixture of [
         jobs: [
             'decide',
             'dependency-review',
+            'pr-secrets',
             'static',
             'lint',
             'boundaries',
@@ -532,7 +567,7 @@ for (const fixture of [
         paths: ['package.json'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true' },
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
     },
     {
         name: 'workflow-only',
@@ -542,6 +577,7 @@ for (const fixture of [
         jobs: [
             'decide',
             'dependency-review',
+            'pr-secrets',
             'static',
             'lint',
             'boundaries',
@@ -559,56 +595,56 @@ for (const fixture of [
         paths: ['docs/architecture/fast-gate.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under Rust code',
         paths: ['crates/daw-core/README.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under server code',
         paths: ['server/README.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under shared runtime code',
         paths: ['src/README.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under end-to-end tests',
         paths: ['tests/e2e/README.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under desktop code',
         paths: ['electron/README.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under scripts',
         paths: ['scripts/README.md'],
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'issue-template-only',
         paths: ['.github/ISSUE_TEMPLATE/bug.yml'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'gate'],
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'true' },
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
     },
     {
         name: 'unclassified root code',
@@ -618,6 +654,7 @@ for (const fixture of [
         jobs: [
             'decide',
             'dependency-review',
+            'pr-secrets',
             'static',
             'lint',
             'boundaries',
@@ -638,6 +675,7 @@ for (const fixture of [
         jobs: [
             'decide',
             'dependency-review',
+            'pr-secrets',
             'static',
             'lint',
             'boundaries',
@@ -658,6 +696,7 @@ for (const fixture of [
         jobs: [
             'decide',
             'dependency-review',
+            'pr-secrets',
             'static',
             'lint',
             'boundaries',
@@ -693,6 +732,30 @@ for (const fixture of [
     expect(gateResult.stdout.endsWith('every job succeeded or was skipped\n'), `${fixture.name} terminal Gate must report its successful conclusion`);
 }
 expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
+expect(prSecrets?.name === 'PR diff secret scan', 'PR diff secret scan job must remain present');
+expect(prSecrets?.needs?.includes('decide'), 'PR diff secret scan must wait for scope decision');
+expect(prSecrets?.env?.GITLEAKS_VERSION === '8.30.1', 'PR diff secret scan must use the trusted pinned Gitleaks version');
+expect(
+    prSecrets?.env?.GITLEAKS_SHA256 === '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+    'PR diff secret scan must use the trusted pinned Gitleaks digest'
+);
+expect(prSecrets?.env?.BASE_SHA === '${{ github.event.pull_request.base.sha }}', 'PR diff secret scan must use the immutable base SHA');
+expect(prSecrets?.env?.HEAD_SHA === '${{ github.event.pull_request.head.sha }}', 'PR diff secret scan must use the immutable head SHA');
+expect(prTrustedCheckout?.with?.ref === '${{ github.event.pull_request.base.sha }}', 'PR diff secret scan must read scanner inputs from the immutable base SHA');
+expect(prTrustedCheckout?.with?.path === 'trusted-scanner', 'PR diff secret scan must isolate trusted scanner inputs');
+expect(prTrustedCheckout?.with?.['persist-credentials'] === false, 'PR diff trusted scanner checkout must not persist credentials');
+expect(prTargetCheckout?.with?.ref === '${{ github.event.pull_request.head.sha }}', 'PR diff secret scan must read the immutable head SHA');
+expect(prTargetCheckout?.with?.path === 'scan-target', 'PR diff secret scan must isolate the untrusted target');
+expect(prTargetCheckout?.with?.['fetch-depth'] === 0, 'PR diff secret scan must fetch the base-to-head history');
+expect(prTargetCheckout?.with?.['persist-credentials'] === false, 'PR diff target checkout must not persist credentials');
+const prSecretScanRun = prSecretScan?.run ?? '';
+expect(prSecretScan?.['working-directory'] === '${{ github.workspace }}', 'PR diff secret scan must run outside the untrusted checkout');
+expect(prSecretScanRun.includes("--config \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml\""), 'PR diff secret scan must use the trusted Gitleaks configuration');
+expect(prSecretScanRun.includes("--gitleaks-ignore-path \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore\""), 'PR diff secret scan must use the trusted Gitleaks ignore file');
+expect(prSecretScanRun.includes('--ignore-gitleaks-allow'), 'PR diff secret scan must reject PR-authored gitleaks:allow annotations');
+expect(prSecretScanRun.includes('--log-opts="$BASE_SHA..$HEAD_SHA"'), 'PR diff secret scan must scan only the base-to-head commit range');
+expect(!prSecretScanRun.includes('--log-opts=--all'), 'PR diff secret scan must not duplicate the full-history scan');
+expect(prSecretScanRun.includes('sha256sum --check --status'), 'PR diff secret scan must verify its downloaded binary digest');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(targetCheckout?.uses ?? ''), 'scan target checkout action must be pinned to a full commit SHA');
 expect(
@@ -950,6 +1013,23 @@ expect(
     ),
     'actual scan must use trusted config and exclude target-controlled config files from the scanner source path'
 );
+writeFileSync(workflowCommandLog, '');
+runWorkflowShell('PR diff secret scan', prSecretScanRun, {
+    ...workflowShellEnv,
+    BASE_SHA: 'base-sha',
+    HEAD_SHA: 'head-sha',
+    FAKE_GITLEAKS_STATUS: '0',
+});
+const prDiffGitleaksCommands = readFileSync(workflowCommandLog, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith('gitleaks git '));
+expect(
+    prDiffGitleaksCommands.includes(
+        `${trustedGitleaksPrefix} --exit-code=1 --log-opts=base-sha..head-sha ${process.env.TEST_TEMP_ROOT}/scan-target/.git`
+    ),
+    'PR diff secret scan must execute the trusted scanner only over the immutable base-to-head range'
+);
+expect(!existsSync(maliciousHelperMarker), 'PR-owned target helper must not influence the PR diff secret scan');
 
 if (failures.length > 0) {
     for (const failure of failures) {
