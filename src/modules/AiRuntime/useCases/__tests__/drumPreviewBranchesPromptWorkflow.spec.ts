@@ -800,7 +800,14 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    it('rejects a stale source edit before creating any candidate document or receipt', async () => {
+    // Freezing the snare track conflicts with a source this proposal names, but
+    // the status, reason and receipt asserted here are what *any* project change
+    // after the proposal produces — adding a track the proposal names nowhere
+    // reaches the same terminal state through the same code path. This test
+    // therefore pins the project-changed disposition, not source-conflict
+    // detection; that the two are indistinguishable is the production defect
+    // filed as #2894.
+    it('creates no candidate document or receipt when the project changes before confirmation', async () => {
         const sourceDocIdsBefore = getCrdtDocIds().toSorted();
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
@@ -813,7 +820,10 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             ),
         });
 
-        await confirmPendingChatActions({ confirmationId });
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
 
         expect(getPendingActionConfirmation(confirmationId)?.status).toBe('invalidated');
         expect(getCrdtDocIds().toSorted()).toEqual(sourceDocIdsBefore);
