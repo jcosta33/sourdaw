@@ -564,9 +564,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // The shared offline scheduler names its pure compiler six times; it
+        // The shared offline scheduler names its pure compiler seven times; it
         // schedules runtime events but does not write project device state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
+        // Measured 7, was 6: the shared lane-bound kernel extraction
+        // (src/utils/automationLaneBound.ts) rewrote the `clampToLaneRange`
+        // wrapper's doc comment and added one more `compileAutomationEvents`
+        // mention naming the caller that supplies the bracket pair.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 7,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -652,6 +656,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
         // (#747) — a pure curve-math utility, not a device-write sink.
         'src/utils/automationCurve.ts': 1,
+        // Count provenance: new file entry, measured 1 — a doc-comment mention
+        // of `compileAutomationEvents` naming the offline compile path that
+        // evaluates this shared lane bound per segment. The kernel is pure
+        // clamp arithmetic over an interpolated value; it holds no write.
+        'src/utils/automationLaneBound.ts': 1,
         // Count provenance (#1994): lexical compile* matches after the
         // runtime-graph-delta split. None is a new raw store write.
         // AiRuntime: compileRequest / command-envelope compilers (not device
@@ -660,6 +669,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 2,
         'src/modules/AiRuntime/repositories/providerAdapterRegistry.ts': 3,
         'src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts': 1,
+        // Count provenance: new file entry, measured 1 — the module path in a
+        // type-only import of `ArbitraryCommandListEvidence` (the family
+        // pattern matches inside the string). The composer projects immutable
+        // agent-run scope metadata; it holds no device write.
+        'src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts': 1,
         'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
         'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
@@ -1053,8 +1067,9 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
 
 function resolveLocalBinding(name: string, scope: LexicalScope | undefined): LocalBinding | undefined {
     for (let current = scope; current; current = current.parent) {
-        if (current.bindings.has(name)) {
-            return current.bindings.get(name);
+        const binding = current.bindings.get(name);
+        if (binding) {
+            return binding;
         }
     }
     return undefined;
@@ -1131,6 +1146,9 @@ function countDeviceDataAstWrites(file: ProductionSource): number {
 
     // Bindings stand for a returned state expression, not nested data: resolving a
     // device variable inside that state would double-count its construction.
+    // A returned identifier may pass as "no change" only when it resolves to a
+    // proven binding; a missing binding means the state shape is unsupported and
+    // must reject the audit rather than silently clear the census.
     const collectStateExpression = (candidate: Expression, resolveBinding = true): void => {
         const expression = unwrapStateExpression(candidate);
         if (visiting.has(expression)) {
@@ -1174,7 +1192,10 @@ function countDeviceDataAstWrites(file: ProductionSource): number {
             }
             if (resolveBinding && isIdentifier(expression)) {
                 const binding = resolveLocalBinding(expression.text, scopeByNode.get(expression));
-                if (!binding || binding.kind === 'parameter') {
+                if (!binding) {
+                    throw new Error(`unresolved local state binding: ${expression.text}`);
+                }
+                if (binding.kind === 'parameter') {
                     return;
                 }
                 if (binding.kind !== 'expression') {
@@ -1381,6 +1402,15 @@ describe('device write boundary closure', () => {
                 source: 'const first = second; const second = first; updateTrack("track", () => first);',
             })
         ).toThrow(/cyclic local state binding/);
+    });
+
+    it('rejects a returned local whose binding cannot be resolved', () => {
+        expect(() =>
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/blockScopedStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { { var next = { ...current, devices }; } return next; });',
+            })
+        ).toThrow(/unresolved local state binding/);
     });
 
     it.each([
