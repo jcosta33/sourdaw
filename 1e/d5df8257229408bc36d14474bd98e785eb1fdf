@@ -1,0 +1,26 @@
+src/modules/Command/useCases/getVersionedCommandBatchCommitDisposition.ts
+  s_a40848e8f8cca9::t_67ef89f9eb8b5a 29
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_b1428a3959e9a0 427-428,438
+  s_a40848e8f8cca9::t_1ffb79f1cea0d4 402,419,426,439,442-443,448
+  s_a40848e8f8cca9::t_3a1fd96e995979 430,440-441
+  s_a40848e8f8cca9::t_7b509fc0161a07 403,406,431-435
+  s_a40848e8f8cca9::t_d3f3f436272a32 404-405,407-418
+  s_a40848e8f8cca9::t_b7384e5b64a8d0 25,429,436-437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "1ed5df8257229408bc36d14474bd98e785eb1fdf",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
