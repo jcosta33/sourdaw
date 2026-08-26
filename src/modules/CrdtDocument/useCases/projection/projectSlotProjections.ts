@@ -1,4 +1,11 @@
-import { gainEnvelopeStore, markerStore, takeLaneStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    gainEnvelopeStore,
+    markerStore,
+    takeLaneStore,
+    trackStore,
+    vcaGroupStore,
+} from '#/modules/Arrangement/stores';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { commandBatchIdempotencyStore } from '#/modules/Command/stores';
 import { midiLearnStore } from '#/modules/ControlSurface/stores';
@@ -78,6 +85,7 @@ function slotProjection(input: SlotProjectionInput): ProjectSlotProjection {
 /** Every project-state store backed by AutomergeStorage on the root document. */
 export const projectSlotProjections: readonly ProjectSlotProjection[] = [
     slotProjection({ slot: 'tracks', getStore: () => trackStore }),
+    slotProjection({ slot: 'adjustmentLayers', getStore: () => adjustmentLayerStore }),
     slotProjection({ slot: 'takeLanes', getStore: () => takeLaneStore }),
     slotProjection({ slot: 'markers', getStore: () => markerStore }),
     slotProjection({ slot: 'vcaGroups', getStore: () => vcaGroupStore }),

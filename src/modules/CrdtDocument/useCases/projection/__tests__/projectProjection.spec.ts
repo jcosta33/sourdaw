@@ -69,6 +69,14 @@ describe('projectChangedCrdtSlots (audit CC-1)', () => {
         expect(dispatched.slots).toEqual(['transport']);
     });
 
+    it('projects adjustment layers for a document-origin change', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: ['adjustmentLayers'], origin: 'document' });
+
+        expect(dispatched.slots).toEqual(['adjustmentLayers']);
+    });
+
     it('projects several changed slots in registry order', () => {
         dispatched = spyOnProjections();
 
