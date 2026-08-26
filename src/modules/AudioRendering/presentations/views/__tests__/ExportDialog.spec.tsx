@@ -10,6 +10,10 @@ import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings, saveExportSettings } from '../exportSettings';
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+type AdjustmentLayerStore = Pick<
+    (typeof import('#/modules/Arrangement/stores'))['adjustmentLayerStore'],
+    'value' | 'subscribe'
+>;
 
 type TestClip = {
     id: string;
@@ -78,6 +82,7 @@ type ExportDialogMocks = {
     restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<() => Promise<number>>>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
     trackStore: TestTrackStore;
+    adjustmentLayerStore: AdjustmentLayerStore;
     transportStore: TestStore<TestTransportState>;
     useStore: ReturnType<typeof vi.fn<(store: TestStore<unknown>, defaultValue?: unknown) => unknown>>;
     clipSelectionStore: TestStore<TestClipSelectionState>;
@@ -104,6 +109,10 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
     };
     const automationStore: TestStore<TestAutomationState> = { value: { lanes: [] } };
     const workspaceStore: TestStore<TestWorkspaceState> = { value: { soloMode: 'sip' } };
+    const adjustmentLayerStore: AdjustmentLayerStore = {
+        value: { layers: [] },
+        subscribe: vi.fn<AdjustmentLayerStore['subscribe']>((_callback) => () => {}),
+    };
 
     return {
         audioContext: null,
@@ -118,6 +127,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         restoreCachedAudioBuffersFromIdb: vi.fn<() => Promise<number>>(),
         selectNativeAudioExportFile: vi.fn(),
         trackStore,
+        adjustmentLayerStore,
         transportStore,
         useStore: vi.fn((store: TestStore<unknown>, defaultValue?: unknown) => store.value ?? defaultValue),
         clipSelectionStore,
@@ -152,6 +162,7 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
     trackStore: mocks.trackStore,
+    adjustmentLayerStore: mocks.adjustmentLayerStore,
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
     clipSelectionStore: mocks.clipSelectionStore,
     // Not exercised by this spec — stubbed only because this spec's module graph
