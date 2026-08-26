@@ -1,16 +1,27 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    compileVersionedCommandBatchEnvelope,
+    createVerifiedBatchReceipt,
+    createVersionedCommandReceipt,
+    getVersionedCommandBatchCommitProof,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCommandEnvelopes';
 import { recordAgentRunPendingEffectContinuation } from '../recordAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
 
 type Receipt = Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt'];
 type PendingEffect = Receipt['pendingEffects'][number];
 type CommandBatch = NonNullable<Parameters<typeof recordAgentRunReceiptSaga>[0]['commandBatch']>;
+type CommandCompensation = NonNullable<Parameters<typeof createVersionedCommandReceipt>[0]['compensation']>;
 
 const BASE_REVISION = JSON.stringify({
     documentIdentityEpoch: 1,
@@ -20,90 +31,121 @@ const BASE_REVISION = JSON.stringify({
 
 const ACTIONS = [
     {
-        type: 'setTrackGain',
-        payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+        type: 'importStemSet',
+        payload: {
+            selectionId: 'selection-1',
+            groupName: 'Imported Stems',
+            projectTempo: 120,
+            folderId: 'folder-1',
+            stems: [
+                {
+                    stemId: 'stem-1',
+                    sourceName: 'Drums.wav',
+                    role: 'other',
+                    sourceTempo: 120,
+                    durationSeconds: 10,
+                    sourceBytes: 100,
+                    decodedBytes: 200,
+                    audioBufferId: 'buffer-1',
+                    assetHash: 'asset-hash-1',
+                    assetLeaseId: 'asset-lease-1',
+                    trackId: 'track-1',
+                    trackName: 'Drums',
+                    trackGain: 1,
+                    trackPan: 0,
+                    clipId: 'clip-1',
+                },
+            ],
+        },
     },
     {
-        type: 'setTrackPan',
-        payload: { trackId: 'track-vocal', pan: -0.2, expectedPan: 0 },
-    },
-] satisfies AppAction[];
-
-const COMMAND_BATCH: CommandBatch = {
-    authority: {
-        projectId: 'project-agent-effects',
-        baseRevision: BASE_REVISION,
-        scope: {
-            targetIds: ['track-vocal'],
-            targetRanges: [],
-            protectedTargetIds: [],
-            protectedRanges: [],
-        },
-        grants: {
-            allowedOperationPrefixes: ['setTrack'],
-            create: false,
-            delete: false,
-            routing: false,
-            tempo: false,
-            master: false,
-            file: false,
-            audioUpload: false,
-            remoteGeneration: false,
-            autoCommit: true,
-        },
-        budgets: {
-            maxCommands: 2,
-            maxCreatedTracks: 0,
-            maxDeletedObjects: 0,
-            maxAffectedTracks: 1,
-            maxAffectedClips: 0,
-            maxAutomationPoints: 0,
-            maxImportedAssets: 0,
-            maxRenderJobs: 0,
+        type: 'addDevice',
+        payload: {
+            deviceId: 'device-compressor-1',
+            trackId: 'track-vocal',
+            deviceType: 'builtin-compressor',
         },
     },
-    serialized: '{"batch":"agent-effects"}',
-};
+] satisfies readonly [Extract<AppAction, { type: 'importStemSet' }>, Extract<AppAction, { type: 'addDevice' }>];
 
-function createReceipt(pendingEffects: readonly PendingEffect[]): Receipt {
-    const revision = {
-        normalizedRevision: BASE_REVISION,
-        documentIdentityEpoch: 1,
-        mutationEpoch: 0,
-        documents: [{ docId: 'root', heads: ['head-0'] }],
-    };
-    return {
-        schemaVersion: 1,
-        runId: 'run-agent-effects',
-        batchId: 'batch-agent-effects',
-        outcome: 'partially-committed',
-        atomicity: 'durable-atomic-with-non-atomic-effects',
-        base: revision,
-        observedBase: revision,
-        resulting: revision,
-        commandOutcomes: pendingEffects.map((effect) => ({
-            commandId: effect.commandId,
-            operation: effect.operation,
-            outcome: 'committed' as const,
-            affectedIds: ['track-vocal'],
-            compensationAvailable: true,
-        })),
-        affectedIds: ['track-vocal'],
-        createdBindings: [],
-        warnings: ['A post-commit effect remains pending.'],
-        errors: [],
-        pendingEffects: [...pendingEffects],
-        links: { render: [], analysis: [] },
-        compensation: { available: true, commandIds: pendingEffects.map(({ commandId }) => commandId) },
-        semanticDiff: null,
-        modelSummary: 'The project committed with pending effects.',
-    };
+const arrangementHandlers = getArrangementHandlers();
+registerHandlerMap({
+    addDevice: arrangementHandlers.addDevice,
+    importStemSet: arrangementHandlers.importStemSet,
+});
+const COMMANDS = compilePendingActionCommandEnvelopes({
+    actions: ACTIONS,
+    actionLabels: ['Import the approved stem set.', 'Add the approved compressor to the vocal track.'],
+    group: {
+        groupId: 'batch-agent-effects',
+        groupLabel: 'Import approved stems and add the vocal compressor.',
+    },
+    projectRevision: BASE_REVISION,
+});
+const COMMAND_COMPENSATION: readonly [CommandCompensation, CommandCompensation] = [
+    { available: true, strategy: 'inverse' },
+    { available: true, strategy: 'inverse' },
+];
+
+const COMMAND_BATCH: CommandBatch = compileVersionedCommandBatchEnvelope({
+    runId: 'run-agent-effects',
+    batchId: 'batch-agent-effects',
+    projectId: 'project-agent-effects',
+    baseRevision: BASE_REVISION,
+    intent: 'Import approved stems and add the vocal compressor.',
+    commands: COMMANDS,
+    mode: 'commit',
+});
+
+const parsedCommandBatch = parseVersionedCommandBatchEnvelope(COMMAND_BATCH.serialized, COMMAND_BATCH.authority);
+if (parsedCommandBatch.status === 'invalid') {
+    throw new Error(parsedCommandBatch.reason);
+}
+const COMMAND_ENVELOPE = parsedCommandBatch.envelope;
+const STEM_COMMAND = COMMAND_ENVELOPE.commands[0];
+const DEVICE_COMMAND = COMMAND_ENVELOPE.commands[1];
+if (STEM_COMMAND?.operation !== ACTIONS[0].type || DEVICE_COMMAND?.operation !== ACTIONS[1].type) {
+    throw new Error('Production command compilation did not preserve the pending-effect action order');
+}
+
+async function createReceipt(pendingEffects: readonly PendingEffect[]): Promise<Receipt> {
+    const proof = await getVersionedCommandBatchCommitProof(COMMAND_BATCH);
+    return createVerifiedBatchReceipt({
+        contentHash: proof.contentHash,
+        envelope: COMMAND_ENVELOPE,
+        observedBaseRevision: BASE_REVISION,
+        resultingRevision: BASE_REVISION,
+        result: {
+            status: 'committed-with-warning',
+            warning: 'A post-commit effect remains pending.',
+            warningDetails: pendingEffects.map((pendingEffect) => ({
+                kind: 'external-effect',
+                message: pendingEffect.reason,
+                commandId: pendingEffect.commandId,
+                pendingEffect,
+            })),
+            actions: COMMAND_ENVELOPE.commands.map((command, index) => {
+                const action = ACTIONS[index];
+                const compensation = COMMAND_COMPENSATION[index];
+                if (!action || !compensation) {
+                    throw new Error(`Missing command receipt fixture for ${command.commandId}`);
+                }
+                return {
+                    action,
+                    receipt: createVersionedCommandReceipt({
+                        envelope: command,
+                        compensation,
+                    }),
+                };
+            }),
+        },
+    });
 }
 
 function createRun(): void {
     agentRunLifecycle.create({
         runId: 'run-agent-effects',
-        request: 'Apply the approved project changes.',
+        request: 'Import approved stems and add the vocal compressor.',
         mode: 'apply',
         createdRevision: BASE_REVISION,
         createdAt: 100,
@@ -123,24 +165,28 @@ function createRun(): void {
 }
 
 describe('recordAgentRunReceiptSaga', () => {
+    afterAll(() => {
+        clearHandlerRegistry();
+    });
+
     beforeEach(() => {
         agentRunLifecycle.clear();
         createRun();
     });
 
-    it('persists a generic reconciliable effect and blocks terminal completion', () => {
-        const genericEffect = {
-            commandId: '11111111-1111-4111-8111-111111111111',
+    it('persists a stem import reconciliation effect and blocks terminal completion', async () => {
+        const stemEffect = {
+            commandId: STEM_COMMAND.commandId,
             kind: 'external-effect' as const,
-            operation: 'setTrackGain' as const,
-            reason: 'render publication queue unavailable',
+            operation: STEM_COMMAND.operation,
+            reason: 'imported stem runtime reconciliation remains pending',
             remediation: 'reconcile' as const,
             state: 'pending' as const,
         };
 
         recordAgentRunReceiptSaga({
             runId: 'run-agent-effects',
-            receipt: createReceipt([genericEffect]),
+            receipt: await createReceipt([stemEffect]),
             actions: ACTIONS,
             completesRun: true,
             commandBatch: COMMAND_BATCH,
@@ -151,14 +197,14 @@ describe('recordAgentRunReceiptSaga', () => {
             pendingEffectContinuations: [
                 {
                     batchId: 'batch-agent-effects',
-                    effects: [genericEffect],
+                    effects: [stemEffect],
                     recovery: 'reconcile-batch',
                 },
             ],
             saga: {
                 steps: expect.arrayContaining([
                     expect.objectContaining({
-                        stepId: 'effect:batch-agent-effects:11111111-1111-4111-8111-111111111111',
+                        stepId: `effect:batch-agent-effects:${STEM_COMMAND.commandId}`,
                         owner: 'external-effect',
                         state: 'external-pending',
                     }),
@@ -167,27 +213,27 @@ describe('recordAgentRunReceiptSaga', () => {
         });
     });
 
-    it('persists every effect in a mixed batch as one receipt-bound continuation', () => {
+    it('persists every effect in a mixed batch as one receipt-bound continuation', async () => {
         const runtimeEffect = {
-            commandId: '11111111-1111-4111-8111-111111111111',
+            commandId: DEVICE_COMMAND.commandId,
             kind: 'runtime-graph' as const,
-            operation: 'setTrackGain' as const,
+            operation: DEVICE_COMMAND.operation,
             reason: 'runtime graph revision is stale',
             remediation: 'repair' as const,
             state: 'pending' as const,
         };
-        const genericEffect = {
-            commandId: '22222222-2222-4222-8222-222222222222',
+        const stemEffect = {
+            commandId: STEM_COMMAND.commandId,
             kind: 'external-effect' as const,
-            operation: 'setTrackPan' as const,
-            reason: 'render publication queue unavailable',
+            operation: STEM_COMMAND.operation,
+            reason: 'imported stem runtime reconciliation remains pending',
             remediation: 'reconcile' as const,
             state: 'pending' as const,
         };
 
         recordAgentRunReceiptSaga({
             runId: 'run-agent-effects',
-            receipt: createReceipt([runtimeEffect, genericEffect]),
+            receipt: await createReceipt([runtimeEffect, stemEffect]),
             actions: ACTIONS,
             completesRun: true,
             commandBatch: COMMAND_BATCH,
@@ -198,14 +244,14 @@ describe('recordAgentRunReceiptSaga', () => {
             pendingEffectContinuations: [
                 {
                     batchId: 'batch-agent-effects',
-                    effects: [runtimeEffect, genericEffect],
+                    effects: [runtimeEffect, stemEffect],
                     recovery: 'reconcile-batch',
                 },
             ],
             saga: {
                 steps: expect.arrayContaining([
                     expect.objectContaining({ stepId: `effect:batch-agent-effects:${runtimeEffect.commandId}` }),
-                    expect.objectContaining({ stepId: `effect:batch-agent-effects:${genericEffect.commandId}` }),
+                    expect.objectContaining({ stepId: `effect:batch-agent-effects:${stemEffect.commandId}` }),
                 ]),
             },
         });
@@ -213,14 +259,14 @@ describe('recordAgentRunReceiptSaga', () => {
 
     it('retains the exact continuation across a receipt-write crash without clearing independent restart work', async () => {
         const pendingEffect = {
-            commandId: '11111111-1111-4111-8111-111111111111',
+            commandId: DEVICE_COMMAND.commandId,
             kind: 'runtime-graph' as const,
-            operation: 'setTrackGain' as const,
+            operation: DEVICE_COMMAND.operation,
             reason: 'runtime graph repair remains pending',
             remediation: 'repair' as const,
             state: 'pending' as const,
         };
-        const receipt = createReceipt([pendingEffect]);
+        const receipt = await createReceipt([pendingEffect]);
         expect(
             agentRunWorkLease.claim({
                 runId: 'run-agent-effects',

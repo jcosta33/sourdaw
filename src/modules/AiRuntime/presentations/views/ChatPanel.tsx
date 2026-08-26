@@ -268,7 +268,14 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                   if (run.decision === null) {
                       return [];
                   }
-                  return [{ ...run, decision: run.decision }];
+                  return [
+                      {
+                          runId: run.runId,
+                          allowedActions: { resume: run.allowedActions.resume },
+                          resumeRejectionReason: run.resumeRejectionReason,
+                          decision: run.decision,
+                      },
+                  ];
               })
             : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);

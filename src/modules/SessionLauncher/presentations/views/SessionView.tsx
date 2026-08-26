@@ -49,11 +49,7 @@ export const SessionView = (): ReactElement => {
         stopAllSessionSlots();
     };
 
-    // §142.1 — pre-compute the clip-per-slot map once per track during the
-    // outer tracks.map rather than re-scanning `tracks` inside the scene
-    // inner loop. The previous getClipForSlot(trackId, sceneIndex) did a
-    // full tracks.find() per rendered cell → O(tracks × scenes × tracks).
-    const renderIife_7 = () => {
+    const renderGridBody = (): ReactElement => {
         if (tracks.length === 0) {
             return (
                 <Row justify="center" className="min-h-full p-6">
@@ -88,6 +84,11 @@ export const SessionView = (): ReactElement => {
                         ))}
                     </DawSideRail>
                     {tracks.map((track: Track) => {
+                        // §142.1 — pre-compute the clip-per-slot map once per track
+                        // during the outer tracks.map rather than re-scanning `tracks`
+                        // inside the scene inner loop. The previous
+                        // getClipForSlot(trackId, sceneIndex) did a full tracks.find()
+                        // per rendered cell → O(tracks × scenes × tracks).
                         const trackClipIds: Array<string | null> = Array.from(
                             { length: SCENE_COUNT },
                             (_, index) => track.clips[index]?.id ?? null
@@ -105,7 +106,8 @@ export const SessionView = (): ReactElement => {
                                 {Array.from({ length: SCENE_COUNT }, (_, sceneIndex) => {
                                     const clipId = trackClipIds[sceneIndex] ?? null;
                                     const isActive = activeSlots[track.id] === sceneIndex;
-                                    const renderIife_8 = () => {
+
+                                    const slotBackgroundClass = (): string => {
                                         if (!clipId) {
                                             return 'hover:bg-white/[0.03]';
                                         }
@@ -114,41 +116,41 @@ export const SessionView = (): ReactElement => {
                                         }
                                         return 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised';
                                     };
-                                    const renderIife_9 = () => {
-                                        if (clipId) {
-                                            const renderIife_10 = () => {
-                                                if (isActive) {
-                                                    return undefined;
-                                                }
-                                                if (track.color) {
-                                                    return `${track.color}20`;
-                                                }
-                                                return undefined;
-                                            };
 
-                                            return (
-                                                <Row gap={1}>
-                                                    {isActive ? (
-                                                        <Play className="size-2.5 fill-[var(--color-state-play)] text-[var(--color-state-play)]" />
-                                                    ) : null}
-                                                    <span
-                                                        className={cn(
-                                                            'rounded px-1 py-0.5 text-[10px]',
-                                                            isActive
-                                                                ? 'bg-[var(--color-state-play)]/30 text-[var(--color-state-play)]'
-                                                                : 'bg-muted/30 text-muted-foreground'
-                                                        )}
-                                                        style={{
-                                                            backgroundColor: renderIife_10(),
-                                                        }}
-                                                    >
-                                                        Clip
-                                                    </span>
-                                                </Row>
-                                            );
-                                        } else {
+                                    // The active badge takes its background from the
+                                    // play-state class; only a loaded inactive clip on a
+                                    // colored track gets an inline tint.
+                                    const badgeBackgroundColor = (): string | undefined => {
+                                        if (isActive) {
+                                            return undefined;
+                                        }
+                                        return track.color ? `${track.color}20` : undefined;
+                                    };
+
+                                    const renderSlotContent = (): ReactElement => {
+                                        if (!clipId) {
                                             return <Plus className="size-2.5 text-muted-foreground/30" />;
                                         }
+                                        return (
+                                            <Row gap={1}>
+                                                {isActive ? (
+                                                    <Play className="size-2.5 fill-[var(--color-state-play)] text-[var(--color-state-play)]" />
+                                                ) : null}
+                                                <span
+                                                    className={cn(
+                                                        'rounded px-1 py-0.5 text-[10px]',
+                                                        isActive
+                                                            ? 'bg-[var(--color-state-play)]/30 text-[var(--color-state-play)]'
+                                                            : 'bg-muted/30 text-muted-foreground'
+                                                    )}
+                                                    style={{
+                                                        backgroundColor: badgeBackgroundColor(),
+                                                    }}
+                                                >
+                                                    Clip
+                                                </span>
+                                            </Row>
+                                        );
                                     };
 
                                     return (
@@ -159,13 +161,13 @@ export const SessionView = (): ReactElement => {
                                             key={clipId ?? `empty-${sceneIndex}`}
                                             className={cn(
                                                 'flex h-10 w-full cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
-                                                renderIife_8()
+                                                slotBackgroundClass()
                                             )}
                                             onClick={() => handleLaunchSlot(track.id, sceneIndex)}
                                             disabled={!clipId}
                                             aria-label={`${track.name} scene ${sceneIndex + 1}${clipId ? ' - clip loaded' : ' - empty'}`}
                                         >
-                                            {renderIife_9()}
+                                            {renderSlotContent()}
                                         </Button>
                                     );
                                 })}
@@ -196,7 +198,7 @@ export const SessionView = (): ReactElement => {
                 }
             />
             {/* Grid */}
-            <div className="flex-1 overflow-auto">{renderIife_7()}</div>
+            <div className="flex-1 overflow-auto">{renderGridBody()}</div>
         </DawPanelSurface>
     );
 };

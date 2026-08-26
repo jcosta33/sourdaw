@@ -14,6 +14,19 @@ import { parseJsonWithUniqueKeys } from './strictJson.ts';
 export const DEPENDENCY_LICENSE_REPORT_PATH = 'public/legal/DEPENDENCY-LICENSES.txt';
 export const SERVER_THIRD_PARTY_NOTICES_PATH = 'server/THIRD-PARTY-NOTICES.md';
 export const DEPENDENCY_LICENSE_PROOFS_PATH = 'release/dependency-license-proofs.json';
+export const CARGO_RUNTIME_FEATURE_SELECTION = {
+    allFeatures: false,
+    noDefaultFeatures: false,
+    features: ['sourdaw-native/napi-addon'],
+} as const;
+const CARGO_FIXED_SOURCE_INPUT_PATHS = [
+    'Cargo.toml',
+    'electron-builder.yml',
+    'package.json',
+    'rust-toolchain.toml',
+    'scripts/buildNativeAddon.ts',
+] as const;
+const CARGO_CONFIG_PATHS = ['.cargo/config', '.cargo/config.toml'] as const;
 
 type LegalFile = {
     label: string;
@@ -43,9 +56,39 @@ export type DependencyLicenseProof = {
     };
 };
 
-type DependencyLicenseProofManifest = {
-    schemaVersion: 3;
+type EvidenceReference = Pick<LegalFile, 'label' | 'sha256'>;
+
+export type CargoRuntimeInventorySnapshot = {
+    cargoLockSha256: string;
+    sourceInputs: Array<{
+        path: string;
+        sha256: string;
+    }>;
+    featureSelection: {
+        allFeatures: false;
+        noDefaultFeatures: false;
+        features: string[];
+    };
+    packages: Array<{
+        name: string;
+        version: string;
+        source: string;
+        license: string;
+        legalFiles: EvidenceReference[];
+        metadataFiles?: EvidenceReference[];
+        reportedLegalFiles: EvidenceReference[];
+    }>;
+};
+
+type DependencyLicenseProofSourceManifest = {
+    schemaVersion: 3 | 4;
     packages: Record<string, DependencyLicenseProof>;
+    cargoRuntimeInventory?: CargoRuntimeInventorySnapshot;
+};
+
+type DependencyLicenseProofManifest = DependencyLicenseProofSourceManifest & {
+    schemaVersion: 4;
+    cargoRuntimeInventory: CargoRuntimeInventorySnapshot;
 };
 
 type PackageLock = {
@@ -83,9 +126,10 @@ type CargoMetadata = {
     resolve: {
         nodes: Array<{
             id: string;
+            features: string[];
             deps: Array<{
                 pkg: string;
-                dep_kinds: Array<{ kind: 'build' | 'dev' | null }>;
+                dep_kinds: Array<{ kind: 'build' | 'dev' | null; target: string | null }>;
             }>;
         }>;
     } | null;
@@ -437,11 +481,39 @@ export function collectNpmLockDependencyLicenses(root: string): DependencyLicens
     });
 }
 
+function cargoPackageId(pkg: Pick<DependencyLicenseRecord, 'name' | 'version'>): string {
+    return `${pkg.name}@${pkg.version}`;
+}
+
+function compareCodeUnits(left: string, right: string): number {
+    if (left === right) {
+        return 0;
+    }
+    return left < right ? -1 : 1;
+}
+
+function compareCargoPackageIdentities(
+    left: Pick<DependencyLicenseRecord, 'name' | 'version'>,
+    right: Pick<DependencyLicenseRecord, 'name' | 'version'>
+): number {
+    return compareCodeUnits(left.name, right.name) || compareCodeUnits(left.version, right.version);
+}
+
 function runtimeCargoPackageIds(metadata: CargoMetadata): Set<string> {
     if (metadata.resolve === null) {
         throw new Error('Cargo metadata omitted the dependency resolve graph');
     }
     const nodes = new Map(metadata.resolve.nodes.map((node) => [node.id, node]));
+    for (const selection of CARGO_RUNTIME_FEATURE_SELECTION.features) {
+        const separator = selection.lastIndexOf('/');
+        const packageName = selection.slice(0, separator);
+        const feature = selection.slice(separator + 1);
+        const pkg = metadata.packages.find(({ name }) => name === packageName);
+        const node = pkg === undefined ? undefined : nodes.get(pkg.id);
+        if (node === undefined || !node.features.includes(feature)) {
+            throw new Error(`cargo metadata did not enable shipped feature ${selection}`);
+        }
+    }
     const included = new Set(metadata.workspace_members);
     const queue = [...metadata.workspace_members];
     while (queue.length > 0) {
@@ -460,37 +532,362 @@ function runtimeCargoPackageIds(metadata: CargoMetadata): Set<string> {
     return included;
 }
 
+function exactReportedContents(contents: string, digest: string): string | undefined {
+    if (sha256(Buffer.from(contents, 'utf8')) === digest) {
+        return contents;
+    }
+    if (!contents.endsWith('\n')) {
+        return undefined;
+    }
+    const withoutTrailingNewline = contents.slice(0, -1);
+    return sha256(Buffer.from(withoutTrailingNewline, 'utf8')) === digest ? withoutTrailingNewline : undefined;
+}
+
+function readReportedLegalFiles(root: string): Map<string, LegalFile[]> {
+    const report = readFileSync(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH), 'utf8');
+    const files = new Map<string, LegalFile[]>();
+    const pattern =
+        /^===== sha256:([0-9a-f]{64}) =====\nEvidence labels: ([^\n]+)\nPackages:\n(?:- [^\n]+\n)+\n([\s\S]*?)\n===== end sha256:\1 =====$/gmu;
+    for (const match of report.matchAll(pattern)) {
+        const [, digest, label, contents] = match;
+        if (digest === undefined || label === undefined || contents === undefined) {
+            throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: malformed legal evidence block`);
+        }
+        const exactContents = exactReportedContents(contents, digest);
+        if (exactContents === undefined) {
+            throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: legal evidence block checksum drifted`);
+        }
+        if (files.has(digest)) {
+            throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: repeated legal evidence block sha256:${digest}`);
+        }
+        files.set(
+            digest,
+            label.split(', ').map((evidenceLabel) => ({
+                label: evidenceLabel,
+                sha256: digest,
+                contents: exactContents,
+            }))
+        );
+    }
+    return files;
+}
+
+function assertCargoLockDigest(root: string, inventory: CargoRuntimeInventorySnapshot): void {
+    const current = sha256(readFileSync(resolve(root, 'Cargo.lock')));
+    if (inventory.cargoLockSha256 !== current) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo.lock snapshot drifted`);
+    }
+}
+
+function assembledProofMetadata(packageId: string, legalFile: LegalFile): LegalFile[] {
+    const metadata: LegalFile[] = [];
+    const pattern =
+        /^===== installed package metadata (.+) sha256:([0-9a-f]{64}) =====\n([\s\S]*?)\n===== end installed package metadata \1 =====$/gmu;
+    for (const match of legalFile.contents.matchAll(pattern)) {
+        const [, sourcePath, expectedSha256, contents] = match;
+        const file = readLegalBytes(Buffer.from(contents!, 'utf8'), sourcePath!);
+        if (file.sha256 !== expectedSha256) {
+            throw new Error(`${packageId}: assembled proof metadata drifted at ${sourcePath}`);
+        }
+        metadata.push(file);
+    }
+    if (metadata.length === 0) {
+        throw new Error(`${packageId}: assembled proof metadata is missing from the dependency license report`);
+    }
+    return metadata;
+}
+
+function compareEvidenceReferences(left: EvidenceReference, right: EvidenceReference): number {
+    return compareCodeUnits(left.label, right.label) || compareCodeUnits(left.sha256, right.sha256);
+}
+
+function evidenceReferences(files: readonly LegalFile[]): EvidenceReference[] {
+    const references = new Map(
+        files.map(({ label, sha256: digest }) => [`${label}\0${digest}`, { label, sha256: digest }])
+    );
+    return [...references.values()].sort(compareEvidenceReferences);
+}
+
+function assertEvidenceReferences(packageId: string, field: string, references: readonly EvidenceReference[]): void {
+    const canonical = [...references].sort(compareEvidenceReferences);
+    if (
+        references.some(({ label, sha256: digest }) => label.length === 0 || !/^[0-9a-f]{64}$/u.test(digest)) ||
+        new Set(references.map(({ label, sha256: digest }) => `${label}\0${digest}`)).size !== references.length ||
+        references.some((reference, index) => compareEvidenceReferences(reference, canonical[index]!) !== 0)
+    ) {
+        throw new Error(`${packageId}: ${field} must contain unique, sorted legal evidence references`);
+    }
+}
+
+function pathEscapesRoot(path: string): boolean {
+    return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
+}
+
+function assertRepositorySourceInput(root: string, path: string): void {
+    const rootPath = resolve(root);
+    const candidatePath = resolve(rootPath, path);
+    const candidateRelative = relative(rootPath, candidatePath);
+    if (candidateRelative.length === 0 || pathEscapesRoot(candidateRelative)) {
+        throw new Error(`${path}: Cargo source input escapes the repository`);
+    }
+    const realRelative = relative(realpathSync(rootPath), realpathSync(candidatePath));
+    if (realRelative.length === 0 || pathEscapesRoot(realRelative)) {
+        throw new Error(`${path}: Cargo source input escapes the repository`);
+    }
+}
+
+function repositoryManifestPath(root: string, manifestPath: string): string {
+    if (!isAbsolute(manifestPath)) {
+        throw new Error(`${manifestPath}: Cargo metadata manifest path is not absolute`);
+    }
+    const rootPath = resolve(root);
+    const candidateRelative = relative(rootPath, resolve(manifestPath));
+    const path = candidateRelative.split(sep).join('/');
+    if (
+        candidateRelative.length === 0 ||
+        pathEscapesRoot(candidateRelative) ||
+        path !== posix.normalize(path) ||
+        posix.isAbsolute(path) ||
+        path.split('/').includes('..')
+    ) {
+        throw new Error(`${manifestPath}: Cargo metadata manifest path escapes the repository`);
+    }
+    assertRepositorySourceInput(root, path);
+    return path;
+}
+
+function cargoWorkspaceManifestPaths(root: string, metadata: CargoMetadata): string[] {
+    const packages = new Map(metadata.packages.map((pkg) => [pkg.id, pkg]));
+    const paths = metadata.workspace_members.map((member) => {
+        const pkg = packages.get(member);
+        if (pkg === undefined) {
+            throw new Error(`Cargo metadata workspace member ${member} has no package manifest`);
+        }
+        return repositoryManifestPath(root, pkg.manifest_path);
+    });
+    if (new Set(paths).size !== paths.length) {
+        throw new Error('Cargo metadata workspace manifest paths must be unique');
+    }
+    return paths.sort(compareCodeUnits);
+}
+
+function cargoSourceInputPaths(root: string, workspaceManifestPaths: readonly string[]): string[] {
+    return [
+        ...new Set([
+            ...CARGO_FIXED_SOURCE_INPUT_PATHS,
+            ...workspaceManifestPaths,
+            ...CARGO_CONFIG_PATHS.filter((path) => existsSync(resolve(root, path))),
+        ]),
+    ].sort(compareCodeUnits);
+}
+
+function cargoSourceInputs(
+    root: string,
+    workspaceManifestPaths: readonly string[]
+): CargoRuntimeInventorySnapshot['sourceInputs'] {
+    return cargoSourceInputPaths(root, workspaceManifestPaths).map((path) => {
+        assertRepositorySourceInput(root, path);
+        return { path, sha256: sha256(readFileSync(resolve(root, path))) };
+    });
+}
+
+function assertCargoSourceInputs(root: string, inventory: CargoRuntimeInventorySnapshot): void {
+    const storedPaths = inventory.sourceInputs.map(({ path }) => path);
+    if (JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root, storedPaths))) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs drifted`);
+    }
+}
+
+function assertCargoRuntimeInventory(
+    inventory: CargoRuntimeInventorySnapshot | undefined
+): CargoRuntimeInventorySnapshot {
+    if (
+        inventory === undefined ||
+        !/^[0-9a-f]{64}$/u.test(inventory.cargoLockSha256) ||
+        !Array.isArray(inventory.sourceInputs) ||
+        inventory.sourceInputs.length === 0 ||
+        inventory.featureSelection.allFeatures !== CARGO_RUNTIME_FEATURE_SELECTION.allFeatures ||
+        inventory.featureSelection.noDefaultFeatures !== CARGO_RUNTIME_FEATURE_SELECTION.noDefaultFeatures ||
+        inventory.featureSelection.features.length !== CARGO_RUNTIME_FEATURE_SELECTION.features.length ||
+        inventory.featureSelection.features.some(
+            (feature, index) => feature !== CARGO_RUNTIME_FEATURE_SELECTION.features[index]
+        ) ||
+        inventory.packages.length === 0
+    ) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported Cargo runtime inventory`);
+    }
+    const canonicalSourceInputs = [...inventory.sourceInputs].sort((left, right) =>
+        compareCodeUnits(left.path, right.path)
+    );
+    if (
+        new Set(inventory.sourceInputs.map(({ path }) => path)).size !== inventory.sourceInputs.length ||
+        inventory.sourceInputs.some(
+            (input, index) =>
+                input !== canonicalSourceInputs[index] ||
+                input.path !== posix.normalize(input.path) ||
+                posix.isAbsolute(input.path) ||
+                input.path.length === 0 ||
+                input.path.includes('\\') ||
+                input.path.split('/').includes('..') ||
+                !/^[0-9a-f]{64}$/u.test(input.sha256)
+        )
+    ) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs must be unique and sorted`);
+    }
+    const identities = inventory.packages.map((pkg) => `${pkg.name}@${pkg.version}`);
+    const canonicalPackages = [...inventory.packages].sort(compareCargoPackageIdentities);
+    if (
+        new Set(identities).size !== identities.length ||
+        inventory.packages.some((pkg, index) => pkg !== canonicalPackages[index])
+    ) {
+        throw new Error(
+            `${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo runtime package identities must be unique and sorted`
+        );
+    }
+    for (const pkg of inventory.packages) {
+        const packageId = `cargo:${cargoPackageId(pkg)}`;
+        if ([pkg.name, pkg.version, pkg.source, pkg.license].some((value) => value.length === 0)) {
+            throw new Error(`${packageId}: Cargo runtime snapshot metadata is incomplete`);
+        }
+        if (pkg.reportedLegalFiles.length === 0 || pkg.metadataFiles?.length === 0) {
+            throw new Error(`${packageId}: Cargo runtime snapshot evidence is incomplete`);
+        }
+        assertEvidenceReferences(packageId, 'legalFiles', pkg.legalFiles);
+        assertEvidenceReferences(packageId, 'reportedLegalFiles', pkg.reportedLegalFiles);
+        if (pkg.metadataFiles !== undefined) {
+            assertEvidenceReferences(packageId, 'metadataFiles', pkg.metadataFiles);
+        }
+    }
+    return inventory;
+}
+
+function resolveEvidenceReferences(
+    packageId: string,
+    references: readonly EvidenceReference[],
+    reported: ReadonlyMap<string, readonly LegalFile[]>
+): LegalFile[] {
+    return references.map((reference) => {
+        const file = reported.get(reference.sha256)?.find(({ label }) => label === reference.label);
+        if (file === undefined) {
+            throw new Error(
+                `${packageId}: snapshot-bound legal evidence is missing from the dependency license report`
+            );
+        }
+        return file;
+    });
+}
+
+function resolveSnapshotMetadataFiles(
+    packageId: string,
+    references: readonly EvidenceReference[] | undefined,
+    reported: ReadonlyMap<string, readonly LegalFile[]>
+): LegalFile[] | undefined {
+    if (references === undefined) {
+        return undefined;
+    }
+    const assembled = [...reported.values()]
+        .flat()
+        .find(({ contents }) => contents.includes(`Package: ${packageId}\n`));
+    if (assembled === undefined) {
+        throw new Error(`${packageId}: assembled proof is missing from the dependency license report`);
+    }
+    const metadata = new Map(
+        assembledProofMetadata(packageId, assembled).map((file) => [`${file.label}\0${file.sha256}`, file] as const)
+    );
+    return references.map((reference) => {
+        const file = metadata.get(`${reference.label}\0${reference.sha256}`);
+        if (file === undefined) {
+            throw new Error(`${packageId}: snapshot-bound assembled proof metadata drifted`);
+        }
+        return file;
+    });
+}
+
+function expectedCargoPackageLine(pkg: CargoRuntimeInventorySnapshot['packages'][number]): string {
+    const references = [...new Set(pkg.reportedLegalFiles.map(({ sha256: digest }) => `sha256:${digest}`))].sort();
+    return `cargo:${cargoPackageId(pkg)} | ${pkg.license} | ${references.join(',')} | Cargo.lock`;
+}
+
+function assertReportedCargoInventory(root: string, inventory: CargoRuntimeInventorySnapshot): void {
+    const actual = readFileSync(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH), 'utf8')
+        .split('\n')
+        .filter((line) => line.startsWith('cargo:'));
+    const expected = inventory.packages.map(expectedCargoPackageLine);
+    if (actual.length !== expected.length || actual.some((line, index) => line !== expected[index])) {
+        throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: Cargo dependency inventory drifted`);
+    }
+}
+
 export function collectCargoDependencyLicenses(root: string): DependencyLicenseRecord[] {
+    const inventory = assertCargoRuntimeInventory(readDependencyLicenseProofManifest(root).cargoRuntimeInventory);
+    assertCargoLockDigest(root, inventory);
+    assertCargoSourceInputs(root, inventory);
+    assertReportedCargoInventory(root, inventory);
+    const reported = readReportedLegalFiles(root);
+    return inventory.packages.map((pkg) => {
+        const packageId = `cargo:${cargoPackageId(pkg)}`;
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'cargo',
+            name: pkg.name,
+            version: pkg.version,
+            license: pkg.license,
+            legalFiles: resolveEvidenceReferences(packageId, pkg.legalFiles, reported),
+            cargoSource: pkg.source,
+            graphs: ['Cargo.lock'],
+            ...(pkg.metadataFiles === undefined
+                ? {}
+                : { metadataFiles: resolveSnapshotMetadataFiles(packageId, pkg.metadataFiles, reported) }),
+        };
+        expectedProofIdentities(root, record);
+        return record;
+    });
+}
+
+function collectCargoDependencyLicensesFromInstalledMetadata(root: string): {
+    metadata: CargoMetadata;
+    records: DependencyLicenseRecord[];
+} {
+    const metadataArguments = [
+        'metadata',
+        '--locked',
+        '--format-version',
+        '1',
+        '--features',
+        CARGO_RUNTIME_FEATURE_SELECTION.features.join(','),
+    ];
     const metadata = parseJsonWithUniqueKeys<CargoMetadata>(
-        execFileSync('cargo', ['metadata', '--locked', '--format-version', '1'], {
+        execFileSync('cargo', metadataArguments, {
             cwd: root,
             encoding: 'utf8',
             maxBuffer: 100 * 1024 * 1024,
         }),
-        'cargo metadata --locked --format-version 1'
+        `cargo ${metadataArguments.join(' ')}`
     );
     const workspace = new Set(metadata.workspace_members);
     const runtime = runtimeCargoPackageIds(metadata);
-    return metadata.packages
-        .filter((pkg) => runtime.has(pkg.id) && !workspace.has(pkg.id))
-        .map((pkg) => ({
-            ecosystem: 'cargo' as const,
-            name: pkg.name,
-            version: pkg.version,
-            license: licenseExpression(pkg.license, `${pkg.name}@${pkg.version}`),
-            legalFiles: packageLegalFiles(
-                dirname(pkg.manifest_path),
-                pkg.license_file === null ? undefined : pkg.license_file
-            ),
-            metadataFiles: [
-                readLegalFile(pkg.manifest_path, basename(pkg.manifest_path)),
-                ...(existsSync(resolve(dirname(pkg.manifest_path), 'AUTHORS'))
-                    ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
-                    : []),
-            ],
-            ...(pkg.source === null ? {} : { cargoSource: pkg.source }),
-            graphs: ['Cargo.lock'],
-        }));
+    return {
+        metadata,
+        records: metadata.packages
+            .filter((pkg) => runtime.has(pkg.id) && !workspace.has(pkg.id))
+            .map((pkg) => ({
+                ecosystem: 'cargo' as const,
+                name: pkg.name,
+                version: pkg.version,
+                license: licenseExpression(pkg.license, `${pkg.name}@${pkg.version}`),
+                legalFiles: packageLegalFiles(
+                    dirname(pkg.manifest_path),
+                    pkg.license_file === null ? undefined : pkg.license_file
+                ),
+                metadataFiles: [
+                    readLegalFile(pkg.manifest_path, basename(pkg.manifest_path)),
+                    ...(existsSync(resolve(dirname(pkg.manifest_path), 'AUTHORS'))
+                        ? [readLegalFile(resolve(dirname(pkg.manifest_path), 'AUTHORS'), 'AUTHORS')]
+                        : []),
+                ],
+                ...(pkg.source === null ? {} : { cargoSource: pkg.source }),
+                graphs: ['Cargo.lock'],
+            })),
+    };
 }
 
 function cargoChecksum(root: string, name: string, version: string, source: string): string | undefined {
@@ -852,21 +1249,33 @@ export function validateDependencyLicenseProof(
     return legalFiles;
 }
 
-export function readDependencyLicenseProofManifest(root: string): DependencyLicenseProofManifest {
+function readDependencyLicenseProofSourceManifest(root: string): DependencyLicenseProofSourceManifest {
     const manifestPath = resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH);
-    return readJsonFile<DependencyLicenseProofManifest>(manifestPath);
+    return readJsonFile<DependencyLicenseProofSourceManifest>(manifestPath);
 }
 
-function applyDependencyLicenseProofs(root: string, records: DependencyLicenseRecord[]): DependencyLicenseRecord[] {
-    const manifest = readDependencyLicenseProofManifest(root);
-    if (manifest.schemaVersion !== 3 || typeof manifest.packages !== 'object') {
+export function readDependencyLicenseProofManifest(root: string): DependencyLicenseProofManifest {
+    const manifest = readDependencyLicenseProofSourceManifest(root);
+    if (manifest.schemaVersion !== 4 || typeof manifest.packages !== 'object' || manifest.packages === null) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
     }
+    return {
+        schemaVersion: 4,
+        packages: manifest.packages,
+        cargoRuntimeInventory: assertCargoRuntimeInventory(manifest.cargoRuntimeInventory),
+    };
+}
+
+function applyDependencyLicenseProofs(
+    root: string,
+    records: DependencyLicenseRecord[],
+    proofs: Readonly<Record<string, DependencyLicenseProof>>
+): DependencyLicenseRecord[] {
     const used = new Set<string>();
     const unresolved: string[] = [];
     const resolved = records.map((record) => {
         const packageId = `${record.ecosystem}:${record.name}@${record.version}`;
-        const proof = manifest.packages[packageId];
+        const proof = proofs[packageId];
         if (record.legalFiles.length > 0) {
             try {
                 assertLicenseExpressionEvidence(packageId, record.license, record.legalFiles);
@@ -893,7 +1302,7 @@ function applyDependencyLicenseProofs(root: string, records: DependencyLicenseRe
                 .join('\n')
         );
     }
-    const stale = Object.keys(manifest.packages).filter((packageId) => !used.has(packageId));
+    const stale = Object.keys(proofs).filter((packageId) => !used.has(packageId));
     if (stale.length > 0) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: stale package proofs: ${stale.sort().join(', ')}`);
     }
@@ -917,16 +1326,10 @@ function mergeDependencyLicenseRecords(records: DependencyLicenseRecord[]): Depe
 }
 
 function compareRecords(left: DependencyLicenseRecord, right: DependencyLicenseRecord): number {
-    const compare = (leftValue: string, rightValue: string): number => {
-        if (leftValue === rightValue) {
-            return 0;
-        }
-        return leftValue < rightValue ? -1 : 1;
-    };
     return (
-        compare(left.ecosystem, right.ecosystem) ||
-        compare(left.name, right.name) ||
-        compare(left.version, right.version)
+        compareCodeUnits(left.ecosystem, right.ecosystem) ||
+        compareCodeUnits(left.name, right.name) ||
+        compareCodeUnits(left.version, right.version)
     );
 }
 
@@ -958,10 +1361,10 @@ export function renderDependencyLicenseReport(
     const npmCount = sorted.filter(({ ecosystem }) => ecosystem === 'npm').length;
     const cargoCount = sorted.length - npmCount;
     const graphLines = Object.entries(graphDigests)
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(([left], [right]) => compareCodeUnits(left, right))
         .map(([path, digest]) => `- ${path} sha256:${digest}`);
     const legalBlocks = [...blocks.entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(([left], [right]) => compareCodeUnits(left, right))
         .map(([digest, block]) => {
             const packages = [...block.packages]
                 .sort()
@@ -982,7 +1385,7 @@ export function renderDependencyLicenseReport(
     return [
         'Sourdaw third-party dependency licenses',
         '',
-        'Generated from pnpm-lock.yaml, server/package-lock.json, and the normal-dependency Cargo.lock graph.',
+        'Generated from pnpm-lock.yaml, server/package-lock.json, and a Cargo metadata runtime snapshot bound to Cargo.lock.',
         'Each package keeps its declared license expression and retained legal files or an explicit assembled license record.',
         `Assembled records use hash-pinned metadata from the lock-resolved install plus canonical SPDX License List ${SPDX_LICENSE_LIST_VERSION} text; they do not authenticate package-specific attribution. Only checked proof archives are byte-authenticated against package integrity.`,
         'Generation fails when configured records are missing or inconsistent.',
@@ -1020,15 +1423,30 @@ export type DependencyLicenseArtifacts = {
     serverNotices: string;
 };
 
-export function buildDependencyLicenseArtifacts(root: string): DependencyLicenseArtifacts {
-    const records = applyDependencyLicenseProofs(
+export type GeneratedDependencyLicenseArtifacts = DependencyLicenseArtifacts & {
+    proofManifest: string;
+};
+
+function resolveDependencyLicenseRecords(
+    root: string,
+    cargoRecords: DependencyLicenseRecord[],
+    proofs: Readonly<Record<string, DependencyLicenseProof>>
+): DependencyLicenseRecord[] {
+    return applyDependencyLicenseProofs(
         root,
         mergeDependencyLicenseRecords([
             ...collectNpmDependencyLicenses(root),
             ...collectNpmLockDependencyLicenses(root),
-            ...collectCargoDependencyLicenses(root),
-        ])
+            ...cargoRecords,
+        ]),
+        proofs
     );
+}
+
+function renderDependencyLicenseArtifacts(
+    root: string,
+    records: DependencyLicenseRecord[]
+): DependencyLicenseArtifacts {
     return {
         report: renderDependencyLicenseReport(records, {
             'pnpm-lock.yaml': sha256(readFileSync(resolve(root, 'pnpm-lock.yaml'))),
@@ -1036,6 +1454,103 @@ export function buildDependencyLicenseArtifacts(root: string): DependencyLicense
             'Cargo.lock': sha256(readFileSync(resolve(root, 'Cargo.lock'))),
         }),
         serverNotices: renderServerThirdPartyNotices(records),
+    };
+}
+
+function createCargoRuntimeInventory(
+    root: string,
+    metadata: CargoMetadata,
+    cargoRecords: readonly DependencyLicenseRecord[],
+    resolvedRecords: readonly DependencyLicenseRecord[],
+    proofs: Readonly<Record<string, DependencyLicenseProof>>
+): CargoRuntimeInventorySnapshot {
+    const resolvedCargoRecords = new Map(
+        resolvedRecords
+            .filter(({ ecosystem }) => ecosystem === 'cargo')
+            .map((record) => [cargoPackageId(record), record] as const)
+    );
+    const packages = [...cargoRecords].sort(compareCargoPackageIdentities).map((record) => {
+        const packageId = `cargo:${cargoPackageId(record)}`;
+        const source = record.cargoSource;
+        const resolvedRecord = resolvedCargoRecords.get(cargoPackageId(record));
+        if (source === undefined || resolvedRecord === undefined) {
+            throw new Error(`${packageId}: generated Cargo runtime inventory is incomplete`);
+        }
+        const proof = proofs[packageId];
+        return {
+            name: record.name,
+            version: record.version,
+            source,
+            license: record.license,
+            legalFiles: evidenceReferences(record.legalFiles),
+            ...(proof?.assembled === undefined
+                ? {}
+                : { metadataFiles: evidenceReferences(record.metadataFiles ?? []) }),
+            reportedLegalFiles: evidenceReferences(resolvedRecord.legalFiles),
+        };
+    });
+    return assertCargoRuntimeInventory({
+        cargoLockSha256: sha256(readFileSync(resolve(root, 'Cargo.lock'))),
+        sourceInputs: cargoSourceInputs(root, cargoWorkspaceManifestPaths(root, metadata)),
+        featureSelection: {
+            allFeatures: CARGO_RUNTIME_FEATURE_SELECTION.allFeatures,
+            noDefaultFeatures: CARGO_RUNTIME_FEATURE_SELECTION.noDefaultFeatures,
+            features: [...CARGO_RUNTIME_FEATURE_SELECTION.features],
+        },
+        packages,
+    });
+}
+
+function assertResolvedCargoEvidence(
+    inventory: CargoRuntimeInventorySnapshot,
+    records: readonly DependencyLicenseRecord[]
+): void {
+    const resolved = new Map(
+        records
+            .filter(({ ecosystem }) => ecosystem === 'cargo')
+            .map((record) => [cargoPackageId(record), evidenceReferences(record.legalFiles)] as const)
+    );
+    for (const pkg of inventory.packages) {
+        if (JSON.stringify(resolved.get(cargoPackageId(pkg))) !== JSON.stringify(pkg.reportedLegalFiles)) {
+            throw new Error(`cargo:${cargoPackageId(pkg)}: snapshot-bound legal evidence assignment drifted`);
+        }
+    }
+}
+
+export function buildDependencyLicenseArtifacts(root: string): DependencyLicenseArtifacts {
+    const manifest = readDependencyLicenseProofManifest(root);
+    const records = resolveDependencyLicenseRecords(root, collectCargoDependencyLicenses(root), manifest.packages);
+    assertResolvedCargoEvidence(manifest.cargoRuntimeInventory, records);
+    return renderDependencyLicenseArtifacts(root, records);
+}
+
+export function buildDependencyLicenseArtifactsFromInstalledMetadata(
+    root: string
+): GeneratedDependencyLicenseArtifacts {
+    const sourceManifest = readDependencyLicenseProofSourceManifest(root);
+    if (
+        ![3, 4].includes(sourceManifest.schemaVersion) ||
+        typeof sourceManifest.packages !== 'object' ||
+        sourceManifest.packages === null
+    ) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported proof manifest`);
+    }
+    const cargo = collectCargoDependencyLicensesFromInstalledMetadata(root);
+    const records = resolveDependencyLicenseRecords(root, cargo.records, sourceManifest.packages);
+    const manifest: DependencyLicenseProofManifest = {
+        schemaVersion: 4,
+        cargoRuntimeInventory: createCargoRuntimeInventory(
+            root,
+            cargo.metadata,
+            cargo.records,
+            records,
+            sourceManifest.packages
+        ),
+        packages: sourceManifest.packages,
+    };
+    return {
+        ...renderDependencyLicenseArtifacts(root, records),
+        proofManifest: `${JSON.stringify(manifest, null, 4)}\n`,
     };
 }
 

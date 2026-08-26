@@ -2042,6 +2042,31 @@ describe('release inventory', () => {
             rmSync(canonicalBase, { recursive: true, force: true });
         }
 
+        const unmergedBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-unmerged-'));
+        const unmergedRoot = join(unmergedBase, 'repository');
+        writeGrandBouleReleaseFixture(unmergedRoot);
+        try {
+            const path = GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS[0];
+            const [mode, object] = execFileSync('git', ['ls-files', '--stage', '--', path], {
+                cwd: unmergedRoot,
+                encoding: 'utf8',
+            })
+                .trim()
+                .split(/\s+/u);
+            expect(mode).toBe('120000');
+            expect(object).toHaveLength(40);
+            const indexInfo = [1, 2, 3].map((stage) => `${mode} ${object} ${stage}\t${path}`).join('\n');
+            execFileSync('git', ['update-index', '--index-info'], {
+                cwd: unmergedRoot,
+                input: `${indexInfo}\n`,
+            });
+
+            expect(() => grandBouleReleaseInventoryContract(unmergedRoot)).toThrow(
+                `Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`
+            );
+        } finally {
+            rmSync(unmergedBase, { recursive: true, force: true });
+        }
         const checkoutBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-checkout-'));
         const checkoutRoot = join(checkoutBase, 'repository');
         writeGrandBouleReleaseFixture(checkoutRoot);
@@ -2187,7 +2212,6 @@ describe('release inventory', () => {
             rmSync(root, { recursive: true, force: true });
         }
     });
-
     it('rejects every tracked Rust file without an admission basis', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-source-gap-'));
         try {

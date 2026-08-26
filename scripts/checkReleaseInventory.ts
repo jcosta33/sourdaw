@@ -611,8 +611,57 @@ type GitTreeEntry = {
     mode: string;
     object: string;
     path: string;
+    stage?: string;
 };
 
+function malformedGitRecord(command: string, entry: string): never {
+    throw new Error(`malformed ${command} record: ${JSON.stringify(entry)}`);
+}
+
+function parseGitTreeEntry(entry: string): GitTreeEntry {
+    const tab = entry.indexOf('\t');
+    if (tab <= 0 || tab === entry.length - 1) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+
+    const fields = entry.slice(0, tab).split(' ');
+    const mode = fields[0];
+    const type = fields[1];
+    const object = fields[2];
+    if (fields.length !== 3 || mode === undefined || type === undefined || object === undefined) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+    if (mode.length === 0 || type.length === 0 || object.length === 0) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+
+    return { mode, object, path: entry.slice(tab + 1) };
+}
+
+function parseGitIndexEntry(entry: string): GitTreeEntry {
+    const tab = entry.indexOf('\t');
+    if (tab <= 0 || tab === entry.length - 1) {
+        return malformedGitRecord('git ls-files --stage', entry);
+    }
+
+    const fields = entry.slice(0, tab).split(' ');
+    const mode = fields[0];
+    const object = fields[1];
+    const stage = fields[2];
+    if (
+        fields.length !== 3 ||
+        mode === undefined ||
+        object === undefined ||
+        stage === undefined ||
+        mode.length === 0 ||
+        object.length === 0 ||
+        !/^\d+$/u.test(stage)
+    ) {
+        return malformedGitRecord('git ls-files --stage', entry);
+    }
+
+    return { mode, object, path: entry.slice(tab + 1), stage };
+}
 function gitTreeEntries(root: string, path: string): GitTreeEntry[] {
     return execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', path], {
         cwd: root,
@@ -620,11 +669,7 @@ function gitTreeEntries(root: string, path: string): GitTreeEntry[] {
     })
         .split('\0')
         .filter(Boolean)
-        .map((entry) => {
-            const tab = entry.indexOf('\t');
-            const [mode, , object] = entry.slice(0, tab).split(' ');
-            return { mode, object, path: entry.slice(tab + 1) };
-        });
+        .map(parseGitTreeEntry);
 }
 
 function gitIndexEntries(root: string, path: string): GitTreeEntry[] {
@@ -634,11 +679,7 @@ function gitIndexEntries(root: string, path: string): GitTreeEntry[] {
     })
         .split('\0')
         .filter(Boolean)
-        .map((entry) => {
-            const tab = entry.indexOf('\t');
-            const [mode, object] = entry.slice(0, tab).split(' ');
-            return { mode, object, path: entry.slice(tab + 1) };
-        });
+        .map(parseGitIndexEntry);
 }
 
 function gitBlob(root: string, object: string): Buffer {
@@ -646,9 +687,16 @@ function gitBlob(root: string, object: string): Buffer {
 }
 
 function assertCanonicalGrandBouleProviderPolicySymlink(root: string, path: string): void {
-    const indexEntry = gitIndexEntries(root, path).find((entry) => entry.path === path);
-    if (indexEntry === undefined) {
+    const indexEntries = gitIndexEntries(root, path).filter((entry) => entry.path === path);
+    if (indexEntries.length === 0) {
         throw new Error(`Grand Boule provider-policy symlink is not tracked: ${path}`);
+    }
+    if (indexEntries.length !== 1) {
+        throw new Error(`Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`);
+    }
+    const indexEntry = indexEntries[0]!;
+    if (indexEntry.stage !== '0') {
+        throw new Error(`Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`);
     }
     if (indexEntry.mode !== '120000') {
         throw new Error(`Grand Boule provider-policy symlink is not tracked as a symlink: ${path}`);
