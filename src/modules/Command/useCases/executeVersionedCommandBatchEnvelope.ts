@@ -170,7 +170,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 : getProjectCommandBatchIdempotencyCheckpoint({
                       projectId: parsed.envelope.projectId,
                       idempotencyKey: parsed.envelope.idempotencyKey,
-                      contentHash: idempotencyContentHash,
+                      contentHash: batchContentHash,
                   });
             if (projectCheckpoint.status === 'unsupported-schema') {
                 const result = {
@@ -245,7 +245,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 const recoveryLeaseAcquired = await commandBatchIdempotencyPort.tryAcquireRecoveryLease({
                     projectId: parsed.envelope.projectId,
                     idempotencyKey: parsed.envelope.idempotencyKey,
-                    contentHash: idempotencyContentHash,
+                    contentHash: batchContentHash,
                 });
                 if (recoveryLeaseAcquired !== true) {
                     return {
@@ -259,7 +259,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     const recoveryCheckpoint = getProjectCommandBatchIdempotencyCheckpoint({
                         projectId: parsed.envelope.projectId,
                         idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
+                        contentHash: batchContentHash,
                     });
                     if (recoveryCheckpoint.status === 'complete') {
                         const completedReceipt = parseStoredVerifiedBatchReceipt({
@@ -359,7 +359,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         persistProjectCommandBatchIdempotencyCheckpoint({
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: idempotencyContentHash,
+                            contentHash: batchContentHash,
                             state: 'complete',
                             serializedReceipt: serializedRecoveredReceipt,
                         });
@@ -375,7 +375,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         await commandBatchIdempotencyPort.complete({
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: idempotencyContentHash,
+                            contentHash: batchContentHash,
                             serializedReceipt: serializedRecoveredReceipt,
                         });
                     } catch {
@@ -392,7 +392,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         await commandBatchIdempotencyPort.release({
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: idempotencyContentHash,
+                            contentHash: batchContentHash,
                         });
                     } catch {
                         // The recovery outcome remains authoritative; repository release is best effort.
@@ -403,7 +403,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             const prior = await commandBatchIdempotencyPort.lookup({
                 projectId: parsed.envelope.projectId,
                 idempotencyKey: parsed.envelope.idempotencyKey,
-                contentHash: idempotencyContentHash,
+                contentHash: batchContentHash,
             });
             if (prior?.status === 'complete') {
                 const receipt = parseStoredVerifiedBatchReceipt({

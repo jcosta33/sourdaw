@@ -1259,7 +1259,19 @@ describe('command batch idempotency', () => {
             serialized: batch.serialized,
         });
         const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
-        await expect(getVersionedCommandBatchCommitDisposition(projectCommitProof)).resolves.toBe('unknown');
+        projectDocument = structuredClone(projectDocument);
+        commandBatchIdempotencyStore.hydrate();
+        expect(getProjectCommandBatchIdempotencyCheckpoint(projectCommitProof)).toMatchObject({
+            status: 'pending',
+        });
+        const postReloadLookup = vi.fn(() => Promise.resolve({ status: 'missing' as const }));
+        commandBatchIdempotencyPort.setRepository({
+            lookup: postReloadLookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+        await expect(getVersionedCommandBatchCommitDisposition(projectCommitProof)).resolves.toBe('committed');
+        expect(postReloadLookup).not.toHaveBeenCalled();
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'missing' }),
             claim: () => Promise.resolve({ status: 'claimed' }),

@@ -126,6 +126,8 @@ const expectedDurableCommitProof = Object.freeze({
     contentHash: `sha256:${'a'.repeat(64)}`,
     runId: 'run:test',
     batchId: 'batch:test',
+    baseRevision: 'revision-stem-import',
+    commands: [{ commandId: 'command-stem-import', operation: 'importStemSet' }],
 }) satisfies Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
 
 const stemAction = importStemSetAction;

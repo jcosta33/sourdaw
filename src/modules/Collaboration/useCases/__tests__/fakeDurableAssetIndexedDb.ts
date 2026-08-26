@@ -536,22 +536,22 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
         overwriteAssetBlob: (hash, blob) => {
             const store = durableStore('assets');
             const record = store?.get(hash);
-            if (record) {
-                store?.set(hash, { ...record, blob });
+            if (store && record) {
+                store.set(hash, { ...record, blob });
             }
         },
         overwriteLeaseHash: (leaseId, hash) => {
             const store = durableStore('leases');
             const record = store?.get(leaseId);
-            if (record) {
-                store?.set(leaseId, { ...record, hash });
+            if (store && record) {
+                store.set(leaseId, { ...record, hash });
             }
         },
         overwriteLeaseTerminalAt: (leaseId, terminalAt) => {
             const store = durableStore('leases');
             const record = store?.get(leaseId);
-            if (record) {
-                store?.set(leaseId, { ...record, terminalAt });
+            if (store && record) {
+                store.set(leaseId, { ...record, terminalAt });
             }
         },
         omitPromotionRecoveryDisposition: (recoveryId) => {
