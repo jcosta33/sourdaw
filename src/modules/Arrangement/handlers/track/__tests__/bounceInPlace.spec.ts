@@ -31,9 +31,7 @@ describe('handleBounceInPlace', () => {
         });
 
         expect(mocks.bounceInPlace).toHaveBeenCalledWith('t1', { deferUndoEntry: expect.any(Function) });
-        // `execute` types as `void | HandlerExecutionResult` — the void arm is
-        // the no-write path, which this case exists to rule out.
-        if (result === undefined || !result.afterCommit || !result.afterAmbiguousCommit) {
+        if (!result || result.status !== 'written' || !result.afterCommit || !result.afterAmbiguousCommit) {
             throw new Error('expected the written result to carry the post-commit hooks');
         }
 
