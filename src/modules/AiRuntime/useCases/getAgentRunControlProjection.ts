@@ -39,6 +39,14 @@ type AgentRunControlProjection = {
     errors: AgentRunError[];
 };
 
+type AgentRunDecisionControlProjection = AgentRunControlProjection & {
+    decision: NonNullable<AgentRunControlProjection['decision']>;
+};
+
+function hasAgentRunDecision(projection: AgentRunControlProjection): projection is AgentRunDecisionControlProjection {
+    return projection.decision !== null;
+}
+
 const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 
 function getAgentRunControlProjection(runId: string): AgentRunControlProjection | null {
@@ -120,8 +128,13 @@ function getAgentRunControlProjections(): AgentRunControlProjection[] {
         });
 }
 
+function listAgentRunDecisionControlProjections(): AgentRunDecisionControlProjection[] {
+    return getAgentRunControlProjections().filter(hasAgentRunDecision);
+}
+
 export const agentRunControls = {
     get: getAgentRunControlProjection,
     list: getAgentRunControlProjections,
+    listDecisions: listAgentRunDecisionControlProjections,
     resumeDecision: resumeAgentRunDecision,
 } as const;
