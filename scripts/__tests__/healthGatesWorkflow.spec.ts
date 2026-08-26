@@ -33,8 +33,12 @@ const SCOPE_OUTPUT_REFERENCES = {
     e2e: '${{ steps.scope.outputs.e2e }}',
     web: '${{ steps.scope.outputs.web }}',
 };
-const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number || github.ref }}';
-const PULL_REQUEST_CONCURRENCY_CANCELLATION = "${{ github.event_name == 'pull_request' }}";
+const PULL_REQUEST_CONCURRENCY_GROUP =
+    "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
+const PULL_REQUEST_CONCURRENCY_CANCELLATION =
+    "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
+const GATE_CONDITION =
+    "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
@@ -307,7 +311,7 @@ function gateResults(
 
 function assertGateContract(candidate: UnknownRecord): string {
     const gate = jobAt(candidate, 'gate');
-    if (gate.name !== 'Gate' || gate.if !== 'always()') {
+    if (gate.name !== 'Gate' || gate.if !== GATE_CONDITION) {
         throw new Error('the Gate job must always report under its stable name');
     }
     const step = stepNamed(gate, 'Require every job to have succeeded or been skipped');
