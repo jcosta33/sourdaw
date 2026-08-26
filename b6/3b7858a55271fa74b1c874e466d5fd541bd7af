@@ -1,0 +1,41 @@
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_0202ff8054d37c::t_8e1ac3296521c5 213
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_0202ff8054d37c::t_080e0f3db7737e 90
+src/app/captureCommandBatchPreflightState.ts
+  s_0202ff8054d37c::t_5e8c03254ff628 131-139,147
+  s_0202ff8054d37c::t_4b0ea7c6e5ff97 510
+  s_0202ff8054d37c::t_55d2b6fcc03f0f 455,469-476
+src/modules/Command/useCases/commandBatchPreflightPort.ts
+  s_0202ff8054d37c::t_5a9dc76a3b898a 18-25
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_0202ff8054d37c::t_526c60ed66f319 36
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_0202ff8054d37c::t_13b5383516967f 30-34
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_0202ff8054d37c::t_01b3ec0f81b7ab 289
+  s_0202ff8054d37c::t_85c2941c1467ee 340
+  s_0202ff8054d37c::t_c601def7dced89 372-377
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  s_0202ff8054d37c::t_3945f41f8b0045 11
+  s_0202ff8054d37c::t_279707fff1494a 1-10,12-34,36-236,238-305,309-334
+  s_0202ff8054d37c::t_79d07f75c0032e 35
+  s_0202ff8054d37c::t_c58385eee2cee5 237
+  s_0202ff8054d37c::t_a0e6f506583df5 306-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b63b7858a55271fa74b1c874e466d5fd541bd7af",
+  "prompts": {},
+  "sessions": {
+    "s_0202ff8054d37c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22edd3d4-6930-4288-aacd-3eeb0b792868",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
