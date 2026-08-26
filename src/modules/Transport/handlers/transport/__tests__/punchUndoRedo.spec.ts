@@ -20,15 +20,6 @@ import { setPunchOut } from '../../../useCases/transportControls/setPunchOut';
 
 type PunchAction = Extract<AppAction, { type: 'setPunchIn' | 'setPunchOut' }>;
 
-type NotificationEvents = {
-    'ui.notify': NotifyPayload;
-    'ui.confirm': ConfirmPayload;
-    'ui.prompt': PromptPayload;
-};
-
-let notifications: NotifyPayload[] = [];
-let unsubscribeFromNotifications: () => void = () => undefined;
-
 type PunchRegion = {
     punchInBeat: number;
     punchOutBeat: number;
@@ -40,6 +31,20 @@ type PunchUndoCase = {
     before: PunchRegion;
     after: PunchRegion;
 };
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
+function expectWarningNotification(index: number, message: string): void {
+    expect(notifications).toHaveLength(index + 1);
+    expect(notifications[index]).toEqual({ message, level: 'warning' });
+}
 
 const punch_undo_cases = [
     {
@@ -85,15 +90,15 @@ function describe_punch_action(action: PunchAction) {
 describe('Transport punch action undo/redo', () => {
     beforeEach(() => {
         Container.clear();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        registerHandlerMap(getTransportHandlers());
         const notificationEventBus = createEventBus<NotificationEvents>();
         notifications = [];
         unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
             notifications.push(notification);
         });
         setNotificationEventBus(notificationEventBus);
-        configureAutomergeStoragePort(null);
-        clearHandlerRegistry();
-        registerHandlerMap(getTransportHandlers());
         clearUndoHistory();
     });
 
@@ -101,7 +106,6 @@ describe('Transport punch action undo/redo', () => {
         clearUndoHistory();
         clearHandlerRegistry();
         unsubscribeFromNotifications();
-        unsubscribeFromNotifications = () => undefined;
         Container.clear();
         configureAutomergeStoragePort(null);
     });
@@ -152,7 +156,12 @@ describe('Transport punch action undo/redo', () => {
         await executeAppAction({ type: 'setPunchIn', payload: { beat: after.punchInBeat } });
         setPunchOut(40);
 
+        const staleUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(
+            staleUndoNotification,
+            'Cannot undo "Set punch in at beat 20": project state has changed'
+        );
 
         expect(notifications).toEqual([
             { message: 'Cannot undo "Set punch in at beat 20": project state has changed', level: 'warning' },
@@ -183,7 +192,12 @@ describe('Transport punch action undo/redo', () => {
         await undo();
         setPunchIn(6);
 
+        const staleRedoNotification = notifications.length;
         await redo();
+        expectWarningNotification(
+            staleRedoNotification,
+            'Cannot redo "Set punch out at beat 2": project state has changed'
+        );
 
         expect(notifications).toEqual([
             { message: 'Cannot redo "Set punch out at beat 2": project state has changed', level: 'warning' },
@@ -307,7 +321,9 @@ describe('Transport punch action undo/redo', () => {
         await executeAppAction({ type: 'setPunchEnabled', payload: { enabled: true } });
 
         transportStore.set({ ...transportStore.value!, isPlaying: true });
+        const busyUndoNotification = notifications.length;
         await undo();
+        expectWarningNotification(busyUndoNotification, 'Cannot undo "Enable Punch In/Out": project state has changed');
         expect(notifications).toEqual([
             { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
         ]);
@@ -324,7 +340,9 @@ describe('Transport punch action undo/redo', () => {
         expect(undoStore.value?.future).toHaveLength(1);
 
         transportStore.set({ ...transportStore.value!, isRecording: true });
+        const busyRedoNotification = notifications.length;
         await redo();
+        expectWarningNotification(busyRedoNotification, 'Cannot redo "Enable Punch In/Out": project state has changed');
         expect(notifications).toEqual([
             { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
             { message: 'Cannot redo "Enable Punch In/Out": project state has changed', level: 'warning' },

@@ -459,11 +459,12 @@ export function publishLane(
     if (currentBaseSha !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
+    const laneIssue = issue ?? laneIssueNumber(lane.branch);
     // Name the resolved selection before anything mutates, so an incorrect target remains visible
     // even when a later gate refuses it.
     port.log(`publishing ${lane.path} on ${lane.branch}`);
-    if (issue !== undefined && !port.issueExists(issue)) {
-        fail(`issue #${issue} does not exist in ${REQUIRED_REPOSITORY}`);
+    if (laneIssue !== undefined && !port.issueExists(laneIssue)) {
+        fail(`issue #${laneIssue} does not exist in ${REQUIRED_REPOSITORY}`);
     }
     // Publishing never authors a commit message. The only subject this script could invent for
     // uncommitted work is some earlier commit's, which describes a different change; the operator
@@ -475,7 +476,7 @@ export function publishLane(
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
     }
-    const write = pullRequestWrite(issue, lane, baseSha, headSha, port, relationship, testInstructions, summary);
+    const write = pullRequestWrite(laneIssue, lane, baseSha, headSha, port, relationship, testInstructions, summary);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
@@ -943,14 +944,6 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
     ) {
         fail('lane:publish trusted repository binding does not match the protected primary checkout');
     }
-    spawnRun(runtime.gitPath, ['fetch', GITHUB_HTTPS_REMOTE, '+refs/heads/main:refs/remotes/origin/main'], {
-        cwd: primaryRoot,
-        env: authorizationEnv,
-    });
-    const baseSha = spawnCapture(runtime.gitPath, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
-        cwd: primaryRoot,
-        env: authorizationEnv,
-    });
     const localWorktrees = parsePublishWorktrees(
         spawnCapture(runtime.gitPath, ['worktree', 'list', '--porcelain', '-z'], {
             cwd: primaryRoot,
@@ -960,16 +953,23 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
     // Resolve the locally locked lane before mint so the token scope comes only from that lane's
     // committed diff. Legacy eligibility is re-proven through GitHub after authentication below;
     // `true` here grants no publish authority, it only lets the enclosing locked lane be inspected.
+    // An exact path may select a conforming issue lane: publishLane derives and validates its issue
+    // from the branch after the authenticated resolution is re-proven.
     const selectionPath = parsed.lanePath ?? cwd;
     const authenticationLane = resolveAuthorLane(parsed.issue, localWorktrees, selectionPath, realpathSync, () => true);
     if (parsed.lanePath !== undefined) {
         if (realpathSync(parsed.lanePath) !== realpathSync(authenticationLane.path)) {
             fail('--lane must name the exact author worktree root');
         }
-        if (laneIssueNumber(authenticationLane.branch) !== undefined) {
-            fail('issue lanes must publish by issue number, not --lane');
-        }
     }
+    spawnRun(runtime.gitPath, ['fetch', GITHUB_HTTPS_REMOTE, '+refs/heads/main:refs/remotes/origin/main'], {
+        cwd: primaryRoot,
+        env: authorizationEnv,
+    });
+    const baseSha = spawnCapture(runtime.gitPath, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
+        cwd: primaryRoot,
+        env: authorizationEnv,
+    });
     const auth = await authenticatePublishingAuthor({
         primaryRoot,
         lane: { path: authenticationLane.path, branch: authenticationLane.branch },
