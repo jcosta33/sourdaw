@@ -16,6 +16,17 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
+/// Host-supplied wake invoked whenever a plugin flags a latency change.
+///
+/// Runs on whatever thread the plugin called the host callback from, so it must
+/// not block, allocate unboundedly, or re-enter the wrapper. The host
+/// application installs it to wake its own control path; keeping it an opaque
+/// closure is what lets this crate stay free of any transport dependency.
+///
+/// Seam vocabulary rather than a CLAP one: every format has a plugin-initiated
+/// latency change, and each backend's host callbacks install one of these.
+pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
+
 /// One host-side parameter write waiting to reach a plugin.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HostParameterUpdate {
@@ -189,6 +200,18 @@ pub trait AudioPlugin: Send + Sync {
 
     /// Close the plugin's editor. A plugin with no editor has nothing to close.
     fn close_gui(&mut self) {}
+
+    /// Whether the plugin accepts note events.
+    ///
+    /// The default is `true` because that is the answer the engine's plugin slot
+    /// has always given for every plugin, and changing it here would change CLAP
+    /// routing in a patch about a different format. It is a placeholder, not a
+    /// fact: CLAP states this in `clap.note-ports`, and reading it there is
+    /// still owed. A backend that can answer truthfully overrides this — the
+    /// VST3 backend reads the plugin's own event bus declaration.
+    fn accepts_midi(&self) -> bool {
+        true
+    }
 }
 
 /// What the shared runtime owner requires of a hosted plugin backend.
