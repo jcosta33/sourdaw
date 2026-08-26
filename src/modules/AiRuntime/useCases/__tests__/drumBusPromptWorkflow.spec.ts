@@ -407,7 +407,7 @@ function getProviderContext(userMessage: string): Record<string, unknown> {
  */
 const SCOPE_TARGET_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
     setTrackOutput: ['trackId', 'outputId'],
-    addSidechainRoute: ['sourceTrackId', 'targetTrackId'],
+    addSidechainRoute: ['sourceTrackId', 'targetTrackId', 'targetDeviceId'],
     addDevice: ['trackId'],
     addSend: ['trackId', 'busId'],
     setTrackGain: ['trackId'],
@@ -1497,7 +1497,7 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('receipts a partial comparison render as committed with warning and keeps the group undoable', async () => {
+    it('receipts a partial comparison render as durably committed with a pending effect and keeps the group undoable', async () => {
         setEx11Project();
         useEx11WebLlmFixture();
         await sendChatMessage(EX11_PROMPT);
@@ -1515,8 +1515,23 @@ describe('drum bus prompt workflow', () => {
             return Promise.resolve(createTestAudioBuffer());
         });
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'executed',
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                {
+                    kind: 'external-effect',
+                    operation: 'renderProjectSections',
+                    state: 'pending',
+                    remediation: 'reconcile',
+                    reason: expect.stringContaining('comparison renderer unavailable'),
+                },
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(getAgentSectionRenderArtifacts()).toEqual([expect.objectContaining({ sectionId: 'section-verse-one' })]);
@@ -1524,9 +1539,11 @@ describe('drum bus prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
         );
-        expect(receipt?.content).toContain('The project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('The project change is durably committed:');
+        expect(receipt?.content).toContain('Outcome: committed-with-warning');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content).toContain('comparison renderer unavailable');
-        expect(receipt?.content).toContain('Do not replay the confirmed project actions');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(undoStore.value?.past).toHaveLength(9);
 
         await undo();
@@ -2659,7 +2676,7 @@ describe('drum bus prompt workflow', () => {
         }
     );
 
-    it('rejects stale EX-06 routing atomically without a receipt or runtime prefix', async () => {
+    it('rejects collaborator-staled EX-06 routing atomically without a receipt or runtime prefix', async () => {
         setMf06Project();
         const originalTracks = structuredClone(trackStore.value?.tracks);
         useMf06WebLlmFixture();
@@ -2677,18 +2694,25 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
+        settleFixtureProjectWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
         const terminalMessage = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(terminalMessage?.content).not.toContain('Outcome: committed');
+        expect(terminalMessage?.content).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
@@ -2866,7 +2890,7 @@ describe('drum bus prompt workflow', () => {
         });
     });
 
-    it('aborts the whole MF-06 batch before runtime when one device route becomes stale', async () => {
+    it('invalidates the whole MF-06 batch before runtime when a collaborator claims one device route', async () => {
         setMf06Project();
         useMf06WebLlmFixture();
         await sendChatMessage(MF06_PROMPT);
@@ -2883,13 +2907,24 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
+        settleFixtureProjectWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('reconciles a transient MF-06 runtime failure from committed durable routes', async () => {
