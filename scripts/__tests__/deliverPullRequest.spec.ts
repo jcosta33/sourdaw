@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
     deliverPullRequest as deliverPullRequestWithTracker,
+    gateRequiredCheckNames,
     parseCliArgs,
+    readGateRequiredCheckNames,
     shellPort,
     type DeliveryPort,
     type HeadCheckRun,
@@ -221,6 +223,24 @@ function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
 }
 
 /**
+ * Written out rather than read from the workflow, so a wrong derivation changes the production set
+ * alone and these expectations still say what the check names are.
+ */
+const gatingCheckNames: ReadonlySet<string> = new Set([
+    'Decide scope',
+    'Types and contracts',
+    'Lint',
+    'Module boundaries',
+    'Dependency review',
+    'Production build',
+    'Rust workspace and collaboration server',
+    'Native audio backend (macOS)',
+    'Windows device layer',
+    'CodeQL',
+    'Secret scan',
+]);
+
+/**
  * The shape an approving review leaves behind when its own run cancels the push run still in
  * flight: every cancelled name succeeded again on the same commit, beside a job the workflow
  * skipped outright and never cancelled.
@@ -288,6 +308,7 @@ type FakeInput = {
     reviewStates?: ReviewState[];
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
+    gateRequiredCheckNames?: ReadonlySet<string>;
     deletesMergedBranches?: boolean;
     failRetargetOnce?: number;
     receipts?: DeliveryReceiptComment[];
@@ -358,6 +379,10 @@ function fakePort(input: FakeInput = {}) {
                 throw new Error(`missing PR #${number} fixture`);
             }
             return current;
+        },
+        gateRequiredCheckNames: () => {
+            calls.push('gate-required-check-names');
+            return input.gateRequiredCheckNames ?? gatingCheckNames;
         },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
@@ -918,9 +943,10 @@ describe('pull-request delivery', () => {
      * The live shape of `Dependency review` on an approval run: the push run's attempt was
      * cancelled, and the review-triggered run skipped the job because it is gated on
      * `pull_request`. `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and
-     * the skips are not one either. This is why `deliver` refuses PR #2795's head today.
+     * the skips are not one either. `Gate` needs that job, so this is why `deliver` refuses PR
+     * #2795's head today.
      */
-    it('refuses an UNSTABLE head whose cancelled check only ever skipped beside that cancellation', () => {
+    it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
         const { port, calls } = fakePort({
             primary: [
                 pullRequest({
@@ -946,6 +972,67 @@ describe('pull-request delivery', () => {
             'Error: PR #42 merge state is UNSTABLE and check Dependency review was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * `Nightly failure report` is cancelled with the rest of the superseded run and never succeeds
+     * on a pull request, because it reports a failed scheduled run and nothing else. `Gate` does not
+     * need it, so its silence decides nothing — and refusing on it would refuse every delivery.
+     */
+    it('merges an UNSTABLE head whose only undecided cancellation is a check the gate does not need', () => {
+        const superseded = {
+            mergeStateStatus: 'UNSTABLE',
+            checkRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Nightly failure report', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Nightly failure report', conclusion: 'SKIPPED' }),
+            ],
+        };
+        const { port, calls } = fakePort({ primary: [pullRequest(superseded), pullRequest(superseded)] });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * A cancelled name is judged against the jobs `Gate` needs, not against the whole rollup, so a
+     * check that has left the gating set stops blocking and one that joins it starts.
+     */
+    it('refuses only the cancelled names the supplied gating set contains', () => {
+        const checkRuns = [
+            ...supersededRunCheckRuns(),
+            checkRun({ name: 'Secret scan', conclusion: 'CANCELLED' }),
+            checkRun({ name: 'Secret scan', conclusion: 'SKIPPED' }),
+        ];
+        const tolerated = fakePort({
+            primary: [
+                pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns }),
+                pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns }),
+            ],
+            gateRequiredCheckNames: new Set(['Gate', 'Lint']),
+        });
+
+        deliverPullRequest(42, tolerated.port);
+
+        expect(tolerated.calls).toContain('merge:42:head');
+
+        const refused = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns })],
+            gateRequiredCheckNames: new Set(['Gate', 'Lint', 'Secret scan']),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, refused.port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Secret scan was cancelled and never succeeded on head'
+        );
+        expect(refused.calls).not.toContain('merge:42:head');
     });
 
     /**
@@ -1058,6 +1145,160 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port)).toThrow(/body/);
         expect(calls).not.toContain('merge:42:head');
+    });
+});
+
+describe('gating check names', () => {
+    const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
+
+    function workflow(...jobs: string[]): string {
+        return ['name: Health gates', 'on:', '  pull_request:', 'jobs:', ...jobs].join('\n');
+    }
+
+    const decide = ['  decide:', '    name: Decide scope', '    runs-on: ubuntu-latest'].join('\n');
+    const boundaries = ['  boundaries:', '    needs: decide', '    runs-on: ubuntu-latest'].join('\n');
+    const dependencyReview = ['  dependency-review:', '    name: Dependency review', '    needs: decide'].join('\n');
+    const nightly = ['  nightly-report:', '    name: Nightly failure report', '    needs: [decide, boundaries]'].join(
+        '\n'
+    );
+    const gate = [
+        '  gate:',
+        '    name: Gate',
+        '    # Comment lines and block scalars must not be read as needs.',
+        '    needs:',
+        '      - decide',
+        '      - boundaries',
+        '      - dependency-review',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - name: Require every job to have succeeded or been skipped',
+        '        run: |',
+        '          set -euo pipefail',
+        '          printf ok',
+    ].join('\n');
+
+    /**
+     * The name GitHub labels a check with is the job's `name:`, and its job id only when the job
+     * declares none — which is how `boundaries` appears in the checks list.
+     */
+    it('maps every job the gate needs to the name GitHub labels its check with', () => {
+        const names = gateRequiredCheckNames(workflow(decide, boundaries, dependencyReview, nightly, gate));
+
+        expect([...names].sort()).toEqual(['Decide scope', 'Dependency review', 'boundaries']);
+    });
+
+    /**
+     * A job that reports on a schedule is not merge evidence, however loudly it is cancelled on a
+     * superseded pull-request run.
+     */
+    it('leaves a job outside the gate needs out of the gating set', () => {
+        const names = gateRequiredCheckNames(workflow(decide, boundaries, dependencyReview, nightly, gate));
+
+        expect(names.has('Nightly failure report')).toBe(false);
+    });
+
+    it('reads a gate that needs one job written inline', () => {
+        const inlineGate = ['  gate:', '    name: Gate', '    needs: dependency-review'].join('\n');
+
+        expect([...gateRequiredCheckNames(workflow(decide, dependencyReview, inlineGate))]).toEqual([
+            'Dependency review',
+        ]);
+    });
+
+    it.each([
+        {
+            label: 'a workflow declaring no jobs',
+            source: 'name: Health gates\non:\n  pull_request:\n',
+            message: `Error: cannot read the jobs in ${WORKFLOW_PATH} to determine which checks gate the merge`,
+        },
+        {
+            label: 'a jobs block that is not a mapping of job ids',
+            source: workflow('  - decide', gate),
+            message: `Error: cannot read the jobs in ${WORKFLOW_PATH} to determine which checks gate the merge`,
+        },
+        {
+            label: 'a workflow with no gate job',
+            source: workflow(decide, boundaries, dependencyReview, nightly),
+            message: `Error: ${WORKFLOW_PATH} declares no gate job, so no check can be proven to gate the merge`,
+        },
+        {
+            label: 'a gate job that needs nothing',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    runs-on: ubuntu-latest'].join('\n')),
+            message: `Error: the gate job in ${WORKFLOW_PATH} needs no job, so no check can be proven to gate the merge`,
+        },
+        {
+            label: 'a gate job whose needs list is empty',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    needs: []'].join('\n')),
+            message: `Error: the gate job in ${WORKFLOW_PATH} needs no job, so no check can be proven to gate the merge`,
+        },
+        {
+            label: 'a gate job needing a job the workflow does not define',
+            source: workflow(decide, ['  gate:', '    name: Gate', '    needs:', '      - typo'].join('\n')),
+            message: `Error: the gate job in ${WORKFLOW_PATH} needs typo, which no job in that workflow defines`,
+        },
+    ])('refuses $label', ({ source, message }) => {
+        let thrown: unknown;
+        try {
+            gateRequiredCheckNames(source);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(message);
+    });
+
+    function workflowRoot(source?: string): string {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-health-gates-'));
+        if (source !== undefined) {
+            mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+            writeFileSync(join(root, WORKFLOW_PATH), source, 'utf8');
+        }
+        return root;
+    }
+
+    it('reads the workflow from the repository it is given', () => {
+        const root = workflowRoot(workflow(decide, boundaries, dependencyReview, nightly, gate));
+        try {
+            expect([...readGateRequiredCheckNames(root)].sort()).toEqual([
+                'Decide scope',
+                'Dependency review',
+                'boundaries',
+            ]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    /**
+     * An unreadable workflow leaves this gate unable to say which checks decide the merge, and a
+     * gate that cannot work that out must refuse rather than tolerate every cancellation on the head.
+     */
+    it('refuses a repository whose health-gates workflow it cannot read', () => {
+        const root = workflowRoot();
+        let thrown: unknown;
+        try {
+            readGateRequiredCheckNames(root);
+        } catch (error) {
+            thrown = error;
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+
+        expect(String(thrown)).toContain(
+            `Error: cannot read ${WORKFLOW_PATH} to determine which checks gate the merge: `
+        );
+        expect(String(thrown)).toContain('ENOENT');
+    });
+
+    /**
+     * The rollup on PR #2795 carried exactly two names cancelled with no success beside them:
+     * `Dependency review`, which `Gate` needs, and `Nightly failure report`, which it does not.
+     */
+    it('gates on the dependency scan and not on the nightly report in this repository', () => {
+        const names = readGateRequiredCheckNames(join(import.meta.dirname, '../..'));
+
+        expect(names.has('Dependency review')).toBe(true);
+        expect(names.has('Nightly failure report')).toBe(false);
     });
 });
 

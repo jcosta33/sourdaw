@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -67,6 +69,7 @@ export type StackedPullRequest = Pick<
 export type DeliveryPort = {
     fetch: () => void;
     pullRequest: (number: number) => PullRequestSnapshot;
+    gateRequiredCheckNames: () => ReadonlySet<string>;
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
@@ -103,7 +106,7 @@ const PASSING_CONCLUSION = 'SUCCESS';
 const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
 
-function validatePullRequest(pullRequest: PullRequestSnapshot): void {
+function validatePullRequest(pullRequest: PullRequestSnapshot, gateRequiredCheckNames: RequiredCheckNames): void {
     if (pullRequest.state !== 'OPEN') {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
     }
@@ -113,7 +116,7 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    validateMergeState(pullRequest);
+    validateMergeState(pullRequest, gateRequiredCheckNames);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
@@ -128,17 +131,17 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
  * nothing is still running, the one required check succeeded, and every cancelled name also
  * succeeded. Every other status still refuses, because it reports something other than checks.
  */
-function validateMergeState(pullRequest: PullRequestSnapshot): void {
+function validateMergeState(pullRequest: PullRequestSnapshot, gateRequiredCheckNames: RequiredCheckNames): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
         return;
     }
     if (pullRequest.mergeStateStatus !== CHECKS_PENDING_MERGE_STATE) {
         fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
     }
-    validateSupersededChecks(pullRequest);
+    validateSupersededChecks(pullRequest, gateRequiredCheckNames);
 }
 
-function validateSupersededChecks(pullRequest: PullRequestSnapshot): void {
+function validateSupersededChecks(pullRequest: PullRequestSnapshot, gateRequiredCheckNames: RequiredCheckNames): void {
     const state = `PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`;
     const failed = pullRequest.checkRuns.find(isFailedCheckRun);
     if (failed !== undefined) {
@@ -151,7 +154,7 @@ function validateSupersededChecks(pullRequest: PullRequestSnapshot): void {
     if (!pullRequest.checkRuns.some(isSuccessfulRequiredCheck)) {
         fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
     }
-    const undecided = undecidedCancelledCheckName(pullRequest.checkRuns);
+    const undecided = undecidedCancelledCheckName(pullRequest.checkRuns, gateRequiredCheckNames());
     if (undecided !== undefined) {
         fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
     }
@@ -178,16 +181,177 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
  * `Dependency review` has exactly this shape on an approval run — one cancellation, skips beside
  * it, no success anywhere. This rule consequently refuses such a head rather than merging with no
  * dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
+ *
+ * Only a check whose verdict gates the merge is evidence. `Nightly failure report` is cancelled on
+ * the same superseded run and never succeeds on a pull request, but it reports a nightly schedule
+ * rather than deciding this head, so refusing on it would refuse every delivery forever. The gating
+ * set is whatever `Gate` needs, read from the workflow rather than restated here.
  */
-function undecidedCancelledCheckName(checks: HeadCheckRun[]): string | undefined {
+function undecidedCancelledCheckName(checks: HeadCheckRun[], required: ReadonlySet<string>): string | undefined {
     const passed = new Set(
         checks.filter((check) => check.conclusion === PASSING_CONCLUSION).map((check) => check.name)
     );
-    return checks.find((check) => check.conclusion === SUPERSEDED_CONCLUSION && !passed.has(check.name))?.name;
+    return checks.find(
+        (check) => check.conclusion === SUPERSEDED_CONCLUSION && required.has(check.name) && !passed.has(check.name)
+    )?.name;
 }
 
 function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
     return check.name === REQUIRED_CHECK_NAME && check.conclusion === PASSING_CONCLUSION;
+}
+
+export type RequiredCheckNames = () => ReadonlySet<string>;
+
+const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
+const GATE_JOB_ID = 'gate';
+const JOB_INDENT = 2;
+const JOB_FIELD_INDENT = 4;
+const JOB_SEQUENCE_INDENT = 6;
+const JOB_ID_PATTERN = /^([A-Za-z_][A-Za-z0-9_-]*):$/;
+const SEQUENCE_ITEM_PREFIX = '- ';
+
+type WorkflowLine = { indent: number; text: string };
+type WorkflowJobs = ReadonlyMap<string, readonly WorkflowLine[]>;
+
+function failUnreadableWorkflowJobs(): never {
+    return fail(`cannot read the jobs in ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge`);
+}
+
+/**
+ * The delivery scripts execute from a snapshot directory that holds nothing but `scripts/`, so a
+ * bare package specifier does not resolve there and the repository's YAML parser is out of reach at
+ * the exact moment this runs. What the gate needs is one list and one field per named job, so this
+ * reads that shape and nothing else — an indentation the file does not match is a shape this code
+ * cannot claim to understand, and it refuses rather than guessing at a narrower answer.
+ */
+function workflowLines(source: string): WorkflowLine[] {
+    return source
+        .split('\n')
+        .map((line) => line.replace(/\r$/, ''))
+        .map((line) => ({ indent: line.length - line.trimStart().length, text: line.trim() }))
+        .filter((line) => line.text !== '' && !line.text.startsWith('#'));
+}
+
+function jobsSection(lines: readonly WorkflowLine[]): readonly WorkflowLine[] {
+    const start = lines.findIndex((line) => line.indent === 0 && line.text === 'jobs:');
+    if (start < 0) {
+        failUnreadableWorkflowJobs();
+    }
+    const body = lines.slice(start + 1);
+    const end = body.findIndex((line) => line.indent === 0);
+    return end < 0 ? body : body.slice(0, end);
+}
+
+function parseWorkflowJobs(source: string): WorkflowJobs {
+    const jobs = new Map<string, WorkflowLine[]>();
+    let current: WorkflowLine[] | undefined;
+    for (const line of jobsSection(workflowLines(source))) {
+        if (line.indent === JOB_INDENT) {
+            const id = JOB_ID_PATTERN.exec(line.text)?.[1] ?? failUnreadableWorkflowJobs();
+            current = [];
+            jobs.set(id, current);
+            continue;
+        }
+        if (line.indent < JOB_INDENT || current === undefined) {
+            failUnreadableWorkflowJobs();
+        }
+        current.push(line);
+    }
+    return jobs;
+}
+
+function scalarValue(text: string): string {
+    const trimmed = text.trim();
+    const quote = trimmed.slice(0, 1);
+    if ((quote === "'" || quote === '"') && trimmed.length > 1 && trimmed.endsWith(quote)) {
+        return trimmed.slice(1, -1);
+    }
+    return trimmed;
+}
+
+function jobFieldValue(job: readonly WorkflowLine[], key: string): string | undefined {
+    const field = job.find((line) => line.indent === JOB_FIELD_INDENT && line.text.startsWith(`${key}:`));
+    return field === undefined ? undefined : scalarValue(field.text.slice(`${key}:`.length));
+}
+
+function flowSequenceItems(text: string): string[] {
+    return text
+        .slice(1, -1)
+        .split(',')
+        .map(scalarValue)
+        .filter((item) => item !== '');
+}
+
+function blockSequenceItems(job: readonly WorkflowLine[], declaration: WorkflowLine): string[] {
+    const items: string[] = [];
+    for (const line of job.slice(job.indexOf(declaration) + 1)) {
+        if (line.indent !== JOB_SEQUENCE_INDENT || !line.text.startsWith(SEQUENCE_ITEM_PREFIX)) {
+            break;
+        }
+        items.push(scalarValue(line.text.slice(SEQUENCE_ITEM_PREFIX.length)));
+    }
+    return items;
+}
+
+function jobNeeds(job: readonly WorkflowLine[]): string[] {
+    const declaration = job.find((line) => line.indent === JOB_FIELD_INDENT && line.text.startsWith('needs:'));
+    if (declaration === undefined) {
+        return [];
+    }
+    const inline = declaration.text.slice('needs:'.length).trim();
+    if (inline === '') {
+        return blockSequenceItems(job, declaration);
+    }
+    return inline.startsWith('[') && inline.endsWith(']') ? flowSequenceItems(inline) : [scalarValue(inline)];
+}
+
+function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
+    const job = jobs.get(jobId);
+    if (job === undefined) {
+        fail(
+            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs ${jobId}, ` +
+                `which no job in that workflow defines`
+        );
+    }
+    const name = jobFieldValue(job, 'name');
+    return name === undefined || name === '' ? jobId : name;
+}
+
+/**
+ * The names GitHub labels the checks that decide this merge with. Only `Gate` is required by the
+ * ruleset, and `Gate` passes when each job it needs succeeded or was skipped, so the jobs in that
+ * `needs` list are exactly the ones whose verdict the merge rests on. Deriving the list from the
+ * workflow keeps a job promoted into the gate from silently escaping this gate, and a job that
+ * never gated it from blocking one. A gate that cannot work out what it must check refuses.
+ */
+export function gateRequiredCheckNames(workflowSource: string): ReadonlySet<string> {
+    const jobs = parseWorkflowJobs(workflowSource);
+    const gate = jobs.get(GATE_JOB_ID);
+    if (gate === undefined) {
+        fail(
+            `${HEALTH_GATES_WORKFLOW_PATH} declares no ${GATE_JOB_ID} job, ` +
+                `so no check can be proven to gate the merge`
+        );
+    }
+    const needs = jobNeeds(gate);
+    if (needs.length === 0) {
+        fail(
+            `the ${GATE_JOB_ID} job in ${HEALTH_GATES_WORKFLOW_PATH} needs no job, ` +
+                `so no check can be proven to gate the merge`
+        );
+    }
+    return new Set(needs.map((jobId) => requiredCheckName(jobId, jobs)));
+}
+
+export function readGateRequiredCheckNames(repositoryRoot: string): ReadonlySet<string> {
+    let source: string;
+    try {
+        source = readFileSync(join(repositoryRoot, HEALTH_GATES_WORKFLOW_PATH), 'utf8');
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        fail(`cannot read ${HEALTH_GATES_WORKFLOW_PATH} to determine which checks gate the merge: ${detail}`);
+    }
+    return gateRequiredCheckNames(source);
 }
 
 function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
@@ -429,7 +593,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
         return;
     }
     const initialTrackerTarget = trackerCompletionTarget(initial);
-    validatePullRequest(initial);
+    validatePullRequest(initial, port.gateRequiredCheckNames);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -441,7 +605,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
     port.fetch();
     const current = port.pullRequest(number);
     const currentTrackerTarget = trackerCompletionTarget(current);
-    validatePullRequest(current);
+    validatePullRequest(current, port.gateRequiredCheckNames);
     validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
     validateStablePullRequest(initial, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
@@ -675,7 +839,7 @@ function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
-    options: { gitToken?: string; helperDir?: string } = {}
+    options: { gitToken?: string; helperDir?: string; repositoryRoot?: string } = {}
 ): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
@@ -743,6 +907,7 @@ export function shellPort(
                 checkRuns: readHeadCheckRuns(number, (cursor) => readRollupPage(number, snapshot.headRefOid, cursor)),
             };
         },
+        gateRequiredCheckNames: () => readGateRequiredCheckNames(options.repositoryRoot ?? process.cwd()),
         reviewState: (number, expectedHead) => {
             const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{
@@ -952,6 +1117,7 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
+                repositoryRoot: primaryRoot,
             });
         },
         trackerPort: (session) => trackerIssueShellPort(session, cwd),
