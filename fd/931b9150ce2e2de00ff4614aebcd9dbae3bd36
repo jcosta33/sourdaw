@@ -1,0 +1,24 @@
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_f71fa3e0bf7386 291-306,309,314-315
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_9eede9d0e44f6c 635-637,639-744,758-760,767,769-777,779-791,798-800,802-813,850-852,854-870,880-890
+  s_a40848e8f8cca9::t_f71fa3e0bf7386 638,745-757,761-766,768,778,792-797,801,814-849,853,871-879
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_9eede9d0e44f6c 1040-1082
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "fd931b9150ce2e2de00ff4614aebcd9dbae3bd36",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
