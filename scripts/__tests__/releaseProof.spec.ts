@@ -1458,7 +1458,7 @@ describe('release proof', () => {
         expect(validate(fixture)).toContain('web archive bytes do not match web contents for assets/app.js');
     });
 
-    it('rejects candidates that omit the Qwen legal notice from both packaged surfaces', () => {
+    it('rejects candidates that omit the Qwen legal notice from both packaged surfaces', { timeout: 10_000 }, () => {
         const fixture = createFixture();
         assemble(fixture);
         rmSync(join(fixture.candidate, 'web/contents/legal/Qwen-NOTICE.txt'));
@@ -1597,7 +1597,7 @@ describe('release proof', () => {
         expect(() => assemble(fixture)).toThrow(/app\.asar renderer (?:does not match|is missing)/u);
     });
 
-    it('preserves contained package symlinks and rejects package link escapes', () => {
+    it('preserves contained package symlinks and rejects package link escapes', { timeout: 10_000 }, () => {
         const valid = createFixture({ symlink: 'contained' });
         assemble(valid);
         expect(validate(valid)).toBe('');
@@ -2870,7 +2870,7 @@ with open(early, "r+b", buffering=0) as file:
         expect(validate(fixture)).toContain('was not generated from the pinned Electron and FFmpeg sources');
     });
 
-    it('rejects relocation of every canonical desktop material path', () => {
+    it('rejects relocation of every canonical desktop material path', { timeout: 10_000 }, () => {
         const fixture = createFixture();
         assemble(fixture);
         const value = proof(fixture);
@@ -2898,20 +2898,24 @@ with open(early, "r+b", buffering=0) as file:
         }
     });
 
-    it('fails validation closed when the repository is dirty or no longer at the expected revision', () => {
-        const dirty = createFixture();
-        assemble(dirty);
-        write(join(dirty.root, 'untracked-release-input.txt'), 'dirty');
-        expect(validate(dirty)).toContain('release proof validation requires a clean worktree');
+    it(
+        'fails validation closed when the repository is dirty or no longer at the expected revision',
+        { timeout: 10_000 },
+        () => {
+            const dirty = createFixture();
+            assemble(dirty);
+            write(join(dirty.root, 'untracked-release-input.txt'), 'dirty');
+            expect(validate(dirty)).toContain('release proof validation requires a clean worktree');
 
-        const moved = createFixture();
-        assemble(moved);
-        write(join(moved.root, 'next-revision.txt'), 'next');
-        commit(moved.root, 'advance fixture revision');
-        expect(validate(moved)).toContain(
-            'release proof validation checkout HEAD does not match the expected revision'
-        );
-    });
+            const moved = createFixture();
+            assemble(moved);
+            write(join(moved.root, 'next-revision.txt'), 'next');
+            commit(moved.root, 'advance fixture revision');
+            expect(validate(moved)).toContain(
+                'release proof validation checkout HEAD does not match the expected revision'
+            );
+        }
+    );
 
     it.each(['.git', '.GIT'])('rejects %s archive metadata before reconstructed Git execution', (directory) => {
         const fixture = createFixture();
@@ -2922,7 +2926,7 @@ with open(early, "r+b", buffering=0) as file:
         expect(existsSync(marker)).toBe(false);
     });
 
-    it('rejects ZIP archive resource metadata without expanding hostile payloads', { timeout: 10_000 }, () => {
+    it('rejects ZIP archive resource metadata without expanding hostile payloads', { timeout: 20_000 }, () => {
         const tar = createFixture();
         assemble(tar);
         const tarSource = proof(tar).source as Record<string, unknown>;

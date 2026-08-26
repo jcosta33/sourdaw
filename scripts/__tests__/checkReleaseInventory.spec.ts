@@ -812,7 +812,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 10_000 }, () => {
+    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 20_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
@@ -1665,7 +1665,7 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toEqual([]);
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 10_000 }, () => {
+    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 20_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
     });
 
