@@ -43,6 +43,9 @@ printf '%s\n' \
     '#!/bin/sh' \
     'set -eu' \
     'printf "pnpm %s\n" "$*" >> "$COMMAND_LOG"' \
+    'if [ "${1:-}" = "install" ]; then' \
+    '    exit "${FAKE_INSTALL_STATUS:-0}"' \
+    'fi' \
     'if [ "${1:-}" = "lint:full" ]; then' \
     '    exit "${FAKE_LINT_STATUS:-0}"' \
     'fi' \
@@ -54,6 +57,9 @@ printf '%s\n' \
     'fi' \
     'if [ "${1:-}" = "test:release-inventory" ]; then' \
     '    exit "${FAKE_RELEASE_INVENTORY_STATUS:-0}"' \
+    'fi' \
+    'if [ "${1:-}" = "test:run" ] && [ "${2:-}" = "scripts/__tests__/fileTrackerIssue.spec.ts" ]; then' \
+    '    exit "${FAKE_FILE_TRACKER_ISSUE_STATUS:-0}"' \
     'fi' \
     'if [ "${1:-}" = "test:barrel-mocks" ]; then' \
     '    exit "${FAKE_BARREL_MOCKS_STATUS:-0}"' \
@@ -124,10 +130,16 @@ while [ "$#" -gt 0 ]; do
 done
 test -n "$extract_dir"
 mkdir -p "$extract_dir"
-cat > "$extract_dir/gitleaks" <<'GITLEAKS'
+  cat > "$extract_dir/gitleaks" <<'GITLEAKS'
 #!/bin/sh
 set -eu
 printf 'gitleaks %s\n' "$*" >> "$COMMAND_LOG"
+if [ "${FAKE_GITLEAKS_REQUIRE_MERGE_DIFF:-false}" = true ]; then
+    case " $* " in
+        *' --log-opts='*' -m '*) ;;
+        *) exit 0 ;;
+    esac
+fi
 exit "${FAKE_GITLEAKS_STATUS:-0}"
 GITLEAKS
 chmod +x "$extract_dir/gitleaks"
@@ -197,6 +209,7 @@ function runResolveScope(event, filters) {
             SERVER: filters.server,
             E2E: filters.e2e,
             WEB: filters.web,
+            METADATA: filters.metadata,
             UNCLASSIFIED: filters.unclassified ?? 'false',
             GITHUB_OUTPUT: outputPath,
         },
@@ -224,6 +237,9 @@ function matchesPathPattern(path, pattern) {
 }
 
 function matchesFilter(path, patterns) {
+    if (!Array.isArray(patterns)) {
+        return false;
+    }
     const positivePatterns = patterns.filter((pattern) => !pattern.startsWith('!'));
     const excludedPatterns = patterns.filter((pattern) => pattern.startsWith('!')).map((pattern) => pattern.slice(1));
     return (
@@ -264,12 +280,17 @@ function terminalGateResults(defaultResult) {
 }
 
 function runWorkflowShell(label, body, env) {
+    const result = runWorkflowShellResult(body, env);
+    expect(result.status === 0, `${label} must execute outside the scan target: ${result.stderr.trim()}`);
+    return result;
+}
+
+function runWorkflowShellResult(body, env) {
     const result = spawnSync('bash', ['-c', body], {
         cwd: process.env.TEST_TEMP_ROOT,
         encoding: 'utf8',
         env: { ...process.env, ...env },
     });
-    expect(result.status === 0, `${label} must execute outside the scan target: ${result.stderr.trim()}`);
     return result;
 }
 
@@ -319,6 +340,8 @@ const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const prTrustedCheckout = stepNamed(prSecrets, 'Checkout trusted scanner');
 const prTargetCheckout = stepNamed(prSecrets, 'Checkout scan target');
 const prTargetBaseFetch = stepNamed(prSecrets, 'Fetch immutable base SHA');
+const prGitleaksInstall = stepNamed(prSecrets, 'Install trusted Gitleaks');
+const prMergePositiveControl = stepNamed(prSecrets, 'Validate PR merge diff secret scanner');
 const prSecretScan = stepNamed(prSecrets, 'Scan pull request diff for secrets');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
 const positiveControlRun = positiveControl?.run ?? '';
@@ -366,18 +389,19 @@ expect(events?.pull_request !== undefined, 'pull_request trigger must remain pre
 expect(events?.pull_request_review === undefined, 'pull_request_review must not start a duplicate Gate');
 expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
+expect(decide?.outputs?.metadata === '${{ steps.scope.outputs.metadata }}', 'decide must publish the dedicated metadata scope');
 expect(
     pathFilters?.with?.['predicate-quantifier'] === 'some-with-excludes',
     'path classification must use the pinned action documented some-with-excludes predicate'
 );
 const configuredPathFilters = parse(pathFilters?.with?.filters ?? '');
 expect(
-    configuredPathFilters.web?.includes('.github/ISSUE_TEMPLATE/**'),
-    'issue templates must be web-owned so fileTrackerIssue contracts run'
+    configuredPathFilters.metadata?.includes('.github/ISSUE_TEMPLATE/**'),
+    'issue templates must have a dedicated metadata scope'
 );
 expect(
-    configuredPathFilters.unclassified?.includes('!.github/ISSUE_TEMPLATE/**'),
-    'issue templates must be excluded from unclassified after becoming web-owned'
+    !configuredPathFilters.web?.includes('.github/ISSUE_TEMPLATE/**'),
+    'issue templates must not trigger web compilation work'
 );
 expect(configuredPathFilters.documentation === undefined, 'path classification must not retain a redundant documentation filter');
 expect(configuredPathFilters.non_document === undefined, 'path classification must not retain a redundant non-document filter');
@@ -387,6 +411,12 @@ for (const scope of ['rust', 'server', 'e2e', 'web']) {
 }
 expect(resolveScope?.env?.NON_DOCUMENT === undefined, 'scope resolution must not retain a redundant non-document output');
 expect(!resolveScopeRun.includes('NON_DOCUMENT'), 'scope resolution must let unclassified alone force every fast scope');
+for (const scope of ['RUST', 'SERVER', 'E2E', 'WEB', 'METADATA', 'UNCLASSIFIED']) {
+    expect(
+        resolveScope?.env?.[scope] === `\${{ steps.filter.outputs.${scope.toLowerCase()} }}`,
+        `Resolve scope ${scope} binding must map to its matching dorny output`
+    );
+}
 expect(smokeSpec.includes("test.use({ serviceWorkers: 'block' });"), 'offline smoke must block service workers before routing requests');
 expect(smokeSpec.includes("await page.routeWebSocket('**/*'"), 'offline smoke must route WebSockets before navigation');
 expect(smokeSpec.includes("await webSocket.close({ code: 1008, reason: 'External network blocked' });"), 'offline smoke must close every external WebSocket');
@@ -401,9 +431,18 @@ expect(
     smokeSpec.includes("expect.poll(audioContextResumeState).toBe('running')"),
     'playback smoke must poll the test-only dataset signal after the play gesture'
 );
+expect(smokeSpec.includes('const nativeStart = OscillatorNode.prototype.start;'), 'playback smoke must observe the production oscillator scheduling boundary');
+expect(smokeSpec.includes('document.documentElement.dataset.scheduledOscillatorCount'), 'playback smoke must expose scheduled oscillator count through a test-only dataset signal');
+expect(smokeSpec.includes('await createPlayableMidiClip(page);'), 'playback smoke must create deterministic playable MIDI material before transport starts');
+expect(smokeSpec.includes("toHaveText('1 note')"), 'playback smoke must assert that the playable clip contains one MIDI note');
+expect(
+    smokeSpec.indexOf('expect.poll(scheduledOscillatorCount).toBeGreaterThan(0)') > smokeSpec.indexOf('await play.click();'),
+    'playback smoke must observe oscillator scheduling after the play gesture'
+);
 expect(
     smokeSpec.includes(
         'const audioContextResumeState = await observeAudioContextResumeState(page);\n' +
+            '        const scheduledOscillatorCount = await observeScheduledOscillatorCount(page);\n' +
             '        const assertOffline = await openNewProject(page);'
     ),
     'playback smoke must install AudioContext instrumentation before project navigation'
@@ -428,13 +467,13 @@ expect(
     'concurrency cancellation must apply only to pull_request runs'
 );
 expect(decide?.if === undefined, 'decide must not retain a dead review predicate');
-const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
+const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' };
 expect(
-    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\nmetadata=true\n',
     'schedule must enable the heavy path and every scope'
 );
 expect(
-    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
+    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\nmetadata=true\n',
     'workflow_dispatch must enable the heavy path and every scope'
 );
 const codeBearingIf =
@@ -443,7 +482,7 @@ expect(staticChecks?.if === codeBearingIf, 'types and contracts must skip docume
 expect(lint?.if === codeBearingIf, 'lint must skip documentation-only pull requests');
 expect(boundaries?.if === codeBearingIf, 'module boundaries must skip documentation-only pull requests');
 expect(unit?.if === "needs.decide.outputs.web == 'true'", 'unit suite must remain scoped to web-related changes');
-expect(smoke?.if === "needs.decide.outputs.e2e == 'true'", 'offline smoke must remain scoped to user-runtime changes');
+expect(smoke?.if === "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'", 'offline smoke must run only on applicable fast pull-request heads');
 expect(build?.if === "needs.decide.outputs.web == 'true'", 'production build must remain scoped to web-related changes');
 expect(
     rust?.if === "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
@@ -456,22 +495,50 @@ expect(prSecrets?.if === "github.event_name == 'pull_request'", 'PR diff secret 
 expect(
     releaseInventory?.if ===
         "github.event_name == 'pull_request' && needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'",
-    'release inventory must run only for documentation-only pull requests'
+    'release inventory must run only for documentation or metadata pull requests'
 );
 expect(releaseInventory?.name === 'Release inventory', 'documentation-only release inventory job must remain present');
 expect(releaseInventory?.['runs-on'] === 'ubuntu-latest', 'documentation-only release inventory must run on a hosted Linux runner');
 const releaseInventoryNode = stepNamed(releaseInventory, 'Set up Node');
 expect(releaseInventoryNode?.with?.['node-version'] === 22, 'documentation-only release inventory must use Node 22');
+expect(stepNamed(releaseInventory, 'Enable Corepack')?.run === 'corepack enable', 'non-code release inventory must enable Corepack');
+expect(stepNamed(releaseInventory, 'Install dependencies')?.run === 'pnpm install --frozen-lockfile', 'non-code release inventory must install the frozen dependency graph');
 expect(
-    (releaseInventory?.steps ?? []).every((step) => step.name !== 'Install dependencies'),
-    'documentation-only release inventory must not install project dependencies'
+    stepNamed(releaseInventory, 'Validate release inventory')?.run === 'pnpm test:release-inventory',
+    'non-code release inventory must invoke the project-native script'
 );
 expect(
-    stepNamed(releaseInventory, 'Validate release inventory')?.run === 'node scripts/checkReleaseInventory.ts',
-    'documentation-only release inventory must invoke its built-in-only script directly'
+    stepNamed(releaseInventory, 'Validate issue-template contract')?.run === 'pnpm test:run scripts/__tests__/fileTrackerIssue.spec.ts',
+    'metadata changes must execute the focused fileTrackerIssue contract'
+);
+const nonCodeCommandLog = `${process.env.TEST_TEMP_ROOT}/non-code-release-inventory.log`;
+const releaseInstallRun = stepNamed(releaseInventory, 'Install dependencies')?.run ?? '';
+const releaseInventoryRun = stepNamed(releaseInventory, 'Validate release inventory')?.run ?? '';
+const metadataContractRun = stepNamed(releaseInventory, 'Validate issue-template contract')?.run ?? '';
+writeFileSync(nonCodeCommandLog, '');
+const missingNonCodeDependencies = runWorkflowShellResult(`set -e\n${releaseInstallRun}\n${releaseInventoryRun}`, {
+    COMMAND_LOG: nonCodeCommandLog,
+    FAKE_INSTALL_STATUS: '53',
+    PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
+});
+expect(missingNonCodeDependencies.status === 53, 'missing non-code dependencies must stop release inventory before it runs');
+expect(readFileSync(nonCodeCommandLog, 'utf8') === 'pnpm install --frozen-lockfile\n', 'non-code dependency failure must run only the frozen install command');
+writeFileSync(nonCodeCommandLog, '');
+const brokenMetadataContract = runWorkflowShellResult(`set -e\n${releaseInventoryRun}\n${metadataContractRun}`, {
+    COMMAND_LOG: nonCodeCommandLog,
+    FAKE_FILE_TRACKER_ISSUE_STATUS: '61',
+    PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
+});
+expect(brokenMetadataContract.status === 61, 'broken focused metadata contract must fail the non-code job');
+expect(
+    readFileSync(nonCodeCommandLog, 'utf8') ===
+        'pnpm test:release-inventory\npnpm test:run scripts/__tests__/fileTrackerIssue.spec.ts\n',
+    'metadata-only execution must run release inventory and only the focused fileTrackerIssue spec'
 );
 expect(e2e?.if === "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'", 'full E2E must require the scheduled or dispatched heavy path');
 expect(e2e?.strategy?.matrix?.shard?.length === 12, 'full E2E must retain all twelve shards');
+expect(smokeRun === 'pnpm test:e2e tests/e2e/smoke.spec.ts', 'fast PR smoke must run only the deterministic smoke spec');
+expect(e2eRunStep?.run === 'pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob', 'scheduled/manual E2E must run the full twelve-shard suite rather than a duplicate smoke job');
 
 function startedPullRequestJobs(scopes) {
     const jobs = ['decide', 'dependency-review', 'pr-secrets'];
@@ -481,7 +548,9 @@ function startedPullRequestJobs(scopes) {
     if (scopes.e2e === 'true') jobs.push('smoke');
     if (scopes.rust === 'true' || scopes.server === 'true') jobs.push('rust');
     if (scopes.rust === 'true') jobs.push('native-macos', 'native-windows');
-    if (!codeBearing) jobs.push('release-inventory');
+    if (!codeBearing) {
+        jobs.push('release-inventory');
+    }
     jobs.push('gate');
     return jobs;
 }
@@ -489,65 +558,65 @@ function startedPullRequestJobs(scopes) {
 for (const fixture of [
     {
         name: 'TypeScript-only',
-        paths: ['src/modules/Project/useCases/smokeFixture.ts'],
+        paths: ['src/modules/Project/useCases/createFreshProjectMetadata.ts'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'true' },
+        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'gate'],
     },
     {
         name: 'test-only',
         paths: ['tests/e2e/smoke.spec.ts'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false' },
+        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
     },
     {
         name: 'Rust-only',
-        paths: ['crates/daw-core/src/smoke_fixture.rs'],
+        paths: ['crates/daw-core/src/lib.rs'],
         unclassified: 'false',
-        scopes: { rust: 'true', server: 'false', e2e: 'false', web: 'false' },
+        scopes: { rust: 'true', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'rust', 'native-macos', 'native-windows', 'gate'],
     },
     {
         name: 'Electron-only',
-        paths: ['electron/main/smokeFixture.ts'],
+        paths: ['electron/appIpc.ts'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'true' },
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'true', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
     },
     {
         name: 'server-only',
-        paths: ['server/src/smokeFixture.ts'],
+        paths: ['server/collab-server.ts'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'false' },
+        scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'rust', 'gate'],
     },
     {
         name: 'Vite config',
         paths: ['vite.config.ts'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true' },
+        scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
     },
     {
         name: 'Playwright config',
         paths: ['playwright.config.ts'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false' },
+        scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
     },
     {
         name: 'Vitest collection scope script',
         paths: ['scripts/checkVitestCollectionScope.ts'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'true' },
+        scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'true', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'rust', 'gate'],
     },
     {
         name: 'server health-gate script',
         paths: ['scripts/health-gates-server.sh'],
         unclassified: 'false',
-        scopes: { rust: 'true', server: 'true', e2e: 'false', web: 'true' },
+        scopes: { rust: 'true', server: 'true', e2e: 'false', web: 'true', metadata: 'false' },
         jobs: [
             'decide',
             'dependency-review',
@@ -567,14 +636,14 @@ for (const fixture of [
         name: 'shared package manifest',
         paths: ['package.json'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true' },
+        scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
     },
     {
         name: 'workflow-only',
-        paths: ['.github/workflows/daily-train.yml'],
+        paths: ['.github/workflows/health-gates.yml'],
         unclassified: 'false',
-        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
+        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: [
             'decide',
             'dependency-review',
@@ -593,65 +662,51 @@ for (const fixture of [
     },
     {
         name: 'documentation-only',
-        paths: ['docs/architecture/fast-gate.md'],
+        paths: ['docs/06-testing.md'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under Rust code',
-        paths: ['crates/daw-core/README.md'],
+        paths: ['crates/daw-core/AGENTS.md'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under server code',
-        paths: ['server/README.md'],
+        paths: ['server/AGENTS.md'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under shared runtime code',
-        paths: ['src/README.md'],
+        paths: ['src/app/AGENTS.md'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
-    },
-    {
-        name: 'nested Markdown under end-to-end tests',
-        paths: ['tests/e2e/README.md'],
-        unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'nested Markdown under desktop code',
-        paths: ['electron/README.md'],
+        paths: ['electron/AGENTS.md'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
-        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
-    },
-    {
-        name: 'nested Markdown under scripts',
-        paths: ['scripts/README.md'],
-        unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'issue-template-only',
         paths: ['.github/ISSUE_TEMPLATE/bug_report.yml'],
         unclassified: 'false',
-        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'true' },
-        jobs: ['decide', 'dependency-review', 'pr-secrets', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
+        scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'true' },
+        jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
     },
     {
         name: 'unclassified root code',
         paths: ['.dependency-cruiser.shared.cjs'],
         unclassified: 'true',
-        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
+        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: [
             'decide',
             'dependency-review',
@@ -670,9 +725,9 @@ for (const fixture of [
     },
     {
         name: 'mixed documentation and unclassified code',
-        paths: ['docs/architecture/fast-gate.md', '.dependency-cruiser.shared.cjs'],
+        paths: ['docs/06-testing.md', '.dependency-cruiser.shared.cjs'],
         unclassified: 'true',
-        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
+        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: [
             'decide',
             'dependency-review',
@@ -691,9 +746,9 @@ for (const fixture of [
     },
     {
         name: 'mixed known and unclassified code',
-        paths: ['src/modules/Project/useCases/smokeFixture.ts', '.dependency-cruiser.shared.cjs'],
+        paths: ['src/modules/Project/useCases/createFreshProjectMetadata.ts', '.dependency-cruiser.shared.cjs'],
         unclassified: 'true',
-        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
+        scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true', metadata: 'false' },
         jobs: [
             'decide',
             'dependency-review',
@@ -757,9 +812,16 @@ expect(prSecretScan?.['working-directory'] === '${{ github.workspace }}', 'PR di
 expect(prSecretScanRun.includes("--config \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml\""), 'PR diff secret scan must use the trusted Gitleaks configuration');
 expect(prSecretScanRun.includes("--gitleaks-ignore-path \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore\""), 'PR diff secret scan must use the trusted Gitleaks ignore file');
 expect(prSecretScanRun.includes('--ignore-gitleaks-allow'), 'PR diff secret scan must reject PR-authored gitleaks:allow annotations');
-expect(prSecretScanRun.includes('--log-opts="$BASE_SHA..$HEAD_SHA"'), 'PR diff secret scan must scan only the base-to-head commit range');
+expect(prSecretScanRun.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"'), 'PR diff secret scan must scan merge diffs only within the immutable base-to-head range');
 expect(!prSecretScanRun.includes('--log-opts=--all'), 'PR diff secret scan must not duplicate the full-history scan');
-expect(prSecretScanRun.includes('sha256sum --check --status'), 'PR diff secret scan must verify its downloaded binary digest');
+expect(prGitleaksInstall?.run?.includes('sha256sum --check --status'), 'PR diff secret scan must verify its downloaded binary digest before scanning');
+expect(prGitleaksInstall?.run?.includes('>> "$GITHUB_PATH"'), 'PR diff secret scanner must make only the verified binary available to later steps');
+const prMergePositiveControlRun = prMergePositiveControl?.run ?? '';
+expect(prMergePositiveControl?.env?.GITLEAKS_EXPECTED_LEAK_EXIT_CODE === 79, 'PR merge-diff positive control must require a distinct leak exit code');
+expect(prMergePositiveControlRun.includes('merge --no-ff fixture-branch'), 'PR merge-diff positive control must create a real merge commit');
+expect(prMergePositiveControlRun.includes('--log-opts="$base_sha..$head_sha -m"'), 'PR merge-diff positive control must include merge diffs');
+expect(prMergePositiveControlRun.includes('positive_control_status'), 'PR merge-diff positive control must fail closed when no secret is found');
+expect(!prSecretScanRun.includes('|| true'), 'PR diff scanner must not suppress a nonzero scanner result');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(targetCheckout?.uses ?? ''), 'scan target checkout action must be pinned to a full commit SHA');
 expect(
@@ -880,7 +942,7 @@ expect(
     'end-to-end Run shard must fail its job on every event so Gate observes a failed end-to-end dependency'
 );
 expect(smoke?.name === 'Offline browser smoke', 'offline smoke job must remain present');
-expect(smoke?.if === "needs.decide.outputs.e2e == 'true'", 'offline smoke must run for every applicable user-runtime head');
+expect(smoke?.if === "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'", 'offline smoke must run only for applicable fast pull-request heads');
 expect(smokeRun === 'pnpm test:e2e tests/e2e/smoke.spec.ts', 'offline smoke must run only the deterministic smoke spec');
 expect(
     unitFailureWarning?.if === shardFailureCondition,
@@ -1018,8 +1080,26 @@ expect(
     'actual scan must use trusted config and exclude target-controlled config files from the scanner source path'
 );
 writeFileSync(workflowCommandLog, '');
-runWorkflowShell('PR diff secret scan', prSecretScanRun, {
+const gitleaksPath = `${process.env.TEST_TEMP_ROOT}/github-path`;
+writeFileSync(gitleaksPath, '');
+runWorkflowShell('PR trusted Gitleaks install', prGitleaksInstall?.run ?? '', {
     ...workflowShellEnv,
+    GITHUB_PATH: gitleaksPath,
+});
+const installedGitleaksDir = readFileSync(gitleaksPath, 'utf8').trim();
+const prWorkflowEnv = {
+    ...workflowShellEnv,
+    PATH: `${installedGitleaksDir}:${process.env.FAKE_BIN}:${process.env.PATH}`,
+};
+runWorkflowShell('PR merge-diff secret positive control', prMergePositiveControlRun, {
+    ...prWorkflowEnv,
+    GITLEAKS_EXPECTED_LEAK_EXIT_CODE: '79',
+    FAKE_GITLEAKS_REQUIRE_MERGE_DIFF: 'true',
+    FAKE_GITLEAKS_STATUS: '79',
+});
+writeFileSync(workflowCommandLog, '');
+runWorkflowShell('PR diff secret scan', prSecretScanRun, {
+    ...prWorkflowEnv,
     BASE_SHA: 'base-sha',
     HEAD_SHA: 'head-sha',
     FAKE_GITLEAKS_STATUS: '0',
@@ -1029,10 +1109,25 @@ const prDiffGitleaksCommands = readFileSync(workflowCommandLog, 'utf8')
     .filter((line) => line.startsWith('gitleaks git '));
 expect(
     prDiffGitleaksCommands.includes(
-        `${trustedGitleaksPrefix} --exit-code=1 --log-opts=base-sha..head-sha ${process.env.TEST_TEMP_ROOT}/scan-target/.git`
+        `${trustedGitleaksPrefix} --exit-code=1 --log-opts=base-sha..head-sha -m ${process.env.TEST_TEMP_ROOT}/scan-target/.git`
     ),
-    'PR diff secret scan must execute the trusted scanner only over the immutable base-to-head range'
+    'PR diff secret scan must execute the trusted scanner only over immutable merge diffs in the base-to-head range'
 );
+const prScannerFailure = runWorkflowShellResult(prSecretScanRun, {
+    ...prWorkflowEnv,
+    BASE_SHA: 'base-sha',
+    HEAD_SHA: 'head-sha',
+    FAKE_GITLEAKS_STATUS: '71',
+});
+expect(prScannerFailure.status === 71, 'PR diff scanner nonzero status must propagate through the job step');
+writeFileSync(workflowCommandLog, '');
+const prChecksumFailure = runWorkflowShellResult(prGitleaksInstall?.run ?? '', {
+    ...workflowShellEnv,
+    GITHUB_PATH: gitleaksPath,
+    FAKE_SHA256SUM_STATUS: '44',
+});
+expect(prChecksumFailure.status === 44, 'PR Gitleaks checksum failure must stop before scanning');
+expect(!readFileSync(workflowCommandLog, 'utf8').includes('tar '), 'PR Gitleaks checksum failure must prevent binary extraction and scanning');
 expect(!existsSync(maliciousHelperMarker), 'PR-owned target helper must not influence the PR diff secret scan');
 
 if (failures.length > 0) {

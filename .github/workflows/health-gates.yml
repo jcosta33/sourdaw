@@ -58,6 +58,7 @@ jobs:
       server: ${{ steps.scope.outputs.server }}
       e2e: ${{ steps.scope.outputs.e2e }}
       web: ${{ steps.scope.outputs.web }}
+      metadata: ${{ steps.scope.outputs.metadata }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -109,9 +110,10 @@ jobs:
               - 'vite.config.ts'
               - 'tsconfig*.json'
               - '.github/workflows/**'
-              - '.github/ISSUE_TEMPLATE/**'
               - '!*.md'
               - '!**/*.md'
+            metadata:
+              - '.github/ISSUE_TEMPLATE/**'
             unclassified:
               - '**'
               - '!crates/**'
@@ -143,13 +145,14 @@ jobs:
           SERVER: ${{ steps.filter.outputs.server }}
           E2E: ${{ steps.filter.outputs.e2e }}
           WEB: ${{ steps.filter.outputs.web }}
+          METADATA: ${{ steps.filter.outputs.metadata }}
           UNCLASSIFIED: ${{ steps.filter.outputs.unclassified }}
         run: |
           set -euo pipefail
           # A scheduled or dispatched run answers "is main healthy", which no
           # pull request's changed paths can narrow — every leg runs.
           if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then
-            printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n' >> "$GITHUB_OUTPUT"
+            printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\nmetadata=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Pull-request heads get only deterministic fast evidence. The full
@@ -159,6 +162,7 @@ jobs:
           server=$SERVER
           e2e=$E2E
           web=$WEB
+          metadata=$METADATA
           # Any unclassified file is code-bearing by default. Fail closed by
           # running every fast scope until that path is classified.
           if [ "$UNCLASSIFIED" = "true" ]; then
@@ -173,6 +177,7 @@ jobs:
             printf 'server=%s\n' "$server"
             printf 'e2e=%s\n' "$e2e"
             printf 'web=%s\n' "$web"
+            printf 'metadata=%s\n' "$metadata"
           } >> "$GITHUB_OUTPUT"
 
   # The fast lane is three concurrent jobs rather than one serial one. Measured
@@ -253,9 +258,9 @@ jobs:
   release-inventory:
     name: Release inventory
     needs: decide
-    # Documentation-only PRs still change release obligations. The inventory
-    # script uses only Node built-ins and repository files, so it needs neither
-    # a package install nor any application compilation.
+    # Documentation and repository metadata can change release obligations.
+    # This job installs the frozen dependency graph needed by the project-native
+    # inventory script, but deliberately does not compile application code.
     if: github.event_name == 'pull_request' && needs.decide.outputs.web != 'true' && needs.decide.outputs.rust != 'true' && needs.decide.outputs.server != 'true' && needs.decide.outputs.e2e != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -267,13 +272,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Validate release inventory
-        run: node scripts/checkReleaseInventory.ts
+        run: pnpm test:release-inventory
+
+      - name: Validate issue-template contract
+        if: needs.decide.outputs.metadata == 'true'
+        run: pnpm test:run scripts/__tests__/fileTrackerIssue.spec.ts
 
   lint:
     name: Lint
@@ -383,7 +399,7 @@ jobs:
   smoke:
     name: Offline browser smoke
     needs: decide
-    if: needs.decide.outputs.e2e == 'true'
+    if: github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -685,7 +701,7 @@ jobs:
         working-directory: scan-target
         run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
 
-      - name: Scan pull request diff for secrets
+      - name: Install trusted Gitleaks
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
@@ -700,8 +716,74 @@ jobs:
           printf '%s  %s\n' "$GITLEAKS_SHA256" "$gitleaks_archive" | sha256sum --check --status
           mkdir -p "$gitleaks_dir"
           tar -xzf "$gitleaks_archive" -C "$gitleaks_dir" gitleaks
+          printf '%s\n' "$gitleaks_dir" >> "$GITHUB_PATH"
 
-          "$gitleaks_dir/gitleaks" git \
+      - name: Validate PR merge diff secret scanner
+        working-directory: ${{ github.workspace }}
+        env:
+          GITLEAKS_EXPECTED_LEAK_EXIT_CODE: 79
+        run: |
+          set -euo pipefail
+          umask 077
+          positive_control_repo=$(mktemp -d "$RUNNER_TEMP/gitleaks-pr-merge-control.XXXXXX")
+          trap 'rm -rf "$positive_control_repo"' EXIT
+
+          git -C "$positive_control_repo" init --initial-branch=main
+          git -C "$positive_control_repo" config user.email sourdaw-ci@example.invalid
+          git -C "$positive_control_repo" config user.name 'Sourdaw CI'
+          mkdir -p "$positive_control_repo/public/wasm"
+          printf 'base side\n' > "$positive_control_repo/public/wasm/fixture.js"
+          git -C "$positive_control_repo" add public/wasm/fixture.js
+          git -C "$positive_control_repo" commit -m 'base fixture'
+          base_sha=$(git -C "$positive_control_repo" rev-parse HEAD)
+          git -C "$positive_control_repo" checkout -b fixture-branch
+          printf 'branch side\n' > "$positive_control_repo/public/wasm/fixture.js"
+          git -C "$positive_control_repo" commit -am 'branch fixture'
+          git -C "$positive_control_repo" checkout main
+          printf 'main side\n' > "$positive_control_repo/public/wasm/fixture.js"
+          git -C "$positive_control_repo" commit -am 'main fixture'
+          set +e
+          git -C "$positive_control_repo" merge --no-ff fixture-branch
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -eq 0 ]; then
+            printf 'expected merge fixture to require a merge-resolution commit\n' >&2
+            exit 1
+          fi
+          synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
+          printf 'aws_access_key_id = "%s" // gitleaks:allow\n' "$synthetic_access_key" > "$positive_control_repo/public/wasm/fixture.js"
+          git -C "$positive_control_repo" add public/wasm/fixture.js
+          git -C "$positive_control_repo" commit --no-edit
+          head_sha=$(git -C "$positive_control_repo" rev-parse HEAD)
+
+          set +e
+          gitleaks git \
+            --config "$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml" \
+            --gitleaks-ignore-path "$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore" \
+            --ignore-gitleaks-allow \
+            --no-banner \
+            --no-color \
+            --redact=100 \
+            --verbose \
+            --exit-code="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+            --log-opts="$base_sha..$head_sha -m" \
+            "$positive_control_repo/.git"
+          positive_control_status=$?
+          set -e
+
+          if [ "$positive_control_status" -ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" ]; then
+            printf 'expected merge-diff Gitleaks positive control to exit %s, got %s\n' \
+              "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+              "$positive_control_status" >&2
+            exit 1
+          fi
+
+      - name: Scan pull request diff for secrets
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          gitleaks git \
             --config "$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml" \
             --gitleaks-ignore-path "$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore" \
             --ignore-gitleaks-allow \
@@ -710,7 +792,7 @@ jobs:
             --redact=100 \
             --verbose \
             --exit-code=1 \
-            --log-opts="$BASE_SHA..$HEAD_SHA" \
+            --log-opts="$BASE_SHA..$HEAD_SHA -m" \
             "$GITHUB_WORKSPACE/scan-target/.git"
 
   codeql:

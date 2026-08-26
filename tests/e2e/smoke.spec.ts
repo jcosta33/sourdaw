@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
@@ -56,6 +56,22 @@ async function observeAudioContextResumeState(page: Page): Promise<() => Promise
     return () => page.evaluate(() => document.documentElement.dataset.audioContextResumeState);
 }
 
+async function observeScheduledOscillatorCount(page: Page): Promise<() => Promise<number>> {
+    await page.addInitScript(() => {
+        const nativeStart = OscillatorNode.prototype.start;
+        OscillatorNode.prototype.start = function (
+            this: OscillatorNode,
+            ...args: Parameters<OscillatorNode['start']>
+        ): void {
+            const count = Number(document.documentElement.dataset.scheduledOscillatorCount ?? '0');
+            document.documentElement.dataset.scheduledOscillatorCount = String(count + 1);
+            nativeStart.apply(this, args);
+        };
+    });
+    return async () =>
+        Number(await page.evaluate(() => document.documentElement.dataset.scheduledOscillatorCount ?? '0'));
+}
+
 async function openNewProject(page: Page): Promise<() => void> {
     const assertOffline = await blockExternalRequests(page);
     await setupWorkspace(page);
@@ -64,9 +80,56 @@ async function openNewProject(page: Page): Promise<() => void> {
 }
 
 async function addMidiTrack(page: Page): Promise<void> {
+    const list = trackList(page);
+    const before = await list.getByRole('row').count();
     await page.keyboard.press(`${MODIFIER}+k`);
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+    await expect.poll(() => list.getByRole('row').count()).toBeGreaterThan(before);
+    await list.getByText('MIDI', { exact: true }).click();
+}
+
+async function midiLaneY(page: Page): Promise<number> {
+    const timeline = page.getByLabel('Timeline editor surface');
+    const muteBox = await page.getByRole('button', { name: 'Mute MIDI' }).boundingBox();
+    const timelineBox = await timeline.boundingBox();
+    if (!muteBox || !timelineBox) {
+        throw new Error('Mute MIDI or timeline surface has no bounding box');
+    }
+    return Math.min(Math.max(muteBox.y - timelineBox.y + muteBox.height / 2, 8), timelineBox.height - 8);
+}
+
+async function openBottomTab(page: Page, name: string): Promise<void> {
+    const dock = page.getByRole('button', { name: 'Toggle bottom dock' });
+    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+        await dock.click();
+    }
+    const tab = page.getByRole('tablist', { name: 'Bottom dock' }).getByRole('tab', { name, exact: true });
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+async function createPlayableMidiClip(page: Page): Promise<Locator> {
+    await addMidiTrack(page);
+    const timeline = page.getByLabel('Timeline editor surface');
+    await expect(timeline).toBeVisible();
+    const y = await midiLaneY(page);
+    await timeline.click({ button: 'right', position: { x: 300, y } });
+    await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+    await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
+    await timeline.dblclick({ position: { x: 300, y } });
+    const pianoRoll = page.getByLabel('Piano roll editor');
+    await expect(pianoRoll).toBeVisible();
+    await openBottomTab(page, 'Editor');
+
+    const paint = page.getByRole('button', { name: 'Toggle paint mode' });
+    if ((await paint.getAttribute('aria-pressed')) !== 'true') {
+        await paint.click();
+    }
+    await pianoRoll.click({ position: { x: 200, y: 130 } });
+    await expect(page.getByTestId('selected-clip-note-count')).toHaveText('1 note');
+    return pianoRoll;
 }
 
 async function renameProject(page: Page, name: string): Promise<void> {
@@ -123,7 +186,9 @@ test.describe('Offline project smoke', () => {
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
         const audioContextResumeState = await observeAudioContextResumeState(page);
+        const scheduledOscillatorCount = await observeScheduledOscillatorCount(page);
         const assertOffline = await openNewProject(page);
+        await createPlayableMidiClip(page);
 
         const playbackControls = page.getByRole('group', { name: 'Playback controls' });
         const playhead = page.getByTestId('transport-playhead');
@@ -134,6 +199,7 @@ test.describe('Offline project smoke', () => {
         await expect(playbackControls.getByRole('status')).toHaveText('Playing');
         await expect(play).toHaveAccessibleName('Pause');
         await expect.poll(audioContextResumeState).toBe('running');
+        await expect.poll(scheduledOscillatorCount).toBeGreaterThan(0);
 
         await expect.poll(playheadPosition).not.toBe(initialPosition);
         const firstAdvancedPosition = await playheadPosition();
