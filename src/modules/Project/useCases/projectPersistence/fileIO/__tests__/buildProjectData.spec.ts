@@ -155,6 +155,41 @@ describe('buildProjectData', () => {
         expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
     });
 
+    it('refuses to serialize when CRDT repair becomes required during audio export', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        let resolveAudioExport!: (buffers: Record<string, never>) => void;
+        exportCachedAudioBuffersMock.mockReturnValue(
+            new Promise<Record<string, never>>((resolve) => {
+                resolveAudioExport = resolve;
+            })
+        );
+
+        const buildPromise = buildProjectData({ includeAudioBuffers: true });
+        await vi.waitFor(() => {
+            expect(exportCachedAudioBuffersMock).toHaveBeenCalledTimes(1);
+        });
+        agentProjectRepairStateStoreMock.value = {
+            audioGraphValid: true,
+            detectedRevision: 'repair-entered-during-audio-export',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/adjustmentLayers'],
+                },
+            ],
+            status: 'repair-required',
+        };
+        resolveAudioExport({});
+
+        await expect(buildPromise).resolves.toBeNull();
+    });
+
     // AC-5. `includeAudioBuffers: false` is the shape the live save uses: the
     // encoder is never entered and the snapshot carries no audio payload.
     // Mutation: making `includeAudioBuffers` unconditional (or defaulting the
