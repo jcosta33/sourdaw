@@ -46,6 +46,7 @@ export const TimelineSurface = (): ReactElement => {
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
+        handleMouseLeave,
         handleDoubleClick,
         handleContextMenu,
         handlePointerDown,
@@ -429,7 +430,7 @@ export const TimelineSurface = (): ReactElement => {
                 }}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
+                onMouseLeave={handleMouseLeave}
                 onDoubleClick={handleDoubleClick}
                 onContextMenu={handleContextMenu}
                 onPointerDown={handlePointerDown}
