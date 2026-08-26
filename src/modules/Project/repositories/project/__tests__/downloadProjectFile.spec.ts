@@ -106,6 +106,25 @@ describe('downloadProjectFile', () => {
         expect(outcome).toBe('written');
     });
 
+    it('rejects a web write when authority changes during the save picker', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const createWritable = vi.fn();
+        const picker = createDeferred<{ createWritable: typeof createWritable }>();
+        const showSaveFilePicker = vi.fn().mockReturnValue(picker.promise);
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        let shouldWrite = true;
+
+        const download = downloadProjectFile({ data: projectData, shouldWrite: () => shouldWrite });
+        await vi.waitFor(() => {
+            expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+        });
+        shouldWrite = false;
+        picker.resolve({ createWritable });
+
+        await expect(download).resolves.toBe('rejected-stale');
+        expect(createWritable).not.toHaveBeenCalled();
+    });
+
     it('rejects a web write when authority changes while creating the writable target', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
         const writable = {
@@ -126,6 +145,30 @@ describe('downloadProjectFile', () => {
 
         await expect(download).resolves.toBe('rejected-stale');
         expect(writable.write).not.toHaveBeenCalled();
+        expect(writable.close).not.toHaveBeenCalled();
+    });
+
+    it('aborts a web write when authority changes while writing the snapshot', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const writeResult = createDeferred<void>();
+        const writable = {
+            write: vi.fn().mockReturnValue(writeResult.promise),
+            close: vi.fn(),
+            abort: vi.fn(),
+        };
+        const createWritable = vi.fn().mockResolvedValue(writable);
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue({ createWritable }));
+        let shouldWrite = true;
+
+        const download = downloadProjectFile({ data: projectData, shouldWrite: () => shouldWrite });
+        await vi.waitFor(() => {
+            expect(writable.write).toHaveBeenCalledTimes(1);
+        });
+        shouldWrite = false;
+        writeResult.resolve();
+
+        await expect(download).resolves.toBe('rejected-stale');
+        expect(writable.abort).toHaveBeenCalledTimes(1);
         expect(writable.close).not.toHaveBeenCalled();
     });
 

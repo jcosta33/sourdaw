@@ -209,6 +209,40 @@ describe('saveProject', () => {
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
+    it('rejects completion when repair becomes required during the named snapshot write', async () => {
+        let resolveWrite: (() => void) | undefined;
+        mocks.writeNamedProjectJsonByKey.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolveWrite = resolve;
+            })
+        );
+
+        const saving = saveProject();
+        await vi.waitFor(() => {
+            expect(mocks.writeNamedProjectJsonByKey).toHaveBeenCalledTimes(1);
+        });
+        mocks.repairState.value = {
+            audioGraphValid: true,
+            detectedRevision: 'repair-entered-during-named-snapshot-write',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/adjustmentLayers'],
+                },
+            ],
+            status: 'repair-required',
+        };
+        resolveWrite?.();
+
+        await expect(saving).resolves.toBe(false);
+        expect(mocks.writeNamedProjectJsonByKey).toHaveBeenCalledTimes(1);
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
     it('resolves true once persistence succeeds', async () => {
         await expect(saveProject()).resolves.toBe(true);
     });

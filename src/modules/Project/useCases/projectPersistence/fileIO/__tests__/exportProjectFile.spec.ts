@@ -84,6 +84,8 @@ describe('exportProjectFile', () => {
         expect(downloadProjectFile).toHaveBeenCalledTimes(1);
         const written = vi.mocked(downloadProjectFile).mock.calls[0]?.[0].data as ProjectData;
         expect(written.version).toBe(CURRENT_PROJECT_VERSION);
+        expect(notifyUser).toHaveBeenCalledTimes(1);
+        expect(notifyUser).toHaveBeenCalledWith('Project exported successfully', 'info');
     });
 
     it('captures live native plugin state before building the export (no prior save required)', async () => {
