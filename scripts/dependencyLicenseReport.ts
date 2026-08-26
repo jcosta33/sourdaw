@@ -437,6 +437,41 @@ export function collectNpmLockDependencyLicenses(root: string): DependencyLicens
     });
 }
 
+type CargoLockPackage = {
+    name: string;
+    version: string;
+    source?: string;
+    checksum?: string;
+    dependencies: string[];
+};
+
+function cargoPackageId(pkg: Pick<CargoLockPackage, 'name' | 'version'>): string {
+    return `${pkg.name}@${pkg.version}`;
+}
+
+function readCargoLockPackages(root: string): CargoLockPackage[] {
+    return readFileSync(resolve(root, 'Cargo.lock'), 'utf8')
+        .split('[[package]]')
+        .slice(1)
+        .map((block) => {
+            const name = /^name = "([^"]+)"$/mu.exec(block)?.[1];
+            const version = /^version = "([^"]+)"$/mu.exec(block)?.[1];
+            if (name === undefined || version === undefined) {
+                throw new Error('Cargo.lock: package entry is incomplete');
+            }
+            const source = /^source = "([^"]+)"$/mu.exec(block)?.[1];
+            const checksum = /^checksum = "([0-9a-f]{64})"$/mu.exec(block)?.[1];
+            const dependencyBlock = /^dependencies = \[\n([\s\S]*?)^\]$/mu.exec(block)?.[1] ?? '';
+            return {
+                name,
+                version,
+                ...(source === undefined ? {} : { source }),
+                ...(checksum === undefined ? {} : { checksum }),
+                dependencies: [...dependencyBlock.matchAll(/^ "([^"]+)",?$/gmu)].map((match) => match[1]!),
+            };
+        });
+}
+
 function runtimeCargoPackageIds(metadata: CargoMetadata): Set<string> {
     if (metadata.resolve === null) {
         throw new Error('Cargo metadata omitted the dependency resolve graph');
@@ -460,7 +495,299 @@ function runtimeCargoPackageIds(metadata: CargoMetadata): Set<string> {
     return included;
 }
 
+function exactReportedContents(contents: string, digest: string): string | undefined {
+    if (sha256(Buffer.from(contents, 'utf8')) === digest) {
+        return contents;
+    }
+    if (!contents.endsWith('\n')) {
+        return undefined;
+    }
+    const withoutTrailingNewline = contents.slice(0, -1);
+    return sha256(Buffer.from(withoutTrailingNewline, 'utf8')) === digest ? withoutTrailingNewline : undefined;
+}
+
+function readReportedLegalFiles(root: string): Map<string, LegalFile[]> {
+    const report = readFileSync(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH), 'utf8');
+    const files = new Map<string, LegalFile[]>();
+    const pattern =
+        /^===== sha256:([0-9a-f]{64}) =====\nEvidence labels: ([^\n]+)\nPackages:\n(?:- [^\n]+\n)+\n([\s\S]*?)\n===== end sha256:\1 =====$/gmu;
+    for (const match of report.matchAll(pattern)) {
+        const [, digest, label, contents] = match;
+        if (digest === undefined || label === undefined || contents === undefined) {
+            throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: malformed legal evidence block`);
+        }
+        const exactContents = exactReportedContents(contents, digest);
+        if (exactContents === undefined) {
+            throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: legal evidence block checksum drifted`);
+        }
+        files.set(
+            digest,
+            label.split(', ').map((evidenceLabel) => ({
+                label: evidenceLabel,
+                sha256: digest,
+                contents: exactContents,
+            }))
+        );
+    }
+    return files;
+}
+
+function workspaceMemberPaths(root: string): string[] {
+    const workspace = readFileSync(resolve(root, 'Cargo.toml'), 'utf8');
+    const members = /members\s*=\s*\[([\s\S]*?)\]/u.exec(workspace)?.[1];
+    if (members === undefined) {
+        throw new Error('Cargo.toml: workspace members are missing');
+    }
+    return [...members.matchAll(/"([^"]+)"/gu)].map((match) => match[1]!);
+}
+
+function isNormalDependencySection(section: string): boolean {
+    return section === 'dependencies' || (section.startsWith('target.') && section.endsWith('.dependencies'));
+}
+
+function addNormalDependency(dependencies: Set<string>, alias: string, value: string): void {
+    if (/\boptional\s*=\s*true\b/u.test(value)) {
+        return;
+    }
+    dependencies.add(/\bpackage\s*=\s*"([^"]+)"/u.exec(value)?.[1] ?? alias);
+}
+
+function normalDependencyNames(manifest: string, manifestPath: string): Set<string> {
+    const dependencies = new Set<string>();
+    let inNormalDependencies = false;
+    let pendingDeclaration: { alias: string; value: string } | undefined;
+    for (const line of manifest.split('\n')) {
+        if (pendingDeclaration !== undefined) {
+            pendingDeclaration.value += ` ${line.trim()}`;
+            if (!line.includes('}')) {
+                continue;
+            }
+            addNormalDependency(dependencies, pendingDeclaration.alias, pendingDeclaration.value);
+            pendingDeclaration = undefined;
+            continue;
+        }
+        const section = /^\[([^\]]+)\]$/u.exec(line)?.[1];
+        if (section !== undefined) {
+            if (/^(?:dependencies|target\..+\.dependencies)\./u.test(section)) {
+                throw new Error(
+                    `${manifestPath}: dependency table syntax is unsupported by the locked inventory check`
+                );
+            }
+            inNormalDependencies = isNormalDependencySection(section);
+            continue;
+        }
+        if (!inNormalDependencies) {
+            continue;
+        }
+        const declaration = /^([A-Za-z0-9_-]+)(?:\.workspace)?\s*=\s*(.*)$/u.exec(line);
+        if (declaration === null) {
+            continue;
+        }
+        const [, alias, value] = declaration;
+        if (value.trimStart().startsWith('{') && !value.includes('}')) {
+            pendingDeclaration = { alias, value };
+            continue;
+        }
+        addNormalDependency(dependencies, alias, value);
+    }
+    if (pendingDeclaration !== undefined) {
+        throw new Error(`${manifestPath}: unterminated dependency declaration for ${pendingDeclaration.alias}`);
+    }
+    return dependencies;
+}
+
+function packagesByName(packages: readonly CargoLockPackage[]): Map<string, CargoLockPackage[]> {
+    const result = new Map<string, CargoLockPackage[]>();
+    for (const pkg of packages) {
+        const matching = result.get(pkg.name) ?? [];
+        matching.push(pkg);
+        result.set(pkg.name, matching);
+    }
+    return result;
+}
+
+function resolveLockedDependency(
+    reference: string,
+    packageIndex: ReadonlyMap<string, readonly CargoLockPackage[]>
+): CargoLockPackage {
+    const match = /^([^ ]+)(?: ([^ ]+))?(?: \((.+)\))?$/u.exec(reference);
+    if (match === null) {
+        throw new Error(`Cargo.lock: malformed dependency reference ${reference}`);
+    }
+    const [, name, version, source] = match;
+    const candidates = (packageIndex.get(name) ?? []).filter(
+        (pkg) => (version === undefined || pkg.version === version) && (source === undefined || pkg.source === source)
+    );
+    if (candidates.length !== 1) {
+        throw new Error(`Cargo.lock: dependency reference is not unique: ${reference}`);
+    }
+    return candidates[0]!;
+}
+
+function normalWorkspaceRoots(root: string, packages: readonly CargoLockPackage[]): CargoLockPackage[] {
+    const packageIndex = packagesByName(packages);
+    const workspacePackages = new Map(
+        packages.filter(({ source }) => source === undefined).map((pkg) => [pkg.name, pkg])
+    );
+    const roots: CargoLockPackage[] = [];
+    for (const memberPath of workspaceMemberPaths(root)) {
+        const manifestPath = `${memberPath}/Cargo.toml`;
+        const manifest = readFileSync(resolve(root, manifestPath), 'utf8');
+        const packageName = /^name = "([^"]+)"$/mu.exec(manifest)?.[1];
+        const workspacePackage = packageName === undefined ? undefined : workspacePackages.get(packageName);
+        if (workspacePackage === undefined) {
+            throw new Error(`${manifestPath}: workspace package is missing from Cargo.lock`);
+        }
+        const normalDependencies = normalDependencyNames(manifest, manifestPath);
+        const lockedDependencies = workspacePackage.dependencies.map((reference) =>
+            resolveLockedDependency(reference, packageIndex)
+        );
+        for (const dependencyName of normalDependencies) {
+            const dependency = lockedDependencies.find(({ name }) => name === dependencyName);
+            if (dependency === undefined) {
+                throw new Error(`${manifestPath}: normal dependency ${dependencyName} is missing from Cargo.lock`);
+            }
+            if (dependency.source !== undefined) {
+                roots.push(dependency);
+            }
+        }
+    }
+    return roots;
+}
+
+function reachableLockedPackageIds(
+    roots: readonly CargoLockPackage[],
+    packages: readonly CargoLockPackage[]
+): Set<string> {
+    const packageIndex = packagesByName(packages);
+    const reachable = new Set<string>();
+    const queue = [...roots];
+    while (queue.length > 0) {
+        const pkg = queue.pop()!;
+        const id = cargoPackageId(pkg);
+        if (reachable.has(id)) {
+            continue;
+        }
+        reachable.add(id);
+        for (const reference of pkg.dependencies) {
+            queue.push(resolveLockedDependency(reference, packageIndex));
+        }
+    }
+    return reachable;
+}
+
+function assertCargoLockDigest(root: string, report: string): void {
+    const reported = /^- Cargo\.lock sha256:([0-9a-f]{64})$/mu.exec(report)?.[1];
+    const current = sha256(readFileSync(resolve(root, 'Cargo.lock')));
+    if (reported !== current) {
+        throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: Cargo.lock snapshot drifted`);
+    }
+}
+
+function assembledProofMetadata(packageId: string, legalFile: LegalFile): LegalFile[] {
+    const metadata: LegalFile[] = [];
+    const pattern =
+        /^===== installed package metadata (.+) sha256:([0-9a-f]{64}) =====\n([\s\S]*?)\n===== end installed package metadata \1 =====$/gmu;
+    for (const match of legalFile.contents.matchAll(pattern)) {
+        const [, sourcePath, expectedSha256, contents] = match;
+        const file = readLegalBytes(Buffer.from(contents!, 'utf8'), sourcePath!);
+        if (file.sha256 !== expectedSha256) {
+            throw new Error(`${packageId}: assembled proof metadata drifted at ${sourcePath}`);
+        }
+        metadata.push(file);
+    }
+    if (metadata.length === 0) {
+        throw new Error(`${packageId}: assembled proof metadata is missing from the dependency license report`);
+    }
+    return metadata;
+}
+
+function prepareReportedCargoRecord(
+    record: DependencyLicenseRecord,
+    proof: DependencyLicenseProof | undefined
+): DependencyLicenseRecord {
+    const packageId = `cargo:${record.name}@${record.version}`;
+    assertLicenseExpressionEvidence(packageId, record.license, record.legalFiles);
+    if (proof?.assembled === undefined) {
+        return record;
+    }
+    const assembledIndex = record.legalFiles.findIndex(({ contents }) => contents.includes(`Package: ${packageId}\n`));
+    if (assembledIndex === -1) {
+        throw new Error(`${packageId}: assembled proof is missing from the dependency license report`);
+    }
+    const assembled = record.legalFiles[assembledIndex]!;
+    return {
+        ...record,
+        legalFiles: record.legalFiles.filter((_, index) => index !== assembledIndex),
+        metadataFiles: assembledProofMetadata(packageId, assembled),
+    };
+}
+
+function reportedCargoRecords(root: string, packages: readonly CargoLockPackage[]): DependencyLicenseRecord[] {
+    const report = readFileSync(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH), 'utf8');
+    assertCargoLockDigest(root, report);
+    const legalFiles = readReportedLegalFiles(root);
+    const proofs = readDependencyLicenseProofManifest(root).packages;
+    const locked = new Map(
+        packages
+            .filter(({ source, checksum }) => source?.startsWith('registry+') === true && checksum !== undefined)
+            .map((entry) => [cargoPackageId(entry), entry])
+    );
+    const records: DependencyLicenseRecord[] = [];
+    for (const line of report.split('\n')) {
+        const match = /^cargo:([^@|]+)@([^| ]+) \| ([^|]+) \| ([^|]+) \| Cargo\.lock$/u.exec(line);
+        if (match === null) {
+            continue;
+        }
+        const [, name, version, license, references] = match;
+        const lockedPackage = locked.get(`${name}@${version}`);
+        if (lockedPackage === undefined || lockedPackage.source === undefined) {
+            throw new Error(`cargo:${name}@${version}: package is missing from Cargo.lock`);
+        }
+        const referencedLegalFiles = references.split(',').flatMap((reference) => {
+            const digest = /^sha256:([0-9a-f]{64})$/u.exec(reference)?.[1];
+            const legal = digest === undefined ? undefined : legalFiles.get(digest);
+            if (legal === undefined) {
+                throw new Error(`cargo:${name}@${version}: reported legal evidence is missing`);
+            }
+            return legal;
+        });
+        const record: DependencyLicenseRecord = {
+            ecosystem: 'cargo',
+            name,
+            version,
+            license,
+            legalFiles: referencedLegalFiles,
+            cargoSource: lockedPackage.source,
+            graphs: ['Cargo.lock'],
+        };
+        records.push(prepareReportedCargoRecord(record, proofs[`cargo:${name}@${version}`]));
+    }
+    if (records.length === 0) {
+        throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: Cargo dependency inventory is missing`);
+    }
+    const publishedPackages = new Set(records.map(cargoPackageId));
+    const normalRoots = normalWorkspaceRoots(root, packages);
+    for (const rootPackage of normalRoots) {
+        if (rootPackage.source !== undefined && !publishedPackages.has(cargoPackageId(rootPackage))) {
+            throw new Error(
+                `cargo:${cargoPackageId(rootPackage)}: normal workspace dependency is missing from the dependency license inventory`
+            );
+        }
+    }
+    const reachablePackages = reachableLockedPackageIds(normalRoots, packages);
+    const stalePackages = [...publishedPackages].filter((packageId) => !reachablePackages.has(packageId)).sort();
+    if (stalePackages.length > 0) {
+        throw new Error(`${DEPENDENCY_LICENSE_REPORT_PATH}: stale Cargo dependencies: ${stalePackages.join(', ')}`);
+    }
+    return records;
+}
+
 export function collectCargoDependencyLicenses(root: string): DependencyLicenseRecord[] {
+    return reportedCargoRecords(root, readCargoLockPackages(root));
+}
+
+function collectCargoDependencyLicensesFromInstalledMetadata(root: string): DependencyLicenseRecord[] {
     const metadata = parseJsonWithUniqueKeys<CargoMetadata>(
         execFileSync('cargo', ['metadata', '--locked', '--format-version', '1'], {
             cwd: root,
@@ -1020,13 +1347,16 @@ export type DependencyLicenseArtifacts = {
     serverNotices: string;
 };
 
-export function buildDependencyLicenseArtifacts(root: string): DependencyLicenseArtifacts {
+function buildDependencyLicenseArtifactsWithCargoRecords(
+    root: string,
+    cargoRecords: DependencyLicenseRecord[]
+): DependencyLicenseArtifacts {
     const records = applyDependencyLicenseProofs(
         root,
         mergeDependencyLicenseRecords([
             ...collectNpmDependencyLicenses(root),
             ...collectNpmLockDependencyLicenses(root),
-            ...collectCargoDependencyLicenses(root),
+            ...cargoRecords,
         ])
     );
     return {
@@ -1037,6 +1367,17 @@ export function buildDependencyLicenseArtifacts(root: string): DependencyLicense
         }),
         serverNotices: renderServerThirdPartyNotices(records),
     };
+}
+
+export function buildDependencyLicenseArtifacts(root: string): DependencyLicenseArtifacts {
+    return buildDependencyLicenseArtifactsWithCargoRecords(root, collectCargoDependencyLicenses(root));
+}
+
+export function buildDependencyLicenseArtifactsFromInstalledMetadata(root: string): DependencyLicenseArtifacts {
+    return buildDependencyLicenseArtifactsWithCargoRecords(
+        root,
+        collectCargoDependencyLicensesFromInstalledMetadata(root)
+    );
 }
 
 export function buildDependencyLicenseReport(root: string): string {

@@ -1,6 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +31,8 @@ import {
 import {
     assertLicenseExpressionEvidence,
     collectNpmLockDependencyLicenses,
+    buildDependencyLicenseArtifacts,
+    collectCargoDependencyLicenses,
     DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
     assertPlatformRestrictedNpmPackage,
@@ -52,6 +63,25 @@ const ownershipFiles = [
 function write(root: string, path: string, contents: string): void {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), contents);
+}
+
+function writeCargoInventoryFixture(root: string): void {
+    const repositoryRoot = process.cwd();
+    const workspace = readFileSync(join(repositoryRoot, 'Cargo.toml'), 'utf8');
+    const members = /members\s*=\s*\[([\s\S]*?)\]/u.exec(workspace)?.[1];
+    if (members === undefined) {
+        throw new Error('test fixture requires Cargo workspace members');
+    }
+    const paths = [
+        'Cargo.lock',
+        'Cargo.toml',
+        DEPENDENCY_LICENSE_REPORT_PATH,
+        DEPENDENCY_LICENSE_PROOFS_PATH,
+        ...[...members.matchAll(/"([^"]+)"/gu)].map((match) => `${match[1]!}/Cargo.toml`),
+    ];
+    for (const path of paths) {
+        write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
+    }
 }
 
 function encodeTarEntry(path: string, type: 'File' | 'NextFileHasLongPath', contents: Buffer): Buffer {
@@ -128,6 +158,52 @@ describe('project license', () => {
 
     it('accepts one project grant across source and shipped metadata', () => {
         expect(validateProjectLicense(root, cargo)).toEqual([]);
+    });
+
+    it('derives the locked Cargo inventory without a cargo executable', () => {
+        const unavailableCargoPath = mkdtempSync(join(tmpdir(), 'sourdaw-unavailable-cargo-'));
+        const originalPath = process.env.PATH;
+        const cargoPath = join(unavailableCargoPath, 'cargo');
+        writeFileSync(cargoPath, '#!/bin/sh\nexit 97\n');
+        chmodSync(cargoPath, 0o755);
+        process.env.PATH = `${unavailableCargoPath}:${originalPath ?? ''}`;
+        try {
+            const records = collectCargoDependencyLicenses(process.cwd());
+            expect(records).not.toHaveLength(0);
+            expect(buildDependencyLicenseArtifacts(process.cwd()).report).toBe(
+                readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8')
+            );
+        } finally {
+            if (originalPath === undefined) {
+                delete process.env.PATH;
+            } else {
+                process.env.PATH = originalPath;
+            }
+            rmSync(unavailableCargoPath, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects locked graph, workspace dependency, and declared license drift offline', () => {
+        writeCargoInventoryFixture(root);
+        const lockPath = join(root, 'Cargo.lock');
+        const lock = readFileSync(lockPath, 'utf8');
+        writeFileSync(lockPath, lock.replace(/^checksum = "[0-9a-f]{64}"$/mu, `checksum = "${'0'.repeat(64)}"`));
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo.lock snapshot drifted');
+
+        writeFileSync(lockPath, lock);
+        const collaborationManifestPath = join(root, 'crates/daw-collab/Cargo.toml');
+        const collaborationManifest = readFileSync(collaborationManifestPath, 'utf8');
+        writeFileSync(collaborationManifestPath, collaborationManifest.replace('automerge = "0.11"\n', ''));
+        expect(() => collectCargoDependencyLicenses(root)).toThrow(/stale Cargo dependencies: .*automerge@0\.11\.0/u);
+
+        writeFileSync(collaborationManifestPath, collaborationManifest);
+        const reportPath = join(root, DEPENDENCY_LICENSE_REPORT_PATH);
+        const report = readFileSync(reportPath, 'utf8');
+        writeFileSync(
+            reportPath,
+            report.replace('cargo:automerge@0.11.0 | MIT |', 'cargo:automerge@0.11.0 | GPL-3.0-only |')
+        );
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('unsupported SPDX evidence signature: GPL-3.0-only');
     });
 
     it('rejects canonical LICENSE drift independently', () => {
@@ -558,7 +634,11 @@ describe('project license', () => {
         mkdirSync(join(root, 'package'), { recursive: true });
         writeFileSync(join(root, 'package/LICENSE'), license);
         mkdirSync(dirname(join(root, archivePath)), { recursive: true });
-        execFileSync('tar', ['-czf', join(root, archivePath), 'package/LICENSE', './package/LICENSE'], { cwd: root });
+        execFileSync(
+            'tar',
+            ['--hard-dereference', '-czf', join(root, archivePath), 'package/LICENSE', './package/LICENSE'],
+            { cwd: root }
+        );
         const archive = readFileSync(join(root, archivePath));
         const revision = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
         const source = 'https://registry.npmjs.org/example/-/example-1.0.0.tgz';
