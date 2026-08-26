@@ -4,6 +4,8 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 
+test.use({ serviceWorkers: 'block' });
+
 function dirtyIndicator(page: Page) {
     return page.getByTitle('Unsaved changes');
 }

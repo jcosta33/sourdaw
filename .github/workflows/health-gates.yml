@@ -64,6 +64,7 @@ jobs:
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
+          predicate-quantifier: some-with-excludes
           filters: |
             rust:
               - 'crates/**'
@@ -72,6 +73,10 @@ jobs:
               - 'rust-toolchain.toml'
               - 'scripts/health-gates-server.sh'
               - '.github/workflows/**'
+              - '!docs/**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
@@ -79,6 +84,10 @@ jobs:
               - 'vite.config.ts'
               - 'scripts/checkVitestCollectionScope.ts'
               - '.github/workflows/**'
+              - '!docs/**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
             e2e:
               - 'src/**'
               - 'public/**'
@@ -86,7 +95,12 @@ jobs:
               - 'playwright.config.ts'
               - 'package.json'
               - 'pnpm-lock.yaml'
+              - 'vite.config.ts'
               - '.github/workflows/**'
+              - '!docs/**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
             web:
               - 'src/**'
               - 'public/**'
@@ -97,6 +111,43 @@ jobs:
               - 'vite.config.ts'
               - 'tsconfig*.json'
               - '.github/workflows/**'
+              - '!docs/**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
+            documentation:
+              - 'docs/**'
+              - '*.md'
+              - '**/*.md'
+              - '.github/ISSUE_TEMPLATE/**'
+            non_document:
+              - '**'
+              - '!docs/**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
+            unclassified:
+              - '**'
+              - '!crates/**'
+              - '!Cargo.toml'
+              - '!Cargo.lock'
+              - '!rust-toolchain.toml'
+              - '!server/**'
+              - '!src/**'
+              - '!public/**'
+              - '!electron/**'
+              - '!scripts/**'
+              - '!tests/e2e/**'
+              - '!package.json'
+              - '!pnpm-lock.yaml'
+              - '!vite.config.ts'
+              - '!playwright.config.ts'
+              - '!tsconfig*.json'
+              - '!.github/workflows/**'
+              - '!docs/**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
 
       - name: Resolve scope
         id: scope
@@ -106,6 +157,8 @@ jobs:
           SERVER: ${{ steps.filter.outputs.server }}
           E2E: ${{ steps.filter.outputs.e2e }}
           WEB: ${{ steps.filter.outputs.web }}
+          NON_DOCUMENT: ${{ steps.filter.outputs.non_document }}
+          UNCLASSIFIED: ${{ steps.filter.outputs.unclassified }}
         run: |
           set -euo pipefail
           # A scheduled or dispatched run answers "is main healthy", which no
@@ -117,12 +170,24 @@ jobs:
           # Pull-request heads get only deterministic fast evidence. The full
           # browser suite, CodeQL, and history scan remain scheduled or manual.
           heavy=false
+          rust=$RUST
+          server=$SERVER
+          e2e=$E2E
+          web=$WEB
+          # Any unclassified non-document file is code-bearing by default. Fail
+          # closed by running every fast scope until that path is classified.
+          if [ "$NON_DOCUMENT" = "true" ] && [ "$UNCLASSIFIED" = "true" ]; then
+            rust=true
+            server=true
+            e2e=true
+            web=true
+          fi
           {
             printf 'heavy=%s\n' "$heavy"
-            printf 'rust=%s\n' "$RUST"
-            printf 'server=%s\n' "$SERVER"
-            printf 'e2e=%s\n' "$E2E"
-            printf 'web=%s\n' "$WEB"
+            printf 'rust=%s\n' "$rust"
+            printf 'server=%s\n' "$server"
+            printf 'e2e=%s\n' "$e2e"
+            printf 'web=%s\n' "$web"
           } >> "$GITHUB_OUTPUT"
 
   # The fast lane is three concurrent jobs rather than one serial one. Measured
