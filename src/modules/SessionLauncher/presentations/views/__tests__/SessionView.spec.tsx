@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { sessionLaunchStore } from '../../../stores/sessionLaunchStore';
@@ -177,5 +177,77 @@ describe('SessionView', () => {
         expect(screen.getByLabelText('Audio 1 scene 2 - clip loaded')).toBeInTheDocument();
         // ...and the remaining scenes are empty.
         expect(screen.getByLabelText('Audio 1 scene 3 - empty')).toBeInTheDocument();
+    });
+
+    describe('render-output structure pin (#2518)', () => {
+        // Pins the DOM the grid/slot rendering paths produce, so the restore
+        // of the renderIife_* outline residue to ordinary named JSX helpers
+        // changes no rendered output: this test passes identically before and
+        // after that restore, and any structural drift (classes, icons, badge
+        // styling, state branches) fails it.
+        beforeEach(async () => {
+            const { useTracks } = await import('../../hooks/useTracks');
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    makeTrack({
+                        id: 'track-1',
+                        name: 'Audio 1',
+                        color: '#ff0000',
+                        clips: [makeClip('clip-a'), makeClip('clip-b')],
+                    }),
+                    makeTrack({ id: 'track-2', name: 'Midi 1', color: '#00ff00', clips: [] }),
+                ],
+                selectedTrackId: null,
+            });
+        });
+
+        it('renders the scene rail: a Scene header plus one launch button per scene', () => {
+            render(<SessionView />);
+            expect(screen.getByText('Scene')).toBeInTheDocument();
+            for (let scene = 1; scene <= 8; scene++) {
+                expect(screen.getByLabelText(`Launch scene ${scene}`)).toBeInTheDocument();
+            }
+        });
+
+        it('styles the active slot with the play-state background, play icon, and active badge', () => {
+            sessionLaunchStore.set({ activeSlots: { 'track-1': 0 } });
+            render(<SessionView />);
+
+            const activeSlot = screen.getByRole('button', { name: 'Audio 1 scene 1 - clip loaded' });
+            expect(activeSlot.className).toContain('bg-[var(--color-state-play)]/20');
+
+            const playIcon = activeSlot.querySelector('svg.lucide-play');
+            expect(playIcon?.getAttribute('class')).toContain('fill-[var(--color-state-play)]');
+
+            const badge = within(activeSlot).getByText('Clip');
+            expect(badge.className).toContain('bg-[var(--color-state-play)]/30');
+            expect(badge.className).toContain('text-[var(--color-state-play)]');
+            // No inline background-color on the active badge: the color
+            // override yields undefined and React omits the property.
+            expect(badge.style.backgroundColor).toBe('');
+        });
+
+        it('styles the loaded inactive slot with the inset background, no play icon, and a muted badge carrying the track color', () => {
+            render(<SessionView />);
+
+            const inactiveSlot = screen.getByRole('button', { name: 'Audio 1 scene 2 - clip loaded' });
+            expect(inactiveSlot.className).toContain('bg-surface-inset');
+            expect(inactiveSlot.querySelector('svg.lucide-play')).toBeNull();
+
+            const badge = within(inactiveSlot).getByText('Clip');
+            expect(badge.className).toContain('bg-muted/30');
+            expect(badge.className).toContain('text-muted-foreground');
+            // The view computes `${track.color}20` (#ff000020); jsdom's
+            // CSSOM serializes that alpha-hex as rgba.
+            expect(badge.style.backgroundColor).toBe('rgba(255, 0, 0, 0.125)');
+        });
+
+        it('styles the empty slot with the faint hover background and a plus icon', () => {
+            render(<SessionView />);
+
+            const emptySlot = screen.getByRole('button', { name: 'Audio 1 scene 3 - empty' });
+            expect(emptySlot.className).toContain('hover:bg-white/[0.03]');
+            expect(emptySlot.querySelector('svg.lucide-plus')).not.toBeNull();
+        });
     });
 });
