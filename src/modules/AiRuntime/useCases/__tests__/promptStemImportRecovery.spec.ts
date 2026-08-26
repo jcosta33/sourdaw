@@ -120,6 +120,22 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     }),
 }));
 
+const preparedStem = {
+    stemId: 'stem-prompt-recovery',
+    sourceName: 'Drums.wav',
+    role: 'other',
+    sourceTempo: 120,
+    durationSeconds: 8,
+    sourceBytes: 100,
+    decodedBytes: 200,
+    audioBufferId: 'buffer-prompt-recovery',
+    trackId: 'track-prompt-recovery',
+    trackName: 'Drums',
+    trackGain: 1,
+    trackPan: 0,
+    clipId: 'clip-prompt-recovery',
+} as const;
+
 const stemAction = {
     type: 'importStemSet',
     payload: {
@@ -127,26 +143,15 @@ const stemAction = {
         groupName: 'Recovered Stems',
         projectTempo: 120,
         folderId: 'folder-prompt-recovery',
-        stems: [
-            {
-                stemId: 'stem-prompt-recovery',
-                sourceName: 'Drums.wav',
-                role: 'other',
-                sourceTempo: 120,
-                durationSeconds: 8,
-                sourceBytes: 100,
-                decodedBytes: 200,
-                audioBufferId: 'buffer-prompt-recovery',
-                assetHash: 'hash-prompt-recovery',
-                assetLeaseId: 'lease-prompt-recovery',
-                trackId: 'track-prompt-recovery',
-                trackName: 'Drums',
-                trackGain: 1,
-                trackPan: 0,
-                clipId: 'clip-prompt-recovery',
-            },
-        ],
+        stems: [{ ...preparedStem, assetHash: 'hash-prompt-recovery', assetLeaseId: 'lease-prompt-recovery' }],
     },
+} satisfies AppAction;
+// A stem carrying no durable asset binding stays on the agent-run recovery
+// ledger: `executePromptActionGroup` only takes the durable promotion route
+// when every stem has both an asset hash and a staging lease.
+const legacyStemAction = {
+    ...stemAction,
+    payload: { ...stemAction.payload, stems: [preparedStem] },
 } satisfies AppAction;
 const discardStemAction = {
     type: 'discardImportedStemSet',
@@ -319,7 +324,7 @@ describe('prompt stem import recovery', () => {
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
-    it('retains exact prepared-stem recovery after ordinary run history evicts its owner', async () => {
+    it('retains exact durable prepared-stem promotion recovery after ordinary run history evicts its owner', async () => {
         const submission = await submitAdmittedPromptRequest({
             prompt: 'Import the selected stems',
             source: 'prompt-bar',
@@ -330,7 +335,61 @@ describe('prompt stem import recovery', () => {
             throw new TypeError(`Expected approval preview, received ${submission.status}`);
         }
         const runId = submission.runId;
+        const batchId = agentRunLifecycle.get(runId)?.batches[0]?.batchId;
+        if (!batchId) {
+            throw new TypeError('Expected the admitted command batch');
+        }
         preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
+        mocks.executionOverride = 'ambiguous-before-commit';
+        mocks.replayOverride = 'missing';
+
+        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-stem-run-${String(index)}`,
+                request: `Later run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-revision-${String(index)}`,
+                createdAt: 1_000 + index,
+            });
+        }
+        expect(agentRunLifecycle.get(runId)).toBeNull();
+        // Durable stems keep their recovery identity in the durable asset
+        // journal, so run-history eviction has nothing of theirs to drop.
+        expect(readAgentRunState()).not.toHaveProperty('preparedStemImportRecoveryLedger');
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${runId}:${batchId}`,
+            [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
+            expect.objectContaining({ runId, batchId })
+        );
+
+        vi.resetModules();
+        mocks.replayOverride = 'failed';
+        const { recoverInterruptedAgentRuns } = await import('../agentRunRecovery');
+
+        await recoverInterruptedAgentRuns({ recoveredAt: 550 });
+        await recoverInterruptedAgentRuns({ recoveredAt: 551 });
+
+        // Agent-run restart recovery no longer owns this media: it may neither
+        // release it nor retire the durable claim the promotion sweep resolves.
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+        expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
+    });
+
+    it('reconstructs an evicted prepared-stem capsule after reload and discards it on proven noncommit', async () => {
+        const submission = await submitAdmittedPromptRequest({
+            prompt: 'Import the selected stems',
+            source: 'prompt-bar',
+            actions: [legacyStemAction],
+            requiresConfirmation: true,
+        });
+        if (submission.status !== 'awaiting-approval') {
+            throw new TypeError(`Expected approval preview, received ${submission.status}`);
+        }
+        const runId = submission.runId;
+        preparedStemImportResources.register({ runId, stems: legacyStemAction.payload.stems });
         mocks.executionOverride = 'ambiguous-before-commit';
         mocks.replayOverride = 'missing';
 
@@ -358,7 +417,7 @@ describe('prompt stem import recovery', () => {
                     resources: [
                         {
                             audioBufferId: 'buffer-prompt-recovery',
-                            assetLeaseId: 'lease-prompt-recovery',
+                            assetLeaseId: null,
                         },
                     ],
                 },
@@ -375,8 +434,7 @@ describe('prompt stem import recovery', () => {
 
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-prompt-recovery');
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledOnce();
-        expect(mocks.releaseStagedAsset).toHaveBeenCalledWith('lease-prompt-recovery');
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
         expect(readReloadedAgentRunState()).not.toHaveProperty('preparedStemImportRecoveryLedger');
     });
 
@@ -384,14 +442,14 @@ describe('prompt stem import recovery', () => {
         const submission = await submitAdmittedPromptRequest({
             prompt: 'Import the selected stems',
             source: 'prompt-bar',
-            actions: [stemAction],
+            actions: [legacyStemAction],
             requiresConfirmation: true,
         });
         if (submission.status !== 'awaiting-approval') {
             throw new TypeError(`Expected approval preview, received ${submission.status}`);
         }
         const runId = submission.runId;
-        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
+        preparedStemImportResources.register({ runId, stems: legacyStemAction.payload.stems });
         mocks.executionOverride = 'ambiguous-before-commit';
         mocks.replayOverride = 'missing';
 
@@ -437,7 +495,7 @@ describe('prompt stem import recovery', () => {
                 resources: [
                     {
                         audioBufferId: 'buffer-prompt-recovery',
-                        assetLeaseId: 'lease-prompt-recovery',
+                        assetLeaseId: null,
                     },
                 ],
             }),
