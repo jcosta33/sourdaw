@@ -23,6 +23,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const zipPayloadExpansionProbe = vi.hoisted(() => ({
     archive: undefined as Buffer | undefined,
     attempts: 0,
+    matchedBytes: 0,
 }));
 
 vi.mock('fflate', async (importOriginal) => {
@@ -40,6 +41,7 @@ vi.mock('fflate', async (importOriginal) => {
                 if (expected.length === bytes.length && bytes.equals(expected)) {
                     this.archiveOffset += bytes.length;
                     zipPayloadExpansionProbe.attempts += 1;
+                    zipPayloadExpansionProbe.matchedBytes += bytes.length;
                 } else {
                     this.archiveMatches = false;
                 }
@@ -492,12 +494,14 @@ function expectZipMetadataRejectionBeforePayloadExpansion(
 ): void {
     zipPayloadExpansionProbe.archive = readFileSync(archive);
     zipPayloadExpansionProbe.attempts = 0;
+    zipPayloadExpansionProbe.matchedBytes = 0;
     try {
         expect(validate(fixture)).toContain(expectedError);
         expect(zipPayloadExpansionProbe.attempts).toBe(0);
     } finally {
         zipPayloadExpansionProbe.archive = undefined;
         zipPayloadExpansionProbe.attempts = 0;
+        zipPayloadExpansionProbe.matchedBytes = 0;
     }
 }
 
@@ -1144,15 +1148,18 @@ describe('release proof', () => {
         assemble(fixture, buildRunner);
         const archive = join(fixture.candidate, webProof(proof(fixture)).archivePath as string);
         const archiveBytes = readFileSync(archive);
-        expect(archiveBytes.length).toBeGreaterThan(1_000_000);
+        expect(archiveBytes.length).toBeGreaterThan(1_048_576);
         zipPayloadExpansionProbe.archive = archiveBytes;
         zipPayloadExpansionProbe.attempts = 0;
+        zipPayloadExpansionProbe.matchedBytes = 0;
         try {
             expect(validate(fixture)).toBe('');
-            expect(zipPayloadExpansionProbe.attempts).toBeGreaterThan(0);
+            expect(zipPayloadExpansionProbe.attempts).toBeGreaterThanOrEqual(2);
+            expect(zipPayloadExpansionProbe.matchedBytes).toBe(archiveBytes.length);
         } finally {
             zipPayloadExpansionProbe.archive = undefined;
             zipPayloadExpansionProbe.attempts = 0;
+            zipPayloadExpansionProbe.matchedBytes = 0;
         }
     });
 
