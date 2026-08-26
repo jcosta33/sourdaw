@@ -207,10 +207,11 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
 ];
 
 describe('lane publish', () => {
-    it('publishes the exact classified lane through the protected primary launcher', () => {
+    it('publishes an exact issue lane through the protected primary launcher when the issue selector is ambiguous', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-routing-'));
         const primary = join(fixtureRoot, 'primary');
         const authorizedLane = join(fixtureRoot, 'authorized-lane');
+        const siblingIssueLane = join(fixtureRoot, 'sibling-issue-lane');
         const hostilePrimary = join(fixtureRoot, 'hostile-primary');
         const hostileLane = join(fixtureRoot, 'hostile-lane');
         const bin = join(fixtureRoot, 'bin');
@@ -255,6 +256,7 @@ describe('lane publish', () => {
                 'agent/12/authorized',
                 '.github/workflows/fixture.yml'
             );
+            addLockedLane(primary, siblingIssueLane, 'agent/12/sibling', 'sibling.txt');
 
             initializeRepository(hostilePrimary);
             writeFileSync(join(hostilePrimary, 'base.txt'), 'base\n');
@@ -313,11 +315,26 @@ describe('lane publish', () => {
                 TEST_MINT_LOG: mintLog,
                 TEST_EVENT_LOG: eventLog,
             };
-            execFileSync('pnpm', ['lane:publish', '12', '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS], {
-                cwd: primary,
-                env: launcherEnv,
-                encoding: 'utf8',
-            });
+            expect(() =>
+                execFileSync(
+                    'pnpm',
+                    ['lane:publish', '12', '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
+                    {
+                        cwd: primary,
+                        env: launcherEnv,
+                        encoding: 'utf8',
+                    }
+                )
+            ).toThrow(/expected exactly one locked author lane for issue #12/);
+            execFileSync(
+                'pnpm',
+                ['lane:publish', '--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
+                {
+                    cwd: primary,
+                    env: launcherEnv,
+                    encoding: 'utf8',
+                }
+            );
 
             expect(JSON.parse(readFileSync(mintLog, 'utf8').trim())).toEqual({
                 permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
@@ -325,7 +342,8 @@ describe('lane publish', () => {
             const push = JSON.parse(readFileSync(pushLog, 'utf8').trim()) as { cwd: string; args: string[] };
             expect(realpathSync(push.cwd)).toBe(realpathSync(authorizedLane));
             expect(push.args).toContain(`${authorizedHead}:refs/heads/agent/12/authorized`);
-            expect(push.args).not.toContain('HEAD:refs/heads/agent/12/hostile');
+            expect(push.args.some((arg) => arg.endsWith(':refs/heads/agent/12/sibling'))).toBe(false);
+            expect(push.args.some((arg) => arg.endsWith(':refs/heads/agent/12/hostile'))).toBe(false);
             const events = readFileSync(eventLog, 'utf8').trim().split('\n');
             const mintEvent = events.indexOf('mint');
             const pushEvent = events.indexOf('push');
@@ -341,13 +359,6 @@ describe('lane publish', () => {
                 )
             ).toBeGreaterThan(pushEvent);
             expect(events[pullRequestWriteEvent - 1]).toBe('fetch');
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', '--lane', authorizedLane], {
-                    cwd: primary,
-                    env: launcherEnv,
-                    encoding: 'utf8',
-                })
-            ).toThrow(/issue lanes must publish by issue number/);
             expect(() =>
                 execFileSync('pnpm', ['lane:publish', '--lane', join(authorizedLane, '.github')], {
                     cwd: primary,
@@ -544,8 +555,24 @@ describe('lane publish', () => {
         });
 
         expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+        expect(calls).toContain('issueExists:12');
         expect(calls).toContain('push:agent/12/work');
         expect(bodies.at(-1)).toContain('Closes #12');
+    });
+
+    it('refuses a branch-derived issue that does not exist before mutating the lane or pull request', () => {
+        const { port, calls } = fakePort({
+            trees: [...otherAuthorLanes(), worktree()],
+            cwd: ISSUE_LANE,
+            issueExists: false,
+        });
+
+        expect(() => publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+            /issue #12 does not exist/
+        );
+        expect(calls).toContain('issueExists:12');
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:') || call.startsWith('edit:'))).toBe(false);
     });
 
     it('references a campaign issue without closing it', () => {
