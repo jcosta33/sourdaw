@@ -22,14 +22,28 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
             document: { projectContext: getProjectContext() },
             targetIds,
         });
-        const targetFingerprints = {
-            ...liveFingerprints,
-            ...documentFingerprints,
-        };
-        for (const systemTargetId of ['master', 'hw_out']) {
-            if (targetIds.includes(systemTargetId)) {
-                targetFingerprints[systemTargetId] = `system-output:${systemTargetId}`;
-            }
+        const targetFingerprints = Object.fromEntries(
+            targetIds.flatMap((targetId) => {
+                const documentFingerprint = documentFingerprints[targetId];
+                if (documentFingerprint === undefined) {
+                    return [];
+                }
+                const liveFingerprint = liveFingerprints[targetId];
+                return [
+                    [
+                        targetId,
+                        liveFingerprint === undefined
+                            ? documentFingerprint
+                            : JSON.stringify({ advertised: liveFingerprint, document: documentFingerprint }),
+                    ],
+                ];
+            })
+        );
+        if (targetIds.includes('master') && targetFingerprints.master === undefined) {
+            targetFingerprints.master = 'system-output:master';
+        }
+        if (targetIds.includes('hw_out')) {
+            targetFingerprints.hw_out = 'system-output:hw_out';
         }
         return {
             audioGraphValid: true,
