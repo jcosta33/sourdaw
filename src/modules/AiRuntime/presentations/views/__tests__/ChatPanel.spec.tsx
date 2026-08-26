@@ -27,7 +27,7 @@ vi.mock('#/modules/AiRuntime/stores/agentRunStore', () => ({
 
 vi.mock('../../../useCases/getAgentRunControlProjection', () => ({
     agentRunControls: {
-        list: vi.fn(),
+        listDecisions: vi.fn(),
         resumeDecision: vi.fn(),
     },
 }));
@@ -130,7 +130,7 @@ describe('ChatPanel', () => {
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store: unknown) =>
             store === agentRunStore ? { schemaVersion: 1, runs: [] } : chatState
         );
-        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([]);
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([]);
         (agentRunControls.resumeDecision as ReturnType<typeof vi.fn>).mockResolvedValue({
             status: 'resumed',
             sourceRunId: 'decision-run',
@@ -250,7 +250,7 @@ describe('ChatPanel', () => {
     });
 
     it('renders a pending decision in the production chat workspace and resumes only after explicit activation', async () => {
-        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([
             {
                 runId: 'decision-run',
                 allowedActions: { resume: true },
@@ -290,7 +290,7 @@ describe('ChatPanel', () => {
     });
 
     it('replaces the provisional resume status with the public rejection reason', async () => {
-        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([
             {
                 runId: 'decision-run',
                 allowedActions: { resume: true },
@@ -318,7 +318,7 @@ describe('ChatPanel', () => {
     });
 
     it('keeps unavailable decisions visible but disabled with their public rejection reason', () => {
-        (agentRunControls.list as ReturnType<typeof vi.fn>).mockReturnValue([
+        (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([
             {
                 runId: 'stale-run',
                 allowedActions: { resume: false },
