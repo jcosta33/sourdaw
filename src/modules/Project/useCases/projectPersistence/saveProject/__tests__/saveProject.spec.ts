@@ -26,6 +26,9 @@ const mocks = vi.hoisted(() => {
         flushAutomergeStorageWrites: vi.fn<() => void>(),
         migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
         repairState,
+        actionHistory: { value: null },
+        setSemanticContext: vi.fn(),
+        clearSemanticContext: vi.fn(),
         writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
     };
 });
@@ -56,6 +59,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: mocks.repairState,
+    actionHistoryStore: mocks.actionHistory,
+    setSemanticContext: mocks.setSemanticContext,
+    clearSemanticContext: mocks.clearSemanticContext,
 }));
 
 vi.mock('../../../../repositories/project/writeNamedProjectJsonByKey', () => ({
@@ -133,6 +139,7 @@ describe('saveProject', () => {
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         mocks.repairState.value = null;
+        mocks.actionHistory.value = null;
         mocks.writeNamedProjectJsonByKey.mockResolvedValue(undefined);
         projectLoadFailureStore.set(null);
     });
