@@ -605,6 +605,21 @@ function isExplicitTrackDeletionScope({ context, text, trackId }: ExplicitTrackD
         return false;
     }
 
+    const hasTrackNameCollision = context.tracks.some(
+        (candidateTrack) =>
+            candidateTrack.id !== track.id &&
+            normalizePromptText(candidateTrack.name) === normalizePromptText(track.name)
+    );
+    if (hasTrackNameCollision) {
+        const normalizedText = normalizePromptText(text);
+        const hasLiteralId = normalizedText.includes(normalizePromptText(track.id));
+        const hasSelection = /\b(?:selected|current|this)\b/u.test(normalizedText);
+        const hasKind = new RegExp(`\\b${escapeRegExp(track.kind)}\\b`, 'u').test(normalizedText);
+        if (!hasLiteralId && !hasSelection && !hasKind) {
+            return false;
+        }
+    }
+
     let commandText = text;
     const targetReferences = [track.id, track.name].sort((left, right) => right.length - left.length);
     for (const reference of targetReferences) {
@@ -3563,8 +3578,8 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
     const groundedArguments = { ...call.arguments };
-    const bulkDeviceInsertionTargetIds =
-        call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
+    const bulkDeviceInsertionScope =
+        call.name === 'addDevice' ? getBulkDeviceInsertionTrackScope(prompt, context) : null;
     const bulkMutedEmptyTrackDeletionTargetIds =
         call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
     const drumRoutingScope =
@@ -3631,12 +3646,28 @@ function groundToolCall({
             continue;
         }
         if (
-            bulkDeviceInsertionTargetIds &&
+            bulkDeviceInsertionScope &&
             call.name === 'addDevice' &&
             targetRule.argument === 'trackId' &&
             typeof assertedValue === 'string' &&
-            bulkDeviceInsertionTargetIds.includes(assertedValue)
+            bulkDeviceInsertionScope.targetIds.includes(assertedValue)
         ) {
+            continue;
+        }
+        if (bulkDeviceInsertionScope && call.name === 'addDevice' && targetRule.argument === 'afterDeviceId') {
+            const trackId = groundedArguments.trackId;
+            const anchor =
+                typeof trackId === 'string'
+                    ? bulkDeviceInsertionScope.anchors.find((candidate) => candidate.trackId === trackId)
+                    : undefined;
+            if (anchor === undefined || assertedValue !== anchor.afterDeviceId) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Provider afterDeviceId does not match the application-resolved insertion anchor'
+                );
+            }
+            groundedArguments.afterDeviceId = anchor.afterDeviceId;
             continue;
         }
         if (
@@ -4650,7 +4681,8 @@ export function bridgeGroundedLlmToolCalls({
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
             (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||
-            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches')
+            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches') ||
+            (wholeProjectVibeMixScope && call.name === 'automateTrackGainRange')
         ) {
             grounded = call;
         } else {

@@ -33,6 +33,7 @@ import { handleDiscardImportedStemSet, handleImportStemSet } from '../handleImpo
 const mocks = vi.hoisted(() => ({
     activateExternalPlugin: vi.fn<() => void>(),
     initializeTrackStripFromSnapshot: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
+    promoteDurableStagedAsset: vi.fn(),
     promoteStagedAsset: vi.fn<(leaseId: string) => void>(),
     publishTrackAdded: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     publishTrackRemoved: vi.fn<() => Promise<void>>(() => Promise.resolve()),
@@ -68,7 +69,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mocks.updateDeviceParam,
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: () => ({ promoteStagedAsset: mocks.promoteStagedAsset }),
+    getAssetTransfer: () => ({
+        promoteDurableStagedAsset: mocks.promoteDurableStagedAsset,
+        promoteStagedAsset: mocks.promoteStagedAsset,
+    }),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: mocks.activateExternalPlugin,
@@ -299,6 +303,11 @@ function seedUnrelatedProjectTruth(): void {
 describe('handleImportStemSet', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.promoteDurableStagedAsset.mockImplementation(async (leaseId: string, hash: string) => ({
+            status: 'promoted',
+            leaseId,
+            hash,
+        }));
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('import stem set handler test');
         removeCrdtDoc('root');
@@ -356,9 +365,10 @@ describe('handleImportStemSet', () => {
             'track-kick',
             'track-vocal',
         ]);
-        expect(mocks.promoteStagedAsset).toHaveBeenCalledTimes(2);
-        expect(mocks.promoteStagedAsset).toHaveBeenCalledWith('lease-kick');
-        expect(mocks.promoteStagedAsset).toHaveBeenCalledWith('lease-vocal');
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(2);
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledWith('lease-kick', 'hash-kick');
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledWith('lease-vocal', 'hash-vocal');
+        expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
 
         await undo();
 
@@ -369,8 +379,26 @@ describe('handleImportStemSet', () => {
         expect(requireTrackState().tracks.map((track) => track.id)).not.toEqual(
             expect.arrayContaining(['folder-starter-stems', 'track-kick', 'track-vocal'])
         );
-        expect(mocks.promoteStagedAsset).toHaveBeenCalledTimes(2);
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(2);
         expect(mocks.publishTrackRemoved).toHaveBeenCalledTimes(3);
+    });
+
+    it('retries an incomplete hash-bound durable promotion', async () => {
+        const action = createStemImportAction();
+        action.payload.stems = [action.payload.stems[0]!];
+        const result = await handleImportStemSet.execute(action);
+
+        mocks.promoteDurableStagedAsset
+            .mockResolvedValueOnce({ status: 'failed', reason: 'lease-hash-mismatch' })
+            .mockResolvedValue({ status: 'promoted', leaseId: 'lease-kick', hash: 'hash-kick' });
+
+        await expect(result?.afterCommit?.()).rejects.toThrow('lease-hash-mismatch');
+        await expect(result?.afterCommit?.()).resolves.toBeUndefined();
+
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(2);
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenNthCalledWith(1, 'lease-kick', 'hash-kick');
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenNthCalledWith(2, 'lease-kick', 'hash-kick');
+        expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
     });
 
     it('rejects guarded compensation after generated project truth diverges', async () => {

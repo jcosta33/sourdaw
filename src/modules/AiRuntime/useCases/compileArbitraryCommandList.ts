@@ -1,7 +1,6 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
-import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     parseSemanticCommandList,
@@ -65,7 +64,6 @@ type CompiledItemEvidence = {
 export type ArbitraryCommandListEvidence = {
     schemaVersion: 1;
     snapshotRevision: string;
-    proposalScope: AgentPlanProposal['scope'];
     providerKnownTargetIds: string[];
     selectors: ArbitraryCommandListSelectorEvidence[];
     items: CompiledItemEvidence[];
@@ -172,7 +170,6 @@ function parseIdList(value: unknown, label: string): string[] | RejectedCompilat
 function resolveSelector(input: {
     candidates: readonly Candidate[];
     selector: SemanticCommandListSelector;
-    protectedTargetIds: ReadonlySet<string>;
     itemId: string;
 }): { stableIds: string[]; evidence: ArbitraryCommandListSelectorEvidence } | RejectedCompilation {
     const where = input.selector.where ?? {};
@@ -189,10 +186,7 @@ function resolveSelector(input: {
         );
     });
     const explicitlyExcludedIds = input.selector.excludeIds ?? [];
-    const excludedIds = new Set([...explicitlyExcludedIds, ...input.protectedTargetIds]);
-    const protectedExclusions = candidates
-        .filter((candidate) => input.protectedTargetIds.has(candidate.id))
-        .map((candidate) => candidate.id);
+    const excludedIds = new Set(explicitlyExcludedIds);
     const stableIds = candidates.filter((candidate) => !excludedIds.has(candidate.id)).map((candidate) => candidate.id);
     if (stableIds.length !== input.selector.quantity.exactly) {
         return {
@@ -206,21 +200,13 @@ function resolveSelector(input: {
             itemId: input.itemId,
             stableIds,
             excludedIds: [...explicitlyExcludedIds],
-            protectedExclusions,
+            protectedExclusions: [],
             preconditions: stableIds.map((stableId) => {
                 const candidate = candidates.find((entry) => entry.id === stableId);
                 return { stableId, fingerprint: JSON.stringify(candidate) };
             }),
         },
     };
-}
-
-function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stableIds: readonly string[]): boolean {
-    if (plan === null || plan.scope.targetIds.length !== stableIds.length) {
-        return false;
-    }
-    const proposedIds = new Set(plan.scope.targetIds);
-    return proposedIds.size === stableIds.length && stableIds.every((id) => proposedIds.has(id));
 }
 
 function canonicalJson(value: unknown): string {
@@ -240,13 +226,13 @@ function getCanonicalCommandIdentity(command: ToolCallResult): string {
     return canonicalJson(command);
 }
 
-type MutationIdentityRule = {
-    arguments: readonly { argument: string; cardinality?: 'many' }[];
-    destructive?: false;
-    fallbackArguments?: readonly { argument: string; cardinality?: 'many' }[];
-    resourceFamily?: string;
-    resourceReferenceOnly?: true;
-};
+type ExecutableAppActionGroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
+type MutationIdentityRule = ExecutableAppActionGroundingRules['mutationIdentityRules'][number];
+type MutationIdentityArgument = MutationIdentityRule['arguments'][number];
+type AppDerivedMutationIdentityArgument = Extract<MutationIdentityArgument, { source: 'app-derived' }>;
+type AppDerivedMutationIdentityArgumentName = AppDerivedMutationIdentityArgument['argument'];
+type AppDerivedParentTrackTargetCapability = AppDerivedMutationIdentityArgument['targetCapabilities'][number];
+type ExecutableAppActionTargetRule = ExecutableAppActionGroundingRules['targetRules'][number];
 
 function expandMutationIdentityValues(
     argumentRules: MutationIdentityRule['arguments'],
@@ -327,74 +313,11 @@ function getMutationResourceWriteIdentities(
     return resourceWriteIdentities;
 }
 
-function materializeMutationIdentityArguments(
+function materializeSidechainRouteIdentityArguments(
     command: ToolCallResult,
     context: ProjectContext
-): Readonly<Record<string, unknown>> {
+): Record<string, unknown> {
     const materializedArguments: Record<string, unknown> = { ...command.arguments };
-    const parentTrackIds = new Set<string>();
-    const addTrackId = (value: unknown): void => {
-        if (typeof value === 'string' && value.length > 0) {
-            parentTrackIds.add(value);
-        }
-    };
-    const addTrackIds = (value: unknown): void => {
-        if (Array.isArray(value)) {
-            for (const trackId of value) {
-                addTrackId(trackId);
-            }
-        }
-    };
-
-    const trackIdByClipId = new Map(
-        context.tracks.flatMap((track) => track.clips.map((clip) => [clip.id, track.id] as const))
-    );
-    for (const [argument, value] of Object.entries(command.arguments)) {
-        if (!/[cC]lip(?:[A-Z][A-Za-z0-9]*)?Ids?$/u.test(argument)) {
-            continue;
-        }
-        const clipIds = Array.isArray(value) ? value : [value];
-        for (const clipId of clipIds) {
-            if (typeof clipId === 'string') {
-                addTrackId(trackIdByClipId.get(clipId));
-            }
-        }
-    }
-
-    if (['removeDevice', 'setDeviceParameter', 'bypassDevice'].includes(command.name)) {
-        const deviceId = command.arguments.deviceId;
-        if (typeof deviceId === 'string') {
-            addTrackId(context.tracks.find((track) => track.devices.some((device) => device.id === deviceId))?.id);
-        }
-    }
-
-    if (
-        [
-            'addAutomationPoint',
-            'setAutomationLaneEnabled',
-            'scaleAutomation',
-            'stretchAutomation',
-            'invertAutomation',
-            'reverseAutomation',
-            'thinAutomation',
-            'quantizeAutomation',
-        ].includes(command.name)
-    ) {
-        const laneId = command.arguments.laneId;
-        if (typeof laneId === 'string') {
-            addTrackId((context.automationLanes ?? []).find((lane) => lane.id === laneId)?.trackId);
-        }
-    }
-
-    if (['addSend', 'setSend', 'removeSend'].includes(command.name)) {
-        addTrackId(command.arguments.trackId);
-        addTrackId(command.arguments.busId);
-    }
-    if (['automateSendRange', 'automateSendRanges'].includes(command.name)) {
-        addTrackIds(command.arguments.trackIds);
-        addTrackId(command.arguments.busId);
-    }
-
     if (command.name === 'addSidechainRoute' || command.name === 'removeSidechainRoute') {
         const sourceTrackId = command.arguments.sourceTrackId;
         const suppliedTargetTrackId = command.arguments.targetTrackId;
@@ -432,14 +355,141 @@ function materializeMutationIdentityArguments(
                 materializedArguments.targetDeviceId = targetDeviceId;
             }
         }
-        addTrackId(sourceTrackId);
-        addTrackId(targetTrackId);
-    }
-
-    if (parentTrackIds.size > 0) {
-        materializedArguments.parentTrackIds = [...parentTrackIds];
     }
     return materializedArguments;
+}
+
+function getTargetRuleValues(
+    targetRule: ExecutableAppActionTargetRule,
+    arguments_: Readonly<Record<string, unknown>>
+): readonly string[] | null {
+    const value = arguments_[targetRule.argument];
+    if (value === undefined && targetRule.optional === true) {
+        return [];
+    }
+    if (targetRule.cardinality === 'many') {
+        return Array.isArray(value) && value.length > 0 && value.every(isSafeId) ? value : null;
+    }
+    return isSafeId(value) ? [value] : null;
+}
+
+function resolveParentTrackId(
+    capability: AppDerivedParentTrackTargetCapability,
+    targetId: string,
+    context: ProjectContext
+): string | null {
+    switch (capability) {
+        case 'track':
+        case 'routable-source':
+        case 'bus':
+            return targetId;
+        case 'device':
+        case 'sidechain-capable-device':
+            return context.tracks.find((track) => track.devices.some((device) => device.id === targetId))?.id ?? null;
+        case 'automation-lane':
+            return (context.automationLanes ?? []).find((lane) => lane.id === targetId)?.trackId ?? null;
+        case 'clip':
+        case 'editable-clip':
+        case 'editable-audio-clip':
+        case 'editable-midi-clip':
+            return context.tracks.find((track) => track.clips.some((clip) => clip.id === targetId))?.id ?? null;
+    }
+    const exhaustiveCapability: never = capability;
+    return exhaustiveCapability;
+}
+
+function isParentTrackTargetCapability(
+    capability: ExecutableAppActionTargetRule['capability'],
+    allowedCapabilities: readonly AppDerivedParentTrackTargetCapability[]
+): capability is AppDerivedParentTrackTargetCapability {
+    return allowedCapabilities.some((allowedCapability) => allowedCapability === capability);
+}
+
+type AppDerivedMutationIdentityMaterializer = (input: {
+    argumentRule: AppDerivedMutationIdentityArgument;
+    arguments_: Readonly<Record<string, unknown>>;
+    context: ProjectContext;
+    targetRules: ExecutableAppActionGroundingRules['targetRules'];
+}) => readonly string[] | null;
+
+const materializeParentTrackIds: AppDerivedMutationIdentityMaterializer = ({
+    argumentRule,
+    arguments_,
+    context,
+    targetRules,
+}) => {
+    const parentTrackIds = new Set<string>();
+    let matchedTargetRule = false;
+    for (const targetRule of targetRules) {
+        if (!isParentTrackTargetCapability(targetRule.capability, argumentRule.targetCapabilities)) {
+            continue;
+        }
+        matchedTargetRule = true;
+        const targetIds = getTargetRuleValues(targetRule, arguments_);
+        if (targetIds === null) {
+            return null;
+        }
+        for (const targetId of targetIds) {
+            const parentTrackId = resolveParentTrackId(targetRule.capability, targetId, context);
+            if (parentTrackId === null) {
+                return null;
+            }
+            parentTrackIds.add(parentTrackId);
+        }
+    }
+    return matchedTargetRule && parentTrackIds.size > 0 ? [...parentTrackIds] : null;
+};
+
+const APP_DERIVED_MUTATION_IDENTITY_MATERIALIZERS = {
+    parentTrackIds: materializeParentTrackIds,
+} satisfies Record<AppDerivedMutationIdentityArgumentName, AppDerivedMutationIdentityMaterializer>;
+
+function isAppDerivedMutationIdentityArgumentName(value: string): value is AppDerivedMutationIdentityArgumentName {
+    return Object.hasOwn(APP_DERIVED_MUTATION_IDENTITY_MATERIALIZERS, value);
+}
+
+function materializeMutationIdentityArguments(input: {
+    command: ToolCallResult;
+    context: ProjectContext;
+    mutationIdentityRules: readonly MutationIdentityRule[];
+    targetRules: ExecutableAppActionGroundingRules['targetRules'];
+}): { status: 'accepted'; arguments: Readonly<Record<string, unknown>> } | RejectedCompilation {
+    const materializedArguments = materializeSidechainRouteIdentityArguments(input.command, input.context);
+    for (const identityRule of input.mutationIdentityRules) {
+        const identityArguments = [
+            ...identityRule.arguments,
+            ...('fallbackArguments' in identityRule && identityRule.fallbackArguments !== undefined
+                ? identityRule.fallbackArguments
+                : []),
+        ];
+        for (const argumentRule of identityArguments) {
+            if (argumentRule.source !== 'app-derived') {
+                continue;
+            }
+            const argumentName: string = argumentRule.argument;
+            if (!isAppDerivedMutationIdentityArgumentName(argumentName)) {
+                return {
+                    status: 'rejected',
+                    reason: `Structured command app-derived mutation identity is not registered: ${argumentName}`,
+                };
+            }
+            const value = APP_DERIVED_MUTATION_IDENTITY_MATERIALIZERS[argumentName]({
+                argumentRule,
+                arguments_: materializedArguments,
+                context: input.context,
+                targetRules: input.targetRules,
+            });
+            if (value === null) {
+                return {
+                    status: 'rejected',
+                    reason: `Structured command app-derived mutation identity could not be materialized: ${argumentName}`,
+                };
+            }
+            materializedArguments[argumentName] = value;
+        }
+    }
+
+    return { status: 'accepted', arguments: materializedArguments };
 }
 
 function getMutationIdentityLabel(
@@ -464,12 +514,22 @@ function checkCommandWriteConflict(input: {
     context: ProjectContext;
     mutationIdempotent: boolean;
     mutationIdentityRules: readonly MutationIdentityRule[];
+    targetRules: ExecutableAppActionGroundingRules['targetRules'];
     mutationResourceWrites: Map<string, { destructive: boolean }>;
     targetCommandArguments: Map<string, string>;
     targetLabel: string;
 }): { status: 'accepted'; commandKey: string } | RejectedCompilation {
     const commandKey = getCanonicalCommandIdentity(input.command);
-    const materializedArguments = materializeMutationIdentityArguments(input.command, input.context);
+    const materialization = materializeMutationIdentityArguments({
+        command: input.command,
+        context: input.context,
+        mutationIdentityRules: input.mutationIdentityRules,
+        targetRules: input.targetRules,
+    });
+    if (materialization.status === 'rejected') {
+        return materialization;
+    }
+    const materializedArguments = materialization.arguments;
     const mutationWriteIdentities = getMutationWriteIdentities(
         input.command.name,
         input.mutationIdentityRules,
@@ -591,7 +651,6 @@ function validateTargetArgumentsWithoutSelectors(input: {
     item: SemanticCommandListItem;
     itemsById: ReadonlyMap<string, SemanticCommandListItem>;
     producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
-    protectedTargetIds: ReadonlySet<string>;
     selectorArgument?: string;
     selectorStableIds?: readonly string[];
     targetRules: readonly {
@@ -691,7 +750,7 @@ function validateTargetArgumentsWithoutSelectors(input: {
                 })
             )
         );
-        if (!isEligible || stableIds.some((stableId) => input.protectedTargetIds.has(stableId))) {
+        if (!isEligible) {
             return {
                 status: 'rejected',
                 reason: `Direct command target ${targetRule.argument} is outside the command capability contract.`,
@@ -782,7 +841,6 @@ export function compileArbitraryCommandList(input: {
     }
     const items = sortedItems.items;
     const candidates = collectCandidates(input.context);
-    const protectedTargetIds = new Set(plan?.scope.protectedTargetIds ?? []);
     const commands: ToolCallResult[] = [];
     const evidence: ArbitraryCommandListSelectorEvidence[] = [];
     const compiledItems: CompiledItemEvidence[] = [];
@@ -830,7 +888,6 @@ export function compileArbitraryCommandList(input: {
                 item,
                 itemsById,
                 producersByBinding,
-                protectedTargetIds,
                 targetRules: rules.targetRules,
             });
             if (targetValidation.status === 'rejected') {
@@ -843,6 +900,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    targetRules: rules.targetRules,
                     mutationResourceWrites,
                     targetCommandArguments,
                     targetLabel: getMutationIdentityLabel(rules.mutationIdentityRules, command.arguments),
@@ -898,7 +956,7 @@ export function compileArbitraryCommandList(input: {
         if (selector.targetArgument in item.arguments) {
             return { status: 'rejected', reason: 'Provider may not supply target IDs for a semantic bulk selector.' };
         }
-        const resolved = resolveSelector({ candidates, selector, protectedTargetIds, itemId: item.id });
+        const resolved = resolveSelector({ candidates, selector, itemId: item.id });
         if ('status' in resolved) {
             return resolved;
         }
@@ -907,7 +965,6 @@ export function compileArbitraryCommandList(input: {
             item,
             itemsById,
             producersByBinding,
-            protectedTargetIds,
             selectorArgument: selector.targetArgument,
             selectorStableIds: resolved.stableIds,
             targetRules: rules.targetRules,
@@ -979,6 +1036,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    targetRules: rules.targetRules,
                     mutationResourceWrites,
                     targetCommandArguments,
                     targetLabel: resolved.stableIds.join(','),
@@ -1026,12 +1084,6 @@ export function compileArbitraryCommandList(input: {
             ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
     }
-    if (!hasExactScope(plan, orderedTargetIds)) {
-        return {
-            status: 'rejected',
-            reason: 'Structured command list resolved scope does not exactly match the provider proposal.',
-        };
-    }
     return {
         status: 'accepted',
         snapshotRevision: input.revision,
@@ -1042,7 +1094,6 @@ export function compileArbitraryCommandList(input: {
                 : {
                       schemaVersion: 1,
                       snapshotRevision: input.revision,
-                      proposalScope: structuredClone(plan.scope),
                       providerKnownTargetIds: [...orderedTargetIds],
                       selectors: structuredClone(evidence),
                       items: structuredClone(compiledItems),

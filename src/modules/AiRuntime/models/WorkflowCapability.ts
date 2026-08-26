@@ -32,7 +32,28 @@ export const WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES = [
     'arpeggiate',
     'setTrackGain',
     'importStemSet',
+    'addSidechainRoute',
+    'removeSidechainRoute',
 ] as const;
+
+/**
+ * Every tool a selected workflow's action plan may call: the capability-bound
+ * action tools plus the generic track and device actions any workflow plan can
+ * need. Planning and inference must filter by this one set so the provider
+ * schema list and the executable tool list cannot drift apart.
+ */
+export const WORKFLOW_ACTION_TOOL_NAMES: ReadonlySet<string> = new Set([
+    ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
+    'automateTrackGainRange',
+    'automateSendRange',
+    'muteTrack',
+    'unmuteTrack',
+    'setTrackPan',
+    'removeTrack',
+    'soloTrack',
+    'unsoloTrack',
+    'setDeviceParameter',
+]);
 
 const workflowCapabilityDescriptions: Readonly<Record<WorkflowCapabilityId, string>> = {
     'drum-routing': 'Route the complete semantic drum set to its existing drum bus while preserving its return.',

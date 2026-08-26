@@ -1,8 +1,19 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readlinkSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -1391,12 +1402,12 @@ describe('check-dependency-boundaries', () => {
                 {
                     file: relativeModelsPath,
                     line: 1,
-                    reason: 'symbolic links are not permitted under src/modules',
+                    reason: 'symbolic link hides source under src from the dependency guard',
                 },
                 {
                     file: relativeSourcePath,
                     line: 1,
-                    reason: 'symbolic links are not permitted under src/modules',
+                    reason: 'symbolic link hides source under src from the dependency guard',
                 },
             ]);
             expect(new Set(findings.map(({ file }) => file)).size).toBe(findings.length);
@@ -1435,5 +1446,28 @@ describe('check-dependency-boundaries', () => {
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports-type-only'
         );
         expect(new RegExp(reverseWorkerTypeRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
+    });
+
+    it('should verify AGENTS.md and provider symlinks across all modules in src/modules', () => {
+        const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+        const modulesDir = join(rootDir, 'src/modules');
+        const moduleEntries = readdirSync(modulesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+        const providerNames = ['CLAUDE.md', 'GEMINI.md', 'CODEX.md', 'KIMI.md', 'ZCODE.md'] as const;
+
+        expect(moduleEntries.length).toBeGreaterThanOrEqual(50);
+
+        for (const entry of moduleEntries) {
+            const modulePath = join(modulesDir, entry.name);
+            const agentsFile = join(modulePath, 'AGENTS.md');
+            expect(existsSync(agentsFile), `${entry.name} is missing AGENTS.md`).toBe(true);
+
+            for (const provider of providerNames) {
+                const providerPath = join(modulePath, provider);
+                expect(existsSync(providerPath), `${entry.name} is missing ${provider}`).toBe(true);
+                const stat = lstatSync(providerPath);
+                expect(stat.isSymbolicLink(), `${entry.name}/${provider} must be a symbolic link`).toBe(true);
+                expect(readlinkSync(providerPath)).toBe('AGENTS.md');
+            }
+        }
     });
 });

@@ -109,7 +109,7 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
 
 function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
     const body = pullRequest.body ?? '';
-    assertPullRequestBody(body, `PR #${pullRequest.number} body`);
+    assertPullRequestBody(body, `PR #${pullRequest.number} body`, pullRequest.title);
     const reference = canonicalIssueReferenceFromBody(body, REQUIRED_REPOSITORY);
     return reference?.relationship === 'closes' ? reference.issue : undefined;
 }

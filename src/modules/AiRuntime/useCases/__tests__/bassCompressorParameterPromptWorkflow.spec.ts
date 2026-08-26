@@ -495,10 +495,12 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             }),
         ];
         trackStore.set({ tracks: [bassDi, bassAmp], selectedTrackId: null, ghostClips: [] });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

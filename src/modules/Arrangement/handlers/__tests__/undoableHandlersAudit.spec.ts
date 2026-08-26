@@ -40,19 +40,6 @@ import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
 const ARRANGEMENT_ROOT = resolve(__dirname, '../..');
 
 /**
- * Undoable handlers with no spec naming their action. The dedicated assertion below
- * pins this set empty, so it cannot become an exemption baseline again.
- *
- * Empty because `handleImportStemSet.spec.ts` executes `importStemSet` through an
- * atomic command batch, proves undo runs `discardImportedStemSet` to remove every
- * imported track, and exercises its track- and MIDI-divergence guards.
- */
-const UNCOVERED_UNDOABLE_HANDLERS: readonly string[] = [];
-
-/** Inverse actions without owning behavioral coverage; see the proof above. */
-const UNCOVERED_INVERSE_ACTIONS: readonly string[] = [];
-
-/**
  * The action types Arrangement sources name as an `inverseAction` or a `redoAction`,
  * read off the syntax tree.
  *
@@ -313,11 +300,6 @@ function handlerEntries() {
 }
 
 describe('Arrangement undoable handlers audit', () => {
-    it('permits no undoable or inverse coverage exemptions', () => {
-        expect(UNCOVERED_UNDOABLE_HANDLERS).toEqual([]);
-        expect(UNCOVERED_INVERSE_ACTIONS).toEqual([]);
-    });
-
     it('resolves a registry with undoable handlers in it', () => {
         // Guards every audit below: each one passes vacuously against an empty or
         // unresolvable registry, which is exactly how this audit could go green while
@@ -338,7 +320,7 @@ describe('Arrangement undoable handlers audit', () => {
         // not proof of behaviour — the round trips that prove an inverse actually
         // restores the original state live in the `*.integration.spec.ts` files this
         // corpus includes.
-        expect(uncovered).toEqual([...UNCOVERED_UNDOABLE_HANDLERS].sort());
+        expect(uncovered).toEqual([]);
     });
 
     it('reads inverse-action types off the Arrangement sources', () => {
@@ -396,6 +378,6 @@ describe('Arrangement undoable handlers audit', () => {
         // forward half of every pair. An inverse is the half that runs when a musician
         // is trying to get work back, and a dedicated one — `restoreTrackClipStates`,
         // `discardCreatedTracks` — is not `undoable` and so is invisible there.
-        expect(uncovered).toEqual([...UNCOVERED_INVERSE_ACTIONS].sort());
+        expect(uncovered).toEqual([]);
     });
 });

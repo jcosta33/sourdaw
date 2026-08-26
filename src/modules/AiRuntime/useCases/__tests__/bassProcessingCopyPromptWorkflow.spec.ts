@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import {
     adjustmentLayerStore,
     markerStore,
@@ -401,6 +404,7 @@ function getBassProcessingCopyTargetIds(plan: readonly ProviderPlanCall[]): stri
         if (!layer) {
             throw new TypeError(`Expected EX-03 adjustment layer ${layerId}`);
         }
+        targetIds.add(layerId);
         for (const trackId of layer.affectedTrackIds) {
             targetIds.add(trackId);
         }
@@ -751,10 +755,13 @@ describe('bass-processing section copy workflow', () => {
             ],
         });
         transportStore.set({ ...defaultTransportState });
+        flushAutomergeStorageWrites();
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();

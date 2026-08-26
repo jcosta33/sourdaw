@@ -360,6 +360,20 @@ const ALTERNATIVE_FIELD_COMPARATORS: AlternativeFieldComparators = {
     // collaborator renamed in between, reports the restore as written, and propagates
     // the revert back through the CRDT.
     name: (live, expected) => live.name === expected.name,
+    // The lane's clips go through `clipsMatch` — the same comparator, at the same depth,
+    // as the live clip sequence one guard up — not a shallower id-sequence check. A
+    // non-active lane is not the live editing surface: clip edits land on `track.clips`
+    // of the active lane, and a lane diverges by being edited while active and then
+    // switched away, which leaves `track.clips` matching the snapshot with the edit
+    // living on only inside the lane. Variation-lane rendering does map a non-active
+    // lane's clips into the timeline (`buildTimelineRenderModel`'s `variationLanes`),
+    // but read-only — nothing writes back and nothing re-checks them — so this
+    // comparator is the only guard over their contents. The restore replaces the whole
+    // lane, clips included, so id-sequence-only would report `written` over a moved,
+    // trimmed or edited take. Reusing the helper rather than writing a second depth
+    // also carries its deliberate exclusions (`isInlineEditing`, a snapshot-absent
+    // `kneadState`), keeping the hidden lane exactly as tolerant of unauthored churn as
+    // the visible one.
     clips: (live, expected) => clipsMatch(live.clips, expected.clips),
 };
 

@@ -1,5 +1,6 @@
 import { collaborationStore } from '../../stores/collaborationStore';
 
+import { collaborationAssetOwnership } from './getCollaborationAssetOwnerId';
 import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
@@ -11,7 +12,7 @@ export function createSession(name: string): string {
     const sessionId = runtime.generateSessionId();
     const color = runtime.pickPeerColor([]);
 
-    runtime.initialize();
+    runtime.initialize(collaborationAssetOwnership.getOwnerId());
     runtime.startPlayheadBroadcast();
     runtime.startBranchSync(true);
 

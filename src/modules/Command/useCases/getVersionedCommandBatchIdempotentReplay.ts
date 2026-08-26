@@ -2,6 +2,7 @@ import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvel
 
 import { commandBatchIdempotencyPort } from './commandBatchIdempotencyPort';
 import { getCommandBatchContentHash } from './getCommandBatchContentHash';
+import { getProjectCommandBatchIdempotencyCheckpoint } from './getProjectCommandBatchIdempotencyCheckpoint';
 import { parseStoredVerifiedBatchReceipt } from './parseStoredVerifiedBatchReceipt';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 
@@ -9,6 +10,10 @@ export async function getVersionedCommandBatchIdempotentReplay(input: {
     authority: CommandBatchAuthority;
     serialized: string;
 }) {
+    // A durable project checkpoint only exists for batches admitted through the
+    // durable idempotency port. Avoid hydrating the missing CRDT ledger while
+    // merely checking a fresh proposal: that initialization is a project write
+    // and would invalidate the proposal it is trying to inspect.
     if (!commandBatchIdempotencyPort.isConfigured()) {
         return null;
     }
@@ -18,6 +23,27 @@ export async function getVersionedCommandBatchIdempotentReplay(input: {
     }
     try {
         const contentHash = await getCommandBatchContentHash(parsed.envelope);
+        const projectCheckpoint = getProjectCommandBatchIdempotencyCheckpoint({
+            projectId: parsed.envelope.projectId,
+            idempotencyKey: parsed.envelope.idempotencyKey,
+            contentHash,
+        });
+        if (projectCheckpoint.status === 'pending' || projectCheckpoint.status === 'complete') {
+            return parseStoredVerifiedBatchReceipt({
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                commands: parsed.envelope.commands,
+                contentHash,
+                runId: parsed.envelope.runId,
+                serializedReceipt: projectCheckpoint.serializedReceipt,
+            });
+        }
+        if (projectCheckpoint.status !== 'missing') {
+            return null;
+        }
+        if (!commandBatchIdempotencyPort.isConfigured()) {
+            return null;
+        }
         const lookup = await commandBatchIdempotencyPort.lookup({
             projectId: parsed.envelope.projectId,
             idempotencyKey: parsed.envelope.idempotencyKey,
@@ -30,6 +56,7 @@ export async function getVersionedCommandBatchIdempotentReplay(input: {
             baseRevision: parsed.envelope.baseRevision,
             batchId: parsed.envelope.batchId,
             commands: parsed.envelope.commands,
+            contentHash,
             runId: parsed.envelope.runId,
             serializedReceipt: lookup.serializedReceipt,
         });

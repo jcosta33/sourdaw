@@ -5,6 +5,8 @@ import type {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
+import type { configureDurableAssetCommitProof } from '#/modules/Collaboration/useCases';
+import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
@@ -23,8 +25,18 @@ import type { NotificationEventBus } from '#/utils/Notification/notificationEven
 
 type HandlerMapSentinel = { moduleId: string };
 type ArrangementEventBus = Parameters<typeof setArrangementEventBus>[0];
-type RuntimeGraphProjectRevisionValidator = Parameters<typeof configureRuntimeGraphProjectRevisionValidator>[0];
-type RuntimeGraphTopologyValidator = Parameters<typeof configureRuntimeGraphTopologyValidator>[0];
+type RuntimeGraphProjectRevisionValidator = NonNullable<
+    Parameters<typeof configureRuntimeGraphProjectRevisionValidator>[0]
+>;
+type RuntimeGraphTopologyValidator = NonNullable<Parameters<typeof configureRuntimeGraphTopologyValidator>[0]>;
+type ProjectIdentityTransitionDependencies = Parameters<typeof setProjectIdentityTransitionDependencies>[0];
+type DurableAssetOwnerRecoveryAfterProjectLoad = NonNullable<
+    ProjectIdentityTransitionDependencies['resumeDurableAssetOwnerHandoffsAfterProjectLoad']
+>;
+type DurableAssetCommitProofProvider = Parameters<typeof configureDurableAssetCommitProof>[0];
+type AssetTransferMock = {
+    resumeDurableOwnerRebindsAfterProjectLoad: DurableAssetOwnerRecoveryAfterProjectLoad;
+};
 
 /**
  * The one sink member this spec asserts on. The offline render's device chain
@@ -63,6 +75,11 @@ const {
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
     canExecuteCommandBatchMock,
+    configureCollaborationAssetOwnerMock,
+    configureDurableAssetCommitProofMock,
+    getAssetTransferMock,
+    getDurableProjectOwnerIdMock,
+    getVersionedCommandBatchCommitDispositionMock,
     prepareOfflineLevainMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
@@ -78,6 +95,9 @@ const {
     configureRuntimeGraphTopologyValidatorMock,
     runtimeGraphTopologyMock,
     setNotificationEventBusMock,
+    setProjectIdentityTransitionDependenciesMock,
+    commandRuntimeRepairPortMock,
+    repairRuntimeGraphFromProjectMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -87,6 +107,15 @@ const {
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
         configureCommandBatchIdempotencyMock: vi.fn(),
         canExecuteCommandBatchMock: vi.fn(() => true),
+        configureCollaborationAssetOwnerMock: vi.fn(),
+        configureDurableAssetCommitProofMock: vi.fn<(provider: DurableAssetCommitProofProvider) => void>(),
+        getAssetTransferMock: vi.fn<() => AssetTransferMock | null>(() => ({
+            resumeDurableOwnerRebindsAfterProjectLoad: vi.fn(() => Promise.resolve()),
+        })),
+        getDurableProjectOwnerIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
+        getVersionedCommandBatchCommitDispositionMock: vi.fn<DurableAssetCommitProofProvider['getDisposition']>(() =>
+            Promise.resolve('committed')
+        ),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -118,13 +147,17 @@ const {
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
+        setProjectIdentityTransitionDependenciesMock:
+            vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
-            vi.fn<(validator: RuntimeGraphProjectRevisionValidator) => void>(),
-        configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator) => void>(),
+            vi.fn<(validator: RuntimeGraphProjectRevisionValidator | null) => void>(),
+        configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator | null) => void>(),
         runtimeGraphTopologyMock: {
             matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
         },
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
+        commandRuntimeRepairPortMock: { setProvider: vi.fn() },
+        repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
     };
 });
 
@@ -233,8 +266,10 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 vi.mock('#/modules/Collaboration/useCases', () => ({
     canExecuteCommandBatch: canExecuteCommandBatchMock,
     canMutateBranchMetadata: () => true,
+    configureCollaborationAssetOwner: configureCollaborationAssetOwnerMock,
+    configureDurableAssetCommitProof: configureDurableAssetCommitProofMock,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
-    getAssetTransfer: () => null,
+    getAssetTransfer: getAssetTransferMock,
     leaveSession: noop,
 }));
 
@@ -244,6 +279,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
+    getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
     getUndoRedoHandlers: sentinelHandlers('UndoRedo'),
@@ -256,6 +292,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     commandProjectRevisionPort: { setProvider: noop },
     commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
+    commandRuntimeRepairPort: commandRuntimeRepairPortMock,
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
     captureCommandTargetFingerprints: noop,
@@ -363,7 +400,12 @@ vi.mock('#/modules/Project/useCases', () => ({
             mirrorsWithoutPrimary: 0,
             failed: 0,
         }),
-    setProjectIdentityTransitionDependencies: noop,
+    getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
+    setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
+}));
+
+vi.mock('#/modules/Project/stores', () => ({
+    getSettledProjectId: getDurableProjectOwnerIdMock,
 }));
 
 vi.mock('#/modules/ProjectVersioning/useCases', () => ({
@@ -414,6 +456,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     setStopPlaybackCallback: noop,
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
+    repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
 }));
 
 vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: noop }));
@@ -459,6 +502,19 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 // `vi.mock` calls above are hoisted above this import by Vitest, so every
 // dependency bootstrap.ts pulls in is already mocked by the time it runs.
 import '../bootstrap';
+
+function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecoveryAfterProjectLoad {
+    const dependencyCall = setProjectIdentityTransitionDependenciesMock.mock.calls.at(0);
+    if (!dependencyCall) {
+        throw new Error('bootstrap never configured project identity transition dependencies');
+    }
+    const [dependencies] = dependencyCall;
+    const recovery = dependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad;
+    if (!recovery) {
+        throw new Error('bootstrap never configured durable asset owner recovery after project load');
+    }
+    return recovery;
+}
 
 describe('bootstrap', () => {
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
@@ -531,6 +587,85 @@ describe('bootstrap', () => {
         });
     });
 
+    it('gives Collaboration only Project-owned settled identity reads', () => {
+        expect(configureCollaborationAssetOwnerMock).toHaveBeenCalledExactlyOnceWith({
+            captureOwnerId: getDurableProjectOwnerIdMock,
+        });
+    });
+
+    it('resumes durable owner handoffs only through the persisted-project load seam', async () => {
+        const resumeDurableAssetOwnerHandoffsAfterProjectLoad = getDurableAssetOwnerRecoveryAfterProjectLoad();
+        const authority = {
+            ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            isCurrent: () => true,
+            signal: new AbortController().signal,
+        };
+
+        await resumeDurableAssetOwnerHandoffsAfterProjectLoad(authority);
+
+        expect(getAssetTransferMock).toHaveBeenCalledOnce();
+        const assetTransferResult = getAssetTransferMock.mock.results[0];
+        if (!assetTransferResult?.value) {
+            throw new Error('bootstrap did not resolve an asset transfer');
+        }
+        expect(assetTransferResult.value.resumeDurableOwnerRebindsAfterProjectLoad).toHaveBeenCalledExactlyOnceWith({
+            ownerId: authority.ownerId,
+            isCurrent: expect.any(Function),
+            signal: authority.signal,
+        });
+    });
+
+    it('does not resolve or recover an asset owner after project-load authority is stale', async () => {
+        const resumeDurableAssetOwnerHandoffsAfterProjectLoad = getDurableAssetOwnerRecoveryAfterProjectLoad();
+        const callsBeforeStaleRecovery = getAssetTransferMock.mock.calls.length;
+
+        await resumeDurableAssetOwnerHandoffsAfterProjectLoad({
+            ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            isCurrent: () => false,
+            signal: new AbortController().signal,
+        });
+
+        expect(getAssetTransferMock).toHaveBeenCalledTimes(callsBeforeStaleRecovery);
+    });
+
+    it('fails closed when durable asset recovery is unavailable after a current project load', async () => {
+        const resumeDurableAssetOwnerHandoffsAfterProjectLoad = getDurableAssetOwnerRecoveryAfterProjectLoad();
+        getAssetTransferMock.mockReturnValueOnce(null);
+
+        await expect(
+            resumeDurableAssetOwnerHandoffsAfterProjectLoad({
+                ownerId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+                isCurrent: () => true,
+                signal: new AbortController().signal,
+            })
+        ).rejects.toThrow('Durable asset owner recovery is unavailable after project load');
+    });
+
+    it('binds durable asset admission to the exact Command commit proof', async () => {
+        expect(configureDurableAssetCommitProofMock).toHaveBeenCalledExactlyOnceWith({
+            getDisposition: getVersionedCommandBatchCommitDispositionMock,
+        });
+        const provider = configureDurableAssetCommitProofMock.mock.calls[0]?.[0];
+        if (!provider) {
+            throw new Error('bootstrap did not configure durable asset commit proof');
+        }
+        const proof = {
+            projectId: 'project-bootstrap-proof',
+            idempotencyKey: 'request-bootstrap-proof',
+            contentHash: `sha256:${'a'.repeat(64)}`,
+            runId: 'run-bootstrap-proof',
+            batchId: 'batch-bootstrap-proof',
+            baseRevision: 'project-revision-before-bootstrap-proof',
+            commands: [
+                { commandId: '11111111-1111-4111-8111-111111111111', operation: 'importStemSet' },
+                { commandId: '22222222-2222-4222-8222-222222222222', operation: 'setTrackGain' },
+            ],
+        };
+
+        await expect(provider.getDisposition(proof)).resolves.toBe('committed');
+        expect(getVersionedCommandBatchCommitDispositionMock).toHaveBeenCalledExactlyOnceWith(proof);
+    });
+
     it('wires project runtime validation and event buses in the composition root', () => {
         expect(registerCrdtStorageRuntimeMock).toHaveBeenCalledExactlyOnceWith();
         expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
@@ -541,6 +676,9 @@ describe('bootstrap', () => {
             throw new Error('bootstrap never configured the runtime graph project revision validator');
         }
         const [projectRevisionValidator] = projectRevisionValidatorCall;
+        if (!projectRevisionValidator) {
+            throw new Error('bootstrap configured a null runtime graph project revision validator');
+        }
         captureProjectRevisionMock.mockReturnValue('revision-1');
         expect(projectRevisionValidator('revision-1')).toBe(true);
         captureProjectRevisionMock.mockReturnValue('revision-2');
@@ -568,6 +706,12 @@ describe('bootstrap', () => {
         expect(setVcaRuntimeProjectionDependenciesMock).toHaveBeenCalledExactlyOnceWith({
             reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
         });
+    });
+
+    it('wires command recovery to the awaited runtime graph repair owner', () => {
+        expect(commandRuntimeRepairPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
+            repairRuntimeGraphFromProjectMock
+        );
     });
 
     it('wires Automation lane ranges to Arrangement descriptor truth', () => {

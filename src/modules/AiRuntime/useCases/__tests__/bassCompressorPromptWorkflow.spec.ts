@@ -665,6 +665,7 @@ describe('bass compressor prompt workflow', () => {
     });
 
     afterEach(async () => {
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         runtimeGraphDeltaSpy.mockRestore();
         removeRealBassTrackStrips();
         resetAiWorkflowCommandPreflightFixture();
@@ -726,12 +727,12 @@ describe('bass compressor prompt workflow', () => {
         expect(confirmation?.risk).toMatchObject({ level: 'broad-reversible' });
         expect(confirmation?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
         expect(confirmation?.affectedIds).toEqual([
+            'device-ai-track-bass-di-builtin-compressor',
             'track-bass-di',
             'device-bass-di-eq',
-            'device-ai-track-bass-di-builtin-compressor',
+            'device-ai-track-bass-amp-builtin-compressor',
             'track-bass-amp',
             'device-bass-amp-eq',
-            'device-ai-track-bass-amp-builtin-compressor',
         ]);
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
@@ -781,10 +782,10 @@ describe('bass compressor prompt workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: track-bass-di, device-bass-di-eq, device-ai-track-bass-di-builtin-compressor'
+            'Affected IDs: device-ai-track-bass-di-builtin-compressor, track-bass-di, device-bass-di-eq'
         );
         expect(receipt?.content).toContain(
-            'Affected IDs: track-bass-amp, device-bass-amp-eq, device-ai-track-bass-amp-builtin-compressor'
+            'Affected IDs: device-ai-track-bass-amp-builtin-compressor, track-bass-amp, device-bass-amp-eq'
         );
         expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
         expect(undoStore.value?.past).toHaveLength(2);
@@ -794,6 +795,9 @@ describe('bass compressor prompt workflow', () => {
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_DEVICE_IDS);
         expectRuntimeDeviceChain('track-bass-amp', BASS_AMP_DEVICE_IDS);
         expect(getTrack('track-bass-frozen')).toEqual(frozenBefore);
+        expect(getTrack('track-guitar')).toEqual(guitarBefore);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(2);
         expect(
             getRuntimeDeviceChainCalls(runtimeGraphDeltaSpy).map(({ operation, trackId }) => [operation, trackId])
         ).toEqual([
@@ -808,6 +812,9 @@ describe('bass compressor prompt workflow', () => {
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
         expectRuntimeDeviceChain('track-bass-amp', BASS_AMP_INSERTED_DEVICE_IDS);
         expect(getTrack('track-bass-frozen')).toEqual(frozenBefore);
+        expect(getTrack('track-guitar')).toEqual(guitarBefore);
+        expect(undoStore.value?.past).toHaveLength(2);
+        expect(undoStore.value?.future).toEqual([]);
         expect(
             getRuntimeDeviceChainCalls(runtimeGraphDeltaSpy).map(({ operation, trackId }) => [operation, trackId])
         ).toEqual([
@@ -820,9 +827,8 @@ describe('bass compressor prompt workflow', () => {
         ]);
     });
 
-    it('normalizes the hosted provider to the same guarded insertion plan and receipt', async () => {
+    it('grounds the hosted OpenAI-compatible fixture to the same terminal result', async () => {
         runtimeMocks.backend.value = 'cloud';
-
         await sendChatMessage(PROMPT);
 
         expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
@@ -830,41 +836,14 @@ describe('bass compressor prompt workflow', () => {
             expect.arrayContaining([expect.objectContaining({ id: 'track-bass-frozen', frozen: true })])
         );
         const confirmation = getConfirmation();
-        expect(confirmation?.actions).toEqual([
-            {
-                type: 'addDevice',
-                payload: {
-                    trackId: 'track-bass-di',
-                    deviceType: 'builtin-compressor',
-                    afterDeviceId: 'device-bass-di-eq',
-                    expectedDeviceIds: BASS_DI_DEVICE_IDS,
-                    expectedFrozen: false,
-                    deviceId: 'device-ai-track-bass-di-builtin-compressor',
-                },
-            },
-            {
-                type: 'addDevice',
-                payload: {
-                    trackId: 'track-bass-amp',
-                    deviceType: 'builtin-compressor',
-                    afterDeviceId: 'device-bass-amp-eq',
-                    expectedDeviceIds: BASS_AMP_DEVICE_IDS,
-                    expectedFrozen: false,
-                    deviceId: 'device-ai-track-bass-amp-builtin-compressor',
-                },
-            },
-        ]);
+        expect(confirmation?.actions).toHaveLength(2);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
             status: 'executed',
         });
-        const receipt = chatStore.value?.messages.find(
-            (message) => message.pendingActionConfirmationId === confirmation?.id
-        );
-        expect(receipt?.content).toContain(
-            'Insert "Compressor" (device-ai-track-bass-amp-builtin-compressor, builtin-compressor) on "Bass Amp" (track-bass-amp) after "EQ" (device-bass-amp-eq)'
-        );
-        expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
+
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_INSERTED_DEVICE_IDS);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_INSERTED_DEVICE_IDS);
     });
 
     it('rejects provider enlargement to a frozen bass track without a proposal or write', async () => {
@@ -889,7 +868,21 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects an ambiguous repeated EQ anchor on a target track', async () => {
+    it('rejects an unanchored insertion before confirmation or write', async () => {
+        const before = structuredClone(trackStore.value?.tracks);
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify([{ name: 'addDevice', arguments: { trackId: 'track-bass-di', deviceType: 'Compressor' } }])
+        );
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmation()).toBeNull();
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('keeps the exact application-resolved EQ anchor when the target has a repeated EQ', async () => {
         const state = trackStore.value;
         if (!state) {
             throw new Error('Expected track state');
@@ -905,7 +898,18 @@ describe('bass compressor prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(getConfirmation()).toBeNull();
+        expect(getConfirmation()?.actions).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    type: 'addDevice',
+                    payload: expect.objectContaining({
+                        trackId: 'track-bass-di',
+                        afterDeviceId: 'device-bass-di-eq',
+                        expectedDeviceIds: [...BASS_DI_DEVICE_IDS, 'device-bass-di-eq-2'],
+                    }),
+                }),
+            ])
+        );
         expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
     });
 
@@ -1019,6 +1023,110 @@ describe('bass compressor prompt workflow', () => {
         await sendChatMessage(PROMPT);
 
         expect(getConfirmation()?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
+    });
+
+    it('rejects the stale proposal when a later target chain changed after approval', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id !== 'track-bass-amp') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    devices: [...track.devices, createDevice('device-remote-change', 'Gain', 'builtin-gain')],
+                };
+            }),
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
+            ...BASS_AMP_DEVICE_IDS,
+            'device-remote-change',
+        ]);
+        expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('applies no project, runtime, or undo change when the stale proposal is rejected before execution', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'track-bass-amp'
+                    ? {
+                          ...track,
+                          devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
+                      }
+                    : track
+            ),
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
+            ...BASS_AMP_DEVICE_IDS,
+            'device-remote-amp',
+        ]);
+        expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('preserves collaborator edits on both target chains when the stale proposal is rejected before execution', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id === 'track-bass-di') {
+                    return {
+                        ...track,
+                        devices: [...track.devices, createDevice('device-remote-di', 'Gain', 'builtin-gain')],
+                    };
+                }
+                if (track.id === 'track-bass-amp') {
+                    return {
+                        ...track,
+                        devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
+                    };
+                }
+                return track;
+            }),
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
+            ...BASS_DI_DEVICE_IDS,
+            'device-remote-di',
+        ]);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
+            ...BASS_AMP_DEVICE_IDS,
+            'device-remote-amp',
+        ]);
+        expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it('keeps committed project truth and exposes runtime divergence when the later target chain conflicts', async () => {

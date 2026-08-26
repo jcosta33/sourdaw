@@ -178,6 +178,7 @@ describe('handleLoadExternalPlugin command path', () => {
         });
         mocks.activateExternalPlugin.mockImplementation(() => {
             effects.push('host-activation');
+            return Promise.resolve({ status: 'active' });
         });
 
         await expect(

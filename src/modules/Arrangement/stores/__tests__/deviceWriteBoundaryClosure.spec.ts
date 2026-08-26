@@ -8,6 +8,7 @@ import {
     type FunctionDeclaration,
     type FunctionExpression,
     type Node,
+    NodeFlags,
     ScriptKind,
     ScriptTarget,
     createSourceFile,
@@ -25,13 +26,14 @@ import {
     isNonNullExpression,
     isObjectLiteralExpression,
     isParenthesizedExpression,
-    isPropertyAssignment,
     isPropertyAccessExpression,
+    isPropertyAssignment,
     isReturnStatement,
     isSatisfiesExpression,
     isShorthandPropertyAssignment,
     isStringLiteral,
     isVariableDeclaration,
+    isVariableDeclarationList,
 } from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -365,13 +367,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Grand Boule's state; the three Mix knobs now persist through
         // `grandBouleParamBridge/helpers.ts`, and calibration remains the
         // exception rather than the rule.
-        // Count provenance: new file entry, measured 1 — the sole executable
-        // `engine.setParam` call that projects a validated morph state to the
-        // Grand Boule runtime. Its callers are transient preview, authoritative
-        // project-to-engine reconciliation, and engine-ready replay; none writes
-        // project truth. Settled edits instead pass serializable device state to
-        // `commitGrandBouleDeviceState`, which dispatches the undoable
-        // `setGrandBouleDeviceState` action through `executeAppAction`.
+        // The runtime projection owns the one direct engine parameter write;
+        // settled edits route through the undoable command instead.
         'src/modules/GrandBoule/useCases/applyGrandBouleMorphState.ts': 1,
         // Count provenance: new file entry, measured 1 — a single doc-comment
         // mention of `CrumbsNode.setParam`, naming the worklet the commit now
@@ -400,11 +397,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // GrandBoule on a track hosting two before the scope was added.
         'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
-        // Count provenance: measured 1, was 7. The remaining match is the
-        // doc-comment naming `setParam`; this file no longer writes the engine.
-        // It clamps intent and delegates to `dispatchGrandBouleMorphEdit`, whose
-        // transient branch reaches the runtime projection above and whose settled
-        // branch reaches the command-routed, serializable, undoable commit path.
+        // This now delegates to the command/runtime split; its remaining match
+        // is the explanatory `setParam` comment.
         'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
@@ -522,18 +516,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // versioned Command executor, not a hydration path.
         'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 4,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
+        // Pending-effect continuation records keep only command-envelope types;
+        // their two matches are type imports and type projections, never device IO.
+        'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
+        'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
+        'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
+        'src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts': 2,
         // Count provenance: was 3, measured 5 — `compileAgentActionExecution`
         // import plus two calls, and `providerProtocol.compileRequest` once.
         // Command-envelope / provider-request compilers; no device hydration.
         'src/modules/AiRuntime/useCases/sendChatMessage.ts': 5,
-        // Count provenance: new file entry, measured 3 — the
-        // `compileAgentActionExecution` import identifier, its module path, and
-        // one call. Prompt admission now owns this immutable Command-envelope
-        // compilation; the file performs no device load, hydration, or engine
-        // write. The same references left `executePromptActionGroup.ts` and the
-        // public barrel, which now score 0 and therefore leave this census.
+        // Prompt admission owns immutable action-execution compilation; the import,
+        // module path, and call are metadata construction, not hydration.
         'src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts': 3,
         // Count provenance: the versioned-command argument compiler and its two
         // callers only project immutable envelope metadata. These are bare
@@ -568,13 +564,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // Count provenance: 6 = the compileAutomationSegments import line
-        // (matched twice: named import + module path), its single call site,
-        // and three doc-comment references to compileAutomationEvents that bind
-        // the segment range and affine-scale laws to the shared compiler. The
-        // executable call surface is unchanged and singular; this file schedules
-        // offline runtime automation and writes no project device state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
+        // The shared offline scheduler names its pure compiler seven times; it
+        // schedules runtime events but does not write project device state.
+        // Measured 7, was 6: the shared lane-bound kernel extraction
+        // (src/utils/automationLaneBound.ts) rewrote the `clampToLaneRange`
+        // wrapper's doc comment and added one more `compileAutomationEvents`
+        // mention naming the caller that supplies the bracket pair.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 7,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -612,11 +608,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Gluten/useCases/index.ts': 1,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,
-        // Count provenance: new file entry, measured 2 — the event contract and
-        // subscription both name `audioDevice.loaded`. The subscriber filters to
-        // Grand Boule, resolves the exact device id, and projects authoritative
-        // serialized project state into the newly ready engine; it never writes
-        // project truth and therefore creates no competing undo owner.
+        // Event contract and subscription project serialized state to the ready
+        // Grand Boule engine; neither writes project truth.
         'src/modules/GrandBoule/useCases/grandBouleSubscriber.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts': 1,
@@ -663,6 +656,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
         // (#747) — a pure curve-math utility, not a device-write sink.
         'src/utils/automationCurve.ts': 1,
+        // Count provenance: new file entry, measured 1 — a doc-comment mention
+        // of `compileAutomationEvents` naming the offline compile path that
+        // evaluates this shared lane bound per segment. The kernel is pure
+        // clamp arithmetic over an interpolated value; it holds no write.
+        'src/utils/automationLaneBound.ts': 1,
         // Count provenance (#1994): lexical compile* matches after the
         // runtime-graph-delta split. None is a new raw store write.
         // AiRuntime: compileRequest / command-envelope compilers (not device
@@ -671,6 +669,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 2,
         'src/modules/AiRuntime/repositories/providerAdapterRegistry.ts': 3,
         'src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts': 1,
+        // Count provenance: new file entry, measured 1 — the module path in a
+        // type-only import of `ArbitraryCommandListEvidence` (the family
+        // pattern matches inside the string). The composer projects immutable
+        // agent-run scope metadata; it holds no device write.
+        'src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts': 1,
         'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
         'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
@@ -746,12 +749,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
 
 const DEVICE_DATA_COUNTS = {
     executable: {
-        // Count provenance: new file entry, measured 3 — the guarded comparator
-        // field, `restoredDevices` parameter, and the actual `devices:` restore.
-        // This Arrangement-owned inverse runs as a registered command handler,
-        // verifies the full serializable snapshot against live project truth,
-        // preserves the live external-plugin chunk, and writes through
-        // `updateTrack` inside the Automerge action transaction.
+        // Guarded clip-state restoration rebuilds the stored device chain inside
+        // the registered action transaction.
         'src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts': 3,
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // the Arrangement handler commits through executeAppAction. Project
@@ -786,15 +785,12 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 2,
         'src/modules/Arrangement/services/computeTrackHash.ts': 1,
         'src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts': 2,
-        // The explicit nested `parameterValues:` replacement and the shorthand
-        // `devices` returned from the owning trackStore mutation.
+        // The explicit parameter map and shorthand returned device chain are both
+        // part of the owning store write.
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 2,
         'src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts': 1,
         'src/modules/Arrangement/stores/trackStore.ts': 2,
-        // Count provenance: new file entry, measured 1 — `devices:` in the
-        // structured track snapshot captured for guarded clip-collection undo.
-        // This is an Arrangement-owned pure read; the JSON-safe snapshot becomes
-        // command payload data and the registered restore handler owns the write.
+        // Snapshot capture reads serializable device topology for a later command.
         'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
@@ -805,14 +801,12 @@ const DEVICE_DATA_COUNTS = {
         // prepareRemoveDevice is the Arrangement-owned compiler for the
         // registered remove handler.
         'src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts': 2,
-        // Device reconstruction plus the shorthand `devices` returned from
-        // updateTrack. The registered restore handler owns the transaction.
+        // Device reconstruction and the shorthand chain replacement are the
+        // registered restore action's complete project write.
         'src/modules/Arrangement/useCases/device/restoreDevice.ts': 2,
-        // Explicit device-chain replacement plus the shorthand parameter map
-        // returned from its nested updateTrack callback.
+        // Each parameter mutation returns its updated shorthand map alongside the
+        // explicit device-chain replacement.
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 2,
-        // Explicit device-chain replacement plus presence-aware shorthand
-        // parameterValues, both inside the owning updateTrack mutation.
         'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
         // Count provenance: PH-3 (#730) — setExternalPluginState maps track
         // devices to store the captured native-plugin state chunk; the single
@@ -854,10 +848,7 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
-        // Count provenance: new file entry, measured 1 — the Project-owned
-        // `devices:` projection in an immutable agent-facing read contract. It
-        // maps canonical serialized ProjectData and performs no store, document,
-        // engine, or undo write.
+        // Immutable agent-facing project projection; it performs no write.
         'src/modules/Project/useCases/getAgentProjectModelContract.ts': 1,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
@@ -913,8 +904,6 @@ const DEVICE_DATA_COUNTS = {
         // shouldCreateLiveTrackStrip can read device types for folder-strip
         // eligibility (#584) — a static declaration, not an executable access.
         'src/modules/Arrangement/stores/trackEligibility.ts': 1,
-        // Count provenance: new file entry, measured 1 — the type-only
-        // `devices:` field on the immutable agent project-track contract.
         'src/modules/Project/models/AgentProjectModelContract.ts': 1,
         'src/modules/Project/models/ProjectData.ts': 4,
         'src/modules/Project/models/VcaTrackMigration.ts': 1,
@@ -1016,13 +1005,26 @@ function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDef
 const DEVICE_DATA_PROPERTIES = new Set(['devices', 'parameterValues']);
 
 type LocalUpdater = ArrowFunction | FunctionDeclaration | FunctionExpression;
+type LocalBinding =
+    | { readonly kind: 'expression'; readonly expression: Expression }
+    | { readonly kind: 'parameter' }
+    | { readonly kind: 'unclassifiable' }
+    | { readonly kind: 'updater'; readonly updater: LocalUpdater };
 type LexicalScope = {
     readonly parent: LexicalScope | null;
-    readonly bindings: Map<string, LocalUpdater | null>;
+    readonly bindings: Map<string, LocalBinding>;
 };
 
-function addLocalBinding(scope: LexicalScope, name: string, updater: LocalUpdater | null): void {
-    scope.bindings.set(name, scope.bindings.has(name) ? null : updater);
+function addLocalBinding(scope: LexicalScope, name: string, binding: LocalBinding): void {
+    scope.bindings.set(name, scope.bindings.has(name) ? { kind: 'unclassifiable' } : binding);
+}
+
+function isConstVariableDeclaration(node: Node): boolean {
+    return (
+        isVariableDeclaration(node) &&
+        isVariableDeclarationList(node.parent) &&
+        (node.parent.flags & NodeFlags.Const) > 0
+    );
 }
 
 function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
@@ -1031,13 +1033,19 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
     const visit = (node: Node, scope: LexicalScope): void => {
         scopeByNode.set(node, scope);
         if (isFunctionDeclaration(node) && node.name) {
-            addLocalBinding(scope, node.name.text, node);
+            addLocalBinding(scope, node.name.text, { kind: 'updater', updater: node });
         }
         if (isVariableDeclaration(node) && isIdentifier(node.name)) {
             const initializer = node.initializer;
             const updater =
                 initializer && (isArrowFunction(initializer) || isFunctionExpression(initializer)) ? initializer : null;
-            addLocalBinding(scope, node.name.text, updater);
+            if (updater) {
+                addLocalBinding(scope, node.name.text, { kind: 'updater', updater });
+            } else if (initializer && isConstVariableDeclaration(node)) {
+                addLocalBinding(scope, node.name.text, { kind: 'expression', expression: initializer });
+            } else {
+                addLocalBinding(scope, node.name.text, { kind: 'unclassifiable' });
+            }
         }
 
         let childScope = scope;
@@ -1045,7 +1053,7 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
             childScope = { parent: scope, bindings: new Map() };
             for (const parameter of node.parameters) {
                 if (isIdentifier(parameter.name)) {
-                    addLocalBinding(childScope, parameter.name.text, null);
+                    addLocalBinding(childScope, parameter.name.text, { kind: 'parameter' });
                 }
             }
         } else if (isBlock(node)) {
@@ -1057,13 +1065,19 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
     return scopeByNode;
 }
 
-function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): LocalUpdater | null {
-    for (let current = scope; current; current = current.parent) {
-        if (current.bindings.has(name)) {
-            return current.bindings.get(name) ?? null;
+function resolveLocalBinding(name: string, scope: LexicalScope | undefined): LocalBinding | undefined {
+    for (let current = scope; current; current = current.parent ?? undefined) {
+        const binding = current.bindings.get(name);
+        if (binding) {
+            return binding;
         }
     }
-    return null;
+    return undefined;
+}
+
+function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): LocalUpdater | null {
+    const binding = resolveLocalBinding(name, scope);
+    return binding?.kind === 'updater' ? binding.updater : null;
 }
 
 function isUpdateTrackCall(node: Node): node is CallExpression {
@@ -1093,16 +1107,17 @@ function unwrapStateExpression(expression: Expression): Expression {
 }
 
 function returnedStateExpressions(updater: LocalUpdater): Expression[] {
-    if (!isBlock(updater.body)) {
-        return [updater.body];
+    const body = updater.body;
+    if (body === undefined) {
+        return [];
+    }
+    if (!isBlock(body)) {
+        return [body];
     }
 
     const expressions: Expression[] = [];
     const visit = (node: Node): void => {
-        if (
-            node !== updater.body &&
-            (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node))
-        ) {
+        if (node !== body && (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node))) {
             return;
         }
         if (isReturnStatement(node)) {
@@ -1113,7 +1128,7 @@ function returnedStateExpressions(updater: LocalUpdater): Expression[] {
         }
         forEachChild(node, visit);
     };
-    visit(updater.body);
+    visit(body);
     return expressions;
 }
 
@@ -1127,48 +1142,81 @@ function countDeviceDataAstWrites(file: ProductionSource): number {
     );
     const scopeByNode = indexLocalUpdaters(sourceFile);
     const writes = new Set<Node>();
+    const visiting = new Set<Expression>();
+    const seen = new Set<Expression>();
 
-    const collectStateExpression = (candidate: Expression): void => {
+    // Bindings stand for a returned state expression, not nested data: resolving a
+    // device variable inside that state would double-count its construction.
+    // A returned identifier may pass as "no change" only when it resolves to a
+    // proven binding; a missing binding means the state shape is unsupported and
+    // must reject the audit rather than silently clear the census.
+    const collectStateExpression = (candidate: Expression, resolveBinding = true): void => {
         const expression = unwrapStateExpression(candidate);
-        if (isObjectLiteralExpression(expression)) {
-            for (const property of expression.properties) {
-                if (isShorthandPropertyAssignment(property) && DEVICE_DATA_PROPERTIES.has(property.name.text)) {
-                    writes.add(property);
-                    continue;
+        if (visiting.has(expression)) {
+            throw new Error('cyclic local state binding');
+        }
+        if (seen.has(expression)) {
+            return;
+        }
+        visiting.add(expression);
+        try {
+            if (isObjectLiteralExpression(expression)) {
+                for (const property of expression.properties) {
+                    if (isShorthandPropertyAssignment(property) && DEVICE_DATA_PROPERTIES.has(property.name.text)) {
+                        writes.add(property);
+                        continue;
+                    }
+                    if (!isPropertyAssignment(property)) {
+                        continue;
+                    }
+                    if (
+                        isComputedPropertyName(property.name) &&
+                        isStringLiteral(property.name.expression) &&
+                        DEVICE_DATA_PROPERTIES.has(property.name.expression.text)
+                    ) {
+                        writes.add(property);
+                    }
+                    collectStateExpression(property.initializer, false);
                 }
-                if (!isPropertyAssignment(property)) {
-                    continue;
-                }
-                if (
-                    isComputedPropertyName(property.name) &&
-                    isStringLiteral(property.name.expression) &&
-                    DEVICE_DATA_PROPERTIES.has(property.name.expression.text)
-                ) {
-                    writes.add(property);
-                }
-                collectStateExpression(property.initializer);
+                return;
             }
-            return;
-        }
-        if (isArrayLiteralExpression(expression)) {
-            for (const element of expression.elements) {
-                collectStateExpression(element);
+            if (isArrayLiteralExpression(expression)) {
+                for (const element of expression.elements) {
+                    collectStateExpression(element, false);
+                }
+                return;
             }
-            return;
-        }
-        if (isConditionalExpression(expression)) {
-            collectStateExpression(expression.whenTrue);
-            collectStateExpression(expression.whenFalse);
-            return;
-        }
-        if (isCallExpression(expression)) {
-            for (const argument of expression.arguments) {
-                if (isArrowFunction(argument) || isFunctionExpression(argument)) {
-                    for (const returned of returnedStateExpressions(argument)) {
-                        collectStateExpression(returned);
+            if (isConditionalExpression(expression)) {
+                collectStateExpression(expression.whenTrue);
+                collectStateExpression(expression.whenFalse);
+                return;
+            }
+            if (resolveBinding && isIdentifier(expression)) {
+                const binding = resolveLocalBinding(expression.text, scopeByNode.get(expression));
+                if (!binding) {
+                    throw new Error(`unresolved local state binding: ${expression.text}`);
+                }
+                if (binding.kind === 'parameter') {
+                    return;
+                }
+                if (binding.kind !== 'expression') {
+                    throw new Error(`unclassifiable local state binding: ${expression.text}`);
+                }
+                collectStateExpression(binding.expression);
+                return;
+            }
+            if (isCallExpression(expression)) {
+                for (const argument of expression.arguments) {
+                    if (isArrowFunction(argument) || isFunctionExpression(argument)) {
+                        for (const returned of returnedStateExpressions(argument)) {
+                            collectStateExpression(returned);
+                        }
                     }
                 }
             }
+        } finally {
+            visiting.delete(expression);
+            seen.add(expression);
         }
     };
 
@@ -1310,6 +1358,60 @@ describe('device write boundary closure', () => {
                 source: 'const devices = []; const replace = (current) => ({ ...current, devices }); { const replace = (current) => ({ ...current }); updateTrack("track", replace); }',
             })
         ).toBe(0);
+    });
+
+    it('detects a local state expression returned from an updater', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/localStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; return next; });',
+            })
+        ).toBe(1);
+    });
+
+    it('accepts a no-change updater return and resolves only its legitimate nearest shadow', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/noChangeUpdater.ts',
+                source: 'updateTrack("track", (current) => current);',
+            })
+        ).toBe(0);
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/shadowedStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; { const next = current; return next; } });',
+            })
+        ).toBe(0);
+    });
+
+    it('rejects mutable, ambiguous, or cyclic returned local state expressions', () => {
+        expect(() =>
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/mutableStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { let next = { ...current, devices }; return next; });',
+            })
+        ).toThrow(/unclassifiable local state binding/);
+        expect(() =>
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/ambiguousStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; const next = current; return next; });',
+            })
+        ).toThrow(/unclassifiable local state binding/);
+        expect(() =>
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/cyclicStateExpression.ts',
+                source: 'const first = second; const second = first; updateTrack("track", () => first);',
+            })
+        ).toThrow(/cyclic local state binding/);
+    });
+
+    it('rejects a returned local whose binding cannot be resolved', () => {
+        expect(() =>
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/blockScopedStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { { var next = { ...current, devices }; } return next; });',
+            })
+        ).toThrow(/unresolved local state binding/);
     });
 
     it.each([

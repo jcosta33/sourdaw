@@ -167,6 +167,7 @@ describe('handleAddDevice', () => {
         }
 
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(result.postCommitEffect).toEqual({ kind: 'runtime-graph', remediation: 'repair' });
         result.afterCommit();
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
             expect.objectContaining({ operation: 'add-device' })
@@ -227,14 +228,85 @@ describe('handleAddDevice', () => {
         expect(undoStore.value?.past).toHaveLength(1);
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(1, {
-            trackId: 'folder-1',
-            activateDormantExternalPlugins: true,
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ trackId: 'folder-1', activateDormantExternalPlugins: true })
+        );
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ trackId: 'child-1', activateDormantExternalPlugins: true })
+        );
+    });
+
+    it('records a durable runtime recovery when a promoted child external plugin cannot activate', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 'folder-1', kind: 'folder', devices: [] },
+                { id: 'child-1', kind: 'audio', parentId: 'folder-1', devices: [] },
+            ],
         });
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(2, {
-            trackId: 'child-1',
-            activateDormantExternalPlugins: true,
+        mocks.writeDeviceToProject.mockReturnValue({
+            id: 'toaster-1',
+            type: 'toaster',
+            parameterValues: {},
         });
+        mocks.projectTrackToLiveStrip.mockImplementation(
+            (input: { onExternalPluginActivation?: (activation: Promise<unknown>) => void; trackId: string }) => {
+                if (input.trackId === 'child-1') {
+                    input.onExternalPluginActivation?.(
+                        Promise.resolve({
+                            status: 'failed',
+                            stage: 'attach',
+                            reason: 'native engine unavailable',
+                        })
+                    );
+                }
+                return {
+                    acceptance: 'accepted',
+                    application: 'applied',
+                    correlation: { appRevision: 1, projectRevision: 'project-1' },
+                    runtimeRevision: 2,
+                };
+            }
+        );
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        const committedError = await executeAppAction({
+            type: 'addDevice',
+            payload: { trackId: 'folder-1', deviceType: 'toaster', deviceId: 'toaster-1' },
+        }).then(
+            () => {
+                throw new Error('Expected a durable post-commit runtime recovery');
+            },
+            (error: unknown) => error
+        );
+
+        expect(isAppActionCommittedError(committedError)).toBe(true);
+        if (!isAppActionCommittedError(committedError) || !(committedError.cause instanceof AggregateError)) {
+            throw new Error('Expected the failed child activation to remain in the committed recovery boundary');
+        }
+        const activationFailures = committedError.cause.errors.flatMap((error) =>
+            error instanceof AggregateError ? error.errors : [error]
+        );
+        expect(
+            activationFailures.some(
+                (failure) =>
+                    failure instanceof Error &&
+                    failure.name === 'RuntimeExternalPluginActivationPostCommitError' &&
+                    (failure as Error & { pendingEffect?: unknown }).pendingEffect !== undefined
+            )
+        ).toBe(true);
+        const activationFailure = activationFailures.find(
+            (failure) => failure instanceof Error && failure.name === 'RuntimeExternalPluginActivationPostCommitError'
+        ) as (Error & { pendingEffect: unknown }) | undefined;
+        expect(activationFailure?.pendingEffect).toEqual(
+            expect.objectContaining({
+                kind: 'runtime-graph',
+                remediation: 'repair',
+                state: 'pending',
+            })
+        );
+        expect(undoStore.value?.past).toHaveLength(1);
     });
 
     it.each([

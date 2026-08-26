@@ -23,7 +23,7 @@ import {
     type ModelProviderStreamIdentity,
 } from '../../models/ModelProviderProtocol';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
-import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
+import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
@@ -33,6 +33,7 @@ import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore'
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
+import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
@@ -299,21 +300,23 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
                     const applicationTools = availableTools.filter(
-                        (tool) => tool.function.name === PROJECT_QUERY_TOOL_NAME
+                        (tool) =>
+                            tool.function.name === PROJECT_QUERY_TOOL_NAME ||
+                            tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
                     );
                     const actionTools = availableTools.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
-                            tool.function.name !== PROJECT_QUERY_TOOL_NAME
+                            tool.function.name !== PROJECT_QUERY_TOOL_NAME &&
+                            tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
                         prompt: toolSelectionPrompt,
                     });
-                    const workflowActionToolNames = new Set<string>(WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES);
                     const workflowActionTools =
                         workflowSelectionTools.length > 0
-                            ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
+                            ? actionTools.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
                             : [];
                     const mandatoryToolNames = new Set(
                         [...workflowSelectionTools, ...applicationTools, ...workflowActionTools].map(
@@ -323,12 +326,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const promptActionTools = selectedActionTools.filter(
                         (tool) => !mandatoryToolNames.has(tool.function.name)
                     );
+                    const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
-                        ...workflowSelectionTools,
-                        ...applicationTools,
-                        ...workflowActionTools,
-                        ...promptActionTools,
-                    ].slice(0, 30);
+                        ...mandatoryTools,
+                        ...promptActionTools.slice(0, Math.max(0, 30 - mandatoryTools.length)),
+                    ];
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
                     );

@@ -16,7 +16,9 @@ import {
     replaceBranchState,
     restoreBranchStateAfterSession,
     waitForCrdtDocumentTransition,
+    DOC_PREFIX_ROOT,
 } from '#/modules/CrdtDocument/useCases';
+import { getSettledProjectId, getSettledProjectIdentity } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -80,6 +82,16 @@ const sessionState: {
      * the store's error text.
      */
     sessionEndedByHostDeparture: boolean;
+    synchronizeAssetOwner:
+        | ((nextOwnerId: string) => Promise<
+              | {
+                    commit: () => Promise<void>;
+                    abort: () => Promise<void>;
+                }
+              | undefined
+          >)
+        | null;
+    assetOwnershipTask: Promise<void>;
 } = {
     peerManager: null,
     automergeSync: null,
@@ -93,6 +105,8 @@ const sessionState: {
     isProjectingBranches: false,
     lastProjectedBranchesJson: null,
     sessionEndedByHostDeparture: false,
+    synchronizeAssetOwner: null,
+    assetOwnershipTask: Promise.resolve(),
 };
 
 /** Shown to a joiner once the host has really gone — see the cleanup timer. */
@@ -357,6 +371,16 @@ function setPeerSyncQuarantined(peerId: PeerId, isQuarantined: boolean): void {
  */
 function buildAutomergeSyncHooks(): AutomergeSyncHooks {
     return {
+        captureSyncAcceptance: ({ peerId, docId }) => {
+            const state = collaborationStore.value;
+            const senderIsHost = state?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
+            return {
+                accepted: senderIsHost || docId !== DOC_BRANCHES,
+                senderIsHost,
+                protectedProjectIdentity:
+                    state && docId === DOC_PREFIX_ROOT && !senderIsHost ? getSettledProjectIdentity() : undefined,
+            };
+        },
         canApplySync: (peerId: PeerId, docId: string) => {
             // The host is the session authority: its syncs always apply.
             const senderIsHost =
@@ -373,8 +397,25 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             }
             return true;
         },
+        getProtectedProjectId: ({ peerId, docId }) => {
+            const state = collaborationStore.value;
+            if (!state || docId !== DOC_PREFIX_ROOT) {
+                return undefined;
+            }
+            const senderIsHost = state.peers.some((peer) => peer.id === peerId && peer.isHost);
+            return senderIsHost ? undefined : getSettledProjectId();
+        },
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
+        },
+        prepareSyncPersistence: ({ docId, projectId, senderIsHost }) => {
+            if (senderIsHost && docId === DOC_PREFIX_ROOT && projectId) {
+                return sessionState.synchronizeAssetOwner?.(projectId);
+            }
+            return undefined;
+        },
+        onPostPersistError: () => {
+            setCollaborationError('Could not update ownership of shared audio. Restarting safely retries it.');
         },
         onSendError: () => {
             // The peer is still connected but has not received these changes.
@@ -433,7 +474,15 @@ function getLocalPeerInfo(): CollaborationPeer {
     };
 }
 
-function initializeSessionRuntime(): PeerConnectionManager {
+type InitializeSessionRuntimeOptions = {
+    handoffSourceOwnerIds?: readonly string[];
+    rebindToSynchronizedOwner?: boolean;
+};
+
+function initializeSessionRuntime(
+    assetOwnerId: string,
+    options: InitializeSessionRuntimeOptions = {}
+): PeerConnectionManager {
     const peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
@@ -449,34 +498,84 @@ function initializeSessionRuntime(): PeerConnectionManager {
     sessionState.automergeSync.start();
     sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
-    sessionState.assetTransfer = new AssetTransfer(peerManager, {
-        onAssetAvailable: (hash) => {
-            void resolveAssetForClips(hash);
+    sessionState.assetTransfer = new AssetTransfer(
+        peerManager,
+        {
+            onAssetAvailable: (hash) => {
+                void resolveAssetForClips(hash);
+            },
+            onProgress: (_hash, _received, _total) => {
+                // Could update a UI progress indicator.
+            },
+            // An abandoned asset transfer is not a session failure — peers stay
+            // connected and the hash becomes requestable again — but it does mean
+            // clips referencing it stay silent, which the user otherwise has no way
+            // to see. Surface it on the panel's error row.
+            // The message names the retry condition rather than promising a retry:
+            // the only thing that re-asks for an asset is the scheduler tick, so a
+            // request is re-issued when playback next runs over a clip that needs
+            // it — and only until AssetTransfer's attempt bound is spent.
+            onTransferFailed: (hash, reason) => {
+                logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
+                setCollaborationError(
+                    `Could not receive shared audio from a peer — ${reason}. Playing over the affected clips asks again.`
+                );
+            },
         },
-        onProgress: (_hash, _received, _total) => {
-            // Could update a UI progress indicator.
-        },
-        // An abandoned asset transfer is not a session failure — peers stay
-        // connected and the hash becomes requestable again — but it does mean
-        // clips referencing it stay silent, which the user otherwise has no way
-        // to see. Surface it on the panel's error row.
-        // The message names the retry condition rather than promising a retry:
-        // the only thing that re-asks for an asset is the scheduler tick, so a
-        // request is re-issued when playback next runs over a clip that needs
-        // it — and only until AssetTransfer's attempt bound is spent.
-        onTransferFailed: (hash, reason) => {
-            logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
-            setCollaborationError(
-                `Could not receive shared audio from a peer — ${reason}. Playing over the affected clips asks again.`
-            );
-        },
-    });
+        assetOwnerId,
+        undefined,
+        {
+            durableStagingReady: options.rebindToSynchronizedOwner !== true,
+            handoffSourceOwnerIds: options.handoffSourceOwnerIds,
+        }
+    );
+
+    const assetTransfer = sessionState.assetTransfer;
+    const queueAssetOwnershipTask = <Result>(task: () => Promise<Result>): Promise<Result | undefined> => {
+        const result = sessionState.assetOwnershipTask.then(() => {
+            if (sessionState.assetTransfer !== assetTransfer) {
+                return undefined;
+            }
+            return task();
+        });
+        sessionState.assetOwnershipTask = result.then(
+            () => undefined,
+            () => undefined
+        );
+        return result;
+    };
+    if (options.rebindToSynchronizedOwner) {
+        sessionState.synchronizeAssetOwner = (nextOwnerId) =>
+            queueAssetOwnershipTask(async () => {
+                const prepared = await assetTransfer.prepareDurableOwnerRebind(nextOwnerId);
+                if (prepared.status === 'failed') {
+                    throw new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`);
+                }
+                return {
+                    commit: async () => {
+                        let failureReason = 'unknown';
+                        for (let attempt = 0; attempt < 3; attempt += 1) {
+                            try {
+                                await prepared.commit();
+                                return;
+                            } catch (error) {
+                                failureReason = error instanceof Error ? error.message : 'unexpected failure';
+                            }
+                            await Promise.resolve();
+                        }
+                        throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
+                    },
+                    abort: prepared.abort,
+                };
+            });
+    }
 
     return peerManager;
 }
 
 /** Tear down all subsystems without changing store state. */
 function cleanupSubsystems(): void {
+    sessionState.synchronizeAssetOwner = null;
     sessionState.pendingInviteId = null;
     sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();
@@ -936,4 +1035,5 @@ export const sessionRuntimePrimitives = {
     pickPeerColor,
     compressInvite,
     decompressInvite,
+    flushAssetOwnership: () => sessionState.assetOwnershipTask,
 };

@@ -11,11 +11,24 @@ type WindowWithFilePicker = Window & {
     }) => Promise<FileSystemFileHandle>;
 };
 
+type DownloadProjectFileInput = {
+    data: ProjectData;
+    shouldWrite: () => boolean;
+};
+
+export type DownloadProjectFileOutcome = 'written' | 'cancelled' | 'rejected-stale';
+
 /**
  * Download a project as a .sourdaw file.
  * Uses the native save dialog for desktop, and File System Access API for web (with anchor fallback).
  */
-export async function downloadProjectFile(data: ProjectData): Promise<void> {
+export async function downloadProjectFile({
+    data,
+    shouldWrite,
+}: DownloadProjectFileInput): Promise<DownloadProjectFileOutcome> {
+    if (!shouldWrite()) {
+        return 'rejected-stale';
+    }
     const safeName = data.meta.name.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${safeName}.sourdaw`;
 
@@ -24,10 +37,14 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
             defaultPath: filename,
             filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
         });
-        if (filePath) {
-            await saveProjectToFile(filePath, data);
+        if (!filePath) {
+            return 'cancelled';
         }
-        return;
+        if (!shouldWrite()) {
+            return 'rejected-stale';
+        }
+        await saveProjectToFile(filePath, data);
+        return 'written';
     }
 
     const json = JSON.stringify(data, null, 2);
@@ -45,14 +62,25 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
                     },
                 ],
             });
+            if (!shouldWrite()) {
+                return 'rejected-stale';
+            }
             const writable = await handle.createWritable();
+            if (!shouldWrite()) {
+                await writable.abort();
+                return 'rejected-stale';
+            }
             await writable.write(blob);
+            if (!shouldWrite()) {
+                await writable.abort();
+                return 'rejected-stale';
+            }
             await writable.close();
-            return;
+            return 'written';
         } catch (error) {
             // User cancelled
             if (error instanceof Error && error.name === 'AbortError') {
-                return;
+                return 'cancelled';
             }
             logger.warn('showSaveFilePicker failed, falling back to anchor download:', error);
         }
@@ -65,9 +93,15 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
     alpha.download = filename;
     alpha.style.display = 'none';
     document.body.appendChild(alpha);
+    if (!shouldWrite()) {
+        document.body.removeChild(alpha);
+        URL.revokeObjectURL(url);
+        return 'rejected-stale';
+    }
     alpha.click();
     setTimeout(() => {
         document.body.removeChild(alpha);
         URL.revokeObjectURL(url);
     }, 1000);
+    return 'written';
 }

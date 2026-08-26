@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { type AgentRunPreparedStemImportRecoveryCapsule } from '../../models/AgentRun';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
+import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../agentRunStore';
 
 const grants = {
     allowedOperationPrefixes: ['copyMidiArticulations'],
@@ -21,6 +23,24 @@ const pointTargetScope = {
     protectedTargetIds: ['clip-chorus-one'],
     protectedRanges: [{ startBeat: 0, endBeat: 4 }],
 };
+
+function createPreparedStemRecoveryCapsule(index: number): AgentRunPreparedStemImportRecoveryCapsule {
+    return {
+        schemaVersion: 1,
+        runId: `evicted-run-${String(index)}`,
+        batchId: `prepared-batch-${String(index)}`,
+        serializedCommandBatch: `serialized-batch-${String(index)}`,
+        resources: [
+            {
+                audioBufferId: `prepared-buffer-${String(index)}`,
+                assetLeaseId: `prepared-lease-${String(index)}`,
+            },
+        ],
+        status: 'pending',
+        lastError: null,
+        manualRepairRequiredAt: null,
+    };
+}
 
 describe('agentRunStore', () => {
     beforeEach(() => {
@@ -105,5 +125,84 @@ describe('agentRunStore', () => {
                 createdAt: 1,
             })
         ).toThrow('Agent run state contains data outside the persistent schema bounds');
+    });
+
+    it('rejects malformed and duplicate prepared-stem recovery capsules', () => {
+        const capsule = createPreparedStemRecoveryCapsule(0);
+        const emptyState = { schemaVersion: 1, runs: [] };
+
+        expect(
+            sanitizeAgentRunState({
+                ...emptyState,
+                preparedStemImportRecoveryLedger: [capsule, capsule],
+            })
+        ).toEqual(emptyState);
+        expect(
+            sanitizeAgentRunState({
+                ...emptyState,
+                preparedStemImportRecoveryLedger: [
+                    capsule,
+                    {
+                        ...createPreparedStemRecoveryCapsule(1),
+                        resources: capsule.resources,
+                    },
+                ],
+            })
+        ).toEqual(emptyState);
+        expect(
+            sanitizeAgentRunState({
+                ...emptyState,
+                preparedStemImportRecoveryLedger: [
+                    {
+                        ...capsule,
+                        status: 'manual-repair',
+                        lastError: null,
+                        manualRepairRequiredAt: null,
+                    },
+                ],
+            })
+        ).toEqual(emptyState);
+    });
+
+    it('refuses a new unresolved capsule instead of evicting recovery at capacity', () => {
+        const admittedCapsules = Array.from({ length: 256 }, (_, index) => createPreparedStemRecoveryCapsule(index));
+        const emptyState = { schemaVersion: 1, runs: [] };
+
+        expect(
+            sanitizeAgentRunState({
+                ...emptyState,
+                preparedStemImportRecoveryLedger: admittedCapsules,
+            })
+        ).toEqual({
+            ...emptyState,
+            preparedStemImportRecoveryLedger: admittedCapsules,
+        });
+        expect(
+            sanitizeAgentRunState({
+                ...emptyState,
+                preparedStemImportRecoveryLedger: [
+                    ...admittedCapsules,
+                    createPreparedStemRecoveryCapsule(admittedCapsules.length),
+                ],
+            })
+        ).toEqual(emptyState);
+
+        persistAgentRunState({
+            schemaVersion: 1,
+            runs: [],
+            preparedStemImportRecoveryLedger: admittedCapsules,
+        });
+
+        expect(() =>
+            persistAgentRunState({
+                ...readAgentRunState(),
+                preparedStemImportRecoveryLedger: [
+                    ...admittedCapsules,
+                    createPreparedStemRecoveryCapsule(admittedCapsules.length),
+                ],
+            })
+        ).toThrow('Agent run prepared-stem recovery ledger reached its persistent capacity');
+        expect(readAgentRunState().preparedStemImportRecoveryLedger).toHaveLength(256);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger?.[0]).toEqual(admittedCapsules[0]);
     });
 });
