@@ -8,6 +8,7 @@ import {
     type FunctionDeclaration,
     type FunctionExpression,
     type Node,
+    NodeFlags,
     ScriptKind,
     ScriptTarget,
     createSourceFile,
@@ -32,6 +33,7 @@ import {
     isShorthandPropertyAssignment,
     isStringLiteral,
     isVariableDeclaration,
+    isVariableDeclarationList,
 } from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -989,13 +991,25 @@ function countByPath(files: ReadonlyArray<ProductionSource>, definition: SinkDef
 const DEVICE_DATA_PROPERTIES = new Set(['devices', 'parameterValues']);
 
 type LocalUpdater = ArrowFunction | FunctionDeclaration | FunctionExpression;
+type LocalBinding = {
+    readonly expression: Expression | null;
+    readonly updater: LocalUpdater | null;
+};
 type LexicalScope = {
     readonly parent: LexicalScope | null;
-    readonly bindings: Map<string, LocalUpdater | null>;
+    readonly bindings: Map<string, LocalBinding | null>;
 };
 
-function addLocalBinding(scope: LexicalScope, name: string, updater: LocalUpdater | null): void {
-    scope.bindings.set(name, scope.bindings.has(name) ? null : updater);
+function addLocalBinding(scope: LexicalScope, name: string, binding: LocalBinding | null): void {
+    scope.bindings.set(name, scope.bindings.has(name) ? null : binding);
+}
+
+function isConstVariableDeclaration(node: Node): boolean {
+    return (
+        isVariableDeclaration(node) &&
+        isVariableDeclarationList(node.parent) &&
+        (node.parent.flags & NodeFlags.Const) > 0
+    );
 }
 
 function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
@@ -1004,13 +1018,14 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
     const visit = (node: Node, scope: LexicalScope): void => {
         scopeByNode.set(node, scope);
         if (isFunctionDeclaration(node) && node.name) {
-            addLocalBinding(scope, node.name.text, node);
+            addLocalBinding(scope, node.name.text, { expression: null, updater: node });
         }
         if (isVariableDeclaration(node) && isIdentifier(node.name)) {
             const initializer = node.initializer;
             const updater =
                 initializer && (isArrowFunction(initializer) || isFunctionExpression(initializer)) ? initializer : null;
-            addLocalBinding(scope, node.name.text, updater);
+            const expression = initializer && !updater && isConstVariableDeclaration(node) ? initializer : null;
+            addLocalBinding(scope, node.name.text, { expression, updater });
         }
 
         let childScope = scope;
@@ -1030,13 +1045,21 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
     return scopeByNode;
 }
 
-function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): LocalUpdater | null {
+function resolveLocalBinding(name: string, scope: LexicalScope | undefined): LocalBinding | null {
     for (let current = scope; current; current = current.parent) {
         if (current.bindings.has(name)) {
             return current.bindings.get(name) ?? null;
         }
     }
     return null;
+}
+
+function resolveLocalUpdater(name: string, scope: LexicalScope | undefined): LocalUpdater | null {
+    return resolveLocalBinding(name, scope)?.updater ?? null;
+}
+
+function resolveLocalExpression(name: string, scope: LexicalScope | undefined): Expression | null {
+    return resolveLocalBinding(name, scope)?.expression ?? null;
 }
 
 function isUpdateTrackCall(node: Node): node is CallExpression {
@@ -1100,9 +1123,16 @@ function countDeviceDataAstWrites(file: ProductionSource): number {
     );
     const scopeByNode = indexLocalUpdaters(sourceFile);
     const writes = new Set<Node>();
+    const seen = new Set<Expression>();
 
-    const collectStateExpression = (candidate: Expression): void => {
+    // Bindings stand for a returned state expression, not nested data: resolving a
+    // device variable inside that state would double-count its construction.
+    const collectStateExpression = (candidate: Expression, resolveBinding = true): void => {
         const expression = unwrapStateExpression(candidate);
+        if (seen.has(expression)) {
+            return;
+        }
+        seen.add(expression);
         if (isObjectLiteralExpression(expression)) {
             for (const property of expression.properties) {
                 if (isShorthandPropertyAssignment(property) && DEVICE_DATA_PROPERTIES.has(property.name.text)) {
@@ -1119,19 +1149,26 @@ function countDeviceDataAstWrites(file: ProductionSource): number {
                 ) {
                     writes.add(property);
                 }
-                collectStateExpression(property.initializer);
+                collectStateExpression(property.initializer, false);
             }
             return;
         }
         if (isArrayLiteralExpression(expression)) {
             for (const element of expression.elements) {
-                collectStateExpression(element);
+                collectStateExpression(element, false);
             }
             return;
         }
         if (isConditionalExpression(expression)) {
             collectStateExpression(expression.whenTrue);
             collectStateExpression(expression.whenFalse);
+            return;
+        }
+        if (resolveBinding && isIdentifier(expression)) {
+            const localExpression = resolveLocalExpression(expression.text, scopeByNode.get(expression));
+            if (localExpression) {
+                collectStateExpression(localExpression);
+            }
             return;
         }
         if (isCallExpression(expression)) {
@@ -1281,6 +1318,36 @@ describe('device write boundary closure', () => {
             countDeviceDataAstWrites({
                 path: 'src/modules/Arrangement/shadowedUpdater.ts',
                 source: 'const devices = []; const replace = (current) => ({ ...current, devices }); { const replace = (current) => ({ ...current }); updateTrack("track", replace); }',
+            })
+        ).toBe(0);
+    });
+
+    it('detects a local state expression returned from an updater', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/localStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; return next; });',
+            })
+        ).toBe(1);
+    });
+
+    it('fails closed for shadowed, ambiguous, or cyclic local state expressions', () => {
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/shadowedStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; { const next = current; return next; } });',
+            })
+        ).toBe(0);
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/ambiguousStateExpression.ts',
+                source: 'const devices = []; updateTrack("track", (current) => { const next = { ...current, devices }; const next = current; return next; });',
+            })
+        ).toBe(0);
+        expect(
+            countDeviceDataAstWrites({
+                path: 'src/modules/Arrangement/cyclicStateExpression.ts',
+                source: 'const first = second; const second = first; updateTrack("track", () => first);',
             })
         ).toBe(0);
     });
