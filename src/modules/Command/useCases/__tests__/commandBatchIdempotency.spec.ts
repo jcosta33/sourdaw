@@ -20,6 +20,7 @@ import { commandRuntimeRepairPort } from '../commandRuntimeRepairPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { createRecoveredVerifiedBatchReceipt } from '../createRecoveredVerifiedBatchReceipt';
 import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
 import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
@@ -886,6 +887,85 @@ describe('command batch idempotency', () => {
 
         expect(lookup).toHaveBeenCalledTimes(cases.length);
         expect(lookup.mock.calls.every(([candidate]) => candidate === proof)).toBe(true);
+    });
+
+    it('accepts a recovery-produced committed receipt through durable repository lookup', async () => {
+        const batch = compileBatch();
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const command = parsed.envelope.commands[0];
+        if (!command) {
+            throw new Error('The recovered receipt batch did not contain a command');
+        }
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const priorReceipt = createVerifiedBatchReceipt({
+            contentHash: proof.contentHash,
+            envelope: parsed.envelope,
+            observedBaseRevision: parsed.envelope.baseRevision,
+            resultingRevision: revision(1),
+            result: {
+                status: 'committed-with-warning',
+                actions: [
+                    {
+                        action: {
+                            type: 'setTrackGain',
+                            payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                        },
+                        receipt: createVersionedCommandReceipt({ envelope: command }),
+                    },
+                ],
+                warningDetails: [
+                    {
+                        kind: 'external-effect',
+                        commandId: command.commandId,
+                        message: 'runtime graph update failed',
+                        pendingEffect: {
+                            commandId: command.commandId,
+                            kind: 'runtime-graph',
+                            operation: 'setTrackGain',
+                            reason: 'runtime graph update failed',
+                            remediation: 'retry',
+                            state: 'pending',
+                        },
+                    },
+                ],
+            },
+        });
+        const recoveredReceipt = createRecoveredVerifiedBatchReceipt({
+            contentHash: proof.contentHash,
+            envelope: parsed.envelope,
+            priorReceipt,
+            receiptWarnings: ['Recovered pending external effects.'],
+        });
+        const lookup = vi.fn(() =>
+            Promise.resolve({
+                status: 'complete' as const,
+                serializedReceipt: JSON.stringify(recoveredReceipt),
+            })
+        );
+        delete projectDocument.commandBatchIdempotency;
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        expect(priorReceipt).toMatchObject({
+            outcome: 'partially-committed',
+            pendingEffects: [{ commandId: command.commandId, state: 'pending' }],
+        });
+        expect(recoveredReceipt).toMatchObject({
+            schemaVersion: 2,
+            contentHash: proof.contentHash,
+            outcome: 'committed',
+            atomicity: 'atomic',
+            pendingEffects: [],
+        });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        expect(lookup).toHaveBeenCalledOnce();
+        expect(lookup).toHaveBeenCalledWith(proof);
     });
 
     it('fails closed for non-complete project evidence and repository lookup failures', async () => {
