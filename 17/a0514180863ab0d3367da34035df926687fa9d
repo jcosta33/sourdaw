@@ -1,0 +1,137 @@
+crates/sourdaw-native/src/state.rs
+  s_1b9333aca53d4d::t_6e24e1c1d610e7 301-303
+  s_1b9333aca53d4d::t_9841489b3d4b4a 325
+  s_1b9333aca53d4d::t_61a6d5495a1061 658-659
+  s_1b9333aca53d4d::t_7cdb958e012328 5
+  s_1b9333aca53d4d::t_816affed4ad354 316
+src/modules/PluginHost/useCases/getAgentDeviceFactoryManifest.ts
+  s_1b9333aca53d4d::t_c55585c4ac6038 175
+  s_1b9333aca53d4d::t_9b9ad8b265b513 299-302
+  s_1b9333aca53d4d::t_9981277ab19689 223,229,234,238,244,248
+  s_1b9333aca53d4d::t_5734c842c60a8e 5-19,27-34,38
+  s_1b9333aca53d4d::t_111a089da2aa16 186
+  s_1b9333aca53d4d::t_d546e6b53c1cbc 109-116,118,127
+src/modules/PluginHost/useCases/pluginScan/supportedPluginFormats.ts
+  s_1b9333aca53d4d::t_43737c134c87d8 12
+crates/daw-plugin-host/src/scanner.rs
+  s_1b9333aca53d4d::t_2fc04d1334a532 836-837
+  s_1b9333aca53d4d::t_2232904acdaa28 385,392
+  s_1b9333aca53d4d::t_384af14539e54f 792
+  s_1b9333aca53d4d::t_927e1558c18980 772-778
+  s_1b9333aca53d4d::t_630da1f7ca4c67 926,929-930
+  s_1b9333aca53d4d::t_96611edf301ff2 867-873
+  s_1b9333aca53d4d::t_7cd042b7eb3a25 287-292
+  s_1b9333aca53d4d::t_cf9d0cc96404b1 922-924
+  s_1b9333aca53d4d::t_af107ef30ac757 821-825
+  s_1b9333aca53d4d::t_85dfabfd648018 806-807,817
+crates/sourdaw-native/AGENTS.md
+  s_1b9333aca53d4d::t_be178bf41c263f 55-59
+  s_1b9333aca53d4d::t_d639e68c030cfd 35
+  s_1b9333aca53d4d::t_375500d68fbec1 37
+crates/sourdaw-native/src/commands/plugins.rs
+  s_1b9333aca53d4d::t_2b5309953d5747 649-681
+  s_1b9333aca53d4d::t_bf16544fa95585 864
+  s_1b9333aca53d4d::t_bd5a8590283dcf 108-136
+  s_1b9333aca53d4d::t_1e5e50fa91a129 16,107,139,142,153,298,324,375,596,636,720-735,737-744,749-758,763-770,773-781,785,789-822,824-839,841-854,856-857,859-863,866-867,869-878,2005,2393-2394
+  s_1b9333aca53d4d::t_db6aa52d9e68b0 2628
+  s_1b9333aca53d4d::t_7964405a6f6306 736,771-772,858,868,1602,3023-3099
+  s_1b9333aca53d4d::t_1c8c92fc997398 597-599,603-615
+  s_1b9333aca53d4d::t_fdacbe11b04a36 14
+  s_1b9333aca53d4d::t_6d6b476ac62843 154
+  s_1b9333aca53d4d::t_d74fc89721571d 2573-2577,2579,2592,2609-2613
+  s_1b9333aca53d4d::t_385cf20c6df712 783-784
+  s_1b9333aca53d4d::t_6430819733bb3d 2719-2721,2723,2728
+  s_1b9333aca53d4d::t_1b797b7350f29d 299,305-313
+  s_1b9333aca53d4d::t_185705973761b5 745-748
+  s_1b9333aca53d4d::t_03b43dac3cda15 759-762
+  s_1b9333aca53d4d::t_ade296665c1b9c 143-144
+src/modules/AudioEngine/presentations/views/PluginBrowser.tsx
+  s_1b9333aca53d4d::t_d3152cace207bd 42-43,46
+  s_1b9333aca53d4d::t_64c61db42104f5 73
+src/modules/AudioEngine/presentations/views/PluginScanSettings.tsx
+  s_1b9333aca53d4d::t_10dc75306f8ed5 195-204
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_1b9333aca53d4d::t_d57b9d45e31687 14-15
+  s_1b9333aca53d4d::t_b73d8f16a65e49 899-904
+src/modules/PluginHost/useCases/pluginScan/__tests__/findSupportedPlugin.spec.ts
+  s_1b9333aca53d4d::t_8ca2efa5a999e8 28
+  s_1b9333aca53d4d::t_3ed04b7785b4a0 73-75,77
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_1b9333aca53d4d::t_1ae5a7e3ed41b9 65-67
+src/modules/PluginHost/stores/__tests__/pluginScanStore.spec.ts
+  s_1b9333aca53d4d::t_6ce05e8f1a42b1 48,215
+src/modules/PluginHost/stores/pluginScanStore.ts
+  s_1b9333aca53d4d::t_e94affad281a44 24-25
+crates/sourdaw-native/src/host/plugin_scan_policy.rs
+  s_1b9333aca53d4d::t_1e27f2b6cab863 104-111,126,131-134,146-148,150,152-153
+  s_1b9333aca53d4d::t_f55198bb48041d 228-281
+public/legal/THIRD-PARTY-NOTICES.md
+  s_1b9333aca53d4d::t_60f1cb8edbbf58 120-127
+crates/daw-plugin-host/src/runtime.rs
+  s_1b9333aca53d4d::t_6ed12b45ef9661 177-192,195
+  s_1b9333aca53d4d::t_2dff3b819b5d8b 16-17
+  s_1b9333aca53d4d::t_127e6d948e6c48 193-194
+  s_1b9333aca53d4d::t_d90a7452e45b05 167-176
+crates/sourdaw-native/src/shutdown.rs
+  s_1b9333aca53d4d::t_90c7263a6b7bae 128-129
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_1b9333aca53d4d::t_5982b6345eeaa0 146-152,161-167
+  s_1b9333aca53d4d::t_8f2d7ea321e5b4 571-572,574,576,581-602,608-609,614
+  s_1b9333aca53d4d::t_5ce6e27909207b 411
+  s_1b9333aca53d4d::t_0048e72d4d8ec1 539
+  s_1b9333aca53d4d::t_b7d7ad88b9b436 5-7
+docs/architecture/04-plugin-hosting-security.md
+  s_1b9333aca53d4d::t_435e7a5bc4df43 10-13
+  s_1b9333aca53d4d::t_0484241f083d4d 20-22,24-28
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_1b9333aca53d4d::t_f42501e6002a89 345-351
+  s_1b9333aca53d4d::t_59d72395891913 336,338
+  s_1b9333aca53d4d::t_81b584e73f03fd 393-397
+  s_1b9333aca53d4d::t_ec7d786eacb12a 13-15
+  s_1b9333aca53d4d::t_e73b2345ae1e95 367,376
+  s_1b9333aca53d4d::t_ebe3840e8bab67 861-866,868
+  s_1b9333aca53d4d::t_4a845081726f00 21
+  s_1b9333aca53d4d::t_1a0c7b670c174e 883
+  s_1b9333aca53d4d::t_e4bf74bface4e4 742
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_1b9333aca53d4d::t_36ded4d8baa7d3 519
+  s_1b9333aca53d4d::t_8e83a7036b830c 14
+public/legal/DEPENDENCY-LICENSES.txt
+  s_1b9333aca53d4d::t_1dcdd3ea41a1da 9,13,37,273,2102,4560,14019-14080
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_1b9333aca53d4d::t_252e7c8fddecf1 122-123,127
+release/dependency-license-proofs.json
+  s_1b9333aca53d4d::t_9ee4cd379d1a1e 4,36,670-688,6293-6318,8609-8623
+crates/daw-plugin-host/AGENTS.md
+  s_1b9333aca53d4d::t_cb6a8a66d3fa71 3,7,13-15
+  s_1b9333aca53d4d::t_df29f75121436b 19
+src/modules/AudioEngine/presentations/views/__tests__/PluginBrowser.spec.tsx
+  s_1b9333aca53d4d::t_5b22d1b893681d 163-170
+  s_1b9333aca53d4d::t_141b601d23d844 61
+  s_1b9333aca53d4d::t_cdbadef3102c85 177
+  s_1b9333aca53d4d::t_d7a101e64acf43 134,136
+  s_1b9333aca53d4d::t_ac0db92f4ad120 149,151
+  s_1b9333aca53d4d::t_3d90b175663961 122
+  s_1b9333aca53d4d::t_8f72e94aea31d5 193
+src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts
+  s_1b9333aca53d4d::t_695d395648a409 553
+  s_1b9333aca53d4d::t_5bad17a446c640 534-552,554-634
+public/legal/PLUGIN-INTERFACE-NOTICES.txt
+  s_1b9333aca53d4d::t_8b86a6ae13afed 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "17a0514180863ab0d3367da34035df926687fa9d",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
