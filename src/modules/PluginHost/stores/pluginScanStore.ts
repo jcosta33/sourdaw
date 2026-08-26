@@ -215,11 +215,11 @@ const persistedScanState = createPlainJsonLocalStorage<PluginScanState>({
  * Overriding the adapter rather than calling `pluginScanStore.trySet()` at the
  * write sites is deliberate, and `Store.update()` is the reason: it is
  * hard-wired to `store.set`, with no `tryUpdate` beside it, and the writes that
- * carry a full scan result — `startPluginScan`, `scanCustomPaths` — are
- * read-modify-write and so go through `update`. A call site here cannot opt
- * into the non-throwing path, so the opt-in has to sit under it. If `update`
- * ever grows a non-throwing form, delete this object and let the call sites
- * choose, which is the repository's normal shape.
+ * carry a full scan result — `startPluginScan` — are read-modify-write and so
+ * go through `update`. A call site here cannot opt into the non-throwing path,
+ * so the opt-in has to sit under it. If `update` ever grows a non-throwing
+ * form, delete this object and let the call sites choose, which is the
+ * repository's normal shape.
  */
 const scanStateStorage: typeof persistedScanState = {
     ...persistedScanState,

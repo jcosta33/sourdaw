@@ -397,6 +397,11 @@ impl SourdawNative {
     }
 
     #[napi]
+    pub async fn is_scan_path_authorized(&self, path: String) -> Result<bool> {
+        reason(commands::plugins::is_scan_path_authorized(path).await)
+    }
+
+    #[napi]
     pub async fn load_plugin(&self, plugin_id: String, instance_id: String) -> Result<Value> {
         json(reason(
             commands::plugins::load_plugin(

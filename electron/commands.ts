@@ -64,6 +64,7 @@ export const EXPOSED_COMMANDS = [
     'get_plugin_state_bytes',
     'get_waveform_peaks',
     'is_plugin_gui_supported',
+    'is_scan_path_authorized',
     'list_directory',
     'list_midi_inputs',
     'load_cached_whisper_model',
