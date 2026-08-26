@@ -22,6 +22,7 @@ import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempo
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
+import { getProjectCommandBatchIdempotencyCheckpoint } from '../getProjectCommandBatchIdempotencyCheckpoint';
 import { getVersionedCommandBatchCommitDisposition } from '../getVersionedCommandBatchCommitDisposition';
 import { getVersionedCommandBatchCommitProof } from '../getVersionedCommandBatchCommitProof';
 import { getVersionedCommandBatchIdempotentReplay } from '../getVersionedCommandBatchIdempotentReplay';
@@ -398,17 +399,53 @@ describe('command batch idempotency', () => {
         const promote = vi.fn();
         const discard = vi.fn();
         const batch = compileBatch();
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        let projectHead = 'before-project-commit';
+        configureAutomergeStoragePort({
+            getDoc: () => projectDocument,
+            getDocHeads: () => [projectHead],
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                if (rejectInitialProjectCommit && mutationCount === 0) {
+                    throw new Error('initial project commit unavailable');
+                }
+                const draft = structuredClone(projectDocument);
+                changeFn(draft);
+                projectDocument = draft;
+                mutationCount += 1;
+            },
+        });
+        let dispositionDuringPreparedCommit: Promise<'committed' | 'unknown'> | null = null;
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
             options: {
-                onProjectCommitCheckpoint: () => ({ promote, discard }),
+                onProjectCommitCheckpoint: () => {
+                    expect(commandBatchIdempotencyStore.value).toMatchObject({
+                        records: [{ state: 'effects-pending' }],
+                    });
+                    const projectBeforeCommit = projectDocument;
+                    projectDocument = {
+                        ...projectDocument,
+                        commandBatchIdempotency: structuredClone(commandBatchIdempotencyStore.value),
+                    };
+                    projectHead = 'prepared-project-commit';
+                    expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({
+                        status: 'pending',
+                    });
+                    dispositionDuringPreparedCommit = getVersionedCommandBatchCommitDisposition(proof);
+                    projectDocument = projectBeforeCommit;
+                    projectHead = 'before-project-commit';
+                    return { promote, discard };
+                },
             },
         });
 
         expect(result).toMatchObject({ status: 'failed', reason: 'initial project commit unavailable' });
+        await expect(dispositionDuringPreparedCommit).resolves.toBe('unknown');
         expect(promote).not.toHaveBeenCalled();
         expect(discard).toHaveBeenCalledOnce();
         expect(mutationCount).toBe(0);

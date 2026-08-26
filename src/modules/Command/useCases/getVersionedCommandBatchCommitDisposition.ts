@@ -26,7 +26,7 @@ export async function getVersionedCommandBatchCommitDisposition(
 ): Promise<CommitDisposition> {
     try {
         const projectCheckpoint = getProjectCommandBatchIdempotencyCheckpoint(proof);
-        if (projectCheckpoint.status === 'pending' || projectCheckpoint.status === 'complete') {
+        if (projectCheckpoint.status === 'complete') {
             return isCommittedReceipt(projectCheckpoint.serializedReceipt, proof) ? 'committed' : 'unknown';
         }
         if (projectCheckpoint.status !== 'missing' || !commandBatchIdempotencyPort.isConfigured()) {
