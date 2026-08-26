@@ -1066,7 +1066,7 @@ function indexLocalUpdaters(sourceFile: Node): ReadonlyMap<Node, LexicalScope> {
 }
 
 function resolveLocalBinding(name: string, scope: LexicalScope | undefined): LocalBinding | undefined {
-    for (let current = scope; current; current = current.parent) {
+    for (let current: LexicalScope | null | undefined = scope; current; current = current.parent) {
         const binding = current.bindings.get(name);
         if (binding) {
             return binding;
@@ -1107,16 +1107,17 @@ function unwrapStateExpression(expression: Expression): Expression {
 }
 
 function returnedStateExpressions(updater: LocalUpdater): Expression[] {
-    if (!isBlock(updater.body)) {
-        return [updater.body];
+    const body = updater.body;
+    if (!body) {
+        return [];
+    }
+    if (!isBlock(body)) {
+        return [body];
     }
 
     const expressions: Expression[] = [];
     const visit = (node: Node): void => {
-        if (
-            node !== updater.body &&
-            (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node))
-        ) {
+        if (node !== body && (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node))) {
             return;
         }
         if (isReturnStatement(node)) {
@@ -1127,7 +1128,7 @@ function returnedStateExpressions(updater: LocalUpdater): Expression[] {
         }
         forEachChild(node, visit);
     };
-    visit(updater.body);
+    visit(body);
     return expressions;
 }
 
