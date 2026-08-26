@@ -84,7 +84,14 @@ function haveSameCommitProof(
         left.idempotencyKey === right.idempotencyKey &&
         left.contentHash === right.contentHash &&
         left.runId === right.runId &&
-        left.batchId === right.batchId
+        left.batchId === right.batchId &&
+        left.baseRevision === right.baseRevision &&
+        left.commands.length === right.commands.length &&
+        left.commands.every(
+            (command, index) =>
+                command.commandId === right.commands[index]?.commandId &&
+                command.operation === right.commands[index]?.operation
+        )
     );
 }
 
@@ -387,7 +394,14 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             bindings: normalized,
             disposition,
             recoveryKind: 'explicit',
-            ...(disposition === 'promote' && commitProof ? { commitProof } : {}),
+            ...(disposition === 'promote' && commitProof
+                ? {
+                      commitProof: {
+                          ...commitProof,
+                          commands: commitProof.commands.map((command) => ({ ...command })),
+                      },
+                  }
+                : {}),
             ...(disposition === 'promote' ? { promotionState } : {}),
             preparedAt: records.isPromotionRecoveryRecord(existing) ? existing.preparedAt : Date.now(),
         } satisfies PromotionRecoveryRecord);

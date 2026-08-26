@@ -63,6 +63,8 @@ export type PromotionRecoveryRecord = {
         contentHash: string;
         runId: string;
         batchId: string;
+        baseRevision: string;
+        commands: Array<{ commandId: string; operation: string }>;
     };
     preparedAt: number;
 };
@@ -234,6 +236,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isPromotionCommitProof(value: unknown): value is NonNullable<PromotionRecoveryRecord['commitProof']> {
+    if (!isRecord(value) || !Array.isArray(value.commands) || value.commands.length === 0) {
+        return false;
+    }
+    const commandIds = new Set<string>();
+    for (const command of value.commands) {
+        if (
+            !isRecord(command) ||
+            typeof command.commandId !== 'string' ||
+            command.commandId.length === 0 ||
+            typeof command.operation !== 'string' ||
+            command.operation.length === 0 ||
+            commandIds.has(command.commandId)
+        ) {
+            return false;
+        }
+        commandIds.add(command.commandId);
+    }
+    return (
+        typeof value.projectId === 'string' &&
+        value.projectId.length > 0 &&
+        typeof value.idempotencyKey === 'string' &&
+        value.idempotencyKey.length > 0 &&
+        /^sha256:[a-f0-9]{64}$/.test(String(value.contentHash)) &&
+        typeof value.runId === 'string' &&
+        value.runId.length > 0 &&
+        typeof value.batchId === 'string' &&
+        value.batchId.length > 0 &&
+        typeof value.baseRevision === 'string' &&
+        value.baseRevision.length > 0
+    );
+}
+
 function isAssetRecord(value: unknown): value is AssetRecord {
     if (typeof value !== 'object' || value === null) {
         return false;
@@ -334,13 +369,7 @@ function isPromotionRecoveryRecord(value: unknown): value is PromotionRecoveryRe
             record.recoveryKind !== 'default-release' &&
             record.recoveryKind !== 'explicit') ||
         (record.recoveryKind === 'default-release' && record.disposition !== 'release') ||
-        (record.commitProof !== undefined &&
-            (!isRecord(record.commitProof) ||
-                typeof record.commitProof.projectId !== 'string' ||
-                typeof record.commitProof.idempotencyKey !== 'string' ||
-                !/^sha256:[a-f0-9]{64}$/.test(String(record.commitProof.contentHash)) ||
-                typeof record.commitProof.runId !== 'string' ||
-                typeof record.commitProof.batchId !== 'string')) ||
+        (record.commitProof !== undefined && !isPromotionCommitProof(record.commitProof)) ||
         (record.commitProof !== undefined && record.disposition !== 'promote') ||
         typeof record.preparedAt !== 'number' ||
         !Number.isSafeInteger(record.preparedAt)

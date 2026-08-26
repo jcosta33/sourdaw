@@ -27,13 +27,37 @@ function makeCurrentRecoveryAuthority(ownerId: string) {
     return { ownerId, isCurrent: () => true, signal: new AbortController().signal };
 }
 
+function makeCommitProof(input: {
+    projectId: string;
+    idempotencyKey: string;
+    contentHash: string;
+    runId: string;
+    batchId: string;
+}) {
+    return {
+        ...input,
+        baseRevision: 'project-revision-before-command',
+        commands: [
+            { commandId: '11111111-1111-4111-8111-111111111111', operation: 'importStemSet' },
+            { commandId: '22222222-2222-4222-8222-222222222222', operation: 'setTrackGain' },
+        ],
+    };
+}
+
 function isExactCommitProof(candidate: DurableAssetCommitProof, expected: DurableAssetCommitProof): boolean {
     return (
         candidate.projectId === expected.projectId &&
         candidate.idempotencyKey === expected.idempotencyKey &&
         candidate.contentHash === expected.contentHash &&
         candidate.runId === expected.runId &&
-        candidate.batchId === expected.batchId
+        candidate.batchId === expected.batchId &&
+        candidate.baseRevision === expected.baseRevision &&
+        candidate.commands.length === expected.commands.length &&
+        candidate.commands.every(
+            (command, index) =>
+                command.commandId === expected.commands[index]?.commandId &&
+                command.operation === expected.commands[index]?.operation
+        )
     );
 }
 
@@ -642,13 +666,13 @@ describe('durable asset ownership lifecycle', () => {
 
     it('does not commit admitted staged promotion after the loaded project authority is superseded', async () => {
         const projectOwner = 'project:superseded-staged-promotion';
-        const proof = {
+        const proof = makeCommitProof({
             projectId: projectOwner,
             idempotencyKey: 'command:superseded-staged-promotion',
             contentHash: `sha256:${'b'.repeat(64)}`,
             runId: 'run-superseded-staged-promotion',
             batchId: 'batch-superseded-staged-promotion',
-        };
+        });
         const preparing = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, projectOwner);
         const staged = await preparing.stageDurableAsset(
             new Blob(['superseded-staged-promotion']),
@@ -889,13 +913,13 @@ describe('durable asset ownership lifecycle', () => {
             'project-commit-proof.wav',
             'asset-stage-project-commit-proof'
         );
-        const proof = {
+        const proof = makeCommitProof({
             projectId: TEST_OWNER,
             idempotencyKey: 'command:project-commit-proof',
             contentHash: `sha256:${'a'.repeat(64)}`,
             runId: 'run-project-commit-proof',
             batchId: 'batch-project-commit-proof',
-        };
+        });
         await transfer.prepareDurablePromotionRecovery(
             'stem-promotion:project-commit-proof',
             [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
@@ -919,32 +943,141 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('keeps prepared promotions staged when persisted command identity does not match', async () => {
+        const expectedProof = makeCommitProof({
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:recovery-proof-identity',
+            contentHash: `sha256:${'9'.repeat(64)}`,
+            runId: 'run-recovery-proof-identity',
+            batchId: 'batch-recovery-proof-identity',
+        });
+        const mismatchedProofs = [
+            { ...expectedProof, baseRevision: 'different-project-revision' },
+            {
+                ...expectedProof,
+                commands: expectedProof.commands.map((command, index) =>
+                    index === 0 ? { ...command, commandId: '44444444-4444-4444-8444-444444444444' } : command
+                ),
+            },
+            { ...expectedProof, commands: expectedProof.commands.toReversed() },
+            {
+                ...expectedProof,
+                commands: expectedProof.commands.map((command, index) =>
+                    index === 0 ? { ...command, operation: 'setTrackPan' } : command
+                ),
+            },
+        ];
+        const stagedAssets: Array<{ leaseId: string; hash: string }> = [];
+        for (const [index, proof] of mismatchedProofs.entries()) {
+            const staged = await transfer.stageDurableAsset(
+                new Blob([`mismatched-proof-${String(index)}`], { type: 'audio/wav' }),
+                `mismatched-proof-${String(index)}.wav`,
+                `asset-stage-mismatched-proof-${String(index)}`
+            );
+            await transfer.prepareDurablePromotionRecovery(
+                `stem-promotion:mismatched-proof-${String(index)}`,
+                [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
+                proof
+            );
+            stagedAssets.push(staged);
+        }
+        transfer.dispose();
+
+        const getDisposition = vi.fn((candidate: DurableAssetCommitProof) =>
+            isExactCommitProof(candidate, expectedProof) ? 'committed' : 'unknown'
+        );
+        configureDurableAssetCommitProof({ getDisposition });
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER));
+
+        expect(getDisposition).toHaveBeenCalledTimes(mismatchedProofs.length);
+        expect(getDisposition.mock.calls.map(([proof]) => proof)).toEqual(expect.arrayContaining(mismatchedProofs));
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(mismatchedProofs.length);
+        for (const staged of stagedAssets) {
+            await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+                status: 'opened',
+                leaseState: 'staged',
+            });
+        }
+        recreated.dispose();
+    });
+
+    it('rejects a persisted promotion proof without exact revision and command identity', async () => {
+        const recoveryId = 'stem-promotion:incomplete-proof';
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['incomplete-proof'], { type: 'audio/wav' }),
+            'incomplete-proof.wav',
+            'asset-stage-incomplete-proof'
+        );
+        const proof = makeCommitProof({
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:incomplete-proof',
+            contentHash: `sha256:${'8'.repeat(64)}`,
+            runId: 'run-incomplete-proof',
+            batchId: 'batch-incomplete-proof',
+        });
+        await transfer.prepareDurablePromotionRecovery(
+            recoveryId,
+            [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
+            proof
+        );
+        durableAssetIndexedDb.overwritePromotionRecoveryCommitProof(recoveryId, {
+            projectId: proof.projectId,
+            idempotencyKey: proof.idempotencyKey,
+            contentHash: proof.contentHash,
+            runId: proof.runId,
+            batchId: proof.batchId,
+        });
+        transfer.dispose();
+
+        const recreated = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(
+            recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER))
+        ).rejects.toThrow('Durable asset promotion recovery failed: corrupt-record');
+        recreated.dispose();
+    });
+
     it('keeps the original promotion commit proof immutable across restart', async () => {
         const staged = await transfer.stageDurableAsset(
             new Blob(['immutable-project-commit-proof'], { type: 'audio/wav' }),
             'immutable-project-commit-proof.wav',
             'asset-stage-immutable-project-commit-proof'
         );
-        const originalProof = {
+        const originalProof = makeCommitProof({
             projectId: TEST_OWNER,
             idempotencyKey: 'command:immutable-project-commit-proof',
             contentHash: `sha256:${'e'.repeat(64)}`,
             runId: 'run-immutable-project-commit-proof',
             batchId: 'batch-immutable-project-commit-proof',
-        };
-        const substitutedProof = {
-            ...originalProof,
-            contentHash: `sha256:${'f'.repeat(64)}`,
-        };
+        });
+        const substitutedProofs = [
+            { ...originalProof, contentHash: `sha256:${'f'.repeat(64)}` },
+            { ...originalProof, baseRevision: 'substituted-project-revision' },
+            {
+                ...originalProof,
+                commands: originalProof.commands.map((command, index) =>
+                    index === 0 ? { ...command, commandId: '33333333-3333-4333-8333-333333333333' } : command
+                ),
+            },
+            { ...originalProof, commands: originalProof.commands.toReversed() },
+            {
+                ...originalProof,
+                commands: originalProof.commands.map((command, index) =>
+                    index === 0 ? { ...command, operation: 'setTrackPan' } : command
+                ),
+            },
+        ];
         const recoveryId = 'stem-promotion:immutable-project-commit-proof';
         const bindings = [{ leaseId: staged.leaseId, expectedHash: staged.hash }];
 
         await expect(
             transfer.prepareDurablePromotionRecovery(recoveryId, bindings, originalProof)
         ).resolves.toMatchObject({ status: 'prepared' });
-        await expect(transfer.prepareDurablePromotionRecovery(recoveryId, bindings, substitutedProof)).resolves.toEqual(
-            { status: 'failed', reason: 'owner-handoff-conflict' }
-        );
+        for (const substitutedProof of substitutedProofs) {
+            await expect(
+                transfer.prepareDurablePromotionRecovery(recoveryId, bindings, substitutedProof)
+            ).resolves.toEqual({ status: 'failed', reason: 'owner-handoff-conflict' });
+        }
         await expect(transfer.prepareDurablePromotionRecovery(recoveryId, bindings)).resolves.toEqual({
             status: 'failed',
             reason: 'owner-handoff-conflict',
@@ -971,13 +1104,13 @@ describe('durable asset ownership lifecycle', () => {
             'project-terminal-noncommit.wav',
             'asset-stage-project-terminal-noncommit'
         );
-        const proof = {
+        const proof = makeCommitProof({
             projectId: TEST_OWNER,
             idempotencyKey: 'command:project-terminal-noncommit',
             contentHash: `sha256:${'c'.repeat(64)}`,
             runId: 'run-project-terminal-noncommit',
             batchId: 'batch-project-terminal-noncommit',
-        };
+        });
         await transfer.prepareDurablePromotionRecovery(
             'stem-promotion:project-terminal-noncommit',
             [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
@@ -1009,13 +1142,13 @@ describe('durable asset ownership lifecycle', () => {
             'project-unknown-disposition.wav',
             'asset-stage-project-unknown-disposition'
         );
-        const proof = {
+        const proof = makeCommitProof({
             projectId: TEST_OWNER,
             idempotencyKey: 'command:project-unknown-disposition',
             contentHash: `sha256:${'d'.repeat(64)}`,
             runId: 'run-project-unknown-disposition',
             batchId: 'batch-project-unknown-disposition',
-        };
+        });
         await transfer.prepareDurablePromotionRecovery(
             'stem-promotion:project-unknown-disposition',
             [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
