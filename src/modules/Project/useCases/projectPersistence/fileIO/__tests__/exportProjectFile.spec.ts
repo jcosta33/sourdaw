@@ -154,6 +154,34 @@ describe('exportProjectFile', () => {
         expect(downloadProjectFile).not.toHaveBeenCalled();
     });
 
+    it('passes a live repair-state authority predicate to the download boundary', async () => {
+        let suppliedShouldWrite: (() => boolean) | undefined;
+        vi.mocked(downloadProjectFile).mockImplementationOnce(({ shouldWrite }) => {
+            suppliedShouldWrite = shouldWrite;
+            agentProjectRepairStateStoreMock.value = {
+                audioGraphValid: true,
+                detectedRevision: 'repair-entered-before-download-write',
+                inspectionAvailable: true,
+                projectInvariantsValid: false,
+                rawProjectRetained: true,
+                repairCandidates: [
+                    {
+                        kind: 'repair-project-invariants',
+                        targetIds: ['@project/raw/adjustmentLayers'],
+                    },
+                ],
+                status: 'repair-required',
+            };
+            return Promise.resolve(shouldWrite() ? 'written' : 'rejected-stale');
+        });
+
+        await exportProjectFile();
+
+        expect(suppliedShouldWrite).toEqual(expect.any(Function));
+        expect(suppliedShouldWrite?.()).toBe(false);
+        expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+    });
+
     it.each(['cancelled', 'rejected-stale'] as const)(
         'does not announce success when download is %s',
         async (outcome) => {

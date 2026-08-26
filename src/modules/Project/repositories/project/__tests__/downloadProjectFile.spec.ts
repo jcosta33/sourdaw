@@ -49,6 +49,36 @@ describe('downloadProjectFile', () => {
         vi.useRealTimers();
     });
 
+    it('rejects stale authority at entry before any platform side effect', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        const writable = {
+            write: vi.fn(),
+            close: vi.fn(),
+            abort: vi.fn(),
+        };
+        const createWritable = vi.fn().mockResolvedValue(writable);
+        const showSaveFilePicker = vi.fn().mockResolvedValue({ createWritable });
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        const anchor = document.createElement('a');
+        const clickAnchor = vi.spyOn(anchor, 'click').mockImplementation(() => undefined);
+        vi.spyOn(document, 'createElement').mockImplementation(() => anchor);
+        const appendChild = vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+        const shouldWrite = vi.fn(() => false);
+
+        await expect(downloadProjectFile({ data: projectData, shouldWrite })).resolves.toBe('rejected-stale');
+
+        expect(shouldWrite).toHaveBeenCalledOnce();
+        expect(isDesktopRuntime).not.toHaveBeenCalled();
+        expect(desktopSaveDialog).not.toHaveBeenCalled();
+        expect(showSaveFilePicker).not.toHaveBeenCalled();
+        expect(createWritable).not.toHaveBeenCalled();
+        expect(writable.write).not.toHaveBeenCalled();
+        expect(appendChild).not.toHaveBeenCalled();
+        expect(clickAnchor).not.toHaveBeenCalled();
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
+        expect(saveProjectToFile).not.toHaveBeenCalled();
+    });
+
     it('should use the native save dialog on desktop', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopSaveDialog).mockResolvedValue('/path/to/save.sourdaw');
