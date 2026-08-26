@@ -1,0 +1,21 @@
+src/modules/Project/repositories/project/downloadProjectFile.ts
+  s_a40848e8f8cca9::t_adf8e0c5c8414e 70
+src/modules/Project/repositories/project/__tests__/downloadProjectFile.spec.ts
+  s_a40848e8f8cca9::t_1f7200cf869226 163,178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "1a3c2957d4b9827dd72573b436ecac87350667af",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
