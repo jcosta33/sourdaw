@@ -1,0 +1,35 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_a40848e8f8cca9::t_cc94bb4cc11374 3-6,12-15,112,117,132-155
+  s_a40848e8f8cca9::t_403807f229374d 156-157
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_a40848e8f8cca9::t_d372446cd160c5 12,143-146
+src/modules/Arrangement/stores/adjustmentLayer.ts
+  s_a40848e8f8cca9::t_d372446cd160c5 8-10,58-224,226-232,234
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_a40848e8f8cca9::t_d372446cd160c5 1-8,92
+src/modules/Arrangement/stores/__tests__/adjustmentLayer.spec.ts
+  s_a40848e8f8cca9::t_ac3252c7387b5e 1-239
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_a40848e8f8cca9::t_cc94bb4cc11374 10,17-19,72,97-117
+  s_a40848e8f8cca9::t_682cdd07567d39 118
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_a40848e8f8cca9::t_7d7124dd571215 6-14,19-20,23-25,44-100,148-152,157-158,321-351
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  s_a40848e8f8cca9::t_b2e01d81de7f5d 178,184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "4200f8322aa98cfbce9c0e1b9b13eeabfd03e2a9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
