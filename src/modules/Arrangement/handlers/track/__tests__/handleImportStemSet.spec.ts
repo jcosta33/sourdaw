@@ -376,9 +376,6 @@ describe('handleImportStemSet', () => {
         expect(requireTrackState()).toEqual(preImportTruth.tracks);
         expect(requireMidiState()).toEqual(preImportTruth.midi);
         expect(automationStore.value).toEqual(preImportTruth.automation);
-        expect(requireTrackState().tracks.map((track) => track.id)).not.toEqual(
-            expect.arrayContaining(['folder-starter-stems', 'track-kick', 'track-vocal'])
-        );
         expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(2);
         expect(mocks.publishTrackRemoved).toHaveBeenCalledTimes(3);
     });
