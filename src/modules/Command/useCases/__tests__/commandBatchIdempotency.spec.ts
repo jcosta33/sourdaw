@@ -356,7 +356,17 @@ describe('command batch idempotency', () => {
         if (!command) {
             throw new Error('The proof batch did not contain a command');
         }
+        const expectedProof = {
+            baseRevision: revision(0),
+            batchId: 'batch-idempotency',
+            commands: [{ commandId: '11111111-1111-4111-8111-111111111111', operation: 'setTrackGain' }],
+            contentHash: await getCommandBatchContentHash(parsed.envelope),
+            idempotencyKey: 'client-request-1',
+            projectId: 'project-idempotency',
+            runId: 'run-idempotency',
+        };
         const proof = await getVersionedCommandBatchCommitProof(batch);
+        expect(proof).toEqual(expectedProof);
         const receipt = JSON.stringify(
             createVerifiedBatchReceipt({
                 envelope: parsed.envelope,
@@ -447,9 +457,9 @@ describe('command batch idempotency', () => {
             });
         const lookup = vi.fn((input: { contentHash: string; idempotencyKey: string; projectId: string }) =>
             Promise.resolve(
-                input.projectId === proof.projectId &&
-                    input.idempotencyKey === proof.idempotencyKey &&
-                    input.contentHash === proof.contentHash
+                input.projectId === expectedProof.projectId &&
+                    input.idempotencyKey === expectedProof.idempotencyKey &&
+                    input.contentHash === expectedProof.contentHash
                     ? { status: 'complete' as const, serializedReceipt: receipt }
                     : { status: 'missing' as const }
             )
@@ -554,6 +564,10 @@ describe('command batch idempotency', () => {
         }
 
         delete projectDocument.commandBatchIdempotency;
+        for (const status of ['pending', 'conflict'] as const) {
+            lookup.mockResolvedValueOnce({ status });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+        }
         lookup.mockRejectedValueOnce(new Error('idempotency repository unavailable'));
         await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
     });
@@ -634,6 +648,16 @@ describe('command batch idempotency', () => {
             { commandId: panCommand.commandId, operation: 'setTrackPan' },
         ]);
         await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+        const reversedReceipt = JSON.stringify({
+            ...(JSON.parse(receipt) as Record<string, unknown>),
+            commandOutcomes: (JSON.parse(receipt) as { commandOutcomes: unknown[] }).commandOutcomes.toReversed(),
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'complete', serializedReceipt: reversedReceipt }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
     });
 
     it('rejects invalid serialized batches and mismatched authority from commit proof', async () => {

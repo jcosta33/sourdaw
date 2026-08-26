@@ -663,6 +663,22 @@ describe('verified batch receipt', () => {
                 outcome: input.outcome,
                 pendingEffects: input.pendingEffects ?? [],
             });
+        const serializeMixedReceipt = (input: {
+            atomicity: 'atomic' | 'durable-atomic-with-non-atomic-effects';
+            committedOutcome: 'committed' | 'executed';
+            outcome: 'committed' | 'executed' | 'partially-committed';
+            pendingEffects?: unknown[];
+        }) =>
+            JSON.stringify({
+                ...receipt,
+                atomicity: input.atomicity,
+                commandOutcomes: commandOutcomes.map((command, index) => ({
+                    ...command,
+                    outcome: index === 0 ? input.committedOutcome : 'no-op',
+                })),
+                outcome: input.outcome,
+                pendingEffects: input.pendingEffects ?? [],
+            });
         const parseReceipt = (serializedReceipt: string) =>
             parseStoredVerifiedBatchReceipt({
                 baseRevision: revision(0),
@@ -692,6 +708,15 @@ describe('verified batch receipt', () => {
         for (const [outcome, commandOutcome, atomicity, pendingEffects] of validFamilies) {
             expect(
                 parseReceipt(serializeReceipt({ outcome, commandOutcome, atomicity, pendingEffects }))
+            ).not.toBeNull();
+        }
+        for (const [outcome, committedOutcome, atomicity, pendingEffects] of [
+            ['committed', 'committed', 'atomic'],
+            ['executed', 'executed', 'atomic'],
+            ['partially-committed', 'committed', 'durable-atomic-with-non-atomic-effects', [pendingExternalEffect]],
+        ] as const) {
+            expect(
+                parseReceipt(serializeMixedReceipt({ outcome, committedOutcome, atomicity, pendingEffects }))
             ).not.toBeNull();
         }
 
