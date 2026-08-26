@@ -904,18 +904,38 @@ function cargoChecksum(root: string, name: string, version: string, source: stri
     return undefined;
 }
 
-function pnpmIntegrity(root: string, name: string, version: string): string | undefined {
-    const document = parseDocument(readFileSync(resolve(root, 'pnpm-lock.yaml'), 'utf8'));
+type PnpmLockPackages = Record<string, { resolution?: { integrity?: unknown } }>;
+
+/**
+ * Callers resolve one identity per dependency, and a proof-bearing package graph can list
+ * dozens of them. `pnpm-lock.yaml` is large, real (not JSON-flow) YAML, so re-parsing it per
+ * dependency dominates wall time under load. The lockfile is immutable for the lifetime of one
+ * resolved `root`, so caching the parsed package table by that path is safe.
+ */
+const pnpmLockPackagesByPath = new Map<string, PnpmLockPackages>();
+
+function pnpmLockPackages(root: string): PnpmLockPackages {
+    const path = resolve(root, 'pnpm-lock.yaml');
+    const cached = pnpmLockPackagesByPath.get(path);
+    if (cached !== undefined) {
+        return cached;
+    }
+    const document = parseDocument(readFileSync(path, 'utf8'));
     if (document.errors.length > 0) {
         throw new Error(`pnpm-lock.yaml: ${document.errors[0]!.message}`);
     }
-    const lock = document.toJS() as {
-        packages?: Record<string, { resolution?: { integrity?: unknown } }>;
-    };
-    const key = Object.keys(lock.packages ?? {}).find(
+    const lock = document.toJS() as { packages?: PnpmLockPackages };
+    const packages = lock.packages ?? {};
+    pnpmLockPackagesByPath.set(path, packages);
+    return packages;
+}
+
+function pnpmIntegrity(root: string, name: string, version: string): string | undefined {
+    const packages = pnpmLockPackages(root);
+    const key = Object.keys(packages).find(
         (candidate) => candidate === `${name}@${version}` || candidate.startsWith(`${name}@${version}(`)
     );
-    const integrity = key === undefined ? undefined : lock.packages?.[key]?.resolution?.integrity;
+    const integrity = key === undefined ? undefined : packages[key]?.resolution?.integrity;
     return typeof integrity === 'string' ? integrity : undefined;
 }
 

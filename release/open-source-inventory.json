@@ -934,7 +934,7 @@
                 "tracked-set-sha256:b2b40500eaaea3294d2126ce420b953fb05494d4552a24f9e32a02766a9bf9e7:grand-boule-live-runtime",
                 "tracked-set-sha256:16aaa54a100321ab11b6e03c920c80be493a067972a6e8b215b38f2e7c84409a:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:6c0b2b79b17ba53683373c0472506b58555007b6754cb76cbadaf67a37031118:grand-boule-release-proof"
+                "tracked-set-sha256:31c559b61a7503a303f6188d72273a116d7c65a5e5323cd378b35d91a0da09f1:grand-boule-release-proof"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],

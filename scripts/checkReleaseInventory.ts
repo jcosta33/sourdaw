@@ -1273,6 +1273,29 @@ const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
     'public/wasm/daw-dsp/daw_dsp_bg.wasm',
 ] as const;
 
+/**
+ * A shallow checkout (`actions/checkout` defaults to `fetch-depth: 1`) keeps only the tip
+ * commit's object graph, so an older `sourceRevision` an earlier commit pinned is genuinely
+ * absent even though it is a real ancestor of HEAD. `git show` cannot materialize a commit it
+ * has never fetched, so deepen just that one revision on demand before reading it. A developer
+ * clone, and any checkout that already fetched full history, already has the object and this is
+ * a no-op probe.
+ */
+function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
+    try {
+        execFileSync('git', ['cat-file', '-e', `${revision}^{commit}`], { cwd: root, stdio: 'ignore' });
+        return;
+    } catch {
+        // Falls through to a targeted fetch; a missing object is expected under a shallow checkout.
+    }
+    try {
+        execFileSync('git', ['fetch', '--depth', '1', 'origin', revision], { cwd: root, stdio: 'ignore' });
+    } catch {
+        // Best effort: no network, no `origin`, or the revision is genuinely gone. `git show`
+        // below still runs and reports the precise, unchanged failure.
+    }
+}
+
 export function assertGrandBouleMeasurementAdmission(root: string): void {
     const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
     const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
@@ -1297,6 +1320,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
         throw new Error('Grand Boule measurement source-digest census is incomplete');
     }
+    ensureGrandBouleRevisionFetched(root, revision);
     for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
         let sourceAtRevision: Buffer;
         try {
