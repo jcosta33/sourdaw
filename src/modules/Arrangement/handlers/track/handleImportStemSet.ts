@@ -208,6 +208,12 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
 });
 
 export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSet'>({
+    canReapplyAfterDivergence: (action) =>
+        isDiscardImportedStemSetDivergenceSafe(action, 'pre-import') ||
+        isDiscardImportedStemSetDivergenceSafe(action, 'post-import'),
+    validate: (action) =>
+        isDiscardImportedStemSetDivergenceSafe(action, 'pre-import') ||
+        isDiscardImportedStemSetDivergenceSafe(action, 'post-import'),
     execute: (action) => {
         if (!isDiscardImportedStemSetDivergenceSafe(action, 'post-import')) {
             return { status: 'conflict' };
