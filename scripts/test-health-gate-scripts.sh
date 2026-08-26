@@ -458,6 +458,12 @@ expect(
     'playback smoke must capture and suspend its real AudioContext through a document-only test control'
 );
 expect(
+    smokeSpec.includes('const nativeCreateOscillator = AudioContext.prototype.createOscillator;') &&
+        smokeSpec.includes('AudioContext.prototype.createOscillator = function (this: AudioContext): OscillatorNode {') &&
+        smokeSpec.includes('return nativeCreateOscillator.call(this);'),
+    'playback smoke must capture the real AudioContext at oscillator creation and delegate faithfully'
+);
+expect(
     smokeSpec.includes("document.addEventListener('sourdaw-test-read-audio-context-state'") &&
         smokeSpec.includes("document.documentElement.dataset.audioContextResumeState = observedAudioContext?.state ?? 'missing';") &&
         smokeSpec.includes("document.dispatchEvent(new Event('sourdaw-test-read-audio-context-state'))"),
@@ -494,6 +500,21 @@ expect(
 expect(!smokeSpec.includes('Object.defineProperty(window'), 'playback smoke must not expose AudioContext observations on window');
 expect(!smokeSpec.includes('Reflect.get(window'), 'playback smoke must not read AudioContext observations from window');
 expect(!smokeSpec.includes('resumeStates'), 'playback smoke must not retain the AudioContext resume-state array seam');
+expect(
+    smokeSpec.includes('async function openSavedProjectInFreshPage(page: Page, name: string)') &&
+        smokeSpec.includes('const reopenedPage = await page.context().newPage();') &&
+        smokeSpec.includes('await reopenedPage.goto(appRootUrl);') &&
+        smokeSpec.includes('await launch_new_project(reopenedPage);'),
+    'persistence smoke must reopen saved IndexedDB truth in a fresh renderer page within the existing browser context'
+);
+expect(
+    !smokeSpec.includes('storageState(') && !smokeSpec.includes('browser.newContext(') && !smokeSpec.includes('openSavedProjectInFreshContext'),
+    'persistence smoke must not serialize unsupported IndexedDB stores into a new browser context'
+);
+expect(
+    (smokeSpec.match(/await reopened\.page\.close\(\);/gu) ?? []).length === 2 && !smokeSpec.includes('reopened.context.close()'),
+    'each persistence smoke must close only its fresh renderer page'
+);
 expect(
     checkoutSteps.length > 0 && checkoutSteps.every(({ step }) => step.with?.['persist-credentials'] === false),
     `every actions/checkout step must disable persisted credentials: ${checkoutSteps.map(({ jobName, step }) => `${jobName}/${step.name ?? 'unnamed'}`).join(', ')}`

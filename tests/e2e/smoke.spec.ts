@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
@@ -56,7 +56,12 @@ type AudioContextTestControl = {
 async function observeAudioContextResumeState(page: Page): Promise<AudioContextTestControl> {
     await page.addInitScript(() => {
         const nativeResume = AudioContext.prototype.resume;
+        const nativeCreateOscillator = AudioContext.prototype.createOscillator;
         let observedAudioContext: AudioContext | undefined;
+        AudioContext.prototype.createOscillator = function (this: AudioContext): OscillatorNode {
+            observedAudioContext = this;
+            return nativeCreateOscillator.call(this);
+        };
         AudioContext.prototype.resume = async function (this: AudioContext): Promise<void> {
             observedAudioContext = this;
             await nativeResume.call(this);
@@ -201,17 +206,15 @@ async function renameProject(page: Page, name: string): Promise<void> {
     await projectNameInput.press('Enter');
 }
 
-async function openSavedProjectInFreshContext(browser: Browser, page: Page, name: string) {
+async function openSavedProjectInFreshPage(page: Page, name: string) {
     const appRootUrl = new URL('/', page.url()).toString();
-    const storageState = await page.context().storageState({ indexedDB: true });
-    const context = await browser.newContext({ storageState });
-    const reopenedPage = await context.newPage();
+    const reopenedPage = await page.context().newPage();
     const assertOffline = await blockExternalRequests(reopenedPage);
     await reopenedPage.goto(appRootUrl);
     await launch_new_project(reopenedPage);
     await reopenedPage.getByRole('button', { name: 'Project menu' }).click();
     await reopenedPage.getByRole('menuitem', { name }).click();
-    return { assertOffline, context, page: reopenedPage };
+    return { assertOffline, page: reopenedPage };
 }
 
 test.describe('Offline project smoke', () => {
@@ -223,7 +226,7 @@ test.describe('Offline project smoke', () => {
         await assertOffline();
     });
 
-    test('saves and reopens an edited project', async ({ page, browser }) => {
+    test('saves and reopens an edited project', async ({ page }) => {
         const assertOffline = await openNewProject(page);
         await expect(dirtyIndicator(page)).toHaveCount(0);
 
@@ -235,13 +238,13 @@ test.describe('Offline project smoke', () => {
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
 
-        const reopened = await openSavedProjectInFreshContext(browser, page, 'Smoke Persistence');
+        const reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
         try {
             await expect(reopened.page.getByRole('button', { name: 'Smoke Persistence' })).toBeVisible();
             await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toBeVisible();
             await reopened.assertOffline();
         } finally {
-            await reopened.context.close();
+            await reopened.page.close();
         }
         await assertOffline();
     });
@@ -281,7 +284,7 @@ test.describe('Offline project smoke', () => {
         await assertOffline();
     });
 
-    test('undo restores durable project truth before its track edit', async ({ page, browser }) => {
+    test('undo restores durable project truth before its track edit', async ({ page }) => {
         const assertOffline = await openNewProject(page);
         await renameProject(page, 'Smoke Undo Persistence');
 
@@ -298,14 +301,14 @@ test.describe('Offline project smoke', () => {
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
 
-        const reopened = await openSavedProjectInFreshContext(browser, page, 'Smoke Undo Persistence');
+        const reopened = await openSavedProjectInFreshPage(page, 'Smoke Undo Persistence');
         try {
             await expect(reopened.page.getByRole('button', { name: 'Smoke Undo Persistence' })).toBeVisible();
             await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toHaveCount(0);
             await expect(reopened.page.getByText('Add your first track')).toBeVisible();
             await reopened.assertOffline();
         } finally {
-            await reopened.context.close();
+            await reopened.page.close();
         }
         await assertOffline();
     });
