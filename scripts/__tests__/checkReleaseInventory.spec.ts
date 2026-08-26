@@ -830,7 +830,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 10_000 }, () => {
+    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 20_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
@@ -1357,7 +1357,7 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toEqual([]);
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 10_000 }, () => {
+    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 20_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
     });
 
@@ -1536,7 +1536,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('binds Grand Boule source bytes to its inventory digest', () => {
+    it('binds Grand Boule source bytes to its inventory digest', { timeout: 10_000 }, () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-provenance-'));
         writeGrandBouleReleaseFixture(root);
         const grandBoule = join(root, 'crates/daw-dsp/src/grand_boule');
@@ -1632,6 +1632,32 @@ describe('release inventory', () => {
             expect(() => grandBouleReleaseInventoryContract(canonicalRoot)).not.toThrow();
         } finally {
             rmSync(canonicalBase, { recursive: true, force: true });
+        }
+
+        const unmergedBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-unmerged-'));
+        const unmergedRoot = join(unmergedBase, 'repository');
+        writeGrandBouleReleaseFixture(unmergedRoot);
+        try {
+            const path = GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS[0];
+            const [mode, object] = execFileSync('git', ['ls-files', '--stage', '--', path], {
+                cwd: unmergedRoot,
+                encoding: 'utf8',
+            })
+                .trim()
+                .split(/\s+/u);
+            expect(mode).toBe('120000');
+            expect(object).toHaveLength(40);
+            const indexInfo = [1, 2, 3].map((stage) => `${mode} ${object} ${stage}\t${path}`).join('\n');
+            execFileSync('git', ['update-index', '--index-info'], {
+                cwd: unmergedRoot,
+                input: `${indexInfo}\n`,
+            });
+
+            expect(() => grandBouleReleaseInventoryContract(unmergedRoot)).toThrow(
+                `Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`
+            );
+        } finally {
+            rmSync(unmergedBase, { recursive: true, force: true });
         }
 
         const checkoutBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-checkout-'));

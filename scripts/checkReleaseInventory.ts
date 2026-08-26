@@ -446,6 +446,7 @@ type GitTreeEntry = {
     mode: string;
     object: string;
     path: string;
+    stage?: string;
 };
 
 function malformedGitRecord(command: string, entry: string): never {
@@ -494,7 +495,7 @@ function parseGitIndexEntry(entry: string): GitTreeEntry {
         return malformedGitRecord('git ls-files --stage', entry);
     }
 
-    return { mode, object, path: entry.slice(tab + 1) };
+    return { mode, object, path: entry.slice(tab + 1), stage };
 }
 
 function gitTreeEntries(root: string, path: string): GitTreeEntry[] {
@@ -522,9 +523,16 @@ function gitBlob(root: string, object: string): Buffer {
 }
 
 function assertCanonicalGrandBouleProviderPolicySymlink(root: string, path: string): void {
-    const indexEntry = gitIndexEntries(root, path).find((entry) => entry.path === path);
-    if (indexEntry === undefined) {
+    const indexEntries = gitIndexEntries(root, path).filter((entry) => entry.path === path);
+    if (indexEntries.length === 0) {
         throw new Error(`Grand Boule provider-policy symlink is not tracked: ${path}`);
+    }
+    if (indexEntries.length !== 1) {
+        throw new Error(`Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`);
+    }
+    const indexEntry = indexEntries[0]!;
+    if (indexEntry.stage !== '0') {
+        throw new Error(`Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`);
     }
     if (indexEntry.mode !== '120000') {
         throw new Error(`Grand Boule provider-policy symlink is not tracked as a symlink: ${path}`);
