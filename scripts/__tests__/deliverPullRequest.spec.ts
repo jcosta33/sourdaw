@@ -89,6 +89,11 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
             if (joined.includes('pr view')) {
                 return JSON.stringify(rawPullRequest(args.includes('43') ? child : pullRequest()));
             }
+            if (joined.includes('statusCheckRollup')) {
+                return rollupResponse({
+                    nodes: rollupNodes(joined.includes('oid=child-head') ? child.checkRuns : pullRequest().checkRuns),
+                });
+            }
             if (joined.includes('query=')) {
                 return JSON.stringify({
                     data: {
@@ -216,8 +221,9 @@ function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
 }
 
 /**
- * The head of PR #2795: an approving review re-ran the health gates and cancelled the push run that
- * was still in flight, leaving a cancelled `Gate` beside the successful one on the same commit.
+ * The shape an approving review leaves behind when its own run cancels the push run still in
+ * flight: every cancelled name succeeded again on the same commit, beside a job the workflow
+ * skipped outright and never cancelled.
  */
 function supersededRunCheckRuns(): HeadCheckRun[] {
     return [
@@ -230,8 +236,39 @@ function supersededRunCheckRuns(): HeadCheckRun[] {
 }
 
 function rawPullRequest(snapshot: PullRequestSnapshot): Record<string, unknown> {
-    const { checkRuns, ...fields } = snapshot;
-    return { ...fields, statusCheckRollup: checkRuns.map((check) => ({ __typename: 'CheckRun', ...check })) };
+    return Object.fromEntries(Object.entries(snapshot).filter(([field]) => field !== 'checkRuns'));
+}
+
+type RollupPageFixture = {
+    nodes: unknown[];
+    totalCount?: number;
+    hasNextPage?: boolean;
+    endCursor?: string | null;
+};
+
+function rollupResponse(page: RollupPageFixture): string {
+    return JSON.stringify({
+        data: {
+            repository: {
+                object: {
+                    statusCheckRollup: {
+                        contexts: {
+                            totalCount: page.totalCount ?? page.nodes.length,
+                            pageInfo: {
+                                hasNextPage: page.hasNextPage ?? false,
+                                endCursor: page.endCursor ?? null,
+                            },
+                            nodes: page.nodes,
+                        },
+                    },
+                },
+            },
+        },
+    });
+}
+
+function rollupNodes(checkRuns: HeadCheckRun[]): unknown[] {
+    return checkRuns.map((check) => ({ __typename: 'CheckRun', ...check }));
 }
 
 function stacked(overrides: Partial<StackedPullRequest> = {}): StackedPullRequest {
@@ -877,6 +914,60 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    /**
+     * The live shape of `Dependency review` on an approval run: the push run's attempt was
+     * cancelled, and the review-triggered run skipped the job because it is gated on
+     * `pull_request`. `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and
+     * the skips are not one either. This is why `deliver` refuses PR #2795's head today.
+     */
+    it('refuses an UNSTABLE head whose cancelled check only ever skipped beside that cancellation', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({
+                    mergeStateStatus: 'UNSTABLE',
+                    checkRuns: [
+                        ...supersededRunCheckRuns(),
+                        checkRun({ name: 'Dependency review', conclusion: 'CANCELLED' }),
+                        checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
+                        checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
+                    ],
+                }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Dependency review was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * The rule keys on a cancellation, not on the absence of a success: a job the workflow simply
+     * never ran on this head has nothing to supersede and nothing to prove.
+     */
+    it('merges an UNSTABLE head carrying a check that only ever skipped and never cancelled', () => {
+        const superseded = {
+            mergeStateStatus: 'UNSTABLE',
+            checkRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
+                checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
+            ],
+        };
+        const { port, calls } = fakePort({ primary: [pullRequest(superseded), pullRequest(superseded)] });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
     it('refuses an UNSTABLE head with no checks at all', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns: [] })],
@@ -985,34 +1076,52 @@ describe('delivery CLI', () => {
 });
 
 describe('delivery shell boundary', () => {
-    function rollupPort(rollup: unknown) {
+    function rollupPort(pages: Array<RollupPageFixture | string>) {
         const captures: Array<{ command: string; args: string[] }> = [];
+        const remaining = [...pages];
         const port = shellPort('jcosta33/sourdaw', {
             capture: (command, args) => {
                 captures.push({ command, args });
-                return JSON.stringify({ ...rawPullRequest(pullRequest()), statusCheckRollup: rollup });
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(rawPullRequest(pullRequest()));
+                }
+                const page = remaining.shift();
+                if (page === undefined) {
+                    throw new Error(`unexpected capture: ${command} ${joined}`);
+                }
+                return typeof page === 'string' ? page : rollupResponse(page);
             },
             run: () => undefined,
         });
         return { captures, port };
     }
 
+    function rollupCaptures(captures: Array<{ command: string; args: string[] }>): string[] {
+        return captures.map((entry) => entry.args.join(' ')).filter((joined) => joined.includes('statusCheckRollup'));
+    }
+
     /**
      * The rollup decides whether an UNSTABLE head merges, so both arms of the union have to reach
      * the snapshot. A dropped StatusContext would take a failing external check with it.
      */
-    it('asks for the head rollup and normalizes both arms of its union', () => {
+    it('asks GitHub for the head rollup and normalizes both arms of its union', () => {
         const { captures, port } = rollupPort([
-            { __typename: 'CheckRun', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-            { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-            { __typename: 'CheckRun', name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: '' },
-            { __typename: 'StatusContext', context: 'coverage/external', state: 'FAILURE' },
-            { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING' },
+            {
+                nodes: [
+                    { __typename: 'CheckRun', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+                    { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+                    { __typename: 'CheckRun', name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: '' },
+                    { __typename: 'StatusContext', context: 'coverage/external', state: 'FAILURE' },
+                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING' },
+                ],
+            },
         ]);
 
         const snapshot = port.pullRequest(42);
 
-        expect(captures[0]?.args.join(' ')).toContain('statusCheckRollup');
+        expect(rollupCaptures(captures)).toHaveLength(1);
+        expect(rollupCaptures(captures)[0]).toContain('oid=head');
         expect(snapshot.checkRuns).toEqual([
             { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
             { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
@@ -1023,13 +1132,80 @@ describe('delivery shell boundary', () => {
         expect(snapshot).not.toHaveProperty('statusCheckRollup');
     });
 
-    it.each([
-        { label: 'an entry matching neither arm', rollup: [{ __typename: 'CheckSuite', name: 'Gate' }] },
-        { label: 'a rollup that is not a list', rollup: null },
-    ])('refuses to guess at $label', ({ rollup }) => {
-        const { port } = rollupPort(rollup);
+    /**
+     * `contexts` is a paged connection, so the completeness signal has to be asked for and read.
+     * Without it a head whose rollup outgrew one page reads as a shorter, tidier rollup than it is.
+     */
+    it('asks for the completeness signal alongside the rollup nodes', () => {
+        const { captures, port } = rollupPort([{ nodes: rollupNodes([checkRun()]) }]);
 
-        expect(() => port.pullRequest(42)).toThrow(/cannot read (a check|the checks) on PR #42/);
+        port.pullRequest(42);
+
+        const query = rollupCaptures(captures)[0] ?? '';
+        expect(query).toContain('totalCount');
+        expect(query).toContain('hasNextPage');
+        expect(query).toContain('endCursor');
+    });
+
+    it('pages the rollup to completion and keeps every context in order', () => {
+        const { captures, port } = rollupPort([
+            {
+                nodes: rollupNodes([checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()]),
+                totalCount: 3,
+                hasNextPage: true,
+                endCursor: 'Y3Vyc29yOjI=',
+            },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 3 },
+        ]);
+
+        const snapshot = port.pullRequest(42);
+
+        expect(snapshot.checkRuns).toEqual([
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        ]);
+        expect(rollupCaptures(captures)).toHaveLength(2);
+        expect(rollupCaptures(captures)[0]).not.toContain('cursor=');
+        expect(rollupCaptures(captures)[1]).toContain('cursor=Y3Vyc29yOjI=');
+    });
+
+    /**
+     * The truncation this gate must not reason over: a page that carries fewer nodes than the head
+     * actually has. Merging on it would treat absent checks as absent problems.
+     */
+    it.each([
+        { label: 'a page that silently stops short of totalCount', hasNextPage: false, endCursor: null },
+        { label: 'a page that claims more contexts but hands back no cursor', hasNextPage: true, endCursor: null },
+    ])('refuses $label', ({ hasNextPage, endCursor }) => {
+        const { port } = rollupPort([{ nodes: rollupNodes([checkRun()]), totalCount: 19, hasNextPage, endCursor }]);
+
+        let thrown: unknown;
+        try {
+            port.pullRequest(42);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: cannot read all 19 checks on PR #42: got 1');
+    });
+
+    it('refuses to guess at an entry matching neither arm', () => {
+        const { port } = rollupPort([{ nodes: [{ __typename: 'CheckSuite', name: 'Gate' }] }]);
+
+        expect(() => port.pullRequest(42)).toThrow('cannot read a check on PR #42');
+    });
+
+    it.each([
+        { label: 'a head carrying no rollup at all', object: { statusCheckRollup: null } },
+        {
+            label: 'a rollup whose nodes are not a list',
+            object: { statusCheckRollup: { contexts: { totalCount: 0 } } },
+        },
+    ])('refuses to guess at $label', ({ object }) => {
+        const { port } = rollupPort([JSON.stringify({ data: { repository: { object } } })]);
+
+        expect(() => port.pullRequest(42)).toThrow('cannot read the checks on PR #42');
     });
 
     it('uses complete GitHub reads and exact-head writes', () => {

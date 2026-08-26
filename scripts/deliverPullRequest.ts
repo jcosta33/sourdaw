@@ -99,6 +99,7 @@ export type ShellRunner = {
 const REQUIRED_CHECK_NAME = 'Gate';
 const SETTLED_CHECK_STATUS = 'COMPLETED';
 const SUPERSEDED_CONCLUSION = 'CANCELLED';
+const PASSING_CONCLUSION = 'SUCCESS';
 const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
 
@@ -124,8 +125,8 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
  * stay `CANCELLED` on the head forever. GitHub reports the head `UNSTABLE` for those corpses even
  * though the review-triggered run the branch ruleset reads succeeded on the same commit. Tolerating
  * that state means proving the head green here instead of trusting the aggregate: nothing failed,
- * nothing is still running, and the one required check succeeded. Every other status still refuses,
- * because it reports something other than checks.
+ * nothing is still running, the one required check succeeded, and every cancelled name also
+ * succeeded. Every other status still refuses, because it reports something other than checks.
  */
 function validateMergeState(pullRequest: PullRequestSnapshot): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
@@ -150,6 +151,10 @@ function validateSupersededChecks(pullRequest: PullRequestSnapshot): void {
     if (!pullRequest.checkRuns.some(isSuccessfulRequiredCheck)) {
         fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
     }
+    const undecided = undecidedCancelledCheckName(pullRequest.checkRuns);
+    if (undecided !== undefined) {
+        fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
+    }
 }
 
 /**
@@ -164,8 +169,25 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
     );
 }
 
+/**
+ * Tolerating a cancellation rests on the review-triggered run having re-run that same job on the
+ * same commit, which is only observable as a success under the same check name. A name that was
+ * cancelled and never succeeded on the head therefore carries no verdict at all, and a skipped
+ * sibling does not supply one: the review-triggered run skips every job gated on `pull_request`,
+ * `Gate` passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
+ * `Dependency review` has exactly this shape on an approval run — one cancellation, skips beside
+ * it, no success anywhere. This rule consequently refuses such a head rather than merging with no
+ * dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
+ */
+function undecidedCancelledCheckName(checks: HeadCheckRun[]): string | undefined {
+    const passed = new Set(
+        checks.filter((check) => check.conclusion === PASSING_CONCLUSION).map((check) => check.name)
+    );
+    return checks.find((check) => check.conclusion === SUPERSEDED_CONCLUSION && !passed.has(check.name))?.name;
+}
+
 function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
-    return check.name === REQUIRED_CHECK_NAME && check.conclusion === 'SUCCESS';
+    return check.name === REQUIRED_CHECK_NAME && check.conclusion === PASSING_CONCLUSION;
 }
 
 function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
@@ -501,7 +523,19 @@ function repositoryMergePolicy(repository: string, shell: ShellRunner): Reposito
     return { method: 'squash', deletesMergedBranches: settings.delete_branch_on_merge };
 }
 
-type RawPullRequestSnapshot = Omit<PullRequestSnapshot, 'checkRuns'> & { statusCheckRollup?: unknown };
+type RawPullRequestSnapshot = Omit<PullRequestSnapshot, 'checkRuns'>;
+
+type RollupPage = {
+    totalCount: number;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    nodes: unknown[];
+};
+
+type RawRollupContexts = {
+    totalCount?: unknown;
+    pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
+    nodes?: unknown;
+};
 
 type RawRollupEntry = {
     __typename?: unknown;
@@ -514,11 +548,70 @@ type RawRollupEntry = {
 
 const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
 
-function toHeadCheckRuns(value: unknown, pullRequestNumber: number): HeadCheckRun[] {
-    if (!Array.isArray(value)) {
+const ROLLUP_PAGE_SIZE = 100;
+
+const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$cursor:String){
+  repository(owner:$owner,name:$name){
+    object(oid:$oid){
+      ... on Commit{
+        statusCheckRollup{
+          contexts(first:${ROLLUP_PAGE_SIZE},after:$cursor){
+            totalCount
+            pageInfo{hasNextPage endCursor}
+            nodes{
+              __typename
+              ... on CheckRun{name status conclusion}
+              ... on StatusContext{context state}
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * `gh pr view --json statusCheckRollup` asks GitHub for the first hundred contexts and reports
+ * neither a total nor a cursor, so a head that outgrew one page arrives silently truncated. Every
+ * conclusion this gate draws from the rollup — a tolerated cancellation as much as a refusal — would
+ * then rest on evidence that may simply be absent, and each further review event adds a whole run's
+ * worth of contexts, so heads cross that line in the ordinary course of a long review. The rollup is
+ * read through GraphQL instead, paged until the nodes account for `totalCount`, and refused when
+ * they do not. A partial list is never merged over.
+ */
+function readHeadCheckRuns(pullRequestNumber: number, readPage: (cursor: string | null) => RollupPage): HeadCheckRun[] {
+    let page = readPage(null);
+    const nodes: unknown[] = [...page.nodes];
+    while (page.pageInfo.hasNextPage && page.pageInfo.endCursor !== null && nodes.length < page.totalCount) {
+        page = readPage(page.pageInfo.endCursor);
+        nodes.push(...page.nodes);
+    }
+    if (nodes.length !== page.totalCount) {
+        fail(`cannot read all ${page.totalCount} checks on PR #${pullRequestNumber}: got ${nodes.length}`);
+    }
+    return nodes.map((entry) => toHeadCheckRun(entry, pullRequestNumber));
+}
+
+function parseRollupPage(response: string, pullRequestNumber: number): RollupPage {
+    const contexts = parseJson<{
+        data?: { repository?: { object?: { statusCheckRollup?: { contexts?: RawRollupContexts } | null } | null } };
+    }>(response, `PR #${pullRequestNumber} checks`).data?.repository?.object?.statusCheckRollup?.contexts;
+    if (
+        contexts === undefined ||
+        typeof contexts.totalCount !== 'number' ||
+        typeof contexts.pageInfo?.hasNextPage !== 'boolean' ||
+        !Array.isArray(contexts.nodes)
+    ) {
         fail(`cannot read the checks on PR #${pullRequestNumber}`);
     }
-    return value.map((entry) => toHeadCheckRun(entry, pullRequestNumber));
+    return {
+        totalCount: contexts.totalCount,
+        pageInfo: {
+            hasNextPage: contexts.pageInfo.hasNextPage,
+            endCursor: typeof contexts.pageInfo.endCursor === 'string' ? contexts.pageInfo.endCursor : null,
+        },
+        nodes: contexts.nodes,
+    };
 }
 
 /**
@@ -603,8 +696,24 @@ export function shellPort(
         'changedFiles',
         'additions',
         'deletions',
-        'statusCheckRollup',
     ].join(',');
+    const readRollupPage = (number: number, headRefOid: string, cursor: string | null): RollupPage =>
+        parseRollupPage(
+            shell.capture('gh', [
+                'api',
+                'graphql',
+                '-f',
+                `query=${ROLLUP_QUERY}`,
+                '-f',
+                `owner=${owner}`,
+                '-f',
+                `name=${name}`,
+                '-f',
+                `oid=${headRefOid}`,
+                ...(cursor === null ? [] : ['-f', `cursor=${cursor}`]),
+            ]),
+            number
+        );
 
     return {
         fetch: () => {
@@ -625,11 +734,14 @@ export function shellPort(
             shell.run('git', ['fetch', '--prune', 'origin']);
         },
         pullRequest: (number) => {
-            const { statusCheckRollup, ...snapshot } = parseJson<RawPullRequestSnapshot>(
+            const snapshot = parseJson<RawPullRequestSnapshot>(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 `PR #${number}`
             );
-            return { ...snapshot, checkRuns: toHeadCheckRuns(statusCheckRollup, number) };
+            return {
+                ...snapshot,
+                checkRuns: readHeadCheckRuns(number, (cursor) => readRollupPage(number, snapshot.headRefOid, cursor)),
+            };
         },
         reviewState: (number, expectedHead) => {
             const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;

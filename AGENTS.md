@@ -425,12 +425,16 @@ proof stays in the session; it is not the GitHub review.
 
 `pnpm deliver` squash-merges only after the immutable reviewer actor `APPROVED` the current head,
 the pull request is not a draft, the head is green, and threads are resolved. Green is `CLEAN`, or
-`UNSTABLE` where every check that did not pass was merely cancelled and `Gate` still succeeded on
-that head — the shape an approving review leaves behind when its own run cancels the push run it
-supersedes. Any other merge state refuses, and so does a real failure, an unfinished check, or a
-head no `Gate` ever passed on. It merges into `main` and nothing else: `lane:publish` opens every
-pull request there, so any other base is a retarget the delivery scripts did not make, and `deliver` refuses it rather than squashing onto a branch the
-change was never reviewed against. Do not merge any other way.
+`UNSTABLE` where `Gate` succeeded on that head and every check that did not pass was merely
+cancelled beside a success under its own name — the shape an approving review leaves behind when its
+own run cancels the push run it supersedes. A cancellation with no success under that name is not
+that shape: the job carries no verdict, a skipped sibling is not one, and `Gate` passes on `skipped`
+so a green `Gate` does not supply one either. Any other merge state refuses, and so does a real
+failure, an unfinished check, a head no `Gate` ever passed on, and a check rollup that cannot be
+read complete. It merges into `main` and nothing else: `lane:publish` opens every pull request
+there, so any other base is a retarget the delivery scripts did not make, and `deliver` refuses it
+rather than squashing onto a branch the change was never reviewed against. Do not merge any other
+way.
 
 Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
 review. Enable hooks: `git config core.hooksPath .githooks`.
