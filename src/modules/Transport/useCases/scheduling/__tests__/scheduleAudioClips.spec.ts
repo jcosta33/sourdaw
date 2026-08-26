@@ -112,6 +112,7 @@ function makeAudioClip(overrides: Record<string, unknown> = {}): unknown {
         audioOffsetBeats: 0,
         fadeInBeats: 0,
         fadeOutBeats: 0,
+        gain: 1,
         ...overrides,
     };
 }
@@ -459,6 +460,58 @@ describe('scheduleAudioClips', () => {
         );
         const expected = 10 ** (6 / 20);
         expect(gains.some((g: number) => Math.abs(g - expected) < 1e-5)).toBe(true);
+    });
+
+    /// B-1: the live scheduler never read `clip.gain`, so a Clip Gain drag or a
+    /// Normalize was inaudible in monitoring while the offline render folded the
+    /// same value into its fade gain (`scheduleOfflineClipSource` —
+    /// `setValueAtTime(clipGainValue, …)`, ramps `0 → clipGainValue → 0`). The
+    /// live path must hold the identical plateau: fades ramp toward and from the
+    /// clip's own level, not unity.
+    it('folds clip.gain into the fade gain plateau, as the offline render does', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ gain: 0.5, fadeInBeats: 2, fadeOutBeats: 2 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        // Fade-in: 0 at effectiveStart(4), ramping to the clip's level (0.5) at
+        // fadeInEnd = 4 + 2 beats / 2 bps = 5 — not to unity.
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, 4);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.5, 5);
+        // Fade-out: holds the clip's level at fadeOutStart(5), ramps to 0 at clipEnd(6).
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0.5, 5);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 6);
+        // No call may target the unity plateau a gain-blind scheduler would use.
+        expect(fadeGain.gain.linearRampToValueAtTime).not.toHaveBeenCalledWith(1, 5);
+        expect(fadeGain.gain.setValueAtTime).not.toHaveBeenCalledWith(1, 5);
+    });
+
+    /// Companion to the plateau test: with no drawn fades the micro-fade ramps
+    /// must also peak at the clip's level, or a gained-down clip would play its
+    /// body at unity between the anti-click ramps.
+    it('peaks the anti-click micro-fades at clip.gain when no fades are drawn', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ gain: 0.25 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        // Micro fade-in: 0 at effectiveStart(4) ramping to clip gain at 4.003.
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.25, 4 + 0.003);
+        // Micro fade-out: clip gain held at 6 - 0.003, ramping to 0 at 6.
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0.25, 6 - 0.003);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 6);
+        expect(fadeGain.gain.linearRampToValueAtTime).not.toHaveBeenCalledWith(1, expect.anything());
+        expect(fadeGain.gain.setValueAtTime).not.toHaveBeenCalledWith(1, expect.anything());
     });
 
     // ── Late start (already-past iterStartTime) ─────────────────────────────

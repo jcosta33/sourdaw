@@ -4,6 +4,7 @@ import { duplicateClipNotes } from '#/modules/MIDI/useCases';
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { getWarpState, isDefaultWarpState, setWarpState } from '../../stores/warpStates';
 
@@ -108,6 +109,18 @@ export function duplicateClipCore(
     // `readClipSatelliteEntry`'s snapshots.
     if (!isDefaultWarpState(clonedWarp)) {
         setWarpState(newClip.id, clonedWarp);
+    }
+
+    // The gain envelope is keyed by clip id like the warp state: re-key a clone
+    // onto the copy, with fresh point objects so the two clips never alias.
+    // Undo drops it with the copy itself (`removeClip` → `removeClipSatelliteData`).
+    const sourceEnvelope = getEnvelope(clipId);
+    if (sourceEnvelope) {
+        setEnvelope(newClip.id, {
+            clipId: newClip.id,
+            enabled: sourceEnvelope.enabled,
+            points: sourceEnvelope.points.map((point) => ({ ...point })),
+        });
     }
 
     if (clip.type === 'midi') {

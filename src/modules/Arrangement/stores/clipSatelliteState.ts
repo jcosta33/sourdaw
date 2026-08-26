@@ -115,6 +115,36 @@ export function readClipSatelliteEntry(clipId: string): ClipSatelliteEntry {
 }
 
 /**
+ * Canonical JSON of the satellite entries of the given clips, in id order given.
+ * Both the capture side (a handler freezing what a generation produced) and the
+ * guard side (`isGeneratedMidiStateCurrent`) serialize through this one
+ * function, so the comparison can never drift on key order or normalization.
+ */
+export function serializeClipSatelliteEntries(clipIds: readonly string[]): string {
+    return JSON.stringify(clipIds.map((clipId) => readClipSatelliteEntry(clipId)));
+}
+
+function normalizeEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
+    return {
+        clipId: entry.clipId,
+        gainEnvelope: entry.gainEnvelope === null ? null : normalizeGainEnvelope(entry.gainEnvelope, entry.clipId),
+        warpState: entry.warpState === null ? null : normalizeWarpState(entry.warpState),
+    };
+}
+
+/**
+ * Whether the live stores hold exactly the given snapshot entries — the
+ * satellite leg of a restore action's `expected` precondition. Both sides are
+ * compared through the same normalization `writeClipSatelliteEntry` applies, so
+ * a snapshot written by an earlier head matches regardless of key order.
+ */
+export function clipSatelliteEntriesMatchSnapshot(entries: readonly ClipSatelliteEntrySnapshot[]): boolean {
+    return entries.every(
+        (entry) => JSON.stringify(readClipSatelliteEntry(entry.clipId)) === JSON.stringify(normalizeEntry(entry))
+    );
+}
+
+/**
  * Publish one entry. A `null` member removes the record rather than storing an
  * empty one, so a restored clip with no envelope is indistinguishable from a
  * clip that never had one.

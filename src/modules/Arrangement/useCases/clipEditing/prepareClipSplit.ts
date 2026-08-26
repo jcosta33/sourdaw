@@ -7,6 +7,8 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { type Clip } from '../../stores/trackStore';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
+import { prepareClipSplitSatellites } from './splitClipSatellites';
+
 type PrepareClipSplitInput = {
     clipId: string;
     splitBeat: number;
@@ -66,6 +68,12 @@ export function prepareClipSplit({
     if (!midiPlan) {
         return null;
     }
+    const satellites = prepareClipSplitSatellites({
+        clipId,
+        rightClipId: effectiveRightClipId,
+        clipRelativeSplitBeats: adjustedSplitBeat - clip.startBeat,
+        contentSplitBeats: adjustedSplitBeat - clip.startBeat + (clip.audioOffsetBeats ?? 0),
+    });
 
     const leftClip: Clip = {
         ...clip,
@@ -89,6 +97,7 @@ export function prepareClipSplit({
         rightClipIndex: track.clips.length,
         sourceMidi: midiPlan.previousSource,
         rightMidi: midiPlan.previousRight,
+        ...(satellites ? { clipSatellites: satellites.previous } : {}),
     };
     const next: ClipSplitActionSnapshot = {
         trackId: track.id,
@@ -97,6 +106,7 @@ export function prepareClipSplit({
         rightClipIndex: track.clips.length,
         sourceMidi: midiPlan.nextSource,
         rightMidi: midiPlan.nextRight,
+        ...(satellites ? { clipSatellites: satellites.next } : {}),
     };
     return {
         adjustedMediaSplit,

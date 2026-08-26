@@ -26,6 +26,8 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
 import { type TrackState } from '../../../repositories/track/getTrackState';
+import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { setWarpState, warpStates } from '../../../stores/warpStates';
 import { splitClip } from '../splitClip';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
@@ -52,6 +54,8 @@ function newTrackState(): TrackState {
 describe('splitClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        warpStates.clear();
+        __resetGainEnvelopesForTest();
         mocks.getNextClipId.mockReturnValue('new-clip-right');
         mocks.snapToZeroCrossing.mockImplementation((_clip, beat) => beat);
         mocks.prepareMidiClipSplit.mockImplementation(() => {
@@ -284,5 +288,102 @@ describe('splitClip', () => {
         const untouched = tracks.find((track) => track.id === 't2');
         expect(untouched?.clips).toEqual([otherClip]);
         expect(untouched?.clips).toHaveLength(1);
+    });
+
+    // ── Satellite repartition (M-7) ─────────────────────────────────────────
+    //
+    // Warp markers are keyed to *source content* beats (the Elastic editor draws
+    // them over the whole buffer), so the right half keeps their coordinates —
+    // its audioOffsetBeats already re-enters the same buffer. Gain envelope
+    // points are clip-relative, so points moving right are re-based by the
+    // split delta, and each half gets a seam point holding the curve's value at
+    // the cut so the audible envelope is unchanged by the split.
+
+    it('repartitions warp markers and gain envelope points across both halves of an audio split', () => {
+        // Clip 0..8 with audioOffsetBeats 2 → content seam at 4 + 2 = 6.
+        mocks.getTrackState.mockReturnValue(
+            makeState([ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8, audioOffsetBeats: 2 })])
+        );
+        setWarpState('c1', {
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },
+                { id: 'w-seam', originalBeat: 6, warpedBeat: 6 },
+                { id: 'w-right', originalBeat: 7, warpedBeat: 7.5 },
+            ],
+        });
+        setEnvelope('c1', {
+            clipId: 'c1',
+            enabled: true,
+            points: [
+                { id: 'p0', beatOffset: 0, gainDb: 0 },
+                { id: 'p6', beatOffset: 6, gainDb: -12 },
+            ],
+        });
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        // Left keeps only the markers below the content seam, coordinates untouched.
+        expect(warpStates.get('c1')?.markers).toEqual([{ id: 'w-left', originalBeat: 3, warpedBeat: 3.25 }]);
+        // Right inherits the warp setup and the seam-and-beyond markers, still in
+        // content beats — the right clip's audioOffsetBeats grew by the split.
+        expect(warpStates.get('new-clip-right')).toEqual({
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-seam', originalBeat: 6, warpedBeat: 6 },
+                { id: 'w-right', originalBeat: 7, warpedBeat: 7.5 },
+            ],
+        });
+
+        // The seam value at clip-relative beat 4 between (0, 0 dB) and (6, -12 dB)
+        // is -8 dB; both halves carry it at their cut edge so the curve is intact.
+        expect(getEnvelope('c1')).toEqual({
+            clipId: 'c1',
+            enabled: true,
+            points: [
+                { id: 'p0', beatOffset: 0, gainDb: 0 },
+                { id: 'gep-split-new-clip-right-left', beatOffset: 4, gainDb: -8 },
+            ],
+        });
+        expect(getEnvelope('new-clip-right')).toEqual({
+            clipId: 'new-clip-right',
+            enabled: true,
+            points: [
+                { id: 'gep-split-new-clip-right-right', beatOffset: 0, gainDb: -8 },
+                { id: 'p6', beatOffset: 2, gainDb: -12 },
+            ],
+        });
+    });
+
+    it('keeps a disabled envelope’s stored points on both halves without enabling it', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4)]));
+        setEnvelope('c1', {
+            clipId: 'c1',
+            enabled: false,
+            points: [{ id: 'p2', beatOffset: 2, gainDb: -6 }],
+        });
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+
+        expect(getEnvelope('c1')?.enabled).toBe(false);
+        expect(getEnvelope('new-clip-right')?.enabled).toBe(false);
+        // The point sits exactly at the cut: it belongs to the right half at 0,
+        // and no synthetic seam point duplicates it.
+        expect(getEnvelope('c1')?.points).toEqual([{ id: 'gep-split-new-clip-right-left', beatOffset: 2, gainDb: -6 }]);
+        expect(getEnvelope('new-clip-right')?.points).toEqual([{ id: 'p2', beatOffset: 0, gainDb: -6 }]);
+    });
+
+    it('writes no satellite state when the split source clip carries none', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4)]));
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+
+        expect(warpStates.size).toBe(0);
+        expect(getEnvelope('c1')).toBeUndefined();
+        expect(getEnvelope('new-clip-right')).toBeUndefined();
     });
 });

@@ -2,6 +2,7 @@ import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitStateRestorable';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 
@@ -21,7 +22,9 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction): boolean {
             expectedRight: action.payload.expected.rightMidi,
             replacementSource: action.payload.replacement.sourceMidi,
             replacementRight: action.payload.replacement.rightMidi,
-        })
+        }) &&
+        (action.payload.expected.clipSatellites === undefined ||
+            clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites))
     );
 }
 
@@ -43,7 +46,15 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             replacementSource: action.payload.replacement.sourceMidi,
             replacementRight: action.payload.replacement.rightMidi,
         });
-        return midiRestored ? { status: 'written' } : { status: 'conflict' };
+        if (!midiRestored) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.replacement.clipSatellites) {
+            for (const entry of action.payload.replacement.clipSatellites) {
+                writeClipSatelliteEntry(entry);
+            }
+        }
+        return { status: 'written' };
     },
     describe: () => ({ label: 'Restore clip split state', inverseAction: null }),
     previewExecution: 'isolated-project',

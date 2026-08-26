@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     restoreMidiClipData: vi.fn(),
     notifyUser: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
+    readClipSatelliteEntry: vi.fn<(typeof satelliteModule)['readClipSatelliteEntry']>(),
+    writeClipSatelliteEntry: vi.fn<(typeof satelliteModule)['writeClipSatelliteEntry']>(),
     redoNotApplied: Symbol('redo-not-applied'),
 }));
 
@@ -29,6 +31,10 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
+vi.mock('../../../stores/clipSatelliteState', () => ({
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
+    writeClipSatelliteEntry: mocks.writeClipSatelliteEntry,
+}));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -37,6 +43,7 @@ import { splitClipWithUndo } from '../splitClipWithUndo';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
 import type * as updateClipRepo from '../../../repositories/track/updateClip';
+import type * as satelliteModule from '../../../stores/clipSatelliteState';
 import type * as resolverModule from '../../../stores/resolveEligibleClipWriteTarget';
 import type * as splitClipModule from '../splitClip';
 
@@ -60,6 +67,11 @@ describe('splitClipWithUndo', () => {
         vi.clearAllMocks();
         mocks.getMidiStoreState.mockReturnValue(null);
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'c1' });
+        mocks.readClipSatelliteEntry.mockImplementation((clipId) => ({
+            clipId,
+            gainEnvelope: null,
+            warpState: null,
+        }));
     });
 
     it('does nothing when the clip does not exist', () => {
@@ -189,5 +201,60 @@ describe('splitClipWithUndo', () => {
             'error'
         );
         expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+    });
+
+    it('restores the frozen source satellites on undo and the repartitioned ones on redo', () => {
+        setState([ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 })]);
+        const sourceBefore = {
+            clipId: 'c1',
+            gainEnvelope: {
+                clipId: 'c1',
+                enabled: true,
+                points: [{ id: 'p0', beatOffset: 0, gainDb: -3 }],
+            },
+            warpState: null,
+        };
+        const leftAfter = {
+            clipId: 'c1',
+            gainEnvelope: {
+                clipId: 'c1',
+                enabled: true,
+                points: [
+                    { id: 'p0', beatOffset: 0, gainDb: -3 },
+                    { id: 'gep-split-right-1-left', beatOffset: 4, gainDb: -3 },
+                ],
+            },
+            warpState: null,
+        };
+        const rightAfter = {
+            clipId: 'right-1',
+            gainEnvelope: {
+                clipId: 'right-1',
+                enabled: true,
+                points: [{ id: 'gep-split-right-1-right', beatOffset: 0, gainDb: -3 }],
+            },
+            warpState: null,
+        };
+        mocks.readClipSatelliteEntry
+            .mockReturnValueOnce(sourceBefore)
+            .mockReturnValueOnce(leftAfter)
+            .mockReturnValueOnce(rightAfter);
+        mocks.splitClip.mockReturnValue('right-1');
+
+        splitClipWithUndo('c1', 4);
+        const entry = capturedUndoEntry();
+        entry.undoFn();
+
+        expect(mocks.writeClipSatelliteEntry).toHaveBeenNthCalledWith(1, sourceBefore);
+        expect(mocks.writeClipSatelliteEntry).toHaveBeenNthCalledWith(2, {
+            clipId: 'right-1',
+            gainEnvelope: null,
+            warpState: null,
+        });
+
+        entry.redoFn();
+
+        expect(mocks.writeClipSatelliteEntry).toHaveBeenNthCalledWith(3, leftAfter);
+        expect(mocks.writeClipSatelliteEntry).toHaveBeenNthCalledWith(4, rightAfter);
     });
 });

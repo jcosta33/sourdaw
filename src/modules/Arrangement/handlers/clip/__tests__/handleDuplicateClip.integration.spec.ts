@@ -20,6 +20,7 @@ import {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { getEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -41,6 +42,7 @@ describe('handleDuplicateClip atomic integration', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        setAllEnvelopes({});
         const clip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 4 });
         const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
@@ -51,6 +53,7 @@ describe('handleDuplicateClip atomic integration', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        setAllEnvelopes({});
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -70,5 +73,40 @@ describe('handleDuplicateClip atomic integration', () => {
 
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
         expect(trackStore.value?.tracks[0]?.clips[0]?.id).toBe('clip-1');
+    });
+
+    it('carries the clip gain envelope onto the duplicate and drops it again on undo', async () => {
+        setEnvelope('clip-1', {
+            clipId: 'clip-1',
+            enabled: true,
+            points: [
+                { id: 'p1', beatOffset: 0, gainDb: -6 },
+                { id: 'p2', beatOffset: 2, gainDb: 0 },
+            ],
+        });
+
+        const result = await executeAppActionBatch([{ type: 'duplicateClip', payload: { clipId: 'clip-1' } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(result.status).toBe('committed');
+        const duplicated = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id !== 'clip-1');
+        expect(duplicated).toBeDefined();
+        // The copy owns an equivalent envelope under its own id; the source's is untouched.
+        expect(getEnvelope(duplicated!.id)).toEqual({
+            clipId: duplicated!.id,
+            enabled: true,
+            points: [
+                { id: 'p1', beatOffset: 0, gainDb: -6 },
+                { id: 'p2', beatOffset: 2, gainDb: 0 },
+            ],
+        });
+        expect(getEnvelope('clip-1')?.clipId).toBe('clip-1');
+
+        await undo();
+
+        expect(getEnvelope(duplicated!.id)).toBeUndefined();
+        expect(getEnvelope('clip-1')?.points).toHaveLength(2);
     });
 });
