@@ -41,10 +41,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: health-gates-${{ github.event.pull_request.number || github.ref }}
-  # Superseded pull-request runs are cancelled; a scheduled or dispatched run
-  # against main is not, because there is nothing newer to supersede it.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Pull-request runs and approved reviews share the PR-number group. Every
+  # other event gets a run-id group, so it replaces neither validation nor
+  # another non-validating run.
+  group: health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}
 
 env:
   NODE_VERSION: 24.19.0
@@ -283,9 +284,20 @@ jobs:
       # than assertions, so worker count is the lever that matters. The local
       # default of two exists for the agent resource guard, not for CI.
       - name: Run shard
+        id: run_shard
+        continue-on-error: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
         env:
           VITEST_MAX_WORKERS: 4
         run: pnpm run test:run --shard=${{ matrix.shard }}/4
+
+      - name: Report shard failure
+        if: ${{ !cancelled() && steps.run_shard.outcome == 'failure' }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\n' "$SHARD"
+          printf '### Unit suite shard %s failed\n\n' "$SHARD" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Inspect the `Run shard` step log for raw failure output.\n' >> "$GITHUB_STEP_SUMMARY"
 
   build:
     name: Production build
@@ -436,7 +448,18 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run shard
+        id: run_shard
+        continue-on-error: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
         run: pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob
+
+      - name: Report shard failure
+        if: ${{ !cancelled() && steps.run_shard.outcome == 'failure' }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          printf '::warning title=End-to-end shard failed::Shard %s failed; inspect the Run shard log.\n' "$SHARD"
+          printf '### End-to-end shard %s failed\n\n' "$SHARD" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Inspect the `Run shard` step log for raw failure output.\n' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload blob report
         if: ${{ !cancelled() }}
@@ -629,12 +652,12 @@ jobs:
           title="ci(nightly): health gates red on main"
           body=$(printf 'The nightly run against `main` failed.\n\nFailing jobs: %s\n\n%s\n' \
             "$failed" "$RUN_URL")
-          existing=$(gh issue list --state open --search "$title in:title" \
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" \
             --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
-            gh issue create --title "$title" --body "$body" --label bug --label status:ready
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --label bug --label status:ready
           fi
 
   gate:
@@ -672,7 +695,10 @@ jobs:
     # the principle that gating on unobserved behaviour is the mistake that left
     # the previous end-to-end job broken in this file for months. Both have now
     # passed, so both gate.
-    if: always()
+    # `!cancelled()` still evaluates failed or skipped dependencies for a live
+    # run. The review predicate prevents an intentionally skipped review run
+    # from reporting a successful Gate from all-skipped dependencies.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}
     needs:
       - decide
       - static

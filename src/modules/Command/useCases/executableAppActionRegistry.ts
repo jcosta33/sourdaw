@@ -37,10 +37,32 @@ export type ExecutableAppActionTargetRule = {
     optional?: boolean;
 };
 
-export type ExecutableAppActionMutationIdentityArgument = {
-    argument: string;
-    cardinality?: 'many';
-};
+export type ExecutableAppActionParentTrackTargetCapability =
+    | 'track'
+    | 'routable-source'
+    | 'bus'
+    | 'device'
+    | 'sidechain-capable-device'
+    | 'automation-lane'
+    | 'clip'
+    | 'editable-clip'
+    | 'editable-audio-clip'
+    | 'editable-midi-clip';
+
+export type ExecutableAppActionDerivedMutationIdentityArgument = 'parentTrackIds';
+
+export type ExecutableAppActionMutationIdentityArgument =
+    | {
+          argument: string;
+          cardinality?: 'many';
+          source?: 'provider';
+      }
+    | {
+          argument: ExecutableAppActionDerivedMutationIdentityArgument;
+          cardinality?: 'many';
+          source: 'app-derived';
+          targetCapabilities: readonly ExecutableAppActionParentTrackTargetCapability[];
+      };
 
 export type ExecutableAppActionMutationIdentityRule = {
     arguments: readonly ExecutableAppActionMutationIdentityArgument[];
@@ -2373,15 +2395,36 @@ const NON_DESTRUCTIVE_MANY_TRACKS_RESOURCE_REFERENCE_IDENTITY = [
         resourceReferenceOnly: true,
     },
 ] as const;
-const PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = [
-    {
-        arguments: [{ argument: 'parentTrackIds', cardinality: 'many' }],
-        destructive: false,
-        resourceFamily: 'track',
-        resourceReferenceOnly: true,
-    },
-] as const;
-const CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY;
+function createParentTrackResourceReferenceIdentity(
+    targetCapabilities: readonly ExecutableAppActionParentTrackTargetCapability[]
+) {
+    return [
+        {
+            arguments: [{ argument: 'parentTrackIds', cardinality: 'many', source: 'app-derived', targetCapabilities }],
+            destructive: false,
+            resourceFamily: 'track',
+            resourceReferenceOnly: true,
+        },
+    ] as const;
+}
+
+const CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity([
+    'clip',
+    'editable-clip',
+    'editable-audio-clip',
+    'editable-midi-clip',
+]);
+const DEVICE_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity(['device']);
+const SEND_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity([
+    'routable-source',
+    'bus',
+]);
+const AUTOMATION_LANE_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity([
+    'automation-lane',
+]);
+const SIDECHAIN_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity([
+    'routable-source',
+]);
 const CLIP_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
     ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
@@ -2407,15 +2450,15 @@ const MIDI_ARTICULATION_COPY_MUTATION_IDENTITY = [
 ] as const;
 const DEVICE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
-    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+    ...DEVICE_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const DEVICE_PARAMETER_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'deviceId' }, { argument: 'paramId' }] },
-    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+    ...DEVICE_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const SEND_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'trackId' }, { argument: 'busId' }], resourceFamily: 'send' },
-    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+    ...SEND_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const TRACK_OUTPUT_MUTATION_IDENTITY = [
     ...TRACK_MUTATION_IDENTITY,
@@ -2429,7 +2472,7 @@ const AUTOMATED_SEND_MUTATION_IDENTITY = [
     {
         arguments: [{ argument: 'trackIds', cardinality: 'many' }, { argument: 'busId' }],
     },
-    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+    ...SEND_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const AUTOMATED_TRACK_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'trackIds', cardinality: 'many' }] },
@@ -2437,7 +2480,7 @@ const AUTOMATED_TRACK_MUTATION_IDENTITY = [
 ] as const;
 const AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY = [
     { arguments: [{ argument: 'laneId' }], resourceFamily: 'automation-lane', resourceReferenceOnly: true },
-    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+    ...AUTOMATION_LANE_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const AUTOMATION_LANE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'laneId' }] },
@@ -2462,7 +2505,7 @@ const SIDECHAIN_ROUTE_RESOURCE_REFERENCE_IDENTITY = [
         resourceFamily: 'sidechain-route',
         resourceReferenceOnly: true,
     },
-    ...PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+    ...SIDECHAIN_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const ADD_SIDECHAIN_ROUTE_MUTATION_IDENTITY = [
     {

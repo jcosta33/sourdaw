@@ -408,6 +408,14 @@ export type FakeDurableAssetIndexedDb = {
     overwriteAssetBlob: (hash: string, blob: Blob) => void;
     overwriteLeaseHash: (leaseId: string, hash: string) => void;
     overwriteLeaseTerminalAt: (leaseId: string, terminalAt: number) => void;
+    omitPromotionRecoveryDisposition: (recoveryId: string) => void;
+    omitPromotionRecoveryState: (recoveryId: string) => void;
+    overwritePromotionRecoveryCommitProof: (recoveryId: string, commitProof: StoredRecord) => void;
+    seedLegacyPromotionRecoveryCommitProof: (
+        recoveryId: string,
+        commitProof: StoredRecord,
+        promotionState?: 'committed'
+    ) => void;
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     seedOwnerHandoff: (input: { previousOwnerId: string; nextOwnerId: string }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
@@ -528,22 +536,60 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
         overwriteAssetBlob: (hash, blob) => {
             const store = durableStore('assets');
             const record = store?.get(hash);
-            if (record) {
-                store?.set(hash, { ...record, blob });
+            if (store && record) {
+                store.set(hash, { ...record, blob });
             }
         },
         overwriteLeaseHash: (leaseId, hash) => {
             const store = durableStore('leases');
             const record = store?.get(leaseId);
-            if (record) {
-                store?.set(leaseId, { ...record, hash });
+            if (store && record) {
+                store.set(leaseId, { ...record, hash });
             }
         },
         overwriteLeaseTerminalAt: (leaseId, terminalAt) => {
             const store = durableStore('leases');
             const record = store?.get(leaseId);
-            if (record) {
-                store?.set(leaseId, { ...record, terminalAt });
+            if (store && record) {
+                store.set(leaseId, { ...record, terminalAt });
+            }
+        },
+        omitPromotionRecoveryDisposition: (recoveryId) => {
+            const store = durableStore('promotionRecoveries');
+            const record = store?.get(recoveryId);
+            if (store && record) {
+                const { disposition: _disposition, ...incomplete } = record;
+                store.set(recoveryId, incomplete);
+            }
+        },
+        omitPromotionRecoveryState: (recoveryId) => {
+            const store = durableStore('promotionRecoveries');
+            const record = store?.get(recoveryId);
+            if (store && record) {
+                const { promotionState: _promotionState, ...incomplete } = record;
+                store.set(recoveryId, incomplete);
+            }
+        },
+        overwritePromotionRecoveryCommitProof: (recoveryId, commitProof) => {
+            const store = durableStore('promotionRecoveries');
+            const record = store?.get(recoveryId);
+            if (store && record) {
+                store.set(recoveryId, { ...record, commitProof });
+            }
+        },
+        seedLegacyPromotionRecoveryCommitProof: (recoveryId, commitProof, promotionState) => {
+            const state = durableState();
+            const store = state?.stores.get('promotionRecoveries');
+            const record = store?.get(recoveryId);
+            if (state && store && record) {
+                state.version = 5;
+                const { promotionState: _promotionState, ...legacy } = record;
+                store.set(recoveryId, {
+                    ...legacy,
+                    schemaVersion: 1,
+                    commitProof,
+                    ...(promotionState ? { promotionState } : {}),
+                });
             }
         },
         seedPromotedLease: ({ leaseId, ownerId, hash, terminalAt }) => {

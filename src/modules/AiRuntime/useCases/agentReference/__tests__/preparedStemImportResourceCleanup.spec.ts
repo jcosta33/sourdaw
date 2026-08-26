@@ -1,6 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type getVersionedCommandBatchCommitProof } from '#/modules/Command/useCases';
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    compileVersionedCommandBatchEnvelope,
+    createVerifiedBatchReceipt,
+    createVersionedCommandReceipt,
+    type getVersionedCommandBatchCommitProof,
+    type getVersionedCommandBatchIdempotentReplay,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 import { type AppAction, type StemImportTrackSnapshot } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +24,7 @@ const mocks = vi.hoisted(() => ({
     releaseStagedAsset: vi.fn(),
     transitionDurablePromotionRecoveryToCleanup: vi.fn().mockResolvedValue({ status: 'prepared' }),
     getVersionedCommandBatchCommitProof: vi.fn(),
-    getVersionedCommandBatchIdempotentReplay: vi.fn(),
+    getVersionedCommandBatchIdempotentReplay: vi.fn<typeof getVersionedCommandBatchIdempotentReplay>(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -34,7 +43,8 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
         transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
     }),
 }));
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     getVersionedCommandBatchCommitProof: mocks.getVersionedCommandBatchCommitProof,
 }));
 
@@ -46,6 +56,7 @@ import {
 } from '../../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunCancellation } from '../../cancelAgentRun';
+import { compilePendingActionCommandEnvelopes } from '../../compilePendingActionCommandEnvelopes';
 import { deleteAgentRunArtifacts } from '../../deleteAgentRunArtifacts';
 import { createStemImportConfirmationResourceLease } from '../createStemImportConfirmationResourceLease';
 import { preparedStemImportCleanup } from '../discardPreparedStemImportResources';
@@ -126,56 +137,89 @@ const expectedDurableCommitProof = Object.freeze({
     contentHash: `sha256:${'a'.repeat(64)}`,
     runId: 'run:test',
     batchId: 'batch:test',
+    baseRevision: 'revision-stem-import',
+    commands: [{ commandId: 'command-stem-import', operation: 'importStemSet' }] satisfies Awaited<
+        ReturnType<typeof getVersionedCommandBatchCommitProof>
+    >['commands'],
 }) satisfies Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
 
 const stemAction = importStemSetAction;
 
-function createRecoveryCommandBatch(serialized: string) {
-    return {
-        authority: {
-            projectId: 'project-cleanup',
-            baseRevision: 'revision-cleanup',
-            scope: {
-                targetIds: [],
-                targetRanges: [],
-                protectedTargetIds: [],
-                protectedRanges: [],
-            },
-            grants: {
-                allowedOperationPrefixes: ['importStemSet'],
-                create: true,
-                delete: false,
-                routing: false,
-                tempo: false,
-                master: false,
-                file: true,
-                audioUpload: true,
-                remoteGeneration: false,
-                autoCommit: false,
-            },
-            budgets: {
-                maxCommands: 1,
-                maxCreatedTracks: 1,
-                maxDeletedObjects: 0,
-                maxAffectedTracks: 1,
-                maxAffectedClips: 1,
-                maxAutomationPoints: 0,
-                maxImportedAssets: 1,
-                maxRenderJobs: 0,
-            },
-        },
-        serialized,
-    };
+function createRecoveryCommandBatch(runId: string, batchId: string) {
+    const commands = compilePendingActionCommandEnvelopes({
+        actions: [importStemSetAction],
+        actionLabels: ['Import the prepared stems'],
+        group: { groupId: batchId, groupLabel: 'Recover prepared stem import resources' },
+        projectRevision: 'revision-cleanup',
+    });
+    return compileVersionedCommandBatchEnvelope({
+        runId,
+        batchId,
+        projectId: 'project-cleanup',
+        baseRevision: 'revision-cleanup',
+        idempotencyKey: `stem-recovery:${runId}:${batchId}`,
+        intent: 'Recover prepared stem import resources',
+        commands,
+    });
+}
+
+async function createRecoveryReceiptFixture(input: {
+    commandBatch: ReturnType<typeof createRecoveryCommandBatch>;
+    contentHash?: string;
+    outcome: 'committed' | 'failed';
+}) {
+    const productionCommandUseCases =
+        await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+    const proof = await productionCommandUseCases.getVersionedCommandBatchCommitProof(input.commandBatch);
+    const parsed = parseVersionedCommandBatchEnvelope(input.commandBatch.serialized, input.commandBatch.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    const command = parsed.envelope.commands[0];
+    if (!command || command.operation !== importStemSetAction.type) {
+        throw new Error('Expected the recovery batch to contain the stem import command');
+    }
+    const createPersistedReceipt = (result: Parameters<typeof createVerifiedBatchReceipt>[0]['result']) =>
+        createVerifiedBatchReceipt({
+            contentHash: input.contentHash ?? proof.contentHash,
+            envelope: parsed.envelope,
+            observedBaseRevision: parsed.envelope.baseRevision,
+            resultingRevision: null,
+            result,
+        });
+    if (input.outcome === 'committed') {
+        const inverseAction = getArrangementHandlers().importStemSet.describe(importStemSetAction).inverseAction;
+        if (!inverseAction) {
+            throw new Error('Expected importStemSet inverse');
+        }
+        const commandReceipt = createVersionedCommandReceipt({
+            envelope: command,
+            compensation: { available: true, strategy: 'inverse' },
+        });
+        const persistedReceipt = createPersistedReceipt({
+            status: 'committed',
+            actions: [{ action: importStemSetAction, receipt: commandReceipt }],
+        });
+        return { command, commandReceipt, persistedReceipt, proof };
+    }
+    const persistedReceipt = createPersistedReceipt({ status: 'failed', actions: [], reason: 'proven noncommit' });
+    return { command, commandReceipt: null, persistedReceipt, proof };
 }
 
 describe('prepared stem import resource cleanup', () => {
     beforeEach(() => {
+        clearHandlerRegistry();
+        registerHandlerMap({ importStemSet: getArrangementHandlers().importStemSet });
         clearPendingActionConfirmations();
         agentRunLifecycle.clear();
         vi.clearAllMocks();
         mocks.getVersionedCommandBatchCommitProof.mockImplementation(async () => ({
             ...expectedDurableCommitProof,
         }));
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
     });
 
     it('deletes decoded audio and journals staged cleanup through the registered production owner', async () => {
@@ -469,7 +513,7 @@ describe('prepared stem import resource cleanup', () => {
         const runId = 'stem-protected-confirmation-clear';
         const batchId = 'batch-protected-confirmation-clear';
         const confirmationId = 'confirmation-protected-confirmation-clear';
-        const commandBatch = createRecoveryCommandBatch('serialized-protected-confirmation-clear');
+        const commandBatch = createRecoveryCommandBatch(runId, batchId);
         agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
         preparedStemImportResources.register({ runId, stems });
         proposePendingActionConfirmation({
@@ -504,16 +548,8 @@ describe('prepared stem import resource cleanup', () => {
             }),
         ]);
 
-        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
-            schemaVersion: 1,
-            runId,
-            batchId,
-            outcome: 'failed',
-            links: { render: [], analysis: [] },
-            warnings: [],
-            errors: ['proven noncommit'],
-            modelSummary: 'proven noncommit',
-        });
+        const noncommitReceipt = await createRecoveryReceiptFixture({ commandBatch, outcome: 'failed' });
+        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce(noncommitReceipt.persistedReceipt);
         await expect(
             preparedStemImportResources.reconcile({
                 runId,
@@ -537,7 +573,7 @@ describe('prepared stem import resource cleanup', () => {
         async ({ receiptOutcome, settlement, cleanupRuns }) => {
             const runId = `stem-recovery-${receiptOutcome}`;
             const batchId = `batch-${receiptOutcome}`;
-            const commandBatch = { authority: {} as never, serialized: `serialized-${receiptOutcome}` };
+            const commandBatch = createRecoveryCommandBatch(runId, batchId);
             agentRunLifecycle.create({
                 runId,
                 request: 'Import stems.',
@@ -562,16 +598,23 @@ describe('prepared stem import resource cleanup', () => {
             expect(readAgentRunState().preparedStemImportRecoveryLedger).toEqual([
                 expect.objectContaining({ runId, batchId, status: 'pending' }),
             ]);
-            mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
-                schemaVersion: 1,
-                runId,
-                batchId,
-                outcome: receiptOutcome,
-                links: { render: [], analysis: [] },
-                warnings: [],
-                errors: [],
-                modelSummary: receiptOutcome,
+            const fixture = await createRecoveryReceiptFixture({ commandBatch, outcome: receiptOutcome });
+            expect(fixture.command).toMatchObject({
+                operation: importStemSetAction.type,
+                arguments: importStemSetAction.payload,
             });
+            expect(fixture.proof.commands).toEqual([
+                { commandId: fixture.command.commandId, operation: importStemSetAction.type },
+            ]);
+            expect(fixture.persistedReceipt.resulting).toBeNull();
+            if (receiptOutcome === 'committed') {
+                expect(fixture.commandReceipt?.compensation).toEqual({ available: true, strategy: 'inverse' });
+                expect(fixture.persistedReceipt.compensation).toEqual({
+                    available: true,
+                    commandIds: [fixture.command.commandId],
+                });
+            }
+            mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce(fixture.persistedReceipt);
 
             const settlements = await Promise.all([
                 preparedStemImportResources.reconcile({
@@ -605,67 +648,61 @@ describe('prepared stem import resource cleanup', () => {
         }
     );
 
-    it.each([
-        { label: 'missing', receipt: null },
-        {
-            label: 'mismatched',
-            receipt: {
-                schemaVersion: 1,
-                runId: 'different-run',
-                batchId: 'different-batch',
-                outcome: 'committed',
-                links: { render: [], analysis: [] },
-                warnings: [],
-                errors: [],
-                modelSummary: 'mismatched',
-            },
-        },
-    ])('retains exact recovery ownership for a $label receipt until later proof settles it', async ({ receipt }) => {
-        const runId = `stem-recovery-${receipt ? 'mismatched' : 'missing'}`;
-        const batchId = `batch-${runId}`;
-        const commandBatch = { authority: {} as never, serialized: `serialized-${runId}` };
-        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
-        preparedStemImportResources.register({ runId, stems });
-        preparedStemImportResources.protect({ runId, stems, recovery: { batchId, commandBatch } });
-        preparedStemImportResources.retainForRecovery({ runId, stems });
-        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce(receipt);
+    it.each(['missing', 'mismatched'] as const)(
+        'retains exact recovery ownership for a %s receipt until later proof settles it',
+        async (receiptKind) => {
+            const runId = `stem-recovery-${receiptKind}`;
+            const batchId = `batch-${runId}`;
+            const commandBatch = createRecoveryCommandBatch(runId, batchId);
+            agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+            preparedStemImportResources.register({ runId, stems });
+            preparedStemImportResources.protect({ runId, stems, recovery: { batchId, commandBatch } });
+            preparedStemImportResources.retainForRecovery({ runId, stems });
+            let receipt: Awaited<ReturnType<typeof getVersionedCommandBatchIdempotentReplay>> = null;
+            if (receiptKind === 'mismatched') {
+                const mismatchedBatch = createRecoveryCommandBatch('different-run', 'different-batch');
+                const mismatchedFixture = await createRecoveryReceiptFixture({
+                    commandBatch: mismatchedBatch,
+                    outcome: 'committed',
+                });
+                expect(mismatchedFixture.persistedReceipt).toMatchObject({
+                    batchId: mismatchedFixture.proof.batchId,
+                    contentHash: mismatchedFixture.proof.contentHash,
+                    runId: mismatchedFixture.proof.runId,
+                });
+                receipt = mismatchedFixture.persistedReceipt;
+            }
+            mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce(receipt);
 
-        await expect(
-            preparedStemImportResources.reconcile({
-                runId,
-                batchId,
-                getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
-            })
-        ).resolves.toEqual({ status: 'retained' });
-        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([
-            expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'cleanup-pending' }),
-        ]);
-        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toHaveLength(1);
-        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+            await expect(
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                })
+            ).resolves.toEqual({ status: 'retained' });
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([
+                expect.objectContaining({ assetId: 'decoded-buffer-1', status: 'cleanup-pending' }),
+            ]);
+            expect(agentRunLifecycle.get(runId)?.preparedStemImports).toHaveLength(1);
+            expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
 
-        mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce({
-            schemaVersion: 1,
-            runId,
-            batchId,
-            outcome: 'failed',
-            links: { render: [], analysis: [] },
-            warnings: [],
-            errors: ['not committed'],
-            modelSummary: 'not committed',
-        });
-        await expect(
-            preparedStemImportResources.reconcile({
-                runId,
-                batchId,
-                getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
-            })
-        ).resolves.toEqual({ status: 'discarded' });
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
-        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledOnce();
-        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
-        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
-        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
-        expect(readAgentRunState().preparedStemImportRecoveryLedger).toBeUndefined();
-    });
+            const noncommitReceipt = await createRecoveryReceiptFixture({ commandBatch, outcome: 'failed' });
+            mocks.getVersionedCommandBatchIdempotentReplay.mockResolvedValueOnce(noncommitReceipt.persistedReceipt);
+            await expect(
+                preparedStemImportResources.reconcile({
+                    runId,
+                    batchId,
+                    getVerifiedReceipt: mocks.getVersionedCommandBatchIdempotentReplay,
+                })
+            ).resolves.toEqual({ status: 'discarded' });
+            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledOnce();
+            expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledOnce();
+            expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+            expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+            expect(readAgentRunState().preparedStemImportRecoveryLedger).toBeUndefined();
+        }
+    );
 });

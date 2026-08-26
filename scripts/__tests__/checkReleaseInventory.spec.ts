@@ -1,14 +1,18 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+    closeSync,
     constants,
     linkSync,
     mkdirSync,
     mkdtempSync,
     openSync,
     readFileSync,
+    readlinkSync,
+    readSync,
     rmSync,
     symlinkSync,
+    truncateSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,6 +52,7 @@ import {
     ddspModelsReleaseInventoryContract,
     ddspTfjsRuntimeReleaseInventoryContract,
     distributedWasmArtifactCensus,
+    GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS,
     GRAND_BOULE_RELEASE_REGISTRY,
     grandBouleReleaseInventoryContract,
     loadRepositorySnapshot,
@@ -58,6 +63,7 @@ import {
     REQUIRED_SNAPSHOT_PATHS,
     TRADEMARK_NOTICE_PATH,
     trademarkReleaseInventoryContract,
+    type RepositorySnapshotFileReader,
     type ReleaseInventory,
     type RepositorySnapshot,
     validateReleaseInventory,
@@ -331,6 +337,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
     }
 }`,
         ],
+        ['src/modules/GrandBoule/AGENTS.md', 'fixture provider policy'],
         ['src/modules/GrandBoule/models/GrandBouleConfig.ts', 'export type GrandBouleConfig = {};'],
         [
             'src/modules/GrandBoule/models/GrandBouleMorphState.ts',
@@ -378,6 +385,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/modules/Command/useCases/versionedCommandArgumentKeys.ts', 'export const keys = [];'],
         ['src/modules/Arrangement/useCases/index.ts', 'export const arrangement = 1;'],
         ['src/modules/Arrangement/useCases/device/setDeviceState.ts', 'export const setDeviceState = 1;'],
+        ['src/modules/GrandBoule/AGENTS.md', 'Grand Boule module guidance'],
         ['src/app/prepareOfflineDeviceSetup.ts', 'export const offline = 1;'],
         ['src/modules/AudioEngine/useCases/buildDeviceChain.ts', 'export const chain = 1;'],
         ['src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts', 'export const prepare = 1;'],
@@ -395,8 +403,86 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), contents);
     }
+    for (const path of GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS) {
+        const linkPath = join(root, path);
+        rmSync(linkPath, { force: true });
+        symlinkSync('AGENTS.md', linkPath);
+    }
     execFileSync('git', ['init', '--quiet'], { cwd: root });
     execFileSync('git', ['add', '.'], { cwd: root });
+    let hasStagedChanges = true;
+    try {
+        execFileSync('git', ['diff', '--cached', '--quiet'], { cwd: root, stdio: 'ignore' });
+        hasStagedChanges = false;
+    } catch {
+        // A fixture reset has changes to commit; an unchanged fixture is already current.
+    }
+    if (hasStagedChanges) {
+        execFileSync(
+            'git',
+            ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'source'],
+            { cwd: root }
+        );
+    }
+}
+
+const INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS = [
+    'src/modules/GrandBoule',
+    'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+    'src/modules/Arrangement/useCases/index.ts',
+    'src/modules/Arrangement/useCases/device/setDeviceState.ts',
+    'src/app/bootstrap.ts',
+    'src/app/getProductionCommandHandlerMaps.ts',
+    'src/utils/handlerContract.ts',
+    ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+];
+
+function readIndependentTrackedEntry(absolutePath: string): Buffer {
+    let fileDescriptor: number | undefined;
+    try {
+        fileDescriptor = openSync(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        return readFileSync(fileDescriptor);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ELOOP') {
+            return readlinkSync(absolutePath, { encoding: 'buffer' });
+        }
+        throw error;
+    } finally {
+        if (fileDescriptor !== undefined) {
+            closeSync(fileDescriptor);
+        }
+    }
+}
+
+function independentTrackedSetSha256(root: string, pathspecs: readonly string[], label: string): string {
+    const files = execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .sort();
+    const hash = createHash('sha256');
+    for (const path of files) {
+        const absolutePath = join(root, path);
+        hash.update(path);
+        hash.update('\0');
+        hash.update(readIndependentTrackedEntry(absolutePath));
+        hash.update('\0');
+    }
+    return `tracked-set-sha256:${hash.digest('hex')}:${label}`;
+}
+
+function independentGrandBouleProjectStateDigest(root: string): string {
+    return independentTrackedSetSha256(root, INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS, 'grand-boule-project-state');
+}
+
+function findDigestByLabel(digests: readonly string[], label: string): string {
+    const digest = digests.find((candidate) => candidate.endsWith(`:${label}`));
+    if (digest === undefined) {
+        throw new Error(`missing digest label ${label}`);
+    }
+    return digest;
 }
 
 function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; revision: string } {
@@ -809,7 +895,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 10_000 }, () => {
+    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 20_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
@@ -934,18 +1020,21 @@ describe('release inventory', () => {
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(join(base, 'outside.txt'), 'outside');
             writeFileSync(join(root, untrackedPath), 'untracked');
-            let digestReads = 0;
+            const forbiddenOpens: string[] = [];
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    digestReads += 1;
-                    return readFileSync(fileDescriptor);
+                open: (path: string, flags: number) => {
+                    if (path.endsWith(unsafePath) || path.endsWith(untrackedPath)) {
+                        forbiddenOpens.push(path);
+                    }
+                    return openSync(path, flags);
                 },
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) =>
+                    readSync(descriptor, buffer, offset, length, position),
             };
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
 
-            expect(digestReads).toBe(0);
+            expect(forbiddenOpens).toEqual([]);
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
             expect(validateReleaseInventory(value, changed)).toEqual(
@@ -1002,19 +1091,13 @@ describe('release inventory', () => {
             symlinkSync(outsideMarkPath, join(root, markSymlinkPath));
             const forbiddenReads: string[] = [];
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    const contents = readFileSync(fileDescriptor, 'utf8');
-                    if (contents.includes('outside')) {
-                        forbiddenReads.push(contents);
-                    }
-                    return Buffer.from(contents);
-                },
-                readText: (fileDescriptor: number) => {
-                    const contents = readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                    const contents = buffer.subarray(offset, offset + bytesRead).toString('utf8');
                     if (contents.includes('outside') || contents.includes('UnsafeMark')) {
                         forbiddenReads.push(contents);
                     }
-                    return contents;
+                    return bytesRead;
                 },
             };
 
@@ -1045,32 +1128,231 @@ describe('release inventory', () => {
             writeFileSync(targetPath, 'contained legal bytes');
             symlinkSync(targetPath, join(root, symlinkPath));
             let opens = 0;
-            let byteReads = 0;
-            let textReads = 0;
+            let reads = 0;
             const readFile = {
                 open: (path: string) => {
                     opens += 1;
                     return openSync(path, constants.O_RDONLY);
                 },
-                readBytes: (fileDescriptor: number) => {
-                    byteReads += 1;
-                    return readFileSync(fileDescriptor);
-                },
-                readText: (fileDescriptor: number) => {
-                    textReads += 1;
-                    return readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    reads += 1;
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
             const changed = loadRepositorySnapshot(root, value, [symlinkPath], readFile);
 
             expect(opens).toBe(0);
-            expect(byteReads).toBe(0);
-            expect(textReads).toBe(0);
+            expect(reads).toBe(0);
             expect(changed.fileDigests[symlinkPath]).toBe('missing');
             expect(validateReleaseInventory(value, changed)).toContain(
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read a tracked path-addressed digest file with another hard link', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-hard-link-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'contained legal bytes');
+            linkSync(filePath, join(base, 'contained.alias.txt'));
+
+            const changed = loadRepositorySnapshot(root, value, [path]);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects oversized path-addressed bytes before invoking a descriptor read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-bounded-bytes-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        let byteReads = 0;
+        const reader = {
+            fileByteLimit: 8,
+            aggregateByteLimit: 32,
+            read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                byteReads += 1;
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'nine-byte');
+
+            expect(() => loadRepositorySnapshot(root, value, [path], reader)).toThrow(
+                'repository file byte limit exceeded'
+            );
+            expect(byteReads).toBe(0);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects oversized scanned text before invoking a descriptor read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-bounded-text-'));
+        const root = join(base, 'repository');
+        const path = 'src/oversized.ts';
+        const filePath = join(root, path);
+        let textReads = 0;
+        const reader = {
+            fileByteLimit: 8,
+            aggregateByteLimit: 32,
+            read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                textReads += 1;
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, "export const endpoint = 'https://attacker.example';\n");
+
+            expect(() => loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], reader)).toThrow(
+                'repository file byte limit exceeded'
+            );
+            expect(textReads).toBe(0);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an unexpected early EOF before accepting a repository descriptor snapshot', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-early-eof-'));
+        const root = join(base, 'repository');
+        const path = 'release/open-source-inventory.json';
+        const filePath = join(root, path);
+        const contents = JSON.stringify(inventory());
+        let reads = 0;
+        const reader: RepositorySnapshotFileReader = {
+            read(descriptor, buffer, offset, length, position) {
+                reads += 1;
+                if (reads > 1) {
+                    return 0;
+                }
+                return readSync(descriptor, buffer, offset, Math.min(length, contents.length - 4), position);
+            },
+        };
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, contents);
+
+            let failure: unknown;
+            try {
+                readReleaseInventory(root, reader);
+            } catch (error) {
+                failure = error;
+            }
+
+            expect(reads).toBe(2);
+            expect(failure).toMatchObject({
+                message: `release inventory cannot be read safely: ${filePath}`,
+                cause: { message: 'unexpected early EOF while reading repository file descriptor' },
+            });
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('enforces one aggregate descriptor-read budget across repository text and digest reads', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-aggregate-budget-'));
+        const root = join(base, 'repository');
+        const firstPath = 'src/first.ts';
+        const secondPath = 'src/second.ts';
+        const readDescriptors = new Set<number>();
+        const reader = {
+            fileByteLimit: 64,
+            aggregateByteLimit: 40,
+            read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                const bytesRead = readSync(descriptor, buffer, offset, length, position);
+                if (bytesRead > 0) {
+                    readDescriptors.add(descriptor);
+                }
+                return bytesRead;
+            },
+        };
+
+        try {
+            mkdirSync(join(root, 'src'), { recursive: true });
+            writeFileSync(join(root, firstPath), "export default 'https://a.io';\n");
+            writeFileSync(join(root, secondPath), "export default 'https://b.io';\n");
+
+            expect(() =>
+                loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [firstPath, secondPath], reader)
+            ).toThrow('repository aggregate byte limit exceeded');
+            expect(readDescriptors.size).toBe(1);
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an oversized release inventory before allocating its declared size', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-bounded-manifest-'));
+        const root = join(base, 'repository');
+        const inventoryPath = join(root, 'release/open-source-inventory.json');
+
+        try {
+            mkdirSync(dirname(inventoryPath), { recursive: true });
+            writeFileSync(inventoryPath, '');
+            truncateSync(inventoryPath, 8 * 1024 * 1024 + 1);
+
+            expect(() => readReleaseInventory(root)).toThrow('release inventory exceeds the per-file byte limit');
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not read a tracked path-addressed digest file hard-linked while its descriptor opens', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-hard-link-race-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/contained.txt';
+        const filePath = join(root, path);
+        const aliasPath = join(base, 'contained.raced.txt');
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        let reads = 0;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, 'contained legal bytes');
+            const readFile = {
+                open: (openPath: string, flags: number) => {
+                    const descriptor = openSync(openPath, flags);
+                    if (openPath === filePath) {
+                        linkSync(filePath, aliasPath);
+                    }
+                    return descriptor;
+                },
+                noFollowFlag: () => constants.O_NOFOLLOW,
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    reads += 1;
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(reads).toBe(0);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
@@ -1084,58 +1366,80 @@ describe('release inventory', () => {
         const targetPath = join(root, 'public/legal/target.txt');
         const value = inventory();
         value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+        let reads = 0;
+        const attemptedFlags: number[] = [];
+        let successfulReplacementOpens = 0;
 
         try {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, 'contained legal bytes');
-            linkSync(filePath, targetPath);
+            writeFileSync(targetPath, 'contained legal bytes');
             const readFile = {
-                open: (openPath: string) => {
+                open: (openPath: string, flags: number) => {
                     rmSync(filePath);
                     symlinkSync(targetPath, filePath);
-                    return openSync(openPath, constants.O_RDONLY);
+                    attemptedFlags.push(flags);
+                    const descriptor = openSync(openPath, flags);
+                    successfulReplacementOpens += 1;
+                    return descriptor;
                 },
-                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                noFollowFlag: () => constants.O_NOFOLLOW,
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    reads += 1;
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
             };
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
 
             expect(changed.fileDigests[path]).toBe('missing');
+            expect(reads).toBe(0);
+            expect(attemptedFlags).toHaveLength(1);
+            expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
+            expect(successfulReplacementOpens).toBe(0);
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
     });
 
-    it('reads scanned text from its opened file when the path swaps to an outside symlink', () => {
+    it('does not admit scanned text when the path swaps to an outside symlink during read', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-swap-'));
         const root = join(base, 'repository');
         const path = 'public/legal/safe.ts';
         const filePath = join(root, path);
         const outsidePath = join(base, 'outside.ts');
+        const insideReference = 'https://inside.example.test/safe';
 
         try {
             mkdirSync(dirname(filePath), { recursive: true });
-            writeFileSync(filePath, "export const safe = 'inside';\n");
+            writeFileSync(filePath, `export const safe = '${insideReference}';\n`);
             writeFileSync(outsidePath, "export const escaped = 'https://outside.net';\n");
+            let swapped = false;
             const readFile = {
-                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
-                readText: (fileDescriptor: number) => {
-                    rmSync(filePath);
-                    symlinkSync(outsidePath, filePath);
-                    return readFileSync(fileDescriptor, 'utf8');
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    if (!swapped) {
+                        rmSync(filePath);
+                        symlinkSync(outsidePath, filePath);
+                        swapped = true;
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
             };
 
             const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], readFile);
 
+            expect(swapped).toBe(true);
+            expect(changed.externalReferences).not.toContain(insideReference);
             expect(changed.externalReferences).toEqual([]);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
     });
 
-    it('reads path-addressed digest bytes from its opened file when the path swaps to an outside symlink', () => {
+    it('does not admit path-addressed digest bytes when the path swaps to an outside symlink during read', () => {
         const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-byte-swap-'));
         const root = join(base, 'repository');
         const path = 'public/legal/safe.txt';
@@ -1150,18 +1454,90 @@ describe('release inventory', () => {
             mkdirSync(dirname(filePath), { recursive: true });
             writeFileSync(filePath, safeContents);
             writeFileSync(outsidePath, outsideContents);
+            let swapped = false;
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    rmSync(filePath);
-                    symlinkSync(outsidePath, filePath);
-                    return readFileSync(fileDescriptor);
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    if (!swapped) {
+                        rmSync(filePath);
+                        symlinkSync(outsidePath, filePath);
+                        swapped = true;
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
                 },
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
             };
 
             const changed = loadRepositorySnapshot(root, value, [path], readFile);
 
-            expect(changed.fileDigests[path]).toBe(sha256(safeContents));
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not admit path-addressed digest bytes when the file gains a hard link during read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-byte-read-link-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.txt';
+        const filePath = join(root, path);
+        const aliasPath = join(base, 'safe-read.alias.txt');
+        const safeContents = 'inside legal bytes';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${sha256(safeContents)}:${path}`];
+        let linked = false;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, safeContents);
+            const readFile = {
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    if (!linked) {
+                        linkSync(filePath, aliasPath);
+                        linked = true;
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(changed.fileDigests[path]).toBe('missing');
+            expect(linked).toBe(true);
+            expect(validateReleaseInventory(value, changed)).toContain(
+                `runtime: path-addressed digest target is missing or untracked: ${path}`
+            );
+        } finally {
+            rmSync(base, { recursive: true, force: true });
+        }
+    });
+
+    it('does not admit scanned text when the file gains a hard link during read', () => {
+        const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-text-read-link-'));
+        const root = join(base, 'repository');
+        const path = 'public/legal/safe.ts';
+        const filePath = join(root, path);
+        const aliasPath = join(base, 'safe-read.alias.ts');
+        let linked = false;
+
+        try {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, "export const source = 'https://inside.test';\n");
+            const readFile = {
+                read(descriptor: number, buffer: Buffer, offset: number, length: number, position: number) {
+                    if (!linked) {
+                        linkSync(filePath, aliasPath);
+                        linked = true;
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [path], readFile);
+
+            expect(changed.externalReferences).toEqual([]);
+            expect(linked).toBe(true);
         } finally {
             rmSync(base, { recursive: true, force: true });
         }
@@ -1185,18 +1561,21 @@ describe('release inventory', () => {
             writeFileSync(join(root, trackedPath), 'provider');
             writeFileSync(join(base, 'outside.txt'), 'outside');
             writeFileSync(join(root, untrackedPath), 'untracked');
-            let digestReads = 0;
+            const forbiddenOpens: string[] = [];
             const readFile = {
-                readBytes: (fileDescriptor: number) => {
-                    digestReads += 1;
-                    return readFileSync(fileDescriptor);
+                open: (path: string, flags: number) => {
+                    if (path.endsWith(unsafePath) || path.endsWith(untrackedPath)) {
+                        forbiddenOpens.push(path);
+                    }
+                    return openSync(path, flags);
                 },
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) =>
+                    readSync(descriptor, buffer, offset, length, position),
             };
 
             const changed = loadRepositorySnapshot(root, value, [trackedPath], readFile);
 
-            expect(digestReads).toBe(0);
+            expect(forbiddenOpens).toEqual([]);
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
         } finally {
@@ -1218,14 +1597,47 @@ describe('release inventory', () => {
                     opens += 1;
                     return openSync(path, constants.O_RDONLY);
                 },
-                readBytes: (fileDescriptor: number) => readFileSync(fileDescriptor),
-                readText: (fileDescriptor: number) => readFileSync(fileDescriptor, 'utf8'),
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) =>
+                    readSync(descriptor, buffer, offset, length, position),
             };
 
             const changed = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [trackedPath], readFile);
 
             expect(opens).toBe(0);
             expect(changed.fileDigests[requiredPath]).toBeUndefined();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not open or read path-addressed digests without no-follow support', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-no-follow-'));
+        const path = 'public/legal/safe.txt';
+        const value = inventory();
+        value.surfaces[0]!.digests = [`sha256:${fixtureDigest}:${path}`];
+
+        try {
+            mkdirSync(dirname(join(root, path)), { recursive: true });
+            writeFileSync(join(root, path), 'safe legal bytes');
+            let opens = 0;
+            let reads = 0;
+            const readFile = {
+                noFollowFlag: () => undefined,
+                open: (openPath: string) => {
+                    opens += 1;
+                    return openSync(openPath, constants.O_RDONLY);
+                },
+                read: (descriptor: number, buffer: Buffer, offset: number, length: number, position: number) => {
+                    reads += 1;
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
+            };
+
+            const changed = loadRepositorySnapshot(root, value, [path], readFile);
+
+            expect(opens).toBe(0);
+            expect(reads).toBe(0);
+            expect(changed.fileDigests[path]).toBe('missing');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1336,7 +1748,7 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toEqual([]);
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 10_000 }, () => {
+    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 20_000 }, () => {
         expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
     });
 
@@ -1515,7 +1927,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('binds Grand Boule source bytes to its inventory digest', () => {
+    it('binds Grand Boule source bytes to its inventory digest', { timeout: 20_000 }, () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-provenance-'));
         writeGrandBouleReleaseFixture(root);
         const grandBoule = join(root, 'crates/daw-dsp/src/grand_boule');
@@ -1537,12 +1949,29 @@ describe('release inventory', () => {
                     expect.stringMatching(new RegExp(`^tracked-set-sha256:[0-9a-f]{64}:${digestLabel}$`))
                 )
             );
+            const projectStateDigest = findDigestByLabel(before.digests, 'grand-boule-project-state');
+            expect(projectStateDigest).toBe(independentGrandBouleProjectStateDigest(root));
 
             writeFileSync(join(grandBoule, 'untracked.rs'), 'untracked source');
             expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
 
-            writeFileSync(join(grandBoule, 'engine.rs'), 'changed source');
+            const enginePath = join(grandBoule, 'engine.rs');
+            const originalEngine = readFileSync(enginePath, 'utf8');
+            writeFileSync(enginePath, 'changed source');
             expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            writeFileSync(enginePath, originalEngine);
+
+            const providerSymlinkPath = join(root, 'src/modules/GrandBoule/CLAUDE.md');
+            rmSync(providerSymlinkPath);
+            symlinkSync('OTHER.md', providerSymlinkPath);
+            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+                'Grand Boule provider-policy symlink checkout target is not AGENTS.md'
+            );
+            rmSync(providerSymlinkPath);
+            symlinkSync('AGENTS.md', providerSymlinkPath);
+            expect(
+                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
+            ).toBe(projectStateDigest);
 
             writeFileSync(
                 join(root, 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts'),
@@ -1595,6 +2024,194 @@ describe('release inventory', () => {
         }
     });
 
+    it('requires canonical committed Grand Boule provider-policy symlinks before excluding them', () => {
+        const projectState = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+            ({ digestLabel }) => digestLabel === 'grand-boule-project-state'
+        );
+        expect(projectState?.excludedPaths).toEqual(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS);
+        expect(projectState?.gitPathspecs).toEqual(
+            expect.arrayContaining(GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`))
+        );
+
+        const canonicalBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-canonical-'));
+        const canonicalRoot = join(canonicalBase, 'repository');
+        writeGrandBouleReleaseFixture(canonicalRoot);
+        try {
+            expect(() => grandBouleReleaseInventoryContract(canonicalRoot)).not.toThrow();
+        } finally {
+            rmSync(canonicalBase, { recursive: true, force: true });
+        }
+
+        const unmergedBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-unmerged-'));
+        const unmergedRoot = join(unmergedBase, 'repository');
+        writeGrandBouleReleaseFixture(unmergedRoot);
+        try {
+            const path = GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS[0];
+            const [mode, object] = execFileSync('git', ['ls-files', '--stage', '--', path], {
+                cwd: unmergedRoot,
+                encoding: 'utf8',
+            })
+                .trim()
+                .split(/\s+/u);
+            expect(mode).toBe('120000');
+            expect(object).toHaveLength(40);
+            const indexInfo = [1, 2, 3].map((stage) => `${mode} ${object} ${stage}\t${path}`).join('\n');
+            execFileSync('git', ['update-index', '--index-info'], {
+                cwd: unmergedRoot,
+                input: `${indexInfo}\n`,
+            });
+
+            expect(() => grandBouleReleaseInventoryContract(unmergedRoot)).toThrow(
+                `Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`
+            );
+        } finally {
+            rmSync(unmergedBase, { recursive: true, force: true });
+        }
+        const checkoutBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-checkout-'));
+        const checkoutRoot = join(checkoutBase, 'repository');
+        writeGrandBouleReleaseFixture(checkoutRoot);
+        try {
+            const checkoutPath = join(checkoutRoot, GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS[0]);
+            rmSync(checkoutPath);
+            symlinkSync('OTHER.md', checkoutPath);
+            expect(() => grandBouleReleaseInventoryContract(checkoutRoot)).toThrow(
+                'Grand Boule provider-policy symlink checkout target is not AGENTS.md'
+            );
+        } finally {
+            rmSync(checkoutBase, { recursive: true, force: true });
+        }
+
+        const mutations = [
+            {
+                name: 'missing entry',
+                error: 'Grand Boule provider-policy symlink is not tracked',
+                mutate: (root: string, path: string, _outside: string) => {
+                    rmSync(join(root, path));
+                    execFileSync('git', ['rm', '--cached', '--', path], { cwd: root });
+                },
+            },
+            {
+                name: 'regular-file substitution',
+                error: 'Grand Boule provider-policy symlink is not tracked as a symlink',
+                mutate: (root: string, path: string, _outside: string) => {
+                    rmSync(join(root, path));
+                    writeFileSync(join(root, path), 'not a symlink');
+                    execFileSync('git', ['add', '--', path], { cwd: root });
+                },
+            },
+            {
+                name: 'wrong relative target',
+                error: 'Grand Boule provider-policy symlink commit target is not AGENTS.md',
+                mutate: (root: string, path: string, _outside: string) => {
+                    rmSync(join(root, path));
+                    symlinkSync('OTHER.md', join(root, path));
+                    execFileSync('git', ['add', '--', path], { cwd: root });
+                },
+            },
+            {
+                name: 'absolute outside target',
+                error: 'Grand Boule provider-policy symlink commit target is not AGENTS.md',
+                mutate: (root: string, path: string, outside: string) => {
+                    rmSync(join(root, path));
+                    symlinkSync(outside, join(root, path));
+                    execFileSync('git', ['add', '--', path], { cwd: root });
+                },
+            },
+        ] as const;
+
+        for (const [index, mutation] of mutations.entries()) {
+            const base = mkdtempSync(join(tmpdir(), `sourdaw-grand-boule-policy-symlinks-${index}-`));
+            const root = join(base, 'repository');
+            const outside = join(base, 'outside.md');
+            writeGrandBouleReleaseFixture(root);
+            writeFileSync(outside, 'provider policy');
+            try {
+                const path =
+                    GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS[
+                        index % GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.length
+                    ]!;
+                mutation.mutate(root, path, outside);
+                execFileSync(
+                    'git',
+                    [
+                        '-c',
+                        'user.name=Fixture',
+                        '-c',
+                        'user.email=fixture@example.test',
+                        'commit',
+                        '-qm',
+                        mutation.name,
+                    ],
+                    { cwd: root }
+                );
+                expect(() => grandBouleReleaseInventoryContract(root)).toThrow(mutation.error);
+            } finally {
+                rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+            }
+        }
+
+        const unexpectedBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-unexpected-'));
+        const unexpectedRoot = join(unexpectedBase, 'repository');
+        const outside = join(unexpectedBase, 'outside.md');
+        writeGrandBouleReleaseFixture(unexpectedRoot);
+        writeFileSync(outside, 'provider policy');
+        try {
+            const unexpected = 'src/modules/GrandBoule/unexpected-policy.md';
+            symlinkSync(outside, join(unexpectedRoot, unexpected));
+            execFileSync('git', ['add', '--', unexpected], { cwd: unexpectedRoot });
+            expect(() => grandBouleReleaseInventoryContract(unexpectedRoot)).toThrow(
+                `Grand Boule release source is unsafe: ${unexpected}`
+            );
+        } finally {
+            rmSync(unexpectedBase, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a Grand Boule tracked-file swap before either reader consumes it', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-tracked-swap-'));
+        writeGrandBouleReleaseFixture(root);
+        const swappedPath = join(root, 'crates/daw-dsp/src/grand_boule/engine.rs');
+        const outside = join(root, 'outside.rs');
+        writeFileSync(outside, 'outside source');
+        let swapped = false;
+        let readsAfterSwap = 0;
+        const attemptedFlags: number[] = [];
+        let successfulReplacementOpens = 0;
+        const reader: RepositorySnapshotFileReader = {
+            open(path, flags) {
+                if (path === swappedPath) {
+                    rmSync(swappedPath);
+                    symlinkSync(outside, swappedPath);
+                    swapped = true;
+                    attemptedFlags.push(flags);
+                }
+                const descriptor = openSync(path, flags);
+                if (path === swappedPath) {
+                    successfulReplacementOpens += 1;
+                }
+                return descriptor;
+            },
+            noFollowFlag: () => constants.O_NOFOLLOW,
+            read(descriptor, buffer, offset, length, position) {
+                if (swapped) {
+                    readsAfterSwap += 1;
+                }
+                return readSync(descriptor, buffer, offset, length, position);
+            },
+        };
+
+        try {
+            expect(() => grandBouleReleaseInventoryContract(root, reader)).toThrow(
+                'Grand Boule release source is unsafe: crates/daw-dsp/src/grand_boule/engine.rs'
+            );
+            expect(readsAfterSwap).toBe(0);
+            expect(attemptedFlags).toHaveLength(1);
+            expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
+            expect(successfulReplacementOpens).toBe(0);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
     it('rejects every tracked Rust file without an admission basis', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-source-gap-'));
         try {
@@ -1719,6 +2336,15 @@ describe('release inventory', () => {
             expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
                 'Grand Boule release source is missing: src/modules/GrandBoule/models/GrandBouleConfig.ts'
             );
+
+            writeGrandBouleReleaseFixture(root);
+            const unsafeSource = 'src/modules/GrandBoule/models/GrandBouleConfig.ts';
+            rmSync(join(root, unsafeSource));
+            mkdirSync(join(root, unsafeSource));
+            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+                `Grand Boule release source is unsafe: ${unsafeSource}`
+            );
+            rmSync(join(root, unsafeSource), { recursive: true, force: true });
 
             writeGrandBouleReleaseFixture(root);
             const preserved = grandBouleReleaseInventoryContract(root);

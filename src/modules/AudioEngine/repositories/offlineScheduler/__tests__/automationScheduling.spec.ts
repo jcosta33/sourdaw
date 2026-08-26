@@ -397,7 +397,14 @@ describe('scheduleTrackAutomation', () => {
 
         scheduleTrackAutomationFixture({
             lanes: [
-                makeLane({ parameterId: 'pan', points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }] }),
+                // Declared -1..1 — a real pan lane's range, so the lane bound
+                // (#2538) admits the -0.5 point this routing case observes.
+                makeLane({
+                    parameterId: 'pan',
+                    minValue: -1,
+                    maxValue: 1,
+                    points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }],
+                }),
             ],
             trackId: 'track-1',
             trackGainNode: gainNode,
@@ -564,8 +571,12 @@ describe('scheduleTrackAutomation', () => {
 
         scheduleTrackAutomationFixture({
             lanes: [
+                // Declared 0..1000 ms — the parameter's real range, which the
+                // lane's own bound (#2538) now holds this 500 ms point to.
                 makeLane({
                     parameterId: 'device-1:delay-time',
+                    minValue: 0,
+                    maxValue: 1000,
                     points: [{ beat: 0, value: 500, curve: 'linear', tension: 0 }],
                 }),
             ],
@@ -588,8 +599,12 @@ describe('scheduleTrackAutomation', () => {
 
         scheduleTrackAutomationFixture({
             lanes: [
+                // Declared 20..20000 — filter-cutoff's real range, which the
+                // lane's own bound (#2538) now holds these points to.
                 makeLane({
                     parameterId: 'fermenter-1:filterCutoff',
+                    minValue: 20,
+                    maxValue: 20_000,
                     points: [
                         { beat: 128, value: 200, curve: 'linear', tension: 0 },
                         { beat: 130, value: 2_000, curve: 'linear', tension: 0 },
@@ -775,10 +790,15 @@ describe('scheduleTrackAutomation', () => {
         // fed back into the recurrence. A clamp is not affine, so it does not
         // commute with the IIR — clamping the target instead renders a visibly
         // different, slower glide. This lane steps 0 → 2 against a [0, 1] range.
+        // The LANE declares [0, 2] so its own bound (#2538) leaves the target
+        // alone and the clamp under observation is unambiguously the device
+        // law's, inside the recurrence.
         scheduleTrackAutomationFixture({
             lanes: [
                 makeLane({
                     parameterId: 'device-1:gain-level',
+                    minValue: 0,
+                    maxValue: 2,
                     points: [
                         { beat: 128, value: 0, curve: 'step', tension: 0 },
                         { beat: 130, value: 2, curve: 'step', tension: 0 },
@@ -1039,6 +1059,11 @@ describe('scheduleTrackAutomation — stepped device parameters offline', () => 
                     // endpoints disagree under rounding; a ride parked at the
                     // default would satisfy an integer assertion vacuously.
                     parameterId: 'bacteria-1:bitDepth',
+                    // bitDepth's real declared range (1..24) — the lane's own
+                    // bound (#2538) must admit the 16/12 targets for this case
+                    // to keep observing the quantiser, not the range.
+                    minValue: 1,
+                    maxValue: 24,
                     points: [
                         { beat: 0, value: 16, curve: 'step', tension: 0 },
                         { beat: 2, value: 12, curve: 'step', tension: 0 },
@@ -1093,6 +1118,8 @@ describe('scheduleTrackAutomation — stepped device parameters offline', () => 
             lanes: [
                 makeLane({
                     parameterId: 'bacteria-1:bitDepth',
+                    minValue: 1,
+                    maxValue: 24,
                     points: [
                         { beat: 0, value: 16, curve: 'step', tension: 0 },
                         { beat: 2, value: 12, curve: 'step', tension: 0 },

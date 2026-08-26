@@ -10,6 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { gainNodePool } from '../audioClipSchedulingState';
@@ -440,6 +441,93 @@ describe('scheduleAudioClips', () => {
         const [, , duration] = fakeSource.start.mock.calls[0]!;
         // Timeline duration 4 beats / 2 bps = 2 s; *stretch 0.5 = 1 s of material.
         expect(duration).toBeCloseTo(1, 6);
+    });
+
+    /// #2532 regression, live half. The stored ratio is finiteness-checked at
+    /// its write paths but never range-checked: hydration validates it is a
+    /// finite number, a stem import stores `projectTempo / sourceTempo`, and
+    /// the UI edit clamp ([0.25, 4], Arrangement `clampRatio`) never sees
+    /// those. Before the shared bound, a raw 0 divided the pre-roll and span
+    /// arithmetic into NaN/Infinity and every comparison below fell false, so
+    /// the clip entered the do-not-start branch and was silently dropped —
+    /// while the offline bounce clamped the same ratio and played it. A
+    /// negative ratio made `playDuration` negative and dropped it the same
+    /// way; a huge one reached `playbackRate` raw. Each row must schedule at
+    /// the bounded rate the projector bounces at, not vanish.
+    it.each([
+        { name: 'zero', raw: 0, expectedRate: 0.01, expectedMaterialSeconds: 0.02 },
+        { name: 'negative', raw: -2, expectedRate: 0.01, expectedMaterialSeconds: 0.02 },
+        { name: 'far past the ceiling', raw: 10_000, expectedRate: 100, expectedMaterialSeconds: 100 },
+    ])(
+        'schedules a clip with a $name stretch ratio at the bounded rate instead of dropping it',
+        ({ raw, expectedRate, expectedMaterialSeconds }) => {
+            const fakeSource = makeFakeSource();
+            mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+            mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+            mockResolveClips.mockReturnValue([
+                makeAudioClip({ stretchMode: 'timestretch', stretchRatio: raw }),
+            ] as never);
+            trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+            scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+            // The clip plays — exactly one start, never the do-not-start branch.
+            expect(fakeSource.start).toHaveBeenCalledTimes(1);
+            expect((fakeSource.playbackRate as { value: number }).value).toBe(expectedRate);
+            // Timeline span 4 beats / 2 bps = 2 s; material = span * rate
+            // except where the 100 s buffer bounds it first (rate 100: 100/100
+            // = 1 s of timeline = 100 s of material, exactly the buffer).
+            const [, offset, duration] = fakeSource.start.mock.calls[0]!;
+            expect(offset).toBeCloseTo(0, 6);
+            expect(duration).toBeCloseTo(expectedMaterialSeconds, 6);
+        }
+    );
+
+    /// #2532 conformance gate — LIVE side. Do not delete without replacing.
+    ///
+    /// The scheduler must realise every clip at the rate the shared kernel
+    /// (`#/utils/stretchRatioBound`) produces, because that kernel is also
+    /// what the offline projector routes through — the mix you monitor is the
+    /// mix you bounce. The sibling spec in AudioEngine `offlineRender`
+    /// (`stretchRatioBoundConformance.spec.ts`) pins the offline routing
+    /// against the same kernel, and `src/utils/__tests__/stretchRatioBound.spec.ts`
+    /// pins the law itself. If either runtime re-forks its bound, one of
+    /// these trips.
+    it.each([0, -2, 0.005, 1, 2, 99, 100, 1000])(
+        'realises a stored stretch ratio of %d at exactly the shared-law rate',
+        (raw) => {
+            const fakeSource = makeFakeSource();
+            mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+            mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+            mockResolveClips.mockReturnValue([
+                makeAudioClip({ stretchMode: 'timestretch', stretchRatio: raw }),
+            ] as never);
+            trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+            scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+            expect(fakeSource.start).toHaveBeenCalledTimes(1);
+            expect((fakeSource.playbackRate as { value: number }).value).toBe(boundStretchRatio(raw));
+        }
+    );
+
+    /// The stretchMode gate is scheduler policy, not part of the bound law:
+    /// an `off` clip must keep ignoring even a corrupt stored ratio, exactly
+    /// as the offline projector does.
+    it('ignores a corrupt stored ratio when stretchMode is off', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ stretchMode: 'off', stretchRatio: 10_000 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        // playbackRate is left untouched at its default.
+        expect((fakeSource.playbackRate as { value: number }).value).toBe(1);
+        const [, , duration] = fakeSource.start.mock.calls[0]!;
+        // Unstretched: 2 s of timeline = 2 s of material.
+        expect(duration).toBeCloseTo(2, 6);
     });
 
     it('inserts an envelope gain node scaled by 10^(db/20) when the clip has env gain', () => {

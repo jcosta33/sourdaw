@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
     captureProjectRevision: vi.fn<() => string>(),
+    flushAutomergeStorageWrites: vi.fn<() => void>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
     buildProjectData: vi.fn<(input?: { includeAudioBuffers?: boolean }) => Promise<{ data: unknown } | null>>(),
     captureExternalPluginStates: vi.fn<() => Promise<void>>(),
@@ -41,6 +42,11 @@ vi.mock('../../../../stores/projectStore', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,
+}));
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
+    flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
 }));
 
 vi.mock('../../../recentProjects/addToRecentProjects', () => ({
@@ -109,6 +115,7 @@ describe('saveProject durability', () => {
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.captureExternalPluginStates.mockResolvedValue(undefined);
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } },
@@ -186,13 +193,17 @@ describe('saveProject durability', () => {
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
-    it('keeps the project dirty when project truth changes while the snapshot is being written', async () => {
+    it('rejects the saved snapshot when project truth changes while it is being written', async () => {
         installFakeIndexedDb();
-        mocks.captureProjectRevision.mockReturnValueOnce('saved-revision').mockReturnValueOnce('newer-revision');
+        mocks.captureProjectRevision
+            .mockReturnValueOnce('saved-revision')
+            .mockReturnValueOnce('saved-revision')
+            .mockReturnValueOnce('newer-revision');
         const saveProject = await importSaveProject();
 
-        await expect(saveProject()).resolves.toBe(true);
+        await expect(saveProject()).resolves.toBe(false);
 
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
@@ -203,16 +214,15 @@ describe('saveProject durability', () => {
         await expect(saveProject()).resolves.toBe(true);
 
         const buildOrder = mocks.buildProjectData.mock.invocationCallOrder[0];
+        const flushOrder = mocks.flushAutomergeStorageWrites.mock.invocationCallOrder[0];
         const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder[0];
         const persistOrder = mocks.persistCrdtProject.mock.invocationCallOrder[0];
-        // build → persist → capture: the revision baseline is captured AFTER
-        // persist settles so the save's own CRDT bookkeeping (the persist
-        // commit's mutationEpoch/heads advance) is in the baseline, not in the
-        // post-save guard's delta. Capturing before persist compared the guard
-        // against a baseline the save itself invalidated, so dirty could never
-        // clear.
-        expect(buildOrder ?? 0).toBeLessThan(persistOrder ?? 0);
-        expect(persistOrder ?? 0).toBeLessThan(captureOrder ?? 0);
+        // Build → flush → capture → persist: the explicit flush puts the
+        // serializer's own arrangement synchronization into the baseline. A
+        // later revision change can therefore only be outside the snapshot.
+        expect(buildOrder ?? 0).toBeLessThan(flushOrder ?? 0);
+        expect(flushOrder ?? 0).toBeLessThan(captureOrder ?? 0);
+        expect(captureOrder ?? 0).toBeLessThan(persistOrder ?? 0);
     });
 
     // AC-5. The live save snapshot references audio by id; the PCM itself lives
@@ -273,6 +283,6 @@ describe('saveProject durability', () => {
         expect(controls.values.get(RECENT_KEY)).toBe(
             JSON.stringify({ version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } })
         );
-        expect(localStorage.length).toBe(0);
+        expect(localStorage.getItem(RECENT_KEY)).toBeNull();
     });
 });

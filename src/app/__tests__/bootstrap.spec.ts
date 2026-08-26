@@ -5,6 +5,7 @@ import type {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
+import type { configureDurableAssetCommitProof } from '#/modules/Collaboration/useCases';
 import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -32,6 +33,7 @@ type ProjectIdentityTransitionDependencies = Parameters<typeof setProjectIdentit
 type DurableAssetOwnerRecoveryAfterProjectLoad = NonNullable<
     ProjectIdentityTransitionDependencies['resumeDurableAssetOwnerHandoffsAfterProjectLoad']
 >;
+type DurableAssetCommitProofProvider = Parameters<typeof configureDurableAssetCommitProof>[0];
 type AssetTransferMock = {
     resumeDurableOwnerRebindsAfterProjectLoad: DurableAssetOwnerRecoveryAfterProjectLoad;
 };
@@ -106,12 +108,14 @@ const {
         configureCommandBatchIdempotencyMock: vi.fn(),
         canExecuteCommandBatchMock: vi.fn(() => true),
         configureCollaborationAssetOwnerMock: vi.fn(),
-        configureDurableAssetCommitProofMock: vi.fn(),
+        configureDurableAssetCommitProofMock: vi.fn<(provider: DurableAssetCommitProofProvider) => void>(),
         getAssetTransferMock: vi.fn<() => AssetTransferMock | null>(() => ({
             resumeDurableOwnerRebindsAfterProjectLoad: vi.fn(() => Promise.resolve()),
         })),
         getDurableProjectOwnerIdMock: vi.fn(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
-        getVersionedCommandBatchCommitDispositionMock: vi.fn(() => Promise.resolve('committed')),
+        getVersionedCommandBatchCommitDispositionMock: vi.fn<DurableAssetCommitProofProvider['getDisposition']>(() =>
+            Promise.resolve('committed')
+        ),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -637,10 +641,29 @@ describe('bootstrap', () => {
         ).rejects.toThrow('Durable asset owner recovery is unavailable after project load');
     });
 
-    it('binds durable asset admission to the Command commit proof', () => {
+    it('binds durable asset admission to the exact Command commit proof', async () => {
         expect(configureDurableAssetCommitProofMock).toHaveBeenCalledExactlyOnceWith({
             getDisposition: getVersionedCommandBatchCommitDispositionMock,
         });
+        const provider = configureDurableAssetCommitProofMock.mock.calls[0]?.[0];
+        if (!provider) {
+            throw new Error('bootstrap did not configure durable asset commit proof');
+        }
+        const proof = {
+            projectId: 'project-bootstrap-proof',
+            idempotencyKey: 'request-bootstrap-proof',
+            contentHash: `sha256:${'a'.repeat(64)}`,
+            runId: 'run-bootstrap-proof',
+            batchId: 'batch-bootstrap-proof',
+            baseRevision: 'project-revision-before-bootstrap-proof',
+            commands: [
+                { commandId: '11111111-1111-4111-8111-111111111111', operation: 'importStemSet' },
+                { commandId: '22222222-2222-4222-8222-222222222222', operation: 'setTrackGain' },
+            ],
+        };
+
+        await expect(provider.getDisposition(proof)).resolves.toBe('committed');
+        expect(getVersionedCommandBatchCommitDispositionMock).toHaveBeenCalledExactlyOnceWith(proof);
     });
 
     it('wires project runtime validation and event buses in the composition root', () => {
@@ -654,7 +677,7 @@ describe('bootstrap', () => {
         }
         const [projectRevisionValidator] = projectRevisionValidatorCall;
         if (!projectRevisionValidator) {
-            throw new Error('bootstrap configured a null runtime graph project revision validator');
+            throw new Error('bootstrap configured an empty runtime graph project revision validator');
         }
         captureProjectRevisionMock.mockReturnValue('revision-1');
         expect(projectRevisionValidator('revision-1')).toBe(true);

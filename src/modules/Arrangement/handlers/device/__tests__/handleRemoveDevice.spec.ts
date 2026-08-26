@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { handleRemoveDevice } from '../handleRemoveDevice';
 
@@ -25,14 +27,13 @@ describe('handleRemoveDevice', () => {
         ['missing', { status: 'no-write' }],
         ['conflict', { status: 'conflict' }],
     ] as const)('maps the %s outcome to the handler result', (outcome, expected) => {
+        const action = { type: 'removeDevice', payload: { deviceId: 'd1' } } as const;
+        const context = { actionIndex: 0, actions: [action] } satisfies HandlerValidationContext;
         mocks.prepareRemoveDevice.mockReturnValue(outcome);
 
-        const result = handleRemoveDevice.execute({
-            type: 'removeDevice',
-            payload: { deviceId: 'd1' },
-        });
+        const result = handleRemoveDevice.execute(action, context);
 
-        expect(mocks.prepareRemoveDevice).toHaveBeenCalledWith('d1');
+        expect(mocks.prepareRemoveDevice).toHaveBeenCalledWith('d1', context);
         expect(result).toEqual(expected);
     });
 

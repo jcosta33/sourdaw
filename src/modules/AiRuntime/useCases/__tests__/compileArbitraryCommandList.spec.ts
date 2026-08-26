@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -72,6 +72,28 @@ const context = {
     selectedClipIds: [],
     activeView: 'arrange' as const,
     playheadPosition: 0,
+};
+
+const duplicateClipContext = {
+    ...context,
+    tracks: context.tracks.map((track) =>
+        track.id === 'track-kick'
+            ? {
+                  ...track,
+                  clipCount: 1,
+                  clips: [
+                      {
+                          id: 'clip-kick-a',
+                          name: 'Kick A',
+                          type: 'audio' as const,
+                          startBeat: 0,
+                          endBeat: 4,
+                          noteCount: 0,
+                      },
+                  ],
+              }
+            : track
+    ),
 };
 
 const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
@@ -161,6 +183,7 @@ const deviceParameter = (id: string) => ({
 
 describe('compileArbitraryCommandList', () => {
     afterEach(() => {
+        vi.restoreAllMocks();
         clearHandlerRegistry();
         commandBatchPreflightPort.setProvider(null);
         commandBatchPreviewPort.setProvider(null);
@@ -558,6 +581,83 @@ describe('compileArbitraryCommandList', () => {
         expect(result).toMatchObject({ status: 'accepted' });
     });
 
+    it('derives duplicateClip parent scope from its registered target contract', () => {
+        expect(
+            compileArbitraryCommandList({
+                context: duplicateClipContext,
+                revision: 'revision-duplicate-clip',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan(['clip-kick-a']),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'duplicate-kick-a',
+                                        name: 'duplicateClip',
+                                        arguments: {},
+                                        selector: {
+                                            targetArgument: 'clipId',
+                                            entity: 'clip',
+                                            where: { name: 'Kick A' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: {
+                commands: [{ name: 'duplicateClip', arguments: { clipId: 'clip-kick-a' } }],
+            },
+        });
+    });
+
+    it('fails closed when an app-derived identity has no materialization contract', async () => {
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const getGroundingRules = commandUseCases.getExecutableAppActionGroundingRules;
+        vi.spyOn(commandUseCases, 'getExecutableAppActionGroundingRules').mockImplementation((actionType) => {
+            const groundingRules = getGroundingRules(actionType);
+            if (actionType !== 'duplicateClip' || groundingRules === null) {
+                return groundingRules;
+            }
+            return { ...groundingRules, targetRules: [] };
+        });
+        expect(
+            compileArbitraryCommandList({
+                context: duplicateClipContext,
+                revision: 'revision-missing-derived-materializer',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan([]),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'duplicate-kick-a',
+                                        name: 'duplicateClip',
+                                        arguments: { clipId: 'clip-kick-a' },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Structured command app-derived mutation identity could not be materialized: parentTrackIds',
+        });
+    });
+
     it('carries every direct secondary target through exact compiler and command-batch planning scope', () => {
         const routingContext = {
             ...context,
@@ -605,7 +705,7 @@ describe('compileArbitraryCommandList', () => {
         if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
             return;
         }
-        expect(result.compilerEvidence.proposalScope.targetIds).toEqual(['track-mix-bus', 'track-kick']);
+        expect(result.compilerEvidence.providerKnownTargetIds).toEqual(['track-mix-bus', 'track-kick']);
         expect(
             validateArbitraryCommandListEvidence({
                 evidence: result.compilerEvidence,
@@ -692,7 +792,7 @@ describe('compileArbitraryCommandList', () => {
                     semantic: { classification: 'simple', uncertainty: [] },
                     objective: 'Route Kick to Mix Bus',
                     constraints: [],
-                    scope: result.compilerEvidence.proposalScope,
+                    scope: plan(result.compilerEvidence.providerKnownTargetIds).scope,
                     capabilityIds: ['setTrackOutput'],
                     assetIds: [],
                     alternatives: [],
@@ -3061,7 +3161,7 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
-    it('excludes protected targets before it records a stable, revision-bearing scope', () => {
+    it('records selector targets without treating provider protections as selection authority', () => {
         const result = compileArbitraryCommandList({
             context,
             revision: 'revision-1',
@@ -3069,7 +3169,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-hat'], ['track-kick']),
+                        plan: plan(['track-kick', 'track-hat'], ['track-kick']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -3080,7 +3180,7 @@ describe('compileArbitraryCommandList', () => {
                                     selector: {
                                         targetArgument: 'trackId',
                                         entity: 'track',
-                                        quantity: { unit: 'targets', exactly: 1 },
+                                        quantity: { unit: 'targets', exactly: 2 },
                                     },
                                 },
                             ],
@@ -3095,9 +3195,12 @@ describe('compileArbitraryCommandList', () => {
             return;
         }
         expect(result.evidence[0]).toMatchObject({
-            stableIds: ['track-hat'],
-            protectedExclusions: ['track-kick'],
-            preconditions: [expect.objectContaining({ stableId: 'track-hat' })],
+            stableIds: ['track-kick', 'track-hat'],
+            protectedExclusions: [],
+            preconditions: [
+                expect.objectContaining({ stableId: 'track-kick' }),
+                expect.objectContaining({ stableId: 'track-hat' }),
+            ],
         });
     });
 
@@ -3183,19 +3286,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('rejected');
     });
 
-    it.each([
-        ['an unbounded selector', { selector: { targetArgument: 'trackId', entity: 'track' } }],
-        [
-            'a protected target',
-            {
-                selector: {
-                    targetArgument: 'trackId',
-                    entity: 'track',
-                    quantity: { unit: 'targets', exactly: 1 },
-                },
-            },
-        ],
-    ])('rejects %s before it can enter the command bridge', (_label, item) => {
+    it('rejects an unbounded selector before it can enter the command bridge', () => {
         const result = compileArbitraryCommandList({
             context,
             revision: 'revision-1',
@@ -3206,7 +3297,14 @@ describe('compileArbitraryCommandList', () => {
                         plan: plan(['track-kick'], ['track-kick']),
                         list: {
                             schemaVersion: 1,
-                            items: [{ id: 'one', name: 'muteTrack', arguments: { muted: true }, ...item }],
+                            items: [
+                                {
+                                    id: 'one',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: { targetArgument: 'trackId', entity: 'track' },
+                                },
+                            ],
                         },
                     },
                 },
@@ -3503,13 +3601,6 @@ describe('compileArbitraryCommandList', () => {
             arguments_: {},
             protectedTargetIds: [],
             expectedReason: 'Bulk selector resolved a target outside the command capability contract.',
-        },
-        {
-            name: 'protected device',
-            devices: [supportedSidechainDevice],
-            arguments_: {},
-            protectedTargetIds: ['device-bass-compressor'],
-            expectedReason: 'Bulk selector sidechain-bass resolved 0 targets, not its exact quantity.',
         },
         {
             name: 'ambiguous device match',
@@ -4159,7 +4250,7 @@ describe('compileArbitraryCommandList', () => {
         });
     });
 
-    it('excludes protected targets from a many-target array and revalidates the exact evidence', () => {
+    it('records every resolved many-target identity independently of provider protections', () => {
         const result = compileArbitraryCommandList({
             context,
             revision: 'revision-1',
@@ -4167,7 +4258,7 @@ describe('compileArbitraryCommandList', () => {
                 {
                     name: 'command.batch.propose',
                     arguments: {
-                        plan: plan(['track-hat'], ['track-kick']),
+                        plan: plan(['track-kick', 'track-hat'], ['track-kick']),
                         list: {
                             schemaVersion: 1,
                             items: [
@@ -4179,7 +4270,7 @@ describe('compileArbitraryCommandList', () => {
                                         targetArgument: 'trackIds',
                                         entity: 'track',
                                         where: { kind: 'audio' },
-                                        quantity: { unit: 'targets', exactly: 1 },
+                                        quantity: { unit: 'targets', exactly: 2 },
                                     },
                                 },
                             ],
@@ -4193,8 +4284,8 @@ describe('compileArbitraryCommandList', () => {
         if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
             return;
         }
-        expect(result.compilerEvidence.commands[0]?.arguments.trackIds).toEqual(['track-hat']);
-        expect(result.compilerEvidence.selectors[0]?.protectedExclusions).toEqual(['track-kick']);
+        expect(result.compilerEvidence.commands[0]?.arguments.trackIds).toEqual(['track-kick', 'track-hat']);
+        expect(result.compilerEvidence.selectors[0]?.protectedExclusions).toEqual([]);
         expect(
             validateArbitraryCommandListEvidence({
                 evidence: result.compilerEvidence,
@@ -4210,7 +4301,7 @@ describe('compileArbitraryCommandList', () => {
         ).toMatchObject({ status: 'rejected' });
     });
 
-    it('rejects many-target direct IDs and selector enlargement', () => {
+    it('rejects many-target direct IDs and records selector resolution independently of proposal targets', () => {
         const direct = compileArbitraryCommandList({
             context,
             revision: 'revision-1',
@@ -4267,7 +4358,10 @@ describe('compileArbitraryCommandList', () => {
         });
 
         expect(direct).toMatchObject({ status: 'rejected' });
-        expect(enlarged).toMatchObject({ status: 'rejected' });
+        expect(enlarged).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: { providerKnownTargetIds: ['track-kick', 'track-hat'] },
+        });
     });
 
     it('resolves adjustment-layer selectors only from the supplied project context', () => {
