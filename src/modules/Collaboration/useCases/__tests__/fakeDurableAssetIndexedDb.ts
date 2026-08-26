@@ -573,7 +573,7 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
         overwritePromotionRecoveryCommitProof: (recoveryId, commitProof) => {
             const store = durableStore('promotionRecoveries');
             const record = store?.get(recoveryId);
-            if (record) {
+            if (store && record) {
                 store.set(recoveryId, { ...record, commitProof });
             }
         },
