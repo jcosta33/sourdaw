@@ -1,0 +1,24 @@
+scripts/dependencyLicenseReport.ts
+  s_0202ff8054d37c::t_d9a1d6dcfffea4 907-923,927-935,938
+release/open-source-inventory.json
+  s_0202ff8054d37c::t_c2ca2ed70cd76c 937
+scripts/checkReleaseInventory.ts
+  s_0202ff8054d37c::t_277c62d785129a 1323
+  s_0202ff8054d37c::t_2247f8c2d22fd8 1276-1298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c3683274ca9fa40421ddc74d4f05a5582c35949e",
+  "prompts": {},
+  "sessions": {
+    "s_0202ff8054d37c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22edd3d4-6930-4288-aacd-3eeb0b792868",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
