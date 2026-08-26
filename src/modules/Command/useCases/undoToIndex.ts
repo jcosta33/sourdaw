@@ -65,13 +65,14 @@ export async function undoToIndex(targetIndex: number): Promise<void> {
             undoTreeMoveTo(currentEntryId(newPast));
             continue;
         }
-        const outcome = await undo();
+        // The clicked row is a destination, so a conflicted head must stop the sweep
+        // rather than be stepped over: the entry a step-over reverts can be exactly
+        // the row the user asked to keep, and stopping afterwards is too late.
+        const outcome = await undo({ allowStepOver: false });
         if (!outcome.headConsumed) {
-            // undo() left the head entry on `past`: it conflicted, and either nothing
-            // replaced it or the call stepped over it onto an older entry. Stack length
-            // cannot stand in for progress — a step-over shortens `past` while the row
-            // this sweep must stop at still stands, so a length-based guard would keep
-            // reverting older edits the user chose to keep.
+            // The head entry is still on `past`, so this sweep cannot reach the target.
+            // Stack length cannot stand in for progress: `past` can shorten while the
+            // row this sweep must stop at still stands.
             return;
         }
     }

@@ -349,7 +349,20 @@ async function stepOverConflict(input: StepOverInput): Promise<UndoResult> {
     return result;
 }
 
-async function undoImpl(): Promise<UndoResult> {
+export type UndoOptions = {
+    /**
+     * Whether a conflicted head may be stepped over onto the entry beneath it.
+     *
+     * A plain Cmd-Z names no destination — the user said "go back one", so there
+     * is no edit they asked to preserve and stepping over is the only way past a
+     * permanently blocked entry. A caller sweeping towards a chosen row does name
+     * one, and the single step-over can revert exactly that row, so it opts out
+     * and takes the conflict as a stop.
+     */
+    readonly allowStepOver?: boolean;
+};
+
+async function undoImpl({ allowStepOver = true }: UndoOptions): Promise<UndoResult> {
     const stored = undoStore.value;
     if (!stored || stored.past.length === 0) {
         return { headConsumed: false };
@@ -378,12 +391,21 @@ async function undoImpl(): Promise<UndoResult> {
             continue;
         }
         if (outcome.status === 'conflict') {
+            const conflictedLabel = undoEntryLabel(candidate.head);
+            if (!allowStepOver) {
+                notifyUndoConflict(conflictedLabel);
+                return settleWithoutUndo({
+                    initialPast,
+                    headId,
+                    retainedPast: [...past, ...outcome.retained],
+                });
+            }
             return stepOverConflict({
                 initialPast,
                 headId,
                 below: past,
                 retainedConflicted: outcome.retained,
-                conflictedLabel: undoEntryLabel(candidate.head),
+                conflictedLabel,
             });
         }
 
@@ -403,6 +425,6 @@ async function undoImpl(): Promise<UndoResult> {
     }
 }
 
-export function undo(): Promise<UndoResult> {
-    return runUndoRedoExclusive(undoImpl);
+export function undo(options: UndoOptions = {}): Promise<UndoResult> {
+    return runUndoRedoExclusive(() => undoImpl(options));
 }

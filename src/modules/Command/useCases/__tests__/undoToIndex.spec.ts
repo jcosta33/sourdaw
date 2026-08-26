@@ -4,7 +4,7 @@ import { undoToIndex } from '../undoToIndex';
 
 import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
-import type { UndoResult } from '../undo';
+import type { UndoOptions, UndoResult } from '../undo';
 
 const mocks = vi.hoisted(() => {
     const undoStoreValue: { value: UndoStoreState | null } = {
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => {
     return {
         undoStoreValue,
         redo: vi.fn<() => Promise<void>>(),
-        undo: vi.fn<() => Promise<UndoResult>>(),
+        undo: vi.fn<(options?: UndoOptions) => Promise<UndoResult>>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
     };
 });
@@ -150,6 +150,8 @@ describe('undoToIndex', () => {
         await undoToIndex(0);
 
         expect(mocks.undo).toHaveBeenCalledTimes(2);
+        // The sweep has a destination, so it never lets undo() step over a conflict.
+        expect(mocks.undo).toHaveBeenCalledWith({ allowStepOver: false });
         expect(mocks.redo).not.toHaveBeenCalled();
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['one']);
     });
@@ -214,11 +216,11 @@ describe('undoToIndex', () => {
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['A']);
     });
 
-    it('should stop as soon as undo steps over the head instead of trusting stack length', async () => {
-        // The head conflicts, so undo() reverts the entry beneath it instead.
-        // `past` shrinks, but the head the sweep was walking down from is still
-        // there: reading that shrink as progress makes the sweep keep going and
-        // revert the row the user clicked to keep.
+    it('should stop on the reported result rather than re-deriving progress from stack length', async () => {
+        // `headConsumed: false` is undo()'s statement that the row this sweep is
+        // walking down from is still applied. undo() may shorten `past` and still
+        // say that — it does exactly that when it steps over a conflict — so the
+        // sweep must read the signal instead of inferring progress from the stack.
         mockUndoSteppingOverHead();
         mocks.undoStoreValue.value = {
             past: ['E0', 'E1', 'E2', 'E3', 'E4'].map(actionEntry),
