@@ -1,0 +1,36 @@
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_a40848e8f8cca9::t_3462aae6101f9e 970
+  s_a40848e8f8cca9::t_42c25b8c27291e 959,1036,1059
+  s_a40848e8f8cca9::t_de5fa208d7800a 30-46,53-60,669,675,916,922,1046,1052-1058,1060-1069,1076-1080,1107,1113,1145,1151
+  s_a40848e8f8cca9::t_c47bdceb25f181 946-958,960-969,971-1035,1037-1039
+src/modules/Collaboration/repositories/durableAssetPromotionRecoveryLifecycle.ts
+  s_a40848e8f8cca9::t_03831ab70fb1f3 87-94,397-404
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_b43c3279bccdc0 411,550-554
+  s_a40848e8f8cca9::t_bc8a9437d35d05 555-556
+src/modules/Collaboration/repositories/durableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_03831ab70fb1f3 66-67,239-271,372
+src/modules/Collaboration/repositories/durableAssetRepositoryContract.ts
+  s_a40848e8f8cca9::t_03831ab70fb1f3 39-40
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_a40848e8f8cca9::t_b9aeb1e088f2a6 15-16,18,627-632,635-831
+  s_a40848e8f8cca9::t_a2ad378f4755a1 633-634
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_1269d45a243d86 8,36,111,116-118,644,648-666
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c77b6729b8a7c9f61d4811c86dc4b20f9e1d157a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
