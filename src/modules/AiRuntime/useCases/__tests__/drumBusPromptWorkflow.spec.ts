@@ -1592,8 +1592,24 @@ describe('drum bus prompt workflow', () => {
             return Promise.resolve(createTestAudioBuffer());
         });
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'executed',
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            reason: expect.stringContaining('comparison renderer unavailable'),
+            effects: [
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    operation: 'renderProjectSections',
+                    reason: expect.stringContaining('comparison renderer unavailable'),
+                    remediation: 'reconcile',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(getAgentSectionRenderArtifacts()).toEqual([expect.objectContaining({ sectionId: 'section-verse-one' })]);
@@ -1601,9 +1617,9 @@ describe('drum bus prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
         );
-        expect(receipt?.content).toContain('The project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('durably committed');
         expect(receipt?.content).toContain('comparison renderer unavailable');
-        expect(receipt?.content).toContain('Do not replay the confirmed project actions');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(undoStore.value?.past).toHaveLength(9);
 
         await undo();
@@ -2810,10 +2826,13 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureStorageOwner('sidechainRoutes');
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
@@ -3016,10 +3035,13 @@ describe('drum bus prompt workflow', () => {
             gain: 0.5,
         };
         sidechainStore.set({ routes: [collaboratorRoute] });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureStorageOwner('sidechainRoutes');
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result.status).toBe('invalidated');
         expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
         expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);

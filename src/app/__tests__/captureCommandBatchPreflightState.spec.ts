@@ -655,4 +655,23 @@ describe('captureCommandBatchPreflightState', () => {
         expect(live.audioGraphValid).toBe(true);
         expect(staged).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
     });
+
+    it('fails closed when there is no project document at all', () => {
+        mocks.getCrdtDoc.mockReturnValue(undefined);
+
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [{ assetHash: 'sha256:vocal', audioBufferId: 'buffer-vocal' }],
+            targetIds: ['track-vocal', 'master'],
+        });
+
+        expect(state).toMatchObject({
+            audioGraphValid: false,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'document-identity-a',
+            projectInvariantsValid: false,
+            targetFingerprints: { master: 'system-output:master' },
+        });
+    });
 });

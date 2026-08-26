@@ -447,6 +447,19 @@ function captureProjectDocumentInspectionState(input: CaptureAgentProjectInspect
 export function captureCommandBatchPreflightState(input: CaptureCommandBatchPreflightStateInput) {
     const context = agentProjectRepairStateStore.value ? null : getProjectContext();
     const projectDoc = input.projectDocument ?? getCrdtDoc(DOC_PREFIX_ROOT);
+    if (!projectDoc) {
+        // No document means no document-backed authority: fail closed so the batch
+        // is rejected instead of approved against an absent project.
+        return {
+            audioGraphValid: false,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: captureProjectRevision(),
+            projectInvariantsValid: false,
+            targetFingerprints: addSystemTargetFingerprints({}, input.targetIds),
+        };
+    }
     const documentInspection = captureProjectDocumentInspectionState({
         projectDocument: projectDoc,
         targetIds: input.targetIds,

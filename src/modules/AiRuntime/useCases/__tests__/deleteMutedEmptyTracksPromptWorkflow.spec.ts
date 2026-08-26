@@ -922,8 +922,24 @@ describe('delete muted empty tracks prompt workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
-            status: 'executed',
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            reason: expect.stringContaining('persistent graph removal failure'),
+            effects: [
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    operation: 'removeTrack',
+                    reason: 'persistent graph removal failure',
+                    remediation: 'reconcile',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(trackStore.value?.tracks.some((track) => track.id === 'track-muted-audio')).toBe(false);
@@ -933,10 +949,9 @@ describe('delete muted empty tracks prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('committed with a follow-up warning');
+        expect(receipt?.content).toContain('durably committed');
         expect(receipt?.content).toContain('manual repair required');
-        expect(receipt?.content).toContain('Do not retry these confirmed actions');
-        expect(receipt?.error).toContain('manual repair required');
+        expect(receipt?.content).toContain('the project mutation will not replay');
     });
 
     it('keeps grouped redo retryable when a collaborator adds alternative content to one restored target', async () => {
