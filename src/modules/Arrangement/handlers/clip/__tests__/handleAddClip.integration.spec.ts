@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -17,6 +19,12 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
@@ -28,8 +36,16 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
 describe('handleAddClip atomic integration', () => {
     beforeEach(() => {
+        Container.clear();
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('add clip atomic integration');
         removeCrdtDoc('root');
@@ -52,6 +68,7 @@ describe('handleAddClip atomic integration', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });

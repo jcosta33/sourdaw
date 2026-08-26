@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, executeAppActionBatch, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { defaultTransportState, transportStore } from '../../../stores/transportStore';
 import { getTransportHandlers } from '../../../useCases/getTransportHandlers';
@@ -11,6 +19,12 @@ import { setPunchIn } from '../../../useCases/transportControls/setPunchIn';
 import { setPunchOut } from '../../../useCases/transportControls/setPunchOut';
 
 type PunchAction = Extract<AppAction, { type: 'setPunchIn' | 'setPunchOut' }>;
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 type PunchRegion = {
     punchInBeat: number;
@@ -67,6 +81,8 @@ function describe_punch_action(action: PunchAction) {
 
 describe('Transport punch action undo/redo', () => {
     beforeEach(() => {
+        Container.clear();
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         registerHandlerMap(getTransportHandlers());
@@ -76,6 +92,7 @@ describe('Transport punch action undo/redo', () => {
     afterEach(() => {
         clearUndoHistory();
         clearHandlerRegistry();
+        Container.clear();
         configureAutomergeStoragePort(null);
     });
 
