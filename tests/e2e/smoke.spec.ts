@@ -12,9 +12,20 @@ function trackList(page: Page) {
     return page.getByRole('grid', { name: /Track list/i }).first();
 }
 
-async function openNewProject(page: Page): Promise<void> {
+async function openNewProject(page: Page): Promise<() => void> {
+    const unexpectedRequests: string[] = [];
+    await page.route('**/*', async (route) => {
+        const url = new URL(route.request().url());
+        if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+            await route.continue();
+            return;
+        }
+        unexpectedRequests.push(url.toString());
+        await route.abort('blockedbyclient');
+    });
     await setupWorkspace(page);
     await launch_new_project(page);
+    return () => expect(unexpectedRequests, 'offline smoke blocked external runtime requests').toEqual([]);
 }
 
 async function addMidiTrack(page: Page): Promise<void> {
@@ -25,25 +36,41 @@ async function addMidiTrack(page: Page): Promise<void> {
 
 test.describe('Offline project smoke', () => {
     test('launches a new project into the workspace', async ({ page }) => {
-        await openNewProject(page);
+        const assertOffline = await openNewProject(page);
 
         await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
         await expect(page.getByText('Add your first track')).toBeVisible();
+        assertOffline();
     });
 
-    test('saves an opened project after an edit', async ({ page }) => {
-        await openNewProject(page);
+    test('saves and reopens an edited project', async ({ page }) => {
+        const assertOffline = await openNewProject(page);
         await expect(dirtyIndicator(page)).toHaveCount(0);
+
+        const projectName = page.getByRole('button', { name: 'Untitled Project' });
+        await projectName.click();
+        const projectNameInput = page.locator('input:focus');
+        await projectNameInput.fill('Smoke Persistence');
+        await projectNameInput.press('Enter');
 
         await addMidiTrack(page);
         await expect(dirtyIndicator(page)).toBeVisible();
 
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
+
+        await page.getByRole('button', { name: 'Project menu' }).click();
+        await page.getByRole('menuitem', { name: 'New Project' }).click();
+        await expect(page.getByText('Add your first track')).toBeVisible();
+
+        await page.getByRole('button', { name: 'Project menu' }).click();
+        await page.getByRole('menuitem', { name: 'Smoke Persistence' }).click();
+        await expect(trackList(page).getByText('MIDI', { exact: true })).toBeVisible();
+        assertOffline();
     });
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
-        await openNewProject(page);
+        const assertOffline = await openNewProject(page);
 
         const playhead = page.getByTestId('transport-playhead');
         const playheadPosition = async () => (await playhead.innerText()).replaceAll(/\s/g, '');
@@ -54,10 +81,11 @@ test.describe('Offline project smoke', () => {
 
         await page.getByTestId('transport-stop').click();
         await expect.poll(playheadPosition).toBe(initialPosition);
+        assertOffline();
     });
 
     test('undo restores the project before its track edit', async ({ page }) => {
-        await openNewProject(page);
+        const assertOffline = await openNewProject(page);
 
         await addMidiTrack(page);
         const midiTrack = trackList(page).getByText('MIDI', { exact: true });
@@ -67,5 +95,6 @@ test.describe('Offline project smoke', () => {
         await expect(undo).toBeEnabled();
         await undo.click();
         await expect(midiTrack).toHaveCount(0);
+        assertOffline();
     });
 });

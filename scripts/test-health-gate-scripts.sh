@@ -203,6 +203,55 @@ function runResolveScope(event, scopes) {
     return readFileSync(outputPath, 'utf8');
 }
 
+function matchesPathPattern(path, pattern) {
+    let expression = '^';
+    for (let index = 0; index < pattern.length; index += 1) {
+        const character = pattern[index];
+        if (character === '*') {
+            if (pattern[index + 1] === '*') {
+                expression += '.*';
+                index += 1;
+            } else {
+                expression += '[^/]*';
+            }
+        } else {
+            expression += character.replace(/[|\\{}()[\]^$+?.]/gu, '\\$&');
+        }
+    }
+    return new RegExp(`${expression}$`, 'u').test(path);
+}
+
+function resolveChangedPathScopes(paths) {
+    const filters = parse(pathFilters?.with?.filters ?? '');
+    return Object.fromEntries(
+        Object.entries(filters).map(([scope, patterns]) => [
+            scope,
+            paths.some((path) => patterns.some((pattern) => matchesPathPattern(path, pattern))) ? 'true' : 'false',
+        ])
+    );
+}
+
+function parseScopeOutput(output) {
+    return Object.fromEntries(
+        output
+            .trim()
+            .split('\n')
+            .map((line) => line.split('='))
+            .map(([key, value]) => [key, value])
+    );
+}
+
+function runGate(results) {
+    return spawnSync('bash', ['-c', gateRun], {
+        encoding: 'utf8',
+        env: { ...process.env, RESULTS: JSON.stringify(results) },
+    });
+}
+
+function terminalGateResults(defaultResult) {
+    return Object.fromEntries(gateNeeds.map((job) => [job, { result: defaultResult }]));
+}
+
 function runWorkflowShell(label, body, env) {
     const result = spawnSync('bash', ['-c', body], {
         cwd: process.env.TEST_TEMP_ROOT,
@@ -235,6 +284,7 @@ function expectShardFailureWarning(step, slug, suite, shard) {
 const events = workflow.on;
 const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
+const pathFilters = stepNamed(decide, 'Filter changed paths');
 const secrets = workflow.jobs?.secrets;
 const staticChecks = workflow.jobs?.static;
 const lint = workflow.jobs?.lint;
@@ -283,26 +333,19 @@ const expectedGateNeeds = [
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
 expect(events?.pull_request !== undefined, 'pull_request trigger must remain present');
-expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
+expect(events?.pull_request_review === undefined, 'pull_request_review must not start a duplicate Gate');
 expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
 expect(
-    concurrency?.group ===
-        "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}",
-    'only pull_request and approved reviews may share a PR-number concurrency group'
+    concurrency?.group === "health-gates-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}",
+    'only pull_request runs may share a PR-number concurrency group'
 );
 expect(
-    concurrency?.['cancel-in-progress'] ===
-        "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
-    'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
+    concurrency?.['cancel-in-progress'] === "${{ github.event_name == 'pull_request' }}",
+    'concurrency cancellation must apply only to pull_request runs'
 );
-expect(
-    decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
-    'decide must ignore non-approved pull_request_review submissions'
-);
+expect(decide?.if === undefined, 'decide must not retain a dead review predicate');
 const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
-const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
-const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
 expect(
     runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
     'schedule must enable the heavy path and every scope'
@@ -311,19 +354,80 @@ expect(
     runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n',
     'workflow_dispatch must enable the heavy path and every scope'
 );
-expect(
-    runResolveScope('pull_request_review', reviewScopes) === 'heavy=false\nrust=false\nserver=true\ne2e=false\nweb=true\n',
-    'pull_request_review must preserve path-filter outputs without enabling the heavy path'
-);
-expect(
-    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\n',
-    'pull_request must disable the heavy path and preserve path-filter outputs'
-);
 const codeBearingIf =
     "needs.decide.outputs.web == 'true' || needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
 expect(staticChecks?.if === codeBearingIf, 'types and contracts must skip documentation-only pull requests');
 expect(lint?.if === codeBearingIf, 'lint must skip documentation-only pull requests');
 expect(boundaries?.if === codeBearingIf, 'module boundaries must skip documentation-only pull requests');
+expect(unit?.if === "needs.decide.outputs.web == 'true'", 'unit suite must remain scoped to web-related changes');
+expect(smoke?.if === "needs.decide.outputs.e2e == 'true'", 'offline smoke must remain scoped to user-runtime changes');
+expect(e2e?.if === "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'", 'full E2E must require the scheduled or dispatched heavy path');
+expect(e2e?.strategy?.matrix?.shard?.length === 12, 'full E2E must retain all twelve shards');
+
+function startedPullRequestJobs(scopes) {
+    const jobs = ['decide', 'dependency-review'];
+    const codeBearing = scopes.web === 'true' || scopes.rust === 'true' || scopes.server === 'true';
+    if (codeBearing) jobs.push('static', 'lint', 'boundaries');
+    if (scopes.web === 'true') jobs.push('unit', 'build');
+    if (scopes.e2e === 'true') jobs.push('smoke');
+    if (scopes.rust === 'true' || scopes.server === 'true') jobs.push('rust');
+    if (scopes.rust === 'true') jobs.push('native-macos', 'native-windows');
+    jobs.push('gate');
+    return jobs;
+}
+
+for (const fixture of [
+    {
+        name: 'TypeScript-only',
+        paths: ['src/modules/Project/useCases/smokeFixture.ts'],
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'gate'],
+    },
+    {
+        name: 'test-only',
+        paths: ['tests/e2e/smoke.spec.ts'],
+        jobs: ['decide', 'dependency-review', 'smoke', 'gate'],
+    },
+    {
+        name: 'Rust-only',
+        paths: ['crates/daw-core/src/smoke_fixture.rs'],
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'rust', 'native-macos', 'native-windows', 'gate'],
+    },
+    {
+        name: 'Electron-only',
+        paths: ['electron/main/smokeFixture.ts'],
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
+    },
+    {
+        name: 'workflow-only',
+        paths: ['.github/workflows/health-gates.yml'],
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'rust', 'gate'],
+    },
+    {
+        name: 'documentation-only',
+        paths: ['docs/architecture/fast-gate.md'],
+        jobs: ['decide', 'dependency-review', 'gate'],
+    },
+]) {
+    const scopes = resolveChangedPathScopes(fixture.paths);
+    const scopeOutput = parseScopeOutput(runResolveScope('pull_request', scopes));
+    expect(scopeOutput.heavy === 'false', `${fixture.name} pull_request must not enable the heavy path`);
+    for (const [scope, value] of Object.entries(scopes)) {
+        expect(scopeOutput[scope] === value, `${fixture.name} must derive ${scope} from the workflow path filters`);
+    }
+    expect(
+        JSON.stringify(startedPullRequestJobs(scopes)) === JSON.stringify(fixture.jobs),
+        `${fixture.name} must start only its applicable jobs and terminal Gate`
+    );
+    const results = terminalGateResults('skipped');
+    for (const job of fixture.jobs) {
+        if (job !== 'gate' && gateNeeds.includes(job)) {
+            results[job] = { result: 'success' };
+        }
+    }
+    const gateResult = runGate(results);
+    expect(gateResult.status === 0, `${fixture.name} terminal Gate must pass with successful and skipped dependencies`);
+    expect(gateResult.stdout.endsWith('every job succeeded or was skipped\n'), `${fixture.name} terminal Gate must report its successful conclusion`);
+}
 expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(targetCheckout?.uses ?? ''), 'scan target checkout action must be pinned to a full commit SHA');
@@ -341,7 +445,7 @@ expect(targetCheckout?.with?.path === 'scan-target', 'scan target must use its o
 expect(targetCheckout?.with?.['fetch-depth'] === 0, 'scan target checkout must fetch full history');
 expect(targetCheckout?.with?.['persist-credentials'] === false, 'scan target checkout must not persist credentials');
 expect(trustedCheckout?.with?.path !== targetCheckout?.with?.path, 'trusted scanner and scan target checkout paths must remain separate');
-expect(secretScanUses === '', 'secret scan must not use gitleaks-action, which rejects pull_request_review events');
+expect(secretScanUses === '', 'secret scan must not use gitleaks-action, which cannot scan the trusted checkout layout');
 expect(secretsEnv.GITLEAKS_VERSION === '8.30.1', 'secret scan must pin the Gitleaks binary version');
 expect(
     secretsEnv.GITLEAKS_SHA256 === '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
@@ -425,7 +529,6 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
-const pullRequestReportAllowance = "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
 const shardFailureCondition = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 expect(
     unit?.['continue-on-error'] === undefined,
@@ -459,11 +562,7 @@ expect(
 expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
-expect(
-    gate?.if ===
-        "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
-    'Gate must cancel with superseded runs and must not report success for non-approved reviews'
-);
+expect(gate?.if === '${{ always() }}', 'Gate must run after failed or cancelled dependencies');
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
@@ -481,6 +580,19 @@ expect(
         gateRun.includes("printf 'every job succeeded or was skipped\\n'"),
     'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
 );
+for (const fixture of [
+    { name: 'success', result: 'success', expectedStatus: 0, expectedOutput: 'every job succeeded or was skipped\n' },
+    { name: 'skipped', result: 'skipped', expectedStatus: 0, expectedOutput: 'every job succeeded or was skipped\n' },
+    { name: 'failure', result: 'failure', expectedStatus: 1, expectedOutput: 'failing jobs:\nunit: failure\n' },
+    { name: 'cancelled', result: 'cancelled', expectedStatus: 1, expectedOutput: 'failing jobs:\nsmoke: cancelled\n' },
+]) {
+    const results = terminalGateResults(fixture.expectedStatus === 0 ? fixture.result : 'skipped');
+    if (fixture.name === 'failure') results.unit = { result: fixture.result };
+    if (fixture.name === 'cancelled') results.smoke = { result: fixture.result };
+    const result = runGate(results);
+    expect(result.status === fixture.expectedStatus, `Gate ${fixture.name} fixture must exit ${fixture.expectedStatus}`);
+    expect(result.stdout.endsWith(fixture.expectedOutput), `Gate ${fixture.name} fixture must report its exact terminal outcome`);
+}
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
 expect(
     nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&

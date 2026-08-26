@@ -11,11 +11,9 @@ name: Health gates
 # native platform legs. Measured, that lane settles in about ten minutes, bounded
 # by the unit shards.
 #
-# Only what cannot fit that budget waits for an approving review: the end-to-end
-# suite across twelve shards, CodeQL, and the full-history secret scan. Those
-# also run nightly and on dispatch. An approval re-runs what the last push
-# already ran, which is deliberate — it costs nothing here, and the alternative
-# is a merge decided by results from an older head.
+# The end-to-end suite across twelve shards, CodeQL, and the full-history secret
+# scan run only nightly and on dispatch. Their resource cost and external
+# dependencies do not belong on a pull-request head.
 #
 # `gate` is the only job the branch ruleset requires by name. It depends on
 # every job whose result should decide a merge, and passes when each either
@@ -28,10 +26,8 @@ name: Health gates
 
 on:
   pull_request:
-  pull_request_review:
-    types: [submitted]
   schedule:
-    # Catches what the path filters and the approval gate leave unobserved.
+    # Catches what the path filters leave unobserved.
     # Nine repository-wide gates went red under exactly that blind spot while
     # nothing ran automatically at all.
     - cron: '0 3 * * *'
@@ -41,11 +37,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Pull-request runs and approved reviews share the PR-number group. Every
-  # other event gets a run-id group, so it replaces neither validation nor
-  # another non-validating run.
-  group: health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}
+  # Pull-request updates replace their own stale run. Scheduled and dispatched
+  # health checks always keep their distinct run-id group.
+  group: health-gates-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   NODE_VERSION: 24.19.0
@@ -55,8 +50,6 @@ jobs:
     name: Decide scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # A review that requests changes or only comments starts nothing.
-    if: github.event_name != 'pull_request_review' || github.event.review.state == 'approved'
     outputs:
       heavy: ${{ steps.scope.outputs.heavy }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -119,8 +112,7 @@ jobs:
             exit 0
           fi
           # Pull-request heads get only deterministic fast evidence. The full
-          # browser suite, CodeQL, and history scan remain scheduled or manual
-          # work so an approving review never starts the twelve-shard suite.
+          # browser suite, CodeQL, and history scan remain scheduled or manual.
           heavy=false
           {
             printf 'heavy=%s\n' "$heavy"
@@ -560,8 +552,8 @@ jobs:
     name: CodeQL
     needs: decide
     # Minutes rather than seconds, so it runs with the heavy lane instead of on
-    # every push. An approval still precedes every merge, so nothing reaches
-    # main unscanned.
+    # every push. Scheduled and manually dispatched health runs retain the
+    # repository-wide security scan.
     if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -661,8 +653,8 @@ jobs:
   nightly-report:
     name: Nightly failure report
     # A scheduled run nobody reads is a scheduled run that does not exist. The
-    # nightly is the only thing that observes what path filters and the approval
-    # gate skip, so its failures have to arrive somewhere a person looks.
+    # nightly is the only thing that observes what path filters skip, so its
+    # failures have to arrive somewhere a person looks.
     if: ${{ failure() && github.event_name == 'schedule' }}
     needs: [static, lint, boundaries, unit, build, rust, native-macos, native-windows, e2e, codeql, secrets]
     runs-on: ubuntu-latest
@@ -704,10 +696,9 @@ jobs:
     # Unit shards and the offline smoke set are the deterministic evidence for
     # applicable pull-request heads. The full suite joins the same aggregate
     # only on scheduled and manually dispatched health runs.
-    # `!cancelled()` still evaluates failed or skipped dependencies for a live
-    # run. The review predicate prevents an intentionally skipped review run
-    # from reporting a successful Gate from all-skipped dependencies.
-    if: ${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}
+    # `always()` makes the shell evaluate every terminal dependency result,
+    # including cancellation, instead of silently skipping Gate.
+    if: ${{ always() }}
     needs:
       - decide
       - static
