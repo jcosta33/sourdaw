@@ -1,0 +1,36 @@
+scripts/deliverPullRequest.ts
+  s_0202ff8054d37c::t_b31ab3de6f0c8f 169,504-541,543-551
+  s_0202ff8054d37c::t_079eab1907fb76 542
+  s_0202ff8054d37c::t_cf219ef30c195b 627-628,631-633
+  s_0202ff8054d37c::t_31f67fd1783450 606
+  s_0202ff8054d37c::t_d6b4bc3d65303c 33-38,54
+  s_0202ff8054d37c::t_97f8d785a2472d 99-104,115,121-168
+  s_0202ff8054d37c::t_a5a86d7eeb49bb 170
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_0202ff8054d37c::t_998203bed4fe23 90
+  s_0202ff8054d37c::t_973bbccaeb9c75 757-762,764-899
+  s_0202ff8054d37c::t_32adf6ad0467a6 988-992,994-1034
+  s_0202ff8054d37c::t_d25e5aecf371de 13
+  s_0202ff8054d37c::t_a3690646f794af 993
+  s_0202ff8054d37c::t_829d750014a381 209,214-235
+  s_0202ff8054d37c::t_e01d02788c2e7f 236
+AGENTS.md
+  s_0202ff8054d37c::t_59a42fefc547d8 427-430
+  s_0202ff8054d37c::t_8c87d9f8ca42f0 431-432
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "bd14cb9fb70c07de6da76ed56cd755a9a9752aad",
+  "prompts": {},
+  "sessions": {
+    "s_0202ff8054d37c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22edd3d4-6930-4288-aacd-3eeb0b792868",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
