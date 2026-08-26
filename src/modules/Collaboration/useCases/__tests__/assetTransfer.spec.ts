@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, type Mock } from 'vitest';
 
 import {
     ASSET_CHUNK_SIZE,
@@ -13,8 +13,18 @@ import {
     type PeerMessage,
 } from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
+import { createDurableAssetRepository } from '../../repositories/durableAssetRepository';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer, ASSET_TRANSFER_STALL_TIMEOUT_MS } from '../assetTransfer';
+
+import { installFakeDurableAssetIndexedDb, type FakeDurableAssetIndexedDb } from './fakeDurableAssetIndexedDb';
+
+let durableAssetIndexedDb: FakeDurableAssetIndexedDb;
+const TEST_OWNER = 'project:test';
+
+beforeAll(() => {
+    durableAssetIndexedDb = installFakeDurableAssetIndexedDb();
+});
 
 function makePeerManager(): PeerConnectionManager {
     return {
@@ -45,11 +55,15 @@ async function captureTransferMessages(blob: Blob, name: string): Promise<{ hash
         }),
     } as unknown as PeerConnectionManager;
 
-    const host = new AssetTransfer(hostPeer, {
-        onAssetAvailable: vi.fn(),
-        onProgress: vi.fn(),
-        onTransferFailed: vi.fn(),
-    });
+    const host = new AssetTransfer(
+        hostPeer,
+        {
+            onAssetAvailable: vi.fn(),
+            onProgress: vi.fn(),
+            onTransferFailed: vi.fn(),
+        },
+        TEST_OWNER
+    );
     const hash = await host.addLocalAsset(blob, name);
 
     // Simulate the requester's `asset.request` arriving at the host.
@@ -77,11 +91,15 @@ function makeCapturingHost(): { host: AssetTransfer; sent: PeerMessage[]; dispos
         sendCrdtSync: vi.fn(record),
         sendCrdtSyncBuffered: vi.fn(record),
     } as unknown as PeerConnectionManager;
-    const host = new AssetTransfer(hostPeer, {
-        onAssetAvailable: vi.fn(),
-        onProgress: vi.fn(),
-        onTransferFailed: vi.fn(),
-    });
+    const host = new AssetTransfer(
+        hostPeer,
+        {
+            onAssetAvailable: vi.fn(),
+            onProgress: vi.fn(),
+            onTransferFailed: vi.fn(),
+        },
+        TEST_OWNER
+    );
     return { host, sent, dispose: () => host.dispose() };
 }
 
@@ -93,11 +111,12 @@ describe('AssetTransfer', () => {
     let transfer: AssetTransfer;
 
     beforeEach(() => {
+        durableAssetIndexedDb.reset();
         peer = makePeerManager();
         onAssetAvailable = vi.fn<(hash: string) => void>();
         onProgress = vi.fn<(hash: string, receivedChunks: number, totalChunks: number) => void>();
         onTransferFailed = vi.fn<(hash: string, reason: string) => void>();
-        transfer = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed });
+        transfer = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
     });
 
     afterEach(() => {
@@ -105,37 +124,6 @@ describe('AssetTransfer', () => {
         // stall timer so a later test's fake clock can't inherit it.
         transfer.dispose();
         vi.useRealTimers();
-    });
-
-    it('addLocalAsset hashes and stores a blob', async () => {
-        const blob = new Blob(['hello'], { type: 'text/plain' });
-        const hash = await transfer.addLocalAsset(blob, 'hello.txt');
-
-        expect(hash.startsWith('sha256:')).toBe(true);
-        expect(transfer.hasAsset(hash)).toBe(true);
-        expect(transfer.getAsset(hash)).toBe(blob);
-    });
-
-    it('stages duplicate content without claiming ownership of the existing asset', async () => {
-        const existing = new Blob(['same-content'], { type: 'text/plain' });
-        const duplicate = new Blob(['same-content'], { type: 'text/plain' });
-        const existingHash = await transfer.addLocalAsset(existing, 'existing.txt');
-
-        const staged = await transfer.stageLocalAsset(duplicate, 'duplicate.txt');
-
-        expect(staged).toEqual({ hash: existingHash, leaseId: expect.stringMatching(/^asset-stage-/u) });
-        expect(transfer.getAsset(existingHash)).toBe(existing);
-    });
-
-    it('does not delete a committed duplicate when an earlier staging owner is cancelled', async () => {
-        const first = await transfer.stageLocalAsset(new Blob(['same-content']), 'first.wav');
-        const second = await transfer.stageLocalAsset(new Blob(['same-content']), 'second.wav');
-        expect(second.hash).toBe(first.hash);
-
-        transfer.promoteStagedAsset(second.leaseId);
-        transfer.releaseStagedAsset(first.leaseId);
-
-        expect(transfer.hasAsset(second.hash)).toBe(true);
     });
 
     it('requestAsset broadcasts an asset.request message', () => {
@@ -441,11 +429,15 @@ describe('AssetTransfer', () => {
                 return Promise.resolve();
             }),
         } as unknown as PeerConnectionManager;
-        const host = new AssetTransfer(hostPeer, {
-            onAssetAvailable: vi.fn(),
-            onProgress: vi.fn(),
-            onTransferFailed: vi.fn(),
-        });
+        const host = new AssetTransfer(
+            hostPeer,
+            {
+                onAssetAvailable: vi.fn(),
+                onProgress: vi.fn(),
+                onTransferFailed: vi.fn(),
+            },
+            TEST_OWNER
+        );
         const hash = await host.addLocalAsset(new Blob(['tiny'], { type: 'text/plain' }), 'tiny.txt');
 
         // A hostile request: duplicates and out-of-range indices. The asset is
@@ -793,6 +785,25 @@ describe('AssetTransfer', () => {
         dispose();
     });
 
+    it('preserves the two-argument live-session stage, promote, and release contract', async () => {
+        const stagedForRelease = await transfer.stageLocalAsset(new Blob(['session-release']), 'session-release.wav');
+        expect(transfer.hasAsset(stagedForRelease.hash)).toBe(true);
+        transfer.releaseStagedAsset(stagedForRelease.leaseId);
+        expect(transfer.hasAsset(stagedForRelease.hash)).toBe(false);
+
+        const stagedForCommit = await transfer.stageLocalAsset(new Blob(['session-commit']), 'session-commit.wav');
+        transfer.promoteStagedAsset(stagedForCommit.leaseId);
+        transfer.releaseStagedAsset(stagedForCommit.leaseId);
+        expect(transfer.hasAsset(stagedForCommit.hash)).toBe(true);
+
+        await transfer.handleMessage('requester', {
+            type: 'crdt-sync',
+            docId: DOC_ID_ASSET,
+            data: JSON.stringify({ type: 'asset.request', hash: stagedForCommit.hash, missingChunks: [] }),
+        });
+        expect(peer.sendCrdtSync).toHaveBeenCalledWith(expect.objectContaining({ peerId: 'requester' }));
+    });
+
     it('dispose clears armed stall timers so a discarded session reports nothing', async () => {
         vi.useFakeTimers();
         transfer.requestAsset(HASH);
@@ -802,5 +813,94 @@ describe('AssetTransfer', () => {
         vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS * 2);
 
         expect(onTransferFailed).not.toHaveBeenCalled();
+    });
+
+    it('dispose prevents queued owner work from starting after an in-flight operation settles', async () => {
+        const durableAssets = createDurableAssetRepository(TEST_OWNER);
+        const firstStarted = Promise.withResolvers<void>();
+        const allowFirst = Promise.withResolvers<void>();
+        const stageAsset = vi.fn(async (...input: Parameters<typeof durableAssets.stageAsset>) => {
+            if (stageAsset.mock.calls.length === 1) {
+                firstStarted.resolve();
+                await allowFirst.promise;
+            }
+            return durableAssets.stageAsset(...input);
+        });
+        const disposable = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER, {
+            ...durableAssets,
+            stageAsset,
+        });
+
+        const first = disposable.stageDurableAsset(new Blob(['first']), 'first.wav', 'lease-first');
+        await firstStarted.promise;
+        const queued = disposable.stageDurableAsset(new Blob(['queued']), 'queued.wav', 'lease-queued');
+        disposable.dispose();
+        allowFirst.resolve();
+
+        await first;
+        await expect(queued).rejects.toThrow('disposed');
+        expect(stageAsset).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispose prevents an in-flight owner operation from repopulating the resident cache', async () => {
+        const durableAssets = createDurableAssetRepository(TEST_OWNER);
+        const writeStarted = Promise.withResolvers<void>();
+        const allowWrite = Promise.withResolvers<void>();
+        const disposable = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER, {
+            ...durableAssets,
+            stageAsset: async (...input) => {
+                writeStarted.resolve();
+                await allowWrite.promise;
+                return durableAssets.stageAsset(...input);
+            },
+        });
+
+        const write = disposable.stageDurableAsset(new Blob(['in-flight']), 'in-flight.wav', 'lease-in-flight');
+        await writeStarted.promise;
+        disposable.dispose();
+        allowWrite.resolve();
+        const { hash } = await write;
+
+        expect(disposable.hasAsset(hash)).toBe(false);
+    });
+
+    it('dispose prevents an in-flight durable request lookup from sending on the stale session', async () => {
+        const durableAssets = createDurableAssetRepository(TEST_OWNER);
+        const stored = await durableAssets.stageAsset(
+            'lease-serve-after-dispose',
+            new Blob(['serve-after-dispose']),
+            'serve.wav'
+        );
+        await durableAssets.promoteStagedAsset(stored.leaseId, stored.hash);
+        const lookupStarted = Promise.withResolvers<void>();
+        const allowLookup = Promise.withResolvers<void>();
+        const stalePeer = makePeerManager();
+        const disposable = new AssetTransfer(
+            stalePeer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            TEST_OWNER,
+            {
+                ...durableAssets,
+                reopenDurableAsset: async (...input) => {
+                    lookupStarted.resolve();
+                    await allowLookup.promise;
+                    return durableAssets.reopenDurableAsset(...input);
+                },
+            }
+        );
+
+        const request = disposable.handleMessage('requester', {
+            type: 'crdt-sync',
+            docId: DOC_ID_ASSET,
+            data: JSON.stringify({ type: 'asset.request', hash: stored.hash, missingChunks: [] }),
+        });
+        await lookupStarted.promise;
+        disposable.dispose();
+        allowLookup.resolve();
+        await request;
+
+        expect(stalePeer.sendCrdtSync).not.toHaveBeenCalled();
+        expect(stalePeer.sendCrdtSyncBuffered).not.toHaveBeenCalled();
+        expect(disposable.hasAsset(stored.hash)).toBe(false);
     });
 });

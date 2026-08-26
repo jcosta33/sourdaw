@@ -10,7 +10,17 @@ import { saveProject } from '../projectPersistence/saveProject/saveProject';
 import type { ProjectStoreState } from '../../stores/projectStore';
 
 const mocks = vi.hoisted(() => ({
-    projectStoreValue: { value: { loading: false, dirty: false, name: 'Initial' } as unknown as ProjectStoreState },
+    projectStoreValue: {
+        value: {
+            dirty: false,
+            identityMigrationPending: false,
+            identityPersistencePending: false,
+            initialized: true,
+            loading: false,
+            name: 'Initial',
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+        } as unknown as ProjectStoreState,
+    },
     projectStoreSet: vi.fn<(...args: unknown[]) => void>(),
     createCrdtProject: vi.fn<() => void>(),
     getCrdtDoc: vi.fn(),
@@ -19,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
     clearUndoHistory: vi.fn<() => void>(),
     resetActionReplayAuthority: vi.fn<() => void>(),
+    executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     captureProjectRevision: vi.fn<() => string>(() => 'saved-revision'),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
@@ -26,6 +37,9 @@ const mocks = vi.hoisted(() => ({
     publishPreparedBuffers: vi.fn(() => 1),
     captureExternalPluginStates: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
+    getDurableProjectOwnerId: vi.fn<() => string>(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
+    migrateAbsoluteMidiNotes: vi.fn<() => void>(),
+    readLegacyChordTrackMigration: vi.fn(),
 }));
 
 // Mock the dependencies of the use cases we are testing
@@ -55,9 +69,16 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeAppAction: mocks.executeAppAction,
     clearUndoHistory: mocks.clearUndoHistory,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    migrateAbsoluteMidiNotes: mocks.migrateAbsoluteMidiNotes,
+    readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
+}));
+vi.mock('../getDurableProjectOwnerId', () => ({
+    getDurableProjectOwnerId: mocks.getDurableProjectOwnerId,
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
@@ -96,7 +117,11 @@ describe('Project Persistence Use Cases', () => {
         mocks.projectStoreValue.value = {
             loading: false,
             dirty: false,
+            identityMigrationPending: false,
+            identityPersistencePending: false,
+            initialized: true,
             name: 'Initial',
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
         } as unknown as ProjectStoreState;
         mocks.getCrdtDoc.mockReturnValue({
             tracks: {
@@ -170,6 +195,28 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
             expect(mocks.prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
             expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+            expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+        });
+
+        it('rejects before post-recovery migrations when durable owner recovery fails', async () => {
+            const recoveryFailure = new Error('durable owner recovery failed');
+            const removeLegacyChordMigration = vi.fn();
+            mocks.loadCrdtProject.mockResolvedValue(true);
+            mocks.readLegacyChordTrackMigration.mockReturnValue({
+                action: { type: 'migrateLegacyChordTrack' },
+                remove: removeLegacyChordMigration,
+            });
+            setProjectIdentityTransitionDependencies({
+                leaveCollaborationSession: () => Promise.resolve(),
+                resumeDurableAssetOwnerHandoffsAfterProjectLoad: () => Promise.reject(recoveryFailure),
+            });
+
+            await expect(loadProject()).rejects.toThrow(recoveryFailure);
+
+            expect(mocks.readLegacyChordTrackMigration).not.toHaveBeenCalled();
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+            expect(removeLegacyChordMigration).not.toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
         });
 

@@ -5,7 +5,7 @@ import { pickFiles } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { type StemImportRole } from '#/utils/handlerContract';
 
-import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
+import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
 
 const MAX_SOURCE_BYTES_PER_STEM = 256 * 1024 * 1024;
 const MAX_TOTAL_SOURCE_BYTES = 1024 * 1024 * 1024;
@@ -136,17 +136,24 @@ export async function prepareStemImport(
                 audioBufferId: decoded.id,
             };
             prepared.push(pendingStem);
-            const stagedAsset = await getAssetTransfer()?.stageLocalAsset(file, file.name);
-            if (stagedAsset) {
-                Object.assign(pendingStem, {
-                    assetHash: stagedAsset.hash,
-                    assetLeaseId: stagedAsset.leaseId,
-                });
+            const assetTransfer = getAssetTransfer();
+            if (!assetTransfer) {
+                throw new Error('Durable project asset staging is unavailable');
             }
+            const stagedAsset = await assetTransfer.stageDurableAsset(
+                file,
+                file.name,
+                `asset-stage-${pendingStem.stemId}`,
+                { protectAcrossTransfer: true }
+            );
+            Object.assign(pendingStem, {
+                assetHash: stagedAsset.hash,
+                assetLeaseId: stagedAsset.leaseId,
+            });
             throwIfAborted(signal);
         }
     } catch (error) {
-        discardPreparedStemImportResources(prepared);
+        await preparedStemImportCleanup.discardBestEffort(prepared, undefined, error);
         throw error;
     }
 

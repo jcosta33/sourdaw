@@ -146,12 +146,14 @@ function makeData(referencedBufferId?: string): HydratableProjectData {
 }
 
 function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): ProjectLoadTransaction {
+    const { signal = new AbortController().signal, ...transactionOverrides } = overrides;
     return {
         prepare: () => Promise.resolve(true),
         activate: () => true,
         canActivate: () => true,
         isCurrent: () => true,
-        ...overrides,
+        signal,
+        ...transactionOverrides,
     };
 }
 
