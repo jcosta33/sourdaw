@@ -378,6 +378,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/modules/Command/useCases/versionedCommandArgumentKeys.ts', 'export const keys = [];'],
         ['src/modules/Arrangement/useCases/index.ts', 'export const arrangement = 1;'],
         ['src/modules/Arrangement/useCases/device/setDeviceState.ts', 'export const setDeviceState = 1;'],
+        ['src/modules/GrandBoule/AGENTS.md', 'Grand Boule module guidance'],
         ['src/app/prepareOfflineDeviceSetup.ts', 'export const offline = 1;'],
         ['src/modules/AudioEngine/useCases/buildDeviceChain.ts', 'export const chain = 1;'],
         ['src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts', 'export const prepare = 1;'],
@@ -394,6 +395,11 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
     ] as const) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), contents);
+    }
+    for (const provider of ['CLAUDE.md', 'CODEX.md', 'GEMINI.md', 'KIMI.md', 'ZCODE.md']) {
+        const providerPath = join(root, 'src/modules/GrandBoule', provider);
+        rmSync(providerPath, { force: true });
+        symlinkSync('AGENTS.md', providerPath);
     }
     execFileSync('git', ['init', '--quiet'], { cwd: root });
     execFileSync('git', ['add', '.'], { cwd: root });
@@ -1541,8 +1547,18 @@ describe('release inventory', () => {
             writeFileSync(join(grandBoule, 'untracked.rs'), 'untracked source');
             expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
 
-            writeFileSync(join(grandBoule, 'engine.rs'), 'changed source');
+            const enginePath = join(grandBoule, 'engine.rs');
+            const originalEngine = readFileSync(enginePath, 'utf8');
+            writeFileSync(enginePath, 'changed source');
             expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            writeFileSync(enginePath, originalEngine);
+
+            const providerSymlinkPath = join(root, 'src/modules/GrandBoule/CLAUDE.md');
+            rmSync(providerSymlinkPath);
+            symlinkSync('OTHER.md', providerSymlinkPath);
+            expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            rmSync(providerSymlinkPath);
+            symlinkSync('AGENTS.md', providerSymlinkPath);
 
             writeFileSync(
                 join(root, 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts'),

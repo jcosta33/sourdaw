@@ -10,6 +10,7 @@ import {
     lstatSync,
     openSync,
     readFileSync,
+    readlinkSync,
     readdirSync,
     realpathSync,
     statSync,
@@ -389,6 +390,24 @@ function readRepositoryRegularFile(
     }
 }
 
+function readTrackedSourceFile(
+    rootRealPath: string,
+    absolutePath: string,
+    readFile: RepositorySnapshotFileReader
+): Buffer {
+    const beforeRead = lstatSync(absolutePath);
+    if (!beforeRead.isSymbolicLink()) {
+        return readRepositoryRegularFile(rootRealPath, absolutePath, readFile);
+    }
+
+    const target = readlinkSync(absolutePath, { encoding: 'buffer' });
+    const afterRead = lstatSync(absolutePath);
+    if (!afterRead.isSymbolicLink() || beforeRead.dev !== afterRead.dev || beforeRead.ino !== afterRead.ino) {
+        throw new Error(`path changed while reading: ${absolutePath}`);
+    }
+    return target;
+}
+
 function readRepositoryRegularText(
     rootRealPath: string,
     absolutePath: string,
@@ -446,13 +465,15 @@ function trackedFilesSha256(root: string, files: readonly string[]): string {
     const rootRealPath = realpathSync(root);
     for (const file of files) {
         const absolutePath = resolve(root, file);
-        if (!existsSync(absolutePath)) {
+        try {
+            lstatSync(absolutePath);
+        } catch {
             throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
         try {
-            hash.update(readRepositoryRegularFile(rootRealPath, absolutePath, repositorySnapshotFileReader));
+            hash.update(readTrackedSourceFile(rootRealPath, absolutePath, repositorySnapshotFileReader));
         } catch {
             throw new Error(`Grand Boule release source is unsafe: ${file}`);
         }
