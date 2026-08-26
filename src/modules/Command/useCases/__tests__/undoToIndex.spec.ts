@@ -4,6 +4,7 @@ import { undoToIndex } from '../undoToIndex';
 
 import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
+import type { UndoResult } from '../undo';
 
 const mocks = vi.hoisted(() => {
     const undoStoreValue: { value: UndoStoreState | null } = {
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => {
     return {
         undoStoreValue,
         redo: vi.fn<() => Promise<void>>(),
-        undo: vi.fn<() => Promise<void>>(),
+        undo: vi.fn<() => Promise<UndoResult>>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
     };
 });
@@ -61,14 +62,14 @@ function mockUndoConsumingHead(): void {
     mocks.undo.mockImplementation(() => {
         const state = mocks.undoStoreValue.value;
         if (!state || state.past.length === 0) {
-            return Promise.resolve();
+            return Promise.resolve({ headConsumed: false });
         }
         const head = state.past[state.past.length - 1]!;
         mocks.undoStoreValue.value = {
             past: state.past.slice(0, -1),
             future: [head, ...state.future],
         };
-        return Promise.resolve();
+        return Promise.resolve({ headConsumed: true });
     });
 }
 
@@ -94,7 +95,7 @@ describe('undoToIndex', () => {
         mocks.undo.mockReset();
         mocks.undoTreeMoveTo.mockReset();
         mocks.redo.mockResolvedValue(undefined);
-        mocks.undo.mockResolvedValue(undefined);
+        mocks.undo.mockResolvedValue({ headConsumed: false });
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
 
@@ -193,8 +194,12 @@ describe('undoToIndex', () => {
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['A']);
     });
 
-    it('should stop when undo makes no progress instead of looping forever', async () => {
-        // undo() declined to consume anything (mock does not mutate the store).
+    it('should stop when undo reports the head entry unconsumed instead of looping forever', async () => {
+        // `headConsumed: false` is undo()'s statement that the entry this sweep is
+        // walking down from is still applied — here because its inverse conflicted
+        // and wrote nothing. The sweep reads that result rather than counting
+        // entries, because one undo() also drops any inert entries it passes and a
+        // shortened `past` says nothing about whether the head was undone.
         mocks.undoStoreValue.value = {
             past: [actionEntry('one'), actionEntry('two')],
             future: [],
