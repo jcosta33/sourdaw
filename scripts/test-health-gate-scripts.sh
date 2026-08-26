@@ -355,7 +355,7 @@ expect(
     'workflow_dispatch must enable the heavy path and every scope'
 );
 const codeBearingIf =
-    "needs.decide.outputs.web == 'true' || needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
+    "needs.decide.outputs.web == 'true' || needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true' || needs.decide.outputs.e2e == 'true'";
 expect(staticChecks?.if === codeBearingIf, 'types and contracts must skip documentation-only pull requests');
 expect(lint?.if === codeBearingIf, 'lint must skip documentation-only pull requests');
 expect(boundaries?.if === codeBearingIf, 'module boundaries must skip documentation-only pull requests');
@@ -366,7 +366,7 @@ expect(e2e?.strategy?.matrix?.shard?.length === 12, 'full E2E must retain all tw
 
 function startedPullRequestJobs(scopes) {
     const jobs = ['decide', 'dependency-review'];
-    const codeBearing = scopes.web === 'true' || scopes.rust === 'true' || scopes.server === 'true';
+    const codeBearing = scopes.web === 'true' || scopes.rust === 'true' || scopes.server === 'true' || scopes.e2e === 'true';
     if (codeBearing) jobs.push('static', 'lint', 'boundaries');
     if (scopes.web === 'true') jobs.push('unit', 'build');
     if (scopes.e2e === 'true') jobs.push('smoke');
@@ -385,7 +385,7 @@ for (const fixture of [
     {
         name: 'test-only',
         paths: ['tests/e2e/smoke.spec.ts'],
-        jobs: ['decide', 'dependency-review', 'smoke', 'gate'],
+        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
     },
     {
         name: 'Rust-only',
@@ -400,7 +400,20 @@ for (const fixture of [
     {
         name: 'workflow-only',
         paths: ['.github/workflows/health-gates.yml'],
-        jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'rust', 'gate'],
+        jobs: [
+            'decide',
+            'dependency-review',
+            'static',
+            'lint',
+            'boundaries',
+            'unit',
+            'build',
+            'smoke',
+            'rust',
+            'native-macos',
+            'native-windows',
+            'gate',
+        ],
     },
     {
         name: 'documentation-only',
@@ -562,7 +575,15 @@ expect(
 expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
-expect(gate?.if === '${{ always() }}', 'Gate must run after failed or cancelled dependencies');
+const gateIf =
+    "${{ always() && (github.event_name != 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}";
+expect(gate?.if === gateIf, 'Gate must evaluate failed or cancelled dependencies and skip non-default manual dispatches');
+function gateRunsForEvent(event, ref, defaultBranch) {
+    return event !== 'workflow_dispatch' || ref === `refs/heads/${defaultBranch}`;
+}
+expect(gateRunsForEvent('schedule', 'refs/heads/main', 'main'), 'scheduled Gate must run');
+expect(gateRunsForEvent('workflow_dispatch', 'refs/heads/main', 'main'), 'default-branch dispatch Gate must run');
+expect(!gateRunsForEvent('workflow_dispatch', 'refs/heads/repair-gate', 'main'), 'non-default dispatch must not mint a Gate');
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
@@ -573,6 +594,10 @@ expect(gateNeeds.includes('unit'), 'full unit suite must contribute to Gate');
 expect(gateNeeds.includes('smoke'), 'offline browser smoke must contribute to Gate');
 expect(gateNeeds.includes('e2e'), 'scheduled full end-to-end suite must contribute to Gate');
 expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
+expect(
+    stepNamed(gate, 'Require every job to have succeeded or been skipped')?.env?.RESULTS === '${{ toJSON(needs) }}',
+    'Gate must bind RESULTS exactly to every declared need result'
+);
 expect(
     gateRun.includes('select(.value.result != "success" and .value.result != "skipped")') &&
         gateRun.includes('if [ -n "$failed" ]; then') &&
@@ -594,6 +619,7 @@ for (const fixture of [
     expect(result.stdout.endsWith(fixture.expectedOutput), `Gate ${fixture.name} fixture must report its exact terminal outcome`);
 }
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
+expect(nightlyReport?.needs?.includes('smoke'), 'nightly report must observe offline smoke failures');
 expect(
     nightlyReportRun.includes('gh issue list --repo "$GITHUB_REPOSITORY"') &&
         nightlyReportRun.includes('gh issue comment "$existing" --repo "$GITHUB_REPOSITORY"') &&
@@ -610,7 +636,7 @@ const nightlyReportEnv = {
     GITHUB_REPOSITORY: fixtureRepository,
     GH_ISSUE_LOG: nightlyIssueLog,
     PATH: `${process.env.FAKE_BIN}:${process.env.PATH}`,
-    RESULTS: '{"static":{"result":"failure"},"lint":{"result":"success"}}',
+    RESULTS: '{"static":{"result":"success"},"smoke":{"result":"failure"}}',
     RUN_URL: 'nightly-run-123',
 };
 writeFileSync(nightlyIssueLog, '');
@@ -618,6 +644,7 @@ runWorkflowShell('nightly report existing issue', nightlyReportRun, { ...nightly
 const existingIssueCommands = readFileSync(nightlyIssueLog, 'utf8').trim().split('\n');
 expect(existingIssueCommands.some((command) => command.startsWith('issue list ') && command.includes(`--repo ${fixtureRepository}`)), 'existing path must list issues in the repository');
 expect(existingIssueCommands.some((command) => command.startsWith('issue comment 42 ') && command.includes(`--repo ${fixtureRepository}`)), 'existing path must comment on the existing issue in the repository');
+expect(existingIssueCommands.some((command) => command.includes('Failing jobs: smoke')), 'nightly report must name an offline smoke failure');
 expect(!existingIssueCommands.some((command) => command.startsWith('issue create ')), 'existing path must not create an issue');
 writeFileSync(nightlyIssueLog, '');
 runWorkflowShell('nightly report missing issue', nightlyReportRun, { ...nightlyReportEnv, GH_ISSUE_MODE: 'none' });
