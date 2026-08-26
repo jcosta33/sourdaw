@@ -318,15 +318,15 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
     );
     const pendingEffects =
         input.result.warningDetails?.flatMap(({ pendingEffect }) => (pendingEffect ? [pendingEffect] : [])) ?? [];
-    const hasFailedExternalEffect =
-        input.result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
-
     return {
         schemaVersion: VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION,
         runId: input.envelope.runId,
         batchId: input.envelope.batchId,
         outcome,
-        atomicity: hasFailedExternalEffect ? ('durable-atomic-with-non-atomic-effects' as const) : ('atomic' as const),
+        atomicity:
+            outcome === 'partially-committed'
+                ? ('durable-atomic-with-non-atomic-effects' as const)
+                : ('atomic' as const),
         base: parseRevision(input.envelope.baseRevision),
         observedBase: input.observedBaseRevision === null ? null : parseRevision(input.observedBaseRevision),
         resulting: input.resultingRevision === null ? null : parseRevision(input.resultingRevision),

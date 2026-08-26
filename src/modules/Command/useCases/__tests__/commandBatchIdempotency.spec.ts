@@ -34,6 +34,7 @@ import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommand
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 type SetTrackPanAction = Extract<AppAction, { type: 'setTrackPan' }>;
+type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 
 const mocks = vi.hoisted(() => ({
     clearSemanticContext: vi.fn(),
@@ -113,6 +114,29 @@ function compileBatch(
         mode: 'commit',
         projectId: 'project-idempotency',
         runId: input.runId ?? 'run-idempotency',
+    });
+}
+
+function compileRuntimeBatch() {
+    const baseRevision = revision(0);
+    const action: SetPlaybackAction = { type: 'setPlayback', payload: { playing: true } };
+    const command = {
+        ...createExecutionCommandEnvelope({
+            action,
+            expectedEffect: 'Start playback.',
+            normalizedProjectRevision: baseRevision,
+        }).envelope,
+        commandId: '33333333-3333-4333-8333-333333333333',
+    };
+    return compileVersionedCommandBatchEnvelope({
+        baseRevision,
+        batchId: 'batch-runtime-warning',
+        commands: [JSON.stringify(command)],
+        idempotencyKey: 'client-request-runtime-warning',
+        intent: 'Start playback',
+        mode: 'commit',
+        projectId: 'project-idempotency',
+        runId: 'run-runtime-warning',
     });
 }
 
@@ -344,6 +368,46 @@ describe('command batch idempotency', () => {
         await expect(
             getVersionedCommandBatchCommitDisposition(await getVersionedCommandBatchCommitProof(batch))
         ).resolves.toBe('committed');
+    });
+
+    it('replays a completed runtime warning receipt without repeating the runtime action', async () => {
+        const afterRuntimeExecution = vi.fn().mockRejectedValue(new Error('transport event unavailable'));
+        const execute = vi.fn(() => ({ status: 'written' as const, afterRuntimeExecution }));
+        registerHandlerMap({
+            setPlayback: {
+                describe: () => ({ label: 'Start playback' }),
+                execute,
+                executionKind: 'runtime',
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const batch = compileRuntimeBatch();
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        const retry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(first).toMatchObject({
+            status: 'executed-with-warning',
+            receipt: {
+                atomicity: 'atomic',
+                outcome: 'executed-with-warning',
+            },
+        });
+        expect(retry).toEqual({
+            status: 'idempotent-replay',
+            actions: [],
+            receipt: 'receipt' in first ? first.receipt : undefined,
+        });
+        expect(execute).toHaveBeenCalledOnce();
+        expect(afterRuntimeExecution).toHaveBeenCalledOnce();
     });
 
     it('treats only the exact verified receipt as committed proof', async () => {
