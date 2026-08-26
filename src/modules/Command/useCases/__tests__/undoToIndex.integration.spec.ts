@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { REDO_NOT_APPLIED } from '../redoResult';
-import { undo } from '../undo';
 import { undoToIndex } from '../undoToIndex';
 
 import type { ActionUndoEntry, CallbackUndoEntry } from '../../models/UndoEntry';
@@ -67,7 +66,7 @@ function inertEntry(id: string): ActionUndoEntry {
     return { ...undoableEntry(id), inverseAction: null };
 }
 
-/** Its inverse is guarded and the document has moved on: replaying it aborts. */
+/** The document has moved on beneath this entry: replaying its inverse aborts. */
 function conflictingEntry(id: string): ActionUndoEntry {
     return { ...undoableEntry(id), inverseAction: { type: 'stopPlayback' } };
 }
@@ -118,9 +117,9 @@ describe('undoToIndex via the Undo History panel path', () => {
         // Row 'E3' is index 3: the user asked for E4 gone and everything else kept.
         await undoToIndex(3);
 
-        // E4 is the only entry undo may touch here, and its inverse writes nothing.
-        // Stepping over it would revert E3 — precisely the row the user clicked to
-        // keep — so the sweep refuses the step-over and takes the conflict as a stop.
+        // E4's inverse writes nothing, so the row the user asked to remove is still
+        // applied and the sweep cannot advance. Reaching past E4 for E3 would revert
+        // precisely the row they clicked to keep.
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E3', 'E4']);
         expect(mocks.undoStoreValue.value.future).toEqual([]);
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
@@ -140,22 +139,6 @@ describe('undoToIndex via the Undo History panel path', () => {
         expect(mocks.undoStoreValue.value.future).toEqual([]);
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Cannot undo "E4": project state has changed', 'warning');
-    });
-
-    it('still steps over the conflicted head on the keyboard path, which names no destination', async () => {
-        // Guards the opt-out against being widened into the default: a plain Cmd-Z
-        // asks only to go back one, so no row is being preserved and stepping over is
-        // the only way past an entry that may never become undoable again.
-        stackWithConflictingHead();
-
-        await undo();
-
-        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E4']);
-        expect(mocks.undoStoreValue.value.future.map((entry) => entry.id)).toEqual(['E3']);
-        expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'Cannot undo "E4": project state has changed. Undid "E3" instead.',
-            'warning'
-        );
     });
 
     it('keeps the clicked undoable entry when an inert entry sits between it and the head', async () => {

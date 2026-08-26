@@ -118,7 +118,7 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [entry] });
         });
 
-        it('notifies the user, steps over a conflicting entry and undoes the one beneath it', async () => {
+        it('reverts nothing when the head conflicts, and never reaches the entry beneath it', async () => {
             const older = actionEntry({
                 id: 'older-1',
                 label: 'First Action',
@@ -130,35 +130,21 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
 
             await expect(undo()).resolves.toEqual({ headConsumed: false });
 
-            // One message per keystroke, naming both the entry that could not be
-            // undone and the older one undone in its place. A bare "Cannot undo Cut
-            // Clip" would report a failure while First Action was silently reverted,
-            // and the next edit clears `future` and makes that revert permanent.
-            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
-            expect(mocks.notifyUser).toHaveBeenCalledWith(
-                'Cannot undo "Cut Clip": project state has changed. Undid "First Action" instead.',
-                'warning'
-            );
-            // The conflicting entry wrote nothing: it keeps its place in `past` so a
-            // later undo retries it, and it never reaches `future` where redo would
-            // re-apply an action that was never undone. Pinning it at the top of `past`
-            // instead would strand `older-1` there for the rest of the session.
-            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [conflicting], future: [older] });
-            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('conflict-1');
-        });
-
-        it('leaves the stack untouched when every entry beneath the conflict also conflicts', async () => {
-            const older = actionEntry({ id: 'older-1', label: 'First Action' });
-            const conflicting = actionEntry({ id: 'conflict-1', label: 'Cut Clip' });
-            mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
-            mocks.executeAppAction.mockRejectedValue(new AppActionConflictError('toggleRecording'));
-
-            await expect(undo()).resolves.toEqual({ headConsumed: false });
-
-            // Nothing was written for either entry, so both stay undoable and the stack
-            // is left exactly as it stood.
+            // Only the head's inverse is attempted. Whether an older inverse would
+            // refuse to write against the diverged document is a property of the
+            // handler it runs, not of the entry, so `First Action` cannot be shown to
+            // be safe to replay here and must not be replayed. The conflicted entry
+            // keeps its place in `past` and never reaches `future`, where redo would
+            // re-apply an action that was never undone.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'toggleRecording' }, expect.anything());
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
             expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "Cut Clip": project state has changed',
+                'warning'
+            );
         });
 
         it('notifies the user and preserves a conflicting action group for retry', async () => {
@@ -187,7 +173,7 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
         });
 
-        it('steps over a conflicting action group to the entry beneath it', async () => {
+        it('leaves the entry beneath a conflicting action group untouched', async () => {
             const older = actionEntry({ id: 'older-1', label: 'First Action' });
             const first = actionEntry({ id: 'g-first', groupId: 'group-1', groupLabel: 'Grouped Edit' });
             const second = actionEntry({ id: 'g-second', groupId: 'group-1', groupLabel: 'Grouped Edit' });
@@ -201,60 +187,16 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             await expect(undo()).resolves.toEqual({ headConsumed: false });
 
             // A group that cannot be undone blocks the history beneath it exactly as a
-            // single entry would, so it is reported and stepped over whole.
+            // single entry does: the whole group stays on `past` and `older-1` is never
+            // replayed.
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
             expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
             expect(mocks.notifyUser).toHaveBeenCalledWith(
-                'Cannot undo "Grouped Edit": project state has changed. Undid "First Action" instead.',
+                'Cannot undo "Grouped Edit": project state has changed',
                 'warning'
             );
-            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [older] });
-            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('g-second');
-        });
-
-        it('refuses to step over a conflict onto a callback entry', async () => {
-            // A callback body is an absolute overwrite captured at edit time — it
-            // restores a whole note list or replaces a lane's points. It has no
-            // snapshot to check, so it cannot refuse to run against a document that
-            // has already diverged; running it would destroy the very change that
-            // caused the conflict.
-            const callbackUndo = vi.fn();
-            const beneath = callbackEntry({ id: 'callback-beneath', undo: callbackUndo });
-            const conflicting = actionEntry({ id: 'conflict-1', label: 'Cut Clip' });
-            mocks.undoStoreValue.value = { past: [beneath, conflicting], future: [] };
-            conflictOn('toggleRecording');
-
-            await expect(undo()).resolves.toEqual({ headConsumed: false });
-
-            expect(callbackUndo).not.toHaveBeenCalled();
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
             expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
-            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
-            expect(mocks.notifyUser).toHaveBeenCalledWith(
-                'Cannot undo "Cut Clip": project state has changed. Older history is blocked until it is resolved.',
-                'warning'
-            );
-        });
-
-        it('steps over at most one conflict per call instead of walking the whole stack', async () => {
-            // Every action conflicts while project mutation is inadmissible. An
-            // unbounded scan turns one keystroke into an attempt on the entire
-            // history — and one eight-second toast per distinct label.
-            const third = actionEntry({ id: 'third', label: 'Third', inverseAction: { type: 'togglePlayback' } });
-            const second = actionEntry({ id: 'second', label: 'Second', inverseAction: { type: 'toggleLoop' } });
-            const head = actionEntry({ id: 'head', label: 'Head' });
-            mocks.undoStoreValue.value = { past: [third, second, head], future: [] };
-            conflictOn('toggleRecording', 'toggleLoop', 'togglePlayback');
-
-            await expect(undo()).resolves.toEqual({ headConsumed: false });
-
-            expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
-            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
-                'toggleRecording',
-                'toggleLoop',
-            ]);
-            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
-            expect(mocks.notifyUser).toHaveBeenCalledWith('Cannot undo "Head": project state has changed', 'warning');
         });
 
         it('retains a mixed group from its conflicting member down and reports the partial undo', async () => {

@@ -13,10 +13,11 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 /** What one `undo()` call did to the entry that headed `past` when it began. */
 export type UndoResult = {
     /**
-     * `false` when that entry is still on `past` — it conflicted, and either
-     * nothing replaced it or the call stepped over it onto an older entry. A
-     * caller sweeping the history must stop there: a step-over shortens `past`
-     * while the head stands, so stack length is not a progress signal.
+     * `false` when that entry is still on `past`, because its inverse conflicted
+     * and wrote nothing. A caller sweeping the history must stop there rather
+     * than count entries: one call also drops any inert entries it passes, so
+     * `past` can shorten by more than the sweep asked for, and stack length says
+     * nothing about whether the entry it stopped at is still applied.
      */
     readonly headConsumed: boolean;
 };
@@ -32,19 +33,6 @@ function undoEntryLabel(entry: UndoEntry): string {
 
 function notifyUndoConflict(label: string): void {
     notifyUser(`Cannot undo "${label}": project state has changed`, 'warning');
-}
-
-/** One message per keystroke: naming only the skipped entry would report a
- *  failure while an older edit was reverted behind the user's back. */
-function notifyUndoSteppedOver(skippedLabel: string, undoneLabel: string): void {
-    notifyUser(`Cannot undo "${skippedLabel}": project state has changed. Undid "${undoneLabel}" instead.`, 'warning');
-}
-
-function notifyUndoBlocked(label: string): void {
-    notifyUser(
-        `Cannot undo "${label}": project state has changed. Older history is blocked until it is resolved.`,
-        'warning'
-    );
 }
 
 function notifyPartialGroupUndo(label: string): void {
@@ -185,13 +173,12 @@ function takeCandidate(past: readonly UndoEntry[]): UndoCandidate | null {
 }
 
 /**
- * Whether undoing this unit runs guarded inverses only. A guarded inverse aborts
- * instead of writing once the document has moved on, which is the only reason a
- * conflict can be reported at all. A callback body is an absolute overwrite
- * captured at edit time and an entry without an `inverseAction` has nothing to
- * check against: neither can refuse to run, so neither may be stepped onto.
+ * Whether the whole unit can be replayed as one inverse batch. That needs every
+ * member to be an action entry carrying an `inverseAction`; a callback member has
+ * no action to batch, and a member without an inverse has nothing to contribute.
+ * Anything else is replayed member by member instead.
  */
-function isGuardedCandidate(entries: readonly UndoEntry[]): boolean {
+function isAtomicActionGroup(entries: readonly UndoEntry[]): boolean {
     return entries.every((entry) => isActionEntry(entry) && entry.inverseAction !== null);
 }
 
@@ -212,7 +199,7 @@ type CandidateOutcome =
 
 /** Undoes a unit member by member, newest first. Used for every unit that is not
  *  an atomic action group: a single entry, or a group mixing callbacks, inert
- *  entries and guarded actions, whose members can only be replayed one at a time. */
+ *  entries and actions, whose members can only be replayed one at a time. */
 async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<CandidateOutcome> {
     const undone: UndoEntry[] = [];
 
@@ -250,7 +237,7 @@ async function undoEntriesNewestFirst(entries: readonly UndoEntry[]): Promise<Ca
 }
 
 async function undoCandidate(candidate: UndoCandidate): Promise<CandidateOutcome> {
-    if (!candidate.head.groupId || !isGuardedCandidate(candidate.entries)) {
+    if (!candidate.head.groupId || !isAtomicActionGroup(candidate.entries)) {
         return undoEntriesNewestFirst(candidate.entries);
     }
 
@@ -299,70 +286,7 @@ function settleWithoutUndo({ initialPast, headId, retainedPast }: UndoSettleInpu
     return toUndoResult(headId, retainedPast);
 }
 
-type StepOverInput = {
-    readonly initialPast: readonly UndoEntry[];
-    readonly headId: string;
-    /** `past` beneath the conflicted unit. */
-    readonly below: readonly UndoEntry[];
-    /** Entries of the conflicted unit that keep their place on `past`. */
-    readonly retainedConflicted: readonly UndoEntry[];
-    readonly conflictedLabel: string;
-};
-
-/**
- * One `undo()` call steps over at most one conflicted unit: it tries the unit
- * beneath, and the call ends there whatever that attempt does. Repeated
- * keystrokes keep walking down one step at a time, so a permanently blocked
- * entry never strands the history beneath it, while a single keypress can never
- * unwind an arbitrary distance the user did not ask for.
- */
-async function stepOverConflict(input: StepOverInput): Promise<UndoResult> {
-    const { initialPast, headId, below, retainedConflicted, conflictedLabel } = input;
-    const blockedPast = [...below, ...retainedConflicted];
-    const next = takeCandidate(below);
-
-    if (!next) {
-        notifyUndoConflict(conflictedLabel);
-        return settleWithoutUndo({ initialPast, headId, retainedPast: blockedPast });
-    }
-    if (!isGuardedCandidate(next.entries)) {
-        notifyUndoBlocked(conflictedLabel);
-        return settleWithoutUndo({ initialPast, headId, retainedPast: blockedPast });
-    }
-
-    const outcome = await undoCandidate(next);
-    if (outcome.status !== 'undone') {
-        notifyUndoConflict(conflictedLabel);
-        return settleWithoutUndo({ initialPast, headId, retainedPast: blockedPast });
-    }
-
-    notifyUndoSteppedOver(conflictedLabel, undoEntryLabel(next.head));
-    const result = commitUndo({
-        initialPast,
-        headId,
-        retainedPast: [...next.below, ...outcome.retained, ...retainedConflicted],
-        undoneEntries: outcome.undone,
-    });
-    if (outcome.committedError) {
-        throw outcome.committedError;
-    }
-    return result;
-}
-
-export type UndoOptions = {
-    /**
-     * Whether a conflicted head may be stepped over onto the entry beneath it.
-     *
-     * A plain Cmd-Z names no destination — the user said "go back one", so there
-     * is no edit they asked to preserve and stepping over is the only way past a
-     * permanently blocked entry. A caller sweeping towards a chosen row does name
-     * one, and the single step-over can revert exactly that row, so it opts out
-     * and takes the conflict as a stop.
-     */
-    readonly allowStepOver?: boolean;
-};
-
-async function undoImpl({ allowStepOver = true }: UndoOptions): Promise<UndoResult> {
+async function undoImpl(): Promise<UndoResult> {
     const stored = undoStore.value;
     if (!stored || stored.past.length === 0) {
         return { headConsumed: false };
@@ -379,6 +303,13 @@ async function undoImpl({ allowStepOver = true }: UndoOptions): Promise<UndoResu
     // Scan downwards until something is actually undone. Inert entries (action
     // entries without an `inverseAction`) are dropped along the way: undoing one
     // writes nothing, so they must never wedge the undoable entries beneath them.
+    //
+    // A conflict ends the scan instead. Whether an inverse can refuse to write
+    // against a diverged document is a property of the handler it runs, not of
+    // the entry, and it is not visible from `UndoEntry` — so the entries beneath
+    // cannot be filtered for safety, and running one risks overwriting the very
+    // edit that caused the conflict. A blocked history is recoverable; a
+    // clobbered edit is not. See #2881 for the capability this needs.
     for (;;) {
         const candidate = takeCandidate(past);
         if (!candidate) {
@@ -391,21 +322,11 @@ async function undoImpl({ allowStepOver = true }: UndoOptions): Promise<UndoResu
             continue;
         }
         if (outcome.status === 'conflict') {
-            const conflictedLabel = undoEntryLabel(candidate.head);
-            if (!allowStepOver) {
-                notifyUndoConflict(conflictedLabel);
-                return settleWithoutUndo({
-                    initialPast,
-                    headId,
-                    retainedPast: [...past, ...outcome.retained],
-                });
-            }
-            return stepOverConflict({
+            notifyUndoConflict(undoEntryLabel(candidate.head));
+            return settleWithoutUndo({
                 initialPast,
                 headId,
-                below: past,
-                retainedConflicted: outcome.retained,
-                conflictedLabel,
+                retainedPast: [...past, ...outcome.retained],
             });
         }
 
@@ -425,6 +346,6 @@ async function undoImpl({ allowStepOver = true }: UndoOptions): Promise<UndoResu
     }
 }
 
-export function undo(options: UndoOptions = {}): Promise<UndoResult> {
-    return runUndoRedoExclusive(() => undoImpl(options));
+export function undo(): Promise<UndoResult> {
+    return runUndoRedoExclusive(undoImpl);
 }

@@ -4,7 +4,7 @@ import { undoToIndex } from '../undoToIndex';
 
 import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
-import type { UndoOptions, UndoResult } from '../undo';
+import type { UndoResult } from '../undo';
 
 const mocks = vi.hoisted(() => {
     const undoStoreValue: { value: UndoStoreState | null } = {
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => {
     return {
         undoStoreValue,
         redo: vi.fn<() => Promise<void>>(),
-        undo: vi.fn<(options?: UndoOptions) => Promise<UndoResult>>(),
+        undo: vi.fn<() => Promise<UndoResult>>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
     };
 });
@@ -70,26 +70,6 @@ function mockUndoConsumingHead(): void {
             future: [head, ...state.future],
         };
         return Promise.resolve({ headConsumed: true });
-    });
-}
-
-/**
- * Simulates the real undo() meeting a conflicted head: it steps over the head
- * onto the entry beneath, which leaves `past` one shorter while the head — the
- * row a backward sweep must stop at — still stands.
- */
-function mockUndoSteppingOverHead(): void {
-    mocks.undo.mockImplementation(() => {
-        const state = mocks.undoStoreValue.value;
-        if (!state || state.past.length < 2) {
-            return Promise.resolve({ headConsumed: false });
-        }
-        const steppedOnto = state.past[state.past.length - 2]!;
-        mocks.undoStoreValue.value = {
-            past: [...state.past.slice(0, -2), state.past[state.past.length - 1]!],
-            future: [steppedOnto, ...state.future],
-        };
-        return Promise.resolve({ headConsumed: false });
     });
 }
 
@@ -150,8 +130,6 @@ describe('undoToIndex', () => {
         await undoToIndex(0);
 
         expect(mocks.undo).toHaveBeenCalledTimes(2);
-        // The sweep has a destination, so it never lets undo() step over a conflict.
-        expect(mocks.undo).toHaveBeenCalledWith({ allowStepOver: false });
         expect(mocks.redo).not.toHaveBeenCalled();
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['one']);
     });
@@ -216,26 +194,12 @@ describe('undoToIndex', () => {
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['A']);
     });
 
-    it('should stop on the reported result rather than re-deriving progress from stack length', async () => {
-        // `headConsumed: false` is undo()'s statement that the row this sweep is
-        // walking down from is still applied. undo() may shorten `past` and still
-        // say that — it does exactly that when it steps over a conflict — so the
-        // sweep must read the signal instead of inferring progress from the stack.
-        mockUndoSteppingOverHead();
-        mocks.undoStoreValue.value = {
-            past: ['E0', 'E1', 'E2', 'E3', 'E4'].map(actionEntry),
-            future: [],
-        };
-
-        await undoToIndex(1);
-
-        expect(mocks.undo).toHaveBeenCalledTimes(1);
-        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['E0', 'E1', 'E2', 'E4']);
-        expect(mocks.undoStoreValue.value.future.map((entry) => entry.id)).toEqual(['E3']);
-    });
-
-    it('should stop when undo makes no progress instead of looping forever', async () => {
-        // undo() declined to consume anything (mock does not mutate the store).
+    it('should stop when undo reports the head entry unconsumed instead of looping forever', async () => {
+        // `headConsumed: false` is undo()'s statement that the entry this sweep is
+        // walking down from is still applied — here because its inverse conflicted
+        // and wrote nothing. The sweep reads that result rather than counting
+        // entries, because one undo() also drops any inert entries it passes and a
+        // shortened `past` says nothing about whether the head was undone.
         mocks.undoStoreValue.value = {
             past: [actionEntry('one'), actionEntry('two')],
             future: [],
