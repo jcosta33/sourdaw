@@ -66,7 +66,6 @@ const mocks = vi.hoisted(() => {
         notifyUser: vi.fn(),
         collaborationStoreValue: storeBox({ isEnabled: false }),
         workspaceStoreValue: storeBox({ activeTool: 'select', automationVisibility: 'hidden' }),
-        midiStoreValue: storeBox({ notesByClipId: {} }),
         preferencesStoreValue: storeBox({}),
     };
 });
@@ -107,13 +106,6 @@ vi.mock('#/modules/Preferences/stores', () => ({
         },
     },
 }));
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: {
-        get value() {
-            return mocks.midiStoreValue.value;
-        },
-    },
-}));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: mocks.pushUndoEntry,
@@ -123,8 +115,10 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     shiftClipAutomation: mocks.shiftClipAutomation,
     duplicateClipAutomation: mocks.duplicateClipAutomation,
 }));
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/MIDI/useCases', () => ({
+    // Full factory, not importOriginal: the spec never exercises the inline
+    // note paths, and loading the real barrel would drag in MIDI's whole
+    // Project/CrdtDocument graph for two side-effect sinks.
     duplicateClipNotes: mocks.duplicateClipNotes,
     removeMidiClipData: mocks.removeMidiClipData,
 }));
@@ -292,7 +286,6 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
 
         mocks.workspaceStoreValue.value = { activeTool: 'select', automationVisibility: 'hidden' };
         mocks.collaborationStoreValue.value = { isEnabled: false };
-        mocks.midiStoreValue.value = { notesByClipId: {} };
         mocks.preferencesStoreValue.value = {};
         mocks.buildTimelineRenderModel.mockReturnValue({ tracks: [], tempo: 120 });
         mocks.hitTestClip.mockReturnValue(null);
