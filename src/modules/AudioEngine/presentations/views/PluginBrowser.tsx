@@ -39,8 +39,11 @@ type PluginBrowserProps = {
     searchQuery: string;
 };
 
+// VST is a registered trademark of Steinberg Media Technologies GmbH. The badge
+// carries the wire format name only, never Steinberg's logo.
 const FORMAT_COLORS: Record<string, string> = {
     clap: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
+    vst3: 'bg-[var(--color-accent-indigo)]/20 text-[var(--color-accent-indigo)]',
 };
 
 // Grouping follows the host's own supported set, so a format the host gains is
@@ -67,7 +70,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                             compact
                             className="cursor-not-allowed opacity-50"
                             icon={<Monitor className="size-5" aria-hidden="true" />}
-                            title="CLAP plugins"
+                            title="CLAP and VST®3 plugins"
                             description="Desktop app required"
                         />
                     </TooltipTrigger>

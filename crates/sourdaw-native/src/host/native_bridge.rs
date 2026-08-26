@@ -10,14 +10,15 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 /// [`daw_plugin_host::HostedPluginRuntime`] rather than holding a trait object:
 /// the audio path is the reason. A `dyn` runtime would put a vtable dispatch on
 /// every `process` call in the render callback, where a generic monomorphises to
-/// the same direct call the concrete type had. `ClapWrapper` is the default type
-/// argument, so every existing caller names the same types it always did.
+/// the same direct call the concrete type had. `HostedRuntime` is the default
+/// type argument — the one enum the application actually loads, whichever format
+/// the plugin is — so callers that hold a loaded plugin name no format at all.
 ///
 /// RT-safety: all scratch buffers are preallocated. No heap allocation occurs
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
-    ClapWrapper, HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginParameter,
+    HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime, PluginParameter,
     ProcessingGate,
 };
 use rtrb::Consumer;
@@ -332,15 +333,22 @@ impl PluginRuntimeLifecycle {
 /// Runtime owner for a hosted plugin shared by the RT processor and non-RT
 /// control path.
 ///
-/// Generic over the backend, defaulted to `ClapWrapper` — see the module note
+/// Generic over the backend, defaulted to `HostedRuntime` — see the module note
 /// for why this is a type parameter and not a trait object.
-pub struct SharedHostedPlugin<Runtime = ClapWrapper> {
+pub struct SharedHostedPlugin<Runtime = HostedRuntime> {
     name: String,
     wrapper: UnsafeCell<Runtime>,
     access_state: AtomicU8,
     lifecycle: PluginRuntimeLifecycle,
     non_rt_control_lock: Mutex<()>,
     activated: bool,
+    /// Whether the plugin takes note events, read from it once at load.
+    ///
+    /// Cached rather than asked per call: it is a property of the loaded
+    /// instance, it cannot change while the instance lives, and the engine asks
+    /// for it from the audio thread — where reaching into the wrapper would
+    /// contend with the control path for an answer that was already fixed.
+    accepts_midi: bool,
     /// Shared with the wrapper. Lets the control path ask for the plugin's
     /// processing state to be left without performing the transition itself.
     processing: Arc<ProcessingGate>,
@@ -356,6 +364,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     pub fn new(wrapper: Runtime) -> Self {
         let name = wrapper.get_name().to_string();
         let activated = wrapper.is_activated();
+        let accepts_midi = wrapper.accepts_midi();
         let processing = wrapper.processing_gate();
         Self {
             name,
@@ -364,6 +373,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
             lifecycle: PluginRuntimeLifecycle::new(),
             non_rt_control_lock: Mutex::new(()),
             activated,
+            accepts_midi,
             processing,
             pending_parameters: PendingParameterQueue::new(),
         }
@@ -378,6 +388,11 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether this plugin takes note events, as the plugin itself declared.
+    pub fn accepts_midi(&self) -> bool {
+        self.accepts_midi
     }
 
     pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), String> {
@@ -724,7 +739,7 @@ impl Drop for PluginAccessGuard<'_> {
 }
 
 /// RT processing handle for a shared hosted plugin runtime.
-pub struct HostedPluginSlot<Runtime = ClapWrapper> {
+pub struct HostedPluginSlot<Runtime = HostedRuntime> {
     plugin: Arc<SharedHostedPlugin<Runtime>>,
     /// Preallocated output scratch for left channel (avoids per-block Vec alloc on RT thread).
     out_l_scratch: Box<[f32; MAX_BUFFER]>,
@@ -843,8 +858,14 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
         self.plugin.name()
     }
 
+    /// The plugin's own answer, not the slot's assumption.
+    ///
+    /// This used to be a hardcoded `true`, which routed notes to every effect in
+    /// the rack. A VST3 plugin that declares no event input bus is entitled to
+    /// treat an event list as a host fault, so the answer has to come from the
+    /// plugin.
     fn accepts_midi(&self) -> bool {
-        true // CLAP instruments accept MIDI
+        self.plugin.accepts_midi()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -859,6 +880,7 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use daw_plugin_host::ClapWrapper;
 
     #[test]
     fn pending_parameter_queue_coalesces_and_drains_latest_value() {

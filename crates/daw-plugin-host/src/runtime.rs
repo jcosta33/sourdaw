@@ -13,7 +13,8 @@
 use crate::clap_wrapper::ClapWrapper;
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, ProcessingGate,
+    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
+    ProcessingGate,
 };
 use crate::vst3_wrapper::Vst3Wrapper;
 use std::ffi::c_void;
@@ -161,6 +162,35 @@ impl HostedRuntime {
     /// the runtime owner's unload and reactivate paths may take it.
     pub fn force_stop_processing_off_audio_thread(&mut self) {
         delegate!(self, backend => backend.force_stop_processing_off_audio_thread())
+    }
+
+    /// Install the wake fired when this plugin flags a latency change.
+    ///
+    /// Not on the seam trait because it is a loader concern rather than a
+    /// runtime one: it is installed once, before the plugin is handed to the
+    /// audio thread, and never touched again. Returns false when one is already
+    /// installed — first install wins, so the wake cannot be hijacked mid-life.
+    pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
+        delegate!(self, backend => backend.set_latency_change_notifier(notifier))
+    }
+
+    /// Stage the parameter values the command fixture answers with.
+    ///
+    /// Fixture-only, and only the CLAP arm has one — the VST3 backend's tests
+    /// drive a real COM plugin rather than a wrapper that pretends to be one, so
+    /// there is nothing here for it to stand in for. Reaching this on a VST3
+    /// runtime is a test wired to the wrong backend, and saying so beats
+    /// silently doing nothing.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn set_engine_owned_command_fixture_parameters(
+        &mut self,
+        parameters: Vec<PluginParameter>,
+    ) {
+        match self {
+            Self::Clap(backend) => backend.set_engine_owned_command_fixture_parameters(parameters),
+            Self::Vst3(_) => panic!("the VST3 backend has no command fixture"),
+        }
     }
 
     /// The loaded plugin's format, for a caller that must report it.

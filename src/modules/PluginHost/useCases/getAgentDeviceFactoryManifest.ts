@@ -2,19 +2,40 @@ import { type ScannedPluginParameter } from '../models/ScannedPlugin';
 import { defaultPluginScanState, pluginScanStore } from '../stores/pluginScanStore';
 
 const EXTERNAL_FACTORY_VERSION_PREFIX = 'external-factory-v1';
-const EXTERNAL_FACTORY_IDENTITY_SCHEME = 'clap-id-v2';
+/**
+ * The identity scheme each hosted format's device types are minted under.
+ *
+ * Device-type text is persisted: it is how an already-saved device names the
+ * factory it came from. So `clap` keeps the scheme it was first written with,
+ * and a format Sourdaw gains joins the table with its own rather than
+ * renumbering anyone else's.
+ */
+const EXTERNAL_FACTORY_IDENTITY_SCHEMES: Readonly<Record<string, string>> = {
+    clap: 'clap-id-v2',
+    vst3: 'vst3-cid-v1',
+};
+const UNKNOWN_FORMAT_IDENTITY_SCHEME = 'unknown-format-v1';
+/** How each format's name is spelled in prose the user or an agent reads. */
+const FORMAT_LABELS: Readonly<Record<string, string>> = { clap: 'CLAP', vst3: 'VST3' };
 const MAX_PUBLIC_SCAN_TEXT_LENGTH = 128;
 const MAX_SCANNED_PARAMETER_COUNT = 4096;
 const MAX_SCANNED_PARAMETER_DESCRIPTORS = 256;
 const MAX_SCANNED_PARAMETER_NAME_LENGTH = 128;
 const PARAMETER_DESCRIPTOR_SOURCE = 'plugin-scan.parameter-descriptors-v1';
-const PARAMETER_DESCRIPTOR_UNAVAILABLE_REASON =
-    'The CLAP scan exposes only a factory descriptor. Parameter descriptors are instance-scoped and unavailable without instantiation.';
 const PARAMETER_SCAN_FAILED_REASON = 'The scanner could not safely complete external parameter inspection.';
+
+function formatLabel(format: string): string {
+    return FORMAT_LABELS[format] ?? format;
+}
+
+function parameterDescriptorUnavailableReason(format: string): string {
+    return `The ${formatLabel(format)} scan exposes only a factory descriptor. Parameter descriptors are instance-scoped and unavailable without instantiation.`;
+}
 
 type ScannedFactory = {
     descriptor_id: string;
     id: string;
+    format: string;
     version: string;
     vendor: string;
     name: string;
@@ -85,12 +106,16 @@ function stableFingerprint(parts: readonly string[]): string {
     return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function factoryType(plugin: Pick<ScannedFactory, 'descriptor_id' | 'id'>): string {
+function factoryType(plugin: Pick<ScannedFactory, 'descriptor_id' | 'format'>): string {
+    const scheme = EXTERNAL_FACTORY_IDENTITY_SCHEMES[plugin.format];
+    if (scheme === undefined) {
+        // A format with no scheme has no identity this manifest can mint, and
+        // its name is not trusted as device-type text. The fingerprint carries
+        // the format so two unknown formats cannot collide on one descriptor.
+        return `external-scan:${UNKNOWN_FORMAT_IDENTITY_SCHEME}:${stableFingerprint([plugin.format, plugin.descriptor_id])}`;
+    }
     const descriptorId = normalizedScanText(plugin.descriptor_id);
-    // The `clap:` prefix and the `clap-id-v2` scheme are persisted device-type
-    // text. They identify already-saved devices, so they stay as written
-    // whatever the descriptor field is called.
-    const declaredType = `clap:${descriptorId}`;
+    const declaredType = `${plugin.format}:${descriptorId}`;
     if (
         descriptorId.length > 0 &&
         Array.from(descriptorId).length <= 240 &&
@@ -99,7 +124,7 @@ function factoryType(plugin: Pick<ScannedFactory, 'descriptor_id' | 'id'>): stri
     ) {
         return declaredType;
     }
-    return `clap-scan:${EXTERNAL_FACTORY_IDENTITY_SCHEME}:${stableFingerprint([plugin.descriptor_id])}`;
+    return `${plugin.format}-scan:${scheme}:${stableFingerprint([plugin.descriptor_id])}`;
 }
 
 function boundedParameterCount(value: number): number | null {
@@ -147,7 +172,7 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
     if (!Array.isArray(plugin.parameters)) {
         return unavailableParameterContract(
             plugin.parameter_metadata_reason === undefined
-                ? PARAMETER_DESCRIPTOR_UNAVAILABLE_REASON
+                ? parameterDescriptorUnavailableReason(plugin.format)
                 : PARAMETER_SCAN_FAILED_REASON
         );
     }
@@ -158,6 +183,7 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
         return unavailableParameterContract(PARAMETER_SCAN_FAILED_REASON);
     }
     const ids = new Set<number>();
+    const label = formatLabel(plugin.format);
     const parameters: PublicParameter[] = [];
     for (const untrustedParameter of plugin.parameters) {
         if (!isScannedPluginParameter(untrustedParameter)) {
@@ -194,32 +220,32 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
         }
         ids.add(parameter.id);
         parameters.push({
-            id: `clap-param:${parameter.id}`,
+            id: `${plugin.format}-param:${parameter.id}`,
             name,
             module:
                 module === undefined
                     ? {
                           availability: 'unavailable',
-                          reason: 'CLAP parameter metadata does not declare a module.',
+                          reason: `${label} parameter metadata does not declare a module.`,
                       }
                     : { availability: 'available', value: module },
             type: {
                 availability: 'unavailable',
-                reason: 'CLAP parameter metadata does not declare a value type.',
+                reason: `${label} parameter metadata does not declare a value type.`,
             },
             unit: {
                 availability: 'unavailable',
-                reason: 'CLAP parameter metadata does not declare a unit.',
+                reason: `${label} parameter metadata does not declare a unit.`,
             },
             bounds: { minimum: parameter.min_value, maximum: parameter.max_value },
             default: parameter.default_value,
             step: {
                 availability: 'unavailable',
-                reason: 'CLAP parameter metadata does not declare a step size.',
+                reason: `${label} parameter metadata does not declare a step size.`,
             },
             choices: {
                 availability: 'unavailable',
-                reason: 'CLAP parameter metadata does not declare discrete choices.',
+                reason: `${label} parameter metadata does not declare discrete choices.`,
             },
             automatable: parameter.is_automatable,
             modulatable: parameter.is_modulatable,
@@ -270,9 +296,10 @@ function factoryVersion(fingerprints: readonly string[]): string {
 
 /**
  * Scan factories are not loaded PluginHost instances and are never queried as such.
- * CLAP does not publish parameter descriptors on its factory descriptor, so the
- * manifest names the scanner-owned extension that would be required instead of
- * creating an instance to inspect CLAP_EXT_PARAMS.
+ * No hosted format publishes parameter descriptors on its factory descriptor —
+ * they are instance-scoped in CLAP and in VST3 alike — so the manifest names the
+ * scanner-owned source that would be required instead of creating an instance of
+ * its own to inspect.
  */
 export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
     const scannedPlugins = (pluginScanStore.value ?? defaultPluginScanState).scannedPlugins;

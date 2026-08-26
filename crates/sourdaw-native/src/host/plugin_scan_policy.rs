@@ -101,6 +101,14 @@ fn unauthorized_scan_path(path: &Path) -> String {
     )
 }
 
+/// The platform's plugin folders, **most specific first**.
+///
+/// The order is priority, not decoration. A plugin installed in two of these
+/// folders is one plugin with two copies, and the scan keeps the first one it
+/// meets, so a per-user install has to precede the machine-wide one and the
+/// machine-wide one has to precede the network share. Both format families
+/// order the same way, which is also the order the VST3 specification lays
+/// down for its own folders.
 fn default_plugin_scan_roots() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
@@ -115,10 +123,15 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
         paths.push(PathBuf::from("/Library/Audio/Plug-Ins/VST3"));
         paths.push(PathBuf::from("/Library/Audio/Plug-Ins/CLAP"));
         paths.push(PathBuf::from("/Library/Audio/Plug-Ins/Components"));
+        paths.push(PathBuf::from("/Network/Library/Audio/Plug-Ins/VST3"));
     }
 
     #[cfg(target_os = "windows")]
     {
+        if let Some(local_app_data) = dirs::data_local_dir() {
+            paths.push(local_app_data.join(r"Programs\Common\VST3"));
+        }
+
         paths.push(PathBuf::from(r"C:\Program Files\Common Files\VST3"));
         paths.push(PathBuf::from(r"C:\Program Files\Common Files\CLAP"));
     }
@@ -130,8 +143,14 @@ fn default_plugin_scan_roots() -> Vec<PathBuf> {
             paths.push(home.join(".clap"));
         }
 
+        // `lib` and `lib64` are the same rung: which one a distribution uses for
+        // 64-bit objects is the distribution's choice, and a machine that has
+        // both keeps unrelated plugins in them.
         paths.push(PathBuf::from("/usr/lib/vst3"));
+        paths.push(PathBuf::from("/usr/lib64/vst3"));
         paths.push(PathBuf::from("/usr/lib/clap"));
+        paths.push(PathBuf::from("/usr/local/lib/vst3"));
+        paths.push(PathBuf::from("/usr/local/lib64/vst3"));
     }
 
     paths
@@ -203,6 +222,60 @@ mod tests {
         assert!(!policy.allowed_roots.is_empty());
         for allowed_root in &policy.allowed_roots {
             assert_eq!(policy.authorize_scan_root(allowed_root), Ok(()));
+        }
+    }
+
+    /// Where a root sits in the default list. Panics rather than returning an
+    /// option: a root the ordering contract names but the defaults do not carry
+    /// is the failure, not a case to tolerate.
+    fn priority_of(roots: &[PathBuf], root: &Path) -> usize {
+        roots
+            .iter()
+            .position(|candidate| candidate == root)
+            .unwrap_or_else(|| panic!("{} should be a default scan root", root.display()))
+    }
+
+    /// The scan keeps the first copy of a plugin it meets, so this order is the
+    /// rule that decides which copy of a twice-installed plugin is hosted.
+    #[test]
+    fn per_user_scan_roots_outrank_the_machine_wide_ones() {
+        let roots = default_plugin_scan_roots();
+
+        #[cfg(target_os = "macos")]
+        {
+            let home = dirs::home_dir().expect("a macOS account should have a home directory");
+            let per_user = priority_of(&roots, &home.join("Library/Audio/Plug-Ins/VST3"));
+            let machine_wide = priority_of(&roots, Path::new("/Library/Audio/Plug-Ins/VST3"));
+            let network = priority_of(&roots, Path::new("/Network/Library/Audio/Plug-Ins/VST3"));
+
+            assert!(per_user < machine_wide);
+            assert!(machine_wide < network);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let local_app_data =
+                dirs::data_local_dir().expect("a Windows account should have local app data");
+            let per_user = priority_of(&roots, &local_app_data.join(r"Programs\Common\VST3"));
+            let machine_wide =
+                priority_of(&roots, Path::new(r"C:\Program Files\Common Files\VST3"));
+
+            assert!(per_user < machine_wide);
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let home = dirs::home_dir().expect("a Linux account should have a home directory");
+            let per_user = priority_of(&roots, &home.join(".vst3"));
+            let distribution = priority_of(&roots, Path::new("/usr/lib/vst3"));
+            let distribution_64 = priority_of(&roots, Path::new("/usr/lib64/vst3"));
+            let site = priority_of(&roots, Path::new("/usr/local/lib/vst3"));
+            let site_64 = priority_of(&roots, Path::new("/usr/local/lib64/vst3"));
+
+            assert!(per_user < distribution);
+            assert!(per_user < distribution_64);
+            assert!(distribution < site);
+            assert!(distribution_64 < site_64);
         }
     }
 

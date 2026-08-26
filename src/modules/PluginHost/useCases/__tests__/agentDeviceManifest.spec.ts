@@ -531,4 +531,105 @@ describe('agent device factory manifest', () => {
             expect.objectContaining({ type: 'clap:org.example.first' }),
         ]);
     });
+
+    it('names a VST3 factory under its own prefix without disturbing CLAP identities', () => {
+        const shared = 'org.example.shared';
+        const base = {
+            id: 'clap-build',
+            descriptor_id: shared,
+            name: 'Shared Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/shared.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 0,
+            has_custom_ui: false,
+        };
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [base, { ...base, id: 'vst3-build', format: 'vst3', path: '/plugins/shared.vst3' }],
+        });
+
+        // A CLAP build and a VST3 build of one plugin are two devices to load,
+        // so one descriptor under two formats must not collapse to one type.
+        expect(getAgentDeviceFactoryManifest().devices.map((device) => device.type)).toEqual([
+            `clap:${shared}`,
+            `vst3:${shared}`,
+        ]);
+    });
+
+    it('describes a VST3 factory as VST3 rather than as CLAP', () => {
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [
+                {
+                    id: 'scan-id',
+                    descriptor_id: '565354456666616B6520566F636F646572',
+                    name: 'Example Vocoder',
+                    vendor: 'Example',
+                    format: 'vst3',
+                    category: 'effect',
+                    path: '/plugins/example.vst3',
+                    version: '2.1.0',
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    num_parameters: 1,
+                    has_custom_ui: true,
+                    parameters: [
+                        {
+                            id: 3,
+                            name: 'Mix',
+                            min_value: 0,
+                            max_value: 1,
+                            default_value: 0.5,
+                            is_automatable: true,
+                            is_modulatable: false,
+                            is_stepped: false,
+                            is_enum: false,
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const device = getAgentDeviceFactoryManifest().devices[0];
+
+        expect(device?.parameters).toEqual([
+            expect.objectContaining({
+                id: 'vst3-param:3',
+                unit: { availability: 'unavailable', reason: 'VST3 parameter metadata does not declare a unit.' },
+            }),
+        ]);
+    });
+
+    it('mints no device-type prefix from a format it does not host', () => {
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [
+                {
+                    id: 'scan-id',
+                    descriptor_id: 'org.example.legacy',
+                    name: 'Legacy Effect',
+                    vendor: 'Example',
+                    format: 'vst2',
+                    category: 'effect',
+                    path: '/plugins/legacy.dll',
+                    version: '1.0.0',
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    num_parameters: 0,
+                    has_custom_ui: false,
+                },
+            ],
+        });
+
+        // The scan's own format text is never device-type text: only a format
+        // with a declared identity scheme gets to name devices after itself.
+        expect(getAgentDeviceFactoryManifest().devices.map((device) => device.type)).toEqual([
+            expect.stringMatching(/^external-scan:unknown-format-v1:[0-9a-f]{8}$/),
+        ]);
+    });
 });

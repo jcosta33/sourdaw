@@ -11,7 +11,8 @@
 
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, ProcessingGate,
+    AudioPlugin, HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
+    ProcessingGate,
 };
 use crate::vst3_host::{read_string128, MessageTarget, Vst3HostContext, Vst3HostState};
 use crate::vst3_module::Vst3Module;
@@ -893,6 +894,12 @@ impl Vst3Wrapper {
     /// The per-instance host state the plugin's callbacks write into.
     pub fn host_state(&self) -> Arc<Vst3HostState> {
         Arc::clone(&self.instance.host.state)
+    }
+
+    /// Install the wake fired when this plugin flags a latency change. First
+    /// install wins, so the wake cannot be hijacked mid-life.
+    pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
+        self.instance.host.state.set_latency_notifier(notifier)
     }
 
     /// The class CID this instance was created from, as the scanner spells it.

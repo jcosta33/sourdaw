@@ -21,8 +21,8 @@ export type PluginScanState = {
      *
      * A separate field from `errors` and not a subset of it: these describe a
      * scan that succeeded, so they must not be rendered as failures and must
-     * not withhold the success state. The VST3 roots are scanned by default on
-     * every platform, so this is non-empty for most users on every scan.
+     * not withhold the success state. A refused format's folders are scanned
+     * like any other, so anyone who owns a plugin in one sees this on every run.
      */
     notices: string[];
 };

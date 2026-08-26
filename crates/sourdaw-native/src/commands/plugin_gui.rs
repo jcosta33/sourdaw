@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::commands::plugins::PluginUnloadResult;
 use crate::host::plugin_window::{plugin_editor_window_label, PluginWindowHost};
 use crate::state::AppState;
+use daw_plugin_host::AudioPlugin;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginGuiInfo {
@@ -515,7 +516,7 @@ mod tests {
     fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, has_gui: bool) {
         let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", vec![], has_gui);
-        let runtime = Arc::new(SharedHostedPlugin::new(wrapper));
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
         let mut engine_plugins = state
             .engine_plugins
             .lock()
