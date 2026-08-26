@@ -3,7 +3,6 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
-const AUDIO_CONTEXT_RESUME_STATES_KEY = '__sourdawE2eAudioContextResumeStates';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -46,21 +45,15 @@ async function blockExternalRequests(page: Page): Promise<() => void> {
         });
 }
 
-async function observeAudioContextResumes(page: Page): Promise<() => Promise<unknown[]>> {
-    await page.addInitScript((resumeStatesKey) => {
-        const resumeStates: AudioContextState[] = [];
-        Object.defineProperty(window, resumeStatesKey, { value: resumeStates });
-        const resume = AudioContext.prototype.resume;
+async function observeAudioContextResumeState(page: Page): Promise<() => Promise<string | undefined>> {
+    await page.addInitScript(() => {
+        const nativeResume = AudioContext.prototype.resume;
         AudioContext.prototype.resume = async function (this: AudioContext): Promise<void> {
-            await resume.call(this);
-            resumeStates.push(this.state);
+            await nativeResume.call(this);
+            document.documentElement.dataset.audioContextResumeState = this.state;
         };
-    }, AUDIO_CONTEXT_RESUME_STATES_KEY);
-    return () =>
-        page.evaluate((resumeStatesKey) => {
-            const resumeStates = Reflect.get(window, resumeStatesKey);
-            return Array.isArray(resumeStates) ? resumeStates : [];
-        }, AUDIO_CONTEXT_RESUME_STATES_KEY);
+    });
+    return () => page.evaluate(() => document.documentElement.dataset.audioContextResumeState);
 }
 
 async function openNewProject(page: Page): Promise<() => void> {
@@ -129,7 +122,7 @@ test.describe('Offline project smoke', () => {
     });
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
-        const audioContextResumeStates = await observeAudioContextResumes(page);
+        const audioContextResumeState = await observeAudioContextResumeState(page);
         const assertOffline = await openNewProject(page);
 
         const playbackControls = page.getByRole('group', { name: 'Playback controls' });
@@ -140,7 +133,7 @@ test.describe('Offline project smoke', () => {
         await play.click();
         await expect(playbackControls.getByRole('status')).toHaveText('Playing');
         await expect(play).toHaveAccessibleName('Pause');
-        await expect.poll(audioContextResumeStates).toContain('running');
+        await expect.poll(audioContextResumeState).toBe('running');
 
         await expect.poll(playheadPosition).not.toBe(initialPosition);
         const firstAdvancedPosition = await playheadPosition();

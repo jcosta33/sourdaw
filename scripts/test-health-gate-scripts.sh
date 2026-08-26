@@ -374,8 +374,31 @@ expect(!resolveScopeRun.includes('NON_DOCUMENT'), 'scope resolution must let unc
 expect(smokeSpec.includes("test.use({ serviceWorkers: 'block' });"), 'offline smoke must block service workers before routing requests');
 expect(smokeSpec.includes("await page.routeWebSocket('**/*'"), 'offline smoke must route WebSockets before navigation');
 expect(smokeSpec.includes("await webSocket.close({ code: 1008, reason: 'External network blocked' });"), 'offline smoke must close every external WebSocket');
-expect(smokeSpec.includes('AudioContext.prototype.resume = async function'), 'playback smoke must instrument the real AudioContext resume path before navigation');
-expect(smokeSpec.includes("expect.poll(audioContextResumeStates).toContain('running')"), 'playback smoke must observe a successfully resumed AudioContext after the play gesture');
+expect(smokeSpec.includes('await page.addInitScript(() => {'), 'playback smoke must install AudioContext instrumentation before navigation');
+expect(smokeSpec.includes('const nativeResume = AudioContext.prototype.resume;'), 'playback smoke must wrap the native AudioContext resume method');
+expect(smokeSpec.includes('await nativeResume.call(this);'), 'playback smoke must await the native AudioContext resume method');
+expect(
+    smokeSpec.includes('document.documentElement.dataset.audioContextResumeState = this.state;'),
+    'playback smoke must publish the resumed AudioContext state through a test-only dataset signal'
+);
+expect(
+    smokeSpec.includes("expect.poll(audioContextResumeState).toBe('running')"),
+    'playback smoke must poll the test-only dataset signal after the play gesture'
+);
+expect(
+    smokeSpec.includes(
+        'const audioContextResumeState = await observeAudioContextResumeState(page);\n' +
+            '        const assertOffline = await openNewProject(page);'
+    ),
+    'playback smoke must install AudioContext instrumentation before project navigation'
+);
+expect(
+    smokeSpec.indexOf("expect.poll(audioContextResumeState).toBe('running')") > smokeSpec.indexOf('await play.click();'),
+    'playback smoke must poll the test-only dataset signal after clicking play'
+);
+expect(!smokeSpec.includes('Object.defineProperty(window'), 'playback smoke must not expose AudioContext observations on window');
+expect(!smokeSpec.includes('Reflect.get(window'), 'playback smoke must not read AudioContext observations from window');
+expect(!smokeSpec.includes('resumeStates'), 'playback smoke must not retain the AudioContext resume-state array seam');
 expect(
     checkoutSteps.length > 0 && checkoutSteps.every(({ step }) => step.with?.['persist-credentials'] === false),
     `every actions/checkout step must disable persisted credentials: ${checkoutSteps.map(({ jobName, step }) => `${jobName}/${step.name ?? 'unnamed'}`).join(', ')}`
