@@ -1,12 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+    closeSync,
     constants,
     linkSync,
     mkdirSync,
     mkdtempSync,
     openSync,
     readFileSync,
+    readlinkSync,
     readSync,
     rmSync,
     symlinkSync,
@@ -383,6 +385,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/modules/Command/useCases/versionedCommandArgumentKeys.ts', 'export const keys = [];'],
         ['src/modules/Arrangement/useCases/index.ts', 'export const arrangement = 1;'],
         ['src/modules/Arrangement/useCases/device/setDeviceState.ts', 'export const setDeviceState = 1;'],
+        ['src/modules/GrandBoule/AGENTS.md', 'Grand Boule module guidance'],
         ['src/app/prepareOfflineDeviceSetup.ts', 'export const offline = 1;'],
         ['src/modules/AudioEngine/useCases/buildDeviceChain.ts', 'export const chain = 1;'],
         ['src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts', 'export const prepare = 1;'],
@@ -421,6 +424,65 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
             { cwd: root }
         );
     }
+}
+
+const INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS = [
+    'src/modules/GrandBoule',
+    'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
+    'src/modules/Arrangement/useCases/index.ts',
+    'src/modules/Arrangement/useCases/device/setDeviceState.ts',
+    'src/app/bootstrap.ts',
+    'src/app/getProductionCommandHandlerMaps.ts',
+    'src/utils/handlerContract.ts',
+    ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+];
+
+function readIndependentTrackedEntry(absolutePath: string): Buffer {
+    let fileDescriptor: number | undefined;
+    try {
+        fileDescriptor = openSync(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        return readFileSync(fileDescriptor);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ELOOP') {
+            return readlinkSync(absolutePath, { encoding: 'buffer' });
+        }
+        throw error;
+    } finally {
+        if (fileDescriptor !== undefined) {
+            closeSync(fileDescriptor);
+        }
+    }
+}
+
+function independentTrackedSetSha256(root: string, pathspecs: readonly string[], label: string): string {
+    const files = execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter(Boolean)
+        .sort();
+    const hash = createHash('sha256');
+    for (const path of files) {
+        const absolutePath = join(root, path);
+        hash.update(path);
+        hash.update('\0');
+        hash.update(readIndependentTrackedEntry(absolutePath));
+        hash.update('\0');
+    }
+    return `tracked-set-sha256:${hash.digest('hex')}:${label}`;
+}
+
+function independentGrandBouleProjectStateDigest(root: string): string {
+    return independentTrackedSetSha256(root, INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS, 'grand-boule-project-state');
+}
+
+function findDigestByLabel(digests: readonly string[], label: string): string {
+    const digest = digests.find((candidate) => candidate.endsWith(`:${label}`));
+    if (digest === undefined) {
+        throw new Error(`missing digest label ${label}`);
+    }
+    return digest;
 }
 
 function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; revision: string } {
@@ -1887,12 +1949,29 @@ describe('release inventory', () => {
                     expect.stringMatching(new RegExp(`^tracked-set-sha256:[0-9a-f]{64}:${digestLabel}$`))
                 )
             );
+            const projectStateDigest = findDigestByLabel(before.digests, 'grand-boule-project-state');
+            expect(projectStateDigest).toBe(independentGrandBouleProjectStateDigest(root));
 
             writeFileSync(join(grandBoule, 'untracked.rs'), 'untracked source');
             expect(grandBouleReleaseInventoryContract(root).digests).toEqual(before.digests);
 
-            writeFileSync(join(grandBoule, 'engine.rs'), 'changed source');
+            const enginePath = join(grandBoule, 'engine.rs');
+            const originalEngine = readFileSync(enginePath, 'utf8');
+            writeFileSync(enginePath, 'changed source');
             expect(grandBouleReleaseInventoryContract(root).digests).not.toEqual(before.digests);
+            writeFileSync(enginePath, originalEngine);
+
+            const providerSymlinkPath = join(root, 'src/modules/GrandBoule/CLAUDE.md');
+            rmSync(providerSymlinkPath);
+            symlinkSync('OTHER.md', providerSymlinkPath);
+            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+                'Grand Boule provider-policy symlink checkout target is not AGENTS.md'
+            );
+            rmSync(providerSymlinkPath);
+            symlinkSync('AGENTS.md', providerSymlinkPath);
+            expect(
+                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
+            ).toBe(projectStateDigest);
 
             writeFileSync(
                 join(root, 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts'),
@@ -2257,6 +2336,15 @@ describe('release inventory', () => {
             expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
                 'Grand Boule release source is missing: src/modules/GrandBoule/models/GrandBouleConfig.ts'
             );
+
+            writeGrandBouleReleaseFixture(root);
+            const unsafeSource = 'src/modules/GrandBoule/models/GrandBouleConfig.ts';
+            rmSync(join(root, unsafeSource));
+            mkdirSync(join(root, unsafeSource));
+            expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
+                `Grand Boule release source is unsafe: ${unsafeSource}`
+            );
+            rmSync(join(root, unsafeSource), { recursive: true, force: true });
 
             writeGrandBouleReleaseFixture(root);
             const preserved = grandBouleReleaseInventoryContract(root);

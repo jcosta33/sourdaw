@@ -9,8 +9,8 @@ import {
     fstatSync,
     lstatSync,
     openSync,
-    readlinkSync,
     readFileSync,
+    readlinkSync,
     readSync,
     readdirSync,
     realpathSync,
@@ -747,14 +747,16 @@ function trackedFilesSha256(
     const hash = createHash('sha256');
     const rootRealPath = realpathSync(root);
     for (const file of files) {
-        const absolute = resolve(root, file);
-        if (!existsSync(absolute)) {
+        const absolutePath = resolve(root, file);
+        try {
+            lstatSync(absolutePath);
+        } catch {
             throw new Error(`Grand Boule release source is missing: ${file}`);
         }
         hash.update(file);
         hash.update('\0');
         try {
-            hash.update(readRepositoryRegularBuffer(rootRealPath, absolute, readFile, budget));
+            hash.update(readRepositoryRegularBuffer(rootRealPath, absolutePath, readFile, budget));
         } catch {
             throw new Error(`Grand Boule release source is unsafe: ${file}`);
         }

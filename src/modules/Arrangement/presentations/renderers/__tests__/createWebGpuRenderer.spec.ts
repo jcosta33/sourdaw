@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
+import { drawClip } from '../clipDrawing';
 import { CLIP_LABEL_ASCENT_CSS_PX, CLIP_LABEL_INSET_CSS_PX } from '../clipLabel';
 import { computeMidiNoteBeatSpan } from '../createWebGpuRenderer';
 
@@ -315,6 +316,36 @@ function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
             textQuadWrites.length = 0;
         },
     };
+}
+
+/**
+ * Recover the device-px left edge of every waveform rect the last frame
+ * encoded, from the rect vertex buffer the mock captured at `writeBuffer`
+ * time. Waveform bins are the only rects an unmuted clip draws at alpha
+ * 0.18 (`alpha * 0.18`; body, background and accent sit at 1, the row
+ * separator at 0.6, the grid at 0.04/0.08, the playhead at 0.9), so alpha
+ * identifies them in the vertex stream without knowing the rect order.
+ */
+function decode_waveform_rect_left_edges(handles: WebGpuMockHandles, canvas: HTMLCanvasElement): number[] {
+    const rect_write = handles.writeBuffer.mock.calls.find(
+        (call: unknown[]) => (call[0] as { bufferIndex?: number } | undefined)?.bufferIndex === 0
+    );
+    if (!rect_write) {
+        throw new Error('expected the frame to write the rect vertex buffer');
+    }
+    const data = rect_write[2] as Float32Array;
+    // 6 vertices × 6 floats (xy + rgba) per rect, matching pushRect.
+    const floatsPerRect = 36;
+    const rectCount = (rect_write[4] as number) / floatsPerRect;
+    const leftEdges: number[] = [];
+    for (let rect = 0; rect < rectCount; rect++) {
+        const base = rect * floatsPerRect;
+        if (Math.abs(data[base + 5]! - 0.18) > 1e-6) {
+            continue;
+        }
+        leftEdges.push(((data[base]! + 1) / 2) * canvas.width);
+    }
+    return leftEdges;
 }
 
 beforeEach(() => {
@@ -808,6 +839,81 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         });
         expect(handles.writeBuffer).toHaveBeenCalled();
         expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('draws the pre-roll as leading silence and shortens the material for a negative offset (#2519)', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.6, 0.6, 0.6, 0.6]));
+
+        // The issue's worked example: 4-beat clip (2 s at 120 BPM) at offset
+        // -1 beat. The scheduler plays 0.5 s of silence then the file's first
+        // 1.5 s, so the renderer must reserve 1 beat (25 device px at dpr 1)
+        // as leading silence and window the source at samples 0..72_000.
+        const base = create_test_model();
+        const model: TimelineRenderModel = {
+            ...base,
+            tracks: [
+                {
+                    ...base.tracks[0]!,
+                    clips: [{ ...base.tracks[0]!.clips[0]!, audioOffsetBeats: -1, stretchRatio: 1 }],
+                },
+            ],
+        };
+
+        renderer.render(model);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith({
+            bufferId: 'buf-1',
+            numBins: 75, // 100 device px minus the 25 px pre-roll
+            startSample: 0,
+            endSample: 72_000,
+        });
+
+        // The first waveform bin's left edge sits at cx1 (50) + 25 px of
+        // pre-roll; the four equal bins tile the remaining 75 px.
+        const waveformLeftEdges = decode_waveform_rect_left_edges(handles, canvas);
+        expect(waveformLeftEdges).toHaveLength(4);
+        expect(waveformLeftEdges[0]).toBeCloseTo(75);
+        expect(waveformLeftEdges[3]).toBeCloseTo(75 + (75 / 4) * 3);
+    });
+
+    it('reads no peaks when the pre-roll swallows the whole clip', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+
+        // Offset -5 beats against a 4-beat clip: the scheduler starts no
+        // source, so there is no audible span to read or draw.
+        const base = create_test_model();
+        const model: TimelineRenderModel = {
+            ...base,
+            tracks: [
+                {
+                    ...base.tracks[0]!,
+                    clips: [{ ...base.tracks[0]!.clips[0]!, audioOffsetBeats: -5, stretchRatio: 1 }],
+                },
+            ],
+        };
+
+        renderer.render(model);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
     });
 
     it('should skip waveform peak reads when the cached audio buffer is missing', async () => {
@@ -1691,5 +1797,131 @@ describe('createWebGpuRenderer factory failure paths', () => {
         const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
         const renderer = await createWebGpuRenderer(canvas);
         expect(renderer).toBeNull();
+    });
+});
+
+/**
+ * Both timeline renderers must draw the same audio window for the same clip
+ * (#2519): the drawn sample span and the leading pre-roll gap are the shared
+ * `audioWaveformSpan` law, so any divergence between the Canvas2D and WebGPU
+ * paths here is a renderer re-deriving the math on its own. Each case renders
+ * the identical clip through `drawClip` and through a full WebGPU frame (dpr 1,
+ * so both work in the same pixels) and compares what each asked the peaks
+ * cache for and where each started drawing the waveform.
+ */
+describe('audio waveform span parity across renderers (#2519)', () => {
+    /**
+     * The Canvas2D context stub drawClip needs; geometry-relevant calls only.
+     * `any`-shaped like the sibling clipDrawing.spec stub — a full
+     * CanvasRenderingContext2D double would reimplement 46 unused members.
+     */
+    const create_canvas_2d_stub = (): any => ({
+        beginPath: vi.fn(),
+        closePath: vi.fn(),
+        roundRect: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        rect: vi.fn(),
+        clip: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
+        fillRect: vi.fn(),
+        clearRect: vi.fn(),
+        arc: vi.fn(),
+        fillText: vi.fn(),
+        measureText: vi.fn().mockReturnValue({ width: 10 }),
+        createLinearGradient: vi.fn().mockReturnValue({ addColorStop: vi.fn() }),
+        fillStyle: '',
+        strokeStyle: '',
+        font: '',
+        globalAlpha: 1,
+        lineWidth: 1,
+        lineDashOffset: 0,
+        shadowColor: '',
+        shadowBlur: 0,
+        shadowOffsetY: 0,
+        setLineDash: vi.fn(),
+    });
+
+    /** Render one clip through both renderers; report each one's span and gap. */
+    const render_through_both = async (audioOffsetBeats: number, stretchRatio: number) => {
+        const base = create_test_model();
+        const clip = { ...base.tracks[0]!.clips[0]!, audioOffsetBeats, stretchRatio };
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.6, 0.6, 0.6, 0.6]));
+
+        // Canvas2D: clip beats 2..6 at 25 px/beat → x = 50, w = 100, inset 2.
+        const canvasCtx = create_canvas_2d_stub();
+        drawClip(canvasCtx, clip, base, 0, 48);
+        const canvasPeaksCall = mocks.getCachedAudioBufferWaveformPeaks.mock.calls.at(-1)![0];
+        // The only non-waveform lineTo is the top-edge highlight at y = 2.5.
+        const firstWaveformX = canvasCtx.lineTo.mock.calls.find((args: number[]) => args[1] !== 2.5)![0];
+        const canvasGapPx = firstWaveformX - (50 + 2);
+
+        // WebGPU, at dpr 1 so its device px are the canvas renderer's CSS px.
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        renderer.render({ ...base, tracks: [{ ...base.tracks[0]!, clips: [clip] }] });
+        const gpuPeaksCall = mocks.getCachedAudioBufferWaveformPeaks.mock.calls.at(-1)![0];
+        const gpuGapPx = decode_waveform_rect_left_edges(handles, canvas)[0]! - 50;
+
+        return { canvasPeaksCall, canvasGapPx, gpuPeaksCall, gpuGapPx };
+    };
+
+    it.each([
+        { audioOffsetBeats: 2, stretchRatio: 1, startSample: 48_000, endSample: 144_000, gapPx: 0 },
+        { audioOffsetBeats: 0, stretchRatio: 1, startSample: 0, endSample: 96_000, gapPx: 0 },
+        { audioOffsetBeats: -0.5, stretchRatio: 1, startSample: 0, endSample: 84_000, gapPx: 12.5 },
+        { audioOffsetBeats: -1, stretchRatio: 1, startSample: 0, endSample: 72_000, gapPx: 25 },
+        // The pre-roll is the offset span crossed at the clip's rate, so a
+        // ratio of 2 halves it (scheduler: preRollSeconds = span / ratio).
+        { audioOffsetBeats: -1, stretchRatio: 2, startSample: 0, endSample: 42_000, gapPx: 12.5 },
+    ])(
+        'offset $audioOffsetBeats (stretch $stretchRatio): span $startSample to $endSample, gap $gapPx px',
+        async ({ audioOffsetBeats, stretchRatio, startSample, endSample, gapPx }) => {
+            const { canvasPeaksCall, canvasGapPx, gpuPeaksCall, gpuGapPx } = await render_through_both(
+                audioOffsetBeats,
+                stretchRatio
+            );
+
+            expect(canvasPeaksCall.startSample).toBe(startSample);
+            expect(canvasPeaksCall.endSample).toBe(endSample);
+            expect(gpuPeaksCall.startSample).toBe(startSample);
+            expect(gpuPeaksCall.endSample).toBe(endSample);
+            expect(canvasGapPx).toBeCloseTo(gapPx);
+            expect(gpuGapPx).toBeCloseTo(gapPx);
+        }
+    );
+
+    it('both renderers decline to draw when the pre-roll swallows the clip', async () => {
+        const base = create_test_model();
+        const clip = { ...base.tracks[0]!.clips[0]!, audioOffsetBeats: -5, stretchRatio: 1 };
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+
+        drawClip(create_canvas_2d_stub(), clip, base, 0, 48);
+        const canvasReads = mocks.getCachedAudioBufferWaveformPeaks.mock.calls.length;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        renderer.render({ ...base, tracks: [{ ...base.tracks[0]!, clips: [clip] }] });
+
+        expect(canvasReads).toBe(0);
+        expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
     });
 });

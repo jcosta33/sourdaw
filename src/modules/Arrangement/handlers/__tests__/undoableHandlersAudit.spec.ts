@@ -40,19 +40,6 @@ import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
 const ARRANGEMENT_ROOT = resolve(__dirname, '../..');
 
 /**
- * Undoable handlers with no spec naming their action. Fail-closed: the audit asserts
- * this set EXACTLY, so covering one of these forces its removal here, and a newly
- * registered undoable handler cannot be waved through by leaving the list alone.
- *
- * `importStemSet` predates this audit and is tracked separately; it emits an inverse
- * and creates tracks, so it is untested undo on a destructive command.
- */
-const UNCOVERED_UNDOABLE_HANDLERS = ['importStemSet'];
-
-/** `importStemSet`'s inverse, uncovered for the same reason and tracked with it. */
-const UNCOVERED_INVERSE_ACTIONS = ['discardImportedStemSet'];
-
-/**
  * The action types Arrangement sources name as an `inverseAction` or a `redoAction`,
  * read off the syntax tree.
  *
@@ -333,7 +320,7 @@ describe('Arrangement undoable handlers audit', () => {
         // not proof of behaviour — the round trips that prove an inverse actually
         // restores the original state live in the `*.integration.spec.ts` files this
         // corpus includes.
-        expect(uncovered).toEqual([...UNCOVERED_UNDOABLE_HANDLERS].sort());
+        expect(uncovered).toEqual([]);
     });
 
     it('reads inverse-action types off the Arrangement sources', () => {
@@ -391,6 +378,6 @@ describe('Arrangement undoable handlers audit', () => {
         // forward half of every pair. An inverse is the half that runs when a musician
         // is trying to get work back, and a dedicated one — `restoreTrackClipStates`,
         // `discardCreatedTracks` — is not `undoable` and so is invisible there.
-        expect(uncovered).toEqual([...UNCOVERED_INVERSE_ACTIONS].sort());
+        expect(uncovered).toEqual([]);
     });
 });
