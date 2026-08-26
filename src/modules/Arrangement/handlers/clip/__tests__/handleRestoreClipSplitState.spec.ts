@@ -119,6 +119,30 @@ describe('handleRestoreClipSplitState — satellites', () => {
         expect(mockedWriteSatellite).not.toHaveBeenCalled();
     });
 
+    it('execute refuses before any write when the expected satellites no longer match the stores', () => {
+        mockedSatellitesMatch.mockReturnValue(false);
+        const satellites = [{ clipId: 'c2', gainEnvelope: null, warpState: null }];
+
+        const result = handleRestoreClipSplitState.execute(
+            makeAction(makeSnapshot({ clipSatellites: satellites }), makeSnapshot({ clipSatellites: satellites }))
+        );
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites);
+        expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+        expect(mockedRestoreMidi).not.toHaveBeenCalled();
+        expect(mockedWriteSatellite).not.toHaveBeenCalled();
+    });
+
+    it('execute keeps the satellite precondition permissive for a legacy payload', () => {
+        mockedSatellitesMatch.mockReturnValue(false);
+
+        const result = handleRestoreClipSplitState.execute(makeAction(makeSnapshot(), makeSnapshot()));
+
+        expect(result).toEqual({ status: 'written' });
+        expect(mockedSatellitesMatch).not.toHaveBeenCalled();
+    });
+
     it('does not write satellites when the MIDI restore conflicts', () => {
         mockedRestoreMidi.mockReturnValue(false);
         const satellites = [{ clipId: 'c2', gainEnvelope: null, warpState: null }];

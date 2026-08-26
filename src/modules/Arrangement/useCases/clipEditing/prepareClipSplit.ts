@@ -97,7 +97,7 @@ export function prepareClipSplit({
         rightClipIndex: track.clips.length,
         sourceMidi: midiPlan.previousSource,
         rightMidi: midiPlan.previousRight,
-        ...(satellites ? { clipSatellites: satellites.previous } : {}),
+        clipSatellites: satellites.previous,
     };
     const next: ClipSplitActionSnapshot = {
         trackId: track.id,
@@ -106,7 +106,7 @@ export function prepareClipSplit({
         rightClipIndex: track.clips.length,
         sourceMidi: midiPlan.nextSource,
         rightMidi: midiPlan.nextRight,
-        ...(satellites ? { clipSatellites: satellites.next } : {}),
+        clipSatellites: satellites.next,
     };
     return {
         adjustedMediaSplit,

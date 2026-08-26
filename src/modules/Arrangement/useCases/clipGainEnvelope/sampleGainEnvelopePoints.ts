@@ -7,8 +7,10 @@ import { type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
  * enabled-gated envelope; the split repartition samples the same curve to place
  * its seam points, so a cut can never change what the envelope sounded like.
  *
- * Coincident points (a zero-width span) resolve to the later point's value
- * rather than dividing by zero.
+ * Two points at one `beatOffset` never make the walk divide a zero-width span:
+ * a segment is only ever entered from below its end, so a coincident pair reads
+ * as whichever of the two the approach reaches — the earlier one mid-curve, the
+ * later one past the end of the curve.
  */
 export function sampleGainEnvelopePoints(points: readonly GainEnvelopePoint[], beatOffset: number): number {
     if (points.length === 0) {
@@ -29,9 +31,6 @@ export function sampleGainEnvelopePoints(points: readonly GainEnvelopePoint[], b
         const beta = points[index + 1]!;
         if (beatOffset >= alpha.beatOffset && beatOffset <= beta.beatOffset) {
             const span = beta.beatOffset - alpha.beatOffset;
-            if (span === 0) {
-                return beta.gainDb;
-            }
             const time = (beatOffset - alpha.beatOffset) / span;
             return alpha.gainDb + time * (beta.gainDb - alpha.gainDb);
         }

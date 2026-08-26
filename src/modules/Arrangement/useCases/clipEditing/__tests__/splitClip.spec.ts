@@ -295,9 +295,11 @@ describe('splitClip', () => {
     // Warp markers are keyed to *source content* beats (the Elastic editor draws
     // them over the whole buffer), so the right half keeps their coordinates —
     // its audioOffsetBeats already re-enters the same buffer. Gain envelope
-    // points are clip-relative, so points moving right are re-based by the
+    // points are clip-relative, so the right half's copy is re-based by the
     // split delta, and each half gets a seam point holding the curve's value at
-    // the cut so the audible envelope is unchanged by the split.
+    // the cut so the audible envelope is unchanged by the split. Neither half
+    // drops the points on the far side of the cut: they are inert there, and
+    // dropping them would destroy authored curve data.
 
     it('repartitions warp markers and gain envelope points across both halves of an audio split', () => {
         // Clip 0..8 with audioOffsetBeats 2 → content seam at 4 + 2 = 6.
@@ -340,19 +342,22 @@ describe('splitClip', () => {
         });
 
         // The seam value at clip-relative beat 4 between (0, 0 dB) and (6, -12 dB)
-        // is -8 dB; both halves carry it at their cut edge so the curve is intact.
+        // is -8 dB; both halves carry it at their cut edge so the curve is intact,
+        // and both keep the far-side point so neither loses authored data.
         expect(getEnvelope('c1')).toEqual({
             clipId: 'c1',
             enabled: true,
             points: [
                 { id: 'p0', beatOffset: 0, gainDb: 0 },
                 { id: 'gep-split-new-clip-right-left', beatOffset: 4, gainDb: -8 },
+                { id: 'p6', beatOffset: 6, gainDb: -12 },
             ],
         });
         expect(getEnvelope('new-clip-right')).toEqual({
             clipId: 'new-clip-right',
             enabled: true,
             points: [
+                { id: 'p0', beatOffset: -4, gainDb: 0 },
                 { id: 'gep-split-new-clip-right-right', beatOffset: 0, gainDb: -8 },
                 { id: 'p6', beatOffset: 2, gainDb: -12 },
             ],
@@ -371,9 +376,9 @@ describe('splitClip', () => {
 
         expect(getEnvelope('c1')?.enabled).toBe(false);
         expect(getEnvelope('new-clip-right')?.enabled).toBe(false);
-        // The point sits exactly at the cut: it belongs to the right half at 0,
-        // and no synthetic seam point duplicates it.
-        expect(getEnvelope('c1')?.points).toEqual([{ id: 'gep-split-new-clip-right-left', beatOffset: 2, gainDb: -6 }]);
+        // The point sits exactly at the cut: it already pins the seam value on
+        // both halves, so no synthetic seam point is added beside it.
+        expect(getEnvelope('c1')?.points).toEqual([{ id: 'p2', beatOffset: 2, gainDb: -6 }]);
         expect(getEnvelope('new-clip-right')?.points).toEqual([{ id: 'p2', beatOffset: 0, gainDb: -6 }]);
     });
 

@@ -32,7 +32,7 @@ import {
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { readClipSatelliteEntry, serializeClipSatelliteEntries } from '../../../stores/clipSatelliteState';
-import { setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { removeEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -320,6 +320,8 @@ describe('handleSplitClip atomic integration', () => {
         // Split at content seam 5: the left keeps the sub-seam marker, the right
         // inherits the warp setup with the beyond-seam marker; the envelope seam
         // value at clip-relative 5 between (0, 0 dB) and (6, -12 dB) is -10 dB.
+        // Both halves keep the whole authored point set — a point beyond a half's
+        // own edge is inert, not something the split may discard.
         const partitionedLeft = serializeClipSatelliteEntries(['clip-1']);
         expect(readClipSatelliteEntry('clip-1').warpState?.markers).toEqual([
             { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },
@@ -330,6 +332,7 @@ describe('handleSplitClip atomic integration', () => {
                 clipId: rightClip.id,
                 enabled: true,
                 points: [
+                    { id: 'p0', beatOffset: -5, gainDb: 0 },
                     { id: `gep-split-${rightClip.id}-right`, beatOffset: 0, gainDb: -10 },
                     { id: 'p6', beatOffset: 1, gainDb: -12 },
                 ],
@@ -344,6 +347,7 @@ describe('handleSplitClip atomic integration', () => {
         expect(readClipSatelliteEntry('clip-1').gainEnvelope?.points).toEqual([
             { id: 'p0', beatOffset: 0, gainDb: 0 },
             { id: `gep-split-${rightClip.id}-left`, beatOffset: 5, gainDb: -10 },
+            { id: 'p6', beatOffset: 6, gainDb: -12 },
         ]);
 
         await undo();
@@ -361,8 +365,69 @@ describe('handleSplitClip atomic integration', () => {
 
         expect(serializeClipSatelliteEntries(['clip-1'])).toBe(partitionedLeft);
         expect(readClipSatelliteEntry(rightClip.id).gainEnvelope?.points).toEqual([
+            { id: 'p0', beatOffset: -5, gainDb: 0 },
             { id: `gep-split-${rightClip.id}-right`, beatOffset: 0, gainDb: -10 },
             { id: 'p6', beatOffset: 1, gainDb: -12 },
         ]);
+    });
+
+    it('refuses to undo a bare split once the right half carries an envelope of its own', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            name: 'Audio Intro',
+            trackId: 'track-1',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'audio-buffer-1',
+        });
+        const track = TrackDummy.create({ id: 'track-1', name: 'Audio', kind: 'audio', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        const channelData = new Float32Array(700).fill(1);
+        channelData.fill(-1, 251);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
+
+        const result = await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        expect(result).toMatchObject({ status: 'committed' });
+        const rightClip = trackStore.value!.tracks[0]!.clips.find((candidate) => candidate.id !== 'clip-1')!;
+        expect(readClipSatelliteEntry(rightClip.id)).toEqual({
+            clipId: rightClip.id,
+            gainEnvelope: null,
+            warpState: null,
+        });
+
+        // The musician draws a curve on the right half after the split. The undo
+        // leg owns that clip id, so it must refuse rather than drop the clip and
+        // strand the envelope on a dead id.
+        setEnvelope(rightClip.id, {
+            clipId: rightClip.id,
+            enabled: true,
+            points: [{ id: 'p-right', beatOffset: 0, gainDb: -4 }],
+        });
+
+        const staleUndoNotification = notifications.length;
+        await undo();
+
+        expectWarningNotification(
+            staleUndoNotification,
+            'Cannot undo "Split clip "Audio Intro" (clip-1) near requested beat 4 at beat 5": project state has changed'
+        );
+        expect(trackStore.value!.tracks[0]!.clips).toHaveLength(2);
+        expect(readClipSatelliteEntry(rightClip.id).gainEnvelope?.points).toEqual([
+            { id: 'p-right', beatOffset: 0, gainDb: -4 },
+        ]);
+
+        removeEnvelope(rightClip.id);
+        await undo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-1', startBeat: 0, endBeat: 8 }]);
+        expect(readClipSatelliteEntry(rightClip.id)).toEqual({
+            clipId: rightClip.id,
+            gainEnvelope: null,
+            warpState: null,
+        });
     });
 });
