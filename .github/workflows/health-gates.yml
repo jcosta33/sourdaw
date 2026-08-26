@@ -73,10 +73,6 @@ jobs:
               - 'rust-toolchain.toml'
               - 'scripts/health-gates-server.sh'
               - '.github/workflows/**'
-              - '!docs/**'
-              - '!*.md'
-              - '!**/*.md'
-              - '!.github/ISSUE_TEMPLATE/**'
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
@@ -84,10 +80,6 @@ jobs:
               - 'vite.config.ts'
               - 'scripts/checkVitestCollectionScope.ts'
               - '.github/workflows/**'
-              - '!docs/**'
-              - '!*.md'
-              - '!**/*.md'
-              - '!.github/ISSUE_TEMPLATE/**'
             e2e:
               - 'src/**'
               - 'public/**'
@@ -97,10 +89,6 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'vite.config.ts'
               - '.github/workflows/**'
-              - '!docs/**'
-              - '!*.md'
-              - '!**/*.md'
-              - '!.github/ISSUE_TEMPLATE/**'
             web:
               - 'src/**'
               - 'public/**'
@@ -111,21 +99,6 @@ jobs:
               - 'vite.config.ts'
               - 'tsconfig*.json'
               - '.github/workflows/**'
-              - '!docs/**'
-              - '!*.md'
-              - '!**/*.md'
-              - '!.github/ISSUE_TEMPLATE/**'
-            documentation:
-              - 'docs/**'
-              - '*.md'
-              - '**/*.md'
-              - '.github/ISSUE_TEMPLATE/**'
-            non_document:
-              - '**'
-              - '!docs/**'
-              - '!*.md'
-              - '!**/*.md'
-              - '!.github/ISSUE_TEMPLATE/**'
             unclassified:
               - '**'
               - '!crates/**'
@@ -157,7 +130,6 @@ jobs:
           SERVER: ${{ steps.filter.outputs.server }}
           E2E: ${{ steps.filter.outputs.e2e }}
           WEB: ${{ steps.filter.outputs.web }}
-          NON_DOCUMENT: ${{ steps.filter.outputs.non_document }}
           UNCLASSIFIED: ${{ steps.filter.outputs.unclassified }}
         run: |
           set -euo pipefail
@@ -174,9 +146,9 @@ jobs:
           server=$SERVER
           e2e=$E2E
           web=$WEB
-          # Any unclassified non-document file is code-bearing by default. Fail
-          # closed by running every fast scope until that path is classified.
-          if [ "$NON_DOCUMENT" = "true" ] && [ "$UNCLASSIFIED" = "true" ]; then
+          # Any unclassified file is code-bearing by default. Fail closed by
+          # running every fast scope until that path is classified.
+          if [ "$UNCLASSIFIED" = "true" ]; then
             rust=true
             server=true
             e2e=true

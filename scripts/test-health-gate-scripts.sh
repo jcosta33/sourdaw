@@ -197,7 +197,6 @@ function runResolveScope(event, filters) {
             SERVER: filters.server,
             E2E: filters.e2e,
             WEB: filters.web,
-            NON_DOCUMENT: filters.non_document ?? 'false',
             UNCLASSIFIED: filters.unclassified ?? 'false',
             GITHUB_OUTPUT: outputPath,
         },
@@ -311,7 +310,8 @@ const e2e = workflow.jobs?.e2e;
 const dependencyReview = workflow.jobs?.['dependency-review'];
 const gate = workflow.jobs?.gate;
 const nightlyReport = workflow.jobs?.['nightly-report'];
-const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
+const resolveScope = stepNamed(decide, 'Resolve scope');
+const resolveScopeRun = resolveScope?.run ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
@@ -357,6 +357,11 @@ expect(
     pathFilters?.with?.['predicate-quantifier'] === 'some-with-excludes',
     'path classification must use the pinned action documented some-with-excludes predicate'
 );
+const configuredPathFilters = parse(pathFilters?.with?.filters ?? '');
+expect(configuredPathFilters.documentation === undefined, 'path classification must not retain a redundant documentation filter');
+expect(configuredPathFilters.non_document === undefined, 'path classification must not retain a redundant non-document filter');
+expect(resolveScope?.env?.NON_DOCUMENT === undefined, 'scope resolution must not retain a redundant non-document output');
+expect(!resolveScopeRun.includes('NON_DOCUMENT'), 'scope resolution must let unclassified alone force every fast scope');
 expect(smokeSpec.includes("test.use({ serviceWorkers: 'block' });"), 'offline smoke must block service workers before routing requests');
 expect(
     concurrency?.group === "health-gates-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}",
@@ -410,8 +415,6 @@ for (const fixture of [
     {
         name: 'TypeScript-only',
         paths: ['src/modules/Project/useCases/smokeFixture.ts'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'true' },
         jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'gate'],
@@ -419,8 +422,6 @@ for (const fixture of [
     {
         name: 'test-only',
         paths: ['tests/e2e/smoke.spec.ts'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'true', web: 'false' },
         jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'smoke', 'gate'],
@@ -428,8 +429,6 @@ for (const fixture of [
     {
         name: 'Rust-only',
         paths: ['crates/daw-core/src/smoke_fixture.rs'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'false',
         scopes: { rust: 'true', server: 'false', e2e: 'false', web: 'false' },
         jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'rust', 'native-macos', 'native-windows', 'gate'],
@@ -437,8 +436,6 @@ for (const fixture of [
     {
         name: 'Electron-only',
         paths: ['electron/main/smokeFixture.ts'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'true' },
         jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'gate'],
@@ -446,8 +443,6 @@ for (const fixture of [
     {
         name: 'server-only',
         paths: ['server/src/smokeFixture.ts'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'false',
         scopes: { rust: 'false', server: 'true', e2e: 'false', web: 'false' },
         jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'rust', 'gate'],
@@ -455,8 +450,6 @@ for (const fixture of [
     {
         name: 'Vite config',
         paths: ['vite.config.ts'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'false',
         scopes: { rust: 'false', server: 'true', e2e: 'true', web: 'true' },
         jobs: ['decide', 'dependency-review', 'static', 'lint', 'boundaries', 'unit', 'build', 'smoke', 'rust', 'gate'],
@@ -464,8 +457,6 @@ for (const fixture of [
     {
         name: 'workflow-only',
         paths: ['.github/workflows/daily-train.yml'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'false',
         scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
         jobs: [
@@ -486,8 +477,6 @@ for (const fixture of [
     {
         name: 'documentation-only',
         paths: ['docs/architecture/fast-gate.md'],
-        documentation: 'true',
-        nonDocument: 'false',
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
         jobs: ['decide', 'dependency-review', 'gate'],
@@ -495,8 +484,6 @@ for (const fixture of [
     {
         name: 'issue-template-only',
         paths: ['.github/ISSUE_TEMPLATE/bug.yml'],
-        documentation: 'true',
-        nonDocument: 'false',
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false' },
         jobs: ['decide', 'dependency-review', 'gate'],
@@ -504,8 +491,6 @@ for (const fixture of [
     {
         name: 'unclassified root code',
         paths: ['.dependency-cruiser.shared.cjs'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'true',
         scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
         jobs: [
@@ -526,8 +511,6 @@ for (const fixture of [
     {
         name: 'mixed documentation and unclassified code',
         paths: ['docs/architecture/fast-gate.md', '.dependency-cruiser.shared.cjs'],
-        documentation: 'true',
-        nonDocument: 'true',
         unclassified: 'true',
         scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
         jobs: [
@@ -548,8 +531,6 @@ for (const fixture of [
     {
         name: 'mixed known and unclassified code',
         paths: ['src/modules/Project/useCases/smokeFixture.ts', '.dependency-cruiser.shared.cjs'],
-        documentation: 'false',
-        nonDocument: 'true',
         unclassified: 'true',
         scopes: { rust: 'true', server: 'true', e2e: 'true', web: 'true' },
         jobs: [
@@ -569,8 +550,6 @@ for (const fixture of [
     },
 ]) {
     const filters = resolveChangedPathFilters(fixture.paths);
-    expect(filters.documentation === fixture.documentation, `${fixture.name} must classify documentation independently`);
-    expect(filters.non_document === fixture.nonDocument, `${fixture.name} must classify non-document changes independently`);
     expect(filters.unclassified === fixture.unclassified, `${fixture.name} must classify unknown paths independently`);
     const scopeOutput = parseScopeOutput(runResolveScope('pull_request', filters));
     expect(scopeOutput.heavy === 'false', `${fixture.name} pull_request must not enable the heavy path`);
