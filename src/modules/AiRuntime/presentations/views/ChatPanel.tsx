@@ -23,7 +23,7 @@ import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
-import { AgentRunDecisionControls, type AgentRunDecisionControl } from '../components/AgentRunDecisionControls';
+import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { ChatComposer } from '../components/ChatComposer';
 
 /**
@@ -262,10 +262,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
-    const decisionRuns: AgentRunDecisionControl[] =
-        agentRunState.schemaVersion === 1
-            ? agentRunControls.list().filter((run): run is AgentRunDecisionControl => run.decision !== null)
-            : [];
+    const decisionRuns = agentRunState.schemaVersion === 1 ? agentRunControls.listDecisions() : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
     const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
