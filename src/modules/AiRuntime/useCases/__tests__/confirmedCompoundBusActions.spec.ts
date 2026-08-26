@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     getArrangementHandlers,
@@ -78,6 +81,72 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     removeSend: runtimeMocks.engineRemoveSend,
     setSend: runtimeMocks.engineSetSend,
 }));
+
+// The globally stubbed AudioContext (src/setupTests.ts) is intentionally
+// minimal and does not implement createStereoPanner or the other node
+// factories a live device chain delta needs. The compound-bus actions in
+// this file create a bus and add a device to it while it is live, so the
+// real applyDeviceChainRuntimeDelta path runs and needs these node
+// factories, same as backingVocalPlateWorkflow.spec.ts.
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    const createNode = () => ({
+        connect: (dest: unknown) => dest,
+        disconnect: () => undefined,
+    });
+    function AudioContextWithStereoPanner(this: unknown, options?: AudioContextOptions) {
+        const base = new OriginalAudioContext(options);
+        return Object.assign(base, {
+            currentTime: 0,
+            createStereoPanner: () => ({
+                ...createNode(),
+                pan: createAudioParam(0),
+            }),
+            createBiquadFilter: () => ({
+                ...createNode(),
+                type: 'lowpass',
+                frequency: createAudioParam(350),
+                Q: createAudioParam(1),
+                gain: createAudioParam(0),
+                detune: createAudioParam(0),
+            }),
+            createDynamicsCompressor: () => ({
+                ...createNode(),
+                threshold: createAudioParam(-24),
+                knee: createAudioParam(30),
+                ratio: createAudioParam(12),
+                attack: createAudioParam(0.003),
+                release: createAudioParam(0.25),
+                reduction: 0,
+            }),
+            createDelay: () => ({ ...createNode(), delayTime: createAudioParam(0) }),
+            createConvolver: () => ({ ...createNode(), buffer: null, normalize: true }),
+            createBuffer: (channels: number, length: number, sampleRate: number) => {
+                const data = Array.from({ length: channels }, () => new Float32Array(length));
+                return {
+                    numberOfChannels: channels,
+                    length,
+                    sampleRate,
+                    duration: length / sampleRate,
+                    getChannelData: (channel: number) => data[channel]!,
+                };
+            },
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        value: AudioContextWithStereoPanner,
+        writable: true,
+    });
+});
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -455,6 +524,7 @@ describe('confirmed compound bus actions', () => {
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const vocals = createVocalsTrack();
         trackStore.set({ tracks: [vocals], selectedTrackId: vocals.id, ghostClips: [] });
+        flushAutomergeStorageWrites();
         chatStore.set({
             messages: [{ id: 'assistant-1', role: 'assistant', content: 'Awaiting confirmation', timestamp: 1 }],
             isGenerating: false,

@@ -1030,18 +1030,37 @@ describe('stem import and starting mix workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
-            status: 'executed',
+        const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+
+        expect(result).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    operation: 'importStemSet',
+                    remediation: 'reconcile',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(trackStore.value?.tracks).toHaveLength(8);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(STEM_SOURCE_NAMES.length * 2);
+        expect(getPendingActionConfirmation(confirmation!.id)).toMatchObject({ status: 'failed' });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('committed with a follow-up warning');
+        expect(receipt?.content).toContain('The project change is durably committed');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
         expect(receipt?.content.toLowerCase()).toContain('manual repair required');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(receipt?.error).toContain('persistent strip projection failure');
     });
 });

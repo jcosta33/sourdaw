@@ -880,20 +880,38 @@ describe('delete muted empty tracks prompt workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
-            status: 'executed',
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result).toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+            effects: [
+                expect.objectContaining({
+                    kind: 'external-effect',
+                    operation: 'removeTrack',
+                    remediation: 'reconcile',
+                    state: 'pending',
+                }),
+            ],
+            continuation: {
+                authority: 'authoritative-collaboration-host',
+                idempotency: 'project-checkpoint',
+                kind: 'reconcile-exact-batch',
+            },
         });
 
         expect(trackStore.value?.tracks.some((track) => track.id === 'track-muted-audio')).toBe(false);
         expect(trackStore.value?.tracks.some((track) => track.id === 'track-muted-midi')).toBe(false);
         expect(runtimeMocks.removeTrackStrip).toHaveBeenCalledTimes(3);
         expect(undoStore.value?.past).toHaveLength(2);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({ status: 'failed' });
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('committed with a follow-up warning');
-        expect(receipt?.content).toContain('manual repair required');
-        expect(receipt?.content).toContain('Do not retry these confirmed actions');
+        expect(receipt?.content).toContain('The project change is durably committed');
+        expect(receipt?.content).toContain('At least one external effect remains pending');
+        expect(receipt?.content).toContain('persistent graph removal failure');
+        expect(receipt?.content).toContain('the project mutation will not replay');
         expect(receipt?.error).toContain('manual repair required');
     });
 
