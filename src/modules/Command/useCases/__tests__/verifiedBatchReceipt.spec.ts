@@ -709,6 +709,16 @@ describe('verified batch receipt', () => {
         for (const [outcome, commandOutcome] of malformedFamilies) {
             expect(parseReceipt(serializeReceipt({ outcome, commandOutcome, atomicity: 'atomic' }))).toBeNull();
         }
+        expect(
+            parseReceipt(
+                serializeReceipt({
+                    atomicity: 'durable-atomic-with-non-atomic-effects',
+                    commandOutcome: 'no-op',
+                    outcome: 'partially-committed',
+                    pendingEffects: [pendingExternalEffect],
+                })
+            )
+        ).toBeNull();
     });
 
     it('reports observer warnings without claiming a partial project commit', async () => {

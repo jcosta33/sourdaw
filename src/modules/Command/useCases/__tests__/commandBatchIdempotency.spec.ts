@@ -515,6 +515,141 @@ describe('command batch idempotency', () => {
         }
     });
 
+    it('fails closed for non-complete project evidence and repository lookup failures', async () => {
+        const batch = compileBatch();
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const lookup = vi.fn(() => Promise.resolve({ status: 'complete' as const, serializedReceipt: '{}' }));
+        commandBatchIdempotencyPort.setRepository({
+            lookup,
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+        const projectRecord = (contentHash: string, serializedReceipt: string) => ({
+            contentHash,
+            id: `${proof.projectId}\u0000${proof.idempotencyKey}\u0000${contentHash}`,
+            idempotencyKey: proof.idempotencyKey,
+            projectId: proof.projectId,
+            serializedReceipt,
+            state: 'complete',
+        });
+
+        const projectEvidence = [
+            {
+                ledger: { records: [projectRecord(proof.contentHash, '{"schemaVersion":1}')] },
+                name: 'malformed complete receipt',
+            },
+            {
+                ledger: { records: [projectRecord(`sha256:${'f'.repeat(64)}`, '{}')] },
+                name: 'conflicting content hash',
+            },
+            {
+                ledger: { records: [], schemaVersion: 2 },
+                name: 'unsupported schema',
+            },
+        ];
+        for (const { ledger, name } of projectEvidence) {
+            projectDocument.commandBatchIdempotency = ledger;
+            await expect(getVersionedCommandBatchCommitDisposition(proof), name).resolves.toBe('unknown');
+            expect(lookup, name).not.toHaveBeenCalled();
+        }
+
+        delete projectDocument.commandBatchIdempotency;
+        lookup.mockRejectedValueOnce(new Error('idempotency repository unavailable'));
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+    });
+
+    it('preserves ordered command identity in a valid two-command commit proof', async () => {
+        const baseRevision = revision(0);
+        const gainCommand = {
+            ...createExecutionCommandEnvelope({
+                action: {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                },
+                expectedEffect: 'Set the vocal gain to 0.8.',
+                normalizedProjectRevision: baseRevision,
+            }).envelope,
+            commandId: '11111111-1111-4111-8111-111111111111',
+        };
+        const panCommand = {
+            ...createExecutionCommandEnvelope({
+                action: {
+                    type: 'setTrackPan',
+                    payload: { trackId: 'track-guitar', expectedPan: 0, pan: -0.2 },
+                },
+                expectedEffect: 'Pan the guitar left.',
+                normalizedProjectRevision: baseRevision,
+            }).envelope,
+            commandId: '22222222-2222-4222-8222-222222222222',
+        };
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision,
+            batchId: 'batch-two-command-proof',
+            commands: [JSON.stringify(gainCommand), JSON.stringify(panCommand)],
+            idempotencyKey: 'client-request-two-command-proof',
+            intent: 'Balance vocal and guitar',
+            mode: 'commit',
+            projectId: 'project-idempotency',
+            runId: 'run-two-command-proof',
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const receipt = JSON.stringify(
+            createVerifiedBatchReceipt({
+                envelope: parsed.envelope,
+                observedBaseRevision: baseRevision,
+                resultingRevision: revision(1),
+                result: {
+                    actions: [
+                        {
+                            action: {
+                                type: 'setTrackGain',
+                                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                            },
+                            receipt: createVersionedCommandReceipt({ envelope: parsed.envelope.commands[0]! }),
+                        },
+                        {
+                            action: {
+                                type: 'setTrackPan',
+                                payload: { trackId: 'track-guitar', expectedPan: 0, pan: -0.2 },
+                            },
+                            receipt: createVersionedCommandReceipt({ envelope: parsed.envelope.commands[1]! }),
+                        },
+                    ],
+                    status: 'committed',
+                },
+            })
+        );
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'complete', serializedReceipt: receipt }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
+
+        expect(proof.commands).toEqual([
+            { commandId: gainCommand.commandId, operation: 'setTrackGain' },
+            { commandId: panCommand.commandId, operation: 'setTrackPan' },
+        ]);
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
+    });
+
+    it('rejects invalid serialized batches and mismatched authority from commit proof', async () => {
+        const batch = compileBatch();
+
+        await expect(
+            getVersionedCommandBatchCommitProof({ authority: batch.authority, serialized: 'not-json' })
+        ).rejects.toThrow('Command batch commit proof is invalid: Command batch must be valid JSON');
+        await expect(
+            getVersionedCommandBatchCommitProof({
+                authority: { ...batch.authority, projectId: 'other-project' },
+                serialized: batch.serialized,
+            })
+        ).rejects.toThrow('Command batch commit proof is invalid: Command batch exceeds application-issued authority');
+    });
+
     it('discards caller recovery prepared for a project transaction that never commits', async () => {
         rejectInitialProjectCommit = true;
         const promote = vi.fn();
