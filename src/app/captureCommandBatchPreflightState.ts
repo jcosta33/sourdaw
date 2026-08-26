@@ -128,22 +128,23 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
     return value as Readonly<Record<string, unknown>>;
 }
 
-function combineTargetFingerprints(input: {
+/**
+ * The live projection's own fingerprint for every target the document backs,
+ * reported beside the document fingerprint rather than folded into it. Approval
+ * binding compares two live captures and wants both; `targets-unchanged`
+ * compares a staged document against a live one, so a projection half there
+ * would let a remote patch that never reached the staged document count as this
+ * batch's own effect. Projection-only targets still establish no authority.
+ */
+function selectAdvertisedFingerprints(input: {
     advertised: Readonly<Record<string, string>>;
     document: Readonly<Record<string, string>>;
     targetIds: readonly string[];
 }): Record<string, string> {
     return Object.fromEntries(
         input.targetIds.flatMap((targetId) => {
-            const document = input.document[targetId];
-            if (document === undefined) {
-                return [];
-            }
             const advertised = input.advertised[targetId];
-            if (advertised !== undefined) {
-                return [[targetId, JSON.stringify({ advertised, document })]];
-            }
-            return [[targetId, document]];
+            return advertised === undefined || input.document[targetId] === undefined ? [] : [[targetId, advertised]];
         })
     );
 }
@@ -451,6 +452,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
         // No document means no document-backed authority: fail closed so the batch
         // is rejected instead of approved against an absent project.
         return {
+            advertisedTargetFingerprints: {},
             audioGraphValid: false,
             availableAssetHashes: [],
             availableAudioBufferIds: [],
@@ -464,17 +466,14 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
         projectDocument: projectDoc,
         targetIds: input.targetIds,
     });
-    const advertisedTargetFingerprints = context
-        ? captureCommandTargetFingerprints({ document: { projectContext: context }, targetIds: input.targetIds })
-        : {};
-    const targetFingerprints = addSystemTargetFingerprints(
-        combineTargetFingerprints({
-            advertised: advertisedTargetFingerprints,
-            document: documentInspection.targetFingerprints,
-            targetIds: input.targetIds,
-        }),
-        input.targetIds
-    );
+    const advertisedTargetFingerprints = selectAdvertisedFingerprints({
+        advertised: context
+            ? captureCommandTargetFingerprints({ document: { projectContext: context }, targetIds: input.targetIds })
+            : {},
+        document: documentInspection.targetFingerprints,
+        targetIds: input.targetIds,
+    });
+    const targetFingerprints = addSystemTargetFingerprints(documentInspection.targetFingerprints, input.targetIds);
     const tracks = (context?.tracks ?? []).map((track) => ({
         devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
         id: track.id,
@@ -508,6 +507,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
     }
 
     return {
+        advertisedTargetFingerprints,
         audioGraphValid:
             (input.projectDocument ? documentInspection.audioGraphValid : undefined) ??
             compileAudioGraphTopology({ tracks, sidechainRoutes }).status === 'compiled',

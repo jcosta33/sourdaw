@@ -33,6 +33,7 @@ type PendingAgentRiskApproval = {
     actionHashes: string[];
     sourceRevision: string;
     targetFingerprints: Readonly<Record<string, string>>;
+    advertisedTargetFingerprints: Readonly<Record<string, string>>;
     consequences: {
         audioUpload: boolean;
         fileAccess: boolean;

@@ -286,6 +286,7 @@ describe('captureCommandBatchPreflightState', () => {
         });
 
         expect(state.targetFingerprints).toEqual({});
+        expect(state.advertisedTargetFingerprints).toEqual({});
     });
 
     it('fails targets-exist when the requested target exists only in the live projection', async () => {
@@ -336,7 +337,7 @@ describe('captureCommandBatchPreflightState', () => {
         }
     });
 
-    it('combines advertised drift only for a document-backed target', () => {
+    it('reports advertised drift for a document-backed target without moving its document fingerprint', () => {
         const document = {
             tracks: {
                 tracks: [
@@ -368,9 +369,12 @@ describe('captureCommandBatchPreflightState', () => {
             targetIds: ['track-vocal'],
         });
 
-        expect(approved.targetFingerprints['track-vocal']).toContain('"document"');
-        expect(approved.targetFingerprints['track-vocal']).toContain('"advertised"');
-        expect(drifted.targetFingerprints['track-vocal']).not.toBe(approved.targetFingerprints['track-vocal']);
+        expect(approved.targetFingerprints['track-vocal']).toContain('track-vocal');
+        expect(drifted.targetFingerprints['track-vocal']).toBe(approved.targetFingerprints['track-vocal']);
+        expect(approved.advertisedTargetFingerprints['track-vocal']).toBeDefined();
+        expect(drifted.advertisedTargetFingerprints['track-vocal']).not.toBe(
+            approved.advertisedTargetFingerprints['track-vocal']
+        );
     });
 
     it('captures an adjustment layer from its document-owned slot', () => {
