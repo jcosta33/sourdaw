@@ -29,6 +29,7 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -44,9 +45,42 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
-import { sendChatMessage } from '../sendChatMessage';
+import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>();
+    return {
+        ...original,
+        createAutomergeStorage: (...args: Parameters<typeof original.createAutomergeStorage>) => {
+            const storage = original.createAutomergeStorage(...args);
+            fixtureStorageOwners.set(`${args[0]}:${args[1]}`, storage);
+            return storage;
+        },
+    };
+});
+
+function flushFixtureStorageOwner(key: string): void {
+    const storage = fixtureStorageOwners.get(`root:${key}`);
+    if (!storage) {
+        throw new Error(`Expected fixture-owned ${key} storage adapter`);
+    }
+    storage.flushPendingUnscopedWrite();
+}
+
+function settleFixtureProjectWrites(): void {
+    for (const key of ['tracks', 'markers', 'adjustmentLayers', 'automation', 'transport']) {
+        flushFixtureStorageOwner(key);
+    }
+}
+
+function sendChatMessage(prompt: string) {
+    settleFixtureProjectWrites();
+    return sendChatMessageUseCase(prompt);
+}
 
 const PROMPT =
     "Copy the bass processing from chorus one to chorus two while preserving chorus two's existing distortion automation.";
@@ -782,12 +816,21 @@ describe('bass-processing section copy workflow', () => {
     });
 
     it('rejects unflushed adjustment-layer identity drift through production fingerprints', async () => {
+        settleFixtureProjectWrites();
+        const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
+        const layersBeforePlanning = structuredClone(adjustmentLayerStore.value);
+        const undoBeforePlanning = structuredClone(undoStore.value);
+        const runtimeCallsBeforePlanning = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
+
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         const approvedFingerprint = confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['layer-bass-eq'];
         const approvedRevision = captureProjectRevision();
-        const runtimeCallsBeforeConfirmation = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
         expect(approvedFingerprint).toBeDefined();
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
+        expect(adjustmentLayerStore.value).toEqual(layersBeforePlanning);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
+        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
 
         adjustmentLayerStore.set({
             layers: (adjustmentLayerStore.value?.layers ?? []).map((layer) =>
@@ -800,10 +843,11 @@ describe('bass-processing section copy workflow', () => {
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
         expect(result.status).toBe('failed');
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
         expect(adjustmentLayerStore.value).toEqual(collaboratorState);
-        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforeConfirmation);
+        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
-        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
@@ -811,12 +855,21 @@ describe('bass-processing section copy workflow', () => {
     });
 
     it('rejects unflushed adjustment-layer state drift through production fingerprints', async () => {
+        settleFixtureProjectWrites();
+        const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
+        const layersBeforePlanning = structuredClone(adjustmentLayerStore.value);
+        const undoBeforePlanning = structuredClone(undoStore.value);
+        const runtimeCallsBeforePlanning = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
+
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         const approvedFingerprint = confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['layer-bass-eq'];
         const approvedRevision = captureProjectRevision();
-        const runtimeCallsBeforeConfirmation = vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls.length;
         expect(approvedFingerprint).toBeDefined();
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
+        expect(adjustmentLayerStore.value).toEqual(layersBeforePlanning);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
+        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
 
         adjustmentLayerStore.set({
             layers: (adjustmentLayerStore.value?.layers ?? []).map((layer) =>
@@ -829,10 +882,11 @@ describe('bass-processing section copy workflow', () => {
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
         expect(result.status).toBe('failed');
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
         expect(adjustmentLayerStore.value).toEqual(collaboratorState);
-        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforeConfirmation);
+        expect(vi.mocked(audioEngine.applyAdjustmentLayerTick).mock.calls).toHaveLength(runtimeCallsBeforePlanning);
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
-        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content

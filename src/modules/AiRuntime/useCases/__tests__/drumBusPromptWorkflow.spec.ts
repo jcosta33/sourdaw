@@ -86,7 +86,7 @@ function flushFixtureStorageOwner(key: string): void {
 }
 
 function settleFixtureProjectWrites(): void {
-    for (const key of ['tracks', 'markers', 'sidechainRoutes']) {
+    for (const key of ['tracks', 'markers', 'sidechainRoutes', 'adjustmentLayers']) {
         flushFixtureStorageOwner(key);
     }
 }
@@ -2570,6 +2570,13 @@ describe('drum bus prompt workflow', () => {
     it('rejects an unflushed sidechain target-device identity drift through production fingerprints', async () => {
         setMf06Project();
         useMf06WebLlmFixture();
+        settleFixtureProjectWrites();
+        const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
+        const tracksBeforePlanning = structuredClone(trackStore.value);
+        const routesBeforePlanning = structuredClone(sidechainStore.value);
+        const undoBeforePlanning = structuredClone(undoStore.value);
+        const runtimeCallsBeforePlanning = runtimeMocks.wireSidechainRoute.mock.calls.length;
+
         await sendChatMessage(MF06_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -2577,6 +2584,11 @@ describe('drum bus prompt workflow', () => {
         );
         const approvedRevision = captureProjectRevision();
         expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints['device-bass-comp-a']).toBeDefined();
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
+        expect(trackStore.value).toEqual(tracksBeforePlanning);
+        expect(sidechainStore.value).toEqual(routesBeforePlanning);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
+        expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforePlanning);
 
         trackStore.set({
             ...trackStore.value!,
@@ -2599,10 +2611,11 @@ describe('drum bus prompt workflow', () => {
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
         expect(result.status).toBe('failed');
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
         expect(trackStore.value).toEqual(collaboratorState);
-        expect(sidechainStore.value?.routes).toEqual([]);
-        expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
-        expect(undoStore.value).toMatchObject({ past: [], future: [] });
+        expect(sidechainStore.value).toEqual(routesBeforePlanning);
+        expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforePlanning);
+        expect(undoStore.value).toEqual(undoBeforePlanning);
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)

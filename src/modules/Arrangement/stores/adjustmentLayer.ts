@@ -5,6 +5,9 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export type AdjustmentEffectType =
     'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
@@ -54,6 +57,9 @@ export type AdjustmentLayerState = {
 
 export const adjustmentLayerStore = createStore<AdjustmentLayerState>({
     initialData: { layers: [] },
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'adjustmentLayers', {
+        hydrateMissing: () => ({ layers: [] }),
+    }),
 });
 
 // §122.1 — UUID instead of module-level counters that reset on HMR

@@ -136,14 +136,14 @@ function combineTargetFingerprints(input: {
     return Object.fromEntries(
         input.targetIds.flatMap((targetId) => {
             const document = input.document[targetId];
+            if (document === undefined) {
+                return [];
+            }
             const advertised = input.advertised[targetId];
-            if (document !== undefined && advertised !== undefined) {
+            if (advertised !== undefined) {
                 return [[targetId, JSON.stringify({ advertised, document })]];
             }
-            if (advertised !== undefined) {
-                return [[targetId, JSON.stringify({ advertised })]];
-            }
-            return document === undefined ? [] : [[targetId, document]];
+            return [[targetId, document]];
         })
     );
 }
