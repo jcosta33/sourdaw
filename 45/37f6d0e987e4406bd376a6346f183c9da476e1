@@ -1,0 +1,26 @@
+release/open-source-inventory.json
+  s_1b9333aca53d4d::t_1c63fbcd5cda60 134
+  s_1b9333aca53d4d::t_bccf205193b069 133
+  s_1b9333aca53d4d::t_e7cb38f39f1abc 286,467,625,863
+  s_1b9333aca53d4d::t_44752dd91b409e 1291
+  s_1b9333aca53d4d::t_1f13483da07537 312-313,315-319,322-325
+crates/daw-plugin-host/src/vst3_module_info.rs
+  s_1b9333aca53d4d::t_fef8706175e4b1 75
+  s_1b9333aca53d4d::t_9e4719c50a91b3 216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "4537f6d0e987e4406bd376a6346f183c9da476e1",
+  "prompts": {},
+  "sessions": {
+    "s_1b9333aca53d4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "188b0d45-7765-49bd-8d6e-1eebbd450613",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
