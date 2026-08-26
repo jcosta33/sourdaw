@@ -32,8 +32,13 @@ vi.mock('fflate', async (importOriginal) => {
     class ProbedUnzip extends actual.Unzip {
         private archiveOffset = 0;
         private archiveMatches = true;
+        private forwarding = false;
 
         override push(chunk: Uint8Array, final?: boolean): void {
+            if (this.forwarding) {
+                super.push(chunk, final);
+                return;
+            }
             const archive = zipPayloadExpansionProbe.archive;
             if (archive !== undefined && this.archiveMatches && chunk.byteLength > 0) {
                 const bytes = Buffer.from(chunk);
@@ -46,7 +51,12 @@ vi.mock('fflate', async (importOriginal) => {
                     this.archiveMatches = false;
                 }
             }
-            super.push(chunk, final);
+            this.forwarding = true;
+            try {
+                super.push(chunk, final);
+            } finally {
+                this.forwarding = false;
+            }
         }
     }
 
