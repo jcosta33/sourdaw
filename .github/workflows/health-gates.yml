@@ -35,6 +35,9 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   # Pull-request updates replace their own stale run. Scheduled and dispatched
   # health checks always keep their distinct run-id group.

@@ -389,7 +389,10 @@ expect(events?.pull_request !== undefined, 'pull_request trigger must remain pre
 expect(events?.pull_request_review === undefined, 'pull_request_review must not start a duplicate Gate');
 expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
-expect(workflow.permissions === undefined, 'workflow permissions must not grant path-filter access to unrelated jobs');
+expect(
+    JSON.stringify(workflow.permissions) === JSON.stringify({ contents: 'read' }),
+    'workflow-level permissions must keep every job read-only by default'
+);
 expect(decide?.permissions?.contents === 'read', 'scope resolution must read repository contents');
 expect(decide?.permissions?.['pull-requests'] === 'read', 'scope resolution must read pull-request file changes');
 expect(
