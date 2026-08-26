@@ -4,6 +4,7 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 
+import { computeAudioWaveformDrawSpan } from './audioWaveformSpan';
 import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
 
@@ -585,26 +586,42 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     if (clip.type === 'audio' && clip.audioBufferId) {
                         const w = cx2 - cx1;
                         if (w >= 4) {
-                            // At least 1 rect per pixel, up to max ~2000 bins to balance perf
-                            const numBins = Math.min(Math.floor(w * dpr), 2000);
-
                             const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
                             if (buffer) {
+                                // Same law as the Canvas renderer
+                                // (`audioWaveformSpan.ts`): the sample window is
+                                // what the scheduler plays, and a negative
+                                // offset reserves its pre-roll as leading
+                                // silence inside the clip.
                                 const offsetBeats = clip.audioOffsetBeats ?? 0;
                                 const stretchRatio = clip.stretchRatio ?? 1;
                                 const clipBeats = clip.endBeat - clip.startBeat;
                                 const secondsPerBeat = 60 / model.tempo;
                                 const sampleRate = buffer.sampleRate;
-                                const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
-                                const beatsConsumed = clipBeats / Math.max(stretchRatio, 0.0001);
-                                const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
-
-                                const peaks = getCachedAudioBufferWaveformPeaks({
-                                    bufferId: clip.audioBufferId,
-                                    numBins,
-                                    startSample,
-                                    endSample,
+                                const span = computeAudioWaveformDrawSpan({
+                                    offsetBeats,
+                                    stretchRatio,
+                                    clipBeats,
+                                    secondsPerBeat,
+                                    sampleRate,
                                 });
+                                const leadingSilencePx = span.leadingSilenceBeats * pixelsPerBeat * dpr;
+                                const waveformWidth = w - leadingSilencePx;
+
+                                // At least 1 rect per pixel, up to max ~2000 bins to balance perf
+                                const numBins = Math.min(Math.floor(waveformWidth * dpr), 2000);
+
+                                // The pre-roll swallowed the clip: the scheduler
+                                // starts no source, so no bins to draw.
+                                const peaks =
+                                    span.audibleTimelineBeats <= 0
+                                        ? new Float32Array(0)
+                                        : getCachedAudioBufferWaveformPeaks({
+                                              bufferId: clip.audioBufferId,
+                                              numBins,
+                                              startSample: span.startSample,
+                                              endSample: span.endSample,
+                                          });
 
                                 const midY = clipTop + (clipBottom - clipTop) / 2;
                                 const padding = 2 * dpr;
@@ -615,12 +632,13 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                                 const binsToDraw = peaks.length;
                                 if (binsToDraw > 0) {
-                                    const drawBinWidth = w / binsToDraw;
+                                    const drawBinWidth = waveformWidth / binsToDraw;
+                                    const waveStartX = cx1 + leadingSilencePx;
 
                                     for (let index = 0; index < binsToDraw; index++) {
                                         const peakHeight = (peaks[index] ?? 0) * amplitude;
                                         if (peakHeight > 0.5) {
-                                            const bx1 = cx1 + index * drawBinWidth;
+                                            const bx1 = waveStartX + index * drawBinWidth;
                                             const bx2 = bx1 + drawBinWidth;
                                             addRect(
                                                 bx1,

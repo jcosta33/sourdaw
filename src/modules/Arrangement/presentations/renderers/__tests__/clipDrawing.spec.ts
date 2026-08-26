@@ -281,4 +281,69 @@ describe('drawClip (Coordinate Conventions)', () => {
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing-buffer' });
         expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
     });
+
+    it('draws the pre-roll as leading silence and shortens the material for a negative offset (#2519)', () => {
+        // The issue's worked example: a 2-second clip (4 beats at 120 BPM) at
+        // audioOffsetBeats = -1. Heard, per the scheduler's pre-roll: 0.5 s of
+        // silence, then the file's first 1.5 s. Drawn: the same thing — 1 beat
+        // (25 px) of leading silence before the waveform, which then shows
+        // source samples 0..72_000 (1.5 s at 48 kHz), not the full 96_000 the
+        // clip width would hold. Pre-fix, the clamp hid the pre-roll entirely
+        // and the drawn span covered material that never sounds.
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.5]));
+
+        // Clip beats 2..6 at 25 px/beat → x = 50, w = 100.
+        const clip = create_audio_clip({ audioOffsetBeats: -1, stretchRatio: 1 });
+        drawClip(mockCtx, clip, create_test_model(), 0, 40);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith({
+            bufferId: 'buf-1',
+            numBins: 75, // 100 px minus the 25 px pre-roll
+            startSample: 0,
+            endSample: 72_000,
+        });
+
+        // The waveform polygon starts after the pre-roll. The only other
+        // lineTo drawClip issues here is the top-edge highlight at y = 2.5,
+        // so these two calls are the up- and down-sweep of the one bin.
+        const waveformLineTos = mockCtx.lineTo.mock.calls.filter((args: number[]) => args[1] !== 2.5);
+        expect(waveformLineTos).toHaveLength(2);
+        for (const [xCoord] of waveformLineTos) {
+            expect(xCoord).toBeCloseTo(50 + 2 + 25); // x + padding + pre-roll
+        }
+    });
+
+    it('draws no waveform when the pre-roll swallows the whole clip', () => {
+        // Offset -5 beats against a 4-beat clip: the scheduler's playDuration
+        // is <= 0 and it starts no source, so there is no audible span to draw.
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+
+        const clip = create_audio_clip({ audioOffsetBeats: -5, stretchRatio: 1 });
+        drawClip(mockCtx, clip, create_test_model(), 0, 40);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
+    });
+
+    it('keeps a zero offset drawing the full clip width with no leading silence', () => {
+        // Anchor for the non-negative path: identical window and geometry to
+        // the pre-fix renderer (offset 0 → start 0, full 2 s of material,
+        // waveform starting at the clip's left inset).
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.5]));
+
+        const clip = create_audio_clip({ audioOffsetBeats: 0, stretchRatio: 1 });
+        drawClip(mockCtx, clip, create_test_model(), 0, 40);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith({
+            bufferId: 'buf-1',
+            numBins: 100,
+            startSample: 0,
+            endSample: 96_000,
+        });
+
+        // The waveform starts at the clip's left inset: no leading gap.
+        const firstWaveformLineTo = mockCtx.lineTo.mock.calls.find((args: number[]) => args[1] !== 2.5);
+        expect(firstWaveformLineTo![0]).toBeCloseTo(50 + 2); // x + padding
+    });
 });
