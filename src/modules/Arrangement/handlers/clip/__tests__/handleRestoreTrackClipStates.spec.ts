@@ -549,6 +549,114 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.updateTrack).not.toHaveBeenCalled();
         });
 
+        it('refuses when a clip inside a hidden take lane was edited since capture', () => {
+            // The hidden-lane counterpart of the in-place-edit test above, and the case
+            // that makes an id sequence insufficient here. A non-active lane renders
+            // nowhere, so an edit inside it has no visible surface and no other
+            // backstop: the restore replaces the whole lane, clips included, and an
+            // id-sequence-only guard reports `written` while dropping the edit — a loss
+            // that surfaces only when the musician switches back to the take, by which
+            // point the undo history has moved on.
+            const [captured] = clipsFor('t1', ['c1']);
+            const track = liveTrack('t1', ['c1'], {
+                alternatives: [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [{ ...captured!, gain: 0.25, endBeat: 9 }] },
+                ],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['c1'], {
+                            trackFields: {
+                                ...trackFields(),
+                                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [captured!] }],
+                            },
+                        }),
+                    ],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        });
+
+        it('still restores when the only divergence in a take lane is an inline editor left open', () => {
+            // The consistency guarantee: the lane's clips ride the same `clipsMatch` as
+            // the live sequence, so the comparator's exclusions reach them too. An
+            // editor open on a hidden lane's clip is not project content, and refusing
+            // here would trade a closed editor — one click to reopen — for a dead undo
+            // stack.
+            const [captured] = clipsFor('t1', ['c1']);
+            const track = liveTrack('t1', ['c1'], {
+                alternatives: [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [{ ...captured!, isInlineEditing: true }] },
+                ],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['c1'], {
+                            trackFields: {
+                                ...trackFields(),
+                                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [captured!] }],
+                            },
+                        }),
+                    ],
+                    replacement: [snapshotFor('t1', ['c1'])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
+        });
+
+        it('still restores when a take-lane clip acquired a Knead state the snapshot never carried', () => {
+            // The seeded-analysis case one level down. The snapshot has no `kneadState`
+            // for the lane's clip, so the guard declines to compare it — and the write
+            // must decline with it, because the lane's clips go through the same
+            // `restoredClips` reconciliation as the live sequence. The live analysis
+            // survives the restore rather than being written over by the absence.
+            const [captured] = clipsFor('t1', ['c1']);
+            const kneadState = {
+                blobs: [],
+                retuneSpeedMs: 25,
+                humanizePercent: 40,
+                formantPreserve: true,
+            };
+            const track = liveTrack('t1', ['c1'], {
+                alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [{ ...captured!, kneadState }] }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+            const laneClip = { id: 'alt-1', name: 'Alternative 1', clips: [captured!] };
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['c1'], {
+                            trackFields: { ...trackFields(), alternatives: [laneClip] },
+                        }),
+                    ],
+                    replacement: [
+                        snapshotFor('t1', ['c1'], {
+                            trackFields: { ...trackFields(), alternatives: [laneClip] },
+                        }),
+                    ],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            const [, updater] = mocks.updateTrack.mock.calls[0]!;
+            expect(updater(track).alternatives[0]?.clips[0]?.kneadState).toEqual(kneadState);
+        });
+
         it('refuses when a device was pointed at a different plugin instance since capture', () => {
             const device = {
                 id: 'device-1',
