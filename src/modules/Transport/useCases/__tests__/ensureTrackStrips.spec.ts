@@ -7,17 +7,9 @@ import { ensureTrackStrips } from '../ensureTrackStrips';
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
-type AdjustmentLayerStore = Pick<
-    (typeof import('#/modules/Arrangement/stores'))['adjustmentLayerStore'],
-    'value' | 'subscribe'
->;
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null as TrackStoreState | null },
-    adjustmentLayerStore: {
-        value: { layers: [] },
-        subscribe: vi.fn<AdjustmentLayerStore['subscribe']>((_callback) => () => {}),
-    },
     ensureTrackStrip: vi.fn(),
     setTrackOutput: vi.fn(),
     setTrackGain: vi.fn(),
@@ -41,7 +33,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
 vi.mock('#/modules/Arrangement/stores', () => ({
-    adjustmentLayerStore: mocks.adjustmentLayerStore,
     getTrackEligibility: (kind: string | undefined) => ({
         acceptsRoutingEndpoint: kind !== undefined && ['audio', 'midi', 'bus', 'master', 'folder'].includes(kind),
         createsLiveStrip: kind !== 'folder' && kind !== 'vca' && kind !== undefined,

@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { executeAppActionBatch, executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import {
+    compileVersionedCommandBatchEnvelope,
+    createVerifiedBatchReceipt,
+    createVersionedCommandReceipt,
+    createVersionedCommandEnvelope,
+    executeAppActionBatch,
+    executeVersionedCommandBatchEnvelope,
+    getVersionedCommandBatchCommitProof,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -15,10 +25,11 @@ import { recordAiActionGroup } from '../recordAiActionGroup';
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn() },
 }));
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppActionBatch: vi.fn(),
     executeVersionedCommandBatchEnvelope: vi.fn(),
-    generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'Mute vocals' })),
+    generateGroupId: vi.fn((groupLabel: string) => ({ groupId: 'group-1', groupLabel })),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: vi.fn(),
@@ -26,84 +37,204 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: vi.fn() }));
 vi.mock('../recordAiActionGroup', () => ({ recordAiActionGroup: vi.fn() }));
 
-const action = { type: 'togglePlayback' } as const;
-const runtimeAction = { type: 'setPlayback', payload: { playing: true } } as const;
-const commandBatch = {
-    authority: {
+type BatchExecutionObservation = Parameters<typeof createVerifiedBatchReceipt>[0]['result'];
+
+type BatchFixtureInput = {
+    action: AppAction;
+    applicationAssignedIds?: Parameters<typeof createVersionedCommandEnvelope>[0]['applicationAssignedIds'];
+    batchId: string;
+    compensation: NonNullable<Parameters<typeof createVersionedCommandReceipt>[0]['compensation']>;
+    expectedEffect: string;
+    intent: string;
+    objectReferences: Parameters<typeof createVersionedCommandEnvelope>[0]['objectReferences'];
+    parameterUnits?: Parameters<typeof createVersionedCommandEnvelope>[0]['parameterUnits'];
+    reason: string;
+    runId: string;
+};
+
+function createBatchFixture(input: BatchFixtureInput) {
+    const command = createVersionedCommandEnvelope({
+        action: input.action,
+        availableDeviceVersions: {},
+        applicationAssignedIds: input.applicationAssignedIds ?? [],
+        dependencyIds: [],
+        expectedEffect: input.expectedEffect,
+        normalizedProjectRevision: 'revision-1',
+        objectReferences: input.objectReferences,
+        parameterUnits: input.parameterUnits ?? [],
+        reason: input.reason,
+        time: [],
+    });
+    const commandBatch = compileVersionedCommandBatchEnvelope({
+        runId: input.runId,
+        batchId: input.batchId,
         projectId: 'project-1',
         baseRevision: 'revision-1',
-        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-        grants: {
-            allowedOperationPrefixes: [],
-            create: false,
-            delete: false,
-            routing: false,
-            tempo: false,
-            master: false,
-            file: false,
-            audioUpload: false,
-            remoteGeneration: false,
-            autoCommit: false,
-        },
-        budgets: {
-            maxCommands: 1,
-            maxCreatedTracks: 0,
-            maxDeletedObjects: 0,
-            maxAffectedTracks: 0,
-            maxAffectedClips: 0,
-            maxAutomationPoints: 0,
-            maxImportedAssets: 0,
-            maxRenderJobs: 0,
-        },
-    },
-    serialized: '{"batch":"exact-auto-commit"}',
-} as const;
-
-type ReplayOutcome =
-    | 'committed'
-    | 'committed-with-warning'
-    | 'executed'
-    | 'executed-with-warning'
-    | 'no-op'
-    | 'ambiguous'
-    | 'rejected'
-    | 'conflicted'
-    | 'cancelled'
-    | 'failed'
-    | 'partially-committed'
-    | 'verification-failed';
-
-function idempotentReplayResult(outcome: ReplayOutcome, errors: string[] = []) {
+        intent: input.intent,
+        commands: [JSON.stringify(command)],
+    });
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    const receiptCommand = parsed.envelope.commands[0];
+    if (!receiptCommand) {
+        throw new Error(`Expected ${input.action.type} command in compiled batch`);
+    }
     return {
-        status: 'idempotent-replay' as const,
-        actions: [] as [],
-        receipt: {
-            schemaVersion: 1 as const,
-            runId: 'run-1',
-            batchId: 'batch-1',
-            outcome,
-            atomicity: 'atomic' as const,
-            base: {
-                normalizedRevision: 'revision-1',
-                documentIdentityEpoch: null,
-                mutationEpoch: null,
-                documents: [],
-            },
-            observedBase: null,
-            resulting: null,
-            commandOutcomes: [],
-            affectedIds: [],
-            createdBindings: [],
-            warnings: [],
-            errors,
-            pendingEffects: [],
-            links: { render: [], analysis: [] },
-            compensation: { available: false, commandIds: [] },
-            semanticDiff: null,
-            modelSummary: `Prior batch outcome: ${outcome}.`,
-        },
+        action: input.action,
+        actions: [input.action],
+        command: receiptCommand,
+        commandBatch,
+        compensation: input.compensation,
+        envelope: parsed.envelope,
     };
 }
+
+const projectFixture = createBatchFixture({
+    action: { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
+    batchId: 'batch-mute-track',
+    compensation: { available: true, strategy: 'inverse' },
+    expectedEffect: 'Mute the vocals track.',
+    intent: 'Mute vocals',
+    objectReferences: [{ argument: 'trackId', id: 'track-1', scope: 'stable' }],
+    reason: 'Silence the vocals track.',
+    runId: 'run-mute-track',
+});
+const runtimeFixture = createBatchFixture({
+    action: { type: 'stopPlayback' },
+    batchId: 'batch-stop-playback',
+    compensation: { available: false, strategy: 'none' },
+    expectedEffect: 'Stop playback.',
+    intent: 'Stop playback',
+    objectReferences: [],
+    reason: 'Stop the transport.',
+    runId: 'run-stop-playback',
+});
+const postCommitFixture = createBatchFixture({
+    action: {
+        type: 'addDevice',
+        payload: { trackId: 'track-1', deviceType: 'builtin-compressor', deviceId: 'device-post-commit' },
+    },
+    applicationAssignedIds: [{ argument: 'deviceId', value: 'device-post-commit' }],
+    batchId: 'batch-add-device',
+    compensation: { available: true, strategy: 'inverse' },
+    expectedEffect: 'Add a compressor to the vocals track.',
+    intent: 'Add compressor',
+    objectReferences: [
+        { argument: 'trackId', id: 'track-1', scope: 'stable' },
+        { argument: 'deviceId', id: 'device-post-commit', scope: 'stable' },
+    ],
+    reason: 'Add a compressor to the vocals track.',
+    runId: 'run-add-device',
+});
+const tempoFixture = createBatchFixture({
+    action: { type: 'setTempo', payload: { bpm: 111 } },
+    batchId: 'batch-set-tempo',
+    compensation: { available: true, strategy: 'inverse' },
+    expectedEffect: 'Set the project tempo to 111 BPM.',
+    intent: 'Set the tempo to 111',
+    objectReferences: [],
+    parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+    reason: 'Apply the requested project tempo.',
+    runId: 'run-set-tempo',
+});
+
+type BatchFixture = ReturnType<typeof createBatchFixture>;
+
+function receiptAction(fixture: BatchFixture) {
+    return {
+        action: fixture.action,
+        receipt: createVersionedCommandReceipt({
+            envelope: fixture.command,
+            compensation: fixture.compensation,
+        }),
+    };
+}
+
+async function createReceipt(fixture: BatchFixture, result: BatchExecutionObservation) {
+    const proof = await getVersionedCommandBatchCommitProof(fixture.commandBatch);
+    const changedProject = result.status === 'committed' || result.status === 'committed-with-warning';
+    return createVerifiedBatchReceipt({
+        contentHash: proof.contentHash,
+        envelope: fixture.envelope,
+        observedBaseRevision: fixture.envelope.baseRevision,
+        resultingRevision: changedProject ? 'revision-2' : fixture.envelope.baseRevision,
+        result,
+    });
+}
+
+const deviceEffectFailure = 'native engine unavailable';
+const deviceEffectWarning = `addDevice post-commit effect failed: ${deviceEffectFailure}`;
+const devicePendingEffect = {
+    commandId: postCommitFixture.command.commandId,
+    kind: 'runtime-graph',
+    operation: 'addDevice',
+    reason: deviceEffectFailure,
+    remediation: 'repair',
+    state: 'pending',
+} satisfies NonNullable<BatchExecutionObservation['warningDetails']>[number]['pendingEffect'];
+
+function partiallyCommittedObservation(): BatchExecutionObservation {
+    return {
+        status: 'committed-with-warning',
+        actions: [receiptAction(postCommitFixture)],
+        warning: deviceEffectWarning,
+        warningDetails: [
+            {
+                kind: 'external-effect',
+                commandId: postCommitFixture.command.commandId,
+                message: deviceEffectWarning,
+                pendingEffect: devicePendingEffect,
+            },
+        ],
+    };
+}
+
+type ReplayExpected = { status: 'no-op' | 'cancelled' } | { status: 'ambiguous' | 'failed'; reason: string };
+
+const unsuccessfulReplayCases: ReadonlyArray<{
+    expected: ReplayExpected;
+    observation: BatchExecutionObservation;
+    outcome: string;
+}> = [
+    { outcome: 'no-op', observation: { status: 'no-op', actions: [] }, expected: { status: 'no-op' } },
+    {
+        outcome: 'cancelled',
+        observation: { status: 'cancelled', reason: 'authority revoked', actions: [] },
+        expected: { status: 'cancelled' },
+    },
+    {
+        outcome: 'ambiguous',
+        observation: { status: 'ambiguous', reason: 'Prior ambiguous outcome', actions: [] },
+        expected: { status: 'ambiguous', reason: 'Prior ambiguous outcome' },
+    },
+    {
+        outcome: 'rejected',
+        observation: { status: 'rejected', reason: 'Prior rejected outcome', actions: [] },
+        expected: { status: 'failed', reason: 'Prior rejected outcome' },
+    },
+    {
+        outcome: 'conflicted',
+        observation: { status: 'conflicted', reason: 'Prior conflicted outcome', actions: [] },
+        expected: { status: 'failed', reason: 'Prior conflicted outcome' },
+    },
+    {
+        outcome: 'verification-failed',
+        observation: {
+            status: 'conflicted',
+            reason: 'Prior verification-failed outcome',
+            actions: [],
+            failureKind: 'verification',
+        },
+        expected: { status: 'failed', reason: 'Prior verification-failed outcome' },
+    },
+    {
+        outcome: 'failed',
+        observation: { status: 'failed', reason: 'Prior failed outcome', actions: [] },
+        expected: { status: 'failed', reason: 'Prior failed outcome' },
+    },
+];
 
 describe('executePlannedActions', () => {
     beforeEach(() => {
@@ -115,23 +246,11 @@ describe('executePlannedActions', () => {
     });
 
     it('retains the exact pending-effect batch across a crash at the auto-commit checkpoint and restart', async () => {
-        const receipt = {
-            ...idempotentReplayResult('partially-committed').receipt,
-            outcome: 'partially-committed' as const,
-            pendingEffects: [
-                {
-                    commandId: 'command-1',
-                    kind: 'runtime-graph' as const,
-                    operation: 'addDevice' as const,
-                    reason: 'runtime graph repair interrupted',
-                    remediation: 'repair' as const,
-                    state: 'pending' as const,
-                },
-            ],
-        };
+        const receipt = await createReceipt(postCommitFixture, partiallyCommittedObservation());
+        expect(receipt.pendingEffects).toEqual([devicePendingEffect]);
         agentRunLifecycle.create({
             runId: receipt.runId,
-            request: 'Add a compressor',
+            request: 'Load external plugin',
             mode: 'apply',
             createdRevision: 'revision-1',
             createdAt: 100,
@@ -169,9 +288,9 @@ describe('executePlannedActions', () => {
 
         await expect(
             executePlannedActions({
-                commandBatch,
-                prompt: 'Add a compressor',
-                actions: [action],
+                commandBatch: postCommitFixture.commandBatch,
+                prompt: 'Load external plugin',
+                actions: postCommitFixture.actions,
                 projectRevision: 'revision-1',
             })
         ).rejects.toThrow('simulated crash after durable project checkpoint');
@@ -185,8 +304,8 @@ describe('executePlannedActions', () => {
             pendingEffectContinuations: [
                 {
                     batchId: receipt.batchId,
-                    effects: receipt.pendingEffects,
-                    serializedBatch: commandBatch.serialized,
+                    effects: [devicePendingEffect],
+                    serializedBatch: postCommitFixture.commandBatch.serialized,
                 },
             ],
             workLeases: [expect.objectContaining({ workId: receipt.batchId, terminalState: 'orphaned' })],
@@ -194,23 +313,11 @@ describe('executePlannedActions', () => {
     });
 
     it('removes a prepared recovery capsule when the owning project checkpoint aborts', async () => {
-        const receipt = {
-            ...idempotentReplayResult('partially-committed').receipt,
-            outcome: 'partially-committed' as const,
-            pendingEffects: [
-                {
-                    commandId: 'command-1',
-                    kind: 'runtime-graph' as const,
-                    operation: 'addDevice' as const,
-                    reason: 'runtime graph repair interrupted',
-                    remediation: 'repair' as const,
-                    state: 'pending' as const,
-                },
-            ],
-        };
+        const receipt = await createReceipt(postCommitFixture, partiallyCommittedObservation());
+        expect(receipt.pendingEffects).toEqual([devicePendingEffect]);
         agentRunLifecycle.create({
             runId: receipt.runId,
-            request: 'Add a compressor',
+            request: 'Load external plugin',
             mode: 'apply',
             createdRevision: 'revision-1',
             createdAt: 100,
@@ -218,14 +325,14 @@ describe('executePlannedActions', () => {
         vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
             const preparation = options?.onProjectCommitCheckpoint?.({ receipt });
             preparation?.discard();
-            return { status: 'failed' as const, reason: 'project commit unavailable', actions: [] as [] };
+            return { status: 'failed', reason: 'project commit unavailable', actions: [] };
         });
 
         await expect(
             executePlannedActions({
-                commandBatch,
-                prompt: 'Add a compressor',
-                actions: [action],
+                commandBatch: postCommitFixture.commandBatch,
+                prompt: 'Load external plugin',
+                actions: postCommitFixture.actions,
                 projectRevision: 'revision-1',
             })
         ).resolves.toEqual({ status: 'failed', reason: 'project commit unavailable' });
@@ -234,15 +341,10 @@ describe('executePlannedActions', () => {
     });
 
     it('rejects legacy execution instead of dispatching an unbound action batch', async () => {
-        vi.mocked(executeAppActionBatch).mockResolvedValue({
-            status: 'committed',
-            actions: [{ action, label: 'Toggle playback' }],
-        });
-
         const result = await executePlannedActions({
             legacyExecution: true,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
         });
 
@@ -254,39 +356,49 @@ describe('executePlannedActions', () => {
     });
 
     it('returns a durable idempotent replay without duplicating AI history or notifications', async () => {
-        const replayResult = idempotentReplayResult('committed');
-        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue(replayResult);
+        const receipt = await createReceipt(projectFixture, {
+            status: 'committed',
+            actions: [receiptAction(projectFixture)],
+        });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'idempotent-replay',
+            actions: [],
+            receipt,
+        });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
         });
 
-        expect(result).toEqual({ status: 'committed', actions: [], receipt: replayResult.receipt });
+        expect(result).toEqual({ status: 'committed', actions: [], receipt });
         expect(recordAiActionGroup).not.toHaveBeenCalled();
         expect(notifyAiChange).not.toHaveBeenCalled();
     });
 
     it('returns the verified receipt from a fresh apply commit', async () => {
-        const receipt = idempotentReplayResult('committed').receipt;
+        const receipt = await createReceipt(projectFixture, {
+            status: 'committed',
+            actions: [receiptAction(projectFixture)],
+        });
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
-            actions: [{ action, label: 'Toggle playback' }],
+            actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],
             receipt,
         });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
             executionMode: 'atomic',
         });
 
         expect(vi.mocked(executeVersionedCommandBatchEnvelope)).toHaveBeenCalledWith({
-            ...commandBatch,
+            ...projectFixture.commandBatch,
             options: expect.objectContaining({
                 groupId: 'group-1',
                 source: 'prompt',
@@ -299,32 +411,35 @@ describe('executePlannedActions', () => {
             prompt: 'Mute vocals',
             groupId: 'group-1',
             executionKind: 'project',
-            actions: [{ kind: 'appAction', actionType: 'togglePlayback', label: 'Toggle playback' }],
+            actions: [{ kind: 'appAction', actionType: 'muteTrack', label: 'Mute track' }],
         });
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['togglePlayback']);
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['muteTrack']);
         expect(result).toEqual({
             status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            actions: [{ actionType: 'muteTrack', label: 'Mute track' }],
             receipt,
         });
     });
 
     it('forwards the commit-prepared observer to the authoritative Command boundary', async () => {
-        const receipt = idempotentReplayResult('committed').receipt;
+        const receipt = await createReceipt(projectFixture, {
+            status: 'committed',
+            actions: [receiptAction(projectFixture)],
+        });
         const onProjectCommitPrepared = vi.fn();
         vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async (input) => {
             input.onProjectCommitPrepared?.();
             return {
                 status: 'committed',
-                actions: [{ action, label: 'Toggle playback' }],
+                actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],
                 receipt,
             };
         });
 
         await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
             onProjectCommitPrepared,
         });
@@ -332,26 +447,20 @@ describe('executePlannedActions', () => {
         expect(onProjectCommitPrepared).toHaveBeenCalledOnce();
     });
 
-    it.each([
-        ['no-op', { status: 'no-op' }],
-        ['cancelled', { status: 'cancelled' }],
-        ['ambiguous', { status: 'ambiguous', reason: 'Prior ambiguous outcome' }],
-        ['rejected', { status: 'failed', reason: 'Prior rejected outcome' }],
-        ['conflicted', { status: 'failed', reason: 'Prior conflicted outcome' }],
-        ['verification-failed', { status: 'failed', reason: 'Prior verification-failed outcome' }],
-        ['failed', { status: 'failed', reason: 'Prior failed outcome' }],
-    ] as const)(
-        'preserves a prior %s outcome instead of reporting an idempotent replay as committed',
-        async (outcome, expected) => {
-            const reason = `Prior ${outcome} outcome`;
-            vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue(
-                idempotentReplayResult(outcome, outcome === 'no-op' || outcome === 'cancelled' ? [] : [reason])
-            );
+    it.each(unsuccessfulReplayCases)(
+        'preserves a prior $outcome outcome instead of reporting an idempotent replay as committed',
+        async ({ expected, observation }) => {
+            const receipt = await createReceipt(projectFixture, observation);
+            vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+                status: 'idempotent-replay',
+                actions: [],
+                receipt,
+            });
 
             const result = await executePlannedActions({
-                commandBatch,
+                commandBatch: projectFixture.commandBatch,
                 prompt: 'Mute vocals',
-                actions: [action],
+                actions: projectFixture.actions,
                 projectRevision: 'revision-1',
             });
 
@@ -362,68 +471,90 @@ describe('executePlannedActions', () => {
     );
 
     it('reports a runtime-only command as executed rather than committed', async () => {
-        const receipt = idempotentReplayResult('executed').receipt;
+        const receipt = await createReceipt(runtimeFixture, {
+            status: 'executed',
+            actions: [receiptAction(runtimeFixture)],
+        });
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'executed',
-            actions: [{ action: runtimeAction, label: 'Start playback' }],
+            actions: [{ ...receiptAction(runtimeFixture), label: 'Stop playback' }],
             receipt,
         });
 
         const result = await executePlannedActions({
-            commandBatch,
-            prompt: 'Start playback',
-            actions: [runtimeAction],
+            commandBatch: runtimeFixture.commandBatch,
+            prompt: 'Stop playback',
+            actions: runtimeFixture.actions,
             projectRevision: 'revision-1',
             executionMode: 'atomic',
         });
 
         expect(vi.mocked(executeVersionedCommandBatchEnvelope)).toHaveBeenCalledWith({
-            ...commandBatch,
+            ...runtimeFixture.commandBatch,
             options: expect.objectContaining({ requireCompensation: true }),
         });
         expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith({
-            prompt: 'Start playback',
+            prompt: 'Stop playback',
             groupId: 'group-1',
             executionKind: 'runtime',
-            actions: [{ kind: 'appAction', actionType: 'setPlayback', label: 'Start playback' }],
+            actions: [{ kind: 'appAction', actionType: 'stopPlayback', label: 'Stop playback' }],
         });
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Start playback', ['setPlayback']);
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Stop playback', ['stopPlayback']);
         expect(result).toEqual({
             status: 'executed',
-            actions: [{ actionType: 'setPlayback', label: 'Start playback' }],
+            actions: [{ actionType: 'stopPlayback', label: 'Stop playback' }],
             receipt,
         });
     });
 
     it('uses executed wording when a runtime follow-up reports a warning', async () => {
-        const receipt = idempotentReplayResult('executed-with-warning').receipt;
+        const warning = 'stopPlayback follow-up effect failed: transport unavailable';
+        const observation: BatchExecutionObservation = {
+            status: 'executed-with-warning',
+            actions: [receiptAction(runtimeFixture)],
+            warning,
+            warningDetails: [
+                {
+                    kind: 'external-effect',
+                    commandId: runtimeFixture.command.commandId,
+                    message: warning,
+                },
+            ],
+        };
+        const receipt = await createReceipt(runtimeFixture, observation);
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'executed-with-warning',
-            actions: [{ action: runtimeAction, label: 'Start playback' }],
-            warning: 'setPlayback follow-up effect failed: transport unavailable',
+            actions: [{ ...receiptAction(runtimeFixture), label: 'Stop playback' }],
+            warning,
+            warningDetails: observation.warningDetails ? [...observation.warningDetails] : undefined,
             receipt,
         });
 
         const result = await executePlannedActions({
-            commandBatch,
-            prompt: 'Start playback',
-            actions: [runtimeAction],
+            commandBatch: runtimeFixture.commandBatch,
+            prompt: 'Stop playback',
+            actions: runtimeFixture.actions,
             projectRevision: 'revision-1',
         });
 
         expect(result).toEqual({
             status: 'executed',
-            actions: [{ actionType: 'setPlayback', label: 'Start playback' }],
-            executionWarning: 'setPlayback follow-up effect failed: transport unavailable',
+            actions: [{ actionType: 'stopPlayback', label: 'Stop playback' }],
+            executionWarning: warning,
             receipt,
         });
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
-            'Executed: Start playback. Executed with follow-up warning: setPlayback follow-up effect failed: transport unavailable',
-            ['setPlayback']
+            `Executed: Stop playback. Executed with follow-up warning: ${warning}`,
+            ['stopPlayback']
         );
     });
 
     it('reports invalidation when the project revision changes before admission', async () => {
+        const receipt = await createReceipt(projectFixture, {
+            status: 'cancelled',
+            reason: 'authority revoked',
+            actions: [],
+        });
         vi.mocked(captureProjectRevision).mockReturnValue('revision-2');
         vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation((input) => {
             expect(input.options?.shouldExecute?.()).toBe(false);
@@ -431,14 +562,14 @@ describe('executePlannedActions', () => {
                 status: 'cancelled',
                 reason: 'authority revoked',
                 actions: [],
-                receipt: idempotentReplayResult('cancelled').receipt,
+                receipt,
             });
         });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
         });
 
@@ -453,6 +584,11 @@ describe('executePlannedActions', () => {
     it('reports user cancellation separately from project invalidation', async () => {
         const controller = new AbortController();
         controller.abort();
+        const receipt = await createReceipt(projectFixture, {
+            status: 'cancelled',
+            reason: 'authority revoked',
+            actions: [],
+        });
         vi.mocked(captureProjectRevision).mockReturnValue('revision-2');
         vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation((input) => {
             expect(input.options?.shouldExecute?.()).toBe(false);
@@ -460,14 +596,14 @@ describe('executePlannedActions', () => {
                 status: 'cancelled',
                 reason: 'authority revoked',
                 actions: [],
-                receipt: idempotentReplayResult('cancelled').receipt,
+                receipt,
             });
         });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
             signal: controller.signal,
         });
@@ -493,9 +629,9 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: tempoFixture.commandBatch,
             prompt: 'Set the tempo to 111',
-            actions: [{ type: 'setTempo', payload: { bpm: 111 } }],
+            actions: tempoFixture.actions,
             projectRevision: 'revision-1',
         });
 
@@ -507,10 +643,13 @@ describe('executePlannedActions', () => {
     });
 
     it('preserves a committed result when post-commit reporting fails', async () => {
-        const receipt = idempotentReplayResult('committed').receipt;
+        const receipt = await createReceipt(projectFixture, {
+            status: 'committed',
+            actions: [receiptAction(projectFixture)],
+        });
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
-            actions: [{ action, label: 'Toggle playback' }],
+            actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],
             receipt,
         });
         vi.mocked(recordAiActionGroup).mockImplementation(() => {
@@ -518,55 +657,66 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
         });
 
         expect(result).toEqual({
             status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            actions: [{ actionType: 'muteTrack', label: 'Mute track' }],
             receipt,
             reportingWarning: 'history: history unavailable',
         });
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['togglePlayback']);
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['muteTrack']);
         expect(vi.mocked(logger.error)).toHaveBeenCalled();
     });
 
-    it('distinguishes a committed post-commit effect warning from reporting failures', async () => {
-        const receipt = idempotentReplayResult('committed-with-warning').receipt;
+    it('distinguishes a committed observer warning from reporting failures', async () => {
+        const warning = 'Committed observer failed: observer unavailable';
+        const observation: BatchExecutionObservation = {
+            status: 'committed-with-warning',
+            actions: [receiptAction(projectFixture)],
+            warning,
+            warningDetails: [{ kind: 'observer', message: warning }],
+        };
+        const receipt = await createReceipt(projectFixture, observation);
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed-with-warning',
-            actions: [{ action, label: 'Toggle playback' }],
-            warning: 'togglePlayback post-commit effect failed: transport unavailable',
+            actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],
+            warning,
+            warningDetails: observation.warningDetails ? [...observation.warningDetails] : undefined,
             receipt,
         });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
         });
 
         expect(result).toEqual({
             status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
-            commitWarning: 'togglePlayback post-commit effect failed: transport unavailable',
+            actions: [{ actionType: 'muteTrack', label: 'Mute track' }],
+            commitWarning: warning,
             receipt,
         });
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
-            'Executed: Mute vocals. Committed with follow-up warning: togglePlayback post-commit effect failed: transport unavailable',
-            ['togglePlayback']
+            `Executed: Mute vocals. Committed with follow-up warning: ${warning}`,
+            ['muteTrack']
         );
     });
 
     it('preserves a committed result when the success notification throws', async () => {
-        const receipt = idempotentReplayResult('committed').receipt;
+        const receipt = await createReceipt(projectFixture, {
+            status: 'committed',
+            actions: [receiptAction(projectFixture)],
+        });
         vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
-            actions: [{ action, label: 'Toggle playback' }],
+            actions: [{ ...receiptAction(projectFixture), label: 'Mute track' }],
             receipt,
         });
         vi.mocked(notifyAiChange).mockImplementation(() => {
@@ -574,15 +724,15 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
-            commandBatch,
+            commandBatch: projectFixture.commandBatch,
             prompt: 'Mute vocals',
-            actions: [action],
+            actions: projectFixture.actions,
             projectRevision: 'revision-1',
         });
 
         expect(result).toEqual({
             status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            actions: [{ actionType: 'muteTrack', label: 'Mute track' }],
             receipt,
             reportingWarning: 'notification: toast unavailable',
         });

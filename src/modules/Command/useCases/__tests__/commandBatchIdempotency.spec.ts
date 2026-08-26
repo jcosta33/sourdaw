@@ -10,6 +10,7 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { type CommandBatchIdempotencyRepository } from '../../models/CommandBatchIdempotency';
 import { commandBatchIdempotencyStore } from '../../stores/commandBatchIdempotencyStore';
 import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
@@ -971,7 +972,9 @@ describe('command batch idempotency', () => {
     it('fails closed for non-complete project evidence and repository lookup failures', async () => {
         const batch = compileBatch();
         const proof = await getVersionedCommandBatchCommitProof(batch);
-        const lookup = vi.fn(() => Promise.resolve({ status: 'complete' as const, serializedReceipt: '{}' }));
+        const lookup = vi.fn<CommandBatchIdempotencyRepository['lookup']>(() =>
+            Promise.resolve({ status: 'complete', serializedReceipt: '{}' })
+        );
         commandBatchIdempotencyPort.setRepository({
             lookup,
             claim: () => Promise.resolve({ status: 'claimed' }),

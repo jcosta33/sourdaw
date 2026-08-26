@@ -1,16 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
-    type compileVersionedCommandBatchEnvelope,
-    type createVerifiedBatchReceipt,
+    compileVersionedCommandBatchEnvelope,
+    createVerifiedBatchReceipt,
+    createVersionedCommandReceipt,
     type getVersionedCommandBatchCommitProof,
+    type parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCommandEnvelopes';
 import { executePromptActionGroup } from '../executePromptActionGroup';
+import { getExactAgentActionHash } from '../getExactAgentActionHash';
 import * as receiptSaga from '../recordAgentRunReceiptSaga';
 
 const mocks = vi.hoisted(() => ({
@@ -67,22 +74,14 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
 const RUN_ID = 'prompt-run-1';
 const BATCH_ID = 'batch-1';
 const IDEMPOTENCY_KEY = 'batch-key-1';
+const RUNTIME_BATCH_ID = 'runtime-batch-1';
+const RUNTIME_IDEMPOTENCY_KEY = 'runtime-batch-key-1';
 const BASE_REVISION = JSON.stringify({
     documentIdentityEpoch: 1,
     mutationEpoch: 0,
     documents: [{ docId: 'root', heads: ['head-0'] }],
 });
-const expectedDurableCommitProof = Object.freeze({
-    projectId: 'project:test',
-    idempotencyKey: IDEMPOTENCY_KEY,
-    contentHash: `sha256:${'a'.repeat(64)}`,
-    runId: RUN_ID,
-    batchId: BATCH_ID,
-    baseRevision: BASE_REVISION,
-    commands: [{ commandId: 'command-1', operation: 'importStemSet' }],
-}) satisfies Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
-const action = { type: 'togglePlayback' } satisfies AppAction;
-type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+const runtimeAction = { type: 'stopPlayback' } satisfies AppAction;
 const stemAction = {
     type: 'importStemSet',
     payload: {
@@ -111,44 +110,86 @@ const stemAction = {
         ],
     },
 } satisfies AppAction;
-const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
-const grants = {
-    allowedOperationPrefixes: ['togglePlayback'],
-    create: false,
-    delete: false,
-    routing: false,
-    tempo: false,
-    master: false,
-    file: false,
-    audioUpload: false,
-    remoteGeneration: false,
-    autoCommit: false,
+type CommandBatch = ReturnType<typeof compileVersionedCommandBatchEnvelope>;
+type ParsedCommandBatch = ReturnType<typeof parseVersionedCommandBatchEnvelope>;
+type ReceiptEnvelope = Extract<ParsedCommandBatch, { status: 'valid' }>['envelope'];
+type DurableCommitProof = Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
+type BatchFixture = {
+    actions: readonly AppAction[];
+    commandBatch: CommandBatch;
+    envelope: ReceiptEnvelope;
+    proof: DurableCommitProof;
 };
-const commandBatch = {
-    serialized: 'command-batch',
-    authority: {
+type BatchFixtures = {
+    stem: BatchFixture;
+    runtime: BatchFixture;
+    differentRun: BatchFixture;
+    differentBatch: BatchFixture;
+};
+type CommandUseCases = typeof import('#/modules/Command/useCases');
+type AgentApproval = Parameters<typeof executePromptActionGroup>[0]['prepared']['agentApproval'];
+
+let batchFixtures: BatchFixtures | null = null;
+
+function getBatchFixtures(): BatchFixtures {
+    if (batchFixtures === null) {
+        throw new Error('Expected the production-compiled command batch fixtures');
+    }
+    return batchFixtures;
+}
+
+function getReceiptCommandFixture(fixture: BatchFixture): ReceiptEnvelope['commands'][number] {
+    const command = fixture.envelope.commands[0];
+    if (!command) {
+        throw new Error('Expected the parsed batch to contain its compiled command');
+    }
+    return command;
+}
+
+async function compileBatchFixture(
+    commandUseCases: CommandUseCases,
+    input: {
+        actions: readonly AppAction[];
+        actionLabels: readonly string[];
+        batchId: string;
+        idempotencyKey: string;
+        intent: string;
+        runId: string;
+    }
+): Promise<BatchFixture> {
+    const commands = compilePendingActionCommandEnvelopes({
+        actions: input.actions,
+        actionLabels: input.actionLabels,
+        group: { groupId: input.batchId, groupLabel: input.intent },
+        projectRevision: BASE_REVISION,
+    });
+    const commandBatch = compileVersionedCommandBatchEnvelope({
+        runId: input.runId,
+        batchId: input.batchId,
         projectId: 'project:test',
         baseRevision: BASE_REVISION,
-        scope,
-        grants,
-        budgets: {
-            maxCommands: 1,
-            maxCreatedTracks: 1,
-            maxDeletedObjects: 0,
-            maxAffectedTracks: 1,
-            maxAffectedClips: 1,
-            maxAutomationPoints: 0,
-            maxImportedAssets: 1,
-            maxRenderJobs: 0,
-        },
-    },
-} satisfies Parameters<typeof getVersionedCommandBatchCommitProof>[0] &
-    Pick<ReturnType<typeof compileVersionedCommandBatchEnvelope>, 'authority' | 'serialized'>;
+        idempotencyKey: input.idempotencyKey,
+        intent: input.intent,
+        commands,
+    });
+    const parsed = commandUseCases.parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    return {
+        actions: input.actions,
+        commandBatch,
+        envelope: parsed.envelope,
+        proof: await commandUseCases.getVersionedCommandBatchCommitProof(commandBatch),
+    };
+}
 
-function seedRun(phase: 'planning' | 'waiting-for-approval' = 'planning'): void {
+function seedRun(fixture: BatchFixture, phase: 'planning' | 'waiting-for-approval' = 'planning'): void {
+    const command = getReceiptCommandFixture(fixture);
+    const batch = fixture.commandBatch;
     agentRunLifecycle.create({
         runId: RUN_ID,
-        request: 'Play',
+        request: fixture.envelope.intent,
         mode: 'apply',
         createdRevision: 'revision-1',
         createdAt: 100,
@@ -156,20 +197,28 @@ function seedRun(phase: 'planning' | 'waiting-for-approval' = 'planning'): void 
     agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning', revision: 'revision-1' });
     agentRunLifecycle.recordPlan({
         runId: RUN_ID,
-        summary: 'Toggle playback',
-        commandIds: ['command-1'],
-        serializedBatchIdentity: IDEMPOTENCY_KEY,
+        summary: fixture.envelope.intent,
+        commandIds: [command.commandId],
+        serializedBatchIdentity: fixture.envelope.idempotencyKey,
         revision: 'revision-1',
-        scope,
-        grants,
+        scope: {
+            targetIds: [...batch.authority.scope.targetIds],
+            targetRanges: batch.authority.scope.targetRanges.map((range) => ({ ...range })),
+            protectedTargetIds: [...batch.authority.scope.protectedTargetIds],
+            protectedRanges: batch.authority.scope.protectedRanges.map((range) => ({ ...range })),
+        },
+        grants: {
+            ...batch.authority.grants,
+            allowedOperationPrefixes: [...batch.authority.grants.allowedOperationPrefixes],
+        },
         budgets: { limits: {}, consumed: {} },
         recordedAt: 101,
     });
     agentRunLifecycle.recordBatch({
         runId: RUN_ID,
         batch: {
-            batchId: BATCH_ID,
-            commandIds: ['command-1'],
+            batchId: fixture.envelope.batchId,
+            commandIds: [command.commandId],
             status: phase === 'waiting-for-approval' ? 'waiting-for-approval' : 'planned',
             receiptIdentity: null,
         },
@@ -184,91 +233,172 @@ function seedRun(phase: 'planning' | 'waiting-for-approval' = 'planning'): void 
     }
 }
 
-function admitted(agentApproval: unknown = null) {
+function admitted(fixture: BatchFixture, agentApproval: AgentApproval = null) {
     return {
         runId: RUN_ID,
         prepared: {
-            commandBatch,
-            agentApproval: agentApproval as never,
+            commandBatch: fixture.commandBatch,
+            agentApproval,
             requiresConfirmation: agentApproval !== null,
         },
     };
 }
 
-function verifiedReceipt(
-    outcome: 'committed' | 'executed' = 'committed',
-    identity: { runId?: string; batchId?: string } = {}
-): VerifiedReceipt {
-    const revision = {
-        normalizedRevision: 'revision-1',
-        documentIdentityEpoch: null,
-        mutationEpoch: null,
-        documents: [],
-    };
+type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type ReceiptResult = Parameters<typeof createVerifiedBatchReceipt>[0]['result'];
+type PendingEffect = NonNullable<ReceiptResult['warningDetails']>[number]['pendingEffect'];
+
+function buildVerifiedReceipt(input: { fixture: BatchFixture; result: ReceiptResult }): VerifiedReceipt {
+    return createVerifiedBatchReceipt({
+        contentHash: input.fixture.proof.contentHash,
+        envelope: input.fixture.envelope,
+        observedBaseRevision: BASE_REVISION,
+        resultingRevision: 'revision-2',
+        result: input.result,
+    });
+}
+
+function receiptAction(fixture: BatchFixture) {
+    const action = fixture.actions[0];
+    if (!action) {
+        throw new Error('Expected the batch fixture to contain its compiled action');
+    }
+    const command = getReceiptCommandFixture(fixture);
     return {
-        schemaVersion: 1,
-        runId: identity.runId ?? RUN_ID,
-        batchId: identity.batchId ?? BATCH_ID,
-        outcome,
-        atomicity: 'atomic',
-        base: revision,
-        observedBase: revision,
-        resulting: revision,
-        commandOutcomes: [],
-        affectedIds: [],
-        createdBindings: [],
-        warnings: [],
-        errors: [],
-        pendingEffects: [],
-        links: { render: [], analysis: [] },
-        compensation: { available: false, commandIds: [] },
-        semanticDiff: null,
-        modelSummary: `Batch outcome: ${outcome}.`,
+        action,
+        receipt: createVersionedCommandReceipt({
+            envelope: command,
+            compensation:
+                action.type === 'importStemSet'
+                    ? { available: true, strategy: 'inverse' }
+                    : { available: false, strategy: 'none' },
+        }),
+    };
+}
+
+function committedReceipt(fixture: BatchFixture): VerifiedReceipt {
+    return buildVerifiedReceipt({
+        fixture,
+        result: { status: 'committed', actions: [receiptAction(fixture)] },
+    });
+}
+
+function executedReceipt(fixture: BatchFixture): VerifiedReceipt {
+    return buildVerifiedReceipt({
+        fixture,
+        result: { status: 'executed', actions: [receiptAction(fixture)] },
+    });
+}
+
+function pendingEffect(fixture: BatchFixture): NonNullable<PendingEffect> {
+    const command = getReceiptCommandFixture(fixture);
+    return {
+        commandId: command.commandId,
+        kind: 'external-effect',
+        operation: command.operation,
+        reason: 'Imported stem runtime reconciliation remains incomplete',
+        remediation: 'reconcile',
+        state: 'pending',
     };
 }
 
 describe('executePromptActionGroup', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.resetAllMocks();
         agentRunLifecycle.clear();
+        registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getTransportHandlers());
+        const commandUseCases =
+            await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+        batchFixtures = {
+            stem: await compileBatchFixture(commandUseCases, {
+                actions: [stemAction],
+                actionLabels: ['Import stems'],
+                runId: RUN_ID,
+                batchId: BATCH_ID,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                intent: 'Import stems',
+            }),
+            runtime: await compileBatchFixture(commandUseCases, {
+                actions: [runtimeAction],
+                actionLabels: ['Stop playback'],
+                runId: RUN_ID,
+                batchId: RUNTIME_BATCH_ID,
+                idempotencyKey: RUNTIME_IDEMPOTENCY_KEY,
+                intent: 'Stop playback',
+            }),
+            differentRun: await compileBatchFixture(commandUseCases, {
+                actions: [stemAction],
+                actionLabels: ['Import stems'],
+                runId: 'different-run',
+                batchId: BATCH_ID,
+                idempotencyKey: 'different-run-batch-key',
+                intent: 'Import stems',
+            }),
+            differentBatch: await compileBatchFixture(commandUseCases, {
+                actions: [stemAction],
+                actionLabels: ['Import stems'],
+                runId: RUN_ID,
+                batchId: 'different-batch',
+                idempotencyKey: 'different-batch-key',
+                intent: 'Import stems',
+            }),
+        };
+        const fixtures = getBatchFixtures();
         mocks.projectRevision.value = 'revision-2';
         mocks.issueApprovalBinding.mockReturnValue({ token: 'exact-approval' });
-        mocks.getVersionedCommandBatchCommitProof.mockImplementation(async () => ({
-            ...expectedDurableCommitProof,
-        }));
+        mocks.getVersionedCommandBatchCommitProof.mockResolvedValue(fixtures.stem.proof);
         mocks.prepareDurablePromotionRecovery.mockResolvedValue({ status: 'prepared' });
         mocks.commitDurablePromotionRecovery.mockResolvedValue({ status: 'committed' });
         mocks.completeDurablePromotionRecovery.mockResolvedValue({ status: 'completed' });
         mocks.transitionDurablePromotionRecoveryToCleanup.mockResolvedValue({ status: 'prepared' });
         mocks.completeDurableCleanupRecovery.mockResolvedValue({ status: 'completed' });
-        mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-            status: 'valid',
-            envelope: {
-                runId: RUN_ID,
-                batchId: BATCH_ID,
-                idempotencyKey: IDEMPOTENCY_KEY,
-                commands: [{ commandId: 'command-1' }],
-            },
-        });
+        mocks.parseVersionedCommandBatchEnvelope.mockImplementation(commandUseCases.parseVersionedCommandBatchEnvelope);
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+        batchFixtures = null;
     });
 
     it('binds the exact application-issued approval to the admitted command batch', async () => {
-        const approval = { actorId: 'artist-1', fingerprint: 'compiled-risk-fingerprint' };
-        seedRun('waiting-for-approval');
+        const fixture = getBatchFixtures().stem;
+        const command = getReceiptCommandFixture(fixture);
+        const approval = {
+            schemaVersion: 1,
+            actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
+            sourceRevision: fixture.envelope.baseRevision,
+            targetFingerprints: {},
+            consequences: {
+                audioUpload: fixture.envelope.grants.audioUpload,
+                fileAccess: fixture.envelope.grants.file,
+                maxImportedAssets: fixture.envelope.budgets.maxImportedAssets,
+                maxRenderJobs: fixture.envelope.budgets.maxRenderJobs,
+                remoteGeneration: fixture.envelope.grants.remoteGeneration,
+            },
+            localActorId: 'artist-1',
+            policy: {
+                decision: 'confirm',
+                reasons: ['The planning workflow requires explicit confirmation.'],
+                requiredTrustMode: 'destructive-commit',
+                risk: 'external-effect',
+            },
+        } satisfies NonNullable<AgentApproval>;
+        seedRun(fixture, 'waiting-for-approval');
         mocks.executePlannedActions.mockResolvedValue({
             status: 'committed',
             actions: [],
-            receipt: verifiedReceipt(),
+            receipt: committedReceipt(fixture),
         });
 
         await executePromptActionGroup({
-            actions: [action],
-            prompt: 'Play',
+            actions: fixture.actions,
+            prompt: 'Import stems',
             projectRevision: 'revision-1',
-            ...admitted(approval),
+            ...admitted(fixture, approval),
         });
 
-        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith({ approval, commandBatch });
+        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith({ approval, commandBatch: fixture.commandBatch });
         expect(mocks.executePlannedActions).toHaveBeenCalledWith(
             expect.objectContaining({
                 runId: RUN_ID,
@@ -277,50 +407,49 @@ describe('executePromptActionGroup', () => {
         );
     });
 
-    it.each(['committed', 'executed'] as const)(
-        'completes durable stem promotion recovery after an exact verified %s receipt without deleting media',
-        async (status) => {
-            seedRun();
-            mocks.executePlannedActions.mockResolvedValue({
-                status,
-                actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
-                receipt: verifiedReceipt(status),
-            });
+    it('completes durable stem promotion recovery after an exact verified committed receipt without deleting media', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt: committedReceipt(fixture),
+        });
 
-            await expect(
-                executePromptActionGroup({
-                    actions: [stemAction],
-                    prompt: 'Import stems',
-                    projectRevision: 'revision-1',
-                    ...admitted(),
-                })
-            ).resolves.toEqual({ status });
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
 
-            expect(mocks.getVersionedCommandBatchCommitProof).toHaveBeenCalledExactlyOnceWith(commandBatch);
-            expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
-                `stem-promotion:${RUN_ID}:${BATCH_ID}`,
-                [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }],
-                expectedDurableCommitProof
-            );
-            expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
-                `stem-promotion:${RUN_ID}:${BATCH_ID}`
-            );
-            expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
-                `stem-promotion:${RUN_ID}:${BATCH_ID}`
-            );
-            expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
-            expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
-                runId: RUN_ID,
-                stems: stemAction.payload.stems,
-            });
-            expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
-        }
-    );
+        expect(mocks.getVersionedCommandBatchCommitProof).toHaveBeenCalledExactlyOnceWith(fixture.commandBatch);
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`,
+            [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }],
+            fixture.proof
+        );
+        expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`
+        );
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`
+        );
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
+    });
 
     it('prepares durable stem promotion before command execution can reach project commit', async () => {
         const controller = new AbortController();
         const order: string[] = [];
-        seedRun();
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
         mocks.prepareDurablePromotionRecovery.mockImplementation(async () => {
             order.push('prepared');
             return { status: 'prepared' };
@@ -341,17 +470,17 @@ describe('executePromptActionGroup', () => {
             return {
                 status: 'committed',
                 actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
-                receipt: verifiedReceipt('committed'),
+                receipt: committedReceipt(fixture),
             };
         });
 
         await expect(
             executePromptActionGroup({
-                actions: [stemAction],
+                actions: fixture.actions,
                 prompt: 'Import stems',
                 projectRevision: 'revision-1',
                 signal: controller.signal,
-                ...admitted(),
+                ...admitted(fixture),
             })
         ).resolves.toEqual({ status: 'committed' });
 
@@ -367,15 +496,16 @@ describe('executePromptActionGroup', () => {
     ] as const)(
         'transitions durable stem promotion recovery to cleanup after a non-committed $execution.status terminal',
         async ({ execution, outcome }) => {
-            seedRun();
+            const fixture = getBatchFixtures().stem;
+            seedRun(fixture);
             mocks.executePlannedActions.mockResolvedValue(execution);
 
             await expect(
                 executePromptActionGroup({
-                    actions: [stemAction],
+                    actions: fixture.actions,
                     prompt: 'Import stems',
                     projectRevision: 'revision-1',
-                    ...admitted(),
+                    ...admitted(fixture),
                 })
             ).resolves.toEqual({ status: outcome });
 
@@ -398,15 +528,16 @@ describe('executePromptActionGroup', () => {
     );
 
     it('retains prepared stem recovery ownership for an ambiguous execution outcome', async () => {
-        seedRun();
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
         mocks.executePlannedActions.mockResolvedValue({ status: 'ambiguous', reason: 'Commit truth is unresolved' });
 
         await expect(
             executePromptActionGroup({
-                actions: [stemAction],
+                actions: fixture.actions,
                 prompt: 'Import stems',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixture),
             })
         ).resolves.toEqual({ status: 'ambiguous' });
 
@@ -424,92 +555,130 @@ describe('executePromptActionGroup', () => {
 
     it.each([
         {
-            result: { status: 'committed', actions: [], receipt: verifiedReceipt('committed') },
+            fixture: 'stem',
+            receiptOutcome: 'committed',
+            result: { status: 'committed', actions: [] },
             phase: 'completed',
             committedRevision: 'revision-2',
             batchStatus: 'committed',
             leaseState: 'completed',
-            receiptIdentity: '1:prompt-run-1:batch-1:committed',
+            receiptIdentity: '2:prompt-run-1:batch-1:committed',
             notification: null,
         },
         {
-            result: { status: 'executed', actions: [], receipt: verifiedReceipt('executed') },
+            fixture: 'runtime',
+            receiptOutcome: 'executed',
+            result: { status: 'executed', actions: [] },
             phase: 'completed',
             committedRevision: null,
             batchStatus: 'committed',
             leaseState: 'completed',
-            receiptIdentity: '1:prompt-run-1:batch-1:executed',
+            receiptIdentity: '2:prompt-run-1:runtime-batch-1:executed',
             notification: null,
         },
         {
+            fixture: 'stem',
+            receiptOutcome: undefined,
             result: { status: 'invalidated', reason: 'Revision changed' },
             phase: 'failed',
             committedRevision: null,
             batchStatus: 'failed',
             leaseState: 'failed',
             receiptIdentity: null,
-            notification: ['Command not executed: Revision changed', []],
+            notification: { message: 'Command not executed: Revision changed', actions: [] },
         },
         {
+            fixture: 'stem',
+            receiptOutcome: undefined,
             result: { status: 'failed', reason: 'Execution failed' },
             phase: 'failed',
             committedRevision: null,
             batchStatus: 'failed',
             leaseState: 'failed',
             receiptIdentity: null,
-            notification: ['Command not executed: Execution failed', []],
+            notification: { message: 'Command not executed: Execution failed', actions: [] },
         },
         {
+            fixture: 'stem',
+            receiptOutcome: undefined,
             result: { status: 'ambiguous', reason: 'Receipt missing' },
             phase: 'partially-completed',
             committedRevision: null,
             batchStatus: 'failed',
             leaseState: 'failed',
             receiptIdentity: null,
-            notification: ['Command outcome is uncertain: Receipt missing. Inspect the project before retrying.', []],
+            notification: {
+                message: 'Command outcome is uncertain: Receipt missing. Inspect the project before retrying.',
+                actions: [],
+            },
         },
         {
+            fixture: 'stem',
+            receiptOutcome: undefined,
             result: { status: 'cancelled' },
             phase: 'cancelled',
             committedRevision: null,
             batchStatus: 'cancelled',
             leaseState: 'cancelled',
             receiptIdentity: null,
-            notification: ['Command cancelled before it committed. No project changes were applied.', []],
+            notification: {
+                message: 'Command cancelled before it committed. No project changes were applied.',
+                actions: [],
+            },
         },
         {
+            fixture: 'stem',
+            receiptOutcome: undefined,
             result: { status: 'no-op' },
             phase: 'completed',
             committedRevision: null,
             batchStatus: 'no-op',
             leaseState: 'completed',
             receiptIdentity: null,
-            notification: ['No project changes were needed.', []],
+            notification: { message: 'No project changes were needed.', actions: [] },
         },
     ])(
         'reconciles $result.status to exact run, batch, lease, receipt, and notification truth',
-        async ({ result, phase, committedRevision, batchStatus, leaseState, receiptIdentity, notification }) => {
-            seedRun();
-            mocks.executePlannedActions.mockResolvedValue(result);
+        async ({
+            fixture,
+            receiptOutcome,
+            result,
+            phase,
+            committedRevision,
+            batchStatus,
+            leaseState,
+            receiptIdentity,
+            notification,
+        }) => {
+            const exactFixture = fixture === 'runtime' ? getBatchFixtures().runtime : getBatchFixtures().stem;
+            seedRun(exactFixture);
+            let receipt: VerifiedReceipt | undefined;
+            if (receiptOutcome === 'committed') {
+                receipt = committedReceipt(exactFixture);
+            } else if (receiptOutcome === 'executed') {
+                receipt = executedReceipt(exactFixture);
+            }
+            const exactResult = receipt ? { ...result, receipt } : result;
+            mocks.executePlannedActions.mockResolvedValue(exactResult);
 
             await expect(
                 executePromptActionGroup({
-                    actions: [action],
-                    prompt: 'Play',
+                    actions: exactFixture.actions,
+                    prompt: exactFixture.envelope.intent,
                     projectRevision: 'revision-1',
-                    ...admitted(),
+                    ...admitted(exactFixture),
                 })
-            ).resolves.toEqual({ status: result.status === 'invalidated' ? 'failed' : result.status });
+            ).resolves.toEqual({ status: exactResult.status === 'invalidated' ? 'failed' : exactResult.status });
 
             expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
                 phase,
                 revisions: { committed: committedRevision },
-                batches: [{ batchId: BATCH_ID, status: batchStatus, receiptIdentity }],
+                batches: [{ batchId: exactFixture.envelope.batchId, status: batchStatus, receiptIdentity }],
                 workLeases: [
                     {
                         runId: RUN_ID,
-                        workId: BATCH_ID,
-                        idempotencyKey: IDEMPOTENCY_KEY,
+                        workId: exactFixture.envelope.batchId,
+                        idempotencyKey: exactFixture.envelope.idempotencyKey,
                         terminalState: leaseState,
                     },
                 ],
@@ -517,59 +686,52 @@ describe('executePromptActionGroup', () => {
             if (notification === null) {
                 expect(mocks.notifyAiChange).not.toHaveBeenCalled();
             } else {
-                expect(mocks.notifyAiChange).toHaveBeenCalledWith(...(notification as [string, []]));
+                expect(mocks.notifyAiChange).toHaveBeenCalledWith(notification.message, notification.actions);
             }
         }
     );
 
     it('persists the exact command batch for pending-effect continuation after a committed receipt', async () => {
-        const pendingEffect = {
-            commandId: 'command-1',
-            kind: 'runtime-graph' as const,
-            operation: 'togglePlayback' as const,
-            reason: 'runtime graph repair remains pending',
-            remediation: 'repair' as const,
-            state: 'pending' as const,
-        };
-        const receipt = {
-            ...verifiedReceipt(),
-            outcome: 'partially-committed' as const,
-            atomicity: 'durable-atomic-with-non-atomic-effects' as const,
-            commandOutcomes: [
-                {
-                    commandId: pendingEffect.commandId,
-                    operation: pendingEffect.operation,
-                    outcome: 'committed' as const,
-                    affectedIds: [],
-                    compensationAvailable: true,
-                },
-            ],
-            pendingEffects: [pendingEffect],
-            warnings: ['A post-commit effect remains pending.'],
-            compensation: { available: true, commandIds: [pendingEffect.commandId] },
-        } satisfies VerifiedReceipt;
-        seedRun();
+        const fixture = getBatchFixtures().stem;
+        const effect = pendingEffect(fixture);
+        const receipt = buildVerifiedReceipt({
+            fixture,
+            result: {
+                status: 'committed-with-warning',
+                actions: [receiptAction(fixture)],
+                warning: 'A post-commit effect remains pending.',
+                warningDetails: [
+                    {
+                        kind: 'external-effect',
+                        commandId: effect.commandId,
+                        message: 'A post-commit effect remains pending.',
+                        pendingEffect: effect,
+                    },
+                ],
+            },
+        });
+        seedRun(fixture);
         mocks.executePlannedActions.mockResolvedValue({
             status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
             receipt,
         });
 
         await expect(
             executePromptActionGroup({
-                actions: [action],
-                prompt: 'Play',
+                actions: fixture.actions,
+                prompt: 'Import stems',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixture),
             })
         ).resolves.toEqual({ status: 'committed' });
 
         const expectedContinuation = {
             batchId: BATCH_ID,
-            effects: [pendingEffect],
+            effects: [effect],
             recovery: 'reconcile-batch',
-            serializedBatch: commandBatch.serialized,
-            authority: commandBatch.authority,
+            serializedBatch: fixture.commandBatch.serialized,
+            authority: fixture.commandBatch.authority,
         };
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
             phase: 'partially-completed',
@@ -583,32 +745,39 @@ describe('executePromptActionGroup', () => {
     it.each([
         {
             label: 'missing',
-            receipt: undefined,
+            receiptFixture: null,
             warning:
                 'Command outcome is uncertain: Command execution completed without an exact verified receipt. Inspect the project before retrying.',
         },
         {
             label: 'different-run',
-            receipt: verifiedReceipt('committed', { runId: 'different-run' }),
+            receiptFixture: 'differentRun',
             warning:
                 'Command outcome is uncertain: Command execution returned a receipt for a different admitted batch. Inspect the project before retrying.',
         },
         {
             label: 'different-batch',
-            receipt: verifiedReceipt('committed', { batchId: 'different-batch' }),
+            receiptFixture: 'differentBatch',
             warning:
                 'Command outcome is uncertain: Command execution returned a receipt for a different admitted batch. Inspect the project before retrying.',
         },
-    ])('keeps a $label committed receipt outcome uncertain', async ({ receipt, warning }) => {
-        seedRun();
+    ])('keeps a $label committed receipt outcome uncertain', async ({ receiptFixture, warning }) => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        let receipt: VerifiedReceipt | undefined;
+        if (receiptFixture === 'differentRun') {
+            receipt = committedReceipt(getBatchFixtures().differentRun);
+        } else if (receiptFixture === 'differentBatch') {
+            receipt = committedReceipt(getBatchFixtures().differentBatch);
+        }
         mocks.executePlannedActions.mockResolvedValue({ status: 'committed', actions: [], receipt });
 
         await expect(
             executePromptActionGroup({
-                actions: [stemAction],
+                actions: fixture.actions,
                 prompt: 'Import stems',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixture),
             })
         ).resolves.toEqual({ status: 'ambiguous' });
 
@@ -633,15 +802,16 @@ describe('executePromptActionGroup', () => {
     });
 
     it('reconciles a thrown execution before propagating the failure', async () => {
-        seedRun();
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
         mocks.executePlannedActions.mockRejectedValue(new Error('Executor crashed'));
 
         await expect(
             executePromptActionGroup({
-                actions: [stemAction],
+                actions: fixture.actions,
                 prompt: 'Import stems',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixture),
             })
         ).rejects.toThrow('Executor crashed');
 
@@ -669,11 +839,12 @@ describe('executePromptActionGroup', () => {
     it.each(['lease-settlement', 'receipt-persistence'] as const)(
         'keeps a verified committed receipt authoritative when %s throws',
         async (failurePoint) => {
-            seedRun();
+            const fixture = getBatchFixtures().stem;
+            seedRun(fixture);
             mocks.executePlannedActions.mockResolvedValue({
                 status: 'committed',
-                actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
-                receipt: verifiedReceipt(),
+                actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+                receipt: committedReceipt(fixture),
             });
             if (failurePoint === 'lease-settlement') {
                 vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
@@ -687,16 +858,16 @@ describe('executePromptActionGroup', () => {
 
             await expect(
                 executePromptActionGroup({
-                    actions: [action],
-                    prompt: 'Play',
+                    actions: fixture.actions,
+                    prompt: 'Import stems',
                     projectRevision: 'revision-1',
-                    ...admitted(),
+                    ...admitted(fixture),
                 })
             ).resolves.toEqual({ status: 'committed' });
 
             expect(mocks.notifyAiChange).toHaveBeenCalledWith(
                 expect.stringMatching(/project change committed.*do not retry automatically/i),
-                ['togglePlayback']
+                ['importStemSet']
             );
             expect(mocks.notifyAiChange).not.toHaveBeenCalledWith(
                 expect.stringMatching(/command not executed/i),
@@ -708,7 +879,7 @@ describe('executePromptActionGroup', () => {
                     {
                         batchId: BATCH_ID,
                         status: 'committed',
-                        receiptIdentity: '1:prompt-run-1:batch-1:committed',
+                        receiptIdentity: '2:prompt-run-1:batch-1:committed',
                     },
                 ],
                 workLeases: [
@@ -722,20 +893,21 @@ describe('executePromptActionGroup', () => {
     );
 
     it('keeps a committed receipt authoritative when lease settlement returns stale', async () => {
-        seedRun();
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
         mocks.executePlannedActions.mockResolvedValue({
             status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
-            receipt: verifiedReceipt(),
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt: committedReceipt(fixture),
         });
         vi.spyOn(agentRunWorkLease, 'settle').mockReturnValueOnce({ status: 'stale' });
 
         await expect(
             executePromptActionGroup({
-                actions: [action],
-                prompt: 'Play',
+                actions: fixture.actions,
+                prompt: 'Import stems',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixture),
             })
         ).resolves.toEqual({ status: 'committed' });
 
@@ -745,14 +917,14 @@ describe('executePromptActionGroup', () => {
                 {
                     batchId: BATCH_ID,
                     status: 'committed',
-                    receiptIdentity: '1:prompt-run-1:batch-1:committed',
+                    receiptIdentity: '2:prompt-run-1:batch-1:committed',
                 },
             ],
             workLeases: [{ workId: BATCH_ID, terminalState: null }],
         });
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(
             expect.stringMatching(/project change committed.*cancelled or replaced.*do not retry automatically/i),
-            ['togglePlayback']
+            ['importStemSet']
         );
         expect(mocks.notifyAiChange).not.toHaveBeenCalledWith(
             expect.stringMatching(/command not executed/i),
@@ -761,23 +933,15 @@ describe('executePromptActionGroup', () => {
     });
 
     it('rejects a prepared batch whose persisted run identity differs from the admitted run', async () => {
-        seedRun();
-        mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-            status: 'valid',
-            envelope: {
-                runId: 'different-run',
-                batchId: BATCH_ID,
-                idempotencyKey: IDEMPOTENCY_KEY,
-                commands: [{ commandId: 'command-1' }],
-            },
-        });
+        const fixtures = getBatchFixtures();
+        seedRun(fixtures.stem);
 
         await expect(
             executePromptActionGroup({
-                actions: [action],
-                prompt: 'Play',
+                actions: fixtures.differentRun.actions,
+                prompt: 'Import stems',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixtures.differentRun),
             })
         ).rejects.toThrow('does not belong to admitted run');
 
@@ -790,23 +954,15 @@ describe('executePromptActionGroup', () => {
     });
 
     it('fails the admitted tracked batch when a prepared envelope supplies a different batch id', async () => {
-        seedRun();
-        mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-            status: 'valid',
-            envelope: {
-                runId: RUN_ID,
-                batchId: 'untrusted-batch',
-                idempotencyKey: IDEMPOTENCY_KEY,
-                commands: [{ commandId: 'command-1' }],
-            },
-        });
+        const fixtures = getBatchFixtures();
+        seedRun(fixtures.stem);
 
         await expect(
             executePromptActionGroup({
-                actions: [stemAction],
+                actions: fixtures.differentBatch.actions,
                 prompt: 'Import stems',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixtures.differentBatch),
             })
         ).rejects.toThrow('does not belong to admitted run');
 
@@ -821,14 +977,15 @@ describe('executePromptActionGroup', () => {
     });
 
     it('terminalizes actions rejected by the approved command boundary', async () => {
-        seedRun();
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
 
         await expect(
             executePromptActionGroup({
                 actions: [{ type: 'removeAllTracks' }],
                 prompt: 'Delete everything',
                 projectRevision: 'revision-1',
-                ...admitted(),
+                ...admitted(fixture),
             })
         ).resolves.toEqual({ status: 'failed' });
 
