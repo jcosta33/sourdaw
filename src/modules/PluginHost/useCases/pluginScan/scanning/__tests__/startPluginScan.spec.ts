@@ -62,6 +62,8 @@ const mocks = vi.hoisted(() => {
         scanPlugins: vi.fn<typeof import('../../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
         getDefaultPluginPaths:
             vi.fn<typeof import('../../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
+        isScanPathAuthorized:
+            vi.fn<typeof import('../../../../repositories/pluginBridge/isScanPathAuthorized').isScanPathAuthorized>(),
     };
 });
 
@@ -83,6 +85,10 @@ vi.mock('../../../../repositories/pluginBridge/getDefaultPluginPaths', () => ({
     getDefaultPluginPaths: mocks.getDefaultPluginPaths,
 }));
 
+vi.mock('../../../../repositories/pluginBridge/isScanPathAuthorized', () => ({
+    isScanPathAuthorized: mocks.isScanPathAuthorized,
+}));
+
 describe('startPluginScan', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -97,6 +103,7 @@ describe('startPluginScan', () => {
             mocks.pluginScanStoreSet(next_value);
         });
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
+        mocks.isScanPathAuthorized.mockResolvedValue(true);
     });
 
     it('sets isScanning and then updates with results', async () => {
@@ -174,6 +181,48 @@ describe('startPluginScan', () => {
         expect(mocks.scanPlugins).toHaveBeenCalledWith(expect.arrayContaining(['/custom/path', '/default/path']));
     });
 
+    it('excludes saved paths the policy refuses from the scan request, with one notice naming them', async () => {
+        // Regression (#2378): a path saved before the add was gated on the
+        // scan policy used to reach the native scan on every run and come
+        // back as a permanent "Unauthorized plugin scan path" error — red,
+        // destructive, and never fixable from settings. The scan now asks the
+        // policy first, sends only what it can authorize, and reports the
+        // skipped paths once, on the informational channel.
+        mocks.pluginScanStoreValue.value.scanPaths = ['/granted/path', '/ungranted/path'];
+        mocks.getDefaultPluginPaths.mockResolvedValue([]);
+        mocks.isScanPathAuthorized.mockImplementation((path: string) => Promise.resolve(path === '/granted/path'));
+        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], notices: [], scan_duration_ms: 0 });
+
+        await startPluginScan();
+
+        expect(mocks.scanPlugins).toHaveBeenCalledWith(['/granted/path']);
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: [],
+                notices: [expect.stringContaining('/ungranted/path')],
+            })
+        );
+    });
+
+    it('reports a policy query that failed instead of scanning past it', async () => {
+        // The partition decides what gets scanned; a query the bridge could
+        // not answer makes the partition a guess. The scan refuses rather
+        // than silently skipping or silently including a path.
+        mocks.pluginScanStoreValue.value.scanPaths = ['/custom/path'];
+        mocks.isScanPathAuthorized.mockRejectedValue(new Error('IPC Failure'));
+
+        await startPluginScan();
+
+        expect(mocks.scanPlugins).not.toHaveBeenCalled();
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: ['IPC Failure'],
+            })
+        );
+    });
+
     it('should not restore a scan path removed while scanPlugins is awaiting', async () => {
         mocks.pluginScanStoreValue.value.scanPaths = ['/removed/path'];
         mocks.getDefaultPluginPaths.mockResolvedValue([]);
@@ -181,9 +230,12 @@ describe('startPluginScan', () => {
         mocks.scanPlugins.mockReturnValue(scan_deferred.promise);
 
         const scan_promise = startPluginScan();
-        await Promise.resolve();
-
-        expect(mocks.scanPlugins).toHaveBeenCalledWith(['/removed/path']);
+        // The authorization round trip sits between the start and the scan
+        // request now, so the request lands a few microtask ticks later than
+        // the start call.
+        await vi.waitFor(() => {
+            expect(mocks.scanPlugins).toHaveBeenCalledWith(['/removed/path']);
+        });
 
         mocks.pluginScanStoreValue.value = {
             ...mocks.pluginScanStoreValue.value,

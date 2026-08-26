@@ -368,6 +368,20 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
     Ok(PluginScanPolicy::platform_defaults().allowed_roots_as_strings())
 }
 
+/// Whether the production scan policy would authorize `path` as a scan root.
+///
+/// The settings UI's add-a-folder action runs on this verdict, so it can only
+/// offer what a scan can honor — the same authority `scan_plugins` enforces,
+/// asked before the path is saved instead of being rejected on every scan
+/// after. Every refusal reason (empty, relative, symlinked, outside the
+/// platform roots) collapses to `false`: the caller needs the verdict, and
+/// the user-facing wording is the renderer's, which names the roots.
+pub async fn is_scan_path_authorized(path: String) -> Result<bool, String> {
+    Ok(PluginScanPolicy::platform_defaults()
+        .authorize_scan_root(Path::new(&path))
+        .is_ok())
+}
+
 // ── Activation-time registry resolution ─────────────────────────────────
 
 /// How long the one targeted rescan an activation miss is allowed may run.
@@ -3269,5 +3283,32 @@ mod tests {
 
         assert_eq!(registry.len(), 2);
         assert!(!registry.contains_key(""));
+    }
+
+    #[test]
+    fn scan_path_authorization_query_round_trips_the_scan_policy_verdict() {
+        // The verdict the settings UI gates a saved scan folder on must be
+        // the verdict the scan itself enforces for the same path: `true` for
+        // a platform root, `false` for a path outside them.
+        let allowed_root = PluginScanPolicy::platform_defaults()
+            .allowed_roots_as_strings()
+            .first()
+            .expect("platform default plugin roots should exist")
+            .clone();
+        let refused_path = std::env::temp_dir()
+            .join("sourdaw-ungranted-query-root")
+            .display()
+            .to_string();
+
+        let allowed = crate::block_on_test(is_scan_path_authorized(allowed_root))
+            .expect("query should answer");
+        let refused = crate::block_on_test(is_scan_path_authorized(refused_path))
+            .expect("query should answer");
+
+        assert!(allowed, "a platform default root must be authorized");
+        assert!(
+            !refused,
+            "a path outside the platform roots must be refused"
+        );
     }
 }
