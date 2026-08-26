@@ -1037,6 +1037,92 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('upgrades a legacy promotion proof without executing an unprovable commit', async () => {
+        const recoveryId = 'stem-promotion:legacy-proof';
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['legacy-proof'], { type: 'audio/wav' }),
+            'legacy-proof.wav',
+            'asset-stage-legacy-proof'
+        );
+        const proof = makeCommitProof({
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:legacy-proof',
+            contentHash: `sha256:${'7'.repeat(64)}`,
+            runId: 'run-legacy-proof',
+            batchId: 'batch-legacy-proof',
+        });
+        await transfer.prepareDurablePromotionRecovery(
+            recoveryId,
+            [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
+            proof
+        );
+        durableAssetIndexedDb.seedLegacyPromotionRecoveryCommitProof(recoveryId, {
+            projectId: proof.projectId,
+            idempotencyKey: proof.idempotencyKey,
+            contentHash: proof.contentHash,
+            runId: proof.runId,
+            batchId: proof.batchId,
+        });
+        transfer.dispose();
+        vi.resetModules();
+
+        const getDisposition = vi.fn(() => 'committed' as const);
+        const [{ AssetTransfer: FreshAssetTransfer }, { configureDurableAssetCommitProof: configureFreshProof }] =
+            await Promise.all([import('../assetTransfer'), import('../configureDurableAssetCommitProof')]);
+        configureFreshProof({ getDisposition });
+        const recreated = new FreshAssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(
+            recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER))
+        ).resolves.toBeUndefined();
+
+        expect(getDisposition).not.toHaveBeenCalled();
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(1);
+        await expect(recreated.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            leaseState: 'staged',
+        });
+        recreated.dispose();
+    });
+
+    it('does not migrate an unrelated malformed legacy promotion proof', async () => {
+        const recoveryId = 'stem-promotion:malformed-legacy-proof';
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['malformed-legacy-proof'], { type: 'audio/wav' }),
+            'malformed-legacy-proof.wav',
+            'asset-stage-malformed-legacy-proof'
+        );
+        const proof = makeCommitProof({
+            projectId: TEST_OWNER,
+            idempotencyKey: 'command:malformed-legacy-proof',
+            contentHash: `sha256:${'6'.repeat(64)}`,
+            runId: 'run-malformed-legacy-proof',
+            batchId: 'batch-malformed-legacy-proof',
+        });
+        await transfer.prepareDurablePromotionRecovery(
+            recoveryId,
+            [{ leaseId: staged.leaseId, expectedHash: staged.hash }],
+            proof
+        );
+        durableAssetIndexedDb.seedLegacyPromotionRecoveryCommitProof(recoveryId, {
+            projectId: proof.projectId,
+            idempotencyKey: proof.idempotencyKey,
+            contentHash: proof.contentHash,
+            runId: proof.runId,
+            batchId: proof.batchId,
+            unrelatedIdentity: 'must-not-be-trusted',
+        });
+        transfer.dispose();
+        vi.resetModules();
+
+        const { AssetTransfer: FreshAssetTransfer } = await import('../assetTransfer');
+        const recreated = new FreshAssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        await expect(
+            recreated.resumeDurableOwnerRebindsAfterProjectLoad(makeCurrentRecoveryAuthority(TEST_OWNER))
+        ).rejects.toThrow('Durable asset promotion recovery failed: corrupt-record');
+        expect(durableAssetIndexedDb.countRecords('promotionRecoveries')).toBe(1);
+        recreated.dispose();
+    });
+
     it('keeps the original promotion commit proof immutable across restart', async () => {
         const staged = await transfer.stageDurableAsset(
             new Blob(['immutable-project-commit-proof'], { type: 'audio/wav' }),

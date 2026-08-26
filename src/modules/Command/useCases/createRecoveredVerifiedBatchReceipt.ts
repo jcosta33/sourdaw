@@ -40,7 +40,6 @@ export function createRecoveredVerifiedBatchReceipt(input: {
     });
     return {
         ...recovered,
-        atomicity: input.priorReceipt.atomicity,
         modelSummary: `${recovered.modelSummary} Pending external effects were reconciled successfully.`,
     };
 }

@@ -409,6 +409,7 @@ export type FakeDurableAssetIndexedDb = {
     overwriteLeaseHash: (leaseId: string, hash: string) => void;
     overwriteLeaseTerminalAt: (leaseId: string, terminalAt: number) => void;
     overwritePromotionRecoveryCommitProof: (recoveryId: string, commitProof: StoredRecord) => void;
+    seedLegacyPromotionRecoveryCommitProof: (recoveryId: string, commitProof: StoredRecord) => void;
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     seedOwnerHandoff: (input: { previousOwnerId: string; nextOwnerId: string }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
@@ -552,6 +553,15 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
             const record = store?.get(recoveryId);
             if (record) {
                 store.set(recoveryId, { ...record, commitProof });
+            }
+        },
+        seedLegacyPromotionRecoveryCommitProof: (recoveryId, commitProof) => {
+            const state = durableState();
+            const store = state?.stores.get('promotionRecoveries');
+            const record = store?.get(recoveryId);
+            if (state && store && record) {
+                state.version = 5;
+                store.set(recoveryId, { ...record, schemaVersion: 1, commitProof });
             }
         },
         seedPromotedLease: ({ leaseId, ownerId, hash, terminalAt }) => {

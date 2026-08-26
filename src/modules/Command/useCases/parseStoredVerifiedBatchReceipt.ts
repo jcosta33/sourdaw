@@ -141,7 +141,7 @@ function hasConsistentBatchOutcome(value: Record<string, unknown>, pendingEffect
 
     if (value.outcome === 'committed') {
         return (
-            (value.atomicity === 'atomic' || value.atomicity === 'durable-atomic-with-non-atomic-effects') &&
+            value.atomicity === 'atomic' &&
             pendingEffectCount === 0 &&
             hasCommittedCommand &&
             allCommandOutcomes('committed', 'no-op')

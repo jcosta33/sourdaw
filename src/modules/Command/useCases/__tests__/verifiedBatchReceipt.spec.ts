@@ -900,6 +900,15 @@ describe('verified batch receipt', () => {
             parseReceipt(
                 serializeReceipt({
                     atomicity: 'durable-atomic-with-non-atomic-effects',
+                    commandOutcome: 'committed',
+                    outcome: 'committed',
+                })
+            )
+        ).toBeNull();
+        expect(
+            parseReceipt(
+                serializeReceipt({
+                    atomicity: 'durable-atomic-with-non-atomic-effects',
                     commandOutcome: 'no-op',
                     outcome: 'partially-committed',
                     pendingEffects: [pendingExternalEffect],

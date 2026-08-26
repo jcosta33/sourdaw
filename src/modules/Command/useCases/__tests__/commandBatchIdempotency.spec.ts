@@ -1607,7 +1607,7 @@ describe('command batch idempotency', () => {
         });
         expect(retry).toMatchObject({
             status: 'idempotent-replay',
-            receipt: { outcome: 'committed', errors: [] },
+            receipt: { outcome: 'committed', atomicity: 'atomic', errors: [] },
         });
         expect('receipt' in retry ? retry.receipt.warnings : []).not.toContain(
             expect.stringContaining('runtime strip unavailable')
@@ -1618,7 +1618,7 @@ describe('command batch idempotency', () => {
         });
         expect(settledRetry).toMatchObject({
             status: 'idempotent-replay',
-            receipt: { outcome: 'committed', errors: [] },
+            receipt: { outcome: 'committed', atomicity: 'atomic', errors: [] },
         });
         expect(tryAcquireRecoveryLease).toHaveBeenCalledTimes(2);
         expect(release).toHaveBeenCalledTimes(1);
