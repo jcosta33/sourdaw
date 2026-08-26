@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -72,6 +72,28 @@ const context = {
     selectedClipIds: [],
     activeView: 'arrange' as const,
     playheadPosition: 0,
+};
+
+const duplicateClipContext = {
+    ...context,
+    tracks: context.tracks.map((track) =>
+        track.id === 'track-kick'
+            ? {
+                  ...track,
+                  clipCount: 1,
+                  clips: [
+                      {
+                          id: 'clip-kick-a',
+                          name: 'Kick A',
+                          type: 'audio' as const,
+                          startBeat: 0,
+                          endBeat: 4,
+                          noteCount: 0,
+                      },
+                  ],
+              }
+            : track
+    ),
 };
 
 const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
@@ -161,6 +183,7 @@ const deviceParameter = (id: string) => ({
 
 describe('compileArbitraryCommandList', () => {
     afterEach(() => {
+        vi.restoreAllMocks();
         clearHandlerRegistry();
         commandBatchPreflightPort.setProvider(null);
         commandBatchPreviewPort.setProvider(null);
@@ -556,6 +579,83 @@ describe('compileArbitraryCommandList', () => {
         });
 
         expect(result).toMatchObject({ status: 'accepted' });
+    });
+
+    it('derives duplicateClip parent scope from its registered target contract', () => {
+        expect(
+            compileArbitraryCommandList({
+                context: duplicateClipContext,
+                revision: 'revision-duplicate-clip',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan(['clip-kick-a']),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'duplicate-kick-a',
+                                        name: 'duplicateClip',
+                                        arguments: {},
+                                        selector: {
+                                            targetArgument: 'clipId',
+                                            entity: 'clip',
+                                            where: { name: 'Kick A' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: {
+                commands: [{ name: 'duplicateClip', arguments: { clipId: 'clip-kick-a' } }],
+            },
+        });
+    });
+
+    it('fails closed when an app-derived identity has no materialization contract', async () => {
+        const commandUseCases = await import('#/modules/Command/useCases');
+        const getGroundingRules = commandUseCases.getExecutableAppActionGroundingRules;
+        vi.spyOn(commandUseCases, 'getExecutableAppActionGroundingRules').mockImplementation((actionType) => {
+            const groundingRules = getGroundingRules(actionType);
+            if (actionType !== 'duplicateClip' || groundingRules === null) {
+                return groundingRules;
+            }
+            return { ...groundingRules, targetRules: [] };
+        });
+        expect(
+            compileArbitraryCommandList({
+                context: duplicateClipContext,
+                revision: 'revision-missing-derived-materializer',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan([]),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'duplicate-kick-a',
+                                        name: 'duplicateClip',
+                                        arguments: { clipId: 'clip-kick-a' },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Structured command app-derived mutation identity could not be materialized: parentTrackIds',
+        });
     });
 
     it('carries every direct secondary target through exact compiler and command-batch planning scope', () => {
