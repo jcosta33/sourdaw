@@ -6,7 +6,7 @@ import {
 } from '#/utils/handlerContract';
 
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from './gainEnvelopeStore';
-import { removeWarpState, setWarpState, warpStates } from './warpStates';
+import { isDefaultWarpState, removeWarpState, setWarpState, warpStates } from './warpStates';
 
 import type { WarpMarker, WarpState } from '../models/WarpMarker';
 
@@ -103,6 +103,11 @@ function normalizeGainEnvelope(envelope: ClipSatelliteGainEnvelopeSnapshot, clip
  * The live satellites of one clip id; `null` where the clip carries none. Every
  * record is rebuilt field by field, so a snapshot never inherits an own key
  * whose value is `undefined` from whoever wrote the store.
+ *
+ * A warp entry whose value is `defaultWarpState` reads as no satellite, exactly
+ * as `hasNonDefaultWarpState` judges presence: `setStretchMode` and friends
+ * write the map unconditionally, so a semantic no-op must not become state an
+ * undo guard or a transition plan treats as worth keeping.
  */
 export function readClipSatelliteEntry(clipId: string): ClipSatelliteEntry {
     const gainEnvelope = getEnvelope(clipId);
@@ -110,7 +115,7 @@ export function readClipSatelliteEntry(clipId: string): ClipSatelliteEntry {
     return {
         clipId,
         gainEnvelope: gainEnvelope ? normalizeGainEnvelope(gainEnvelope, clipId) : null,
-        warpState: warpState ? normalizeWarpState(warpState) : null,
+        warpState: warpState && !isDefaultWarpState(warpState) ? normalizeWarpState(warpState) : null,
     };
 }
 
