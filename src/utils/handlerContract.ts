@@ -2261,10 +2261,15 @@ export type HandlerDescribeResult = {
 
 export type HandlerAfterCommit = () => void | Promise<void>;
 
+export type HandlerPostCommitEffect =
+    | { readonly kind: 'runtime-graph'; readonly remediation: 'retry' | 'repair' }
+    | { readonly kind: 'external-effect'; readonly remediation: 'reconcile' | 'manual-repair' };
+
 type HandlerDeferredEffects =
     | {
           afterCommit?: undefined;
           afterAmbiguousCommit?: undefined;
+          postCommitEffect?: undefined;
           afterRuntimeExecution?: undefined;
       }
     | {
@@ -2272,11 +2277,14 @@ type HandlerDeferredEffects =
           afterCommit: HandlerAfterCommit;
           /** Reconcile external state from durable project truth after an ambiguous project commit. */
           afterAmbiguousCommit: HandlerAfterCommit;
+          /** Durable recovery classification recorded before the project transaction commits. */
+          postCommitEffect?: HandlerPostCommitEffect;
           afterRuntimeExecution?: undefined;
       }
     | {
           afterCommit?: undefined;
           afterAmbiguousCommit?: undefined;
+          postCommitEffect?: undefined;
           /** Complete a runtime-only action after its applied state is already observable. */
           afterRuntimeExecution: HandlerAfterCommit;
       };

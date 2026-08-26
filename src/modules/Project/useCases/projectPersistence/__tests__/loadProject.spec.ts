@@ -14,8 +14,18 @@ import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction'
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 
+const CANONICAL_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
+
 const mocks = vi.hoisted(() => ({
-    projectStoreValue: { value: { loading: false, initialized: true } as ProjectStoreState },
+    projectStoreValue: {
+        value: {
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+            loading: false,
+            identityMigrationPending: false,
+            identityPersistencePending: false,
+            initialized: true,
+        } as ProjectStoreState,
+    },
     projectStoreSet: vi.fn(),
     createCrdtProject: vi.fn(),
     executeAppAction: vi.fn<
@@ -33,6 +43,9 @@ const mocks = vi.hoisted(() => ({
     prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
     resetModuleStores: vi.fn(),
     readLegacyChordTrackMigration: vi.fn(),
+    resumeDurableAssetOwnerHandoffsAfterProjectLoad: vi.fn(
+        (_authority: { ownerId: string; isCurrent: () => boolean; signal: AbortSignal }) => Promise.resolve()
+    ),
     stopActiveAutoSave: vi.fn(),
     setAutoSaveHandle: vi.fn(),
     migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
@@ -79,7 +92,13 @@ vi.mock('../migrateActiveProjectIdentity', () => ({
 describe('loadProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.projectStoreValue.value = { loading: false, initialized: true } as ProjectStoreState;
+        mocks.projectStoreValue.value = {
+            projectId: CANONICAL_PROJECT_ID,
+            loading: false,
+            identityMigrationPending: false,
+            identityPersistencePending: false,
+            initialized: true,
+        } as ProjectStoreState;
         mocks.loadCrdtProject.mockResolvedValue(true);
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.createCrdtProject.mockResolvedValue(undefined);
@@ -91,7 +110,10 @@ describe('loadProject', () => {
         });
         mocks.readLegacyChordTrackMigration.mockReturnValue(null);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
-        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => Promise.resolve(),
+            resumeDurableAssetOwnerHandoffsAfterProjectLoad: mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad,
+        });
     });
 
     it('should hydrate only after collaboration exits and persistence activates', async () => {
@@ -107,9 +129,17 @@ describe('loadProject', () => {
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
         expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledTimes(1);
+        expect(mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad).toHaveBeenCalledTimes(1);
         expect(mocks.projectCrdtToStores.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.migrateActiveProjectIdentity.mock.invocationCallOrder[0]!
         );
+        expect(mocks.migrateActiveProjectIdentity.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad.mock.invocationCallOrder[0]!
+        );
+        const recoveryAuthority = mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad.mock.calls[0]?.[0];
+        expect(recoveryAuthority?.ownerId).toBe(CANONICAL_PROJECT_ID);
+        expect(recoveryAuthority?.isCurrent()).toBe(true);
+        expect(recoveryAuthority?.signal.aborted).toBe(false);
     });
 
     it('lands on the launch screen without creating a document when persistence is empty', async () => {
@@ -259,6 +289,26 @@ describe('loadProject', () => {
 
         await expect(loadProject()).rejects.toBe(failure);
         expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('invalidates owner recovery authority when a newer project transition supersedes the loaded identity', async () => {
+        const recoveryGate = Promise.withResolvers<void>();
+        let recoveryAuthority: { ownerId: string; isCurrent: () => boolean; signal: AbortSignal } | undefined;
+        mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad.mockImplementationOnce((authority) => {
+            recoveryAuthority = authority;
+            return recoveryGate.promise;
+        });
+
+        const loading = loadProject();
+        await vi.waitFor(() => expect(recoveryAuthority?.isCurrent()).toBe(true));
+        const newerLoad = runProjectLoadTransaction({ yieldToInFlight: true });
+        await newerLoad.prepare();
+        newerLoad.activate();
+
+        expect(recoveryAuthority?.isCurrent()).toBe(false);
+        expect(recoveryAuthority?.signal.aborted).toBe(true);
+        recoveryGate.resolve();
+        await expect(loading).resolves.toBe(false);
     });
 
     it('cancels a prepared buffer candidate when a newer project load supersedes it before publication', async () => {

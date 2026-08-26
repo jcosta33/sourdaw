@@ -1,8 +1,12 @@
-import { bounceTrack } from './bounceTrack';
+import { bounceTrack, type BounceTransactionScope } from './bounceTrack';
 
 type BounceInPlaceOptions = {
     /** Forwarded to `bounceTrack`; see `BounceOptions.recordUndoEntry`. */
     recordUndoEntry?: boolean;
+    /** Forwarded to `bounceTrack`; see `BounceOptions.transactionScope`. */
+    transactionScope?: BounceTransactionScope;
+    /** Forwarded to `bounceTrack`; see `BounceOptions.deferUndoEntry`. */
+    deferUndoEntry?: (file: () => void) => void;
 };
 
 export async function bounceInPlace(trackId: string, options?: BounceInPlaceOptions): Promise<boolean> {
@@ -14,5 +18,7 @@ export async function bounceInPlace(trackId: string, options?: BounceInPlaceOpti
         tailHandling: 'auto',
         destination: 'replace',
         ...(options?.recordUndoEntry === undefined ? {} : { recordUndoEntry: options.recordUndoEntry }),
+        ...(options?.transactionScope === undefined ? {} : { transactionScope: options.transactionScope }),
+        ...(options?.deferUndoEntry === undefined ? {} : { deferUndoEntry: options.deferUndoEntry }),
     });
 }

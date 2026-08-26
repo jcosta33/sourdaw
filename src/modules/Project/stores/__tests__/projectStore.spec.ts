@@ -6,7 +6,15 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { isCanonicalProjectId } from '../../models/ProjectData';
-import { defaultProjectStoreState, projectStore, type ProjectStoreState } from '../projectStore';
+import {
+    defaultProjectStoreState,
+    getSettledProjectId,
+    getSettledProjectIdentity,
+    projectStore,
+    readSettledProjectId,
+    readSettledProjectIdentity,
+    type ProjectStoreState,
+} from '../projectStore';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -156,6 +164,55 @@ describe('projectStore', () => {
             expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document: fake_doc })).toEqual([]);
         }
     );
+
+    it('publishes only a canonical project identity whose migration has settled', () => {
+        const settledProjectId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+        projectStore.set({
+            ...create_default_state(),
+            projectId: settledProjectId,
+            identityMigrationPending: false,
+            initialized: true,
+        });
+        expect(getSettledProjectId()).toBe(settledProjectId);
+        expect(getSettledProjectIdentity()).toEqual({ projectId: settledProjectId });
+
+        projectStore.set({
+            ...create_default_state(),
+            projectId: settledProjectId,
+            identityMigrationPending: false,
+            initialized: false,
+        });
+        expect(getSettledProjectId()).toBeUndefined();
+        expect(getSettledProjectIdentity()).toBeUndefined();
+
+        projectStore.set({ ...create_default_state(), projectId: 'not-a-uuid', identityMigrationPending: false });
+        expect(getSettledProjectId()).toBeUndefined();
+
+        projectStore.set({ ...create_default_state(), projectId: settledProjectId, identityMigrationPending: true });
+        expect(getSettledProjectId()).toBeUndefined();
+
+        projectStore.set({ ...create_default_state(), projectId: undefined, identityMigrationPending: false });
+        expect(getSettledProjectId()).toBeUndefined();
+
+        expect(
+            readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: false, initialized: true })
+        ).toBe(settledProjectId);
+        expect(
+            readSettledProjectIdentity({
+                projectId: settledProjectId,
+                identityMigrationPending: false,
+                initialized: true,
+            })
+        ).toEqual({ projectId: settledProjectId });
+        expect(
+            readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: false, initialized: false })
+        ).toBeUndefined();
+        expect(readSettledProjectId({ projectId: 'not-a-uuid', identityMigrationPending: false })).toBeUndefined();
+        expect(readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: true })).toBeUndefined();
+        expect(
+            readSettledProjectId({ projectId: settledProjectId, identityMigrationPending: 'unknown' })
+        ).toBeUndefined();
+    });
 
     it('should ignore legacy persisted transient flags on cold-start hydration', () => {
         fake_doc.projectMeta = {

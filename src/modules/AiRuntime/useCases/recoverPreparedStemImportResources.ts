@@ -4,10 +4,16 @@ import { agentRunLifecycle } from './agentRunLifecycle';
 import { reconcilePreparedStemImportRecovery } from './reconcilePreparedStemImportRecovery';
 
 export async function recoverPreparedStemImportResources(input?: { runId?: string }): Promise<void> {
-    const runs = readAgentRunState().runs.filter((run) => input?.runId === undefined || run.runId === input.runId);
+    const state = readAgentRunState();
+    const runs = state.runs.filter((run) => input?.runId === undefined || run.runId === input.runId);
+    const recoveries = (state.preparedStemImportRecoveryLedger ?? []).filter(
+        (recovery) => input?.runId === undefined || recovery.runId === input.runId
+    );
     for (const run of runs) {
         const recordedAssetIds = new Set(
-            run.preparedStemImports.flatMap((recovery) => recovery.resources.map((resource) => resource.audioBufferId))
+            recoveries
+                .filter((recovery) => recovery.runId === run.runId)
+                .flatMap((recovery) => recovery.resources.map((resource) => resource.audioBufferId))
         );
         const legacyAssetIds = run.temporaryAssets
             .filter(
@@ -24,15 +30,18 @@ export async function recoverPreparedStemImportResources(input?: { runId?: strin
                 batchIds: [],
             });
         }
-        for (const recovery of run.preparedStemImports) {
-            const result = await reconcilePreparedStemImportRecovery({ runId: run.runId, batchId: recovery.batchId });
-            if (result.status === 'manual-repair') {
-                agentRunLifecycle.requirePreparedStemManualRepair({
-                    runId: run.runId,
-                    assetIds: recovery.resources.map((resource) => resource.audioBufferId),
-                    batchIds: [recovery.batchId],
-                });
-            }
+    }
+    for (const recovery of recoveries) {
+        const result = await reconcilePreparedStemImportRecovery({
+            runId: recovery.runId,
+            batchId: recovery.batchId,
+        });
+        if (result.status === 'manual-repair') {
+            agentRunLifecycle.requirePreparedStemManualRepair({
+                runId: recovery.runId,
+                assetIds: recovery.resources.map((resource) => resource.audioBufferId),
+                batchIds: [recovery.batchId],
+            });
         }
     }
 }

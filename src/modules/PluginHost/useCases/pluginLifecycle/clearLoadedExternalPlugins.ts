@@ -1,4 +1,14 @@
+import {
+    defaultExternalPluginActivationState,
+    externalPluginActivationStore,
+} from '../../stores/externalPluginActivationStore';
+
 import { externalLatencyReporters } from './externalLatencyReporters';
+import {
+    externalPluginActivationEpoch,
+    externalPluginActivationOutcomes,
+    externalPluginActivationTasks,
+} from './externalPluginActivationTasks';
 import { loadedExternalInstances } from './loadedExternalInstances';
 
 /**
@@ -13,4 +23,8 @@ import { loadedExternalInstances } from './loadedExternalInstances';
 export function clearLoadedExternalPlugins(): void {
     loadedExternalInstances.clear();
     externalLatencyReporters.clear();
+    externalPluginActivationEpoch.current += 1;
+    externalPluginActivationTasks.clear();
+    externalPluginActivationOutcomes.clear();
+    externalPluginActivationStore.set(defaultExternalPluginActivationState);
 }

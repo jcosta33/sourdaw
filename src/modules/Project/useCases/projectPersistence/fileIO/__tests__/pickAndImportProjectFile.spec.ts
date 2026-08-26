@@ -10,6 +10,7 @@ const transactionSentinel: ProjectLoadTransaction = {
     activate: vi.fn(),
     canActivate: vi.fn(),
     isCurrent: vi.fn(),
+    signal: new AbortController().signal,
 };
 
 const mocks = vi.hoisted(() => {

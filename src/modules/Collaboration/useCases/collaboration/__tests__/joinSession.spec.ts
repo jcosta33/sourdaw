@@ -15,7 +15,13 @@ import { leaveSession } from '../leaveSession';
  */
 const mockRuntime = vi.hoisted(() => ({
     cleanup: vi.fn<() => void>(),
-    initialize: vi.fn<() => PeerConnectionManager>(),
+    initialize:
+        vi.fn<
+            (
+                assetOwnerId: string,
+                options?: { handoffSourceOwnerIds?: readonly string[]; rebindToSynchronizedOwner?: boolean }
+            ) => PeerConnectionManager
+        >(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -26,6 +32,9 @@ const mockRuntime = vi.hoisted(() => ({
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
+vi.mock('../getCollaborationAssetOwnerId', () => ({
+    collaborationAssetOwnership: { getOwnerId: () => 'project-owner-1' },
+}));
 
 type Offer = Extract<SignalingMessage, { type: 'offer' }>;
 
@@ -107,6 +116,13 @@ describe('joinSession', () => {
         await joinSession('invite', 'Alice');
 
         expect(mockRuntime.initialize).toHaveBeenCalledTimes(1);
+        expect(mockRuntime.initialize).toHaveBeenCalledWith(
+            expect.stringMatching(/^collaboration-join:session-1:joiner-1:/u),
+            {
+                handoffSourceOwnerIds: ['project-owner-1'],
+                rebindToSynchronizedOwner: true,
+            }
+        );
         expect(mockRuntime.startPlayheadBroadcast).toHaveBeenCalledTimes(1);
         expect(mockRuntime.startBranchSync).toHaveBeenCalledWith(false);
     });

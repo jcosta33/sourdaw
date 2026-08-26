@@ -7,9 +7,7 @@ import { preparedStemImportResources } from './agentReference/registerPreparedSt
 import { agentRunLifecycle } from './agentRunLifecycle';
 
 export function reconcilePreparedStemImportRecovery(input: { runId: string; batchId: string }) {
-    const recovery = agentRunLifecycle
-        .get(input.runId)
-        ?.preparedStemImports.find((candidate) => candidate.batchId === input.batchId);
+    const recovery = agentRunLifecycle.getPreparedStemImportRecovery(input);
     if (!recovery) {
         return Promise.resolve({ status: 'missing' as const });
     }

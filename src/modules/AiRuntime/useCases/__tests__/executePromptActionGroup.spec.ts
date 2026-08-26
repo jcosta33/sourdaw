@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    type compileVersionedCommandBatchEnvelope,
+    type createVerifiedBatchReceipt,
+    type getVersionedCommandBatchCommitProof,
+} from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { executePromptActionGroup } from '../executePromptActionGroup';
@@ -12,7 +18,13 @@ const mocks = vi.hoisted(() => ({
     executePlannedActions: vi.fn(),
     notifyAiChange: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
+    getVersionedCommandBatchCommitProof: vi.fn(),
     issueApprovalBinding: vi.fn(() => ({ token: 'exact-approval' })),
+    prepareDurablePromotionRecovery: vi.fn(),
+    commitDurablePromotionRecovery: vi.fn(),
+    completeDurablePromotionRecovery: vi.fn(),
+    transitionDurablePromotionRecoveryToCleanup: vi.fn(),
+    completeDurableCleanupRecovery: vi.fn(),
     protectPreparedStemImportResources: vi.fn(),
     retainPreparedStemImportResources: vi.fn(),
     releasePreparedStemImportResources: vi.fn(),
@@ -24,6 +36,16 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     generateGroupId: () => ({ groupId: 'group-1', groupLabel: 'Prompt action' }),
     isExecutableAppActionType: (type: string) => type !== 'removeAllTracks',
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
+    getVersionedCommandBatchCommitProof: mocks.getVersionedCommandBatchCommitProof,
+}));
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    getAssetTransfer: () => ({
+        prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
+        commitDurablePromotionRecovery: mocks.commitDurablePromotionRecovery,
+        completeDurablePromotionRecovery: mocks.completeDurablePromotionRecovery,
+        transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
+        completeDurableCleanupRecovery: mocks.completeDurableCleanupRecovery,
+    }),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: () => mocks.projectRevision.value,
@@ -45,7 +67,20 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
 const RUN_ID = 'prompt-run-1';
 const BATCH_ID = 'batch-1';
 const IDEMPOTENCY_KEY = 'batch-key-1';
+const expectedDurableCommitProof = Object.freeze({
+    projectId: 'project:test',
+    idempotencyKey: IDEMPOTENCY_KEY,
+    contentHash: `sha256:${'a'.repeat(64)}`,
+    runId: RUN_ID,
+    batchId: BATCH_ID,
+}) satisfies Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
+const BASE_REVISION = JSON.stringify({
+    documentIdentityEpoch: 1,
+    mutationEpoch: 0,
+    documents: [{ docId: 'root', heads: ['head-0'] }],
+});
 const action = { type: 'togglePlayback' } satisfies AppAction;
+type VerifiedReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 const stemAction = {
     type: 'importStemSet',
     payload: {
@@ -63,6 +98,7 @@ const stemAction = {
                 sourceBytes: 100,
                 decodedBytes: 200,
                 audioBufferId: 'buffer-1',
+                assetHash: 'asset-hash-1',
                 assetLeaseId: 'asset-lease-1',
                 trackId: 'track-1',
                 trackName: 'Drums',
@@ -73,8 +109,6 @@ const stemAction = {
         ],
     },
 } satisfies AppAction;
-const commandBatch = { serialized: 'command-batch', authority: { projectId: 'revision-1' } } as never;
-
 const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
 const grants = {
     allowedOperationPrefixes: ['togglePlayback'],
@@ -88,6 +122,26 @@ const grants = {
     remoteGeneration: false,
     autoCommit: false,
 };
+const commandBatch = {
+    serialized: 'command-batch',
+    authority: {
+        projectId: 'project:test',
+        baseRevision: BASE_REVISION,
+        scope,
+        grants,
+        budgets: {
+            maxCommands: 1,
+            maxCreatedTracks: 1,
+            maxDeletedObjects: 0,
+            maxAffectedTracks: 1,
+            maxAffectedClips: 1,
+            maxAutomationPoints: 0,
+            maxImportedAssets: 1,
+            maxRenderJobs: 0,
+        },
+    },
+} satisfies Parameters<typeof getVersionedCommandBatchCommitProof>[0] &
+    Pick<ReturnType<typeof compileVersionedCommandBatchEnvelope>, 'authority' | 'serialized'>;
 
 function seedRun(phase: 'planning' | 'waiting-for-approval' = 'planning'): void {
     agentRunLifecycle.create({
@@ -142,14 +196,33 @@ function admitted(agentApproval: unknown = null) {
 function verifiedReceipt(
     outcome: 'committed' | 'executed' = 'committed',
     identity: { runId?: string; batchId?: string } = {}
-) {
+): VerifiedReceipt {
+    const revision = {
+        normalizedRevision: 'revision-1',
+        documentIdentityEpoch: null,
+        mutationEpoch: null,
+        documents: [],
+    };
     return {
         schemaVersion: 1,
         runId: identity.runId ?? RUN_ID,
         batchId: identity.batchId ?? BATCH_ID,
         outcome,
+        atomicity: 'atomic',
+        base: revision,
+        observedBase: revision,
+        resulting: revision,
+        commandOutcomes: [],
+        affectedIds: [],
+        createdBindings: [],
+        warnings: [],
+        errors: [],
+        pendingEffects: [],
         links: { render: [], analysis: [] },
-    } as never;
+        compensation: { available: false, commandIds: [] },
+        semanticDiff: null,
+        modelSummary: `Batch outcome: ${outcome}.`,
+    };
 }
 
 describe('executePromptActionGroup', () => {
@@ -158,6 +231,14 @@ describe('executePromptActionGroup', () => {
         agentRunLifecycle.clear();
         mocks.projectRevision.value = 'revision-2';
         mocks.issueApprovalBinding.mockReturnValue({ token: 'exact-approval' });
+        mocks.getVersionedCommandBatchCommitProof.mockImplementation(async () => ({
+            ...expectedDurableCommitProof,
+        }));
+        mocks.prepareDurablePromotionRecovery.mockResolvedValue({ status: 'prepared' });
+        mocks.commitDurablePromotionRecovery.mockResolvedValue({ status: 'committed' });
+        mocks.completeDurablePromotionRecovery.mockResolvedValue({ status: 'completed' });
+        mocks.transitionDurablePromotionRecoveryToCleanup.mockResolvedValue({ status: 'prepared' });
+        mocks.completeDurableCleanupRecovery.mockResolvedValue({ status: 'completed' });
         mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
             status: 'valid',
             envelope: {
@@ -195,7 +276,7 @@ describe('executePromptActionGroup', () => {
     });
 
     it.each(['committed', 'executed'] as const)(
-        'transfers prepared stem resources after an exact verified %s receipt without deleting media',
+        'completes durable stem promotion recovery after an exact verified %s receipt without deleting media',
         async (status) => {
             seedRun();
             mocks.executePlannedActions.mockResolvedValue({
@@ -213,6 +294,19 @@ describe('executePromptActionGroup', () => {
                 })
             ).resolves.toEqual({ status });
 
+            expect(mocks.getVersionedCommandBatchCommitProof).toHaveBeenCalledExactlyOnceWith(commandBatch);
+            expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+                `stem-promotion:${RUN_ID}:${BATCH_ID}`,
+                [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }],
+                expectedDurableCommitProof
+            );
+            expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+                `stem-promotion:${RUN_ID}:${BATCH_ID}`
+            );
+            expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+                `stem-promotion:${RUN_ID}:${BATCH_ID}`
+            );
+            expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
             expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
                 runId: RUN_ID,
                 stems: stemAction.payload.stems,
@@ -221,14 +315,24 @@ describe('executePromptActionGroup', () => {
         }
     );
 
-    it('protects prepared stems at commit preparation before abort can run post-commit cleanup', async () => {
+    it('prepares durable stem promotion before command execution can reach project commit', async () => {
         const controller = new AbortController();
         const order: string[] = [];
         seedRun();
-        mocks.protectPreparedStemImportResources.mockImplementation(() => order.push('protected'));
-        mocks.releasePreparedStemImportResources.mockImplementation(() => order.push('released'));
-        mocks.executePlannedActions.mockImplementation(async (input) => {
-            input.onProjectCommitPrepared?.();
+        mocks.prepareDurablePromotionRecovery.mockImplementation(async () => {
+            order.push('prepared');
+            return { status: 'prepared' };
+        });
+        mocks.commitDurablePromotionRecovery.mockImplementation(async () => {
+            order.push('committed');
+            return { status: 'committed' };
+        });
+        mocks.completeDurablePromotionRecovery.mockImplementation(async () => {
+            order.push('completed');
+            return { status: 'completed' };
+        });
+        mocks.releasePreparedStemImportResources.mockImplementation(() => order.push('legacy-released'));
+        mocks.executePlannedActions.mockImplementation(async () => {
             order.push('post-commit');
             controller.abort();
             await Promise.resolve();
@@ -249,7 +353,7 @@ describe('executePromptActionGroup', () => {
             })
         ).resolves.toEqual({ status: 'committed' });
 
-        expect(order).toEqual(['protected', 'post-commit', 'released']);
+        expect(order).toEqual(['legacy-released', 'prepared', 'post-commit', 'committed', 'completed']);
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
     });
 
@@ -259,7 +363,7 @@ describe('executePromptActionGroup', () => {
         { execution: { status: 'cancelled' }, outcome: 'cancelled' },
         { execution: { status: 'no-op' }, outcome: 'no-op' },
     ] as const)(
-        'discards prepared stem resources after a non-committed $execution.status terminal',
+        'transitions durable stem promotion recovery to cleanup after a non-committed $execution.status terminal',
         async ({ execution, outcome }) => {
             seedRun();
             mocks.executePlannedActions.mockResolvedValue(execution);
@@ -273,11 +377,21 @@ describe('executePromptActionGroup', () => {
                 })
             ).resolves.toEqual({ status: outcome });
 
-            expect(mocks.discardPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
                 runId: RUN_ID,
                 stems: stemAction.payload.stems,
             });
-            expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
+            expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
+            expect(mocks.transitionDurablePromotionRecoveryToCleanup).toHaveBeenCalledExactlyOnceWith(
+                `stem-promotion:${RUN_ID}:${BATCH_ID}`,
+                [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }]
+            );
+            expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
+                `stem-promotion:${RUN_ID}:${BATCH_ID}`
+            );
+            expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+            expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+            expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
         }
     );
 
@@ -295,12 +409,15 @@ describe('executePromptActionGroup', () => {
         ).resolves.toEqual({ status: 'ambiguous' });
 
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
-        expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
-        expect(mocks.retainPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
             runId: RUN_ID,
             stems: stemAction.payload.stems,
-            recovery: { batchId: BATCH_ID, commandBatch },
         });
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+        expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.retainPreparedStemImportResources).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -403,6 +520,64 @@ describe('executePromptActionGroup', () => {
         }
     );
 
+    it('persists the exact command batch for pending-effect continuation after a committed receipt', async () => {
+        const pendingEffect = {
+            commandId: 'command-1',
+            kind: 'runtime-graph' as const,
+            operation: 'togglePlayback' as const,
+            reason: 'runtime graph repair remains pending',
+            remediation: 'repair' as const,
+            state: 'pending' as const,
+        };
+        const receipt = {
+            ...verifiedReceipt(),
+            outcome: 'partially-committed' as const,
+            atomicity: 'durable-atomic-with-non-atomic-effects' as const,
+            commandOutcomes: [
+                {
+                    commandId: pendingEffect.commandId,
+                    operation: pendingEffect.operation,
+                    outcome: 'committed' as const,
+                    affectedIds: [],
+                    compensationAvailable: true,
+                },
+            ],
+            pendingEffects: [pendingEffect],
+            warnings: ['A post-commit effect remains pending.'],
+            compensation: { available: true, commandIds: [pendingEffect.commandId] },
+        } satisfies VerifiedReceipt;
+        seedRun();
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            receipt,
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: [action],
+                prompt: 'Play',
+                projectRevision: 'revision-1',
+                ...admitted(),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        const expectedContinuation = {
+            batchId: BATCH_ID,
+            effects: [pendingEffect],
+            recovery: 'reconcile-batch',
+            serializedBatch: commandBatch.serialized,
+            authority: commandBatch.authority,
+        };
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'partially-completed',
+            pendingEffectContinuations: [expectedContinuation],
+        });
+        expect(readAgentRunState().runs.find((run) => run.runId === RUN_ID)).toMatchObject({
+            pendingEffectContinuations: [expectedContinuation],
+        });
+    });
+
     it.each([
         {
             label: 'missing',
@@ -444,12 +619,15 @@ describe('executePromptActionGroup', () => {
         expect(mocks.notifyAiChange).toHaveBeenCalledTimes(1);
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(warning, []);
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
-        expect(mocks.releasePreparedStemImportResources).not.toHaveBeenCalled();
-        expect(mocks.retainPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
             runId: RUN_ID,
             stems: stemAction.payload.stems,
-            recovery: { batchId: BATCH_ID, commandBatch },
         });
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+        expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.retainPreparedStemImportResources).not.toHaveBeenCalled();
     });
 
     it('reconciles a thrown execution before propagating the failure', async () => {
@@ -471,10 +649,19 @@ describe('executePromptActionGroup', () => {
             workLeases: [{ workId: BATCH_ID, terminalState: 'failed' }],
         });
         expect(mocks.notifyAiChange).toHaveBeenCalledWith('Command not executed: Executor crashed', []);
-        expect(mocks.discardPreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
             runId: RUN_ID,
             stems: stemAction.payload.stems,
         });
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`,
+            [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }]
+        );
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`
+        );
+        expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
     });
 
     it.each(['lease-settlement', 'receipt-persistence'] as const)(

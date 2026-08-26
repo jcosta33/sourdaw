@@ -267,6 +267,8 @@ function createStemImportAction(audioBufferId: string): ExecutableRuntimeAction 
                     sourceBytes: 64,
                     decodedBytes: 128,
                     audioBufferId,
+                    assetHash: `sha256:${audioBufferId}`,
+                    assetLeaseId: `asset-lease:${audioBufferId}`,
                     trackId: 'track-kick',
                     trackName: 'Kick',
                     trackGain: 0.8,

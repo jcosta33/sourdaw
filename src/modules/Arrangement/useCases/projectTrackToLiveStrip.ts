@@ -22,6 +22,7 @@ type ProjectTrackToLiveStripInput = {
     trackId: string;
     deferSidechainWiring?: boolean;
     activateDormantExternalPlugins?: boolean;
+    onExternalPluginActivation?: (activation: ReturnType<typeof activateExternalPlugin>) => void;
 };
 
 function findUniqueTrack(tracks: readonly Track[], trackId: string): Track | null {
@@ -48,6 +49,7 @@ export function projectTrackToLiveStrip({
     trackId,
     deferSidechainWiring = false,
     activateDormantExternalPlugins = false,
+    onExternalPluginActivation,
 }: ProjectTrackToLiveStripInput): ReturnType<typeof initializeTrackStripFromSnapshot> | undefined {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -90,12 +92,13 @@ export function projectTrackToLiveStrip({
         if (instanceId && pluginId) {
             // Idempotent load + state restore; skips if the instance is already live,
             // so the project-open rebuild and every Play/record rebuild stay cheap.
-            activateExternalPlugin({
+            const activation = activateExternalPlugin({
                 pluginId,
                 instanceId,
                 stateChunk: device.externalStateChunk,
                 onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
             });
+            onExternalPluginActivation?.(activation);
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {
