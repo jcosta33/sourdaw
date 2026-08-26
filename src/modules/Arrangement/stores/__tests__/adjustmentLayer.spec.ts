@@ -228,6 +228,7 @@ describe('adjustmentLayerStore hydration', () => {
         attachPeer(peer);
 
         expect(readState()).toEqual({ layers: [] });
+        flushAutomergeStorageWrites();
         expect(peer.getDoc().adjustmentLayers).toEqual(malformed);
         expect(
             findAutomergeStorageRawProjectionLosses({

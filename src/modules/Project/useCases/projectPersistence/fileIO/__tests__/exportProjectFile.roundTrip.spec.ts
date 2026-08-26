@@ -36,6 +36,11 @@ vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
 }));
+const persistCrdtProjectMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    persistCrdtProject: persistCrdtProjectMock,
+}));
 
 function written(): ProjectData {
     return vi.mocked(downloadProjectFile).mock.calls[0]?.[0] as ProjectData;
@@ -104,6 +109,8 @@ describe('exportProjectFile round-trip shape', () => {
         vi.mocked(notifyUser).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
+        persistCrdtProjectMock.mockReset();
+        persistCrdtProjectMock.mockResolvedValue(undefined);
         trackStore.set({
             tracks: [
                 normalizeTrack({
@@ -347,6 +354,7 @@ describe('exportProjectFile round-trip shape', () => {
 
         await expect(saveProject()).resolves.toBe(false);
 
+        expect(persistCrdtProjectMock).not.toHaveBeenCalled();
         expect(indexedDb.values.has(recentKey)).toBe(false);
     });
 });
