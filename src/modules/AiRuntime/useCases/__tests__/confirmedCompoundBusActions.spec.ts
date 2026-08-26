@@ -13,6 +13,7 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
+import { configureCollaborationAssetOwner } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -465,6 +466,9 @@ describe('confirmed compound bus actions', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        configureCollaborationAssetOwner({
+            captureOwnerId: () => 'project:confirmed-compound-bus',
+        });
         configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );

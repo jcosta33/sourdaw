@@ -9,6 +9,7 @@ import {
     configureRuntimeGraphTopologyValidator,
     type initializeTrackStripFromSnapshot,
 } from '#/modules/AudioEngine/useCases';
+import { configureCollaborationAssetOwner } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -441,6 +442,9 @@ describe('delete muted empty tracks prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        configureCollaborationAssetOwner({
+            captureOwnerId: () => 'project:delete-muted-empty-tracks-workflow',
+        });
         configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
@@ -874,11 +878,14 @@ describe('delete muted empty tracks prompt workflow', () => {
         vcaGroupStore.set({
             groups: [{ id: 'vca-1', name: 'Band', gain: 1, muted: false, trackIds: ['track-muted-midi'] }],
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        fixtureStorageOwners.get('root:vcaGroups')?.flushPendingUnscopedWrite();
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
         const vcaBeforeConfirm = structuredClone(vcaGroupStore.value);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);

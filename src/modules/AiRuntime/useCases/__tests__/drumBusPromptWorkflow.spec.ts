@@ -1056,6 +1056,9 @@ describe('drum bus prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        collaborationUseCases.configureCollaborationAssetOwner({
+            captureOwnerId: () => 'project:drum-bus-workflow',
+        });
         audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );

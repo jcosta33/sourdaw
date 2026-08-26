@@ -90,7 +90,6 @@ export const projectSlotProjections: readonly ProjectSlotProjection[] = [
     slotProjection({ slot: 'markers', getStore: () => markerStore }),
     slotProjection({ slot: 'vcaGroups', getStore: () => vcaGroupStore }),
     slotProjection({ slot: 'gainEnvelopes', getStore: () => gainEnvelopeStore }),
-    slotProjection({ slot: 'adjustmentLayers', getStore: () => adjustmentLayerStore }),
     slotProjection({ slot: 'automation', getStore: () => automationStore }),
     slotProjection({ slot: 'modulation', getStore: () => modulationStore }),
     slotProjection({ slot: 'transport', getStore: () => transportStore }),
