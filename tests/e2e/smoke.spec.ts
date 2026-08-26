@@ -45,18 +45,55 @@ async function blockExternalRequests(page: Page): Promise<() => void> {
         });
 }
 
-async function observeAudioContextResumeState(page: Page): Promise<() => Promise<string | undefined>> {
+type AudioContextTestControl = {
+    resumeState: () => Promise<string | undefined>;
+    suspend: () => Promise<string | undefined>;
+};
+
+async function observeAudioContextResumeState(page: Page): Promise<AudioContextTestControl> {
     await page.addInitScript(() => {
         const nativeResume = AudioContext.prototype.resume;
+        let observedAudioContext: AudioContext | undefined;
         AudioContext.prototype.resume = async function (this: AudioContext): Promise<void> {
+            observedAudioContext = this;
             await nativeResume.call(this);
             document.documentElement.dataset.audioContextResumeState = this.state;
         };
+        document.addEventListener('sourdaw-test-suspend-audio-context', () => {
+            void (async () => {
+                if (!observedAudioContext) {
+                    document.documentElement.dataset.audioContextResumeState = 'missing';
+                } else {
+                    await observedAudioContext.suspend();
+                    document.documentElement.dataset.audioContextResumeState = observedAudioContext.state;
+                }
+                document.dispatchEvent(new Event('sourdaw-test-audio-context-suspended'));
+            })();
+        });
     });
-    return () => page.evaluate(() => document.documentElement.dataset.audioContextResumeState);
+    return {
+        resumeState: () => page.evaluate(() => document.documentElement.dataset.audioContextResumeState),
+        suspend: () =>
+            page.evaluate(
+                () =>
+                    new Promise<string | undefined>((resolve) => {
+                        document.addEventListener(
+                            'sourdaw-test-audio-context-suspended',
+                            () => resolve(document.documentElement.dataset.audioContextResumeState),
+                            { once: true }
+                        );
+                        document.dispatchEvent(new Event('sourdaw-test-suspend-audio-context'));
+                    })
+            ),
+    };
 }
 
-async function observeScheduledOscillatorCount(page: Page): Promise<() => Promise<number>> {
+type ScheduledOscillatorTestControl = {
+    count: () => Promise<number>;
+    reset: () => Promise<void>;
+};
+
+async function observeScheduledOscillatorCount(page: Page): Promise<ScheduledOscillatorTestControl> {
     await page.addInitScript(() => {
         const nativeStart = OscillatorNode.prototype.start;
         OscillatorNode.prototype.start = function (
@@ -67,9 +104,16 @@ async function observeScheduledOscillatorCount(page: Page): Promise<() => Promis
             document.documentElement.dataset.scheduledOscillatorCount = String(count + 1);
             nativeStart.apply(this, args);
         };
+        document.addEventListener('sourdaw-test-reset-scheduled-oscillator-count', () => {
+            document.documentElement.dataset.scheduledOscillatorCount = '0';
+        });
     });
-    return async () =>
-        Number(await page.evaluate(() => document.documentElement.dataset.scheduledOscillatorCount ?? '0'));
+    return {
+        count: async () =>
+            Number(await page.evaluate(() => document.documentElement.dataset.scheduledOscillatorCount ?? '0')),
+        reset: () =>
+            page.evaluate(() => document.dispatchEvent(new Event('sourdaw-test-reset-scheduled-oscillator-count'))),
+    };
 }
 
 async function openNewProject(page: Page): Promise<() => void> {
@@ -185,8 +229,8 @@ test.describe('Offline project smoke', () => {
     });
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
-        const audioContextResumeState = await observeAudioContextResumeState(page);
-        const scheduledOscillatorCount = await observeScheduledOscillatorCount(page);
+        const audioContext = await observeAudioContextResumeState(page);
+        const scheduledOscillators = await observeScheduledOscillatorCount(page);
         const assertOffline = await openNewProject(page);
         await createPlayableMidiClip(page);
 
@@ -195,11 +239,15 @@ test.describe('Offline project smoke', () => {
         const playheadPosition = async () => (await playhead.innerText()).replaceAll(/\s/g, '');
         const initialPosition = await playheadPosition();
         const play = page.getByTestId('transport-play');
+        await scheduledOscillators.reset();
+        await expect.poll(scheduledOscillators.count).toBe(0);
+        await audioContext.suspend();
+        await expect.poll(audioContext.resumeState).toBe('suspended');
         await play.click();
         await expect(playbackControls.getByRole('status')).toHaveText('Playing');
         await expect(play).toHaveAccessibleName('Pause');
-        await expect.poll(audioContextResumeState).toBe('running');
-        await expect.poll(scheduledOscillatorCount).toBeGreaterThan(0);
+        await expect.poll(audioContext.resumeState).toBe('running');
+        await expect.poll(scheduledOscillators.count).toBeGreaterThan(0);
 
         await expect.poll(playheadPosition).not.toBe(initialPosition);
         const firstAdvancedPosition = await playheadPosition();

@@ -389,6 +389,13 @@ expect(events?.pull_request !== undefined, 'pull_request trigger must remain pre
 expect(events?.pull_request_review === undefined, 'pull_request_review must not start a duplicate Gate');
 expect(events?.schedule !== undefined, 'schedule trigger must remain present');
 expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
+expect(workflow.permissions === undefined, 'workflow permissions must not grant path-filter access to unrelated jobs');
+expect(decide?.permissions?.contents === 'read', 'scope resolution must read repository contents');
+expect(decide?.permissions?.['pull-requests'] === 'read', 'scope resolution must read pull-request file changes');
+expect(
+    JSON.stringify(Object.keys(decide?.permissions ?? {}).sort()) === JSON.stringify(['contents', 'pull-requests']),
+    'scope resolution must receive only the repository and pull-request read permissions'
+);
 expect(decide?.outputs?.metadata === '${{ steps.scope.outputs.metadata }}', 'decide must publish the dedicated metadata scope');
 expect(
     pathFilters?.with?.['predicate-quantifier'] === 'some-with-excludes',
@@ -428,28 +435,38 @@ expect(
     'playback smoke must publish the resumed AudioContext state through a test-only dataset signal'
 );
 expect(
-    smokeSpec.includes("expect.poll(audioContextResumeState).toBe('running')"),
-    'playback smoke must poll the test-only dataset signal after the play gesture'
+    smokeSpec.includes('let observedAudioContext: AudioContext | undefined;') &&
+        smokeSpec.includes("document.addEventListener('sourdaw-test-suspend-audio-context'") &&
+        smokeSpec.includes('await observedAudioContext.suspend();'),
+    'playback smoke must capture and suspend its real AudioContext through a document-only test control'
 );
 expect(smokeSpec.includes('const nativeStart = OscillatorNode.prototype.start;'), 'playback smoke must observe the production oscillator scheduling boundary');
 expect(smokeSpec.includes('document.documentElement.dataset.scheduledOscillatorCount'), 'playback smoke must expose scheduled oscillator count through a test-only dataset signal');
 expect(smokeSpec.includes('await createPlayableMidiClip(page);'), 'playback smoke must create deterministic playable MIDI material before transport starts');
 expect(smokeSpec.includes("toHaveText('1 note')"), 'playback smoke must assert that the playable clip contains one MIDI note');
 expect(
-    smokeSpec.indexOf('expect.poll(scheduledOscillatorCount).toBeGreaterThan(0)') > smokeSpec.indexOf('await play.click();'),
-    'playback smoke must observe oscillator scheduling after the play gesture'
+    smokeSpec.indexOf('await scheduledOscillators.reset();') > smokeSpec.indexOf('await createPlayableMidiClip(page);') &&
+        smokeSpec.indexOf('await scheduledOscillators.reset();') < smokeSpec.indexOf('await play.click();') &&
+        smokeSpec.indexOf('await expect.poll(scheduledOscillators.count).toBe(0);') < smokeSpec.indexOf('await play.click();'),
+    'playback smoke must reset and prove the scheduling counter empty after note-entry auditioning and before Play'
 );
 expect(
     smokeSpec.includes(
-        'const audioContextResumeState = await observeAudioContextResumeState(page);\n' +
-            '        const scheduledOscillatorCount = await observeScheduledOscillatorCount(page);\n' +
+        'const audioContext = await observeAudioContextResumeState(page);\n' +
+            '        const scheduledOscillators = await observeScheduledOscillatorCount(page);\n' +
             '        const assertOffline = await openNewProject(page);'
     ),
     'playback smoke must install AudioContext instrumentation before project navigation'
 );
 expect(
-    smokeSpec.indexOf("expect.poll(audioContextResumeState).toBe('running')") > smokeSpec.indexOf('await play.click();'),
-    'playback smoke must poll the test-only dataset signal after clicking play'
+    smokeSpec.indexOf('expect.poll(scheduledOscillators.count).toBeGreaterThan(0)') > smokeSpec.indexOf('await play.click();'),
+    'playback smoke must observe transport scheduling only after clicking Play'
+);
+expect(
+    smokeSpec.indexOf('await audioContext.suspend();') < smokeSpec.indexOf('await play.click();') &&
+        smokeSpec.indexOf("expect.poll(audioContext.resumeState).toBe('suspended')") < smokeSpec.indexOf('await play.click();') &&
+        smokeSpec.indexOf("expect.poll(audioContext.resumeState).toBe('running')") > smokeSpec.indexOf('await play.click();'),
+    'playback smoke must require Play to resume the deliberately suspended context'
 );
 expect(!smokeSpec.includes('Object.defineProperty(window'), 'playback smoke must not expose AudioContext observations on window');
 expect(!smokeSpec.includes('Reflect.get(window'), 'playback smoke must not read AudioContext observations from window');
@@ -511,6 +528,11 @@ expect(
     stepNamed(releaseInventory, 'Validate issue-template contract')?.run === 'pnpm test:run scripts/__tests__/fileTrackerIssue.spec.ts',
     'metadata changes must execute the focused fileTrackerIssue contract'
 );
+const metadataContractStep = stepNamed(releaseInventory, 'Validate issue-template contract');
+expect(
+    metadataContractStep?.if === "needs.decide.outputs.metadata == 'true'",
+    'metadata contract must run exactly for the metadata scope'
+);
 const nonCodeCommandLog = `${process.env.TEST_TEMP_ROOT}/non-code-release-inventory.log`;
 const releaseInstallRun = stepNamed(releaseInventory, 'Install dependencies')?.run ?? '';
 const releaseInventoryRun = stepNamed(releaseInventory, 'Validate release inventory')?.run ?? '';
@@ -553,6 +575,10 @@ function startedPullRequestJobs(scopes) {
     }
     jobs.push('gate');
     return jobs;
+}
+
+function startsMetadataContract(scopes) {
+    return metadataContractStep?.if === "needs.decide.outputs.metadata == 'true'" && scopes.metadata === 'true';
 }
 
 for (const fixture of [
@@ -666,6 +692,7 @@ for (const fixture of [
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'false' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
+        metadataContract: false,
     },
     {
         name: 'nested Markdown under Rust code',
@@ -701,6 +728,7 @@ for (const fixture of [
         unclassified: 'false',
         scopes: { rust: 'false', server: 'false', e2e: 'false', web: 'false', metadata: 'true' },
         jobs: ['decide', 'dependency-review', 'pr-secrets', 'release-inventory', 'gate'],
+        metadataContract: true,
     },
     {
         name: 'unclassified root code',
@@ -777,6 +805,12 @@ for (const fixture of [
         JSON.stringify(startedPullRequestJobs(fixture.scopes)) === JSON.stringify(fixture.jobs),
         `${fixture.name} must start only its applicable jobs and terminal Gate`
     );
+    if (fixture.metadataContract !== undefined) {
+        expect(
+            startsMetadataContract(fixture.scopes) === fixture.metadataContract,
+            `${fixture.name} must ${fixture.metadataContract ? 'run' : 'skip'} the focused issue-template contract`
+        );
+    }
     const results = terminalGateResults('skipped');
     for (const job of fixture.jobs) {
         if (job !== 'gate' && gateNeeds.includes(job)) {
@@ -907,6 +941,10 @@ expect(positiveControl?.['working-directory'] === '${{ github.workspace }}', 'po
 expect(
     positiveControlRun.includes('positive_control_status') && positiveControlRun.includes('-ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE"'),
     'positive control must require the exact leak exit code'
+);
+expect(
+    prMergePositiveControlRun.includes('if [ "$positive_control_status" -ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" ]; then'),
+    'PR merge-diff positive control must fail when the scanner does not report its synthetic secret'
 );
 expect(
     !gitleaksHelper.includes('GITHUB_EVENT_NAME') &&
@@ -1097,6 +1135,16 @@ runWorkflowShell('PR merge-diff secret positive control', prMergePositiveControl
     FAKE_GITLEAKS_REQUIRE_MERGE_DIFF: 'true',
     FAKE_GITLEAKS_STATUS: '79',
 });
+const prMergePositiveControlClean = runWorkflowShellResult(prMergePositiveControlRun, {
+    ...prWorkflowEnv,
+    GITLEAKS_EXPECTED_LEAK_EXIT_CODE: '79',
+    FAKE_GITLEAKS_REQUIRE_MERGE_DIFF: 'true',
+    FAKE_GITLEAKS_STATUS: '0',
+});
+expect(
+    prMergePositiveControlClean.status === 1,
+    'PR merge-diff positive control must fail closed when Gitleaks returns clean for its synthetic secret'
+);
 writeFileSync(workflowCommandLog, '');
 runWorkflowShell('PR diff secret scan', prSecretScanRun, {
     ...prWorkflowEnv,
