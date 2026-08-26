@@ -36,6 +36,8 @@ export type DurableAssetCommitProof = {
     contentHash: string;
     runId: string;
     batchId: string;
+    baseRevision: string;
+    commands: Array<{ commandId: string; operation: string }>;
 };
 export type DurableAssetCommitDisposition = 'committed' | 'terminal-noncommit' | 'unknown';
 export type DurableAssetRecoveryFence = {

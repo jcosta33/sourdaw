@@ -129,10 +129,62 @@ function isBatchOutcome(value: unknown): boolean {
     );
 }
 
+function hasConsistentBatchOutcome(value: Record<string, unknown>, pendingEffects: StoredPendingEffect[] | undefined) {
+    if (!Array.isArray(value.commandOutcomes) || !value.commandOutcomes.every(isCommandOutcome)) {
+        return false;
+    }
+    const commandOutcomes = value.commandOutcomes.map((command) => command.outcome);
+    const hasCommittedCommand = commandOutcomes.some((outcome) => outcome === 'committed');
+    const pendingEffectCount = pendingEffects?.length ?? 0;
+    const allCommandOutcomes = (...expected: StoredCommandOutcome['outcome'][]) =>
+        commandOutcomes.every((outcome) => expected.includes(outcome));
+
+    if (value.outcome === 'committed') {
+        return (
+            value.atomicity === 'atomic' &&
+            pendingEffectCount === 0 &&
+            hasCommittedCommand &&
+            allCommandOutcomes('committed', 'no-op')
+        );
+    }
+    if (value.outcome === 'committed-with-warning') {
+        return (
+            value.atomicity === 'atomic' &&
+            pendingEffectCount === 0 &&
+            hasCommittedCommand &&
+            allCommandOutcomes('committed', 'no-op')
+        );
+    }
+    if (value.outcome === 'partially-committed') {
+        return (
+            value.atomicity === 'durable-atomic-with-non-atomic-effects' &&
+            pendingEffectCount > 0 &&
+            hasCommittedCommand &&
+            allCommandOutcomes('committed', 'no-op')
+        );
+    }
+    if (value.outcome === 'executed' || value.outcome === 'executed-with-warning') {
+        return (
+            value.atomicity === 'atomic' &&
+            pendingEffectCount === 0 &&
+            commandOutcomes.some((outcome) => outcome === 'executed') &&
+            allCommandOutcomes('executed', 'no-op')
+        );
+    }
+    if (value.outcome === 'no-op') {
+        return value.atomicity === 'atomic' && pendingEffectCount === 0 && allCommandOutcomes('no-op');
+    }
+    if (value.outcome === 'ambiguous') {
+        return value.atomicity === 'atomic' && pendingEffectCount === 0 && allCommandOutcomes('unknown');
+    }
+    return value.atomicity === 'atomic' && pendingEffectCount === 0 && allCommandOutcomes('not-applied');
+}
+
 export function parseStoredVerifiedBatchReceipt(input: {
     baseRevision: string;
     batchId: string;
     commands: ReadonlyArray<{ commandId: string; operation: string }>;
+    contentHash: string;
     runId: string;
     serializedReceipt: string;
 }): StoredVerifiedBatchReceipt | null {
@@ -145,7 +197,9 @@ export function parseStoredVerifiedBatchReceipt(input: {
     const pendingEffects = isRecord(value) && Array.isArray(value.pendingEffects) ? value.pendingEffects : undefined;
     if (
         !isRecord(value) ||
-        value.schemaVersion !== 1 ||
+        value.schemaVersion !== 2 ||
+        value.contentHash !== input.contentHash ||
+        !/^sha256:[a-f0-9]{64}$/.test(input.contentHash) ||
         value.batchId !== input.batchId ||
         value.runId !== input.runId ||
         !isBatchOutcome(value.outcome) ||
@@ -180,6 +234,7 @@ export function parseStoredVerifiedBatchReceipt(input: {
                 (pendingEffects.length > 0 &&
                     (value.outcome !== 'partially-committed' ||
                         value.atomicity !== 'durable-atomic-with-non-atomic-effects')))) ||
+        !hasConsistentBatchOutcome(value, pendingEffects) ||
         !isArtifactLinks(value.links) ||
         !isCompensation(value.compensation) ||
         (value.semanticDiff !== null && !isRecord(value.semanticDiff)) ||
