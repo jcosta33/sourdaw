@@ -36,6 +36,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
     persistDeviceParam: mocks.persistDeviceParam,
     resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
+    // Not exercised by this spec — reached transitively through the
+    // CrdtDocument projection chain (projectSlotProjections) and required by
+    // the barrel-mock coverage gate.
+    adjustmentLayerStore: { value: null },
 }));
 
 vi.mock('../../../stores/crustStore', () => ({

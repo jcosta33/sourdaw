@@ -63,6 +63,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     scratchPadStore: { value: {} },
     takeLaneStore: { value: {} },
     persistDeviceParam: vi.fn(),
+    // Not exercised by this spec — reached transitively through the
+    // CrdtDocument projection chain (projectSlotProjections) and required by
+    // the barrel-mock coverage gate.
+    adjustmentLayerStore: { value: null },
 }));
 
 // Mock AudioEngine use cases
