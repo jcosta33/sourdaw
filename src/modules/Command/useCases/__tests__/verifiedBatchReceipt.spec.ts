@@ -138,13 +138,9 @@ function compileBatch(
     });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function receiptFrom(result: object): Record<string, unknown> {
+function receiptFrom(result: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>) {
     expect(result).toHaveProperty('receipt');
-    if (!('receipt' in result) || !isRecord(result.receipt)) {
+    if (!('receipt' in result)) {
         throw new Error('Expected a verified batch receipt');
     }
     return result.receipt;
@@ -592,7 +588,7 @@ describe('verified batch receipt', () => {
                 state: 'pending',
             },
         ]);
-        const legacyPartialReceipt = { ...receipt };
+        const legacyPartialReceipt: Partial<typeof receipt> = { ...receipt };
         delete legacyPartialReceipt.pendingEffects;
         expect(
             parseStoredVerifiedBatchReceipt({
