@@ -448,6 +448,55 @@ type GitTreeEntry = {
     path: string;
 };
 
+function malformedGitRecord(command: string, entry: string): never {
+    throw new Error(`malformed ${command} record: ${JSON.stringify(entry)}`);
+}
+
+function parseGitTreeEntry(entry: string): GitTreeEntry {
+    const tab = entry.indexOf('\t');
+    if (tab <= 0 || tab === entry.length - 1) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+
+    const fields = entry.slice(0, tab).split(' ');
+    const mode = fields[0];
+    const type = fields[1];
+    const object = fields[2];
+    if (fields.length !== 3 || mode === undefined || type === undefined || object === undefined) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+    if (mode.length === 0 || type.length === 0 || object.length === 0) {
+        return malformedGitRecord('git ls-tree', entry);
+    }
+
+    return { mode, object, path: entry.slice(tab + 1) };
+}
+
+function parseGitIndexEntry(entry: string): GitTreeEntry {
+    const tab = entry.indexOf('\t');
+    if (tab <= 0 || tab === entry.length - 1) {
+        return malformedGitRecord('git ls-files --stage', entry);
+    }
+
+    const fields = entry.slice(0, tab).split(' ');
+    const mode = fields[0];
+    const object = fields[1];
+    const stage = fields[2];
+    if (
+        fields.length !== 3 ||
+        mode === undefined ||
+        object === undefined ||
+        stage === undefined ||
+        mode.length === 0 ||
+        object.length === 0 ||
+        !/^\d+$/u.test(stage)
+    ) {
+        return malformedGitRecord('git ls-files --stage', entry);
+    }
+
+    return { mode, object, path: entry.slice(tab + 1) };
+}
+
 function gitTreeEntries(root: string, path: string): GitTreeEntry[] {
     return execFileSync('git', ['ls-tree', '-rz', 'HEAD', '--', path], {
         cwd: root,
@@ -455,11 +504,7 @@ function gitTreeEntries(root: string, path: string): GitTreeEntry[] {
     })
         .split('\0')
         .filter(Boolean)
-        .map((entry) => {
-            const tab = entry.indexOf('\t');
-            const [mode, , object] = entry.slice(0, tab).split(' ');
-            return { mode, object, path: entry.slice(tab + 1) };
-        });
+        .map(parseGitTreeEntry);
 }
 
 function gitIndexEntries(root: string, path: string): GitTreeEntry[] {
@@ -469,11 +514,7 @@ function gitIndexEntries(root: string, path: string): GitTreeEntry[] {
     })
         .split('\0')
         .filter(Boolean)
-        .map((entry) => {
-            const tab = entry.indexOf('\t');
-            const [mode, object] = entry.slice(0, tab).split(' ');
-            return { mode, object, path: entry.slice(tab + 1) };
-        });
+        .map(parseGitIndexEntry);
 }
 
 function gitBlob(root: string, object: string): Buffer {
