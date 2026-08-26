@@ -52,6 +52,10 @@ type EvidenceReference = Pick<LegalFile, 'label' | 'sha256'>;
 
 export type CargoRuntimeInventorySnapshot = {
     cargoLockSha256: string;
+    sourceInputs: Array<{
+        path: string;
+        sha256: string;
+    }>;
     featureSelection: {
         allFeatures: false;
         noDefaultFeatures: false;
@@ -606,12 +610,41 @@ function assertEvidenceReferences(packageId: string, field: string, references: 
     }
 }
 
+function cargoManifestPaths(root: string, directory = 'crates'): string[] {
+    return readdirSync(resolve(root, directory), { withFileTypes: true }).flatMap((entry) => {
+        const path = `${directory}/${entry.name}`;
+        if (entry.isDirectory()) {
+            return cargoManifestPaths(root, path);
+        }
+        return entry.isFile() && entry.name === 'Cargo.toml' ? [path] : [];
+    });
+}
+
+function cargoSourceInputs(root: string): CargoRuntimeInventorySnapshot['sourceInputs'] {
+    const paths = [
+        'Cargo.toml',
+        'rust-toolchain.toml',
+        'scripts/buildNativeAddon.ts',
+        ...cargoManifestPaths(root),
+        ...['.cargo/config', '.cargo/config.toml'].filter((path) => existsSync(resolve(root, path))),
+    ].sort();
+    return paths.map((path) => ({ path, sha256: sha256(readFileSync(resolve(root, path))) }));
+}
+
+function assertCargoSourceInputs(root: string, inventory: CargoRuntimeInventorySnapshot): void {
+    if (JSON.stringify(inventory.sourceInputs) !== JSON.stringify(cargoSourceInputs(root))) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs drifted`);
+    }
+}
+
 function assertCargoRuntimeInventory(
     inventory: CargoRuntimeInventorySnapshot | undefined
 ): CargoRuntimeInventorySnapshot {
     if (
         inventory === undefined ||
         !/^[0-9a-f]{64}$/u.test(inventory.cargoLockSha256) ||
+        !Array.isArray(inventory.sourceInputs) ||
+        inventory.sourceInputs.length === 0 ||
         inventory.featureSelection.allFeatures !== CARGO_RUNTIME_FEATURE_SELECTION.allFeatures ||
         inventory.featureSelection.noDefaultFeatures !== CARGO_RUNTIME_FEATURE_SELECTION.noDefaultFeatures ||
         inventory.featureSelection.features.length !== CARGO_RUNTIME_FEATURE_SELECTION.features.length ||
@@ -621,6 +654,24 @@ function assertCargoRuntimeInventory(
         inventory.packages.length === 0
     ) {
         throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: unsupported Cargo runtime inventory`);
+    }
+    const canonicalSourceInputs = [...inventory.sourceInputs].sort((left, right) =>
+        left.path.localeCompare(right.path)
+    );
+    if (
+        new Set(inventory.sourceInputs.map(({ path }) => path)).size !== inventory.sourceInputs.length ||
+        inventory.sourceInputs.some(
+            (input, index) =>
+                input !== canonicalSourceInputs[index] ||
+                input.path !== posix.normalize(input.path) ||
+                posix.isAbsolute(input.path) ||
+                input.path.length === 0 ||
+                input.path.includes('\\') ||
+                input.path.split('/').includes('..') ||
+                !/^[0-9a-f]{64}$/u.test(input.sha256)
+        )
+    ) {
+        throw new Error(`${DEPENDENCY_LICENSE_PROOFS_PATH}: Cargo source inputs must be unique and sorted`);
     }
     const identities = inventory.packages.map((pkg) => `${pkg.name}@${pkg.version}`);
     const canonicalPackages = [...inventory.packages].sort(compareCargoPackageIdentities);
@@ -709,6 +760,7 @@ function assertReportedCargoInventory(root: string, inventory: CargoRuntimeInven
 export function collectCargoDependencyLicenses(root: string): DependencyLicenseRecord[] {
     const inventory = assertCargoRuntimeInventory(readDependencyLicenseProofManifest(root).cargoRuntimeInventory);
     assertCargoLockDigest(root, inventory);
+    assertCargoSourceInputs(root, inventory);
     assertReportedCargoInventory(root, inventory);
     const reported = readReportedLegalFiles(root);
     return inventory.packages.map((pkg) => {
@@ -1377,6 +1429,7 @@ function createCargoRuntimeInventory(
     });
     return assertCargoRuntimeInventory({
         cargoLockSha256: sha256(readFileSync(resolve(root, 'Cargo.lock'))),
+        sourceInputs: cargoSourceInputs(root),
         featureSelection: {
             allFeatures: CARGO_RUNTIME_FEATURE_SELECTION.allFeatures,
             noDefaultFeatures: CARGO_RUNTIME_FEATURE_SELECTION.noDefaultFeatures,

@@ -2,6 +2,64 @@
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
         "cargoLockSha256": "bad8592c5c5d9104f7b79f57bf23564bfdf7ead00659e93c202d0a2a7662b34e",
+        "sourceInputs": [
+            {
+                "path": ".cargo/config.toml",
+                "sha256": "cf292f45bb33cce3c2ddfe8db3fc1dacebbe021e7846c617636fa141eca8fcaf"
+            },
+            {
+                "path": "Cargo.toml",
+                "sha256": "284744213beac0c5c28b8f44860127c44a66c36b90915d6b049f160e50c6f85d"
+            },
+            {
+                "path": "crates/daw-collab/Cargo.toml",
+                "sha256": "4cbe88e8b009d05714fff2d0526daac8cc44074ce91814b26b2583f92f8cdc6c"
+            },
+            {
+                "path": "crates/daw-core/Cargo.toml",
+                "sha256": "71ab0020f786a8d271f4b78c3243c6cf005b6fe8874247d0da51b70f916bfa22"
+            },
+            {
+                "path": "crates/daw-dsp/Cargo.toml",
+                "sha256": "52b7d9b8c5f92e6c23188fc98745ceca7d9ad57013df7aaf198539fc905556e2"
+            },
+            {
+                "path": "crates/daw-engine/Cargo.toml",
+                "sha256": "fca52fba170f297695b6eef7dc4ec4971ba0fe7ed9c28ccf20bcd0306311a548"
+            },
+            {
+                "path": "crates/daw-io/Cargo.toml",
+                "sha256": "ffdfd6ccd4d4987d89c44ba560ef7e65f137adadd533a3543b34d8a150a3c137"
+            },
+            {
+                "path": "crates/daw-plugin-host/Cargo.toml",
+                "sha256": "b485d0f7144a4dea305719f03ea9adad2ad26df8a8f18a2a8e296344b66ce39f"
+            },
+            {
+                "path": "crates/daw-wasm-decoder/Cargo.toml",
+                "sha256": "6c36a228508458af121015475c36f1269aa8d3d91d2c31c7486b732686cb38df"
+            },
+            {
+                "path": "crates/proof-chamber/Cargo.toml",
+                "sha256": "f6833d75c9736ae25908e95ae474f005a6ca795c16bfbccb09b76acfee4cfdc1"
+            },
+            {
+                "path": "crates/scoring/Cargo.toml",
+                "sha256": "c97271ac7945ef4965a798a93d8c75cdfd5308cbcd39d68b32f0d88d8ee95454"
+            },
+            {
+                "path": "crates/sourdaw-native/Cargo.toml",
+                "sha256": "15623a5737a766d8d4423120ed43340400017007fcdd42e292cbc8964f44f392"
+            },
+            {
+                "path": "rust-toolchain.toml",
+                "sha256": "bae4e26ab3ac14ac537b8d09c3577c55b94cd39c781fb9ac3d291e5e12f72a82"
+            },
+            {
+                "path": "scripts/buildNativeAddon.ts",
+                "sha256": "f3246c1034fcd2bebd109649810faa6e5373507832194b542a2a7e133e9f31b7"
+            }
+        ],
         "featureSelection": {
             "allFeatures": false,
             "noDefaultFeatures": false,

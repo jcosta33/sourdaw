@@ -5,6 +5,7 @@ import {
     existsSync,
     mkdirSync,
     mkdtempSync,
+    readdirSync,
     readFileSync,
     rmSync,
     symlinkSync,
@@ -67,7 +68,24 @@ function write(root: string, path: string, contents: string): void {
 
 function writeCargoInventoryFixture(root: string): void {
     const repositoryRoot = process.cwd();
-    const paths = ['Cargo.lock', DEPENDENCY_LICENSE_REPORT_PATH, DEPENDENCY_LICENSE_PROOFS_PATH];
+    const cargoManifests = (directory = 'crates'): string[] =>
+        readdirSync(join(repositoryRoot, directory), { withFileTypes: true }).flatMap((entry) => {
+            const path = `${directory}/${entry.name}`;
+            if (entry.isDirectory()) {
+                return cargoManifests(path);
+            }
+            return entry.isFile() && entry.name === 'Cargo.toml' ? [path] : [];
+        });
+    const paths = [
+        'Cargo.lock',
+        'Cargo.toml',
+        'rust-toolchain.toml',
+        'scripts/buildNativeAddon.ts',
+        DEPENDENCY_LICENSE_REPORT_PATH,
+        DEPENDENCY_LICENSE_PROOFS_PATH,
+        ...cargoManifests(),
+        ...['.cargo/config', '.cargo/config.toml'].filter((path) => existsSync(join(repositoryRoot, path))),
+    ];
     for (const path of paths) {
         write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
     }
@@ -266,6 +284,19 @@ describe('project license', () => {
         inventory!.packages[0]!.source = 'registry+https://example.invalid/index';
         writeCargoInventoryFixtureManifest(root, manifest);
         expect(() => collectCargoDependencyLicenses(root)).toThrow('proof source is not the crates.io registry');
+    });
+
+    it.each([
+        ['crates/sourdaw-native/Cargo.toml', 'napi-addon =', 'napi-addon-renamed ='],
+        ['scripts/buildNativeAddon.ts', "'napi-addon'", "'napi-addon-renamed'"],
+    ])('rejects Cargo resolution input drift in %s without invoking Cargo', (path, before, after) => {
+        writeCargoInventoryFixture(root);
+        const inputPath = join(root, path);
+        const input = readFileSync(inputPath, 'utf8');
+        expect(input).toContain(before);
+        writeFileSync(inputPath, input.replace(before, after));
+
+        expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo source inputs drifted');
     });
 
     it('rejects canonical LICENSE drift independently', () => {
