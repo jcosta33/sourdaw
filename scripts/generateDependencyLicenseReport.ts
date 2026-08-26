@@ -6,12 +6,16 @@ import { fileURLToPath } from 'node:url';
 
 import {
     buildDependencyLicenseArtifactsFromInstalledMetadata,
+    DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
     SERVER_THIRD_PARTY_NOTICES_PATH,
 } from './dependencyLicenseReport.ts';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const artifacts = buildDependencyLicenseArtifactsFromInstalledMetadata(root);
+writeFileSync(resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH), artifacts.proofManifest, 'utf8');
 writeFileSync(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH), artifacts.report, 'utf8');
 writeFileSync(resolve(root, SERVER_THIRD_PARTY_NOTICES_PATH), artifacts.serverNotices, 'utf8');
-process.stdout.write(`wrote ${DEPENDENCY_LICENSE_REPORT_PATH} and ${SERVER_THIRD_PARTY_NOTICES_PATH}\n`);
+process.stdout.write(
+    `wrote ${DEPENDENCY_LICENSE_PROOFS_PATH}, ${DEPENDENCY_LICENSE_REPORT_PATH}, and ${SERVER_THIRD_PARTY_NOTICES_PATH}\n`
+);
