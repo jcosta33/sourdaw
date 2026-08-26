@@ -30,6 +30,12 @@ import {
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
+export type HeadCheckRun = {
+    name: string;
+    status: string;
+    conclusion: string | null;
+};
+
 export type PullRequestSnapshot = {
     number: number;
     state: string;
@@ -45,6 +51,7 @@ export type PullRequestSnapshot = {
     changedFiles: number;
     additions: number;
     deletions: number;
+    checkRuns: HeadCheckRun[];
 };
 
 export type ReviewState = {
@@ -89,6 +96,12 @@ export type ShellRunner = {
     run: (command: string, args: string[]) => void;
 };
 
+const REQUIRED_CHECK_NAME = 'Gate';
+const SETTLED_CHECK_STATUS = 'COMPLETED';
+const SUPERSEDED_CONCLUSION = 'CANCELLED';
+const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
+const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
+
 function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (pullRequest.state !== 'OPEN') {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
@@ -99,12 +112,60 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    if (pullRequest.mergeStateStatus !== 'CLEAN') {
-        fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
-    }
+    validateMergeState(pullRequest);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
+}
+
+/**
+ * An approving review re-runs the health gates in the same concurrency group as the push run that
+ * is still in flight, so that earlier run is cancelled and its check runs — its `Gate` included —
+ * stay `CANCELLED` on the head forever. GitHub reports the head `UNSTABLE` for those corpses even
+ * though the review-triggered run the branch ruleset reads succeeded on the same commit. Tolerating
+ * that state means proving the head green here instead of trusting the aggregate: nothing failed,
+ * nothing is still running, and the one required check succeeded. Every other status still refuses,
+ * because it reports something other than checks.
+ */
+function validateMergeState(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.mergeStateStatus === 'CLEAN') {
+        return;
+    }
+    if (pullRequest.mergeStateStatus !== CHECKS_PENDING_MERGE_STATE) {
+        fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
+    }
+    validateSupersededChecks(pullRequest);
+}
+
+function validateSupersededChecks(pullRequest: PullRequestSnapshot): void {
+    const state = `PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`;
+    const failed = pullRequest.checkRuns.find(isFailedCheckRun);
+    if (failed !== undefined) {
+        fail(`${state} and check ${failed.name} concluded ${failed.conclusion ?? 'nothing'}`);
+    }
+    const unsettled = pullRequest.checkRuns.find((check) => check.status !== SETTLED_CHECK_STATUS);
+    if (unsettled !== undefined) {
+        fail(`${state} and check ${unsettled.name} is still ${unsettled.status}`);
+    }
+    if (!pullRequest.checkRuns.some(isSuccessfulRequiredCheck)) {
+        fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
+    }
+}
+
+/**
+ * A cancelled run is the only tolerated corpse. Anything else that settled without a passing
+ * conclusion — an unrecognized one included — is a real result the merge must not step over.
+ */
+function isFailedCheckRun(check: HeadCheckRun): boolean {
+    return (
+        check.status === SETTLED_CHECK_STATUS &&
+        check.conclusion !== SUPERSEDED_CONCLUSION &&
+        !NON_BLOCKING_CONCLUSIONS.has(check.conclusion ?? '')
+    );
+}
+
+function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
+    return check.name === REQUIRED_CHECK_NAME && check.conclusion === 'SUCCESS';
 }
 
 function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
@@ -440,6 +501,54 @@ function repositoryMergePolicy(repository: string, shell: ShellRunner): Reposito
     return { method: 'squash', deletesMergedBranches: settings.delete_branch_on_merge };
 }
 
+type RawPullRequestSnapshot = Omit<PullRequestSnapshot, 'checkRuns'> & { statusCheckRollup?: unknown };
+
+type RawRollupEntry = {
+    __typename?: unknown;
+    name?: unknown;
+    status?: unknown;
+    conclusion?: unknown;
+    context?: unknown;
+    state?: unknown;
+};
+
+const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
+
+function toHeadCheckRuns(value: unknown, pullRequestNumber: number): HeadCheckRun[] {
+    if (!Array.isArray(value)) {
+        fail(`cannot read the checks on PR #${pullRequestNumber}`);
+    }
+    return value.map((entry) => toHeadCheckRun(entry, pullRequestNumber));
+}
+
+/**
+ * The rollup is a union. GitHub Actions reports a `CheckRun` carrying a status and a conclusion,
+ * while an external integration reports a `StatusContext` whose single state carries both. Reading
+ * only the `CheckRun` arm would drop a failing status context out of the evidence entirely, so an
+ * entry that matches neither arm refuses rather than being skipped.
+ */
+function toHeadCheckRun(value: unknown, pullRequestNumber: number): HeadCheckRun {
+    const entry = (value === null || typeof value !== 'object' ? {} : value) as RawRollupEntry;
+    if (entry.__typename === 'CheckRun' && typeof entry.name === 'string' && typeof entry.status === 'string') {
+        return {
+            name: entry.name,
+            status: entry.status,
+            conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+        };
+    }
+    if (entry.__typename === 'StatusContext' && typeof entry.context === 'string' && typeof entry.state === 'string') {
+        return toStatusContextCheckRun(entry.context, entry.state);
+    }
+    return fail(`cannot read a check on PR #${pullRequestNumber}`);
+}
+
+function toStatusContextCheckRun(name: string, state: string): HeadCheckRun {
+    if (UNSETTLED_STATUS_CONTEXT_STATES.has(state)) {
+        return { name, status: state, conclusion: null };
+    }
+    return { name, status: SETTLED_CHECK_STATUS, conclusion: state };
+}
+
 function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         fail('invalid delivery receipt comment');
@@ -494,6 +603,7 @@ export function shellPort(
         'changedFiles',
         'additions',
         'deletions',
+        'statusCheckRollup',
     ].join(',');
 
     return {
@@ -514,11 +624,13 @@ export function shellPort(
             }
             shell.run('git', ['fetch', '--prune', 'origin']);
         },
-        pullRequest: (number) =>
-            parseJson<PullRequestSnapshot>(
+        pullRequest: (number) => {
+            const { statusCheckRollup, ...snapshot } = parseJson<RawPullRequestSnapshot>(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 `PR #${number}`
-            ),
+            );
+            return { ...snapshot, checkRuns: toHeadCheckRuns(statusCheckRollup, number) };
+        },
         reviewState: (number, expectedHead) => {
             const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{

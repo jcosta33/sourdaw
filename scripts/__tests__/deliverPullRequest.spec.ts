@@ -10,6 +10,7 @@ import {
     parseCliArgs,
     shellPort,
     type DeliveryPort,
+    type HeadCheckRun,
     type PullRequestSnapshot,
     type ReviewState,
     type ShellRunner,
@@ -86,7 +87,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 return 'base';
             }
             if (joined.includes('pr view')) {
-                return JSON.stringify(args.includes('43') ? child : pullRequest());
+                return JSON.stringify(rawPullRequest(args.includes('43') ? child : pullRequest()));
             }
             if (joined.includes('query=')) {
                 return JSON.stringify({
@@ -205,8 +206,32 @@ function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestS
         changedFiles: 3,
         additions: 40,
         deletions: 5,
+        checkRuns: [checkRun()],
         ...overrides,
     };
+}
+
+function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
+    return { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', ...overrides };
+}
+
+/**
+ * The head of PR #2795: an approving review re-ran the health gates and cancelled the push run that
+ * was still in flight, leaving a cancelled `Gate` beside the successful one on the same commit.
+ */
+function supersededRunCheckRuns(): HeadCheckRun[] {
+    return [
+        checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+        checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
+        checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' }),
+        checkRun({ name: 'Lint' }),
+        checkRun(),
+    ];
+}
+
+function rawPullRequest(snapshot: PullRequestSnapshot): Record<string, unknown> {
+    const { checkRuns, ...fields } = snapshot;
+    return { ...fields, statusCheckRollup: checkRuns.map((check) => ({ __typename: 'CheckRun', ...check })) };
 }
 
 function stacked(overrides: Partial<StackedPullRequest> = {}): StackedPullRequest {
@@ -729,10 +754,149 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects a blocked merge state', () => {
-        const { port, calls } = fakePort({ primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })] });
+    it.each(['BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'])(
+        'rejects merge state %s and names it, because it reports something other than checks',
+        (mergeStateStatus) => {
+            const { port, calls } = fakePort({
+                primary: [pullRequest({ mergeStateStatus, checkRuns: [checkRun()] })],
+            });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/BLOCKED/);
+            let thrown: unknown;
+            try {
+                deliverPullRequest(42, port);
+            } catch (error) {
+                thrown = error;
+            }
+
+            expect(String(thrown)).toBe(`Error: PR #42 merge state is ${mergeStateStatus}`);
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
+
+    it('merges a CLEAN head', () => {
+        const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest()] });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * The cancelled run is a corpse of the push run the approval superseded. Its `Gate` is what
+     * makes GitHub call the head UNSTABLE; the run that actually decided the head passed.
+     */
+    it('merges an UNSTABLE head whose only non-success runs were cancelled and whose Gate succeeded', () => {
+        const superseded = { mergeStateStatus: 'UNSTABLE', checkRuns: supersededRunCheckRuns() };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(superseded), pullRequest(superseded)],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it.each(['FAILURE', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])(
+        'refuses an UNSTABLE head carrying a check that concluded %s',
+        (conclusion) => {
+            const { port, calls } = fakePort({
+                primary: [
+                    pullRequest({
+                        mergeStateStatus: 'UNSTABLE',
+                        checkRuns: [...supersededRunCheckRuns(), checkRun({ name: 'Unit suite 1/4', conclusion })],
+                    }),
+                ],
+            });
+
+            let thrown: unknown;
+            try {
+                deliverPullRequest(42, port);
+            } catch (error) {
+                thrown = error;
+            }
+
+            expect(String(thrown)).toBe(
+                `Error: PR #42 merge state is UNSTABLE and check Unit suite 1/4 concluded ${conclusion}`
+            );
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
+
+    it('refuses an UNSTABLE head whose checks have not all settled', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({
+                    mergeStateStatus: 'UNSTABLE',
+                    checkRuns: [
+                        ...supersededRunCheckRuns(),
+                        checkRun({ name: 'End-to-end 3/12', status: 'IN_PROGRESS', conclusion: null }),
+                    ],
+                }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check End-to-end 3/12 is still IN_PROGRESS'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * `Gate` is the one check the branch ruleset requires. A head where every run of it was
+     * cancelled has never been decided, however tidy the rest of the rollup looks.
+     */
+    it('refuses an UNSTABLE head whose cancelled runs never left a successful Gate', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({
+                    mergeStateStatus: 'UNSTABLE',
+                    checkRuns: [
+                        checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+                        checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
+                        checkRun({ name: 'Lint' }),
+                    ],
+                }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequest(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and no Gate check succeeded on head');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('refuses an UNSTABLE head with no checks at all', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE', checkRuns: [] })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/no Gate check succeeded on head/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('refuses an UNSTABLE head carrying a conclusion it does not recognize', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({
+                    mergeStateStatus: 'UNSTABLE',
+                    checkRuns: [...supersededRunCheckRuns(), checkRun({ name: 'CodeQL', conclusion: 'STALE' })],
+                }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/check CodeQL concluded STALE/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -821,6 +985,53 @@ describe('delivery CLI', () => {
 });
 
 describe('delivery shell boundary', () => {
+    function rollupPort(rollup: unknown) {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                return JSON.stringify({ ...rawPullRequest(pullRequest()), statusCheckRollup: rollup });
+            },
+            run: () => undefined,
+        });
+        return { captures, port };
+    }
+
+    /**
+     * The rollup decides whether an UNSTABLE head merges, so both arms of the union have to reach
+     * the snapshot. A dropped StatusContext would take a failing external check with it.
+     */
+    it('asks for the head rollup and normalizes both arms of its union', () => {
+        const { captures, port } = rollupPort([
+            { __typename: 'CheckRun', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+            { __typename: 'CheckRun', name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: '' },
+            { __typename: 'StatusContext', context: 'coverage/external', state: 'FAILURE' },
+            { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING' },
+        ]);
+
+        const snapshot = port.pullRequest(42);
+
+        expect(captures[0]?.args.join(' ')).toContain('statusCheckRollup');
+        expect(snapshot.checkRuns).toEqual([
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
+            { name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: null },
+            { name: 'coverage/external', status: 'COMPLETED', conclusion: 'FAILURE' },
+            { name: 'deploy/preview', status: 'PENDING', conclusion: null },
+        ]);
+        expect(snapshot).not.toHaveProperty('statusCheckRollup');
+    });
+
+    it.each([
+        { label: 'an entry matching neither arm', rollup: [{ __typename: 'CheckSuite', name: 'Gate' }] },
+        { label: 'a rollup that is not a list', rollup: null },
+    ])('refuses to guess at $label', ({ rollup }) => {
+        const { port } = rollupPort(rollup);
+
+        expect(() => port.pullRequest(42)).toThrow(/cannot read (a check|the checks) on PR #42/);
+    });
+
     it('uses complete GitHub reads and exact-head writes', () => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const runs: Array<{ command: string; args: string[] }> = [];
