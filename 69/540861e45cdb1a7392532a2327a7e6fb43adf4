@@ -1,0 +1,31 @@
+src/modules/Command/useCases/getVersionedCommandBatchCommitDisposition.ts
+  s_a40848e8f8cca9::t_565465ede83fd4 1-2,7-15,56-59
+  s_a40848e8f8cca9::t_27187a7eab5d11 60-62
+  s_a40848e8f8cca9::t_d467d3613341e1 63
+src/modules/Collaboration/useCases/__tests__/fakeDurableAssetIndexedDb.ts
+  s_a40848e8f8cca9::t_565465ede83fd4 539-540,546-547,553-554
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_a40848e8f8cca9::t_565465ede83fd4 70-74,81-82
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_a40848e8f8cca9::t_565465ede83fd4 129-130
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_b0fa50f0f30527 1262-1274
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_565465ede83fd4 173,248,262,362,378,395,406
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "69540861e45cdb1a7392532a2327a7e6fb43adf4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
