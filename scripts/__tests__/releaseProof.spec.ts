@@ -2987,83 +2987,88 @@ with open(early, "r+b", buffering=0) as file:
         expect(existsSync(marker)).toBe(false);
     });
 
-    it('rejects ZIP archive resource metadata without expanding hostile payloads', { timeout: 20_000 }, () => {
-        const tar = createFixture();
-        assemble(tar);
-        const tarSource = proof(tar).source as Record<string, unknown>;
-        const tarArchive = join(tar.candidate, tarSource.archivePath as string);
-        writeFileSync(tarArchive, oversizedTarHeader(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1));
-        refreshSourceArchiveHash(tar);
-        expect(validate(tar)).toContain(
-            'tar archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
-        );
+    it(
+        'rejects ZIP archive resource metadata without expanding hostile payloads',
+        { timeout: 20_000 },
+        () => {
+            const tar = createFixture();
+            assemble(tar);
+            const tarSource = proof(tar).source as Record<string, unknown>;
+            const tarArchive = join(tar.candidate, tarSource.archivePath as string);
+            writeFileSync(tarArchive, oversizedTarHeader(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1));
+            refreshSourceArchiveHash(tar);
+            expect(validate(tar)).toContain(
+                'tar archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
+            );
 
-        const file = createFixture();
-        assemble(file);
-        const fileSource = proof(file).source as Record<string, unknown>;
-        truncateSync(
-            join(file.candidate, fileSource.archivePath as string),
-            RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1
-        );
-        expect(validate(file)).toContain('source archive: file exceeds the candidate file-size limit');
+            const file = createFixture();
+            assemble(file);
+            const fileSource = proof(file).source as Record<string, unknown>;
+            truncateSync(
+                join(file.candidate, fileSource.archivePath as string),
+                RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1
+            );
+            expect(validate(file)).toContain('source archive: file exceeds the candidate file-size limit');
 
-        const entry = createFixture();
-        assemble(entry);
-        const entryArchive = replaceWebArchive(entry, ['entry.txt']);
-        patchZipMetadata(entryArchive, (bytes, centralOffset) => {
-            bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
-        });
-        refreshWebArchiveHash(entry);
-        expectZipMetadataRejectionBeforePayloadExpansion(
-            entry,
-            entryArchive,
-            'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
-        );
+            const entry = createFixture();
+            assemble(entry);
+            const entryArchive = replaceWebArchive(entry, ['entry.txt']);
+            patchZipMetadata(entryArchive, (bytes, centralOffset) => {
+                bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
+            });
+            refreshWebArchiveHash(entry);
+            expectZipMetadataRejectionBeforePayloadExpansion(
+                entry,
+                entryArchive,
+                'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
+            );
 
-        const aggregate = createFixture();
-        assemble(aggregate);
-        const aggregatePaths = Array.from({ length: 11 }, (_value, index) => `file-${String(index)}.txt`);
-        const aggregateArchive = replaceWebArchive(aggregate, aggregatePaths);
-        patchZipMetadata(aggregateArchive, (bytes, centralOffset, entryCount) => {
-            let offset = centralOffset;
-            const size = Math.floor(RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes / entryCount) + 1;
-            for (let index = 0; index < entryCount; index += 1) {
-                bytes.writeUInt32LE(size, offset + 24);
-                offset +=
-                    46 +
-                    bytes.readUInt16LE(offset + 28) +
-                    bytes.readUInt16LE(offset + 30) +
-                    bytes.readUInt16LE(offset + 32);
-            }
-        });
-        refreshWebArchiveHash(aggregate);
-        expectZipMetadataRejectionBeforePayloadExpansion(
-            aggregate,
-            aggregateArchive,
-            'zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit'
-        );
+            const aggregate = createFixture();
+            assemble(aggregate);
+            const aggregatePaths = Array.from({ length: 11 }, (_value, index) => `file-${String(index)}.txt`);
+            const aggregateArchive = replaceWebArchive(aggregate, aggregatePaths);
+            patchZipMetadata(aggregateArchive, (bytes, centralOffset, entryCount) => {
+                let offset = centralOffset;
+                const size = Math.floor(RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes / entryCount) + 1;
+                for (let index = 0; index < entryCount; index += 1) {
+                    bytes.writeUInt32LE(size, offset + 24);
+                    offset +=
+                        46 +
+                        bytes.readUInt16LE(offset + 28) +
+                        bytes.readUInt16LE(offset + 30) +
+                        bytes.readUInt16LE(offset + 32);
+                }
+            });
+            refreshWebArchiveHash(aggregate);
+            expectZipMetadataRejectionBeforePayloadExpansion(
+                aggregate,
+                aggregateArchive,
+                'zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit'
+            );
 
-        const count = createFixture();
-        assemble(count);
-        const countArchive = replaceWebArchive(count, ['count.txt']);
-        patchZipMetadata(countArchive, (bytes, _centralOffset) => {
-            const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-            bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 8);
-            bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 10);
-        });
-        refreshWebArchiveHash(count);
-        expectZipMetadataRejectionBeforePayloadExpansion(
-            count,
-            countArchive,
-            'zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit'
-        );
+            const count = createFixture();
+            assemble(count);
+            const countArchive = replaceWebArchive(count, ['count.txt']);
+            patchZipMetadata(countArchive, (bytes, _centralOffset) => {
+                const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+                bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 8);
+                bytes.writeUInt16LE(RELEASE_PROOF_ARCHIVE_LIMITS.entries + 1, end + 10);
+            });
+            refreshWebArchiveHash(count);
+            expectZipMetadataRejectionBeforePayloadExpansion(
+                count,
+                countArchive,
+                'zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit'
+            );
 
-        const depth = createFixture();
-        assemble(depth);
-        const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
-        replaceWebArchive(depth, [deepPath]);
-        expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
-    }, 15_000);
+            const depth = createFixture();
+            assemble(depth);
+            const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
+            replaceWebArchive(depth, [deepPath]);
+            expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
+        },
+        15_000
+    );
 
     it('observes expansion for a valid ZIP with split input chunks', () => {
         const fixture = createFixture();
