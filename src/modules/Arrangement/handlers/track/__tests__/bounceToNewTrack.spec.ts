@@ -31,7 +31,7 @@ describe('handleBounceToNewTrack', () => {
         });
 
         expect(mocks.bounceToNewTrack).toHaveBeenCalledWith('t1', { deferUndoEntry: expect.any(Function) });
-        if (!result.afterCommit || !result.afterAmbiguousCommit) {
+        if (result.status !== 'written') {
             throw new Error('expected the written result to carry the post-commit hooks');
         }
 
