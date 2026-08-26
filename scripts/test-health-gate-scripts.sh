@@ -236,7 +236,11 @@ const events = workflow.on;
 const concurrency = workflow.concurrency;
 const decide = workflow.jobs?.decide;
 const secrets = workflow.jobs?.secrets;
+const staticChecks = workflow.jobs?.static;
+const lint = workflow.jobs?.lint;
+const boundaries = workflow.jobs?.boundaries;
 const unit = workflow.jobs?.unit;
+const smoke = workflow.jobs?.smoke;
 const e2e = workflow.jobs?.e2e;
 const gate = workflow.jobs?.gate;
 const nightlyReport = workflow.jobs?.['nightly-report'];
@@ -251,10 +255,12 @@ const secretScanUses = secretScan?.uses ?? '';
 const secretsEnv = secrets?.env ?? {};
 const secretScanEnvJson = JSON.stringify([secretsEnv, positiveControl?.env ?? {}, secretScan?.env ?? {}]);
 const unitRunStep = stepNamed(unit, 'Run shard');
+const smokeRunStep = stepNamed(smoke, 'Run offline smoke set');
 const e2eRunStep = stepNamed(e2e, 'Run shard');
 const unitFailureWarning = stepNamed(unit, 'Report shard failure');
 const e2eFailureWarning = stepNamed(e2e, 'Report shard failure');
 const unitRun = unitRunStep?.run ?? '';
+const smokeRun = smokeRunStep?.run ?? '';
 const nightlyReportRun = stepNamed(nightlyReport, 'Open or update the nightly failure issue')?.run ?? '';
 const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
@@ -268,6 +274,9 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
+    'unit',
+    'smoke',
+    'e2e',
     'codeql',
     'secrets',
 ];
@@ -289,7 +298,7 @@ expect(
 );
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
-    'decide must run the heavy path only for approved pull_request_review submissions'
+    'decide must ignore non-approved pull_request_review submissions'
 );
 const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
 const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
@@ -303,13 +312,18 @@ expect(
     'workflow_dispatch must enable the heavy path and every scope'
 );
 expect(
-    runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\n',
-    'pull_request_review must enable the heavy path and preserve path-filter outputs'
+    runResolveScope('pull_request_review', reviewScopes) === 'heavy=false\nrust=false\nserver=true\ne2e=false\nweb=true\n',
+    'pull_request_review must preserve path-filter outputs without enabling the heavy path'
 );
 expect(
     runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\n',
     'pull_request must disable the heavy path and preserve path-filter outputs'
 );
+const codeBearingIf =
+    "needs.decide.outputs.web == 'true' || needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
+expect(staticChecks?.if === codeBearingIf, 'types and contracts must skip documentation-only pull requests');
+expect(lint?.if === codeBearingIf, 'lint must skip documentation-only pull requests');
+expect(boundaries?.if === codeBearingIf, 'module boundaries must skip documentation-only pull requests');
 expect(secrets?.if === "needs.decide.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(targetCheckout?.uses ?? ''), 'scan target checkout action must be pinned to a full commit SHA');
@@ -424,13 +438,16 @@ expect(
 expect(unitRunStep?.id === 'run_shard', 'unit Run shard step must keep its stable id');
 expect(e2eRunStep?.id === 'run_shard', 'end-to-end Run shard step must keep its stable id');
 expect(
-    unitRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'unit Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    unitRunStep?.['continue-on-error'] === undefined,
+    'unit Run shard must fail its job on every event so Gate observes a failed unit dependency'
 );
 expect(
-    e2eRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'end-to-end Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    e2eRunStep?.['continue-on-error'] === undefined,
+    'end-to-end Run shard must fail its job on every event so Gate observes a failed end-to-end dependency'
 );
+expect(smoke?.name === 'Offline browser smoke', 'offline smoke job must remain present');
+expect(smoke?.if === "needs.decide.outputs.e2e == 'true'", 'offline smoke must run for every applicable user-runtime head');
+expect(smokeRun === 'pnpm test:e2e tests/e2e/smoke.spec.ts', 'offline smoke must run only the deterministic smoke spec');
 expect(
     unitFailureWarning?.if === shardFailureCondition,
     'unit shard failure warning must observe the failed Run shard outcome'
@@ -453,8 +470,9 @@ expect(
         gateNeeds.every((need, index) => need === expectedGateNeeds[index]),
     `Gate needs must stay exactly: ${expectedGateNeeds.join(', ')}`
 );
-expect(!gateNeeds.includes('unit'), 'unit suite must remain outside required Gate needs');
-expect(!gateNeeds.includes('e2e'), 'e2e suite must remain outside required Gate needs');
+expect(gateNeeds.includes('unit'), 'full unit suite must contribute to Gate');
+expect(gateNeeds.includes('smoke'), 'offline browser smoke must contribute to Gate');
+expect(gateNeeds.includes('e2e'), 'scheduled full end-to-end suite must contribute to Gate');
 expect(!gateNeeds.includes('e2e-report'), 'e2e report must remain outside required Gate needs');
 expect(
     gateRun.includes('select(.value.result != "success" and .value.result != "skipped")') &&

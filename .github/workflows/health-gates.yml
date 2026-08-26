@@ -118,8 +118,10 @@ jobs:
             printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Pull-request heads get only deterministic fast evidence. The full
+          # browser suite, CodeQL, and history scan remain scheduled or manual
+          # work so an approving review never starts the twelve-shard suite.
           heavy=false
-          if [ "$EVENT" = "pull_request_review" ]; then heavy=true; fi
           {
             printf 'heavy=%s\n' "$heavy"
             printf 'rust=%s\n' "$RUST"
@@ -137,6 +139,7 @@ jobs:
   static:
     name: Types and contracts
     needs: decide
+    if: needs.decide.outputs.web == 'true' || needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -204,6 +207,7 @@ jobs:
   lint:
     name: Lint
     needs: decide
+    if: needs.decide.outputs.web == 'true' || needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -233,6 +237,7 @@ jobs:
   boundaries:
     name: Module boundaries
     needs: decide
+    if: needs.decide.outputs.web == 'true' || needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -285,7 +290,6 @@ jobs:
       # default of two exists for the agent resource guard, not for CI.
       - name: Run shard
         id: run_shard
-        continue-on-error: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
         env:
           VITEST_MAX_WORKERS: 4
         run: pnpm run test:run --shard=${{ matrix.shard }}/4
@@ -298,6 +302,34 @@ jobs:
           printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\n' "$SHARD"
           printf '### Unit suite shard %s failed\n\n' "$SHARD" >> "$GITHUB_STEP_SUMMARY"
           printf 'Inspect the `Run shard` step log for raw failure output.\n' >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: Offline browser smoke
+    needs: decide
+    if: needs.decide.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run offline smoke set
+        run: pnpm test:e2e tests/e2e/smoke.spec.ts
 
   build:
     name: Production build
@@ -449,7 +481,6 @@ jobs:
 
       - name: Run shard
         id: run_shard
-        continue-on-error: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}
         run: pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob
 
       - name: Report shard failure
@@ -670,31 +701,9 @@ jobs:
     # a pull request that legitimately skips every heavy leg still reports a
     # conclusion instead of sitting pending.
     #
-    # `unit` and `e2e` are deliberately absent. They run, and their results are
-    # visible on the pull request, but they do not decide the merge yet — a gate
-    # is only worth having if a red one means something, and each of these has a
-    # reason it does not yet. Each is promoted by one line here, and each should
-    # be, as soon as its reason expires. Red is a reason to fix the thing and
-    # then gate it, never a reason to leave it ungated.
-    #
-    # The unit suite fails 217 tests across 37 files on `main` today, none of
-    # them caused by any open pull request. Gating on it now would mean a red
-    # check that says "main was already broken" on every unrelated change, and
-    # would freeze the repository against a defect its author is not fixing.
-    # Promote it the moment `main` is green — it is deterministic, it is the
-    # feedback that replaces a local run, and it is the first of these four that
-    # should decide merges.
-    #
-    # The end-to-end suite passed 895 of 928 on its first execution. Some of the
-    # remainder download a model from a third-party host at run time and fail
-    # with `Failed to fetch` when that host is unreachable, which makes the suite
-    # non-deterministic as a gate rather than merely red. Promote it once those
-    # tests no longer reach the network and the suite is green.
-    #
-    # `codeql` and `secrets` were held out until each had completed a run, on
-    # the principle that gating on unobserved behaviour is the mistake that left
-    # the previous end-to-end job broken in this file for months. Both have now
-    # passed, so both gate.
+    # Unit shards and the offline smoke set are the deterministic evidence for
+    # applicable pull-request heads. The full suite joins the same aggregate
+    # only on scheduled and manually dispatched health runs.
     # `!cancelled()` still evaluates failed or skipped dependencies for a live
     # run. The review predicate prevents an intentionally skipped review run
     # from reporting a successful Gate from all-skipped dependencies.
@@ -709,6 +718,9 @@ jobs:
       - rust
       - native-macos
       - native-windows
+      - unit
+      - smoke
+      - e2e
       - codeql
       - secrets
     runs-on: ubuntu-latest
