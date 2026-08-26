@@ -101,6 +101,7 @@ describe('handleAddClip atomic integration', () => {
         );
 
         expect(result).toMatchObject({ status: 'committed' });
+        expect(notifications).toEqual([]);
         const created = trackStore.value!.tracks[0]!.clips[0]!;
         expect(created).toMatchObject({
             trackId: 'track-keys',
@@ -112,9 +113,11 @@ describe('handleAddClip atomic integration', () => {
         expect(midiStore.value!.notesByClipId).not.toHaveProperty(created.id);
 
         await undo();
+        expect(notifications).toEqual([]);
         expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
 
         await redo();
+        expect(notifications).toEqual([]);
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Verse', type: 'midi' }]);
     });
 
@@ -157,6 +160,9 @@ describe('handleAddClip atomic integration', () => {
             notesByClipId: {},
         });
         await undo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Editable"": project state has changed', level: 'warning' },
+        ]);
 
         expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
     });
@@ -200,6 +206,9 @@ describe('handleAddClip atomic integration', () => {
             notesByClipId: {},
         });
         await undo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Initialized"": project state has changed', level: 'warning' },
+        ]);
 
         expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
     });
