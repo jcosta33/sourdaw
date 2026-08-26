@@ -1,7 +1,8 @@
 # Sourdaw Agent Rules
 
-`CLAUDE.md` points here. A nested `AGENTS.md` overrides this file inside its subtree. Read the
-local one before editing that tree.
+`CLAUDE.md`, `GEMINI.md`, `CODEX.md`, `KIMI.md`, and `ZCODE.md` point here. A nested `AGENTS.md` (with
+companion provider symlinks) overrides this file inside its subtree. Read the local one before
+editing that tree.
 
 ## Ownership
 
@@ -270,16 +271,16 @@ exception at all: lane tooling owns every push, because a push from anywhere els
 review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
 tracker state. Identity for a script-covered write is the App that script mints, not a persona.
 
-| Need                        | Command                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]`                                                             |
-| Push; open or update the PR | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--test "<instructions>"]` |
-| Write the review bundle     | `pnpm review:prepare <pr>`                                                                  |
-| Post `review.json`          | `pnpm review:publish <pr>`                                                                  |
-| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                       |
-| Squash-merge                | `pnpm deliver <pr>`                                                                         |
-| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                           |
-| Remove a spent lane         | `pnpm lane:remove <path>`                                                                   |
+| Need                        | Command                                                                                                          |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Open a lane                 | `pnpm lane:open [issue] [slug]`                                                                                  |
+| Push; open or update the PR | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"]` |
+| Write the review bundle     | `pnpm review:prepare <pr>`                                                                                       |
+| Post `review.json`          | `pnpm review:publish <pr>`                                                                                       |
+| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                            |
+| Squash-merge                | `pnpm deliver <pr>`                                                                                              |
+| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
+| Remove a spent lane         | `pnpm lane:remove <path>`                                                                                        |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
 `.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
@@ -338,15 +339,19 @@ the absolute worktree root of an issueless or off-convention lane. It pushes wit
 refuses any lane with uncommitted changes: commit the work yourself with a conventional subject
 first.
 
-A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it with the
-newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`), so merging
-`origin/main` in never retitles it, keeps the required headings in
+A conforming `agent/` lane also gets a written pull request: `lane:publish` titles it, when opening,
+with the newest non-merge commit the lane holds above `origin/main` (`type(scope): subject`). Later
+publishes rewrite the body and leave the title, so a follow-up commit and a merge of `origin/main`
+never retitle it. It keeps the required headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes. A new pull request requires explicit `--test` instructions. For product changes, How to test
-states user- or reviewer-observable steps and the expected result; automated author or CI checks are
-not a substitute. Developer-facing or internal changes may name their actual validation interface.
-Later publishes preserve a valid existing How-to-test section when `--test` is omitted and replace
-it when `--test` is supplied. Screenshots is offered rather than required: it is written, and the
+bytes. A new pull request requires explicit `--summary` and `--test` instructions. What must say what
+changed and why, and must not repeat the title or the title with `type(scope):` stripped. Later
+publishes preserve a valid existing What section when `--summary` is omitted and replace it when
+`--summary` is supplied. For product changes, How to test states user- or reviewer-observable steps
+and the expected result; automated author or CI checks are not a substitute. Developer-facing or
+internal changes may name their actual validation interface. Later publishes preserve a valid
+existing How-to-test section when `--test` is omitted and replace it when `--test` is supplied.
+Screenshots is offered rather than required: it is written, and the
 template keeps it, but a body without it still merges, because a section whose canonical content is
 `None.` gates nothing. Issue lanes use `Closes #<issue>` by default; campaign slices use `--relates`
 to write `Related #<issue>` without closing the campaign. Later publishes preserve that relationship.

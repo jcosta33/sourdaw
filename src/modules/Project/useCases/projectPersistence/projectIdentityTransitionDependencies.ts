@@ -1,5 +1,11 @@
 type ProjectIdentityTransitionDependencies = {
     leaveCollaborationSession: () => Promise<void>;
+    /** Consume durable owner handoffs only after this load proved the persisted root identity. */
+    resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
+        ownerId: string;
+        isCurrent: () => boolean;
+        signal: AbortSignal;
+    }) => Promise<void>;
 };
 
 export let projectIdentityTransitionDependencies: ProjectIdentityTransitionDependencies = {

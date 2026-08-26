@@ -15,7 +15,29 @@ import {
     type PeerMessage,
 } from '../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../models/SyncChannelConstants';
+import { durableAssetOwnerResolution } from '../repositories/durableAssetOwnerResolution';
+import {
+    createDurableAssetRepository,
+    DEFAULT_STAGE_RECOVERY_PREFIX,
+    type DurableAssetRepository,
+    type DurableAssetCommitProof,
+    type DurableAssetRecoveryFence,
+    type PromoteStagedAssetResult,
+    type RebindDurableAssetOwnerResult,
+    type ReleaseOwnedAssetResult,
+    type ReleaseStagedAssetResult,
+    type ReleaseStagedAssetsResult,
+    type ReopenDurableAssetResult,
+    type ReopenStagedAssetResult,
+    type StagedAssetBinding,
+} from '../repositories/durableAssetRepository';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
+
+import { durableAssetCommitProof } from './configureDurableAssetCommitProof';
+
+function getDefaultStageRecoveryId(leaseId: string): string {
+    return `${DEFAULT_STAGE_RECOVERY_PREFIX}${leaseId}`;
+}
 
 /**
  * How long a solicited transfer may go without progress before it is abandoned.
@@ -62,6 +84,70 @@ type LocalAssetEntry = {
     stagingLeaseIds: Set<string>;
 };
 
+type DurableAssetCacheEntry = Pick<LocalAssetEntry, 'blob' | 'name'>;
+
+// Reserve durable operations when called, not when a per-instance predecessor
+// settles, so a handoff cannot overtake staging already accepted by any transfer.
+let durableOwnerOperationTail: Promise<void> = Promise.resolve();
+
+function runDurableOwnerOperation<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const task = durableOwnerOperationTail.then(operation);
+    durableOwnerOperationTail = task.then(
+        () => undefined,
+        () => undefined
+    );
+    return task;
+}
+
+// A pending confirmation outlives the transport object that happened to stage
+// its bytes. Keep one live owner per exact default recovery until that caller
+// promotes or releases it. A renderer restart clears this process registry, so
+// abandoned stages still follow durable default-release recovery on startup.
+const liveStageRecoveryOwnerById = new Map<string, string>();
+
+function protectLiveStageRecovery(ownerId: string, recoveryId: string): void {
+    if (!liveStageRecoveryOwnerById.has(recoveryId)) {
+        liveStageRecoveryOwnerById.set(recoveryId, ownerId);
+    }
+}
+
+function releaseLiveStageRecovery(recoveryId: string): void {
+    liveStageRecoveryOwnerById.delete(recoveryId);
+}
+
+function getLiveStageRecoveries(ownerId: string): ReadonlySet<string> {
+    return new Set(
+        [...liveStageRecoveryOwnerById.entries()].flatMap(([recoveryId, protectedOwnerId]) =>
+            protectedOwnerId === ownerId ? [recoveryId] : []
+        )
+    );
+}
+
+function rebindLiveStageRecoveries(previousOwnerId: string, nextOwnerId: string): void {
+    for (const [recoveryId, protectedOwnerId] of liveStageRecoveryOwnerById) {
+        if (protectedOwnerId === previousOwnerId) {
+            liveStageRecoveryOwnerById.set(recoveryId, nextOwnerId);
+        }
+    }
+}
+
+type AssetTransferDurabilityOptions = {
+    durableStagingReady?: boolean;
+    handoffSourceOwnerIds?: readonly string[];
+};
+
+type DurableOwnerRecoveryAuthority = {
+    readonly ownerId: string;
+    readonly isCurrent: () => boolean;
+    readonly signal: AbortSignal;
+};
+
+type DurableAssetStageOptions = {
+    protectAcrossTransfer?: boolean;
+};
+
+class DurableOwnerRecoveryCancelled extends Error {}
+
 /**
  * Content-addressed asset transfer over WebRTC data channels.
  *
@@ -71,10 +157,22 @@ type LocalAssetEntry = {
 export class AssetTransfer {
     private peerManager: PeerConnectionManager;
     private callbacks: AssetTransferCallbacks;
+    private durableAssets: DurableAssetRepository;
+    private readonly durableOwnerHandoffSources: Map<string, DurableAssetRepository>;
+    private ownerId: string;
+    private unsubscribeInvalidation: (() => void) | null;
+    private disposed = false;
+    private durableStagingReady: boolean;
+    private ownerRecoveryPending = true;
+    private readonly protectedStageRecoveryIds = new Set<string>();
+    /** Serializes every operation whose durable authority is bound to ownerId. */
+    private ownerOperationTail = Promise.resolve();
 
-    /** Local content store with durable and pending-staging ownership. */
+    /** Session-owned assets retain the live import/peer-transfer contract. */
     private localAssets = new Map<string, LocalAssetEntry>();
     private stagingLeaseHashById = new Map<string, string>();
+    /** Restartable IndexedDB bytes stay distinct from session staging authority. */
+    private durableAssetCache = new Map<string, DurableAssetCacheEntry>();
 
     /** In-flight incoming transfers: hash → { chunks, received bitmap } */
     private incomingTransfers = new Map<
@@ -138,9 +236,31 @@ export class AssetTransfer {
      */
     private servingHashesByPeer = new Map<PeerId, Set<string>>();
 
-    constructor(peerManager: PeerConnectionManager, callbacks: AssetTransferCallbacks) {
+    constructor(
+        peerManager: PeerConnectionManager,
+        callbacks: AssetTransferCallbacks,
+        ownerId: string,
+        durableAssets: DurableAssetRepository = createDurableAssetRepository(ownerId),
+        durabilityOptions: AssetTransferDurabilityOptions = {}
+    ) {
         this.peerManager = peerManager;
         this.callbacks = callbacks;
+        this.ownerId = ownerId;
+        this.durableAssets = durableAssets;
+        this.durableOwnerHandoffSources = new Map(
+            [...new Set(durabilityOptions.handoffSourceOwnerIds ?? [])]
+                .filter((sourceOwnerId) => sourceOwnerId !== ownerId)
+                .map((sourceOwnerId) => [sourceOwnerId, createDurableAssetRepository(sourceOwnerId)])
+        );
+        this.durableStagingReady = durabilityOptions.durableStagingReady ?? true;
+        this.unsubscribeInvalidation = durableAssets.subscribeInvalidation((event) => {
+            if (this.disposed) {
+                return;
+            }
+            if (event.ownerId === undefined || event.ownerId === this.ownerId) {
+                this.durableAssetCache.delete(event.hash);
+            }
+        });
     }
 
     /**
@@ -151,6 +271,10 @@ export class AssetTransfer {
      * retained chunk buffers outlive it.
      */
     dispose(): void {
+        if (this.disposed) {
+            return;
+        }
+        this.disposed = true;
         for (const timer of this.stallTimers.values()) {
             clearTimeout(timer);
         }
@@ -161,11 +285,19 @@ export class AssetTransfer {
         this.failedAttempts.clear();
         this.abandonedHashes.clear();
         this.servingHashesByPeer.clear();
+        this.localAssets.clear();
+        this.stagingLeaseHashById.clear();
+        this.durableAssetCache.clear();
+        this.unsubscribeInvalidation?.();
+        this.unsubscribeInvalidation = null;
     }
 
     /** Register a local asset (e.g. after recording or importing). */
     async addLocalAsset(blob: Blob, name: string): Promise<string> {
         const hash = await hashBlob(blob);
+        if (this.disposed) {
+            throw new Error('AssetTransfer is disposed');
+        }
         const existing = this.localAssets.get(hash);
         if (existing) {
             existing.durable = true;
@@ -175,9 +307,12 @@ export class AssetTransfer {
         return hash;
     }
 
-    /** Stage an import asset under a unique lease until project commit or cancellation. */
+    /** Stage an import in this live Collaboration session until commit or cancellation. */
     async stageLocalAsset(blob: Blob, name: string): Promise<{ hash: string; leaseId: string }> {
         const hash = await hashBlob(blob);
+        if (this.disposed) {
+            throw new Error('AssetTransfer is disposed');
+        }
         const leaseId = `asset-stage-${crypto.randomUUID()}`;
         const existing = this.localAssets.get(hash);
         if (existing) {
@@ -189,7 +324,7 @@ export class AssetTransfer {
         return { hash, leaseId };
     }
 
-    /** Release one unresolved staging reference, deleting only uncommitted unshared data. */
+    /** Release one unresolved live-session staging reference. */
     releaseStagedAsset(leaseId: string): void {
         const hash = this.stagingLeaseHashById.get(leaseId);
         if (!hash) {
@@ -206,7 +341,7 @@ export class AssetTransfer {
         }
     }
 
-    /** Promote one staging reference to durable project-owned availability. */
+    /** Promote one live-session staging reference to committed availability. */
     promoteStagedAsset(leaseId: string): void {
         const hash = this.stagingLeaseHashById.get(leaseId);
         if (!hash) {
@@ -221,14 +356,478 @@ export class AssetTransfer {
         entry.durable = true;
     }
 
+    /** Stage a caller-keyed restartable original for future #2648 integration. */
+    async stageDurableAsset(
+        blob: Blob,
+        name: string,
+        leaseId: string,
+        options: DurableAssetStageOptions = {}
+    ): Promise<{ hash: string; leaseId: string }> {
+        this.protectedStageRecoveryIds.add(getDefaultStageRecoveryId(leaseId));
+        return this.runOwnerOperation(async (durableAssets) => {
+            if (!this.durableStagingReady) {
+                throw new Error('Durable asset staging is unavailable until synchronized owner persistence completes');
+            }
+            const staged = await durableAssets.stageAsset(leaseId, blob, name);
+            const recoveryId = getDefaultStageRecoveryId(staged.leaseId);
+            if (options.protectAcrossTransfer) {
+                // Register while this owner's durable operation is still held.
+                // A replacement transfer's startup recovery is serialized
+                // behind this point and therefore cannot release the stage in
+                // the gap between durable commit and the caller receiving it.
+                protectLiveStageRecovery(this.ownerId, recoveryId);
+            }
+            if (!this.disposed) {
+                this.protectedStageRecoveryIds.add(recoveryId);
+                this.durableAssetCache.set(staged.hash, { blob: staged.blob, name: staged.name });
+            }
+            return { hash: staged.hash, leaseId: staged.leaseId };
+        });
+    }
+
+    /** Keep one caller-owned staged lease live while its transport object is replaced. */
+    protectDurableStagedAssetAcrossTransfer(leaseId: string): void {
+        if (this.disposed) {
+            throw new Error('AssetTransfer is disposed');
+        }
+        const recoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectedStageRecoveryIds.add(recoveryId);
+        protectLiveStageRecovery(this.ownerId, recoveryId);
+    }
+
+    /** Verify and reopen one exact staged original after owner recreation. */
+    async reopenDurableStagedAsset(leaseId: string, expectedHash: string): Promise<ReopenStagedAssetResult> {
+        // Possession of the exact lease/hash pair is the live caller renewing
+        // ownership of a pending stage after recreation. Protect its default
+        // release claim before startup recovery can treat it as abandoned.
+        const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectedStageRecoveryIds.add(defaultRecoveryId);
+        return this.runOwnerOperation(async (durableAssets) => {
+            const result = await durableAssets.reopenStagedAsset(leaseId, expectedHash);
+            if (result.status === 'failed') {
+                if (result.reason !== 'lease-hash-mismatch' && result.reason !== 'lease-owner-mismatch') {
+                    this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+                    releaseLiveStageRecovery(defaultRecoveryId);
+                }
+            }
+            if (result.status === 'opened' && !this.disposed) {
+                this.durableAssetCache.set(result.hash, { blob: result.blob, name: result.name });
+            }
+            return result;
+        });
+    }
+
+    /** Verify and reopen one project-owned original after owner recreation. */
+    async reopenDurableAsset(hash: string): Promise<ReopenDurableAssetResult> {
+        return this.runOwnerOperation(async (durableAssets) => {
+            const result = await durableAssets.reopenDurableAsset(hash);
+            if (result.status === 'opened' && !this.disposed) {
+                this.durableAssetCache.set(result.hash, { blob: result.blob, name: result.name });
+            }
+            return result;
+        });
+    }
+
+    /** Release one hash-bound staging reference exactly once. */
+    async releaseDurableStagedAsset(leaseId: string, expectedHash: string): Promise<ReleaseStagedAssetResult> {
+        const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectedStageRecoveryIds.add(defaultRecoveryId);
+        const result = await this.runOwnerOperation(async (durableAssets) => {
+            const result = await durableAssets.releaseStagedAsset(leaseId, expectedHash);
+            if (!this.disposed && result.status === 'released' && !result.ownerRetained) {
+                this.durableAssetCache.delete(result.hash);
+            }
+            return result;
+        });
+        if (result.status !== 'failed') {
+            this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+            releaseLiveStageRecovery(defaultRecoveryId);
+        }
+        return result;
+    }
+
+    /** Atomically release a complete prepared resource set or leave every lease staged. */
+    async releaseDurableStagedAssets(bindings: readonly StagedAssetBinding[]): Promise<ReleaseStagedAssetsResult> {
+        const defaultRecoveryIds = bindings.map((binding) => getDefaultStageRecoveryId(binding.leaseId));
+        for (const recoveryId of defaultRecoveryIds) {
+            this.protectedStageRecoveryIds.add(recoveryId);
+        }
+        const result = await this.runOwnerOperation(async (durableAssets) => {
+            const result = await durableAssets.releaseStagedAssets(bindings);
+            if (!this.disposed && result.status === 'released') {
+                for (const release of result.releases) {
+                    if (release.status === 'released' && !release.ownerRetained) {
+                        this.durableAssetCache.delete(release.hash);
+                    }
+                }
+            }
+            return result;
+        });
+        if (result.status !== 'failed') {
+            for (const recoveryId of defaultRecoveryIds) {
+                this.protectedStageRecoveryIds.delete(recoveryId);
+                releaseLiveStageRecovery(recoveryId);
+            }
+        }
+        return result;
+    }
+
+    /** Promote one hash-bound staging reference exactly once. */
+    async promoteDurableStagedAsset(leaseId: string, expectedHash: string): Promise<PromoteStagedAssetResult> {
+        const defaultRecoveryId = getDefaultStageRecoveryId(leaseId);
+        this.protectedStageRecoveryIds.add(defaultRecoveryId);
+        const result = await this.runOwnerOperation(async (durableAssets) => {
+            const result = await durableAssets.promoteStagedAsset(leaseId, expectedHash);
+            if (!this.disposed && result.status !== 'failed') {
+                this.durableAssetCache.set(result.hash, { blob: result.blob, name: result.name });
+            }
+            return result;
+        });
+        if (result.status !== 'failed') {
+            this.protectedStageRecoveryIds.delete(defaultRecoveryId);
+            releaseLiveStageRecovery(defaultRecoveryId);
+        }
+        return result;
+    }
+
+    /** Persist exact committed-asset promotion ownership before the project transaction starts. */
+    async prepareDurablePromotionRecovery(
+        recoveryId: string,
+        bindings: readonly StagedAssetBinding[],
+        commitProof?: DurableAssetCommitProof
+    ) {
+        const result = await this.runBindingOwnerOperation(bindings, (durableAssets) =>
+            durableAssets.preparePromotionRecovery(recoveryId, bindings, commitProof)
+        );
+        if (result.status !== 'failed') {
+            for (const binding of bindings) {
+                const recoveryId = getDefaultStageRecoveryId(binding.leaseId);
+                this.protectedStageRecoveryIds.delete(recoveryId);
+                releaseLiveStageRecovery(recoveryId);
+            }
+        }
+        return result;
+    }
+
+    /** Make a prepared promotion restart-executable after the command returns durable commit proof. */
+    async commitDurablePromotionRecovery(recoveryId: string) {
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.commitPromotionRecovery(recoveryId)
+        );
+    }
+
+    /** Prove every committed lease promoted before retiring its durable recovery journal. */
+    async completeDurablePromotionRecovery(recoveryId: string) {
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.completePromotionRecovery(recoveryId)
+        );
+    }
+
+    /** Retire a pre-commit recovery claim before releasing its staged leases. */
+    async cancelDurablePromotionRecovery(recoveryId: string) {
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.cancelPromotionRecovery(recoveryId)
+        );
+    }
+
+    /** Persist exact staged-asset cleanup ownership before a terminal caller may disappear. */
+    async prepareDurableCleanupRecovery(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
+        const result = await this.runBindingOwnerOperation(bindings, (durableAssets) =>
+            durableAssets.prepareCleanupRecovery(recoveryId, bindings)
+        );
+        if (result.status !== 'failed') {
+            for (const binding of bindings) {
+                const recoveryId = getDefaultStageRecoveryId(binding.leaseId);
+                this.protectedStageRecoveryIds.delete(recoveryId);
+                releaseLiveStageRecovery(recoveryId);
+            }
+        }
+        return result;
+    }
+
+    /** Atomically replace a pre-commit promotion claim with exact restart-safe cleanup ownership. */
+    async transitionDurablePromotionRecoveryToCleanup(recoveryId: string, bindings: readonly StagedAssetBinding[]) {
+        return this.runBindingOwnerOperation(bindings, (durableAssets) =>
+            durableAssets.transitionPromotionRecoveryToCleanup(recoveryId, bindings)
+        );
+    }
+
+    /** Release every cleanup-owned lease and retire its journal atomically. */
+    async completeDurableCleanupRecovery(recoveryId: string) {
+        return this.runRecoveryOwnerOperation(recoveryId, (durableAssets) =>
+            durableAssets.completeCleanupRecovery(recoveryId)
+        );
+    }
+
+    /** Release this project identity's durable reference without affecting another project. */
+    async releaseDurableAsset(hash: string): Promise<ReleaseOwnedAssetResult> {
+        return this.runOwnerOperation((durableAssets) => durableAssets.releaseOwnedAsset(hash));
+    }
+
+    /** Journal the exact provisional-to-project handoff before CRDT persistence begins. */
+    async prepareDurableOwnerRebind(nextOwnerId: string) {
+        return this.runOwnerOperation(async (durableAssets) => {
+            const createdRepositories: DurableAssetRepository[] = [];
+            const prepare = async (repository: DurableAssetRepository) => {
+                const prepared = await repository.prepareOwnerRebind(nextOwnerId);
+                if (prepared.status !== 'failed' && prepared.created) {
+                    createdRepositories.push(repository);
+                }
+                return prepared;
+            };
+            const rollbackCreated = async () => {
+                const failures: string[] = [];
+                for (const repository of createdRepositories.toReversed()) {
+                    try {
+                        const aborted = await repository.abortOwnerRebind(nextOwnerId);
+                        if (aborted.status === 'failed') {
+                            failures.push(aborted.reason);
+                        }
+                    } catch (error) {
+                        failures.push(error instanceof Error ? error.message : String(error));
+                    }
+                }
+                if (failures.length > 0) {
+                    throw new Error(`Durable asset owner handoff rollback failed: ${failures.join('; ')}`);
+                }
+            };
+
+            let current: Awaited<ReturnType<DurableAssetRepository['prepareOwnerRebind']>>;
+            try {
+                current = await prepare(durableAssets);
+                if (current.status === 'failed') {
+                    return current;
+                }
+                for (const source of this.durableOwnerHandoffSources.values()) {
+                    const incoming = await source.resumeOwnerRebinds(undefined, rebindLiveStageRecoveries);
+                    if (incoming.status === 'failed') {
+                        await rollbackCreated();
+                        return incoming;
+                    }
+                    const prepared = await prepare(source);
+                    if (prepared.status === 'failed') {
+                        await rollbackCreated();
+                        return prepared;
+                    }
+                }
+            } catch (error) {
+                await rollbackCreated();
+                throw error;
+            }
+
+            let settled: 'pending' | 'committing' | 'committed' | 'aborted' = 'pending';
+            return {
+                ...current,
+                commit: async () => {
+                    if (settled === 'aborted') {
+                        throw new Error('Durable asset owner handoff was already aborted');
+                    }
+                    if (settled === 'committed') {
+                        return;
+                    }
+                    settled = 'committing';
+                    const committed = await this.commitDurableOwnerRebindTransaction(nextOwnerId, true);
+                    if (committed.status === 'failed') {
+                        throw new Error(`Durable asset owner rebind failed: ${committed.reason}`);
+                    }
+                    settled = 'committed';
+                },
+                abort: async () => {
+                    if (settled === 'committing' || settled === 'committed') {
+                        throw new Error('Durable asset owner handoff commit already started');
+                    }
+                    if (settled === 'aborted') {
+                        return;
+                    }
+                    await runDurableOwnerOperation(rollbackCreated);
+                    settled = 'aborted';
+                },
+            };
+        });
+    }
+
+    /** Commit a journaled handoff after CRDT persistence has adopted the project owner. */
+    async commitDurableOwnerRebind(nextOwnerId: string): Promise<RebindDurableAssetOwnerResult> {
+        return this.commitDurableOwnerRebindTransaction(nextOwnerId, false);
+    }
+
+    private commitDurableOwnerRebindTransaction(
+        nextOwnerId: string,
+        allowDisposed: boolean
+    ): Promise<RebindDurableAssetOwnerResult> {
+        return this.runOwnerOperation(
+            async (durableAssets) => {
+                const previousOwnerId = this.ownerId;
+                const reboundHashes = new Set<string>();
+                for (const source of [durableAssets, ...this.durableOwnerHandoffSources.values()]) {
+                    const result = await source.commitOwnerRebind(nextOwnerId);
+                    if (result.status === 'failed') {
+                        return result;
+                    }
+                    rebindLiveStageRecoveries(result.previousOwnerId, nextOwnerId);
+                    for (const hash of result.reboundHashes) {
+                        reboundHashes.add(hash);
+                    }
+                }
+                if (this.disposed) {
+                    return {
+                        status: 'rebound',
+                        previousOwnerId,
+                        ownerId: nextOwnerId,
+                        reboundHashes: [...reboundHashes],
+                    };
+                }
+                this.unsubscribeInvalidation?.();
+                this.ownerId = nextOwnerId;
+                this.durableAssets = createDurableAssetRepository(nextOwnerId);
+                this.durableOwnerHandoffSources.clear();
+                this.ownerRecoveryPending = true;
+                this.durableStagingReady = true;
+                this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
+                    if (this.disposed) {
+                        return;
+                    }
+                    if (event.ownerId === undefined || event.ownerId === this.ownerId) {
+                        this.durableAssetCache.delete(event.hash);
+                    }
+                });
+                return {
+                    status: 'rebound',
+                    previousOwnerId,
+                    ownerId: nextOwnerId,
+                    reboundHashes: [...reboundHashes],
+                };
+            },
+            { allowDisposed }
+        );
+    }
+
+    /** Resume target-keyed owner handoffs only while the exact persisted project load stays authoritative. */
+    async resumeDurableOwnerRebindsAfterProjectLoad(authority: DurableOwnerRecoveryAuthority): Promise<void> {
+        try {
+            await this.runOwnerOperation(async () => undefined, {
+                resumeOwnerRebinds: true,
+                resumeRecoveries: true,
+                recoveryAuthority: authority,
+            });
+        } catch (error) {
+            if (!(error instanceof DurableOwnerRecoveryCancelled)) {
+                throw error;
+            }
+        }
+    }
+
+    private runOwnerOperation<Result>(
+        operation: (durableAssets: DurableAssetRepository) => Promise<Result>,
+        options: {
+            allowDisposed?: boolean;
+            resumeOwnerRebinds?: boolean;
+            resumeRecoveries?: boolean;
+            recoveryAuthority?: DurableOwnerRecoveryAuthority;
+        } = {}
+    ): Promise<Result> {
+        const transferPredecessor = this.ownerOperationTail;
+        const task = runDurableOwnerOperation(async () => {
+            await transferPredecessor;
+            if (this.disposed && !options.allowDisposed) {
+                throw new Error('AssetTransfer is disposed');
+            }
+            return (async () => {
+                const recoveryIsAuthorized = () =>
+                    !options.recoveryAuthority ||
+                    (!options.recoveryAuthority.signal.aborted &&
+                        options.recoveryAuthority.ownerId === this.ownerId &&
+                        options.recoveryAuthority.isCurrent());
+                const recoveryFence: DurableAssetRecoveryFence | undefined = options.recoveryAuthority
+                    ? { isCurrent: recoveryIsAuthorized, signal: options.recoveryAuthority.signal }
+                    : undefined;
+                if (options.resumeOwnerRebinds && this.ownerRecoveryPending && recoveryIsAuthorized()) {
+                    const recovery = await this.durableAssets.resumeOwnerRebinds(
+                        recoveryFence,
+                        rebindLiveStageRecoveries
+                    );
+                    if (recovery.status === 'failed') {
+                        throw new Error(`Durable asset owner recovery failed: ${recovery.reason}`);
+                    }
+                    if (recovery.status === 'cancelled' || !recoveryIsAuthorized()) {
+                        throw new DurableOwnerRecoveryCancelled();
+                    }
+                    this.ownerRecoveryPending = false;
+                }
+                if (options.resumeRecoveries && recoveryIsAuthorized()) {
+                    const protectedRecoveryIds = new Set([
+                        ...this.protectedStageRecoveryIds,
+                        ...getLiveStageRecoveries(this.ownerId),
+                    ]);
+                    const recovery = await this.durableAssets.resumeRecoveries(
+                        protectedRecoveryIds,
+                        durableAssetCommitProof.getDisposition,
+                        false,
+                        recoveryFence
+                    );
+                    if (recovery.status === 'failed') {
+                        throw new Error(`Durable asset promotion recovery failed: ${recovery.reason}`);
+                    }
+                    if (recovery.status === 'cancelled' || !recoveryIsAuthorized()) {
+                        throw new DurableOwnerRecoveryCancelled();
+                    }
+                }
+                return operation(this.durableAssets);
+            })();
+        });
+        this.ownerOperationTail = task.then(
+            () => undefined,
+            () => undefined
+        );
+        return task;
+    }
+
+    private runBindingOwnerOperation<Result>(
+        bindings: readonly StagedAssetBinding[],
+        operation: (durableAssets: DurableAssetRepository) => Promise<Result>
+    ) {
+        return this.runOwnerOperation(
+            async (current) => {
+                const resolved = await durableAssetOwnerResolution.binding(bindings);
+                if (resolved.status === 'failed') {
+                    return resolved;
+                }
+                return operation(
+                    resolved.ownerId === this.ownerId ? current : createDurableAssetRepository(resolved.ownerId)
+                );
+            },
+            { resumeRecoveries: false }
+        );
+    }
+
+    private runRecoveryOwnerOperation<Result>(
+        recoveryId: string,
+        operation: (durableAssets: DurableAssetRepository) => Promise<Result>
+    ) {
+        return this.runOwnerOperation(
+            async (current) => {
+                const resolved = await durableAssetOwnerResolution.recovery(recoveryId);
+                if (resolved.status === 'failed') {
+                    return resolved;
+                }
+                return operation(
+                    resolved.status === 'missing' || resolved.ownerId === this.ownerId
+                        ? current
+                        : createDurableAssetRepository(resolved.ownerId)
+                );
+            },
+            { resumeRecoveries: false }
+        );
+    }
+
     /** Check if an asset is available locally. */
     hasAsset(hash: string): boolean {
-        return this.localAssets.has(hash);
+        return this.localAssets.has(hash) || this.durableAssetCache.has(hash);
     }
 
     /** Get a local asset by hash. */
     getAsset(hash: string): Blob | undefined {
-        return this.localAssets.get(hash)?.blob;
+        return this.localAssets.get(hash)?.blob ?? this.durableAssetCache.get(hash)?.blob;
     }
 
     /**
@@ -245,7 +844,15 @@ export class AssetTransfer {
      * must stay a handful of lookups.
      */
     requestAsset(hash: string): void {
-        if (this.localAssets.has(hash) || this.incomingTransfers.has(hash) || this.requestedHashes.has(hash)) {
+        if (this.disposed) {
+            return;
+        }
+        if (
+            this.localAssets.has(hash) ||
+            this.durableAssetCache.has(hash) ||
+            this.incomingTransfers.has(hash) ||
+            this.requestedHashes.has(hash)
+        ) {
             return;
         }
         if (this.abandonedHashes.has(hash)) {
@@ -276,6 +883,9 @@ export class AssetTransfer {
 
     /** Handle an incoming asset-related message. */
     async handleMessage(peerId: PeerId, message: PeerMessage): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
         if (message.type !== 'crdt-sync' || message.docId !== DOC_ID_ASSET) {
             return;
         }
@@ -297,6 +907,9 @@ export class AssetTransfer {
 
     /** Arm (or re-arm) the no-progress deadline for one outstanding hash. */
     private armStallTimer(hash: string): void {
+        if (this.disposed) {
+            return;
+        }
         this.clearStallTimer(hash);
         this.stallTimers.set(
             hash,
@@ -331,6 +944,9 @@ export class AssetTransfer {
      * request/abort loop at peer-RTT speed.
      */
     private abortTransfer(hash: string, reason: string): void {
+        if (this.disposed) {
+            return;
+        }
         this.clearStallTimer(hash);
         const wasOutstanding = this.requestedHashes.delete(hash);
         const wasInFlight = this.incomingTransfers.delete(hash);
@@ -352,11 +968,6 @@ export class AssetTransfer {
     }
 
     private async handleAssetRequest(peerId: PeerId, hash: string, missingChunks: unknown): Promise<void> {
-        const entry = this.localAssets.get(hash);
-        if (!entry) {
-            return;
-        }
-
         // A request is a ~100-byte message; answering one slices, base64-encodes
         // and buffers the whole asset. Without an in-flight marker, N identical
         // requests are served N times concurrently, so the responder multiplies
@@ -370,6 +981,24 @@ export class AssetTransfer {
         serving.add(hash);
         this.servingHashesByPeer.set(peerId, serving);
         try {
+            const resident = this.localAssets.get(hash);
+            if (resident) {
+                await this.sendAssetResponse(peerId, hash, resident, missingChunks);
+                return;
+            }
+            // A renderer/session restart has no resident entry. Only an
+            // explicitly promoted project owner may reopen durable bytes;
+            // ordinary local and received session assets never mint ownerIds.
+            const durable = await this.runOwnerOperation((durableAssets) => durableAssets.reopenDurableAsset(hash));
+            if (this.disposed) {
+                return;
+            }
+            if (durable.status === 'failed') {
+                this.durableAssetCache.delete(hash);
+                return;
+            }
+            const entry = { blob: durable.blob, name: durable.name };
+            this.durableAssetCache.set(hash, entry);
             await this.sendAssetResponse(peerId, hash, entry, missingChunks);
         } finally {
             serving.delete(hash);
@@ -382,7 +1011,7 @@ export class AssetTransfer {
     private async sendAssetResponse(
         peerId: PeerId,
         hash: string,
-        entry: LocalAssetEntry,
+        entry: DurableAssetCacheEntry,
         missingChunks: unknown
     ): Promise<void> {
         const { blob, name } = entry;
@@ -398,6 +1027,9 @@ export class AssetTransfer {
 
         // The manifest must land before its chunks: a chunk for a hash with no
         // manifest is rejected by `handleChunk`.
+        if (this.disposed) {
+            return;
+        }
         await this.peerManager.sendCrdtSync({
             peerId,
             message: {
@@ -418,10 +1050,16 @@ export class AssetTransfer {
             : Array.from({ length: chunkCount }, (_, index1) => index1);
 
         for (const index of chunksToSend) {
+            if (this.disposed) {
+                return;
+            }
             const start = index * ASSET_CHUNK_SIZE;
             const end = Math.min(start + ASSET_CHUNK_SIZE, blob.size);
             const slice = blob.slice(start, end);
             const buffer = await slice.arrayBuffer();
+            if (this.disposed) {
+                return;
+            }
             const base64 = arrayBufferToBase64(buffer);
 
             await this.peerManager.sendCrdtSyncBuffered({
@@ -441,8 +1079,11 @@ export class AssetTransfer {
     }
 
     private handleManifest(_peerId: PeerId, manifest: AssetManifest): void {
+        if (this.disposed) {
+            return;
+        }
         // Already have the asset — nothing to fetch.
-        if (this.localAssets.has(manifest.hash)) {
+        if (this.localAssets.has(manifest.hash) || this.durableAssetCache.has(manifest.hash)) {
             return;
         }
 
@@ -484,6 +1125,9 @@ export class AssetTransfer {
     }
 
     private handleChunk(hash: string, index: number, base64Data: unknown): void {
+        if (this.disposed) {
+            return;
+        }
         // Reject chunks for a hash with no in-flight (requested) transfer. This
         // covers chunks arriving before/without a manifest, chunks from peers
         // that lost the first-responder race, and chunks for assets we already
@@ -604,11 +1248,17 @@ export class AssetTransfer {
 
             // Verify integrity before accepting the asset.
             const actualHash = await hashBlob(blob);
+            if (this.disposed) {
+                return;
+            }
             if (actualHash !== hash) {
                 this.abortTransfer(hash, `integrity check failed (received ${actualHash})`);
                 return;
             }
 
+            // Received session bytes stay resident only. Durable ownerIds are
+            // minted exclusively by explicit hash-bound stage/promotion; a
+            // transfer has no project reachability authority to retain them.
             this.localAssets.set(hash, {
                 blob,
                 name: transfer.manifest.name,

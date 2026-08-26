@@ -1,6 +1,11 @@
 import { bounceTrack } from './bounceTrack';
 
-export async function bounceToNewTrack(trackId: string): Promise<boolean> {
+type BounceToNewTrackOptions = {
+    /** Forwarded to `bounceTrack`; see `BounceOptions.deferUndoEntry`. */
+    deferUndoEntry?: (file: () => void) => void;
+};
+
+export async function bounceToNewTrack(trackId: string, options?: BounceToNewTrackOptions): Promise<boolean> {
     return bounceTrack(trackId, {
         includeInserts: true,
         includeSends: false,
@@ -8,5 +13,6 @@ export async function bounceToNewTrack(trackId: string): Promise<boolean> {
         normalization: 'protection',
         tailHandling: 'auto',
         destination: 'new-track',
+        ...(options?.deferUndoEntry === undefined ? {} : { deferUndoEntry: options.deferUndoEntry }),
     });
 }

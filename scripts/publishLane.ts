@@ -32,6 +32,7 @@ import {
     fail,
     howToTestFromBody,
     issueRelationshipFromBody,
+    whatFromBody,
     type IssueRelationship,
 } from './prContract.ts';
 
@@ -42,10 +43,10 @@ export type PublishWorktree = {
     lockReason?: string;
 };
 
-export type ExistingPullRequest = { number: number; body: unknown };
+export type ExistingPullRequest = { number: number; title: unknown; body: unknown };
 
 export const PUBLISH_LANE_USAGE =
-    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--test <instructions>]';
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>]';
 
 const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
@@ -98,7 +99,7 @@ export type PublishLanePort = {
     push: (lane: string, branch: string, headSha: string) => void;
     existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
     createPullRequest: (input: { branch: string; title: string; body: string }) => number;
-    updatePullRequest: (number: number, input: { title: string; body: string }) => void;
+    updatePullRequest: (number: number, input: { body: string }) => void;
     log: (message: string) => void;
 };
 
@@ -107,6 +108,7 @@ export function parsePublishLaneArgs(args: string[]): {
     lanePath?: string;
     relationship?: IssueRelationship;
     testInstructions?: string;
+    summary?: string;
     help: boolean;
 } {
     if (args[0] === '--help') {
@@ -119,6 +121,7 @@ export function parsePublishLaneArgs(args: string[]): {
     let lanePath: string | undefined;
     let relationship: IssueRelationship | undefined;
     let testInstructions: string | undefined;
+    let summary: string | undefined;
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
         if (arg === '--relates') {
@@ -134,6 +137,15 @@ export function parsePublishLaneArgs(args: string[]): {
                 fail(PUBLISH_LANE_USAGE);
             }
             testInstructions = value;
+            index += 1;
+            continue;
+        }
+        if (arg === '--summary') {
+            const value = args[index + 1];
+            if (summary !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            summary = value;
             index += 1;
             continue;
         }
@@ -159,6 +171,7 @@ export function parsePublishLaneArgs(args: string[]): {
         ...(lanePath === undefined ? {} : { lanePath }),
         ...(relationship === undefined ? {} : { relationship }),
         ...(testInstructions === undefined ? {} : { testInstructions }),
+        ...(summary === undefined ? {} : { summary }),
         help: false,
     };
 }
@@ -418,6 +431,7 @@ export function publishLane(
     port: PublishLanePort,
     relationship?: IssueRelationship,
     testInstructions?: string,
+    summary?: string,
     authorization?: AuthorizedResolvedLane
 ): number {
     const lane = resolveAuthorLane(
@@ -461,7 +475,7 @@ export function publishLane(
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
     }
-    const write = pullRequestWrite(issue, lane, baseSha, headSha, port, relationship, testInstructions);
+    const write = pullRequestWrite(issue, lane, baseSha, headSha, port, relationship, testInstructions, summary);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
@@ -490,9 +504,9 @@ function pullRequestNumber(lane: ResolvedLane, write: PullRequestWrite | undefin
     }
     const { existing, ...content } = write;
     if (existing === undefined) {
-        return port.createPullRequest({ branch: lane.branch, ...content });
+        return port.createPullRequest({ branch: lane.branch, title: content.title, body: content.body });
     }
-    port.updatePullRequest(existing.number, content);
+    port.updatePullRequest(existing.number, { body: content.body });
     return existing.number;
 }
 
@@ -526,16 +540,17 @@ function pullRequestWrite(
     headSha: string,
     port: PublishLanePort,
     relationship: IssueRelationship | undefined,
-    testInstructions: string | undefined
+    testInstructions: string | undefined,
+    summary: string | undefined
 ): PullRequestWrite | undefined {
     if (lane.legacy) {
         return undefined;
     }
-    const title = port.laneSubject(lane.path, baseSha, headSha);
-    if (title === undefined) {
+    const laneSubject = port.laneSubject(lane.path, baseSha, headSha);
+    if (laneSubject === undefined) {
         fail(`${lane.branch} ${NO_LANE_SUBJECT_FAILURE}`);
     }
-    assertConventionalSubject(title, 'pull-request title');
+    assertConventionalSubject(laneSubject, 'pull-request title');
     // The update path overwrites the whole body, so an argumentless run on an issue lane would
     // strip `Closes #<issue>` off a pull request that already carried it. The resolved lane's own
     // branch is the issue of record; `None.` is only for a lane that genuinely has no issue.
@@ -547,6 +562,10 @@ function pullRequestWrite(
     if (existing !== undefined && typeof existing.body !== 'string') {
         fail('existing pull-request body is unreadable');
     }
+    const existingTitle = existing?.title;
+    if (existing !== undefined && typeof existingTitle !== 'string') {
+        fail('existing pull-request title is unreadable');
+    }
     const existingRelationship =
         existing === undefined
             ? undefined
@@ -555,6 +574,9 @@ function pullRequestWrite(
     if (existing === undefined && testInstructions === undefined) {
         fail('opening a pull request requires --test <instructions>');
     }
+    if (existing === undefined && summary === undefined) {
+        fail('opening a pull request requires --summary <text>');
+    }
     let resolvedTestInstructions = testInstructions;
     if (resolvedTestInstructions === undefined) {
         if (existing === undefined || typeof existing.body !== 'string') {
@@ -562,9 +584,23 @@ function pullRequestWrite(
         }
         resolvedTestInstructions = howToTestFromBody(existing.body);
     }
+    let resolvedSummary = summary;
+    if (resolvedSummary === undefined) {
+        if (existing === undefined || typeof existing.body !== 'string') {
+            fail('existing pull-request body is unreadable');
+        }
+        resolvedSummary = whatFromBody(existing.body);
+    }
+    const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
     return {
-        title,
-        body: composePublishBody(laneIssue, title, resolvedTestInstructions, resolvedRelationship),
+        title: laneSubject,
+        body: composePublishBody(
+            laneIssue,
+            pullRequestTitle,
+            resolvedSummary,
+            resolvedTestInstructions,
+            resolvedRelationship
+        ),
         existing,
     };
 }
@@ -586,13 +622,13 @@ function legacyPullRequestNumber(lane: ResolvedLane, existing: ExistingPullReque
 }
 
 /**
- * The pull-request title is squash-merged onto `main`, so it has to name the lane's work. Keeping a
- * published lane current means merging `origin/main` into it — rebasing would force a
- * non-fast-forward push — which leaves HEAD a merge commit, so HEAD alone titles the pull request
- * after the merge that carried it. Both halves of this argument list are load-bearing:
+ * The pull-request title is squash-merged onto `main`, so the opening write has to name the lane's
+ * work. Later publishes leave that title: a follow-up commit must not retitle the pull request, and
+ * merging `origin/main` in leaves HEAD a merge commit that must not either. This walk still picks
+ * the opening title and still refuses a lane whose only commits above `origin/main` are merges.
  * `--no-merges` skips the merge commits, and the pinned-base range keeps the walk inside the lane's
  * own commits. Without the range, a lane commit older than `origin/main`'s tip loses the date sort
- * and the title comes from a commit `main` already has.
+ * and the opening title comes from a commit `main` already has.
  */
 function laneSubjectArgs(baseSha: string, headSha: string): string[] {
     return ['log', '-1', '--format=%s', '--no-merges', `${baseSha}..${headSha}`];
@@ -737,8 +773,8 @@ export function shellPort(
             }
             return number;
         },
-        updatePullRequest: (number, { title, body }) => {
-            ghRun(['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--title', title, '--body', body]);
+        updatePullRequest: (number, { body }) => {
+            ghRun(updatePullRequestArgs(number, body));
         },
         log: (message) => {
             console.log(message);
@@ -812,14 +848,19 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
         '--state',
         'open',
         '--json',
-        'number,headRefName,isCrossRepository,body',
+        'number,headRefName,isCrossRepository,title,body',
     ];
+}
+
+export function updatePullRequestArgs(number: number, body: string): string[] {
+    return ['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body];
 }
 
 export type OpenPullRequestRow = {
     number: number;
     headRefName: string;
     isCrossRepository: boolean;
+    title: unknown;
     body: unknown;
 };
 
@@ -958,6 +999,7 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
             shellPort(auth.session, selectionPath, primaryRoot, { git: runtime.gitPath, gh: runtime.ghPath }),
             parsed.relationship,
             parsed.testInstructions,
+            parsed.summary,
             { ...auth.authorization, legacy: authenticationLane.legacy }
         );
         return 0;

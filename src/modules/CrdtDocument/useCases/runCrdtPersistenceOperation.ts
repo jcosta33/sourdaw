@@ -1,5 +1,8 @@
 import { crdtPersistenceQueueCoordinator, type CrdtPersistenceOperation } from './crdtPersistenceQueueCoordinator';
 
-export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation): Promise<void> {
-    return crdtPersistenceQueueCoordinator.runOperation(operation);
+export function runCrdtPersistenceOperation(
+    operation: CrdtPersistenceOperation,
+    expectedRootHeads?: readonly string[]
+): Promise<void> {
+    return crdtPersistenceQueueCoordinator.runOperation(operation, expectedRootHeads);
 }

@@ -3,13 +3,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import {
+    agentProjectInspectionPort,
+    createCrdtDoc,
+    hasCrdtDoc,
+    mutateCrdtDoc,
+    projectCrdtToStores,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type ProjectData } from '../../../../models/ProjectData';
+import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
+import { NAMED_PROJECT_KEY_PREFIX, type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
+import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
+import { saveProject } from '../../saveProject/saveProject';
+import { buildProjectData } from '../buildProjectData';
 import { exportProjectFile } from '../exportProjectFile';
 
 // Heavy / side-effecting boundaries — stubbed so the export runs deterministically
@@ -26,6 +39,63 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 function written(): ProjectData {
     return vi.mocked(downloadProjectFile).mock.calls[0]?.[0] as ProjectData;
+}
+
+function seedSavableProject(createdAt: number): void {
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        createdAt,
+        dirty: true,
+        loading: false,
+        name: 'Repair Required',
+        projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+        updatedAt: createdAt,
+    });
+}
+
+function configurePassingProjectInspection(): void {
+    agentProjectInspectionPort.setProvider(() => ({
+        audioGraphValid: true,
+        projectInvariantsValid: true,
+        targetFingerprints: {},
+    }));
+}
+
+function replaceRootWithMalformedAdjustmentLayers(): void {
+    if (hasCrdtDoc('root')) {
+        removeCrdtDoc('root');
+    }
+    createCrdtDoc('root');
+    mutateCrdtDoc<Record<string, unknown>>({
+        id: 'root',
+        changeFn: (draft) => {
+            draft.adjustmentLayers = {
+                layers: [
+                    {
+                        id: 'layer-foreign',
+                        name: 'Foreign layer',
+                        effectType: 'eq',
+                        parameters: [
+                            {
+                                name: 'Low Gain',
+                                value: 0,
+                                min: -12,
+                                max: 12,
+                                unit: 'dB',
+                                futurePeerField: true,
+                            },
+                        ],
+                        affectedTrackIds: [],
+                        insertionIndex: 0,
+                        regions: [],
+                        enabled: true,
+                        mix: 0.5,
+                        color: '#ffffff',
+                    },
+                ],
+            };
+        },
+    });
 }
 
 describe('exportProjectFile round-trip shape', () => {
@@ -75,10 +145,17 @@ describe('exportProjectFile round-trip shape', () => {
     });
 
     afterEach(() => {
+        agentProjectInspectionPort.setProvider(null);
+        agentProjectRepairStateStore.set(null);
+        if (hasCrdtDoc('root')) {
+            removeCrdtDoc('root');
+        }
         trackStore.set({ tracks: [], selectedTrackId: null });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         transportStore.set({ ...defaultTransportState });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        projectStore.set(structuredClone(defaultProjectStoreState));
+        vi.unstubAllGlobals();
     });
 
     it('writes the serialized bufferId/sampleStartBeat — not the runtime audioBufferId', async () => {
@@ -240,5 +317,36 @@ describe('exportProjectFile round-trip shape', () => {
             '4 audio files could not be bundled with the export — the project may not play back correctly on another machine.',
             'warning'
         );
+    });
+
+    it('blocks save and export snapshots after malformed raw adjustment layers enter CRDT repair', async () => {
+        const createdAt = 1_700_000_000_000;
+        const recentKey = `${NAMED_PROJECT_KEY_PREFIX}${createdAt}`;
+        const indexedDb = installFakeIndexedDb();
+        seedSavableProject(createdAt);
+        configurePassingProjectInspection();
+        replaceRootWithMalformedAdjustmentLayers();
+
+        projectCrdtToStores();
+
+        expect(agentProjectRepairStateStore.value).toMatchObject({
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/adjustmentLayers'],
+                },
+            ],
+            status: 'repair-required',
+        });
+        await expect(buildProjectData({ includeAudioBuffers: false })).resolves.toBeNull();
+
+        await exportProjectFile();
+
+        expect(downloadProjectFile).not.toHaveBeenCalled();
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(indexedDb.values.has(recentKey)).toBe(false);
     });
 });
