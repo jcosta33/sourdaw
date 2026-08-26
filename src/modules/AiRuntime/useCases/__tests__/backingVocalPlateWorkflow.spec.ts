@@ -1347,6 +1347,9 @@ describe('backing-vocal plate workflow', () => {
                 sectionId: 'section-chorus-one',
             }),
         ]);
+        // status: 'failed' paired with followUpStatus: 'retryable' arms the "Retry renders"
+        // button in ChatPanel, but confirmPendingChatActions' retry gate requires
+        // status === 'executed'; the button cannot fire from this state. Tracked in issue #2887.
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'failed',
             followUpStatus: 'retryable',

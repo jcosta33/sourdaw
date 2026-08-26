@@ -871,7 +871,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(2);
     });
 
-    it('reports persistent runtime teardown failure as committed with manual repair instead of false clean success', async () => {
+    it('reports persistent runtime teardown failure as durably committed with a reconcile-classified pending effect', async () => {
         runtimeMocks.removeTrackStrip
             .mockImplementationOnce(() => undefined)
             .mockImplementation(() => {
@@ -882,6 +882,9 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
+        // handleRemoveTrack throws "manual repair required" for this failure, but the batch
+        // classifier assigns remediation: 'reconcile' regardless, so the receipt's guidance and
+        // the thrown reason disagree about what the user must do next. Tracked in issue #2889.
         expect(result).toMatchObject({
             status: 'failed',
             durableCommit: true,

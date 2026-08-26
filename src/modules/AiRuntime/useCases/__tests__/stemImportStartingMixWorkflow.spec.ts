@@ -1023,7 +1023,7 @@ describe('stem import and starting mix workflow', () => {
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
 
-    it('reports persistent live-strip projection failure as committed with a manual-repair warning', async () => {
+    it('reports persistent live-strip projection failure as durably committed with a reconcile-classified pending effect', async () => {
         mocks.initializeTrackStripFromSnapshot.mockImplementation(() => {
             throw new Error('persistent strip projection failure');
         });
@@ -1032,6 +1032,9 @@ describe('stem import and starting mix workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });
 
+        // handleImportStemSet throws "Manual repair required." for this failure, but the batch
+        // classifier assigns remediation: 'reconcile' regardless, so the receipt's guidance and
+        // the thrown reason disagree about what the user must do next. Tracked in issue #2889.
         expect(result).toMatchObject({
             status: 'failed',
             durableCommit: true,
