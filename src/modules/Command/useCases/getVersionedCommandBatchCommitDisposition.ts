@@ -11,6 +11,7 @@ function getReceiptDisposition(serializedReceipt: string, proof: VersionedComman
         baseRevision: proof.baseRevision,
         batchId: proof.batchId,
         commands: proof.commands,
+        contentHash: proof.contentHash,
         runId: proof.runId,
         serializedReceipt,
     });

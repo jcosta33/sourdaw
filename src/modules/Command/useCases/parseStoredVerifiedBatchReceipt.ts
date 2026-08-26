@@ -184,6 +184,7 @@ export function parseStoredVerifiedBatchReceipt(input: {
     baseRevision: string;
     batchId: string;
     commands: ReadonlyArray<{ commandId: string; operation: string }>;
+    contentHash: string;
     runId: string;
     serializedReceipt: string;
 }): StoredVerifiedBatchReceipt | null {
@@ -196,7 +197,9 @@ export function parseStoredVerifiedBatchReceipt(input: {
     const pendingEffects = isRecord(value) && Array.isArray(value.pendingEffects) ? value.pendingEffects : undefined;
     if (
         !isRecord(value) ||
-        value.schemaVersion !== 1 ||
+        value.schemaVersion !== 2 ||
+        value.contentHash !== input.contentHash ||
+        !/^sha256:[a-f0-9]{64}$/.test(input.contentHash) ||
         value.batchId !== input.batchId ||
         value.runId !== input.runId ||
         !isBatchOutcome(value.outcome) ||

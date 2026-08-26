@@ -11,6 +11,7 @@ import { parseStoredVerifiedBatchReceipt } from './parseStoredVerifiedBatchRecei
 type PreviewActionHandler = Extract<ActionHandler, { previewExecution: 'isolated-project' }>;
 
 type ReconcileProjectCommandBatchEffectsInput = {
+    contentHash: string;
     envelope: VersionedCommandBatchEnvelope;
     isProjectCurrent?: () => boolean;
     serializedReceipt: string;
@@ -36,6 +37,7 @@ export async function reconcileProjectCommandBatchEffects(
         baseRevision: input.envelope.baseRevision,
         batchId: input.envelope.batchId,
         commands: input.envelope.commands,
+        contentHash: input.contentHash,
         runId: input.envelope.runId,
         serializedReceipt: input.serializedReceipt,
     });

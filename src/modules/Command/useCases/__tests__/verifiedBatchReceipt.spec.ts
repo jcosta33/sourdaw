@@ -14,6 +14,7 @@ import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommand
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { createVerifiedBatchReceipt } from '../createVerifiedBatchReceipt';
 import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
+import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
 import { parseStoredVerifiedBatchReceipt } from '../parseStoredVerifiedBatchReceipt';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 
@@ -368,6 +369,11 @@ describe('verified batch receipt', () => {
 
     it('returns one machine-readable receipt for the exact atomic Automerge outcome', async () => {
         const batch = compileBatch();
+        const parsedBatch = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsedBatch.status === 'invalid') {
+            throw new Error(parsedBatch.reason);
+        }
+        const contentHash = await getCommandBatchContentHash(parsedBatch.envelope);
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -379,7 +385,8 @@ describe('verified batch receipt', () => {
         expect(mutationCount).toBe(1);
         expect(projectDocument).toEqual({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(receiptFrom(result)).toMatchObject({
-            schemaVersion: 1,
+            schemaVersion: 2,
+            contentHash,
             runId: 'run-receipt',
             batchId: 'batch-receipt',
             outcome: 'committed',
@@ -571,6 +578,7 @@ describe('verified batch receipt', () => {
                 { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
                 { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
             ],
+            contentHash: receipt.contentHash,
             runId: 'run-receipt',
             serializedReceipt: JSON.stringify(receipt),
         });
@@ -594,6 +602,7 @@ describe('verified batch receipt', () => {
                     { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
                     { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
                 ],
+                contentHash: receipt.contentHash,
                 runId: 'run-receipt',
                 serializedReceipt: JSON.stringify(legacyPartialReceipt),
             })
@@ -606,6 +615,7 @@ describe('verified batch receipt', () => {
                     { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
                     { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
                 ],
+                contentHash: receipt.contentHash,
                 runId: 'run-receipt',
                 serializedReceipt: JSON.stringify({
                     ...receipt,
@@ -624,12 +634,13 @@ describe('verified batch receipt', () => {
         ).toBeNull();
     });
 
-    it('round-trips every producer-supported receipt family through storage parsing', () => {
+    it('round-trips every producer-supported receipt family through storage parsing', async () => {
         const batch = compileBatch();
         const parsedBatch = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
         if (parsedBatch.status === 'invalid') {
             throw new Error(parsedBatch.reason);
         }
+        const contentHash = await getCommandBatchContentHash(parsedBatch.envelope);
         type ProducerResult = Parameters<typeof createVerifiedBatchReceipt>[0]['result'];
         const actions: ProducerResult['actions'] = [
             {
@@ -801,6 +812,7 @@ describe('verified batch receipt', () => {
 
         for (const expected of cases) {
             const receipt = createVerifiedBatchReceipt({
+                contentHash,
                 envelope: parsedBatch.envelope,
                 observedBaseRevision: revision(0),
                 resultingRevision: expected.resultingRevision,
@@ -810,6 +822,7 @@ describe('verified batch receipt', () => {
                 baseRevision: revision(0),
                 batchId: parsedBatch.envelope.batchId,
                 commands: parsedBatch.envelope.commands,
+                contentHash,
                 runId: parsedBatch.envelope.runId,
                 serializedReceipt: JSON.stringify(receipt),
             });
@@ -878,6 +891,7 @@ describe('verified batch receipt', () => {
                     { commandId: GAIN_COMMAND_ID, operation: 'setTrackGain' },
                     { commandId: PAN_COMMAND_ID, operation: 'setTrackPan' },
                 ],
+                contentHash: receipt.contentHash,
                 runId: 'run-receipt',
                 serializedReceipt,
             });

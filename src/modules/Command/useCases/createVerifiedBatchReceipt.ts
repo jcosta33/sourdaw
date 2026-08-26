@@ -9,7 +9,7 @@ import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../
 import { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
 
-export const VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION = 1 as const;
+export const VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION = 2 as const;
 
 type BatchExecutionObservation = {
     status:
@@ -47,6 +47,7 @@ type BatchExecutionObservation = {
 };
 
 type CreateVerifiedBatchReceiptInput = {
+    contentHash: string;
     envelope: VersionedCommandBatchEnvelope;
     observedBaseRevision: string | null;
     receiptWarnings?: readonly string[];
@@ -320,6 +321,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         input.result.warningDetails?.flatMap(({ pendingEffect }) => (pendingEffect ? [pendingEffect] : [])) ?? [];
     return {
         schemaVersion: VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION,
+        contentHash: input.contentHash,
         runId: input.envelope.runId,
         batchId: input.envelope.batchId,
         outcome,

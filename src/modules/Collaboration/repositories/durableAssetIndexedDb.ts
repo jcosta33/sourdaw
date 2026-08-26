@@ -49,26 +49,37 @@ export type OwnerAuthorityRecord = {
     canonicalOwnerId: string;
     epoch: number;
 };
-export type PromotionRecoveryRecord = {
+type PromotionRecoveryRecordBase = {
     schemaVersion: typeof PROMOTION_RECOVERY_SCHEMA_VERSION;
     recoveryId: string;
     ownerId: string;
     leaseIds: string[];
     bindings: Array<{ leaseId: string; expectedHash: string }>;
-    disposition?: 'promote' | 'release';
-    promotionState?: 'prepared' | 'committed';
     recoveryKind?: 'default-release' | 'explicit';
-    commitProof?: {
-        projectId: string;
-        idempotencyKey: string;
-        contentHash: string;
-        runId: string;
-        batchId: string;
-        baseRevision: string;
-        commands: Array<{ commandId: string; operation: string }>;
-    };
     preparedAt: number;
 };
+type PromotionCommitProof = {
+    projectId: string;
+    idempotencyKey: string;
+    contentHash: string;
+    runId: string;
+    batchId: string;
+    baseRevision: string;
+    commands: Array<{ commandId: string; operation: string }>;
+};
+export type PromotionRecoveryRecord = PromotionRecoveryRecordBase &
+    (
+        | {
+              disposition: 'promote';
+              promotionState: 'prepared' | 'committed';
+              commitProof?: PromotionCommitProof;
+          }
+        | {
+              disposition: 'release';
+              promotionState?: never;
+              commitProof?: never;
+          }
+    );
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -143,8 +154,26 @@ function migrateLegacyPromotionRecoveryRecords(store: IDBObjectStore): void {
             cursor.continue();
             return;
         }
-        const { commitProof: _legacyCommitProof, ...record } = value;
-        cursor.update({ ...record, schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION });
+        const {
+            commitProof: _legacyCommitProof,
+            disposition: _legacyDisposition,
+            promotionState: _legacyPromotionState,
+            ...record
+        } = value;
+        if (value.disposition === 'release') {
+            cursor.update({
+                ...record,
+                schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                disposition: 'release',
+            });
+        } else {
+            cursor.update({
+                ...record,
+                schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                disposition: 'promote',
+                promotionState: value.promotionState === 'committed' ? 'committed' : 'prepared',
+            });
+        }
         cursor.continue();
     };
 }
@@ -299,8 +328,10 @@ type LegacyPromotionCommitProof = {
     batchId: string;
 };
 
-type LegacyPromotionRecoveryRecord = Omit<PromotionRecoveryRecord, 'schemaVersion' | 'commitProof'> & {
+type LegacyPromotionRecoveryRecord = Omit<PromotionRecoveryRecordBase, 'schemaVersion'> & {
     schemaVersion: typeof LEGACY_PROMOTION_RECOVERY_SCHEMA_VERSION;
+    disposition?: 'promote' | 'release';
+    promotionState?: 'prepared' | 'committed';
     commitProof?: LegacyPromotionCommitProof;
 };
 
@@ -415,8 +446,8 @@ function hasValidPromotionRecoveryFields(
         recoveryLeaseIds.length !== record.leaseIds.length ||
         !Array.isArray(record.bindings) ||
         record.bindings.length === 0 ||
-        (record.disposition !== undefined && record.disposition !== 'promote' && record.disposition !== 'release') ||
-        (record.promotionState !== undefined &&
+        (record.disposition !== 'promote' && record.disposition !== 'release') ||
+        (record.disposition === 'promote' &&
             record.promotionState !== 'prepared' &&
             record.promotionState !== 'committed') ||
         (record.disposition === 'release' && record.promotionState !== undefined) ||
@@ -450,9 +481,21 @@ function hasValidPromotionRecoveryFields(
 }
 
 function isLegacyPromotionRecoveryRecord(value: unknown): value is LegacyPromotionRecoveryRecord {
-    return (
-        isRecord(value) &&
-        hasValidPromotionRecoveryFields(value, LEGACY_PROMOTION_RECOVERY_SCHEMA_VERSION, isLegacyPromotionCommitProof)
+    if (!isRecord(value)) {
+        return false;
+    }
+    if (value.disposition !== undefined && value.disposition !== 'promote' && value.disposition !== 'release') {
+        return false;
+    }
+    const disposition = value.disposition === 'release' ? 'release' : 'promote';
+    return hasValidPromotionRecoveryFields(
+        {
+            ...value,
+            disposition,
+            ...(disposition === 'promote' ? { promotionState: value.promotionState ?? 'prepared' } : {}),
+        },
+        LEGACY_PROMOTION_RECOVERY_SCHEMA_VERSION,
+        isLegacyPromotionCommitProof
     );
 }
 

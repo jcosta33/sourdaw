@@ -24,11 +24,11 @@ const records = createDurableAssetRecordAccess();
 type RecoveryDisposition = 'promote' | 'release';
 
 function getRecoveryDisposition(record: PromotionRecoveryRecord): RecoveryDisposition {
-    return record.disposition ?? 'promote';
+    return record.disposition;
 }
 
 function getPromotionState(record: PromotionRecoveryRecord): 'prepared' | 'committed' {
-    return record.promotionState ?? 'committed';
+    return record.disposition === 'promote' ? record.promotionState : 'prepared';
 }
 
 function normalizeBindings(bindings: readonly StagedAssetBinding[]): StagedAssetBinding[] | DurableAssetFailure {
@@ -386,25 +386,39 @@ export function createDurableAssetPromotionRecoveryLifecycle(
                 recoveryStore.delete(recovery.recoveryId);
             }
         }
-        recoveryStore.put({
-            schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
-            recoveryId,
-            ownerId,
-            leaseIds: normalized.map((binding) => binding.leaseId),
-            bindings: normalized,
-            disposition,
-            recoveryKind: 'explicit',
-            ...(disposition === 'promote' && commitProof
+        const preparedAt = records.isPromotionRecoveryRecord(existing) ? existing.preparedAt : Date.now();
+        const recoveryRecord: PromotionRecoveryRecord =
+            disposition === 'promote'
                 ? {
-                      commitProof: {
-                          ...commitProof,
-                          commands: commitProof.commands.map((command) => ({ ...command })),
-                      },
+                      schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                      recoveryId,
+                      ownerId,
+                      leaseIds: normalized.map((binding) => binding.leaseId),
+                      bindings: normalized,
+                      disposition,
+                      recoveryKind: 'explicit',
+                      promotionState,
+                      ...(commitProof
+                          ? {
+                                commitProof: {
+                                    ...commitProof,
+                                    commands: commitProof.commands.map((command) => ({ ...command })),
+                                },
+                            }
+                          : {}),
+                      preparedAt,
                   }
-                : {}),
-            ...(disposition === 'promote' ? { promotionState } : {}),
-            preparedAt: records.isPromotionRecoveryRecord(existing) ? existing.preparedAt : Date.now(),
-        } satisfies PromotionRecoveryRecord);
+                : {
+                      schemaVersion: PROMOTION_RECOVERY_SCHEMA_VERSION,
+                      recoveryId,
+                      ownerId,
+                      leaseIds: normalized.map((binding) => binding.leaseId),
+                      bindings: normalized,
+                      disposition,
+                      recoveryKind: 'explicit',
+                      preparedAt,
+                  };
+        recoveryStore.put(recoveryRecord);
         await completion;
         return { status: 'prepared' as const, recoveryId, ownerId };
 
@@ -445,7 +459,7 @@ export function createDurableAssetPromotionRecoveryLifecycle(
             if (
                 !records.isPromotionRecoveryRecord(value) ||
                 value.ownerId !== ownerId ||
-                getRecoveryDisposition(value) !== 'promote'
+                value.disposition !== 'promote'
             ) {
                 transaction.abort();
                 await completion.catch(() => undefined);

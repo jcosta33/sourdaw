@@ -408,8 +408,14 @@ export type FakeDurableAssetIndexedDb = {
     overwriteAssetBlob: (hash: string, blob: Blob) => void;
     overwriteLeaseHash: (leaseId: string, hash: string) => void;
     overwriteLeaseTerminalAt: (leaseId: string, terminalAt: number) => void;
+    omitPromotionRecoveryDisposition: (recoveryId: string) => void;
+    omitPromotionRecoveryState: (recoveryId: string) => void;
     overwritePromotionRecoveryCommitProof: (recoveryId: string, commitProof: StoredRecord) => void;
-    seedLegacyPromotionRecoveryCommitProof: (recoveryId: string, commitProof: StoredRecord) => void;
+    seedLegacyPromotionRecoveryCommitProof: (
+        recoveryId: string,
+        commitProof: StoredRecord,
+        promotionState?: 'committed'
+    ) => void;
     seedPromotedLease: (input: { leaseId: string; ownerId: string; hash: string; terminalAt: number }) => void;
     seedOwnerHandoff: (input: { previousOwnerId: string; nextOwnerId: string }) => void;
     unlinkLeaseFromAsset: (leaseId: string, hash: string) => void;
@@ -548,6 +554,22 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 store?.set(leaseId, { ...record, terminalAt });
             }
         },
+        omitPromotionRecoveryDisposition: (recoveryId) => {
+            const store = durableStore('promotionRecoveries');
+            const record = store?.get(recoveryId);
+            if (store && record) {
+                const { disposition: _disposition, ...incomplete } = record;
+                store.set(recoveryId, incomplete);
+            }
+        },
+        omitPromotionRecoveryState: (recoveryId) => {
+            const store = durableStore('promotionRecoveries');
+            const record = store?.get(recoveryId);
+            if (store && record) {
+                const { promotionState: _promotionState, ...incomplete } = record;
+                store.set(recoveryId, incomplete);
+            }
+        },
         overwritePromotionRecoveryCommitProof: (recoveryId, commitProof) => {
             const store = durableStore('promotionRecoveries');
             const record = store?.get(recoveryId);
@@ -555,13 +577,19 @@ export function installFakeDurableAssetIndexedDb(): FakeDurableAssetIndexedDb {
                 store.set(recoveryId, { ...record, commitProof });
             }
         },
-        seedLegacyPromotionRecoveryCommitProof: (recoveryId, commitProof) => {
+        seedLegacyPromotionRecoveryCommitProof: (recoveryId, commitProof, promotionState) => {
             const state = durableState();
             const store = state?.stores.get('promotionRecoveries');
             const record = store?.get(recoveryId);
             if (state && store && record) {
                 state.version = 5;
-                store.set(recoveryId, { ...record, schemaVersion: 1, commitProof });
+                const { promotionState: _promotionState, ...legacy } = record;
+                store.set(recoveryId, {
+                    ...legacy,
+                    schemaVersion: 1,
+                    commitProof,
+                    ...(promotionState ? { promotionState } : {}),
+                });
             }
         },
         seedPromotedLease: ({ leaseId, ownerId, hash, terminalAt }) => {

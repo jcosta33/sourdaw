@@ -451,6 +451,7 @@ describe('command batch idempotency', () => {
         expect(proof).toEqual(expectedProof);
         const receipt = JSON.stringify(
             createVerifiedBatchReceipt({
+                contentHash: expectedProof.contentHash,
                 envelope: parsed.envelope,
                 observedBaseRevision: parsed.envelope.baseRevision,
                 resultingRevision: revision(1),
@@ -475,6 +476,7 @@ describe('command batch idempotency', () => {
         const committedReceipts = [
             JSON.stringify(
                 createVerifiedBatchReceipt({
+                    contentHash: expectedProof.contentHash,
                     envelope: parsed.envelope,
                     observedBaseRevision: parsed.envelope.baseRevision,
                     resultingRevision: revision(1),
@@ -495,6 +497,7 @@ describe('command batch idempotency', () => {
             ),
             JSON.stringify(
                 createVerifiedBatchReceipt({
+                    contentHash: expectedProof.contentHash,
                     envelope: parsed.envelope,
                     observedBaseRevision: parsed.envelope.baseRevision,
                     resultingRevision: revision(1),
@@ -557,6 +560,23 @@ describe('command batch idempotency', () => {
             lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
             await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('committed');
         }
+        const alteredContentHash = await getCommandBatchContentHash({
+            ...parsed.envelope,
+            commands: parsed.envelope.commands.map((candidate) =>
+                candidate.commandId === command.commandId
+                    ? { ...candidate, arguments: { ...candidate.arguments, gain: 0.5 } }
+                    : candidate
+            ),
+        });
+        lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt: receipt });
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: alteredContentHash })
+        ).resolves.toBe('unknown');
+        lookup.mockResolvedValueOnce({
+            status: 'complete',
+            serializedReceipt: JSON.stringify({ ...receiptRecord, contentHash: undefined, schemaVersion: 1 }),
+        });
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
         await expect(
             getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: `sha256:${'f'.repeat(64)}` })
         ).resolves.toBe('unknown');
@@ -700,6 +720,7 @@ describe('command batch idempotency', () => {
         const proof = await getVersionedCommandBatchCommitProof(batch);
         const receipt = JSON.stringify(
             createVerifiedBatchReceipt({
+                contentHash: proof.contentHash,
                 envelope: parsed.envelope,
                 observedBaseRevision: baseRevision,
                 resultingRevision: revision(1),

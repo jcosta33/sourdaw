@@ -90,6 +90,7 @@ function settlePreparedProjectCommitRecovery(input: {
             baseRevision: input.envelope.baseRevision,
             batchId: input.envelope.batchId,
             commands: input.envelope.commands,
+            contentHash: input.envelope.contentHash,
             runId: input.envelope.runId,
             serializedReceipt: checkpoint.serializedReceipt,
         });
@@ -119,6 +120,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (parsed.envelope.mode === 'preview') {
         return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
+    const batchContentHash = await getCommandBatchContentHash(parsed.envelope);
     const requiresDurableExecutionAuthority = commandBatchIdempotencyPort.isConfigured();
     let observedBaseRevision: string | null = null;
     const receiptWarnings: string[] = [];
@@ -133,7 +135,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             `Observed base revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
         );
     }
-    let idempotencyContentHash: string | null = null;
+    const idempotencyContentHash = requiresDurableExecutionAuthority ? batchContentHash : null;
     let mayReclaimPendingClaim = false;
     const projectCommitRecovery: {
         receipt: ReturnType<typeof createVerifiedBatchReceipt> | null;
@@ -152,6 +154,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...result,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings,
@@ -161,7 +164,6 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             };
         }
         try {
-            idempotencyContentHash = await getCommandBatchContentHash(parsed.envelope);
             const activeClaimId = `${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`;
             const projectCheckpoint = activeIdempotencyClaims.has(activeClaimId)
                 ? { status: 'missing' as const }
@@ -179,6 +181,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -196,6 +199,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -209,6 +213,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: projectCheckpoint.serializedReceipt,
                 });
@@ -226,6 +231,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: projectCheckpoint.serializedReceipt,
                 });
@@ -260,6 +266,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             baseRevision: parsed.envelope.baseRevision,
                             batchId: parsed.envelope.batchId,
                             commands: parsed.envelope.commands,
+                            contentHash: batchContentHash,
                             runId: parsed.envelope.runId,
                             serializedReceipt: recoveryCheckpoint.serializedReceipt,
                         });
@@ -298,6 +305,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         baseRevision: parsed.envelope.baseRevision,
                         batchId: parsed.envelope.batchId,
                         commands: parsed.envelope.commands,
+                        contentHash: batchContentHash,
                         runId: parsed.envelope.runId,
                         serializedReceipt: recoveryCheckpoint.serializedReceipt,
                     });
@@ -310,6 +318,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     }
                     const originatingProjectRevision = observedBaseRevision;
                     const reconciliation = await reconcileProjectCommandBatchEffects({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         isProjectCurrent: () => isOriginatingProjectCurrent(originatingProjectRevision),
                         serializedReceipt: recoveryCheckpoint.serializedReceipt,
@@ -340,6 +349,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         };
                     }
                     const recoveredReceipt = createRecoveredVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         priorReceipt: recoveryReceipt,
                         receiptWarnings: [PROJECT_RECEIPT_REVISION_WARNING],
@@ -400,6 +410,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: prior.serializedReceipt,
                 });
@@ -421,6 +432,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...result,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings,
@@ -439,6 +451,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         return {
             ...result,
             receipt: createVerifiedBatchReceipt({
+                contentHash: batchContentHash,
                 envelope: resolvedEnvelope,
                 observedBaseRevision,
                 receiptWarnings,
@@ -460,6 +473,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     baseRevision: parsed.envelope.baseRevision,
                     batchId: parsed.envelope.batchId,
                     commands: parsed.envelope.commands,
+                    contentHash: batchContentHash,
                     runId: parsed.envelope.runId,
                     serializedReceipt: claim.serializedReceipt,
                 });
@@ -481,6 +495,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -498,6 +513,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 return {
                     ...result,
                     receipt: createVerifiedBatchReceipt({
+                        contentHash: batchContentHash,
                         envelope: resolvedEnvelope,
                         observedBaseRevision,
                         receiptWarnings,
@@ -516,6 +532,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...result,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings,
@@ -565,6 +582,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             ],
                         };
                         projectCommitRecovery.receipt = createVerifiedBatchReceipt({
+                            contentHash: batchContentHash,
                             envelope: resolvedEnvelope,
                             observedBaseRevision,
                             receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
@@ -629,6 +647,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     let finalized = {
         ...result,
         receipt: createVerifiedBatchReceipt({
+            contentHash: batchContentHash,
             envelope: resolvedEnvelope,
             observedBaseRevision,
             receiptWarnings,
@@ -643,6 +662,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     result.status === 'committed-with-warning' &&
                     result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
                 const projectReceipt = createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
@@ -697,6 +717,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             return {
                 ...finalized,
                 receipt: createVerifiedBatchReceipt({
+                    contentHash: batchContentHash,
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
                     receiptWarnings: [...receiptWarnings, warning],
