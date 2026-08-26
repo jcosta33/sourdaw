@@ -36,6 +36,9 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
 type NotificationEvents = {
     'ui.notify': NotifyPayload;
     'ui.confirm': ConfirmPayload;
@@ -45,7 +48,12 @@ type NotificationEvents = {
 describe('handleAddClip atomic integration', () => {
     beforeEach(() => {
         Container.clear();
-        setNotificationEventBus(createEventBus<NotificationEvents>());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('add clip atomic integration');
         removeCrdtDoc('root');
@@ -68,6 +76,8 @@ describe('handleAddClip atomic integration', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        unsubscribeFromNotifications();
+        unsubscribeFromNotifications = () => undefined;
         Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -135,6 +145,10 @@ describe('handleAddClip atomic integration', () => {
 
         await undo();
 
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Editable"": project state has changed', level: 'warning' },
+        ]);
+
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Editable' }]);
         expect(midiStore.value!.notesByClipId[created.id]).toMatchObject([{ id: 'external-note' }]);
 
@@ -173,6 +187,10 @@ describe('handleAddClip atomic integration', () => {
         });
 
         await undo();
+
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Add clip "Initialized"": project state has changed', level: 'warning' },
+        ]);
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: created.id, name: 'Initialized' }]);
         expect(midiStore.value!.notesByClipId).toHaveProperty(created.id, []);

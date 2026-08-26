@@ -26,6 +26,9 @@ type NotificationEvents = {
     'ui.prompt': PromptPayload;
 };
 
+let notifications: NotifyPayload[] = [];
+let unsubscribeFromNotifications: () => void = () => undefined;
+
 type PunchRegion = {
     punchInBeat: number;
     punchOutBeat: number;
@@ -82,7 +85,12 @@ function describe_punch_action(action: PunchAction) {
 describe('Transport punch action undo/redo', () => {
     beforeEach(() => {
         Container.clear();
-        setNotificationEventBus(createEventBus<NotificationEvents>());
+        const notificationEventBus = createEventBus<NotificationEvents>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationEventBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationEventBus);
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
         registerHandlerMap(getTransportHandlers());
@@ -92,6 +100,8 @@ describe('Transport punch action undo/redo', () => {
     afterEach(() => {
         clearUndoHistory();
         clearHandlerRegistry();
+        unsubscribeFromNotifications();
+        unsubscribeFromNotifications = () => undefined;
         Container.clear();
         configureAutomergeStoragePort(null);
     });
@@ -141,6 +151,10 @@ describe('Transport punch action undo/redo', () => {
 
         await undo();
 
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Set punch in at beat 20": project state has changed', level: 'warning' },
+        ]);
+
         expect(get_punch_region()).toEqual({ punchInBeat: 20, punchOutBeat: 40 });
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
@@ -164,6 +178,10 @@ describe('Transport punch action undo/redo', () => {
         setPunchIn(6);
 
         await redo();
+
+        expect(notifications).toEqual([
+            { message: 'Cannot redo "Set punch out at beat 2": project state has changed', level: 'warning' },
+        ]);
 
         expect(get_punch_region()).toEqual({ punchInBeat: 6, punchOutBeat: 12 });
         expect(undoStore.value?.past).toHaveLength(0);
@@ -281,6 +299,9 @@ describe('Transport punch action undo/redo', () => {
 
         transportStore.set({ ...transportStore.value!, isPlaying: true });
         await undo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
+        ]);
         expect(transportStore.value?.punchInEnabled).toBe(true);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
@@ -292,6 +313,10 @@ describe('Transport punch action undo/redo', () => {
 
         transportStore.set({ ...transportStore.value!, isRecording: true });
         await redo();
+        expect(notifications).toEqual([
+            { message: 'Cannot undo "Enable Punch In/Out": project state has changed', level: 'warning' },
+            { message: 'Cannot redo "Enable Punch In/Out": project state has changed', level: 'warning' },
+        ]);
         expect(transportStore.value?.punchInEnabled).toBe(false);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
