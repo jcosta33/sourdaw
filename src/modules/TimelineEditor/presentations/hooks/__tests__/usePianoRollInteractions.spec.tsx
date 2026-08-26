@@ -937,11 +937,18 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
             const paintedIds = mocks.addMidiNote.mock.results.map((result) => result.value.id);
             const paintEntry = mocks.pushUndoEntry.mock.calls.find((call) => String(call[0]).startsWith('Paint '));
-            paintEntry?.[1]();
+            if (!paintEntry) {
+                throw new Error('paint gesture pushed no undo entry');
+            }
+            paintEntry[1]();
             for (const id of paintedIds) {
                 expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', id);
             }
-            paintEntry?.[2]();
+            // The gesture phase already recorded these tuples, so the mock is
+            // cleared here: the assertions below observe only what the redo
+            // closure re-adds.
+            mocks.addMidiNote.mockClear();
+            paintEntry[2]();
             expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100);
             expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 3, 1, 100);
         });
