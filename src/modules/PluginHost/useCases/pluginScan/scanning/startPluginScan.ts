@@ -1,4 +1,5 @@
 import { getDefaultPluginPaths } from '../../../repositories/pluginBridge/getDefaultPluginPaths';
+import { isScanPathAuthorized } from '../../../repositories/pluginBridge/isScanPathAuthorized';
 import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
 import { pluginScanStore } from '../../../stores/pluginScanStore';
 
@@ -17,7 +18,27 @@ export async function startPluginScan(): Promise<void> {
     try {
         const defaultPaths = await getDefaultPluginPaths();
         const scanPathsBeforeScan = getState().scanPaths;
-        const allPaths = [...new Set([...scanPathsBeforeScan, ...defaultPaths])];
+        // Saved paths the policy refuses are left out of the request rather
+        // than sent to fail: a path saved before the add was policy-gated
+        // comes back from the native scan as an unauthorized error on every
+        // run — red, destructive, and never fixable from the scan itself.
+        // They are named once, on the notice channel, and stay in settings
+        // for the user to remove. A query that fails aborts the scan: the
+        // partition decides what gets scanned, and guessing either way would
+        // silently skip or silently send a path.
+        const authorizations = await Promise.all(
+            scanPathsBeforeScan.map(async (scan_path) => ({
+                path: scan_path,
+                authorized: await isScanPathAuthorized(scan_path),
+            }))
+        );
+        const refusedPaths = authorizations
+            .filter((authorization) => !authorization.authorized)
+            .map((authorization) => authorization.path);
+        const authorizedScanPaths = authorizations
+            .filter((authorization) => authorization.authorized)
+            .map((authorization) => authorization.path);
+        const allPaths = [...new Set([...authorizedScanPaths, ...defaultPaths])];
 
         if (allPaths.length === 0) {
             pluginScanStore.update((current) => ({
@@ -30,6 +51,12 @@ export async function startPluginScan(): Promise<void> {
         }
 
         const result = await scanPlugins(allPaths);
+        const refusedPathNotice =
+            refusedPaths.length > 0
+                ? [
+                      `Skipped ${refusedPaths.length} saved scan path(s) the app is not allowed to scan: ${refusedPaths.join(', ')}`,
+                  ]
+                : [];
         pluginScanStore.update((current) => {
             const currentState = current ?? getState();
             const removedScanPaths = new Set(
@@ -45,7 +72,7 @@ export async function startPluginScan(): Promise<void> {
                 isScanning: false,
                 lastScanTime: Date.now(),
                 errors: result.errors,
-                notices: result.notices,
+                notices: [...refusedPathNotice, ...result.notices],
                 scannedPlugins: result.plugins,
             };
         });

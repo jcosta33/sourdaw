@@ -13,6 +13,8 @@ import { addClip } from './addClip';
 type DuplicateClipCoreInput = {
     clipId: string;
     targetClipId?: string;
+    /** Track the copy is added to. Defaults to the source clip's own track. */
+    destinationTrackId?: string;
     computeStartBeat: (clip: Clip) => number;
 };
 
@@ -24,6 +26,7 @@ export function duplicateClipCore(
 ): boolean {
     const clipId = typeof input === 'string' ? input : input.clipId;
     const targetClipId = typeof input === 'string' ? undefined : input.targetClipId;
+    const destinationTrackId = typeof input === 'string' ? undefined : input.destinationTrackId;
     const computeStartBeat = typeof input === 'string' ? legacyComputeStartBeat : input.computeStartBeat;
     if (!computeStartBeat) {
         return false;
@@ -34,7 +37,7 @@ export function duplicateClipCore(
         return false;
     }
 
-    const destinationTarget = resolveEligibleClipWriteTarget({ trackId: sourceTarget.trackId });
+    const destinationTarget = resolveEligibleClipWriteTarget({ trackId: destinationTrackId ?? sourceTarget.trackId });
     if (destinationTarget.status !== 'eligible') {
         return false;
     }
@@ -64,7 +67,7 @@ export function duplicateClipCore(
     const startBeat = computeStartBeat(clip);
     const newClip = addClip({
         id: effectiveTargetClipId,
-        trackId: track.id,
+        trackId: destinationTrackId ?? track.id,
         startBeat,
         endBeat: startBeat + duration,
         name: `${clip.name} (copy)`,

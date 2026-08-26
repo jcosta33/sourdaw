@@ -4,6 +4,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { zoomTimeline } from '#/modules/Arrangement/stores';
 import {
     acceptGhostClip,
+    cancelActiveTimelineGesture,
     clearClipSelection,
     deleteTimeRange,
     dismissGhostClip,
@@ -99,6 +100,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     acceptGhostClip: vi.fn(),
+    cancelActiveTimelineGesture: vi.fn(() => false),
     dismissGhostClip: vi.fn(),
     deleteTimeRange: vi.fn(),
     executeUndoableInsertTime: vi.fn(),
@@ -325,6 +327,56 @@ describe('handleKeydown', () => {
                     cause: panicError,
                 })
             );
+        });
+    });
+
+    describe('Escape ordering', () => {
+        function bindEscape(): void {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'transport.stopPlayback', key: 'Escape', callbackId: 'stopPlayback' }),
+            ];
+        }
+
+        it('cancels an active timeline gesture instead of clearing selection or stopping playback', () => {
+            bindEscape();
+            vi.mocked(cancelActiveTimelineGesture).mockReturnValueOnce(true);
+            clipSelectionStoreMock.value = {
+                selectedClipId: 'clip-1',
+                selectedClipIds: ['clip-1'],
+                marqueeSelection: null,
+            };
+
+            const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+            expect(prevent).toBe(true);
+            expect(cancelActiveTimelineGesture).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(clearClipSelection)).not.toHaveBeenCalled();
+            expect(stopPlaybackMock).not.toHaveBeenCalled();
+        });
+
+        it('clears an active marquee (time-range) selection before the clip selection', () => {
+            bindEscape();
+            clipSelectionStoreMock.value = {
+                selectedClipId: 'clip-1',
+                selectedClipIds: ['clip-1'],
+                marqueeSelection: { startBeat: 1, endBeat: 3, trackIds: ['t1'] },
+            };
+
+            handleKeydown(descriptor({ key: 'Escape' }));
+
+            expect(vi.mocked(setMarqueeSelection)).toHaveBeenCalledWith(null);
+            expect(vi.mocked(clearClipSelection)).not.toHaveBeenCalled();
+            expect(stopPlaybackMock).not.toHaveBeenCalled();
+
+            // With the marquee gone, the next Escape reaches the clip selection.
+            clipSelectionStoreMock.value = {
+                selectedClipId: 'clip-1',
+                selectedClipIds: ['clip-1'],
+                marqueeSelection: null,
+            };
+            handleKeydown(descriptor({ key: 'Escape' }));
+            expect(vi.mocked(clearClipSelection)).toHaveBeenCalledTimes(1);
+            expect(stopPlaybackMock).not.toHaveBeenCalled();
         });
     });
 

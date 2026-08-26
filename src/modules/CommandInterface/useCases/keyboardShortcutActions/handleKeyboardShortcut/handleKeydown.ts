@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, trackStore, zoomTimeline } from '#/modules/Arrangement/stores';
 import {
     acceptGhostClip,
+    cancelActiveTimelineGesture,
     dismissGhostClip,
     deleteTimeRange,
     executeUndoableDuplicateTimeRange,
@@ -221,6 +222,12 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         if (action.type === 'callback') {
             switch (action.id) {
                 case 'stopPlayback': {
+                    // Escape cancels an in-progress timeline gesture first:
+                    // the gesture discards its preview (no history entry) and
+                    // the key does not fall through to transport stop.
+                    if (cancelActiveTimelineGesture()) {
+                        return true;
+                    }
                     // R-E1.2: Escape dismisses selected ghost clip first
                     const ghostId = getSelectedGhostClipId();
                     if (ghostId) {
@@ -228,6 +235,13 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                         return true;
                     }
                     const ws = clipSelectionStore.value;
+                    // Then a marquee (time-range) selection: clearClipSelection
+                    // deliberately leaves it untouched, so Escape clears it here
+                    // before falling through to the clip selection.
+                    if (ws?.marqueeSelection) {
+                        setMarqueeSelection(null);
+                        return false;
+                    }
                     if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
                         clearClipSelection();
                         return false;
