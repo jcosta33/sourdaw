@@ -58,6 +58,7 @@ const mocks = vi.hoisted(
         rippleMoveClip: ReturnType<typeof vi.fn>;
         getTrackStoreState: ReturnType<typeof vi.fn>;
         setTrackState: ReturnType<typeof vi.fn>;
+        notifyUser: ReturnType<typeof vi.fn>;
         collaborationStoreValue: MockStoreBox;
         timelineViewStoreValue: MockStoreBox;
         workspaceStoreValue: MockStoreBox;
@@ -116,6 +117,7 @@ const mocks = vi.hoisted(
         rippleMoveClip: vi.fn(),
         getTrackStoreState: vi.fn(),
         setTrackState: vi.fn(),
+        notifyUser: vi.fn(),
         collaborationStoreValue: { value: { isEnabled: false } },
         timelineViewStoreValue: { value: { scrollY: 0, pixelsPerBeat: 100, scrollX: 0 } },
         workspaceStoreValue: {
@@ -192,6 +194,9 @@ vi.mock('../../../stores/trackStore', () => ({
         get value() {
             return mocks.trackStoreValue.value;
         },
+        // yeastStore subscribes to trackStore at module init (via the
+        // Collaboration use-cases importOriginal chain); the box must offer
+        // the subscription surface or suite collection crashes.
         subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
 }));
@@ -280,6 +285,7 @@ vi.mock('../../../useCases/timelineInteractions/snapToGridOrClips', () => ({
 vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossing', () => ({
     snapToZeroCrossing: mocks.snapToZeroCrossing,
 }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 describe('useTimelineInteractions', () => {
     let canvas: HTMLCanvasElement;
@@ -905,6 +911,8 @@ describe('useTimelineInteractions', () => {
             ],
             tempo: 120,
         });
+        // moveClip reports whether the write landed; history only follows a real mutation.
+        mocks.moveClip.mockReturnValue(true);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -939,11 +947,9 @@ describe('useTimelineInteractions', () => {
             tracks: [{ id: 't1', height: 100, clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
             tempo: 120,
         });
-        // duplicateClipCore appends a new clip to the track; simulate by mutating store.
-        mocks.duplicateClipCore.mockImplementation(() => {
-            const s = mocks.trackStoreValue.value as { tracks: { id: string; clips: { id: string }[] }[] };
-            s.tracks[0]!.clips.push({ id: 'copy-1' });
-        });
+        // duplicateClipCore reports whether the copy was created; the undo
+        // entry is keyed on the pre-allocated copy id, not a store scan.
+        mocks.duplicateClipCore.mockReturnValue(true);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -1277,6 +1283,7 @@ describe('useTimelineInteractions', () => {
             tracks: [
                 {
                     id: 't1',
+                    kind: 'audio',
                     height: 100,
                     clips: [
                         { id: 'c1', startBeat: 0, endBeat: 4 },

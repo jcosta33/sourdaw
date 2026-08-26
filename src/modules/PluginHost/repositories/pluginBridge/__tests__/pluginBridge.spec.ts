@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { isDesktopRuntime, desktopInvoke, desktopListen } from '#/utils/desktopBridge';
 
+import { isScanPathAuthorized } from '../isScanPathAuthorized';
 import { loadPlugin } from '../loadPlugin';
 import { onPluginLatencyChanged } from '../onPluginLatencyChanged';
 import { processAudioIPC } from '../processAudioIPC';
@@ -95,6 +96,23 @@ describe('pluginBridge repository', () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(false);
             await setPluginBypass({ instanceId: 'i1', bypassed: true });
             expect(desktopInvoke).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('isScanPathAuthorized', () => {
+        it('refuses every path outside the desktop app, where there is no policy to ask', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
+
+            expect(await isScanPathAuthorized('/any/path')).toBe(false);
+            expect(desktopInvoke).not.toHaveBeenCalled();
+        });
+
+        it('asks the native scan policy for the verdict the add-path gate runs on', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockResolvedValue(true);
+
+            expect(await isScanPathAuthorized('/root/child')).toBe(true);
+            expect(desktopInvoke).toHaveBeenCalledWith('is_scan_path_authorized', { path: '/root/child' });
         });
     });
 
