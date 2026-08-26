@@ -43,11 +43,14 @@
                 "AGENTS.md",
                 "CLAUDE.md",
                 "CONTRIBUTING.md",
+                "CODEX.md",
                 "Cargo.lock",
                 "Cargo.toml",
                 "GEMINI.md",
+                "KIMI.md",
                 "README.md",
                 "SECURITY.md",
+                "ZCODE.md",
                 "components.json",
                 "eslint.config.mjs",
                 "index.html",
@@ -1151,6 +1154,7 @@
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Gluten/models/GlutenPatch.ts",
                 "src/modules/Gluten/models/GlutenTopologyGating.ts",
                 "src/modules/Grinder/models/GrinderPatch.ts",
@@ -1869,6 +1873,7 @@
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts"
             ]
         },
@@ -1992,7 +1997,8 @@
                 "docs/manual/devices/17-fermenter.md",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
-                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md"
             ]
         },
         {
@@ -2014,6 +2020,7 @@
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Fermenter/AGENTS.md",
                 "src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts"
             ]
         },
