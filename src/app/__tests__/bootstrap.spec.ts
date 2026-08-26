@@ -677,7 +677,7 @@ describe('bootstrap', () => {
         }
         const [projectRevisionValidator] = projectRevisionValidatorCall;
         if (!projectRevisionValidator) {
-            throw new Error('bootstrap configured a null runtime graph project revision validator');
+            throw new Error('bootstrap configured an empty runtime graph project revision validator');
         }
         captureProjectRevisionMock.mockReturnValue('revision-1');
         expect(projectRevisionValidator('revision-1')).toBe(true);

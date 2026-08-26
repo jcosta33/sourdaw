@@ -1,28 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
+import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { saveProject } from '../saveProject';
 
+import type { inspectCurrentAgentProjectRepairState } from '#/modules/CrdtDocument/useCases';
 import type { ProjectStoreState } from '../../../../stores/projectStore';
+import type { BuiltProjectData } from '../../fileIO/buildProjectData';
 
-const mocks = vi.hoisted(() => ({
-    projectStoreValue: { value: null as ProjectStoreState | null },
-    projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
-    persistCrdtProject: vi.fn<() => Promise<void>>(),
-    captureProjectRevision: vi.fn<() => string>(),
-    addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
-    loggerWarn: vi.fn<(...args: unknown[]) => void>(),
-    notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
-    buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
-    flushAutomergeStorageWrites: vi.fn<() => void>(),
-    migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
-    repairState: { value: null },
-    actionHistory: { value: null },
-    setSemanticContext: vi.fn(),
-    clearSemanticContext: vi.fn(),
-    writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
-}));
+type ProjectRepairState = Exclude<ReturnType<typeof inspectCurrentAgentProjectRepairState>, null>;
+
+const mocks = vi.hoisted(() => {
+    const repairState: { value: ProjectRepairState | null } = { value: null };
+
+    return {
+        projectStoreValue: { value: null as ProjectStoreState | null },
+        projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
+        persistCrdtProject: vi.fn<() => Promise<void>>(),
+        captureProjectRevision: vi.fn<() => string>(),
+        addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
+        loggerWarn: vi.fn<(...args: unknown[]) => void>(),
+        notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
+        buildProjectData: vi.fn<() => Promise<BuiltProjectData | null>>(),
+        flushAutomergeStorageWrites: vi.fn<() => void>(),
+        migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
+        repairState,
+        actionHistory: { value: null },
+        setSemanticContext: vi.fn(),
+        clearSemanticContext: vi.fn(),
+        writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
+    };
+});
 
 vi.mock('../../fileIO/buildProjectData', () => ({
     buildProjectData: mocks.buildProjectData,
@@ -81,6 +90,44 @@ function makeProject(): ProjectStoreState {
     } as unknown as ProjectStoreState;
 }
 
+function makeProjectData(): ProjectData {
+    return {
+        version: CURRENT_PROJECT_VERSION,
+        meta: {
+            name: 'My Song',
+            createdAt: 1700000000000,
+            updatedAt: 1700000000000,
+            keyRoot: 0,
+            scaleName: 'major',
+            tuning: { name: '12-TET', frequencies: [] },
+        },
+        transport: {
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            loopStart: 0,
+            loopEnd: 4,
+            isLooping: false,
+            metronomeEnabled: false,
+            metronomeVolume: 0.8,
+            punchInEnabled: false,
+            punchInBeat: 0,
+            punchOutBeat: 4,
+            countInEnabled: false,
+            countInBars: 1,
+            preRollEnabled: false,
+            preRollBars: 0,
+            masterGain: 1,
+        },
+        arrangement: { tracks: [] },
+        automation: { lanes: [] },
+        midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+        mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
+        markers: [],
+        history: { checkpoints: [] },
+    };
+}
+
 describe('saveProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -88,7 +135,7 @@ describe('saveProject', () => {
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
-        mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
+        mocks.buildProjectData.mockResolvedValue({ data: makeProjectData(), missingBufferCount: 0 });
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         mocks.repairState.value = null;

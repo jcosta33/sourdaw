@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
+type AdjustmentLayerStore = Pick<
+    (typeof import('#/modules/Arrangement/stores'))['adjustmentLayerStore'],
+    'value' | 'subscribe'
+>;
 
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
@@ -25,6 +29,10 @@ const mocks = vi.hoisted(() => ({
         value: { tracks: [{ id: 'track-1', devices: [{ id: 'device-1', type: 'crust' }] }] },
         subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
     },
+    adjustmentLayerStore: {
+        value: { layers: [] },
+        subscribe: vi.fn<AdjustmentLayerStore['subscribe']>((_callback) => () => {}),
+    },
 }));
 const { updateDeviceParam, persistDeviceParam } = mocks;
 
@@ -34,7 +42,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
-    adjustmentLayerStore: { value: null },
+    adjustmentLayerStore: mocks.adjustmentLayerStore,
     persistDeviceParam: mocks.persistDeviceParam,
     resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
 }));
