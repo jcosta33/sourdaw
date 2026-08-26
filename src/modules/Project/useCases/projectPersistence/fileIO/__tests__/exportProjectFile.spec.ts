@@ -7,12 +7,16 @@ import { downloadProjectFile } from '../../../../repositories/project/downloadPr
 import { exportProjectFile } from '../exportProjectFile';
 
 const captureExternalPluginStatesMock = vi.hoisted(() => vi.fn<() => Promise<void>>(() => Promise.resolve()));
+const agentProjectRepairStateStoreMock = vi.hoisted((): { value: unknown } => ({ value: null }));
 
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
     downloadProjectFile: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: agentProjectRepairStateStoreMock,
+}));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
@@ -65,6 +69,7 @@ vi.mock('../../saveProject/captureExternalPluginStates', () => ({
 
 describe('exportProjectFile', () => {
     beforeEach(() => {
+        agentProjectRepairStateStoreMock.value = null;
         vi.mocked(downloadProjectFile).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
@@ -88,5 +93,27 @@ describe('exportProjectFile', () => {
         const captureOrder = captureExternalPluginStatesMock.mock.invocationCallOrder[0]!;
         const downloadOrder = vi.mocked(downloadProjectFile).mock.invocationCallOrder[0]!;
         expect(captureOrder).toBeLessThan(downloadOrder);
+    });
+
+    it('does not download a project snapshot while raw CRDT project repair is required', async () => {
+        agentProjectRepairStateStoreMock.value = {
+            audioGraphValid: true,
+            detectedRevision: 'revision-with-invalid-adjustment-layers',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/adjustmentLayers'],
+                },
+            ],
+            status: 'repair-required',
+        };
+
+        await exportProjectFile();
+
+        expect(downloadProjectFile).not.toHaveBeenCalled();
+        expect(exportCachedAudioBuffers).not.toHaveBeenCalled();
     });
 });

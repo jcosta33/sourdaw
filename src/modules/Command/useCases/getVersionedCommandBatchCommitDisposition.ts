@@ -4,9 +4,9 @@ import { type getVersionedCommandBatchCommitProof } from './getVersionedCommandB
 import { parseStoredVerifiedBatchReceipt } from './parseStoredVerifiedBatchReceipt';
 
 type VersionedCommandBatchCommitProof = Awaited<ReturnType<typeof getVersionedCommandBatchCommitProof>>;
-type CommitDisposition = 'committed' | 'unknown';
+type CommitDisposition = 'committed' | 'terminal-noncommit' | 'unknown';
 
-function isCommittedReceipt(serializedReceipt: string, proof: VersionedCommandBatchCommitProof): boolean {
+function getReceiptDisposition(serializedReceipt: string, proof: VersionedCommandBatchCommitProof): CommitDisposition {
     const receipt = parseStoredVerifiedBatchReceipt({
         baseRevision: proof.baseRevision,
         batchId: proof.batchId,
@@ -14,28 +14,45 @@ function isCommittedReceipt(serializedReceipt: string, proof: VersionedCommandBa
         runId: proof.runId,
         serializedReceipt,
     });
-    return (
+    if (
         receipt?.outcome === 'committed' ||
         receipt?.outcome === 'committed-with-warning' ||
         receipt?.outcome === 'partially-committed'
-    );
+    ) {
+        return 'committed';
+    }
+    if (
+        receipt?.outcome === 'no-op' ||
+        receipt?.outcome === 'rejected' ||
+        receipt?.outcome === 'conflicted' ||
+        receipt?.outcome === 'cancelled' ||
+        receipt?.outcome === 'failed' ||
+        receipt?.outcome === 'verification-failed'
+    ) {
+        return 'terminal-noncommit';
+    }
+    return 'unknown';
 }
 
 export async function getVersionedCommandBatchCommitDisposition(
     proof: VersionedCommandBatchCommitProof
 ): Promise<CommitDisposition> {
-    try {
-        const projectCheckpoint = getProjectCommandBatchIdempotencyCheckpoint(proof);
-        if (projectCheckpoint.status === 'complete') {
-            return isCommittedReceipt(projectCheckpoint.serializedReceipt, proof) ? 'committed' : 'unknown';
-        }
-        if (projectCheckpoint.status !== 'missing' || !commandBatchIdempotencyPort.isConfigured()) {
-            return 'unknown';
-        }
-        const repositoryReceipt = await commandBatchIdempotencyPort.lookup(proof);
-        return repositoryReceipt?.status === 'complete' &&
-            isCommittedReceipt(repositoryReceipt.serializedReceipt, proof)
+    const projectCheckpoint = getProjectCommandBatchIdempotencyCheckpoint(proof);
+    if (projectCheckpoint.status === 'complete') {
+        return getReceiptDisposition(projectCheckpoint.serializedReceipt, proof) === 'committed'
             ? 'committed'
+            : 'unknown';
+    }
+    if (projectCheckpoint.status !== 'missing') {
+        return 'unknown';
+    }
+    if (!commandBatchIdempotencyPort.isConfigured()) {
+        return 'unknown';
+    }
+    try {
+        const repositoryReceipt = await commandBatchIdempotencyPort.lookup(proof);
+        return repositoryReceipt?.status === 'complete'
+            ? getReceiptDisposition(repositoryReceipt.serializedReceipt, proof)
             : 'unknown';
     } catch {
         return 'unknown';

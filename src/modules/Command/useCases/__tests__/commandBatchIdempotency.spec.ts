@@ -311,6 +311,24 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(0);
     });
 
+    it('distinguishes an exact terminal non-commit receipt from missing proof', async () => {
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+            options: { shouldExecute: () => false },
+        });
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+
+        expect(result.status).toBe('cancelled');
+        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('terminal-noncommit');
+        await expect(
+            getVersionedCommandBatchCommitDisposition({ ...proof, contentHash: `sha256:${'f'.repeat(64)}` })
+        ).resolves.toBe('unknown');
+    });
+
     it('preserves a fresh approved batch revision while replay is probed without durable idempotency', async () => {
         commandBatchIdempotencyPort.setRepository(null);
         const batch = compileBatch();
@@ -561,8 +579,6 @@ describe('command batch idempotency', () => {
             receiptWithOutcome('committed', 'unknown'),
             receiptWithOutcome('committed', 'not-applied'),
             receiptWithOutcome('executed', 'executed'),
-            receiptWithOutcome('no-op', 'no-op'),
-            receiptWithOutcome('failed', 'not-applied'),
             JSON.stringify({ ...receiptRecord, runId: 'stale-run' }),
             JSON.stringify({ ...receiptRecord, batchId: 'stale-batch' }),
             JSON.stringify({
@@ -586,6 +602,13 @@ describe('command batch idempotency', () => {
         ]) {
             lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
             await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+        }
+        for (const serializedReceipt of [
+            receiptWithOutcome('no-op', 'no-op'),
+            receiptWithOutcome('failed', 'not-applied'),
+        ]) {
+            lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('terminal-noncommit');
         }
     });
 
@@ -761,7 +784,7 @@ describe('command batch idempotency', () => {
                 mutationCount += 1;
             },
         });
-        let dispositionDuringPreparedCommit: Promise<'committed' | 'unknown'> | null = null;
+        let dispositionDuringPreparedCommit: ReturnType<typeof getVersionedCommandBatchCommitDisposition> | null = null;
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -878,6 +901,8 @@ describe('command batch idempotency', () => {
             confirmed: true,
             serialized: batch.serialized,
         });
+        const projectCommitProof = await getVersionedCommandBatchCommitProof(batch);
+        await expect(getVersionedCommandBatchCommitDisposition(projectCommitProof)).resolves.toBe('unknown');
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'missing' }),
             claim: () => Promise.resolve({ status: 'claimed' }),

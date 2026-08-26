@@ -3,7 +3,10 @@ import {
     initSyncState,
     change,
     clone,
+    decodeSyncMessage,
+    encodeSyncMessage,
     generateSyncMessage,
+    getChanges,
     getHeads,
     load,
     receiveSyncMessage,
@@ -12,7 +15,7 @@ import {
     type Heads,
     type SyncState,
 } from '@automerge/automerge';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
 import {
     subscribeToCrdtChanges,
@@ -23,12 +26,16 @@ import {
     sanitizeIncomingCrdtDocument,
     hasCrdtDoc,
     getCrdtDocIds,
+    persistCrdtProject,
 } from '#/modules/CrdtDocument/useCases';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import { type PeerId, type PeerMessage } from '../../models/CollaborationTypes';
+import { type PeerConnectionManager } from '../../repositories/peerConnection';
+import { AssetTransfer } from '../assetTransfer';
 import { AutomergeSync } from '../automergeSync';
 
+import { installFakeDurableAssetIndexedDb, type FakeDurableAssetIndexedDb } from './fakeDurableAssetIndexedDb';
 import { createPeerSyncMessages } from './peerSyncHandshake';
 
 const command_mocks = vi.hoisted(() => ({
@@ -37,7 +44,14 @@ const command_mocks = vi.hoisted(() => ({
 
 const crdt_mocks = vi.hoisted(() => ({
     wait_for_document_transition: vi.fn<(docId: string) => Promise<'aborted' | 'committed'> | null>(),
+    persist_project: vi.fn().mockResolvedValue(undefined),
 }));
+
+let durableAssetIndexedDb: FakeDurableAssetIndexedDb;
+
+beforeAll(() => {
+    durableAssetIndexedDb = installFakeDurableAssetIndexedDb();
+});
 
 vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: command_mocks.sync_action_replay_metadata,
@@ -51,7 +65,14 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     removeCrdtDoc: vi.fn(),
     hasCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
-    persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+    persistCrdtProject: crdt_mocks.persist_project,
+    runCrdtPersistenceBarrier: vi.fn(
+        async (
+            operation: (input: {
+                persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<void>;
+            }) => Promise<void>
+        ) => operation({ persistCurrentProject: crdt_mocks.persist_project })
+    ),
     waitForCrdtDocumentTransition: crdt_mocks.wait_for_document_transition,
     sanitizeIncomingCrdtDocument: vi.fn((document) => document),
     DOC_PREFIX_ROOT: 'root',
@@ -81,6 +102,8 @@ function createAmDoc(): Doc<unknown> {
 
 type SeededDoc = {
     actionHistory?: { entries: { id: string }[] };
+    projectId?: string;
+    projectMeta?: { projectId: string; name?: string };
     /** A slot with no store projection — stands in for ordinary project truth. */
     peerProbe?: string;
 };
@@ -118,6 +141,7 @@ function forkPeerDocs(): { live: Doc<SeededDoc>; remoteSeed: Doc<SeededDoc> } {
 
 describe('AutomergeSync', () => {
     beforeEach(() => {
+        durableAssetIndexedDb.reset();
         vi.clearAllMocks();
         crdt_mocks.wait_for_document_transition.mockReturnValue(null);
         // `clearAllMocks` clears calls but not queued `...Once` implementations,
@@ -139,6 +163,7 @@ describe('AutomergeSync', () => {
         vi.mocked(removeCrdtDoc).mockReset();
         vi.mocked(hasCrdtDoc).mockReset().mockReturnValue(false);
         vi.mocked(getCrdtDocIds).mockReset().mockReturnValue([]);
+        vi.mocked(persistCrdtProject).mockReset().mockResolvedValue(undefined);
     });
 
     it('subscribes to CRDT changes on start using injected dependencies', () => {
@@ -179,6 +204,701 @@ describe('AutomergeSync', () => {
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
+    });
+
+    it.each([
+        { label: 'the same project identity text', remoteProjectId: undefined },
+        { label: 'a differing project identity', remoteProjectId: 'project:host' },
+    ])(
+        'waits through a change-free handshake and reports the later authoritative root advance with $label',
+        ({ remoteProjectId }) => {
+            const { live: initialLive, remoteSeed } = forkPeerDocs();
+            let live: Doc<unknown> = initialLive;
+            vi.mocked(getCrdtDoc).mockImplementation(() => live);
+            vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+                live = doc;
+            });
+            const onSyncApplied = vi.fn();
+            const onSyncConverged = vi.fn();
+            const sync = new AutomergeSync(makePeerManager(), { onSyncApplied, onSyncConverged });
+
+            const remote = change(remoteSeed, (draft) => {
+                draft.peerProbe = 'host-authoritative';
+                if (remoteProjectId) {
+                    draft.projectId = remoteProjectId;
+                }
+            });
+            const messages = createPeerSyncMessages({ remote, local: live });
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: messages[0]! });
+
+            expect(onSyncApplied).not.toHaveBeenCalled();
+            expect(onSyncConverged).not.toHaveBeenCalled();
+            for (const syncMessageBase64 of messages.slice(1)) {
+                sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+            }
+
+            expect(onSyncApplied).toHaveBeenCalledExactlyOnceWith({ peerId: 'host-peer', docId: 'root' });
+            expect(onSyncConverged).toHaveBeenCalledExactlyOnceWith({ peerId: 'host-peer', docId: 'root' });
+        }
+    );
+
+    it('journals a converged owner handoff before persistence and commits it afterward', async () => {
+        const order: string[] = [];
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+            order.push('publish-root');
+        });
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            order.push('persist-project');
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                order.push('prepare-handoff');
+                return {
+                    commit: async () => {
+                        order.push('commit-handoff');
+                    },
+                    abort: async () => undefined,
+                };
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectId = 'project:host-authoritative';
+            draft.peerProbe = 'host-root-advanced';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        expect(order.slice(-4)).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
+    });
+
+    it('finishes a persisted owner handoff after session teardown before reopening the authoritative asset', async () => {
+        const previousOwnerId = 'project:teardown-source';
+        const nextOwnerId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const peer = makePeerManager() as unknown as PeerConnectionManager;
+        const transfer = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            previousOwnerId
+        );
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['teardown-after-persistence']),
+            'teardown-after-persistence.wav',
+            'asset-stage-teardown-after-persistence'
+        );
+        await transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash);
+        let sync!: AutomergeSync;
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            sync.stop();
+            transfer.dispose();
+        });
+        sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async ({ projectId }) => {
+                const transition = await transfer.prepareDurableOwnerRebind(projectId!);
+                if (transition.status === 'failed') {
+                    throw new Error(transition.reason);
+                }
+                return { commit: transition.commit, abort: transition.abort };
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: nextOwnerId };
+            draft.peerProbe = 'persisted-before-session-teardown';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        const authoritativeOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            nextOwnerId
+        );
+        await expect(authoritativeOwner.reopenDurableAsset(staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+            hash: staged.hash,
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        authoritativeOwner.dispose();
+    });
+
+    it('adopts the settled owner from an authoritative converged root without rewriting project state', async () => {
+        const canonical = change(seedAmDoc(), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+        });
+        let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+        const remote = clone(canonical, 'bbbbbbbbbbbbbbbb');
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const commitHandoff = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        const prepareSyncPersistence = vi.fn().mockResolvedValue({
+            commit: commitHandoff,
+            abort: vi.fn().mockResolvedValue(undefined),
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence,
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        expect(prepareSyncPersistence).toHaveBeenCalledWith({
+            peerId: 'host-peer',
+            docId: 'root',
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            rootHeads: [...getHeads(canonical)].map(String).toSorted(),
+            senderIsHost: true,
+        });
+        expect(commitHandoff).toHaveBeenCalledOnce();
+        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(persistCrdtProject).toHaveBeenCalledExactlyOnceWith([...getHeads(canonical)].map(String).toSorted());
+    });
+
+    it('abandons a no-op root owner handoff when the session stops before adoption', async () => {
+        const canonical = change(seedAmDoc(), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+        });
+        const live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+        const remote = clone(canonical, 'bbbbbbbbbbbbbbbb');
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        const peer = makePeerManager() as unknown as PeerConnectionManager;
+        const transfer = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            'project:abandoned-no-op-source'
+        );
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['abandoned-no-op']),
+            'abandoned-no-op.wav',
+            'asset-stage-abandoned-no-op'
+        );
+        transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
+        const prepared = Promise.withResolvers<void>();
+        const releasePreparation = Promise.withResolvers<void>();
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async ({ projectId }) => {
+                const transition = await transfer.prepareDurableOwnerRebind(projectId!);
+                if (transition.status === 'failed') {
+                    throw new Error(transition.reason);
+                }
+                prepared.resolve();
+                await releasePreparation.promise;
+                return { commit: transition.commit, abort: transition.abort };
+            },
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await prepared.promise;
+        sync.stop();
+        transfer.dispose();
+        releasePreparation.resolve();
+        await sync.flushPersistence();
+
+        const replacementSource = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            'project:abandoned-no-op-source'
+        );
+        const replacement = await replacementSource.prepareDurableOwnerRebind('project:replacement-after-no-op');
+        expect(replacement).toMatchObject({ status: 'prepared' });
+        await replacementSource.commitDurableOwnerRebind('project:replacement-after-no-op');
+        const replacementOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            'project:replacement-after-no-op'
+        );
+        await expect(replacementOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+        replacementOwner.dispose();
+        replacementSource.dispose();
+    });
+
+    it('retains a prepared handoff when project persistence fails before commit', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        let handoffPrepared = false;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            if (handoffPrepared) {
+                throw new Error('persistence interrupted');
+            }
+        });
+        const commitHandoff = vi.fn<() => Promise<void>>();
+        const onPersistError = vi.fn();
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                handoffPrepared = true;
+                return { commit: commitHandoff, abort: vi.fn().mockResolvedValue(undefined) };
+            },
+            onPersistError,
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectId = 'project:host-authoritative';
+            draft.peerProbe = 'host-root-advanced';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        expect(handoffPrepared).toBe(true);
+        expect(onPersistError).toHaveBeenCalledExactlyOnceWith(expect.any(Error));
+        expect(commitHandoff).not.toHaveBeenCalled();
+    });
+
+    it('keeps owner authority on the persisted root until a no-op retry durably saves the exact published root', async () => {
+        const previousOwnerId = 'project:persisted-owner';
+        const nextOwnerId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const peer = makePeerManager() as unknown as PeerConnectionManager;
+        const transfer = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            previousOwnerId
+        );
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['persisted-owner-original']),
+            'persisted-owner.wav',
+            'asset-stage-persisted-owner'
+        );
+        transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
+        const commitHandoff = vi.fn(async (commit: () => Promise<void>) => commit());
+        const persistFailure = new Error('exact root save interrupted');
+        let persistenceAttempts = 0;
+        let restartedProjectOwnerId = previousOwnerId;
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            persistenceAttempts += 1;
+            if (persistenceAttempts <= 2) {
+                throw persistFailure;
+            }
+            restartedProjectOwnerId = (live as Doc<SeededDoc>).projectMeta?.projectId ?? previousOwnerId;
+        });
+        const onPersistError = vi.fn();
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async ({ projectId }) => {
+                const transition = await transfer.prepareDurableOwnerRebind(projectId!);
+                if (transition.status === 'failed') {
+                    throw new Error(transition.reason);
+                }
+                return {
+                    commit: () => commitHandoff(transition.commit),
+                    abort: transition.abort,
+                };
+            },
+            onPersistError,
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: nextOwnerId };
+            draft.peerProbe = 'published-before-save';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        const publishedHeads = [...getHeads(live)].map(String).toSorted();
+        expect(persistCrdtProject).toHaveBeenCalledExactlyOnceWith(publishedHeads);
+        expect(commitHandoff).not.toHaveBeenCalled();
+
+        const sendNoOpHostFrame = async (peerId: PeerId, actorId: string) => {
+            const unchangedRemote = clone(live, actorId);
+            for (const syncMessageBase64 of createPeerSyncMessages({ remote: unchangedRemote, local: live })) {
+                sync.receiveSync({ peerId, docId: 'root', syncMessageBase64 });
+            }
+            await sync.flushPersistence();
+        };
+
+        await sendNoOpHostFrame('host-peer-retry-1', 'cccccccccccccccc');
+
+        expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+        expect(persistCrdtProject).toHaveBeenLastCalledWith(publishedHeads);
+        expect(commitHandoff).not.toHaveBeenCalled();
+        expect(restartedProjectOwnerId).toBe(previousOwnerId);
+        expect(onPersistError).toHaveBeenCalledTimes(2);
+        const inProcessPublishedOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            nextOwnerId
+        );
+        await expect(inProcessPublishedOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toEqual({
+            status: 'failed',
+            reason: 'lease-owner-mismatch',
+        });
+        inProcessPublishedOwner.dispose();
+        const restartedPersistedOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            restartedProjectOwnerId
+        );
+        await expect(
+            restartedPersistedOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toMatchObject({ status: 'opened' });
+        restartedPersistedOwner.dispose();
+
+        await sendNoOpHostFrame('host-peer-retry-2', 'dddddddddddddddd');
+
+        expect(persistCrdtProject).toHaveBeenCalledTimes(3);
+        expect(persistCrdtProject).toHaveBeenLastCalledWith(publishedHeads);
+        expect(commitHandoff).toHaveBeenCalledOnce();
+        expect(restartedProjectOwnerId).toBe(nextOwnerId);
+        const restartedAdoptedOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            restartedProjectOwnerId
+        );
+        await expect(
+            restartedAdoptedOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)
+        ).resolves.toMatchObject({ status: 'opened' });
+        await restartedAdoptedOwner.releaseDurableStagedAsset(staged.leaseId, staged.hash);
+        restartedAdoptedOwner.dispose();
+        transfer.dispose();
+    });
+
+    it('prepares an identity-bearing root delivery even before the peer converges', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const prepareSyncPersistence = vi.fn().mockResolvedValue(undefined);
+        const sync = new AutomergeSync(makePeerManager(), { prepareSyncPersistence });
+        const identityRevision = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+        });
+        const laterRevision = change(identityRevision, (draft) => {
+            draft.peerProbe = 'later-root-revision';
+        });
+        const messages = createPeerSyncMessages({ remote: laterRevision, local: live });
+        const identityBearing = decodeSyncMessage(base64ToBytes(messages.at(-1)!));
+        const changesThroughIdentity = getChanges(remoteSeed, identityRevision);
+        const partialMessage = encodeSyncMessage({
+            ...identityBearing,
+            changes: changesThroughIdentity,
+        });
+
+        for (const message of messages.slice(0, -1)) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: bytesToBase64(partialMessage) });
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).projectMeta?.projectId).toBe('aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa');
+        expect(prepareSyncPersistence).toHaveBeenCalledWith(
+            expect.objectContaining({
+                docId: 'root',
+                projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+                rootHeads: expect.any(Array),
+            })
+        );
+    });
+
+    it('holds a newer root delivery behind the exact prepare-persist-commit barrier', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        let releasePrepare: (() => void) | undefined;
+        const prepareBlocked = new Promise<void>((resolve) => {
+            releasePrepare = resolve;
+        });
+        const persistInputs: unknown[][] = [];
+        let senderIsHost = true;
+        const preparedAuthorities: Array<boolean | undefined> = [];
+        vi.mocked(persistCrdtProject).mockImplementation((...input: unknown[]) => {
+            persistInputs.push(input);
+            return Promise.resolve();
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost }),
+            prepareSyncPersistence: async ({ projectId, senderIsHost: preparedAsHost }) => {
+                preparedAuthorities.push(preparedAsHost);
+                if (!projectId) {
+                    return undefined;
+                }
+                await prepareBlocked;
+                return { commit: async () => undefined, abort: async () => undefined };
+            },
+        });
+        const firstRemote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'first';
+        });
+        for (const message of createPeerSyncMessages({ remote: firstRemote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+            await Promise.resolve();
+        }
+        const firstHeads = [...getHeads(firstRemote)].map(String).toSorted();
+
+        const secondRemote = change(clone(firstRemote, 'cccccccccccccccc'), (draft) => {
+            draft.peerProbe = 'second';
+        });
+        for (const message of createPeerSyncMessages({ remote: secondRemote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        senderIsHost = false;
+
+        expect((live as Doc<SeededDoc>).peerProbe).not.toBe('first');
+        releasePrepare?.();
+        await sync.flushPersistence();
+        await Promise.resolve();
+        await sync.flushPersistence();
+
+        expect(persistInputs[0]).toEqual([firstHeads]);
+        expect((live as Doc<SeededDoc>).peerProbe).toBe('second');
+        expect(preparedAuthorities.length).toBeGreaterThanOrEqual(2);
+        expect(preparedAuthorities.every(Boolean)).toBe(true);
+    });
+
+    it('drops a root delivery deferred behind preparation when the session stops', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        let releasePrepare: (() => void) | undefined;
+        const prepareBlocked = new Promise<void>((resolve) => {
+            releasePrepare = resolve;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                await prepareBlocked;
+                return undefined;
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'must-not-publish';
+        });
+
+        for (const message of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        sync.stop();
+        releasePrepare?.();
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).peerProbe).not.toBe('must-not-publish');
+    });
+
+    it('retries against a local root mutation instead of overwriting it after deferred preparation', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        let prepareCount = 0;
+        let releaseFirstPrepare: (() => void) | undefined;
+        const firstPrepare = new Promise<void>((resolve) => {
+            releaseFirstPrepare = resolve;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            prepareSyncPersistence: async () => {
+                prepareCount += 1;
+                if (prepareCount === 1) {
+                    await firstPrepare;
+                }
+                return undefined;
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'remote-change';
+        });
+
+        for (const message of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
+        }
+        await Promise.resolve();
+        live = change(live as Doc<SeededDoc>, (draft) => {
+            (draft as SeededDoc & { localProbe?: string }).localProbe = 'local-change';
+        });
+        releaseFirstPrepare?.();
+        await sync.flushPersistence();
+        await Promise.resolve();
+        await sync.flushPersistence();
+
+        expect(live).toMatchObject({ peerProbe: 'remote-change', localProbe: 'local-change' });
+        expect(prepareCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it('abandons a changed-root owner handoff before retrying against a newer local root', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const peer = makePeerManager() as unknown as PeerConnectionManager;
+        const transfer = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            'project:abandoned-changed-source'
+        );
+        const staged = await transfer.stageDurableAsset(
+            new Blob(['abandoned-changed']),
+            'abandoned-changed.wav',
+            'asset-stage-abandoned-changed'
+        );
+        transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
+        const firstPrepared = Promise.withResolvers<void>();
+        const releaseFirstPreparation = Promise.withResolvers<void>();
+        const retryStarted = Promise.withResolvers<void>();
+        const releaseRetry = Promise.withResolvers<void>();
+        let prepareCount = 0;
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async ({ projectId }) => {
+                prepareCount += 1;
+                if (prepareCount > 1) {
+                    retryStarted.resolve();
+                    await releaseRetry.promise;
+                    return undefined;
+                }
+                const transition = await transfer.prepareDurableOwnerRebind(projectId!);
+                if (transition.status === 'failed') {
+                    throw new Error(transition.reason);
+                }
+                firstPrepared.resolve();
+                await releaseFirstPreparation.promise;
+                return { commit: transition.commit, abort: transition.abort };
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'bbbbbbbb-bbbb-8bbb-8bbb-bbbbbbbbbbbb' };
+            draft.peerProbe = 'remote-change';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await firstPrepared.promise;
+        live = change(live as Doc<SeededDoc>, (draft) => {
+            draft.peerProbe = 'local-change';
+        });
+        releaseFirstPreparation.resolve();
+        await retryStarted.promise;
+        sync.stop();
+        releaseRetry.resolve();
+        await sync.flushPersistence();
+
+        const replacement = await transfer.prepareDurableOwnerRebind('project:replacement-after-changed');
+        expect(replacement).toMatchObject({ status: 'prepared' });
+        await transfer.commitDurableOwnerRebind('project:replacement-after-changed');
+        const replacementOwner = new AssetTransfer(
+            peer,
+            { onAssetAvailable: vi.fn(), onProgress: vi.fn(), onTransferFailed: vi.fn() },
+            'project:replacement-after-changed'
+        );
+        await expect(replacementOwner.reopenDurableStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+            status: 'opened',
+        });
+        replacementOwner.dispose();
+        transfer.dispose();
+    });
+
+    it('preserves the host project identity while applying other guest root changes', async () => {
+        const canonical = change(seedAmDoc(), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa', name: 'Host project' };
+        });
+        let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+        const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            getProtectedProjectId: () => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+        });
+        const guest = change(remoteSeed, (draft) => {
+            draft.projectMeta = {
+                projectId: 'bbbbbbbb-bbbb-8bbb-8bbb-bbbbbbbbbbbb',
+                name: 'Guest edit accepted',
+            };
+        });
+
+        for (const message of createPeerSyncMessages({ remote: guest, local: live })) {
+            sync.receiveSync({ peerId: 'guest-peer', docId: 'root', syncMessageBase64: message });
+        }
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).projectMeta).toEqual({
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            name: 'Guest edit accepted',
+        });
+    });
+
+    it('removes a hostile migration-pending marker while preserving the canonical host identity', async () => {
+        const canonical = change(seedAmDoc(), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa', name: 'Host project' };
+        });
+        let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+        const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({
+                accepted: true,
+                senderIsHost: false,
+                protectedProjectIdentity: { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' },
+            }),
+        });
+        const guest = change(remoteSeed, (draft) => {
+            Object.assign(draft.projectMeta!, { identityMigrationPending: true, name: 'Guest edit accepted' });
+        });
+
+        for (const message of createPeerSyncMessages({ remote: guest, local: live })) {
+            sync.receiveSync({ peerId: 'guest-peer', docId: 'root', syncMessageBase64: message });
+        }
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).projectMeta).toEqual({
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            name: 'Guest edit accepted',
+        });
     });
 
     it('defers an incoming branch-document sync until its owning transition releases the document', async () => {
@@ -235,6 +955,7 @@ describe('AutomergeSync', () => {
         const sync = new AutomergeSync(makePeerManager());
 
         sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: makeRealSyncMessage() });
+        await sync.flushPersistence();
 
         expect(sanitizeIncomingCrdtDocument).toHaveBeenCalledTimes(1);
         expect(replaceCrdtDoc).toHaveBeenCalledWith({ id: doc_id, doc: sanitized_document });
@@ -980,9 +1701,7 @@ describe('AutomergeSync', () => {
         const sync = new AutomergeSync(makePeerManager(), { onPersistError });
 
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
-        // Let the rejected persist promise settle.
-        await Promise.resolve();
-        await Promise.resolve();
+        await sync.flushPersistence();
 
         expect(onPersistError).toHaveBeenCalled();
     });

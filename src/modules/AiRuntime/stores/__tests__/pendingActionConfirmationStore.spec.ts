@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    commitPendingActionResourceLease,
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
+    protectPendingActionResourceLease,
     proposePendingActionConfirmation,
+    settlePendingActionResourceLease,
+    settlePendingActionResourceLeaseBestEffort,
 } from '../pendingActionConfirmationStore';
 
 describe('pendingActionConfirmationStore', () => {
@@ -223,5 +227,159 @@ describe('pendingActionConfirmationStore', () => {
         expect(proposePendingActionConfirmation(createInput('second', rejectedRelease))).toBeNull();
         expect(firstRelease).not.toHaveBeenCalled();
         expect(rejectedRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries rejected resource cleanup in-process until the lease releases', async () => {
+        const retainedRelease = vi.fn();
+        const rejectedRelease = vi
+            .fn<() => Promise<void>>()
+            .mockRejectedValueOnce(new Error('durable cleanup preparation interrupted'))
+            .mockResolvedValueOnce(undefined);
+        const rejectedLease = { bytes: 1100 * 1024 * 1024, release: rejectedRelease };
+
+        expect(
+            proposePendingActionConfirmation({
+                id: 'retained-at-resource-ceiling',
+                prompt: 'retained',
+                assistantMessageId: 'message-retained-at-resource-ceiling',
+                actions: [{ type: 'createBus', payload: { name: 'Retained', busId: 'bus-retained' } }],
+                actionLabels: ['Retained'],
+                projectRevision: 'revision-retained-at-resource-ceiling',
+                resourceLease: { bytes: 1100 * 1024 * 1024, release: retainedRelease },
+            })
+        ).not.toBeNull();
+        expect(
+            proposePendingActionConfirmation({
+                id: 'rejected-at-resource-ceiling',
+                prompt: 'rejected',
+                assistantMessageId: 'message-rejected-at-resource-ceiling',
+                actions: [{ type: 'createBus', payload: { name: 'Rejected', busId: 'bus-rejected' } }],
+                actionLabels: ['Rejected'],
+                projectRevision: 'revision-rejected-at-resource-ceiling',
+                resourceLease: rejectedLease,
+            })
+        ).toBeNull();
+
+        await vi.waitFor(() => expect(rejectedRelease).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+        expect(rejectedRelease).toHaveBeenCalledTimes(2);
+        expect(retainedRelease).not.toHaveBeenCalled();
+    });
+
+    it('retains a failed async release so cleanup can be retried', async () => {
+        const release = vi
+            .fn<() => Promise<void>>()
+            .mockRejectedValueOnce(new Error('durable release interrupted'))
+            .mockResolvedValueOnce(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-retryable-release',
+            prompt: 'retry cleanup',
+            assistantMessageId: 'message-retryable-release',
+            actions: [{ type: 'createBus', payload: { name: 'Retry', busId: 'bus-retry' } }],
+            actionLabels: ['Retry'],
+            projectRevision: 'revision-retryable-release',
+            resourceLease: { bytes: 1, release },
+        });
+
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-retryable-release',
+                disposition: 'discard',
+            })
+        ).rejects.toThrow('durable release interrupted');
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-retryable-release',
+                disposition: 'discard',
+            })
+        ).resolves.toBeUndefined();
+        expect(release).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves the primary outcome while a failed best-effort release remains retryable', async () => {
+        const release = vi
+            .fn<() => Promise<void>>()
+            .mockRejectedValueOnce(new Error('durable release interrupted'))
+            .mockResolvedValueOnce(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-best-effort-release',
+            prompt: 'retry cleanup',
+            assistantMessageId: 'message-best-effort-release',
+            actions: [{ type: 'createBus', payload: { name: 'Retry', busId: 'bus-best-effort' } }],
+            actionLabels: ['Retry'],
+            projectRevision: 'revision-best-effort-release',
+            resourceLease: { bytes: 1, release },
+        });
+
+        await expect(
+            settlePendingActionResourceLeaseBestEffort({
+                confirmationId: 'confirmation-best-effort-release',
+                disposition: 'discard',
+            })
+        ).resolves.toBeUndefined();
+        await expect(
+            settlePendingActionResourceLease({
+                confirmationId: 'confirmation-best-effort-release',
+                disposition: 'discard',
+            })
+        ).resolves.toBeUndefined();
+        expect(release).toHaveBeenCalledTimes(2);
+    });
+
+    it('defers generic cleanup while commit is prepared but releases after proven noncommit', async () => {
+        const protect = vi.fn();
+        const release = vi.fn().mockResolvedValue(undefined);
+        proposePendingActionConfirmation({
+            id: 'confirmation-prepared-noncommit',
+            prompt: 'prepare resources before commit',
+            assistantMessageId: 'message-prepared-noncommit',
+            actions: [{ type: 'createBus', payload: { name: 'Prepared', busId: 'bus-prepared' } }],
+            actionLabels: ['Prepared'],
+            projectRevision: 'revision-prepared-noncommit',
+            resourceLease: { bytes: 1, protect, release },
+        });
+
+        protectPendingActionResourceLease('confirmation-prepared-noncommit');
+        clearPendingActionConfirmations();
+        await Promise.resolve();
+
+        expect(protect).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
+
+        await settlePendingActionResourceLease({
+            confirmationId: 'confirmation-prepared-noncommit',
+            disposition: 'discard',
+        });
+
+        expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('hands a committed resource lease to its durable recovery owner before forgetting it', async () => {
+        const commit = vi.fn();
+        const release = vi.fn();
+        const retain = vi.fn().mockRejectedValue(new Error('promotion remains pending'));
+        proposePendingActionConfirmation({
+            id: 'confirmation-promotion-recovery',
+            prompt: 'commit prepared stems',
+            assistantMessageId: 'message-promotion-recovery',
+            actions: [{ type: 'createBus', payload: { name: 'Recovery', busId: 'bus-recovery' } }],
+            actionLabels: ['Recovery'],
+            projectRevision: 'revision-promotion-recovery',
+            resourceLease: { bytes: 1, commit, release, retain },
+        });
+
+        await commitPendingActionResourceLease('confirmation-promotion-recovery');
+
+        await expect(
+            settlePendingActionResourceLeaseBestEffort({
+                confirmationId: 'confirmation-promotion-recovery',
+                disposition: 'retain',
+            })
+        ).resolves.toBeUndefined();
+        clearPendingActionConfirmations();
+
+        expect(commit).toHaveBeenCalledOnce();
+        expect(retain).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
     });
 });

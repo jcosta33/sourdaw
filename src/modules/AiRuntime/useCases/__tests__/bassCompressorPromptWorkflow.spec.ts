@@ -727,12 +727,12 @@ describe('bass compressor prompt workflow', () => {
         expect(confirmation?.risk).toMatchObject({ level: 'broad-reversible' });
         expect(confirmation?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
         expect(confirmation?.affectedIds).toEqual([
+            'device-ai-track-bass-di-builtin-compressor',
             'track-bass-di',
             'device-bass-di-eq',
-            'device-ai-track-bass-di-builtin-compressor',
+            'device-ai-track-bass-amp-builtin-compressor',
             'track-bass-amp',
             'device-bass-amp-eq',
-            'device-ai-track-bass-amp-builtin-compressor',
         ]);
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
@@ -782,10 +782,10 @@ describe('bass compressor prompt workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain(
-            'Affected IDs: track-bass-di, device-bass-di-eq, device-ai-track-bass-di-builtin-compressor'
+            'Affected IDs: device-ai-track-bass-di-builtin-compressor, track-bass-di, device-bass-di-eq'
         );
         expect(receipt?.content).toContain(
-            'Affected IDs: track-bass-amp, device-bass-amp-eq, device-ai-track-bass-amp-builtin-compressor'
+            'Affected IDs: device-ai-track-bass-amp-builtin-compressor, track-bass-amp, device-bass-amp-eq'
         );
         expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
         expect(undoStore.value?.past).toHaveLength(2);

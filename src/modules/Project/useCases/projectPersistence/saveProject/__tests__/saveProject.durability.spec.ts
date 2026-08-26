@@ -175,12 +175,13 @@ describe('saveProject durability', () => {
     // recorded. Mutation: making the addToRecentProjects call unconditional
     // again reds `expect(addToRecentProjects).not.toHaveBeenCalled()`.
     it('reports failure and lists nothing when no snapshot could be built', async () => {
-        installFakeIndexedDb();
+        const controls = installFakeIndexedDb();
         mocks.buildProjectData.mockResolvedValue(null);
         const saveProject = await importSaveProject();
 
         await expect(saveProject()).resolves.toBe(false);
 
+        expect(controls.values.has(RECENT_KEY)).toBe(false);
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
