@@ -21,6 +21,8 @@ import {
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { getEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { warpStates } from '../../../stores/warpStates';
+import { setStretchMode } from '../../../useCases';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -54,6 +56,7 @@ describe('handleDuplicateClip atomic integration', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         setAllEnvelopes({});
+        warpStates.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -108,5 +111,26 @@ describe('handleDuplicateClip atomic integration', () => {
 
         expect(getEnvelope(duplicated!.id)).toBeUndefined();
         expect(getEnvelope('clip-1')?.points).toHaveLength(2);
+    });
+
+    it('still undoes the duplicate after a semantic no-op warp write on the copy', async () => {
+        const result = await executeAppActionBatch([{ type: 'duplicateClip', payload: { clipId: 'clip-1' } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        expect(result.status).toBe('committed');
+        const duplicated = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id !== 'clip-1')!;
+
+        // Re-selecting the already-active stretch mode writes a map entry whose
+        // value IS defaultWarpState — by the system's own definition
+        // (hasNonDefaultWarpState) the copy still carries no warp state, so the
+        // captured satellite guard must still match and undo must still run.
+        setStretchMode(duplicated.id, 'repitch');
+        expect(warpStates.has(duplicated.id)).toBe(true);
+
+        await undo();
+
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+        expect(trackStore.value?.tracks[0]?.clips[0]?.id).toBe('clip-1');
     });
 });

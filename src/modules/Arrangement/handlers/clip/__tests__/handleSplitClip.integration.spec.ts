@@ -23,7 +23,10 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { readClipSatelliteEntry, serializeClipSatelliteEntries } from '../../../stores/clipSatelliteState';
+import { setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { trackStore } from '../../../stores/trackStore';
+import { setWarpState, warpStates } from '../../../stores/warpStates';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
 const noActionHistoryMetadataPort = {
@@ -81,6 +84,8 @@ describe('handleSplitClip atomic integration', () => {
             pitchBendByClipId: {},
         });
         transportStore.set({ ...defaultTransportState, tempo: 120 });
+        warpStates.clear();
+        setAllEnvelopes({});
     });
 
     afterEach(() => {
@@ -89,6 +94,8 @@ describe('handleSplitClip atomic integration', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        warpStates.clear();
+        setAllEnvelopes({});
         vi.restoreAllMocks();
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
@@ -209,4 +216,96 @@ describe('handleSplitClip atomic integration', () => {
             expect(transportStore.value?.tempo).toBe(60);
         }
     );
+
+    it('round-trips gain envelope and warp state exactly through split, undo, and redo', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            name: 'Audio Intro',
+            trackId: 'track-1',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'audio-buffer-1',
+        });
+        const track = TrackDummy.create({ id: 'track-1', name: 'Audio', kind: 'audio', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        // Snap fixture shared with the tempo tests above: beat 4 snaps to 5.
+        const channelData = new Float32Array(700).fill(1);
+        channelData.fill(-1, 251);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
+
+        setWarpState('clip-1', {
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },
+                { id: 'w-right', originalBeat: 7, warpedBeat: 7.5 },
+            ],
+        });
+        setEnvelope('clip-1', {
+            clipId: 'clip-1',
+            enabled: true,
+            points: [
+                { id: 'p0', beatOffset: 0, gainDb: 0 },
+                { id: 'p6', beatOffset: 6, gainDb: -12 },
+            ],
+        });
+        const satellitesBefore = serializeClipSatelliteEntries(['clip-1']);
+
+        const result = await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        expect(result).toMatchObject({ status: 'committed' });
+        const rightClip = trackStore.value!.tracks[0]!.clips.find((candidate) => candidate.id !== 'clip-1')!;
+
+        // Split at content seam 5: the left keeps the sub-seam marker, the right
+        // inherits the warp setup with the beyond-seam marker; the envelope seam
+        // value at clip-relative 5 between (0, 0 dB) and (6, -12 dB) is -10 dB.
+        const partitionedLeft = serializeClipSatelliteEntries(['clip-1']);
+        expect(readClipSatelliteEntry('clip-1').warpState?.markers).toEqual([
+            { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },
+        ]);
+        expect(readClipSatelliteEntry(rightClip.id)).toEqual({
+            clipId: rightClip.id,
+            gainEnvelope: {
+                clipId: rightClip.id,
+                enabled: true,
+                points: [
+                    { id: `gep-split-${rightClip.id}-right`, beatOffset: 0, gainDb: -10 },
+                    { id: 'p6', beatOffset: 1, gainDb: -12 },
+                ],
+            },
+            warpState: {
+                enabled: true,
+                markers: [{ id: 'w-right', originalBeat: 7, warpedBeat: 7.5 }],
+                stretchMode: 'complex',
+                originalTempo: 120,
+            },
+        });
+        expect(readClipSatelliteEntry('clip-1').gainEnvelope?.points).toEqual([
+            { id: 'p0', beatOffset: 0, gainDb: 0 },
+            { id: `gep-split-${rightClip.id}-left`, beatOffset: 5, gainDb: -10 },
+        ]);
+
+        await undo();
+
+        // The source entry is back byte-identically, and the right half's
+        // satellites are gone rather than orphaned.
+        expect(serializeClipSatelliteEntries(['clip-1'])).toBe(satellitesBefore);
+        expect(readClipSatelliteEntry(rightClip.id)).toEqual({
+            clipId: rightClip.id,
+            gainEnvelope: null,
+            warpState: null,
+        });
+
+        await redo();
+
+        expect(serializeClipSatelliteEntries(['clip-1'])).toBe(partitionedLeft);
+        expect(readClipSatelliteEntry(rightClip.id).gainEnvelope?.points).toEqual([
+            { id: `gep-split-${rightClip.id}-right`, beatOffset: 0, gainDb: -10 },
+            { id: 'p6', beatOffset: 1, gainDb: -12 },
+        ]);
+    });
 });
