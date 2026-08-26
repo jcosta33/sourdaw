@@ -360,6 +360,19 @@ describe('command batch idempotency', () => {
                 result: { actions: [], status: 'committed' },
             })
         );
+        const receiptRecord = JSON.parse(receipt) as {
+            base: { normalizedRevision: string };
+            commandOutcomes: Array<{ commandId: string; operation: string; outcome: string }>;
+        };
+        const receiptWithOutcome = (outcome: string, commandOutcome: string) =>
+            JSON.stringify({
+                ...receiptRecord,
+                outcome,
+                commandOutcomes: receiptRecord.commandOutcomes.map((command) => ({
+                    ...command,
+                    outcome: commandOutcome,
+                })),
+            });
         const lookup = vi.fn((input: { contentHash: string; idempotencyKey: string; projectId: string }) =>
             Promise.resolve(
                 input.projectId === proof.projectId &&
@@ -389,9 +402,34 @@ describe('command batch idempotency', () => {
         lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt: '{"schemaVersion":1}' });
         await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
 
-        const staleReceipt = JSON.stringify({ ...JSON.parse(receipt), runId: 'stale-run' });
-        lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt: staleReceipt });
-        await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+        for (const serializedReceipt of [
+            receiptWithOutcome('executed', 'executed'),
+            receiptWithOutcome('no-op', 'no-op'),
+            receiptWithOutcome('failed', 'not-applied'),
+            JSON.stringify({ ...receiptRecord, runId: 'stale-run' }),
+            JSON.stringify({ ...receiptRecord, batchId: 'stale-batch' }),
+            JSON.stringify({
+                ...receiptRecord,
+                base: JSON.parse(revision(999)) as typeof receiptRecord.base,
+            }),
+            JSON.stringify({
+                ...receiptRecord,
+                commandOutcomes: receiptRecord.commandOutcomes.map((command) => ({
+                    ...command,
+                    commandId: '22222222-2222-4222-8222-222222222222',
+                })),
+            }),
+            JSON.stringify({
+                ...receiptRecord,
+                commandOutcomes: receiptRecord.commandOutcomes.map((command) => ({
+                    ...command,
+                    operation: 'setTrackPan',
+                })),
+            }),
+        ]) {
+            lookup.mockResolvedValueOnce({ status: 'complete', serializedReceipt });
+            await expect(getVersionedCommandBatchCommitDisposition(proof)).resolves.toBe('unknown');
+        }
     });
 
     it('discards caller recovery prepared for a project transaction that never commits', async () => {
@@ -400,6 +438,7 @@ describe('command batch idempotency', () => {
         const discard = vi.fn();
         const batch = compileBatch();
         const proof = await getVersionedCommandBatchCommitProof(batch);
+        const pendingCheckpointLookup = vi.fn();
         let projectHead = 'before-project-commit';
         configureAutomergeStoragePort({
             getDoc: () => projectDocument,
@@ -436,6 +475,16 @@ describe('command batch idempotency', () => {
                     expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({
                         status: 'pending',
                     });
+                    const serializedReceipt = commandBatchIdempotencyStore.value?.records[0]?.serializedReceipt;
+                    if (!serializedReceipt) {
+                        throw new Error('The prepared project checkpoint did not include a verified receipt');
+                    }
+                    pendingCheckpointLookup.mockResolvedValue({ status: 'complete', serializedReceipt });
+                    commandBatchIdempotencyPort.setRepository({
+                        lookup: pendingCheckpointLookup,
+                        claim: () => Promise.resolve({ status: 'claimed' }),
+                        complete: () => Promise.resolve(),
+                    });
                     dispositionDuringPreparedCommit = getVersionedCommandBatchCommitDisposition(proof);
                     projectDocument = projectBeforeCommit;
                     projectHead = 'before-project-commit';
@@ -446,6 +495,7 @@ describe('command batch idempotency', () => {
 
         expect(result).toMatchObject({ status: 'failed', reason: 'initial project commit unavailable' });
         await expect(dispositionDuringPreparedCommit).resolves.toBe('unknown');
+        expect(pendingCheckpointLookup).not.toHaveBeenCalled();
         expect(promote).not.toHaveBeenCalled();
         expect(discard).toHaveBeenCalledOnce();
         expect(mutationCount).toBe(0);
