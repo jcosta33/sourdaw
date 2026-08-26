@@ -230,9 +230,20 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         };
     }, []);
 
-    // Pointer leaving the canvas mid-gesture cancels rather than committing at
-    // the last position (audit: arrangement focus-loss cancellation).
+    // Pointer leaving the canvas mid-gesture cancels the clip, note, slip,
+    // and automation drags rather than committing at the last position
+    // (audit: arrangement focus-loss cancellation). A rubber-band lasso is
+    // the exception: the canvas fills its container edge-to-edge, so
+    // dragging the lasso past that edge is the ordinary way to select
+    // everything from a point onward — leaving still commits it, exactly
+    // like releasing the mouse button would.
     const handleMouseLeave = (): void => {
+        if (rubberBandRef.current) {
+            commitRubberBandSelection();
+            rubberBandRef.current = null;
+            setRubberBand(null);
+            return;
+        }
         cancelGestureRef.current();
     };
 
@@ -255,6 +266,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     // ── Mouse Down ────────────────────────────────────────────────────────────
 
     const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
+        // The ref only ever describes the press currently in flight. Clear
+        // it unconditionally before anything below can re-arm it — a press
+        // whose drag never started (e.g. beginClipDrag rejects a hit that
+        // hitTestClip returned but trackStore no longer holds) otherwise
+        // leaves it armed for a later, unrelated press to consume.
+        pendingCollapseClipIdRef.current = null;
+
         if (event.button !== 0) {
             return;
         }
@@ -666,6 +684,56 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 }
                 previewDirtyFlag.value = true;
             }
+        } else {
+            // No track under the pointer (e.g. below the last row): any
+            // rejection reason recorded over an earlier row no longer
+            // describes the drop the user is about to make, so it must not
+            // survive to surface at mouse-up.
+            dropRejectedRef.current = { reason: null, clipIds: new Set<string>() };
+        }
+    };
+
+    // Shared by handleMouseUp (release) and handleMouseLeave (pointer exits
+    // the canvas mid-lasso): both commit the same rubber-band selection from
+    // the same tracked bounds, they just fire on different DOM events.
+    const commitRubberBandSelection = (): void => {
+        if (!rubberBand) {
+            return;
+        }
+        const view = timelineViewStore.value;
+        const model = buildTimelineRenderModel();
+        if (!view) {
+            return;
+        }
+        const left = Math.min(rubberBand.startX, rubberBand.endX);
+        const right = Math.max(rubberBand.startX, rubberBand.endX);
+        const sY = view.scrollY;
+        const top = Math.min(rubberBand.startY, rubberBand.endY) + sY;
+        const bottom = Math.max(rubberBand.startY, rubberBand.endY) + sY;
+        const leftBeat = left / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
+        const rightBeat = right / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
+
+        const hitIds: string[] = [];
+        const hitTrackIds: string[] = [];
+        let trackYOffset = 0;
+        for (const track of model.tracks) {
+            const h = track.height;
+            if (!(trackYOffset + h < top || trackYOffset > bottom)) {
+                hitTrackIds.push(track.id);
+                for (const clip of track.clips) {
+                    if (clip.endBeat > leftBeat && clip.startBeat < rightBeat) {
+                        hitIds.push(clip.id);
+                    }
+                }
+            }
+            trackYOffset += h;
+        }
+
+        if (getActiveTool() === 'marquee') {
+            setMarqueeSelection({ startBeat: leftBeat, endBeat: rightBeat, trackIds: hitTrackIds });
+        } else {
+            setClipSelection(hitIds);
+            setMarqueeSelection(null);
         }
     };
 
@@ -807,40 +875,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (rubberBandRef.current && rubberBand) {
-            const view = timelineViewStore.value;
-            const model = buildTimelineRenderModel();
-            if (view) {
-                const left = Math.min(rubberBand.startX, rubberBand.endX);
-                const right = Math.max(rubberBand.startX, rubberBand.endX);
-                const sY = view.scrollY;
-                const top = Math.min(rubberBand.startY, rubberBand.endY) + sY;
-                const bottom = Math.max(rubberBand.startY, rubberBand.endY) + sY;
-                const leftBeat = left / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
-                const rightBeat = right / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
-
-                const hitIds: string[] = [];
-                const hitTrackIds: string[] = [];
-                let trackYOffset = 0;
-                for (const track of model.tracks) {
-                    const h = track.height;
-                    if (!(trackYOffset + h < top || trackYOffset > bottom)) {
-                        hitTrackIds.push(track.id);
-                        for (const clip of track.clips) {
-                            if (clip.endBeat > leftBeat && clip.startBeat < rightBeat) {
-                                hitIds.push(clip.id);
-                            }
-                        }
-                    }
-                    trackYOffset += h;
-                }
-
-                if (getActiveTool() === 'marquee') {
-                    setMarqueeSelection({ startBeat: leftBeat, endBeat: rightBeat, trackIds: hitTrackIds });
-                } else {
-                    setClipSelection(hitIds);
-                    setMarqueeSelection(null);
-                }
-            }
+            commitRubberBandSelection();
             rubberBandRef.current = null;
             setRubberBand(null);
             return;

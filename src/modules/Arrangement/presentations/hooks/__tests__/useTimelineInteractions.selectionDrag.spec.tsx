@@ -1080,4 +1080,163 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
     });
+
+    describe('review 6 — mouse-leave mid-lasso still commits the rubber-band selection', () => {
+        it('crossing the canvas edge while dragging a lasso selects the clips it covered, same as releasing there would', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })]),
+                makeTrack('t2', 'audio', [makeClip({ id: 'c2', trackId: 't2', startBeat: 0, endBeat: 4 })]),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            mocks.hitTestClip.mockReturnValue(null);
+            mocks.hitTestTrack.mockReturnValue('t1');
+            mocks.buildTimelineRenderModel.mockReturnValue({
+                tracks: [
+                    { id: 't1', kind: 'audio', height: 100, clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] },
+                    { id: 't2', kind: 'audio', height: 100, clips: [{ id: 'c2', startBeat: 0, endBeat: 4 }] },
+                ],
+                tempo: 120,
+            });
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 0);
+            mouseMove(result, 900, 150);
+            expect(result.current.rubberBand).not.toBeNull();
+
+            // The canvas is edge-to-edge with its container: the pointer
+            // leaving it — not a mouse-up — is the ordinary way a lasso
+            // drag extends past the visible timeline.
+            act(() => {
+                result.current.handleMouseLeave();
+            });
+
+            expect(result.current.rubberBand).toBeNull();
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['c1', 'c2']);
+        });
+
+        it('still cancels a clip drag on leave — the lasso exception does not weaken other gestures', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })]),
+                makeTrack('t2', 'audio', []),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockReturnValue({
+                clipId: 'c1',
+                sourceTrackId: 't1',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode: 'move',
+            });
+            mocks.getTrackAtY.mockReturnValue({ index: 1, id: 't2' });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 20);
+            mouseMove(result, 200, 120);
+            expect(clipDragPreviewRef.current?.positions.get('c1')?.trackId).toBe('t2');
+
+            act(() => {
+                result.current.handleMouseLeave();
+            });
+
+            expect(clipDragPreviewRef.current).toBeNull();
+
+            mouseUp(result, 200, 120);
+            expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
+            expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(0);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('review 7 — a failed drag start must not leave a stale pending-collapse id armed', () => {
+        it('a later single-clip click is not hijacked by a prior multi-selection press whose drag never started', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [
+                    makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 }),
+                    makeClip({ id: 'c2', trackId: 't1', startBeat: 4, endBeat: 8 }),
+                ]),
+                makeTrack('t2', 'audio', [makeClip({ id: 'c3', trackId: 't2', startBeat: 0, endBeat: 4 })]),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            clipSelectionStore.set({
+                selectedClipId: 'c1',
+                selectedClipIds: ['c1', 'c2'],
+                marqueeSelection: null,
+            });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            const { result } = renderInteractions();
+
+            // Press 1: c1 is a multi-selection member — hitTestClip finds it,
+            // but its drag never starts (mirrors a variation-lane hit that
+            // beginClipDrag can't find in trackStore's track.clips and bails
+            // on). The press arms the pending-collapse ref for 'c1' and is
+            // released without ever setting a dragState.
+            mocks.hitTestClip.mockReturnValueOnce({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockReturnValueOnce(null);
+            mouseDown(result, 0, 20);
+            mouseUp(result, 0, 20);
+
+            // Press 2: a plain click on an unrelated single clip, released
+            // without movement.
+            mocks.hitTestClip.mockReturnValueOnce({ clipId: 'c3', trackId: 't2' });
+            mocks.beginClipDrag.mockReturnValueOnce({
+                clipId: 'c3',
+                sourceTrackId: 't2',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode: 'move',
+            });
+            mouseDown(result, 400, 20);
+            mouseUp(result, 400, 20);
+
+            // The selection must land on the clip actually clicked, not on
+            // the stale press-1 clip left over from the failed drag.
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['c3']);
+            expect(clipSelectionStore.value?.selectedClipId).toBe('c3');
+        });
+    });
+
+    describe('review 8 — dropRejectedRef must not survive the pointer leaving every track row', () => {
+        it('releasing below the last track does not surface a rejection recorded over an earlier track', () => {
+            const tracks = [
+                makeTrack('t1', 'audio', [
+                    makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4, locked: true }),
+                ]),
+                makeTrack('t2', 'audio', []),
+            ];
+            trackStore.set({ ...defaultTrackState, tracks });
+            mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            mocks.beginClipDrag.mockReturnValue({
+                clipId: 'c1',
+                sourceTrackId: 't1',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode: 'move',
+            });
+            mocks.buildTimelineRenderModel.mockReturnValue({ tracks: modelTracks(tracks), tempo: 120 });
+            const { result } = renderInteractions();
+
+            mouseDown(result, 0, 20);
+
+            // First move lands over t2: the locked clip is rejected there.
+            mocks.getTrackAtY.mockReturnValue({ index: 1, id: 't2' });
+            mouseMove(result, 200, 120);
+            expect(canvas.style.cursor).toBe('not-allowed');
+
+            // Second move leaves every track row (below the last one).
+            mocks.getTrackAtY.mockReturnValue(null);
+            mouseMove(result, 200, 900);
+
+            mouseUp(result, 200, 900);
+
+            // The rejection recorded over t2 must not survive into empty
+            // space below the track list.
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+            expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
+        });
+    });
 });
