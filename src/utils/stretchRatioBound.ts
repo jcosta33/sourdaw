@@ -34,10 +34,10 @@
 
 /**
  * Bound a raw clip stretch ratio into the schedulable range [0.01, 100] and
- * return it. Non-finite input is not this law's to repair — every write path
- * already rejects a non-finite ratio, and the hydrate check guards the
- * persisted one — so it passes through as-is, exactly as both runtimes
- * treated it before the law existed.
+ * return it. Only NaN flows through unrepaired — every write path already
+ * rejects a non-finite ratio, and the hydrate check guards the persisted
+ * one — while the infinities clamp to their nearest bound: +Infinity to 100,
+ * -Infinity to 0.01, exactly the values the kernel spec pins.
  */
 export function boundStretchRatio(stretchRatio: number): number {
     return Math.min(100, Math.max(0.01, stretchRatio));
