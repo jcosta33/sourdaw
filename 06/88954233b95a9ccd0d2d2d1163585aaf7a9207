@@ -1,0 +1,21 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_a40848e8f8cca9::t_abee11ba7c4fdd 39-43,112-113,357
+src/modules/Arrangement/stores/__tests__/adjustmentLayer.spec.ts
+  s_a40848e8f8cca9::t_abee11ba7c4fdd 231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "0688954233b95a9ccd0d2d2d1163585aaf7a9207",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
