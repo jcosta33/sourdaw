@@ -154,6 +154,15 @@ export const PianoRoll = ({
         prevClipId.current = clipId;
         setFocusedClipId(clipId);
     }
+    // The multi-selection behind `openedClipIds` can drop the focused clip
+    // while this roll stays open (deselected or deleted in the arrangement).
+    // A stale focus must not linger in the selector, so snap it back to the
+    // primary clip. The interactions hook independently gates on the same
+    // condition, so even a stale value between renders cannot route notes
+    // into an unrendered clip.
+    if (focusedClipId !== clipId && !(openedClipIds?.includes(focusedClipId) ?? false)) {
+        setFocusedClipId(clipId);
+    }
 
     // ── Store subscriptions ──────────────────────────────────────────
     const notes = useStoreSelector(

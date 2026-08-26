@@ -221,10 +221,22 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     // A9: every note-creation gesture — step input, chord stamp, paint, draw,
     // click-stamp — lands in the focused clip, because the toolbar selector
-    // promises "Focused clip for note input". Unset falls back to the primary
-    // clip, and each gesture's undo closures must retract from this same
-    // target or undo would miss the clip the note actually went to.
-    const targetClipId = focusedClipId ?? clipId;
+    // promises "Focused clip for note input". Each gesture's undo closures
+    // must retract from this same target or undo would miss the clip the note
+    // actually went to.
+    //
+    // A focus is only legal while its clip is open: the primary always is, a
+    // secondary only while it appears in the opened clips' notes map. The
+    // multi-selection behind `openedClipNotes` can drop the focused clip
+    // without the primary changing (deselected or deleted in the arrangement),
+    // and routing into a clip this roll no longer renders would hide every
+    // created note, defeat paint dedupe against an empty list, and — for a
+    // deleted clip — re-grow an orphan store entry. A stale focus therefore
+    // falls back to the primary.
+    const targetClipId =
+        focusedClipId !== undefined && (focusedClipId === clipId || openedClipNotes?.[focusedClipId] !== undefined)
+            ? focusedClipId
+            : clipId;
     // Gestures that consult the target clip's existing notes (paint dedupe,
     // paint undo snapshot) must read the target's own list: the primary's
     // `notes` prop describes only the primary clip.
@@ -528,7 +540,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         // threshold), the stashed `pendingStampRef` tells `handleMouseUp`
                         // to stamp a note at this grid cell — single-click-creates-a-note
                         // affordance preserved.
-                        auditionRef.current = playAuditionNote(trackId, pitch, 100);
+                        // The stamp will land in targetClipId, so its preview
+                        // must sound that clip's track instrument — a focused
+                        // clip on another track would otherwise audition
+                        // through the primary's instrument.
+                        const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
+                        auditionRef.current = playAuditionNote(auditionTrackId, pitch, 100);
                         const beat = snap(x / beatWidth);
                         pendingStampRef.current = { pitch, beat };
                         rubberBandRef.current = { x, y: noteY, w: 0, h: 0 };
