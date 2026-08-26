@@ -219,6 +219,17 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
     const [hoverCursor, setHoverCursor] = useState<string>('crosshair');
 
+    // A9: every note-creation gesture — step input, chord stamp, paint, draw,
+    // click-stamp — lands in the focused clip, because the toolbar selector
+    // promises "Focused clip for note input". Unset falls back to the primary
+    // clip, and each gesture's undo closures must retract from this same
+    // target or undo would miss the clip the note actually went to.
+    const targetClipId = focusedClipId ?? clipId;
+    // Gestures that consult the target clip's existing notes (paint dedupe,
+    // paint undo snapshot) must read the target's own list: the primary's
+    // `notes` prop describes only the primary clip.
+    const targetClipNotes = targetClipId === clipId ? notes : (openedClipNotes?.[targetClipId] ?? []);
+
     // ── Wheel: ctrl/cmd zooms the editor, and carries trackpad pinch ──
     //
     // Chromium reports a trackpad pinch as a ctrl-modified `wheel` event, so
@@ -475,29 +486,29 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
                     if (stepInput) {
-                        const note = addMidiNote(clipId, pitch, stepBeat, gridSnap, 100);
+                        const note = addMidiNote(targetClipId, pitch, stepBeat, gridSnap, 100);
                         pushUndoEntry(
                             'Add MIDI note',
-                            () => removeMidiNote(clipId, note.id),
-                            () => addMidiNote(clipId, pitch, stepBeat, gridSnap, 100)
+                            () => removeMidiNote(targetClipId, note.id),
+                            () => addMidiNote(targetClipId, pitch, stepBeat, gridSnap, 100)
                         );
                         setStepBeat((prev) => prev + gridSnap);
                         setSelectedNoteIds(new Set());
                     } else if (chordMode) {
                         const beat = snap(x / beatWidth);
-                        const created = stampChord(clipId, pitch, beat, gridSnap, 100, chordType);
+                        const created = stampChord(targetClipId, pitch, beat, gridSnap, 100, chordType);
                         if (created.length > 0) {
                             const createdIds = created.map((node) => node.id);
                             pushUndoEntry(
                                 `Stamp ${chordType} chord`,
-                                () => removeNotesByIds(clipId, createdIds),
-                                () => stampChord(clipId, pitch, beat, gridSnap, 100, chordType)
+                                () => removeNotesByIds(targetClipId, createdIds),
+                                () => stampChord(targetClipId, pitch, beat, gridSnap, 100, chordType)
                             );
                             setSelectedNoteIds(new Set(createdIds));
                         }
                     } else if (paintMode) {
                         const beat = snap(x / beatWidth);
-                        const note = addMidiNote(clipId, pitch, beat, gridSnap, 100);
+                        const note = addMidiNote(targetClipId, pitch, beat, gridSnap, 100);
                         paintNotesRef.current = new Set([note.id]);
                         dragRef.current = {
                             mode: 'paint',
@@ -650,11 +661,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const highBeat = Math.max(drag.origBeat, currentBeat);
             for (let b = lowBeat; b <= highBeat; b += gridSnap) {
                 const snappedB = snap(b);
-                const exists = notes.some(
+                // Dedupe against the clip being painted into, or a pass back
+                // over crossed cells would double-add into the focused clip.
+                const exists = targetClipNotes.some(
                     (node) => Math.abs(node.startBeat - snappedB) < 0.001 && node.pitch === drag.origPitch
                 );
                 if (!exists) {
-                    const note = addMidiNote(clipId, drag.origPitch, snappedB, gridSnap, 100);
+                    const note = addMidiNote(targetClipId, drag.origPitch, snappedB, gridSnap, 100);
                     paintNotesRef.current.add(note.id);
                 }
             }
@@ -761,11 +774,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 setSelectedNoteIds(event.shiftKey ? (prev) => new Set([...prev, ...hitIds]) : hitIds);
             } else if (pendingStamp) {
                 // Click without drag — stamp a note at the click location.
-                const note = addMidiNote(clipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100);
+                const note = addMidiNote(targetClipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100);
                 pushUndoEntry(
                     'Draw MIDI note',
-                    () => removeMidiNote(clipId, note.id),
-                    () => addMidiNote(clipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100)
+                    () => removeMidiNote(targetClipId, note.id),
+                    () => addMidiNote(targetClipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100)
                 );
                 setSelectedNoteIds(new Set());
             } else if (!event.shiftKey) {
@@ -784,8 +797,6 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (drag.mode === 'draw') {
             const dp = drawPreviewRef.current;
             if (dp) {
-                // A9: new notes go to focusedClipId (or primary clipId if not set)
-                const targetClipId = focusedClipId ?? clipId;
                 const note = addMidiNote(targetClipId, dp.pitch, dp.beat, dp.duration, 100);
                 pushUndoEntry(
                     'Draw MIDI note',
@@ -1039,19 +1050,21 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (drag.mode === 'paint') {
             const paintedIds = [...paintNotesRef.current];
             if (paintedIds.length > 0) {
-                const paintedNotes = notes
+                // The painted notes live in the target clip, so the undo
+                // snapshot must be read from — and retracted in — that clip.
+                const paintedNotes = targetClipNotes
                     .filter((node) => paintNotesRef.current.has(node.id))
                     .map((node) => ({ ...node }));
                 pushUndoEntry(
                     `Paint ${paintedIds.length} note${paintedIds.length > 1 ? 's' : ''}`,
                     () => {
                         for (const id of paintedIds) {
-                            removeMidiNote(clipId, id);
+                            removeMidiNote(targetClipId, id);
                         }
                     },
                     () => {
                         for (const node of paintedNotes) {
-                            addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
+                            addMidiNote(targetClipId, node.pitch, node.startBeat, node.duration, node.velocity);
                         }
                     }
                 );
